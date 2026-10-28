@@ -5,6 +5,7 @@
 - 変更日: 2026-10-10
 - 置換範囲: draw／Submitでの登録失効検出と、staging revision・command間metadata依存の再検証。利用者が寿命と同期を管理し、検証のための追跡費用を省く方針へ変更する。
 - 後継: [ADR-GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)。以下の本文は判断時点の記録であり、上記の実行時検証には後継を適用する。
+- 追加変更日: 2026-10-28。[GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)で、選択したtableへの直接・間接参照の所属検証を明確化する。SetArgumentTableによる選択は維持する。
 
 ## 背景
 

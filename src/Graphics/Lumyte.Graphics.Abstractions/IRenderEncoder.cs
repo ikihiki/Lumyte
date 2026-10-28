@@ -3,8 +3,8 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Provides a non-owning recording scope.</summary>
 public interface IRenderEncoder
 {
-    /// <summary>Selects the device's logical registration table for subsequent execution.</summary>
-    /// <param name="table">The live table from this device.</param>
+    /// <summary>Selects the same-device table against which draw or dispatch references are validated.</summary>
+    /// <param name="table">The live argument table containing all directly and transitively referenced resources.</param>
     void SetArgumentTable(IArgumentTable table);
 
     /// <summary>Snapshots application root values using their interface serializer.</summary>

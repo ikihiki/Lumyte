@@ -21,7 +21,7 @@ public readonly struct BufferSlice<T>
             throw new ArgumentOutOfRangeException(nameof(count));
         }
 
-        buffer.ValidateRange(buffer.Layout.GetSizeInBytes(offset), buffer.Layout.GetSizeInBytes(count));
+        buffer.ValidateByteRange(buffer.Layout.GetSizeInBytes(offset), buffer.Layout.GetSizeInBytes(count));
         (Buffer, Offset, Count) = (buffer, offset, count);
     }
 
@@ -62,7 +62,7 @@ public readonly struct BufferSlice<T>
             throw new ArgumentException("Source does not fit the buffer slice.", nameof(source));
         }
 
-        Buffer.CopyFrom(MemoryMarshal.AsBytes(source), OffsetInBytes, SizeInBytes);
+        Buffer.CopyBytesFrom(MemoryMarshal.AsBytes(source), OffsetInBytes, SizeInBytes);
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ public readonly struct BufferSlice<T>
             throw new ArgumentException("Destination does not fit the complete buffer slice.", nameof(destination));
         }
 
-        Buffer.CopyTo(MemoryMarshal.AsBytes(destination[..checked((int)Count)]), OffsetInBytes, SizeInBytes);
+        Buffer.CopyBytesTo(MemoryMarshal.AsBytes(destination[..checked((int)Count)]), OffsetInBytes, SizeInBytes);
     }
 
     private BufferLayout<T> GetLayout() => Buffer?.Layout ?? throw new ArgumentException("Invalid buffer slice.");

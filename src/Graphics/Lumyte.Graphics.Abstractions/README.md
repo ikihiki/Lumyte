@@ -32,7 +32,7 @@ using IGraphicsBuffer<uint> upload = device.CreateBuffer(new BufferDesc<uint>
     Memory = MemoryPreference.Upload,
 });
 await upload.MapAsync();
-upload.Slice(2, 3).CopyFrom(new uint[] { 10, 20, 30 });
+upload.SliceElements(2, 3).CopyFrom(new uint[] { 10, 20, 30 });
 upload.Unmap();
 ```
 
@@ -43,6 +43,29 @@ upload.Unmap();
 `IGraphicsBuffer<T>` に byte 範囲検証と CPU copy の契約も含め、slice は同じ allocation に処理を委譲します。buffer は device より先に解放します。resourceの有効期間と親子の解放順は利用者が保証します。
 
 設計判断は [GRAPHICS-0002](../../../docs/adr/graphics/GRAPHICS-0002-typed-buffers.md) を参照してください。
+
+範囲操作は`SliceElements(elementOffset, elementCount)`、
+`CopyBytesFrom(source, byteOffset, byteLength)`、`CopyBytesTo(destination, byteOffset, byteLength)`、
+`ValidateByteRange(byteOffset, byteLength)`へ統一します。mapping・範囲条件は各interfaceに定義します。
+shader ABIを使うbufferは`device.CreateShaderDataBuffer<T>(artifact, count, memory)`で生成でき、
+raw bufferとshader bufferの要素範囲はともに`SliceElements`で指定します。
+shader data bufferの`MapAsync(cancellationToken)`もraw bufferと同様、native mappingの完了後に
+キャンセルを確認し、成功したmappingをUnmapしてからキャンセルを返します。
+
+## 明示的な描画初期化
+
+passのdynamic stateは次の呼び出しでまとめて設定できます。
+
+```csharp
+encoder.SetRenderState(GraphicsRenderStateDesc.ForColorTargets(1));
+encoder.SetDynamicState(new Viewport(0, 0, width, height, 0, 1), new ScissorRect(0, 0, width, height));
+```
+
+SetDynamicStateはviewport、scissor、blend constant、stencil referenceをその順で設定します。
+blend constantとstencil referenceの既定は0で、引数による変更と後続の個別setterも使えます。
+GPU同期やdrawを発行せず、passを開始しません。後のsetterが失敗しても以前の設定は戻しません。
+ForColorTargets(0)はdepth-only pass用です。実attachmentとの互換性検証はbackendが行います。
+設計は[GRAPHICS-0023](../../../docs/adr/graphics/GRAPHICS-0023-explicit-api-convenience.md)を参照してください。
 
 ## TextureとView
 
@@ -104,11 +127,17 @@ using IArgumentTable table = device.CreateArgumentTable(new ArgumentTableDesc
 });
 IGpuRef<IGraphicsTextureView> image = table.WriteTexture(0, sampledView);
 IGpuRef<IGraphicsSampler> sampling = table.WriteSampler(0, sampler);
-IGpuRef<uint> values = table.WriteBuffer(0, storage.Slice(3, 5));
+IGpuRef<uint> values = table.WriteBuffer(0, storage.SliceElements(3, 5));
 IGpuRef<uint> value = values.GetElement(2);
 ```
 
 slotは利用者が管理する論理位置です。種類ごとに独立し、同時shader binding数ではありません。IGpuRefのCountは論理要素数で、bufferのGetElementは登録範囲から単一要素を選びます。GPU addressやbinding番号への変換は公開しません。
+
+draw／dispatchで参照を使う場合は、encoder.SetArgumentTable(table)で使用するtableを明示します。
+backendはbindingの収集時に、root引数とshader dataから間接的に辿るすべてのIGpuRefが、
+そのtableに属することを検証します。table未設定はInvalidOperationException、別tableの参照はArgumentExceptionです。
+同じresourceやslotを登録していても、別tableから発行された参照は使えません。
+tableを切り替えた後のdraw／dispatchにも現在のtableで検証を行います。値だけの引数にはtableは不要です。
 
 slotの置換・Release・table Dispose後の古い参照と派生要素は使用できません。その有効期間を利用者が管理し、登録世代やresourceの生存を走査して検証しません。登録・参照を使い終わってからbuffer／view／samplerを解放してください。tableを解放しても登録resource自体はDisposeしません。
 

@@ -19,17 +19,19 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
+    private WgpuArgumentTable? _table;
 
     public void SetArgumentTable(IArgumentTable table)
     {
         owner.ValidatePass(this);
         ArgumentNullException.ThrowIfNull(table);
-        if (table is not WgpuArgumentTable concrete || !concrete.BelongsTo(owner.Owner))
+        if (table is not WgpuArgumentTable selected || !selected.BelongsTo(owner.Owner))
         {
             throw new ArgumentException("Argument table belongs to another device.", nameof(table));
         }
 
-        concrete.ThrowIfDisposed();
+        selected.ThrowIfDisposed();
+        _table = selected;
     }
 
     public void SetArguments<T>(in T value)
@@ -63,7 +65,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
     public void SetRenderState(GraphicsRenderStateDesc state)
     {
         owner.ValidatePass(this);
-        RenderStateSnapshot snapshot = PipelineValidation.State(state);
+        RenderStateSnapshot snapshot = PipelineValidation.State(state, owner.Owner.Caps);
         _state = snapshot;
     }
 
@@ -194,15 +196,16 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
         }
 
-        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        if (_pipeline.RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
         ShaderBindingData? bindingData = null;
-        if (_arguments != null)
+        if (_pipeline.RequiresArguments && _arguments != null)
         {
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
+            _table?.ThrowIfDisposed();
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);
         }
 

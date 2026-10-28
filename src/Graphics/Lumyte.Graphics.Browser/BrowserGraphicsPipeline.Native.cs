@@ -10,6 +10,11 @@ internal sealed partial class BrowserGraphicsPipeline
     internal JSObject Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingData? arguments = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
+        if (Desc.AlphaToCoverageEnable)
+        {
+            throw new NotSupportedException("Alpha-to-coverage requires multisampled attachments; this pass has one sample.");
+        }
+
         string formatJson = "[" + string.Join(',', formats.Select(f => (int)f)) + "]";
         string key = state.Key + ":" + depthFormat + ":" + formatJson + ":" + arguments?.Key;
         if (_variants.TryGetValue(key, out JSObject? cached))

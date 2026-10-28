@@ -149,13 +149,13 @@ public static class AdvancedCommandExercise
             using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
             if (format == 0)
             {
-                commands.CopyBuffer(upload16.Slice(0, 6), indices16.Slice(0, 6));
-                commands.Barrier(new BufferBarrierDesc<ushort> { Buffer = indices16.Slice(0, 6), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });
+                commands.CopyBuffer(upload16.SliceElements(0, 6), indices16.SliceElements(0, 6));
+                commands.Barrier(new BufferBarrierDesc<ushort> { Buffer = indices16.SliceElements(0, 6), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });
             }
             else
             {
-                commands.CopyBuffer(upload32.Slice(0, 6), indices32.Slice(0, 6));
-                commands.Barrier(new BufferBarrierDesc<uint> { Buffer = indices32.Slice(0, 6), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });
+                commands.CopyBuffer(upload32.SliceElements(0, 6), indices32.SliceElements(0, 6));
+                commands.Barrier(new BufferBarrierDesc<uint> { Buffer = indices32.SliceElements(0, 6), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });
             }
 
             ColorBarrier(commands, color);
@@ -166,11 +166,11 @@ public static class AdvancedCommandExercise
             Expect<ArgumentException>(() => render.DrawIndexed(3));
             if (format == 0)
             {
-                render.SetIndexBuffer(indices16.Slice(1, 4));
+                render.SetIndexBuffer(indices16.SliceElements(1, 4));
             }
             else
             {
-                render.SetIndexBuffer(indices32.Slice(1, 4));
+                render.SetIndexBuffer(indices32.SliceElements(1, 4));
             }
 
             Expect<ArgumentException>(() => render.DrawIndexed(4, firstIndex: 1));
@@ -197,31 +197,31 @@ public static class AdvancedCommandExercise
         for (int mode = 0; mode < 3; mode++)
         {
             using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-            commands.CopyBuffer(drawUpload.Slice(0, 2), draw.Slice(0, 2));
-            commands.CopyBuffer(indexedUpload.Slice(0, 2), indexed.Slice(0, 2));
-            commands.CopyBuffer(indexUpload.Slice(0, 6), indices.Slice(0, 6));
-            commands.Barrier(new BufferBarrierDesc<DrawIndirectArguments> { Buffer = draw.Slice(0, 2), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead) });
-            commands.Barrier(new BufferBarrierDesc<DrawIndexedIndirectArguments> { Buffer = indexed.Slice(0, 2), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead) });
-            commands.Barrier(new BufferBarrierDesc<uint> { Buffer = indices.Slice(0, 6), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });
+            commands.CopyBuffer(drawUpload.SliceElements(0, 2), draw.SliceElements(0, 2));
+            commands.CopyBuffer(indexedUpload.SliceElements(0, 2), indexed.SliceElements(0, 2));
+            commands.CopyBuffer(indexUpload.SliceElements(0, 6), indices.SliceElements(0, 6));
+            commands.Barrier(new BufferBarrierDesc<DrawIndirectArguments> { Buffer = draw.SliceElements(0, 2), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead) });
+            commands.Barrier(new BufferBarrierDesc<DrawIndexedIndirectArguments> { Buffer = indexed.SliceElements(0, 2), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead) });
+            commands.Barrier(new BufferBarrierDesc<uint> { Buffer = indices.SliceElements(0, 6), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });
             ColorBarrier(commands, color);
             IRenderEncoder render = commands.BeginRenderPass(Pass(view));
             Setup(render, pipeline, State());
             var root = new AdvancedDrawArguments(new(1, 0, 0, 1), 0.5f);
             render.SetArguments(in root);
-            Expect<ArgumentException>(() => render.DrawIndirect(draw.Slice(0, 2)));
-            Expect<InvalidOperationException>(() => render.DrawIndexedIndirect(indexed.Slice(1, 1)));
+            Expect<ArgumentException>(() => render.DrawIndirect(draw.SliceElements(0, 2)));
+            Expect<InvalidOperationException>(() => render.DrawIndexedIndirect(indexed.SliceElements(1, 1)));
             if (mode == 0)
             {
-                render.DrawIndirect(draw.Slice(1, 1));
+                render.DrawIndirect(draw.SliceElements(1, 1));
             }
             else if (mode == 1)
             {
-                render.SetIndexBuffer(indices.Slice(2, 3));
-                render.DrawIndexedIndirect(indexed.Slice(1, 1));
+                render.SetIndexBuffer(indices.SliceElements(2, 3));
+                render.DrawIndexedIndirect(indexed.SliceElements(1, 1));
             }
             else
             {
-                render.DrawIndirect(draw.Slice(0, 1));
+                render.DrawIndirect(draw.SliceElements(0, 1));
             }
 
             render.End();
@@ -239,7 +239,7 @@ public static class AdvancedCommandExercise
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1, BufferCapacity = 2 });
-        var root = new IndirectComputeArguments(table.WriteBuffer(0, command.Slice(0, 1)), table.WriteBuffer(1, output.Slice(0, 3)));
+        var root = new IndirectComputeArguments(table.WriteBuffer(0, command.SliceElements(0, 1)), table.WriteBuffer(1, output.SliceElements(0, 3)));
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(generator);
@@ -247,18 +247,18 @@ public static class AdvancedCommandExercise
         compute.SetArguments(in root);
         compute.Dispatch(1);
         compute.End();
-        commands.Barrier(new BufferBarrierDesc<DispatchIndirectArguments> { Buffer = command.Slice(0, 1), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead) });
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.Slice(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
+        commands.Barrier(new BufferBarrierDesc<DispatchIndirectArguments> { Buffer = command.SliceElements(0, 1), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead) });
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
         compute = commands.BeginComputePass(new());
         compute.SetPipeline(consumer);
         compute.SetArgumentTable(table);
         var execution = new IndirectExecuteArguments(root.Output);
         compute.SetArguments(in execution);
-        compute.DispatchIndirect(command.Slice(0, 1));
+        compute.DispatchIndirect(command.SliceElements(0, 1));
         compute.End();
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.Slice(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-        commands.CopyBuffer(output.Slice(0, 3), readback.Slice(0, 3));
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.Slice(0, 3), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(output.SliceElements(0, 3), readback.SliceElements(0, 3));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 3), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();
@@ -284,8 +284,8 @@ public static class AdvancedCommandExercise
         uint pitch = Math.Max(32, device.GetTextureCopyLayout(color.Format).BytesPerRowAlignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         Transition(commands, color, TextureState.ColorAttachment, TextureState.CopySource, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite), new(PipelineStage.Copy, ResourceAccess.CopyRead));
-        commands.CopyTextureToBuffer(new() { Texture = color, Width = 8, Height = 8 }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 8 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.CopyTextureToBuffer(new() { Texture = color, Width = 8, Height = 8 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 8 });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();

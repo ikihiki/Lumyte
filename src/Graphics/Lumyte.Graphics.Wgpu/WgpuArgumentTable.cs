@@ -48,7 +48,7 @@ internal sealed class WgpuArgumentTable(WgpuDevice owner, ArgumentTableDesc desc
             throw new ArgumentException("A shader buffer range from the same device is required.", nameof(range));
         }
 
-        resource.ValidateRange(range.OffsetInBytes, range.SizeInBytes);
+        resource.ValidateByteRange(range.OffsetInBytes, range.SizeInBytes);
         return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes);
     }
 

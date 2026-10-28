@@ -16,7 +16,7 @@ internal sealed class TestShaderDataBuffer : IGraphicsShaderDataBuffer<TestShade
 
     public void CopyFrom(ReadOnlySpan<TestShaderData> source, ulong elementOffset = 0) => throw new NotSupportedException();
 
-    public ValueTask MapAsync() => throw new NotSupportedException();
+    public ValueTask MapAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
     public void Unmap() => throw new NotSupportedException();
 

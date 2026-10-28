@@ -9,17 +9,19 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
+    private BrowserArgumentTable? _table;
 
     public void SetArgumentTable(IArgumentTable table)
     {
         owner.ValidatePass(this);
         ArgumentNullException.ThrowIfNull(table);
-        if (table is not BrowserArgumentTable concrete || !concrete.BelongsTo(owner.Owner))
+        if (table is not BrowserArgumentTable selected || !selected.BelongsTo(owner.Owner))
         {
             throw new ArgumentException("Argument table belongs to another device.", nameof(table));
         }
 
-        concrete.ThrowIfDisposed();
+        selected.ThrowIfDisposed();
+        _table = selected;
     }
 
     public void SetArguments<T>(in T value)
@@ -86,15 +88,16 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
             throw new InvalidOperationException("Select a compute program before dispatch.");
         }
 
-        if (_arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        if (_pipeline.RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
         ShaderBindingData? bindingData = null;
-        if (_arguments != null)
+        if (_pipeline.RequiresArguments && _arguments != null)
         {
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
+            _table?.ThrowIfDisposed();
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
         }
 

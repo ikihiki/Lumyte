@@ -139,7 +139,7 @@ public sealed class DrawingGpuTests
             : new byte[] { 255, 255, 255, 255, 255, 255, 255, 255, 128, 128, 255, 255 });
         if (normalUvScale.HasValue)
         {
-            upload.Slice(8, 4).CopyFrom(new byte[] { 255, 128, 255, 255 });
+            upload.SliceElements(8, 4).CopyFrom(new byte[] { 255, 128, 255, 255 });
         }
 
         upload.Unmap();
@@ -147,7 +147,7 @@ public sealed class DrawingGpuTests
         uint pitch = ((64 + copyLayout.BytesPerRowAlignment - 1) / copyLayout.BytesPerRowAlignment) * copyLayout.BytesPerRowAlignment;
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 1, TextureCapacity = 3, SamplerCapacity = 1 });
-        IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.Slice(0, mesh.Vertices.Count));
+        IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.SliceElements(0, mesh.Vertices.Count));
         object vertexResource = Assert.IsAssignableFrom<IShaderReference>(vertexRef).Resource;
         Assert.IsAssignableFrom<IShaderRawBuffer>(vertexResource);
         Assert.False(vertexResource is IShaderDataSource);
@@ -205,11 +205,11 @@ public sealed class DrawingGpuTests
         var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
         var sampleRead = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
         var colorWrite = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, 12), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.SliceElements(0, 12), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
         Transition(commands, white, TextureState.Undefined, TextureState.CopyDestination, new(PipelineStage.None, ResourceAccess.None), copyWrite);
         Transition(commands, normal, TextureState.Undefined, TextureState.CopyDestination, new(PipelineStage.None, ResourceAccess.None), copyWrite);
-        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(0, 8), BytesPerRow = 8, RowsPerImage = 1 }, new() { Texture = white, Width = 2, Height = 1 });
-        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(8, 4), BytesPerRow = 4, RowsPerImage = 1 }, new() { Texture = normal, Width = 1, Height = 1 });
+        commands.CopyBufferToTexture(new() { Buffer = upload.SliceElements(0, 8), BytesPerRow = 8, RowsPerImage = 1 }, new() { Texture = white, Width = 2, Height = 1 });
+        commands.CopyBufferToTexture(new() { Buffer = upload.SliceElements(8, 4), BytesPerRow = 4, RowsPerImage = 1 }, new() { Texture = normal, Width = 1, Height = 1 });
         Transition(commands, white, TextureState.CopyDestination, TextureState.Sampled, copyWrite, sampleRead);
         Transition(commands, normal, TextureState.CopyDestination, TextureState.Sampled, copyWrite, sampleRead);
         using var graph = new Graph(device);
@@ -246,7 +246,7 @@ public sealed class DrawingGpuTests
         RenderGraphBuffer<byte> readbackHandle = graph.ImportBuffer(readback, default);
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
             new() { Texture = context.GetTexture(graded.Texture), Width = 8, Height = 8 },
-            new() { Buffer = context.GetBuffer(readbackHandle).Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 8 }))
+            new() { Buffer = context.GetBuffer(readbackHandle).SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 8 }))
             .UseTexture(graded.Texture, TextureState.CopySource, copyRead)
             .UseBuffer(readbackHandle, copyWrite);
         graph.ExportBuffer(readbackHandle, new(PipelineStage.Host, ResourceAccess.HostRead));

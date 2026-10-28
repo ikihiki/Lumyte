@@ -1,7 +1,7 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Provides immutable capabilities of a backend-owned graphics device.</summary>
-/// <remarks>Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
+/// <summary>Provides borrowed access to backend device capabilities and graphics operations.</summary>
+/// <remarks>The backend's owner controls device disposal; receiving this interface does not transfer ownership. Concurrent operations are not synchronized; the caller manages all required resource lifetime and access synchronization.</remarks>
 public interface IGraphicDevice
 {
     /// <summary>Notifies loss once; subscribers must also check Status after subscribing.</summary>
@@ -87,6 +87,6 @@ public interface IGraphicDevice
     /// <param name="count">The positive logical element count.</param>
     /// <param name="memory">Automatic for GPU storage or Upload for CPU staging.</param>
     /// <returns>The backend's shader data allocation.</returns>
-    IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
+    IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderData;
 }

@@ -19,6 +19,8 @@ public static class PipelineExercise
         using IGraphicsShader bound = Load(device, "increment");
         Expect<NotSupportedException>(() => device.CreateComputePipeline(new() { ComputeShader = bound }));
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
+        using IGraphicsPipeline alphaPipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, AlphaToCoverageEnable = true });
+        await RejectUnsupportedStateAsync(device, alphaPipeline);
         foreach (TextureFormat format in new[] { TextureFormat.Rgba8Unorm, TextureFormat.Bgra8Unorm })
         {
             // Repeating equivalent new state snapshots also exercises variant reuse.
@@ -72,6 +74,33 @@ public static class PipelineExercise
         Expect<ArgumentException>(() => device.CreateGraphicsPipeline(new() { VertexShader = shader }));
     }
 
+    private static async Task RejectUnsupportedStateAsync(IGraphicDevice device, IGraphicsPipeline alphaPipeline)
+    {
+        using IGraphicsTexture texture = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment });
+        using IGraphicsTextureView view = texture.CreateView();
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite) });
+        IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
+        var state = new GraphicsRenderStateDesc { ColorTargets = [new()] };
+        Expect<NotSupportedException>(() => render.SetRenderState(state with { Rasterization = new() { DepthClipEnable = false } }));
+        if ((device.Caps.Features & GraphicsFeatures.DepthBiasClamp) == 0)
+        {
+            Expect<NotSupportedException>(() => render.SetRenderState(state with { Rasterization = new() { DepthBiasClamp = 0.5f } }));
+        }
+
+        render.SetRenderState(state);
+        render.SetPipeline(alphaPipeline);
+        render.SetViewport(new(0, 0, 1, 1, 0, 1));
+        render.SetScissor(new(0, 0, 1, 1));
+        render.SetBlendConstant(new(0, 0, 0, 0));
+        render.SetStencilReference(0);
+        Expect<NotSupportedException>(() => render.Draw(3));
+        render.End();
+        commands.Finish();
+        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        await submission.WaitAsync();
+    }
+
     private static IGraphicsShader Load(IGraphicDevice device, string name) => device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(PipelineExercise).Assembly, "Lumyte.Shaders." + name + ".lshader"));
 
     private static async Task DrawAsync(IGraphicDevice device, IGraphicsPipeline pipeline, TextureFormat format, bool blend, ColorWriteMask mask, uint sampleMask, CullMode cull = CullMode.None, uint scissorWidth = 8)
@@ -106,8 +135,8 @@ public static class PipelineExercise
         render.End();
         Expect<InvalidOperationException>(() => render.Draw(3));
         commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = write, After = copy });
-        commands.CopyTextureToBuffer(new() { Texture = texture, Width = 8, Height = 8 }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 8 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.CopyTextureToBuffer(new() { Texture = texture, Width = 8, Height = 8 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 8 });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();

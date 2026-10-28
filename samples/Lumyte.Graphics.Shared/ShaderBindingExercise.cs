@@ -42,14 +42,16 @@ public static class ShaderBindingExercise
         ShaderArtifact artifact = sourceArtifact ?? Artifact("binding-compute");
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
-        using IGraphicsShaderDataBuffer<BindingNode> nodes = device.CreateBuffer<BindingNode>(artifact, 2);
+        using IGraphicsShader emptyShader = device.CreateShader(Artifact("empty-compute"));
+        using IGraphicsComputePipeline emptyPipeline = device.CreateComputePipeline(new() { ComputeShader = emptyShader });
+        using IGraphicsShaderDataBuffer<BindingNode> nodes = device.CreateShaderDataBuffer<BindingNode>(artifact, 2);
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2 });
         IGpuRef<BindingNode> node = table.WriteBuffer(0, nodes.SliceElements(0, 2));
-        IGpuRef<uint> results = table.WriteBuffer(1, output.Slice(0, 8));
-        using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateBuffer<BindingNode>(artifact, 2, MemoryPreference.Upload);
-        using IGraphicsShaderDataBuffer<BindingNode> changed = device.CreateBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
+        IGpuRef<uint> results = table.WriteBuffer(1, output.SliceElements(0, 8));
+        using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateShaderDataBuffer<BindingNode>(artifact, 2, MemoryPreference.Upload);
+        using IGraphicsShaderDataBuffer<BindingNode> changed = device.CreateShaderDataBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
         await staging.MapAsync();
         staging.CopyFrom([new(3, node.GetElement(1)), new(7, node.GetElement(0))]);
         staging.Unmap();
@@ -65,10 +67,12 @@ public static class ShaderBindingExercise
         var first = new BindingComputeArguments(Matrix4x4.CreateScale(3), 20, node.GetElement(0), results.GetElement(3));
         compute.SetArguments(in first);
         compute.Dispatch(1);
+        compute.SetPipeline(emptyPipeline);
+        compute.Dispatch(1);
         compute.End();
         commands.Barrier(new ShaderDataBufferBarrierDesc<BindingNode> { Buffer = nodes.SliceElements(0, 1), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
         RecordUpload(commands, changed, nodes, 1);
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.Slice(0, 8), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 8), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
         compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
         compute.SetArgumentTable(table);
@@ -76,9 +80,9 @@ public static class ShaderBindingExercise
         compute.SetArguments(in second);
         compute.Dispatch(1);
         compute.End();
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.Slice(0, 8), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-        commands.CopyBuffer(output.Slice(0, 8), readback.Slice(0, 8));
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.Slice(0, 8), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 8), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(output.SliceElements(0, 8), readback.SliceElements(0, 8));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 8), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();
@@ -97,8 +101,8 @@ public static class ShaderBindingExercise
         using IGraphicsShader vertex = device.CreateShader(Artifact("fullscreen-vertex"));
         using IGraphicsShader fragment = device.CreateShader(artifact);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
-        using IGraphicsShaderDataBuffer<BindingMaterial> materials = device.CreateBuffer<BindingMaterial>(artifact, Count);
-        using IGraphicsShaderDataBuffer<BindingMaterial> staging = device.CreateBuffer<BindingMaterial>(artifact, Count, MemoryPreference.Upload);
+        using IGraphicsShaderDataBuffer<BindingMaterial> materials = device.CreateShaderDataBuffer<BindingMaterial>(artifact, Count);
+        using IGraphicsShaderDataBuffer<BindingMaterial> staging = device.CreateShaderDataBuffer<BindingMaterial>(artifact, Count, MemoryPreference.Upload);
         using IGraphicsSampler sampler = device.CreateSampler(new());
         using IGraphicsTexture target = device.CreateTexture(new() { Width = Width, Height = 4, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView targetView = target.CreateView();
@@ -145,6 +149,15 @@ public static class ShaderBindingExercise
             var rangeArguments = new BindingDrawArguments(table.WriteBuffer(1, materials.SliceElements(0, 5)), 5);
             render.SetArguments(in rangeArguments);
             render.SetScissor(new(0, 0, 20, 4));
+            using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+            using IGraphicsBuffer<DrawIndirectArguments> indirect = device.CreateBuffer<DrawIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect });
+            render.SetArgumentTable(outside);
+            BindingRegressionExercise.Expect<ArgumentException>(() => render.Draw(3));
+            BindingRegressionExercise.Expect<ArgumentException>(() => render.DrawIndirect(indirect.SliceElements(0, 1)));
+            outside.Dispose();
+            BindingRegressionExercise.Expect<ObjectDisposedException>(() => render.SetArgumentTable(outside));
+            BindingRegressionExercise.Expect<ArgumentNullException>(() => render.SetArgumentTable(null!));
+            render.SetArgumentTable(table);
             render.Draw(3);
             for (int i = 5; i < Count; i++)
             {
@@ -157,8 +170,8 @@ public static class ShaderBindingExercise
 
             render.End();
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = colorWrite, After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-            commands.CopyTextureToBuffer(new() { Texture = target, Width = Width, Height = 4 }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
-            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+            commands.CopyTextureToBuffer(new() { Texture = target, Width = Width, Height = 4 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
+            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
             commands.Finish();
             using IGraphicsSubmission submission = device.Queue.Submit([commands]);
             await submission.WaitAsync();
@@ -196,6 +209,8 @@ public static class ShaderBindingExercise
         using IGraphicsShader vertex = device.CreateShader(Artifact("fullscreen-vertex"));
         using IGraphicsShader fragment = device.CreateShader(Artifact("binding-camera"));
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
+        using IGraphicsShader emptyFragment = device.CreateShader(Artifact("color-fragment"));
+        using IGraphicsPipeline emptyPipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = emptyFragment });
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
         uint pitch = Math.Max(4, device.GetTextureCopyLayout(target.Format).BytesPerRowAlignment);
@@ -213,10 +228,14 @@ public static class ShaderBindingExercise
         render.SetBlendConstant(new(0, 0, 0, 0));
         render.SetStencilReference(0);
         render.Draw(3);
+        render.SetPipeline(emptyPipeline);
+        render.Draw(3);
+        render.SetPipeline(pipeline);
+        render.Draw(3);
         render.End();
         commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = write, After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-        commands.CopyTextureToBuffer(new() { Texture = target, Width = 1, Height = 1 }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 1 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.CopyTextureToBuffer(new() { Texture = target, Width = 1, Height = 1 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 1 });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();

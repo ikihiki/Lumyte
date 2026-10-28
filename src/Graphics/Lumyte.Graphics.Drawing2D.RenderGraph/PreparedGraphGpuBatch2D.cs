@@ -123,8 +123,8 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             _context.Bindings.GetTexture(texture);
         }
 
-        IGraphicsShaderDataBuffer<DrawingInstruction> instructions = Own(_context.Device.CreateBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count));
-        IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
+        IGraphicsShaderDataBuffer<DrawingInstruction> instructions = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count));
+        IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
         await upload.MapAsync().ConfigureAwait(false);
         try
@@ -161,7 +161,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         graph.AddPass("Upload 2D command", context =>
         {
             context.Commands.CopyBuffer(command.Upload.SliceElements(0, command.Upload.Count), command.Instructions.SliceElements(0, command.Instructions.Count));
-            context.Commands.CopyBuffer(command.Data.Slice(0, command.Data.Count), context.GetBuffer(data).Slice(0, command.Data.Count));
+            context.Commands.CopyBuffer(command.Data.SliceElements(0, command.Data.Count), context.GetBuffer(data).SliceElements(0, command.Data.Count));
         })
         .UseShaderDataBuffer(upload, new(PipelineStage.Copy, ResourceAccess.CopyRead))
         .UseShaderDataBuffer(instructions, new(PipelineStage.Copy, ResourceAccess.CopyWrite))
@@ -176,7 +176,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             }
 
             IGraphicsTextureView view = context.CreateTextureView(target.Texture);
-            IGpuRef<Vector4> dataRef = command.Table.WriteBuffer(1, context.GetBuffer(data).Slice(0, command.Data.Count));
+            IGpuRef<Vector4> dataRef = command.Table.WriteBuffer(1, context.GetBuffer(data).SliceElements(0, command.Data.Count));
             IGpuRef<IGraphicsTextureView> sourceRef = command.Source is null ? command.Fallback : command.Table.WriteTexture(DrawingProgram2D.MaximumInstructions, context.CreateTextureView(command.Source.Texture));
             IGpuRef<IGraphicsTextureView> originalRef = command.Original is null ? command.Fallback : command.Table.WriteTexture(DrawingProgram2D.MaximumInstructions + 1, context.CreateTextureView(command.Original.Texture));
             var arguments = new DrawingArguments(command.InstructionRef, dataRef, (uint)command.Program.Instructions.Count, command.Root, command.Source is null ? 0u : command.Original is null ? 1u : 2u, command.Opacity, Bounds(command.Source), Bounds(command.Original), new(target.PixelOrigin, 0, 0), sourceRef, originalRef, command.Sampler);

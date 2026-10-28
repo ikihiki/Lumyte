@@ -86,7 +86,7 @@ internal static class PipelineValidation
         }
     }
 
-    internal static RenderStateSnapshot State(GraphicsRenderStateDesc state)
+    internal static RenderStateSnapshot State(GraphicsRenderStateDesc state, DeviceCaps caps)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(state.Rasterization);
@@ -100,6 +100,16 @@ internal static class PipelineValidation
             !Enum.IsDefined(d.DepthCompare) || d.StencilReadMask > 255 || d.StencilWriteMask > 255)
         {
             throw new ArgumentException("Invalid draw state.");
+        }
+
+        if (!r.DepthClipEnable)
+        {
+            throw new NotSupportedException("Disabling depth clipping is not supported by this backend.");
+        }
+
+        if (r.DepthBiasClamp != 0 && (caps.Features & GraphicsFeatures.DepthBiasClamp) == 0)
+        {
+            throw new NotSupportedException("Depth bias clamping is not enabled on this device.");
         }
 
         Stencil(d.Front);

@@ -42,20 +42,20 @@ public static class CommandExercise
         Expect<ArgumentException>(() => device.Queue.Submit([]));
         await upload.MapAsync();
         upload.CopyFrom(values);
-        Expect<InvalidOperationException>(() => commands.CopyBuffer(upload.Slice(0, 8), gpu.Slice(0, 8)));
+        Expect<InvalidOperationException>(() => commands.CopyBuffer(upload.SliceElements(0, 8), gpu.SliceElements(0, 8)));
         upload.Unmap();
         Expect<ArgumentException>(() => commands.Barrier(new MemoryBarrierDesc { Before = new(PipelineStage.Host, ResourceAccess.CopyRead), After = _copyRead }));
-        Expect<ArgumentException>(() => commands.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.Slice(0, 8), Before = _copyRead, After = _copyWrite }));
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.Slice(0, 8), Before = _hostWrite, After = _copyRead });
-        Expect<ArgumentException>(() => commands.CopyBuffer(upload.Slice(0, 8), readback.Slice(0, 4)));
-        Expect<ArgumentException>(() => commands.CopyBuffer(gpu.Slice(0, 4), gpu.Slice(4, 4)));
-        commands.CopyBuffer(upload.Slice(0, 8), gpu.Slice(0, 8));
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = gpu.Slice(0, 8), Before = _copyWrite, After = _copyRead });
-        commands.CopyBuffer(gpu.Slice(2, 4), readback.Slice(0, 4));
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.Slice(0, 4), Before = _copyWrite, After = _hostRead });
+        Expect<ArgumentException>(() => commands.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.SliceElements(0, 8), Before = _copyRead, After = _copyWrite }));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.SliceElements(0, 8), Before = _hostWrite, After = _copyRead });
+        Expect<ArgumentException>(() => commands.CopyBuffer(upload.SliceElements(0, 8), readback.SliceElements(0, 4)));
+        Expect<ArgumentException>(() => commands.CopyBuffer(gpu.SliceElements(0, 4), gpu.SliceElements(4, 4)));
+        commands.CopyBuffer(upload.SliceElements(0, 8), gpu.SliceElements(0, 8));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = gpu.SliceElements(0, 8), Before = _copyWrite, After = _copyRead });
+        commands.CopyBuffer(gpu.SliceElements(2, 4), readback.SliceElements(0, 4));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 4), Before = _copyWrite, After = _hostRead });
         IComputeEncoder compute = commands.BeginComputePass(new());
         Expect<InvalidOperationException>(commands.Finish);
-        Expect<InvalidOperationException>(() => commands.CopyBuffer(upload.Slice(0, 8), gpu.Slice(0, 8)));
+        Expect<InvalidOperationException>(() => commands.CopyBuffer(upload.SliceElements(0, 8), gpu.SliceElements(0, 8)));
         compute.End();
         Expect<InvalidOperationException>(compute.End);
         commands.Finish();
@@ -100,15 +100,15 @@ public static class CommandExercise
         upload.Unmap();
 
         using IGraphicsCommandBuffer first = device.CreateCommandBuffer(new());
-        first.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.Slice(0, 4), Before = _hostWrite, After = _copyRead });
-        first.CopyBuffer(upload.Slice(0, 4), gpu.Slice(0, 4));
+        first.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.SliceElements(0, 4), Before = _hostWrite, After = _copyRead });
+        first.CopyBuffer(upload.SliceElements(0, 4), gpu.SliceElements(0, 4));
         first.Finish();
         using IGraphicsSubmission firstSubmission = device.Queue.Submit([first]);
 
         using IGraphicsCommandBuffer second = device.CreateCommandBuffer(new());
-        second.Barrier(new BufferBarrierDesc<uint> { Buffer = gpu.Slice(0, 4), Before = _copyWrite, After = _copyRead });
-        second.CopyBuffer(gpu.Slice(0, 4), readback.Slice(0, 4));
-        second.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.Slice(0, 4), Before = _copyWrite, After = _hostRead });
+        second.Barrier(new BufferBarrierDesc<uint> { Buffer = gpu.SliceElements(0, 4), Before = _copyWrite, After = _copyRead });
+        second.CopyBuffer(gpu.SliceElements(0, 4), readback.SliceElements(0, 4));
+        second.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 4), Before = _copyWrite, After = _hostRead });
         second.Finish();
         using IGraphicsSubmission secondSubmission = device.Queue.Submit([second]);
         await secondSubmission.WaitAsync();
@@ -157,8 +157,8 @@ public static class CommandExercise
         using IGraphicsTexture destination = device.CreateTexture(desc);
         var sourceRegion = new TextureCopyRegion { Texture = source, MipLevel = 1, OriginX = 1, OriginY = 1, Width = 3, Height = 2, BaseArrayLayer = 1, ArrayLayerCount = 2 };
         TextureCopyRegion destinationRegion = sourceRegion with { Texture = destination, OriginX = 0, OriginY = 0 };
-        var sourceLayout = new BufferTextureCopyLayout { Buffer = upload.Slice(offset, bytes - offset), BytesPerRow = pitch, RowsPerImage = rows };
-        BufferTextureCopyLayout destinationLayout = sourceLayout with { Buffer = readback.Slice(offset, bytes - offset) };
+        var sourceLayout = new BufferTextureCopyLayout { Buffer = upload.SliceElements(offset, bytes - offset), BytesPerRow = pitch, RowsPerImage = rows };
+        BufferTextureCopyLayout destinationLayout = sourceLayout with { Buffer = readback.SliceElements(offset, bytes - offset) };
         await upload.MapAsync();
         upload.CopyFrom(expected);
         upload.Unmap();
@@ -166,11 +166,11 @@ public static class CommandExercise
         Expect<ArgumentException>(() => commands.Barrier(new TextureBarrierDesc { Texture = source, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.Present, Before = default, After = default }));
         Transition(commands, source, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);
         Transition(commands, destination, new(1, 1, 1, 2), TextureState.Undefined, TextureState.CopyDestination, default, _copyWrite);
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, bytes), Before = _hostWrite, After = _copyRead });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.SliceElements(0, bytes), Before = _hostWrite, After = _copyRead });
         Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { BytesPerRow = 1 }, sourceRegion));
         if (format == TextureFormat.Rgba16Float)
         {
-            Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { Buffer = upload.Slice(4, bytes - 4) }, sourceRegion));
+            Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { Buffer = upload.SliceElements(4, bytes - 4) }, sourceRegion));
             Expect<ArgumentException>(() => commands.CopyBufferToTexture(sourceLayout with { BytesPerRow = pitch + 4 }, sourceRegion));
         }
 
@@ -179,7 +179,7 @@ public static class CommandExercise
         commands.CopyTexture(sourceRegion, destinationRegion);
         Transition(commands, destination, new(1, 1, 1, 2), TextureState.CopyDestination, TextureState.CopySource, _copyWrite, _copyRead);
         commands.CopyTextureToBuffer(destinationRegion, destinationLayout);
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, bytes), Before = _copyWrite, After = _hostRead });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, bytes), Before = _copyWrite, After = _hostRead });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();
@@ -222,8 +222,8 @@ public static class CommandExercise
         render.End();
         Expect<InvalidOperationException>(render.End);
         Transition(commands, texture, new(0, 1, 0, 1), TextureState.ColorAttachment, TextureState.CopySource, _colorWrite, _copyRead);
-        commands.CopyTextureToBuffer(new() { Texture = texture, Width = 4, Height = 3 }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 3 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = _copyWrite, After = _hostRead });
+        commands.CopyTextureToBuffer(new() { Texture = texture, Width = 4, Height = 3 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 3 });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = _hostRead });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         await submission.WaitAsync();

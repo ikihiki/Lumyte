@@ -137,8 +137,8 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
             program.Data.Add(default);
         }
 
-        IGraphicsShaderDataBuffer<DrawingInstruction> instructions = Own(_context.Device.CreateBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count));
-        IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
+        IGraphicsShaderDataBuffer<DrawingInstruction> instructions = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count));
+        IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
         await upload.MapAsync().ConfigureAwait(false);
         try
@@ -172,18 +172,18 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
         var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
         commands.Barrier(new ShaderDataBufferBarrierDesc<DrawingInstruction> { Buffer = command.Upload.SliceElements(0, command.Upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
-        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Data.Slice(0, command.Data.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
+        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Data.SliceElements(0, command.Data.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
         commands.CopyBuffer(command.Upload.SliceElements(0, command.Upload.Count), command.Instructions.SliceElements(0, command.Instructions.Count));
-        commands.CopyBuffer(command.Data.Slice(0, command.Data.Count), command.Geometry.Slice(0, command.Geometry.Count));
+        commands.CopyBuffer(command.Data.SliceElements(0, command.Data.Count), command.Geometry.SliceElements(0, command.Geometry.Count));
         commands.Barrier(new ShaderDataBufferBarrierDesc<DrawingInstruction> { Buffer = command.Instructions.SliceElements(0, command.Instructions.Count), Before = copyWrite, After = _fragmentRead });
-        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Geometry.Slice(0, command.Geometry.Count), Before = copyWrite, After = _fragmentRead });
+        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Geometry.SliceElements(0, command.Geometry.Count), Before = copyWrite, After = _fragmentRead });
         if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
         {
             return;
         }
 
         DrawingTargetInfo2D target = _context.Target;
-        IGpuRef<Vector4> dataRef = command.Table.WriteBuffer(1, command.Geometry.Slice(0, command.Geometry.Count));
+        IGpuRef<Vector4> dataRef = command.Table.WriteBuffer(1, command.Geometry.SliceElements(0, command.Geometry.Count));
         var arguments = new DrawingArguments(command.InstructionRef, dataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(_pipeline);

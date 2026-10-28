@@ -158,8 +158,8 @@ public sealed class Drawing2DTests
             prepared.Record(commands);
             Assert.Throws<InvalidOperationException>(() => prepared.Record(commands));
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = colorScope, After = _copyRead });
-            commands.CopyTextureToBuffer(new() { Texture = target, Width = 4, Height = 2 }, new() { Buffer = readback.Slice(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 2 });
-            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.Slice(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+            commands.CopyTextureToBuffer(new() { Texture = target, Width = 4, Height = 2 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 2 });
+            commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
             commands.Finish();
             submission = device.Queue.Submit([commands]);
             await submission.WaitAsync();
@@ -628,7 +628,7 @@ public sealed class Drawing2DTests
         RenderGraphBuffer<byte> result = graph.CreateBuffer<byte>(new() { Count = byteCount, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
             new() { Texture = context.GetTexture(target), Width = checked((uint)width), Height = checked((uint)height) },
-            new() { Buffer = context.GetBuffer(result).Slice(0, byteCount), BytesPerRow = pitch, RowsPerImage = checked((uint)height) }))
+            new() { Buffer = context.GetBuffer(result).SliceElements(0, byteCount), BytesPerRow = pitch, RowsPerImage = checked((uint)height) }))
             .UseTexture(target, TextureState.CopySource, _copyRead).UseBuffer(result, _copyWrite);
         graph.ExportBuffer(result, new(PipelineStage.Host, ResourceAccess.HostRead));
         CompiledRenderGraph? plan = null;
@@ -687,9 +687,9 @@ public sealed class Drawing2DTests
         upload.CopyFrom(bytes);
         upload.Unmap();
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.Slice(0, upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = _copyRead });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = upload.SliceElements(0, upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = _copyRead });
         commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.CopyDestination, Before = default, After = _copyWrite });
-        commands.CopyBufferToTexture(new() { Buffer = upload.Slice(0, upload.Count), BytesPerRow = pitch, RowsPerImage = texture.Height }, new() { Texture = texture, Width = texture.Width, Height = texture.Height });
+        commands.CopyBufferToTexture(new() { Buffer = upload.SliceElements(0, upload.Count), BytesPerRow = pitch, RowsPerImage = texture.Height }, new() { Texture = texture, Width = texture.Width, Height = texture.Height });
         commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.CopyDestination, AfterState = TextureState.Sampled, Before = _copyWrite, After = _sampleRead });
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);

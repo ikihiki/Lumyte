@@ -61,7 +61,7 @@ public sealed class ModelMesh : IDisposable
     /// <param name="vertexArtifact">The shader whose natural vertex layout is verified before allocation.</param>
     /// <returns>The mesh with filled, unmapped staging; no GPU submission is performed.</returns>
     public static Task<ModelMesh> CreateAsync(IGraphicDevice device, ReadOnlyMemory<ModelVertex> vertexData, ReadOnlyMemory<uint> indexData, ShaderArtifact vertexArtifact)
-        => CreateCoreAsync(device, vertexData, default, indexData, vertexArtifact, IndexFormat.Uint32, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); });
+        => CreateCoreAsync(device, vertexData, default, indexData, vertexArtifact, IndexFormat.Uint32, static (render, buffer, count) => { render.SetIndexBuffer(buffer.SliceElements(0, count)); });
 
     /// <summary>Preserves sixteen-bit indices without expanding them into thirty-two-bit values.</summary>
     /// <param name="device">The owning device.</param>
@@ -70,7 +70,7 @@ public sealed class ModelMesh : IDisposable
     /// <param name="vertexArtifact">The model shader artifact.</param>
     /// <returns>The mesh with filled staging, without GPU submission.</returns>
     public static Task<ModelMesh> CreateAsync(IGraphicDevice device, ReadOnlyMemory<ModelVertex> vertexData, ReadOnlyMemory<ushort> indexData, ShaderArtifact vertexArtifact)
-        => CreateCoreAsync(device, vertexData, default, indexData, vertexArtifact, IndexFormat.Uint16, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); });
+        => CreateCoreAsync(device, vertexData, default, indexData, vertexArtifact, IndexFormat.Uint16, static (render, buffer, count) => { render.SetIndexBuffer(buffer.SliceElements(0, count)); });
 
     /// <summary>Uploads compatible interleaved vertex bytes without allocating a converted vertex array.</summary>
     /// <param name="device">The owning device.</param>
@@ -80,7 +80,7 @@ public sealed class ModelMesh : IDisposable
     /// <param name="retainCleanup">Optionally retains retryable partial-allocation cleanup before creation; dispose after failure. Empty on success.</param>
     /// <returns>The mesh after a bulk copy into staging, without GPU submission.</returns>
     public static Task<ModelMesh> CreatePackedAsync(IGraphicDevice device, ReadOnlyMemory<byte> vertexBytes, ReadOnlyMemory<uint> indexData, ShaderArtifact vertexArtifact, Action<IDisposable>? retainCleanup = null)
-        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint32, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); }, retainCleanup);
+        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint32, static (render, buffer, count) => { render.SetIndexBuffer(buffer.SliceElements(0, count)); }, retainCleanup);
 
     /// <summary>Uploads interleaved vertex bytes and preserves sixteen-bit triangle indices.</summary>
     /// <param name="device">The owning device.</param>
@@ -90,7 +90,7 @@ public sealed class ModelMesh : IDisposable
     /// <param name="retainCleanup">Optionally retains retryable partial-allocation cleanup before creation; dispose after failure. Empty on success.</param>
     /// <returns>The mesh with bulk-filled staging, without GPU submission.</returns>
     public static Task<ModelMesh> CreatePackedAsync(IGraphicDevice device, ReadOnlyMemory<byte> vertexBytes, ReadOnlyMemory<ushort> indexData, ShaderArtifact vertexArtifact, Action<IDisposable>? retainCleanup = null)
-        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint16, static (render, buffer, count) => { render.SetIndexBuffer(buffer.Slice(0, count)); }, retainCleanup);
+        => CreateCoreAsync(device, default, vertexBytes, indexData, vertexArtifact, IndexFormat.Uint16, static (render, buffer, count) => { render.SetIndexBuffer(buffer.SliceElements(0, count)); }, retainCleanup);
 
     /// <summary>Records initial raw staging copies and host/copy/vertex/index dependencies outside a pass.</summary>
     /// <param name="commands">The recording command buffer; call once before first drawing.</param>
@@ -98,8 +98,8 @@ public sealed class ModelMesh : IDisposable
     {
         ArgumentNullException.ThrowIfNull(commands);
         IGraphicsBuffer<ModelVertex> upload = _vertexUpload ?? throw new InvalidOperationException("Initial upload staging has been released.");
-        BufferSlice<ModelVertex> source = upload.Slice(0, upload.Count);
-        BufferSlice<ModelVertex> destination = Vertices.Slice(0, Vertices.Count);
+        BufferSlice<ModelVertex> source = upload.SliceElements(0, upload.Count);
+        BufferSlice<ModelVertex> destination = Vertices.SliceElements(0, Vertices.Count);
         commands.Barrier(new BufferBarrierDesc<ModelVertex> { Buffer = source, Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.CopyBuffer(source, destination);
         commands.Barrier(new BufferBarrierDesc<ModelVertex> { Buffer = destination, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.VertexShader, ResourceAccess.ShaderRead) });
@@ -206,7 +206,7 @@ public sealed class ModelMesh : IDisposable
                 indexUpload.CopyFrom(indexData.Span);
                 if (storageCount != indexCount)
                 {
-                    indexUpload.Slice(indexCount, 1).CopyFrom(new TIndex[1]);
+                    indexUpload.SliceElements(indexCount, 1).CopyFrom(new TIndex[1]);
                 }
             }
             finally
@@ -265,8 +265,8 @@ public sealed class ModelMesh : IDisposable
         public void RecordUpload(IGraphicsCommandBuffer commands)
         {
             IGraphicsBuffer<T> staging = _upload ?? throw new InvalidOperationException("Initial upload staging has been released.");
-            BufferSlice<T> source = staging.Slice(0, staging.Count);
-            BufferSlice<T> destination = storage.Slice(0, storage.Count);
+            BufferSlice<T> source = staging.SliceElements(0, staging.Count);
+            BufferSlice<T> destination = storage.SliceElements(0, storage.Count);
             commands.Barrier(new BufferBarrierDesc<T> { Buffer = source, Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyBuffer(source, destination);
             commands.Barrier(new BufferBarrierDesc<T> { Buffer = destination, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.IndexInput, ResourceAccess.IndexRead) });

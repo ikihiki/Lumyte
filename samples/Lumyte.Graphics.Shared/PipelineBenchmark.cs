@@ -23,11 +23,8 @@ public static class PipelineBenchmark
         commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite) });
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(pipeline);
-        render.SetRenderState(new() { ColorTargets = [new()] });
-        render.SetViewport(new(0, 0, 8, 8, 0, 1));
-        render.SetScissor(new(0, 0, 8, 8));
-        render.SetBlendConstant(new(0, 0, 0, 0));
-        render.SetStencilReference(0);
+        render.SetRenderState(GraphicsRenderStateDesc.ForColorTargets(1));
+        render.SetDynamicState(new(0, 0, 8, 8, 0, 1), new(0, 0, 8, 8));
         long start = Stopwatch.GetTimestamp();
         render.Draw(3);
         double firstDraw = Stopwatch.GetElapsedTime(start).TotalMilliseconds;

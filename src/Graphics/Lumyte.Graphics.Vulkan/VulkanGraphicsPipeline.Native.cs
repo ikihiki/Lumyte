@@ -20,6 +20,11 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
     internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingSnapshot? arguments = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
+        if (Desc.AlphaToCoverageEnable)
+        {
+            throw new NotSupportedException("Alpha-to-coverage requires multisampled attachments; this pass has one sample.");
+        }
+
         string argumentKey = SelectLayout(arguments);
         if (!_owner.CacheGraphicsPipelines)
         {
@@ -195,6 +200,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
             DepthBiasEnable = state.Rasterization.DepthBiasConstant != 0 || state.Rasterization.DepthBiasSlope != 0,
             DepthBiasConstantFactor = state.Rasterization.DepthBiasConstant,
             DepthBiasSlopeFactor = state.Rasterization.DepthBiasSlope,
+            DepthBiasClamp = state.Rasterization.DepthBiasClamp,
         };
         DepthStencilStateDesc d = state.DepthStencil;
         var depthState = new PipelineDepthStencilStateCreateInfo

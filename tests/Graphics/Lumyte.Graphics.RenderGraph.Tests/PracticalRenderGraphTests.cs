@@ -24,7 +24,7 @@ public sealed class PracticalRenderGraphTests
         RenderGraphBuffer<uint> destination = graph.ImportBuffer(output, default);
         graph.AddPass("produce", _ => { }).UseBuffer(temporary, CopyWrite);
         graph.AddPass("unused", _ => throw new InvalidOperationException()).UseTexture(unused, TextureState.CopyDestination, CopyWrite);
-        graph.AddPass("consume", context => context.Commands.CopyBuffer(context.GetBuffer(temporary).Slice(0, 16), context.GetBuffer(destination).Slice(0, 16)))
+        graph.AddPass("consume", context => context.Commands.CopyBuffer(context.GetBuffer(temporary).SliceElements(0, 16), context.GetBuffer(destination).SliceElements(0, 16)))
             .UseBuffer(temporary, CopyRead).UseBuffer(destination, CopyWrite);
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Equal(new[] { "produce", "consume" }, plan.PassNames);

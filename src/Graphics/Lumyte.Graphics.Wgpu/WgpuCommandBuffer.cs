@@ -30,7 +30,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.Slice(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.Slice(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
@@ -43,7 +43,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Shader data barrier belongs to another device.");
         }
 
-        Barrier(new BufferBarrierDesc<byte> { Buffer = buffer.Storage.Slice(checked(barrier.Buffer.Offset * buffer.ShaderElementStrideInBytes), checked(barrier.Buffer.Count * buffer.ShaderElementStrideInBytes)), Before = barrier.Before, After = barrier.After });
+        Barrier(new BufferBarrierDesc<byte> { Buffer = buffer.Storage.SliceElements(checked(barrier.Buffer.Offset * buffer.ShaderElementStrideInBytes), checked(barrier.Buffer.Count * buffer.ShaderElementStrideInBytes)), Before = barrier.Before, After = barrier.After });
     }
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
@@ -269,7 +269,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Buffer belongs to another device or lacks required usage.");
         }
 
-        buffer.ValidateRange(slice.OffsetInBytes, slice.SizeInBytes);
+        buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
         _ = buffer.Native;
         return buffer;
     }

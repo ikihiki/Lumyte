@@ -24,9 +24,9 @@ internal sealed class TestTypedBuffer<T>(BufferDesc<T> desc, List<string> lifeti
 
     public bool IsMapped => false;
 
-    public BufferSlice<T> Slice(ulong offset, ulong count) => new(this, offset, count);
+    public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-    public void ValidateRange(ulong offset, ulong length)
+    public void ValidateByteRange(ulong offset, ulong length)
     {
         if (length == 0 || offset > SizeInBytes || length > SizeInBytes - offset)
         {
@@ -38,9 +38,9 @@ internal sealed class TestTypedBuffer<T>(BufferDesc<T> desc, List<string> lifeti
 
     public void Unmap() => throw new NotSupportedException();
 
-    public void CopyFrom(ReadOnlySpan<byte> source, ulong offset, ulong length) => throw new NotSupportedException();
+    public void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length) => throw new NotSupportedException();
 
-    public void CopyTo(Span<byte> destination, ulong offset, ulong length) => throw new NotSupportedException();
+    public void CopyBytesTo(Span<byte> destination, ulong offset, ulong length) => throw new NotSupportedException();
 
     public void CopyFrom(ReadOnlySpan<T> source) => throw new NotSupportedException();
 
