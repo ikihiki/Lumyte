@@ -136,7 +136,9 @@ rootはviewportのtight制約とoffset0を持つ。非表示のrootだけはlayo
 
 一回のpassの確定サイズとoffsetを作業tableに保持する。全ノードの成功後、Size/Boundsをまとめて公開しdirtyを解除する。この公開処理は再layoutを行わず、ユーザーコードも呼ばない。overrideの例外、制約違反のサイズ、非finite値、子の処理漏れでは旧公開値を保ちdirtyを維持する。overrideが不正なサイズを返した場合は黙ってclampせずInvalidOperationExceptionとする。
 
-Layout中の値・子構成の変更とUpdateLayout再入を拒否する。DispatchとRecordはIdle中に必要なUpdateLayoutを済ませてから自身のphaseへ移る。失敗したlayoutの作業値を入力や描画へ渡さない。取り外した部分木の公開値は最後の値で、未接続時の配置の有効性は保証しない。
+Layout中の値・子構成の変更とUpdateLayout再入を拒否する。幾何を使う通常のDispatchとRecordはIdle中に必要なUpdateLayoutを済ませてから自身のphaseへ移る。pointer Cancel、FocusLost、後続PRのUiKeyCancelInputは幾何を使わず、layoutを経由せず所有状態を解除する。別thread・再入・破棄後の検査は取消にも適用する。失敗したlayoutの作業値を入力や描画へ渡さない。取り外した部分木の公開値は最後の値で、未接続時の配置の有効性は保証しない。
+
+通常Dispatchのlayout失敗時の系列取消は後続のpointer実装PRで具体化する。UpdateLayout/Recordの失敗でホストが入力配送を止める場合も、Idleへの復帰後にFocusLost等で清掃できる。取消は旧公開値も参照せず、dirtyとlayoutの再試行可能性を保つ。
 
 ### 初期対象と拡張境界
 
@@ -166,6 +168,7 @@ one-passはサイズ決定の基本プロトコルであり、任意の制約問
 - `CustomPanelTests`: 別assemblyのPanel派生型で継承パラメーター、LayoutChildの返値、offset指定を使い、各可視子が一度だけlayoutされることを確認する。
 - `InvalidationTests`: resize・子差し替え・再表示の再layout、同値代入、clean passの呼び出し回数を確認する。
 - `LayoutFailureTests`: 非finiteサイズ・offset、制約違反、重複・処理漏れ、例外で旧公開値を保持し、修正後に再試行できることを確認する。
+- 後続の入力PRでは、例外を返すdirtyなlayoutでもCancel/FocusLost/UiKeyCancelInputがoverrideを再実行せず所有状態を解除し、修正後のlayoutが成功することを確認する。
 
 ## 参考資料
 
