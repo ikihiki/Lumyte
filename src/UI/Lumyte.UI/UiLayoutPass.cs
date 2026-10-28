@@ -119,13 +119,8 @@ internal sealed class UiLayoutPass
         }
     }
 
-    private void ValidateChildren(ChildCollection? collection)
+    private void ValidateChildren(WidgetChildren collection)
     {
-        if (collection is null)
-        {
-            return;
-        }
-
         foreach (Widget child in collection.Items)
         {
             if (!child.IsVisible && !_entries.ContainsKey(child))

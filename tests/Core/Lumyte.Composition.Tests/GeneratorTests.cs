@@ -8,6 +8,41 @@ namespace Lumyte.Composition.Tests;
 /// <summary>Tests generator diagnostics against compilations containing malformed declarations.</summary>
 public sealed class GeneratorTests
 {
+    /// <summary>Checks getter-only managed content receives generated arrays, including mixed slots and inherited indexers.</summary>
+    [Fact]
+    public void ManagedContentCompilesWithoutAPropertySetter()
+    {
+        const string Source = "using Lumyte.Composition; public sealed class OwnedContent : ICompositionContent<int> { public void Initialize(int[] content) { } } [CompositionContentType(typeof(OwnedContent))] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel : ContentBase { [ComposeContent] public OwnedContent Children { get; } = new(); } [Composable] public partial class Stack : Panel { } [Composable] public partial class Button : ContentBase { [ComposeContent] public OwnedContent Children { get; } = new(); [ComposeSlot] private static void Background(Button target, int[] children) { } } } } public class Usage { public object Build() => Compose.Panel()[Compose.Stack()[1, 2].Children is null ? 0 : 1]; public object Mixed() => Compose.Button()[1, Compose.Button.Background()[2]]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Contains(result.GeneratedTrees, tree => tree.ToString().Contains(").Initialize(content);", StringComparison.Ordinal));
+    }
+
+    /// <summary>Checks an inherited storage policy rejects other collection types and replaceable managed properties.</summary>
+    /// <param name="member">The invalid content declaration.</param>
+    [Theory]
+    [InlineData("[ComposeContent] public int[] Children { get; set; } = [];")]
+    [InlineData("[ComposeContent] public System.Collections.Generic.IReadOnlyList<int> Children { get; set; } = [];")]
+    [InlineData("[ComposeContent] public OwnedContent Children { get; set; } = new();")]
+    [InlineData("[ComposeContent] public OwnedContent Children = new();")]
+    public void InheritedContentPolicyRejectsAlternateStorage(string member)
+    {
+        string source = "using Lumyte.Composition; public sealed class OwnedContent : ICompositionContent<int> { public void Initialize(int[] content) { } } [CompositionContentType(typeof(OwnedContent))] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel : ContentBase { " + member + " } } }";
+        GeneratorDriverRunResult result = Run(source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Id == "AD0001");
+    }
+
+    /// <summary>Checks descendants cannot replace an ancestor's exact content type constraint.</summary>
+    [Fact]
+    public void DescendantContentPolicyCannotRelaxAncestorConstraint()
+    {
+        const string Source = "using Lumyte.Composition; public sealed class OwnedContent : ICompositionContent<int> { public void Initialize(int[] content) { } } public sealed class OtherContent : ICompositionContent<int> { public void Initialize(int[] content) { } } [CompositionContentType(typeof(OwnedContent))] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable, CompositionContentType(typeof(OtherContent))] public partial class Panel : ContentBase { [ComposeContent] public OtherContent Children { get; } = new(); } } }";
+        GeneratorDriverRunResult result = Run(Source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+    }
+
     /// <summary>Tests that unsupported definitions produce a deliberate diagnostic.</summary>
     /// <param name="member">The malformed component declaration.</param>
     [Theory]

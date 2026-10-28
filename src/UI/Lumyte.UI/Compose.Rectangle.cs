@@ -27,7 +27,7 @@ public static partial class Compose
                 get => _fill;
                 set
                 {
-                    using MutationScope mutation = BeginMutation();
+                    VerifyMutationAllowed();
                     ValidateComponent(value.R);
                     ValidateComponent(value.G);
                     ValidateComponent(value.B);

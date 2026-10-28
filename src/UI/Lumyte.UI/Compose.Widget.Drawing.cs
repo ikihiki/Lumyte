@@ -21,7 +21,7 @@ public static partial class Compose
                 get => _clipToBounds;
                 set
                 {
-                    using MutationScope mutation = BeginMutation();
+                    VerifyMutationAllowed();
                     _clipToBounds = value;
                 }
             }

@@ -54,7 +54,7 @@ RectangleとButton背景のlayoutは[UI-0003の組み込みコンテナー規則
 
 初期は毎Recordで全可視要素の命令を再生成し、描画dirty、DrawList cache、InvalidateVisual APIは追加しない。
 
-命令の再生成と、描画先の前frameの画素を消すことは別の責務である。初期サンプルは描画するframeごとに描画先全体を再構成する。単独UIではホストがtargetをClearし、必要な背景とUIを描く。3D等へ重ねる場合は、そのframeで再構成した背景をLoadしてUIを合成する。前frameのUIを含む画素へ半透明UIを重ね続けず、移動・削除した要素の跡も背景から消す。Hostedを含む同じtargetのClearはホストが最初に一度だけ行い、surface.RecordはClearしない。damage領域だけの再描画・保持buffer・部分Presentは初期範囲に含めず、導入時は別途測定と契約を設ける。
+命令の再生成と、描画先の前frameの画素を消すことは別の責務である。初期サンプルは描画するframeごとに描画先全体を再構成する。単独UIではホストがtargetをClearし、必要な背景とUIを描く。3D等へ重ねる場合は、そのframeで再構成した背景をLoadしてUIを合成する。前frameのUIを含む画素へ半透明UIを重ね続けず、移動・非表示にした要素の跡も背景から消す。Hostedを含む同じtargetのClearはホストが最初に一度だけ行い、surface.RecordはClearしない。damage領域だけの再描画・保持buffer・部分Presentは初期範囲に含めず、導入時は別途測定と契約を設ける。
 
 ### 記録手順と座標
 
@@ -98,7 +98,7 @@ UI専用の描画リストとrendererを作ると既存Canvasのclip・paint・G
 - 親子clip、親外の子、viewport clip、ホストのscale・Translateとの合成を確認する。
 - Stackの高さ100に高さ80の子を二つ置き、二つ目のサイズ80を保ったまま、ClipToBoundsで描画領域だけが変わることを確認する。
 - callbackの例外、変更・再入の拒否、失敗後のCancelと次frame再試行を確認する。
-- 単独UIの連続frameで半透明要素が濃くならず、移動・削除後に旧領域が背景へ戻ることを確認する。複数Hosted surfaceの記録で先行surfaceをClearしないことも確認する。
+- 単独UIの連続frameで半透明要素が濃くならず、移動・非表示後に旧領域が背景へ戻ることを確認する。複数Hosted surfaceの記録で先行surfaceをClearしないことも確認する。
 - 既存Graphics GPUテストへ小さな固定UIを追加し、Vulkan/wgpuで基準画素と照合する。座標・順序のCPUテストと役割を分ける。
 
 ## 実装・検証記録
@@ -110,3 +110,5 @@ UI専用の描画リストとrendererを作ると既存Canvasのclip・paint・G
 - サンプルのrecord-only・vulkan・wgpuが成功し、二つのviewportでPPMを出力した。同じviewportのVulkan/wgpu出力は一致した。
 - 関連6パッケージのpackと、ProjectReferenceを使わないNuGet consumerで静的factory・継承パラメーター・独自OnRecord・別threadでの順次記録を確認した。
 - 対象C#の書式、Markdown、相対リンクを確認した。性能・割当量の測定とdamage描画との比較は未実施。
+
+固定内容への修正では子の削除APIを廃止し、連続frameのGPU検証をIsVisibleによる非表示へ変更した。命令snapshot・Canvas状態復元の契約は維持する。

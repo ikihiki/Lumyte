@@ -28,7 +28,7 @@ public static partial class Compose
                 get => _orientation;
                 set
                 {
-                    using MutationScope mutation = BeginMutation();
+                    VerifyMutationAllowed();
                     if (!Enum.IsDefined(value))
                     {
                         throw new ArgumentOutOfRangeException(nameof(value));
@@ -49,7 +49,7 @@ public static partial class Compose
                 get => _spacing;
                 set
                 {
-                    using MutationScope mutation = BeginMutation();
+                    VerifyMutationAllowed();
                     UiLayoutMath.ValidateDimension(value, nameof(value));
                     if (_spacing != value)
                     {

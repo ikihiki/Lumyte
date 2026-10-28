@@ -13,7 +13,7 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks UI clips, hosted surfaces and complete frame redraw using actual backend pixels.</summary>
 public sealed class UiDrawingTests
 {
-    /// <summary>Checks direct UI rendering and successive frames on Vulkan.</summary>
+    /// <summary>Checks direct UI rendering and successive fixed-content frames on Vulkan.</summary>
     /// <returns>The asynchronous pixel verification.</returns>
     [GpuFact]
     public async Task VulkanUiClippingAndRedrawAsync()
@@ -22,7 +22,7 @@ public sealed class UiDrawingTests
         await CheckFramesAsync(device);
     }
 
-    /// <summary>Checks direct UI rendering and successive frames on wgpu.</summary>
+    /// <summary>Checks direct UI rendering and successive fixed-content frames on wgpu.</summary>
     /// <returns>The asynchronous pixel verification.</returns>
     [GpuFact]
     public async Task WgpuUiClippingAndRedrawAsync()
@@ -53,7 +53,7 @@ public sealed class UiDrawingTests
             }
             else if (frame == 3)
             {
-                root.Children = [];
+                root.IsVisible = false;
             }
 
             var canvas = new Canvas2D();

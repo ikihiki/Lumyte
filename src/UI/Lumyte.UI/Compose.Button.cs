@@ -15,21 +15,16 @@ public static partial class Compose
         {
             /// <summary>Initializes a new instance of the <see cref="Button"/> class.</summary>
             public Button()
+                : base(1, int.MaxValue)
             {
-                ContentCollection = new ChildCollection(this, 1);
-                BackgroundCollection = new ChildCollection(this, int.MaxValue);
             }
 
-            /// <summary>Gets or sets the zero or one content child using an immutable snapshot.</summary>
+            /// <summary>Gets the zero or one ordinary child, initialized at most once.</summary>
             [ComposeContent]
-            public IReadOnlyList<Widget> Children
-            {
-                get => ContentCollection!.Items;
-                set => ContentCollection!.Replace(value);
-            }
+            public WidgetChildren Children => ContentCollection;
 
             /// <summary>Gets an immutable snapshot of the children owned by the background slot.</summary>
-            public IReadOnlyList<Widget> BackgroundChildren => BackgroundCollection!.Items;
+            public WidgetChildren BackgroundChildren => BackgroundCollection;
 
             /// <inheritdoc/>
             protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
@@ -52,8 +47,8 @@ public static partial class Compose
             }
 
             [ComposeSlot]
-            private static void Background(Button target, IReadOnlyList<Widget> children) =>
-                target.BackgroundCollection!.Replace(children);
+            private static void Background(Button target, Widget[] children) =>
+                target.BackgroundCollection.Initialize(children);
         }
     }
 }

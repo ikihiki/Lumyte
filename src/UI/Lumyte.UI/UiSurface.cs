@@ -22,7 +22,6 @@ public sealed class UiSurface : IDisposable
             throw new ArgumentException("The root must have neither a parent nor a surface.", nameof(root));
         }
 
-        using Widget.MutationScope mutation = root.BeginMutation();
         List<Widget> nodes = root.CollectSubtree();
         _root = root;
         foreach (Widget node in nodes)
@@ -50,7 +49,7 @@ public sealed class UiSurface : IDisposable
     public void SetViewport(Vector2 logicalSize)
     {
         ThrowIfDisposed();
-        using Widget.MutationScope mutation = _root.BeginMutation();
+        VerifyMutationAllowed();
         UiLayoutMath.ValidateSize(logicalSize, nameof(logicalSize));
         if (_viewport != logicalSize)
         {
@@ -68,7 +67,7 @@ public sealed class UiSurface : IDisposable
             throw new InvalidOperationException("Layout can only start while the surface is idle.");
         }
 
-        using Widget.MutationScope mutation = _root.BeginMutation();
+        VerifyMutationAllowed();
         if (!_root.IsLayoutDirty)
         {
             return;
@@ -133,7 +132,7 @@ public sealed class UiSurface : IDisposable
             throw new InvalidOperationException("A surface can only be disposed while idle.");
         }
 
-        using Widget.MutationScope mutation = _root.BeginMutation();
+        VerifyMutationAllowed();
         List<Widget> nodes = _root.CollectSubtree();
         foreach (Widget node in nodes)
         {
@@ -188,7 +187,7 @@ public sealed class UiSurface : IDisposable
             canvas.Restore();
         }
 
-        void RecordChildren(ChildCollection? collection)
+        void RecordChildren(WidgetChildren collection)
         {
             if (collection is not null)
             {

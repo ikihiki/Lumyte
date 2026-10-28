@@ -17,11 +17,15 @@ using var surface = new UiSurface(root);
 factory、子インデクサー、`Button.Background()`は既存Composition Generatorが生成します。通常の静的呼出しとして利用でき、構築用のcontextやruntimeは不要です。
 
 - 子は通常内容・背景を通じて一つの親だけに属します。Buttonの通常内容は0〜1個、Panelと背景は複数を許可します。
-- 子リストのsetterは入力をコピーし、変更不能なsnapshotを返します。循環・重複・複数親・別slot・接続済みsurfaceの混入を変更前に拒否します。
-- 同じ列の並べ替えは許可します。別親へ移す場合は先に元の列から外します。
-- 失敗保証は列単位です。後の背景slotが失敗しても、その前の通常内容やslotの成功は残ります。
+- ChildrenとBackgroundChildrenは、基底Widgetが所有するsealedなWidgetChildrenです。getterだけを公開し、内容をそれぞれ一回だけ初期化できます。入力配列をコピーし、循環・重複・複数親・別slot・接続済みsurfaceの混入を変更前に拒否します。
+- 同値・空を含む二回目の指定、追加・削除・並べ替えは拒否します。空の初期化も一回として数え、検証失敗は回数を消費しません。表示切替にはIsVisibleを使います。
+- 失敗保証は列の初期化単位です。後の背景slotが失敗しても、その前の通常内容やslotの成功は残ります。同じ背景slotの二回目は拒否します。
 - UiSurfaceとWidgetは作成threadへ固定しません。操作が重ならなければ、接続中も別threadで読取り・変更・Disposeできます。利用者が明示的に並行処理する場合の同期は利用者が管理します。ライブラリはlockや自動thread配送を追加しません。
 - surface.Disposeは冪等で、背景を含む全接続を解除します。部分木の内部親子関係や外部資源を破棄しません。元のrootは新しいsurfaceへ再接続できます。
+
+直接初期化する場合は`panel.Children.Initialize(child1, child2)`または配列を使います。任意のIReadOnlyListを渡すoverloadはありません。Compositionで生成するカスタムWidgetのComposeContentもWidgetChildrenかつget-onlyに限定され、違反はGeneratorのLYC001診断になります。単純なプロパティ代入でrootをたどるMutationScopeは使いません。layout・描画中の変更禁止はsurfaceが検査します。
+
+子の動的な置換を伴うnavigation・Items等は専用コンテナーとして別途設計し、固定のChildrenを繰り返し初期化する経路にはしません。
 
 ライブラリはCompositionと、既存のRect2Dを使うGraphics.Drawing2Dを参照し、Generatorはビルド時のAnalyzerとして使用します。OS、GPU、Windowや入力pumpは所有しません。
 
@@ -43,7 +47,7 @@ surface.UpdateLayout();
 
 親は制約を渡し、子は制約内のサイズを返し、親は位置だけを決めます。Width/Heightは親制約内でtight化し、rootのサイズはviewportのtight制約を優先します。Stackは主軸をunboundedとして内容を一回ずつlayoutし、gapは可視の子同士の間だけに入れます。Buttonは内容から自身を決め、そのサイズで背景をlayoutします。
 
-寸法・可視性・子の置換・viewportが変わるとdirtyになり、次のUpdateLayoutでrootから更新します。同値の指定やcleanなUpdateLayoutは再実行しません。Size/Boundsの読取はlayoutを実行せず、pass全体の成功後だけ新しい値を公開します。失敗後は前回値と再試行可能なdirty状態を保ちます。
+寸法・可視性・子の初回初期化・viewportが変わるとdirtyになり、次のUpdateLayoutでrootから更新します。同値の指定やcleanなUpdateLayoutは再実行しません。Size/Boundsの読取はlayoutを実行せず、pass全体の成功後だけ新しい値を公開します。失敗後は前回値と再試行可能なdirty状態を保ちます。
 
 カスタムの葉はWidgetのLayoutOverrideを、カスタムコンテナーはPanelのLayoutOverrideを拡張します。直接の可視子をLayoutChildで一回ずつ処理し、その返値を使ってSetChildOffsetで一回ずつ配置します。カスタム状態の変更はInvalidateLayoutをfield更新前に呼びます。layout中の値・子の変更や同じsurfaceの再入は拒否します。別threadへの順次移行は接続中も利用できます。
 

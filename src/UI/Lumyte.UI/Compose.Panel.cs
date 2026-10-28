@@ -15,17 +15,13 @@ public static partial class Compose
         {
             /// <summary>Initializes a new instance of the <see cref="Panel"/> class.</summary>
             public Panel()
+                : base(int.MaxValue)
             {
-                ContentCollection = new ChildCollection(this, int.MaxValue);
             }
 
-            /// <summary>Gets or sets the owned children using an immutable snapshot and atomic replacement.</summary>
+            /// <summary>Gets the ordinary children, initialized at most once.</summary>
             [ComposeContent]
-            public IReadOnlyList<Widget> Children
-            {
-                get => ContentCollection!.Items;
-                set => ContentCollection!.Replace(value);
-            }
+            public WidgetChildren Children => ContentCollection;
 
             /// <inheritdoc/>
             protected override Vector2 LayoutOverride(UiBoxConstraints constraints)

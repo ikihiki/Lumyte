@@ -9,6 +9,28 @@ namespace Lumyte.UI.Tests;
 /// <summary>Tests one-way layout, generated parameters and transactional geometry publication.</summary>
 public sealed class LayoutTests
 {
+    /// <summary>Checks the phase guard rejects a first assignment, independently of the one-time initialization check.</summary>
+    [Fact]
+    public void FirstContentInitializationIsRejectedDuringLayout()
+    {
+        var root = new ProtocolPanel();
+        var leaf = new Leaf(new(10, 10));
+        root.Compute = (_, constraints) =>
+        {
+            root.Children.Initialize(leaf);
+            return constraints.Constrain(Vector2.Zero);
+        };
+        using var surface = new UiSurface(root);
+        surface.SetViewport(new(100, 100));
+        Assert.Throws<InvalidOperationException>(surface.UpdateLayout);
+        Assert.Empty(root.Children);
+        Assert.Null(leaf.Parent);
+        root.Compute = null;
+        root.Children.Initialize(leaf);
+        surface.UpdateLayout();
+        Assert.Equal(new Vector2(10, 10), leaf.Size);
+    }
+
     /// <summary>Tests root constraints and the absence of implicit layout in property getters.</summary>
     [Fact]
     public void RootUsesTheViewportAndGeometryGettersDoNotRunLayout()
@@ -132,7 +154,7 @@ public sealed class LayoutTests
         var leaf = new Leaf(new(20, 4));
         Definitions.Panel panel = Panel()[leaf];
         var root = new ProtocolPanel();
-        root.Children = [panel];
+        root.Children.Initialize([panel]);
         root.Compute = (owner, constraints) =>
         {
             owner.RunChild(panel, new(5, float.PositiveInfinity, 7, 100));
@@ -194,7 +216,7 @@ public sealed class LayoutTests
         Assert.Equal(1, text.Calls);
     }
 
-    /// <summary>Tests clean passes, same-value properties and same-order child lists.</summary>
+    /// <summary>Tests clean passes, same-value properties and rejected repeat content initialization.</summary>
     [Fact]
     public void UnchangedInputsDoNotRepeatLayout()
     {
@@ -210,7 +232,7 @@ public sealed class LayoutTests
         leaf.Width = null;
         leaf.Height = null;
         leaf.IsVisible = true;
-        root.Children = [leaf];
+        Assert.Throws<InvalidOperationException>(() => root.Children.Initialize(leaf));
         surface.SetViewport(new(100, 100));
         surface.UpdateLayout();
         Assert.Equal(1, leaf.Calls);
@@ -221,7 +243,7 @@ public sealed class LayoutTests
         Assert.Equal(2, leaf.Calls);
     }
 
-    /// <summary>Tests invalidation from dimensions, ordering and viewport changes.</summary>
+    /// <summary>Tests invalidation from dimensions, fixed ordering and viewport changes.</summary>
     [Fact]
     public void LayoutInputsInvalidateTheRootAndRetainOldValuesUntilUpdated()
     {
@@ -234,16 +256,16 @@ public sealed class LayoutTests
         first.Height = 30;
         Assert.Equal(new Vector2(10, 10), first.Size);
         root.Spacing = 2;
-        root.Children = [second, first];
+        Assert.Throws<InvalidOperationException>(() => root.Children.Initialize(second, first));
         surface.UpdateLayout();
-        Assert.Equal(new Rect2D(0, 22, 10, 30), first.Bounds);
+        Assert.Equal(new Rect2D(0, 32, 10, 20), second.Bounds);
 
         surface.SetViewport(new(200, 50));
         surface.UpdateLayout();
         Assert.Equal(new Vector2(200, 50), root.Size);
         root.Orientation = UiOrientation.Horizontal;
         surface.UpdateLayout();
-        Assert.Equal(new Rect2D(12, 0, 10, 30), first.Bounds);
+        Assert.Equal(new Rect2D(12, 0, 10, 20), second.Bounds);
     }
 
     /// <summary>Tests rollback of every public size and offset when a later child throws.</summary>
@@ -312,7 +334,8 @@ public sealed class LayoutTests
     public void InvalidChildProtocolFailsTheWholePass(string failure)
     {
         var leaf = new Leaf(new(10, 10));
-        var root = new ProtocolPanel { Children = [leaf] };
+        var root = new ProtocolPanel();
+        root.Children.Initialize(leaf);
         root.Compute = (owner, constraints) =>
         {
             if (failure == "missing-layout")
@@ -386,7 +409,7 @@ public sealed class LayoutTests
             {
                 case "width": leaf.Width = 50; break;
                 case "visible": leaf.IsVisible = false; break;
-                case "children": root.Children = []; break;
+                case "children": root.Children.Initialize([]); break;
                 case "viewport": surface.SetViewport(new(1, 1)); break;
                 case "update": surface.UpdateLayout(); break;
                 case "dispose": surface.Dispose(); break;
@@ -433,8 +456,9 @@ public sealed class LayoutTests
         surface.UpdateLayout();
         Assert.Equal(new Vector2(10, 10), root.Size);
         Assert.Equal(float.MaxValue, second.Bounds.Y);
-        root.Children = [first, second, new Leaf(new(1, 1))];
-        Assert.Throws<InvalidOperationException>(surface.UpdateLayout);
+        using var overflow = new UiSurface(Stack()[new Leaf(new(1, float.MaxValue)), new Leaf(new(1, float.MaxValue)), new Leaf(new(1, 1))]);
+        overflow.SetViewport(new(10, 10));
+        Assert.Throws<InvalidOperationException>(overflow.UpdateLayout);
         Assert.Equal(float.MaxValue, second.Bounds.Y);
     }
 
@@ -461,7 +485,8 @@ public sealed class LayoutTests
     public void ChildOffsetsMustBeFiniteButCanBeNegative(float offset, bool valid)
     {
         var leaf = new Leaf(new(10, 10));
-        var root = new ProtocolPanel { Children = [leaf] };
+        var root = new ProtocolPanel();
+        root.Children.Initialize(leaf);
         root.Compute = (owner, constraints) =>
         {
             owner.RunChild(leaf, constraints.Loosen());
@@ -499,7 +524,7 @@ public sealed class LayoutTests
         Assert.Throws<ArgumentOutOfRangeException>(() => root.Spacing = float.PositiveInfinity);
         Assert.Throws<ArgumentOutOfRangeException>(() => root.Orientation = (UiOrientation)99);
         Assert.Throws<ArgumentOutOfRangeException>(() => surface.SetViewport(new(-1, 100)));
-        Assert.Throws<ArgumentException>(() => root.Children = [leaf, leaf]);
+        Assert.Throws<InvalidOperationException>(() => root.Children.Initialize(leaf, leaf));
         surface.UpdateLayout();
         Assert.Equal(1, leaf.Calls);
         Assert.Null(leaf.Width);
@@ -511,7 +536,8 @@ public sealed class LayoutTests
     public void CustomContainerCanOmitHiddenChildren()
     {
         var leaf = new Leaf(new(10, 10)) { IsVisible = false, DuringLayout = () => throw new InvalidOperationException("hidden") };
-        var root = new ProtocolPanel { Children = [leaf] };
+        var root = new ProtocolPanel();
+        root.Children.Initialize(leaf);
         root.Compute = (_, constraints) => constraints.Constrain(Vector2.Zero);
         using var surface = new UiSurface(root);
         surface.SetViewport(new(100, 100));
@@ -520,28 +546,24 @@ public sealed class LayoutTests
         Assert.Equal(default, leaf.Bounds);
     }
 
-    /// <summary>Tests that detached geometry is retained and reconnection always requires a new layout.</summary>
+    /// <summary>Tests that fixed ownership survives disposal and reconnection requires a new layout.</summary>
     [Fact]
-    public void RemovalAndReconnectionPreserveValuesUntilTheNextSuccessfulPass()
+    public void FixedOwnershipAndReconnectionPreserveValuesUntilTheNextSuccessfulPass()
     {
         var leaf = new Leaf(new(10, 10));
         Definitions.Panel root = Panel()[leaf];
         var surface = new UiSurface(root);
         surface.SetViewport(new(100, 100));
         surface.UpdateLayout();
-        root.Children = [];
-        surface.UpdateLayout();
+        Assert.Throws<InvalidOperationException>(() => root.Children.Initialize());
         Assert.Equal(new Vector2(10, 10), leaf.Size);
-        Assert.Null(leaf.Parent);
-        root.Children = [leaf];
-        surface.UpdateLayout();
-        Assert.Equal(2, leaf.Calls);
+        Assert.Same(root, leaf.Parent);
         surface.Dispose();
         using var replacement = new UiSurface(root);
         replacement.SetViewport(new(200, 200));
         replacement.UpdateLayout();
         Assert.Equal(new Vector2(200, 200), root.Size);
-        Assert.Equal(3, leaf.Calls);
+        Assert.Equal(2, leaf.Calls);
     }
 
     /// <summary>Tests content overflow that cannot produce a finite unbounded container size.</summary>
@@ -549,7 +571,8 @@ public sealed class LayoutTests
     public void UnboundedContentSizeOverflowFailsWithoutPublishing()
     {
         Definitions.Stack stack = Stack()[new Leaf(new(1, float.MaxValue)), new Leaf(new(1, float.MaxValue))];
-        var root = new ProtocolPanel { Children = [stack] };
+        var root = new ProtocolPanel();
+        root.Children.Initialize(stack);
         root.Compute = (owner, constraints) =>
         {
             owner.RunChild(stack, new(0, 10, 0, float.PositiveInfinity));

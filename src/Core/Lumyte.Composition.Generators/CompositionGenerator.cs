@@ -160,11 +160,13 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 return "Hidden or overridden composition members are unsupported.";
             }
 
-            if (!Writable(member) || member.IsStatic || !compilation.IsSymbolAccessibleWithin(member, component)
-                || (member is IPropertySymbol property && (property.IsIndexer || property.SetMethod is null
-                    || !compilation.IsSymbolAccessibleWithin(property.SetMethod, component))))
+            bool managedContent = contents.Contains(member, SymbolEqualityComparer.Default) && ManagedContentItem(MemberType(member)) is not null;
+            if ((!managedContent && !Writable(member)) || member.IsStatic || !compilation.IsSymbolAccessibleWithin(member, component)
+                || (member is IPropertySymbol property && (property.IsIndexer || (managedContent
+                    ? property.GetMethod is null || !compilation.IsSymbolAccessibleWithin(property.GetMethod, component)
+                    : property.SetMethod is null || !compilation.IsSymbolAccessibleWithin(property.SetMethod, component)))))
             {
-                return "Composition member '" + member.Name + "' must be writable and accessible from its component.";
+                return "Composition member '" + member.Name + "' must be accessible and support generated assignment or initialization.";
             }
 
             if (HasAttribute(member, "ComposeParameter") && HasAttribute(member, "ComposeContent"))
@@ -193,9 +195,23 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         }
 
         if (contents.Length > 1 || (contents.Length == 1 && (ContentItem(MemberType(contents[0])) is null
-            || (contents[0] is IPropertySymbol contentProperty && contentProperty.SetMethod!.IsInitOnly))))
+            || (contents[0] is IPropertySymbol contentProperty && contentProperty.SetMethod?.IsInitOnly == true))))
         {
-            return "Use at most one settable array or supported collection interface for content; init-only content is unsupported.";
+            return "Use at most one supported collection or managed content member; init-only content is unsupported.";
+        }
+
+        for (INamedTypeSymbol? ancestor = component; ancestor is not null; ancestor = ancestor.BaseType)
+        {
+            foreach (AttributeData policy in ancestor.GetAttributes().Where(attribute => IsAttribute(attribute, "CompositionContentType")))
+            {
+                var allowed = policy.ConstructorArguments.FirstOrDefault().Value as ITypeSymbol;
+                if (contents.Any(content => !SymbolEqualityComparer.Default.Equals(MemberType(content), allowed)
+                    || (content is IPropertySymbol property && property.SetMethod is not null)
+                    || (content is IFieldSymbol field && !field.IsReadOnly)))
+                {
+                    return "Content must use the inherited CompositionContentType with a getter-only property or readonly field.";
+                }
+            }
         }
 
         if ((contents.Length != 0 || component.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))) && component.GetMembers().OfType<IPropertySymbol>().Any(property => property.IsIndexer))
@@ -236,7 +252,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             if (!method.IsStatic || !method.ReturnsVoid || method.IsAsync || method.Arity != 0
                 || method.MethodKind != MethodKind.Ordinary || method.Parameters.Length != 2
                 || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, component)
-                || ContentItem(method.Parameters[1].Type) is null
+                || ContentItem(method.Parameters[1].Type) is null || ManagedContentItem(method.Parameters[1].Type) is not null
                 || method.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.IsOptional || parameter.IsParams || !PublicType(parameter.Type)))
             {
                 return "ComposeSlot requires a synchronous non-generic static void method accepting its component and a supported child collection.";
@@ -362,14 +378,15 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         builder.AppendLine("foreach (var action in @with)\n{\naction(instance);\n}\n}\nreturn instance;\n}");
         if (content is not null && slots.Length == 0)
         {
-            builder.AppendLine("/// <summary>Replaces children and returns this same instance.</summary>");
+            builder.AppendLine("/// <summary>Applies ordinary content and returns this same instance.</summary>");
             builder.AppendLine("/// <param name=\"content\">The ordered children.</param>");
             builder.AppendLine("/// <returns>This instance.</returns>");
             builder.Append(InheritsContentIndexer(component, ContentItem(MemberType(content))!, compilation) ? "public new " : "public ")
                 .Append(type).Append(" this[params ").Append(TypeName(ContentItem(MemberType(content))!))
                 .AppendLine("[] content]\n{\nget\n{");
             builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
-            builder.Append("this.").Append(Escape(content.Name)).AppendLine(" = content;\nreturn this;\n}\n}");
+            builder.AppendLine(ContentAssignment(content, "content"));
+            builder.AppendLine("return this;\n}\n}");
         }
 
         if (slots.Length != 0)
@@ -455,12 +472,12 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         builder.Append("public static implicit operator CompositionChild(").Append(child).AppendLine(" child) => new(child);");
         builder.AppendLine("/// <summary>Wraps a named slot assignment.</summary>");
         builder.Append("public static implicit operator CompositionChild(").Append(assignment).AppendLine(" slot) => new(slot);\n}");
-        builder.AppendLine("/// <summary>Replaces ordinary children when present and applies named slots in order.</summary>");
+        builder.AppendLine("/// <summary>Applies ordinary content when present and named slots in order.</summary>");
         builder.Append("public ").Append(type).AppendLine(" this[params CompositionChild[] content]\n{\nget\n{");
         builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
         builder.Append("var children = new global::System.Collections.Generic.List<").Append(child).AppendLine(">();");
         builder.AppendLine("foreach (var item in content) { if (item.IsChild) children.Add(item.Child); }");
-        builder.Append("if (children.Count != 0 || content.Length == 0) this.").Append(Escape(content.Name)).AppendLine(" = children.ToArray();");
+        builder.Append("if (children.Count != 0 || content.Length == 0) ").AppendLine(ContentAssignment(content, "children.ToArray()"));
         builder.AppendLine("foreach (var item in content) { if (!item.IsChild) item.Slot.Apply(this); }\nreturn this;\n}\n}");
     }
 
@@ -582,6 +599,30 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
     private static ITypeSymbol MemberType(ISymbol member) => member is IFieldSymbol field ? field.Type : ((IPropertySymbol)member).Type;
 
+    private static string ContentAssignment(ISymbol content, string value)
+    {
+        ITypeSymbol? item = ManagedContentItem(MemberType(content));
+        return item is null
+            ? "this." + Escape(content.Name) + " = " + value + ";"
+            : "((global::Lumyte.Composition.ICompositionContent<" + TypeName(item) + ">)this." + Escape(content.Name) + ").Initialize(" + value + ");";
+    }
+
+    private static ITypeSymbol? ManagedContentItem(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol named)
+        {
+            foreach (INamedTypeSymbol candidate in named.AllInterfaces.Prepend(named))
+            {
+                if (candidate.OriginalDefinition.ToDisplayString() == "Lumyte.Composition.ICompositionContent<T>")
+                {
+                    return candidate.TypeArguments[0];
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static ITypeSymbol? ContentItem(ITypeSymbol type)
     {
         if (type is IArrayTypeSymbol array)
@@ -596,7 +637,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             return named.TypeArguments[0];
         }
 
-        return null;
+        return ManagedContentItem(type);
     }
 
     private static string ParameterDeclaration(ISymbol parameter, bool optionalDefault = true)

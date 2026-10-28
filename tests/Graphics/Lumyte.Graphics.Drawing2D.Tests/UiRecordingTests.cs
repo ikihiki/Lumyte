@@ -14,6 +14,30 @@ public sealed class UiRecordingTests
     private static readonly Color2D _green = new(0, 1, 0, 0.5f);
     private static readonly Color2D _blue = new(0, 0, 1, 0.5f);
 
+    /// <summary>Checks even the first child assignment is prohibited while recording and can succeed after failure.</summary>
+    [Fact]
+    public void FirstContentInitializationIsRejectedDuringRecording()
+    {
+        bool initialize = true;
+        Definitions.Rectangle child = Rectangle(fill: _red, width: 10, height: 10);
+        CallbackPanel? root = null;
+        root = new CallbackPanel(_ =>
+        {
+            if (initialize)
+            {
+                root!.Children.Initialize(child);
+            }
+        });
+        using var surface = new UiSurface(root);
+        surface.SetViewport(new(100, 100));
+        Assert.Throws<InvalidOperationException>(() => Record(surface));
+        Assert.Empty(root.Children);
+        Assert.Null(child.Parent);
+        initialize = false;
+        root.Children.Initialize(child);
+        Assert.Single(Record(surface).Commands);
+    }
+
     /// <summary>Checks static construction, inherited parameters and transparent defaults.</summary>
     [Fact]
     public void RectangleFactoriesExposeInheritedParametersAndDefaultToTransparent()
@@ -47,8 +71,9 @@ public sealed class UiRecordingTests
     public void NestedOriginsAndClipsComposeInsideTheHostTransform()
     {
         var inner = new OffsetPanel(new(7, 11)) { Width = 30, Height = 20, ClipToBounds = true };
-        inner.Children = [Rectangle(fill: _red, width: 15, height: 10)];
-        var root = new OffsetPanel(new(3, 5)) { ClipToBounds = true, Children = [inner] };
+        inner.Children.Initialize(Rectangle(fill: _red, width: 15, height: 10));
+        var root = new OffsetPanel(new(3, 5)) { ClipToBounds = true };
+        root.Children.Initialize(inner);
         using var surface = new UiSurface(root);
         surface.SetViewport(new(100, 80));
         var canvas = new Canvas2D();
@@ -94,7 +119,8 @@ public sealed class UiRecordingTests
     [Fact]
     public void ZeroSizedParentDoesNotCullAnOverflowingSubtree()
     {
-        var parent = new OffsetPanel(new(-4, -5)) { Width = 0, Height = 0, Children = [Rectangle(fill: _red, width: 12, height: 13)] };
+        var parent = new OffsetPanel(new(-4, -5)) { Width = 0, Height = 0 };
+        parent.Children.Initialize(Rectangle(fill: _red, width: 12, height: 13));
         using var surface = new UiSurface(Panel()[parent]);
         surface.SetViewport(new(100, 100));
         FillRectCommand2D command = Assert.IsType<FillRectCommand2D>(Assert.Single(Record(surface).Commands));
@@ -114,8 +140,8 @@ public sealed class UiRecordingTests
             canvas.Save();
             canvas.FillRect(new(0, 0, 2, 2), _green);
             canvas.Restore();
-        })
-        { Children = [Rectangle(fill: _red, width: 10, height: 10), Rectangle(fill: _blue, width: 10, height: 10)] };
+        });
+        root.Children.Initialize(Rectangle(fill: _red, width: 10, height: 10), Rectangle(fill: _blue, width: 10, height: 10));
         using var surface = new UiSurface(root);
         surface.SetViewport(new(100, 100));
         DrawList2D list = Record(surface);
@@ -133,7 +159,8 @@ public sealed class UiRecordingTests
     public void HiddenSubtreesAndZeroViewportDoNotInvokeCallbacks()
     {
         int calls = 0;
-        var child = new CallbackPanel(_ => calls++) { IsVisible = false, Children = [new CallbackPanel(_ => calls++)] };
+        var child = new CallbackPanel(_ => calls++) { IsVisible = false };
+        child.Children.Initialize(new CallbackPanel(_ => calls++));
         using var surface = new UiSurface(Panel()[child]);
         surface.SetViewport(new(100, 100));
         Assert.Empty(Record(surface).Commands);
@@ -183,7 +210,8 @@ public sealed class UiRecordingTests
     public void FillAndClipChangesDoNotInvalidateLayoutButEveryRecordIsFresh()
     {
         Definitions.Rectangle rectangle = Rectangle(fill: _red, width: 12, height: 8);
-        var root = new CallbackPanel(_ => { }) { Children = [rectangle] };
+        var root = new CallbackPanel(_ => { });
+        root.Children.Initialize(rectangle);
         using var surface = new UiSurface(root);
         surface.SetViewport(new(100, 100));
         DrawList2D first = Record(surface);
@@ -245,7 +273,7 @@ public sealed class UiRecordingTests
                 "clip" => () => rectangle.ClipToBounds = true,
                 "size" => () => rectangle.Width = 50,
                 "visible" => () => rectangle.IsVisible = false,
-                "children" => () => ((Definitions.Panel)surface!.Root).Children = [],
+                "children" => () => ((Definitions.Panel)surface!.Root).Children.Initialize(),
                 "viewport" => () => surface!.SetViewport(new(50, 50)),
                 "layout" => () => surface!.UpdateLayout(),
                 "record" => () => surface!.Record(canvas),
@@ -253,8 +281,8 @@ public sealed class UiRecordingTests
                 _ => throw new ArgumentException(operation),
             };
             Assert.Throws<InvalidOperationException>(action);
-        })
-        { Children = [rectangle] };
+        });
+        root.Children.Initialize(rectangle);
         using (surface = new UiSurface(root))
         {
             surface.SetViewport(new(100, 100));

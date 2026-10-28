@@ -38,3 +38,9 @@ var button = Button()[Button.Background()[Image("sample.jpeg")]];
 ```
 
 スロット指定は子要素を捕捉し、外側のインデクサーで対象へ適用する。保存と置換は利用側メソッドの責務。通常の子要素との混在やジェネリックなスロットにも対応する。
+
+所有済みのストレージをget-onlyで公開する場合は、その型に`ICompositionContent<T>`を実装します。生成インデクサーはプロパティを置換せず、`Initialize(T[])`へ配列を渡します。初期化回数・所有関係の検査・保持する入力のコピーは実装側の責務です。
+
+基底classへ`[CompositionContentType(typeof(OwnedChildren))]`を指定すると、派生classを含めてComposeContentの型を完全一致に制限し、プロパティのsetterを禁止します。全基底型の制約を検査し、違反はLYC001です。既存の配列・標準collection interfaceへの代入は、この制約がないcomponentで引き続き使用できます。
+
+[所有コレクションのADR](../../../docs/adr/composition/COMPOSITION-0004-owned-content-collections.md)

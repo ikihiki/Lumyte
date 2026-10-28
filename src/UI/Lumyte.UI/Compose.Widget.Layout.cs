@@ -49,7 +49,7 @@ public static partial class Compose
                 get => _isVisible;
                 set
                 {
-                    using MutationScope mutation = BeginMutation();
+                    VerifyMutationAllowed();
                     if (_isVisible != value)
                     {
                         _isVisible = value;
@@ -80,7 +80,7 @@ public static partial class Compose
             /// <summary>Invalidates this node and its ancestors before changing custom layout state.</summary>
             protected void InvalidateLayout()
             {
-                using MutationScope mutation = BeginMutation();
+                VerifyMutationAllowed();
                 MarkLayoutDirty();
             }
 
@@ -107,7 +107,7 @@ public static partial class Compose
 
             private void SetDimension(ref float? field, float? value)
             {
-                using MutationScope mutation = BeginMutation();
+                VerifyMutationAllowed();
                 if (value.HasValue)
                 {
                     UiLayoutMath.ValidateDimension(value.Value, nameof(value));

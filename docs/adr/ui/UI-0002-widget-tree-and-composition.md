@@ -2,133 +2,117 @@
 
 - 状態: 採用
 - 日付: 2026-10-27
-- 対応: 実装PR 1
+- 対応: 実装PR 1、固定内容への修正はPR #79を前提とする追加PR
 - 更新: 2026-10-28
 
 ## 背景
 
-[UI-0001](UI-0001-composition-based-ui-system.md)の保持型UIでは、通常内容と背景スロットを同じ所有ツリーとして扱う。Compositionが生成するインデクサーはsetterへ配列を渡すだけなので、親付け、検証、取り外し、寿命はUIが実装する。
+[UI-0001](UI-0001-composition-based-ui-system.md)の保持型UIでは、通常内容と背景を同じ所有ツリーとして扱う。利用者の指定により内容の設定を一回に限定し、任意のIReadOnlyList実装の読取りを起点とする再入を構造的に取り除く。親付け、検証、接続と寿命はUIが実装し、構築構文の生成はCompositionが担当する。
 
 ## 決定
 
-### 実装範囲と公開API
+### 公開APIと保存領域
 
-`src/UI/Lumyte.UI`、`tests/UI/Lumyte.UI.Tests`を追加し、solutionと既存の検証対象へ登録する。Compositionを通常参照し、Composition.GeneratorsをAnalyzer参照する。API diffの比較元は[UI-0001](UI-0001-composition-based-ui-system.md)に従う。
+最新修正の比較元はPR #79の`e6922285dfef533701cffdbbfb3f53656256cda0`。既存の可変内容APIを次のように変更する。[COMPOSITION-0004](../composition/COMPOSITION-0004-owned-content-collections.md)の所有コレクション初期化と型制約を利用する。
 
 ```diff
-+namespace Lumyte.UI
-+{
-+    public sealed class UiSurface : IDisposable
+ namespace Lumyte.UI
+ {
++    public sealed class WidgetChildren : IReadOnlyList<Compose.Definitions.Widget>,
++        ICompositionContent<Compose.Definitions.Widget>
 +    {
-+        // nullはArgumentNullException。親・surface付きrootはArgumentException。
-+        // 作成スレッドへの固定なし。同時操作の同期は呼出し側が管理する。
-+        public UiSurface(Compose.Definitions.Widget root);
-+        public Compose.Definitions.Widget Root { get; }
-+        // 冪等。接続を解除するがWidgetと外部資源を破棄しない。
-+        public void Dispose();
++        // public constructorなし。Widgetが親と最大個数を指定して生成する。
++        public int Count { get; }
++        public Compose.Definitions.Widget this[int index] { get; }
++        public IEnumerator<Compose.Definitions.Widget> GetEnumerator();
++        // 初回成功のみ。入力をコピーし、空配列でも一回を消費する。
++        // 再指定は同じ値でもInvalidOperationException。検証失敗は回数を消費しない。
++        // null配列はArgumentNullException、構造違反はArgumentException。
++        public void Initialize(params Compose.Definitions.Widget[] content);
 +    }
-+    public static partial class Compose
-+    {
-+        public static partial class Definitions
-+        {
-+            public abstract class Widget
-+            {
-+                protected Widget();
-+                // 通常内容と背景で共通。rootはnull。
-+                public Widget? Parent { get; }
-+            }
-+            [Composable]
-+            public partial class Panel : Widget
-+            {
-+                public Panel();
-+                // 既定空。setterがコピーし、変更不能なviewを返す。
-+                [ComposeContent] public IReadOnlyList<Widget> Children { get; set; }
-+            }
-+            [Composable]
-+            public partial class Button : Widget
-+            {
-+                public Button();
-+                // 0〜1個。構造違反は変更前に拒否。
-+                [ComposeContent] public IReadOnlyList<Widget> Children { get; set; }
-+                public IReadOnlyList<Widget> BackgroundChildren { get; }
-+                // 空指定で背景を解除。複数の背景要素を許可する。
-+                [ComposeSlot]
-+                private static void Background(Button target, IReadOnlyList<Widget> children);
-+            }
-+        }
-+    }
-+}
+     public static partial class Compose
+     {
+         public static partial class Definitions
+         {
++            [CompositionContentType(typeof(WidgetChildren))]
+             public abstract class Widget
+             {
+-                protected Widget();
++                // 最大個数は非負。葉の既定は各0。ストレージ参照は固定。
++                protected Widget(int maximumChildren = 0, int maximumBackgroundChildren = 0);
++                protected internal WidgetChildren ContentCollection { get; }
++                protected internal WidgetChildren BackgroundCollection { get; }
+                 public Widget? Parent { get; }
+             }
+             public partial class Panel : Widget
+             {
+-                [ComposeContent] public IReadOnlyList<Widget> Children { get; set; }
++                [ComposeContent] public WidgetChildren Children { get; }
+             }
+             public partial class Button : Widget
+             {
+-                [ComposeContent] public IReadOnlyList<Widget> Children { get; set; }
+-                public IReadOnlyList<Widget> BackgroundChildren { get; }
++                [ComposeContent] public WidgetChildren Children { get; }
++                public WidgetChildren BackgroundChildren { get; }
+-                private static void Background(Button target, IReadOnlyList<Widget> children);
++                private static void Background(Button target, Widget[] children);
+             }
+         }
+     }
+ }
 ```
 
-生成されるファクトリ、子インデクサーと`Button.Background()`は手書きしない。このPRではlayout・Record・Dispatch・Clickを公開しない。
+WidgetChildrenはsealedで、IListなどの変更interface、setter、Add/Remove/Clearを公開しない。Compositionは生成したWidget[]をInitializeへ渡す。任意のIReadOnlyListやIEnumerableを受け取るoverloadと暗黙変換は設けない。直接初期化にも配列またはparamsを使い、必要なら呼出し側で明示的にToArrayする。
 
-構築、子列の置換、背景スロットの適用ではlayoutを実行しない。後続のlayoutは[UI-0001](UI-0001-composition-based-ui-system.md)の共通契約に従ってこの所有ツリーを使い、希望サイズの保存領域やlayout専用の第二のツリーを追加しない。
+Compositionで生成するWidget派生型のComposeContentに配列、IReadOnlyList、その他の型を指定するとLYC001で生成を拒否する。派生型からこの制約を緩和できない。カスタムコンテナーはPanelを継承するか、基底constructorの最大数を指定し、ContentCollectionをget-onlyなComposeContentプロパティで公開する。任意の業務データ用コレクションfieldをC#自体で禁止することはしない。
 
-```csharp
-using Lumyte.UI;
-using static Lumyte.UI.Compose;
+### 初期化と所有権
 
-var root = Panel()[Button()[Button.Background()[Panel()]]];
-using var surface = new UiSurface(root);
-```
+通常内容と背景は独立に一回ずつ初期化できる。未初期化の読取りは空として扱い、読取りやsurface接続は初期化回数を消費しない。Panelは通常内容を複数、Buttonは通常内容を0〜1個・背景を複数受け入れる。
 
-### 所有ツリーと置換手順
+1. 操作phaseと未初期化状態を確認する。再初期化は入力内容にかかわらずInvalidOperationException。
+2. 入力配列をコピーし、個数・null要素・参照重複を検査する。
+3. 自身・祖先、親やslotに所属済みの子、surface接続済みrootを拒否する。
+4. 接続対象の部分木と必要な配列・viewを全て事前確保し、利用者コードを呼ばず親・surface所属を一括設定する。
+5. 内容を公開し、初期化済みにしてlayoutを無効化する。
 
-内部の子保存は親と役割（Content/Background）を持つ`ChildCollection`へ集約する。Panelを継承したカスタムコンテナーも同じChildrenを使う。Widgetへ任意の子を登録する第二の経路は設けない。走査順は背景、通常内容の順で、各列の記述順を維持する。
+検証・確保の失敗では親子関係も初期化状態も変更せず、正常な入力で再試行できる。成功後は同値・空・並べ替えを含む全ての再設定を拒否する。取り外し・別親への移動・背景の再適用は提供しない。Widgetの値やIsVisibleは引き続き更新できる。
 
-setterとBackground操作は次の手順で実行する。
+生成された通常内容の初期化とslotの適用は別操作である。後のslot失敗時は先の成功を保持する。同じ背景slotを一式に複数回指定した場合、二回目を拒否し、初回の背景を保持する。slotだけの指定は通常内容を初期化しない。
 
-1. 操作可能な実行phaseと、同じtreeの変更が再入していないことを確認する。
-2. 入力列を新配列へコピーし、要素のnull・参照重複・個数を検査する。入力列自体のnullはArgumentNullException、その他の構造違反はArgumentException。
-3. 自身・祖先の混入、別親、別スロット、別surfaceへの所属を拒否する。同じ置換対象列に既に属する子の再指定と並べ替えは許可する。
-4. 全検証後に旧列から外れた部分木を切り離し、新列を親付けし、surface所属を部分木全体へ反映する。検証後のcommitはユーザーコードや資源取得を呼ばない。
-5. layout無効化と、後続の入力実装が持つ状態解除の内部hookを呼ぶ。
+### スレッド・再入・ライフサイクル
 
-失敗保証は一つの列の置換単位である。Compositionは通常内容を置換後にスロットを記述順に実行するため、後のスロット失敗時には先の成功が残る。同じ背景スロットを複数指定すると最後の成功が有効になる。
+CPUのWidget/UiSurfaceは作成threadへ固定しない。読取りを含む明示的な並行アクセスの同期は利用者の責任とし、通常利用へlockやdispatcherを要求しない。
 
-入力列のCount/indexerは利用側のコードを実行し得るため、コピー開始からcommit完了まで同じ所有treeの変更・接続・Disposeの再入をInvalidOperationExceptionで拒否する。未接続treeも変更中のadoption/接続を拒否する。入力評価の例外時には旧列を保ち、finallyで再入guardを解除して次の正当な変更を許可する。commitに必要な配列・view・部分木走査の確保は全て事前に済ませる。
+配列コピーから所有関係の反映までに外部のCount/indexerやcallbackを呼ばないため、rootの変更中フラグとMutationScopeを撤去する。変更可否の検査のためにrootまで走査しない。layout無効化に必要な祖先へのdirty伝播は維持する。Layout/Record中の値・子構成の変更と同一surfaceへの再入は、surfaceのphase検査で拒否する。将来、構造変更通知などのcallbackを導入する場合は、その境界の再入契約を別途定義する。
 
-公開する子リストはコピーした配列の変更不能なviewであり、入力列の後からの変更は反映しない。外した部分木の内部親子関係は保持する。別親へ移す場合は先に元の列から外す。surfaceのrootはDisposeで接続を解除してから別surfaceへ移す。
+初回の子初期化はIdle/Dispatchで許可し、接続中なら部分木のsurface所属も反映する。layout・描画をその場で実行しない。DisposeはIdleのみ、冪等であり、通常内容・背景を含む全接続を解除する。Widget・外部資源・内部親子関係・初期化済み状態を保持し、root全体を別surfaceへ再接続できる。子の初期化回数は再接続でもリセットしない。UiSurface.Rootは破棄後ObjectDisposedExceptionとなる。
 
-### スレッドとライフサイクル
+### 後続機能への影響
 
-UiSurfaceとWidgetを作成スレッドへ固定しない。接続中も、読取り・変更・Disposeが重ならなければ別threadへ順次処理を移せる。通常利用にowner thread判定、dispatcherや接続し直しを要求しない。利用者がTask.Runや独自thread等で明示的に並行実行する場合は、読取りを含む同時アクセスの同期と結果を利用者が管理する。
-
-UI本体へlockや自動thread配送を追加せず、競合の検出・安全性を保証しない。既存の変更guardは同じcall stackからの再入を拒否するもので、thread間の排他制御ではない。将来の標準hostは通常処理の順序と、Window/IME等のthread依存serviceへの内部配送を管理し、その制約をCPU上のWidgetツリーへ転嫁しない。
-
-内部phaseはIdle/Layout/Record/Dispatch/Disposedとし、後続PRが利用する。公開操作はtry/finallyでIdleへ復帰し、不正なphase・再入はInvalidOperationException、破棄後はObjectDisposedException。DisposeをLayout/Record/Dispatch中に呼ぶことも拒否する。Click中の通常の値・子の変更は許可するが、surface破棄はcallbackを抜けてから行う。
-
-Root、Parent、子リストの読取にはthread検査を入れない。UiSurface.Rootは破棄後ObjectDisposedExceptionとし、Disposeは別threadからの順次呼出しも冪等である。Widgetは接続解除後も内部の親子関係を保持して利用できる。
-
-本PRはIdle/Disposedの接続寿命を実装する。Layout/Record/Dispatchのphase遷移と無効化・入力解除のhookは、それぞれのAPIを導入する後続PRで接続し、将来APIのstubを公開しない。
-
-Disposeは自身の入力状態をcallbackなしで解除するhookを持ち、全Widgetのsurface所属を外す。rootの内部親子関係、保持しているコールバック参照、外部リソースには触れない。不要なdelegate参照は利用側がプロパティへnullを代入して解除する。
+一般のChildrenの差替え・並べ替えを前提にするAPIとテストを廃止する。表示切替にはIsVisibleを使用する。将来のnavigation、条件分岐、Itemsや仮想化で子を動的に変える場合は、汎用Childrenの再設定を復活させず、専用コンテナーの所有権と寿命を別途設計する。後続の提案ADRにある取り外し・動的子置換の記述は、その専用設計を定義するまで実装済みの契約として扱わない。
 
 ## 検討した代替案
 
-Composition側にParentや保存領域を追加すると汎用構築基盤の責務が変わる。通常内容と背景を別の所有モデルにすると二重配置を防げない。UI側の共通の子管理へ集約する。
+setterを残して内部で一回に制限するだけでは、任意のリスト実装を受け入れるAPIが残る。readonlyな専用ストレージを公開し、初期化入力も配列へ限定する。init-only setterは構築後の生成インデクサーから呼べないため採用しない。
 
-作成threadへ固定する方式は、CPU上のツリーを直列に扱う場合にもdispatcherや再接続を要求するため採用しない。OS固有のthread要件は統合層の内部へ限定し、利用者が明示的に行う並行操作の責任は利用者へ委ねる。
+Widgetへの任意のcollection宣言を全て禁止すると、業務データまで制限してしまう。UIの所有ツリーは基底が作るストレージへ限定し、ComposeContentの型違反は汎用Generatorの型制約で検出する。
 
 ## 結果と影響
 
-生成コードの規則を保ったまま、安全な親子関係と部分木の再利用を実現できる。置換ごとに配列のコピーと検証コストが発生し、式全体のロールバックは提供しない。
+通常のusing static構築を維持しながら、内容の固定と入力配列のsnapshotを保証する。再入防止のroot走査を除去できる。構築後の子の再構成はできず、動的UIには専用の設計が必要となる。既存のChildren setterと繰り返しslot適用に対する破壊的変更である。
 
 ## 検証方針
 
-- 実際のAnalyzer参照で通常内容・背景混在、空スロット、繰り返し置換、新規instanceを確認する。
-- null、循環、複数親・スロット・surface、同じ列の並べ替え、入力配列変更の遮断を確認する。
-- 検証失敗で列を保つことと、後続スロット失敗時に先の成功を保つことを区別して確認する。
-- 接続中の別threadへの順次移行、Disposeの冪等性、接続解除後の再利用、外部資源を破棄しないことを確認する。
+通常内容・背景・継承・with、空初期化、同値を含む二回目の拒否、失敗後の再試行、slotの部分成功、入力コピー、循環・重複・複数親・surfaceを検証する。接続中の初回初期化、別threadでの順次利用、Dispose後の内容保持、20,000段の接続・解除、Layout/Record中の初回初期化拒否も確認する。異なる型・setter付きComposeContentは生成テストで拒否する。
 
 ## 実装・検証記録
 
-2026-10-28、.NET SDK 10.0.401 / Linux x64で実装した。UIの25件がRelease/Debugの両方で成功し、既存Compositionの47件もReleaseで成功した。生成APIを別assemblyのテストから使用し、失敗後の旧列維持、slotの部分適用、参照同一性、入力評価中の再入、再接続、外部資源を破棄しないこと、20,000段の接続・解除を確認した。
+2026-10-28、固定内容への修正をADR・実装・テスト・READMEと同じ追加PRへまとめた。
 
-solutionへsource/testを登録し、既存のsolution検証と全srcのpack列挙へ含めた。描画、入力、Signalは本PRの実装対象に含めない。Windows/Browserと後続機能の検証完了を示すものではない。
-
-C#の書式検証とMarkdown検証を実施した。Composition/UIのNuGetパッケージを作成し、ProjectReferenceやGenerator参照を持たない別consumerから通常のusing static構文、背景slot、surface再接続が成功した。UIパッケージの実行時依存はCompositionのみである。
-
-同日、固定thread検査を撤去し、接続中も別threadから順次操作できる契約へ緩和した。明示的な同時アクセスは利用側の責任とし、CPUツリーにthreadの所有者や自動dispatcherを持ち込まない。別threadでの通常内容/背景変更、await/workerをまたぐ順次操作、別threadでのDisposeと再接続を検証対象へ追加した。
-
-固定thread検査を緩和した現行版では、UIの26件がRelease/Debugの両方で成功し、source/testの書式検証も成功した。
+- UI 79件とDrawing2D 93件がDebug/Releaseの双方で成功した。旧契約の置換・並べ替えテストを廃止し、一回初期化、失敗後の再試行、初回でもLayout/Record中は拒否すること、surface再接続で初期化回数を保持することを検証した。
+- Composition 55件がReleaseで成功した。既存の代入型contentとの互換性、getter-only初期化と継承、型制約・readonly制約の違反を検証した。
+- Linux x64のLavapipe上のVulkan/wgpuでGPUテスト2件が成功した。固定の子をIsVisibleで非表示にする連続frameの背景復元を確認した。record-onlyサンプルも成功した。
+- 関連6パッケージをpackし、NuGet consumerで独自Widgetの生成・描画・二回目の初期化拒否・別threadでの順次更新が成功した。別のcollection型をComposeContentにしたconsumerは、継承した型制約に対するLYC001でbuildを拒否した。
+- 対象C#の書式、Markdownと相対リンクを確認した。Windows・Browser・hardware GPUでの実行は未実施。
