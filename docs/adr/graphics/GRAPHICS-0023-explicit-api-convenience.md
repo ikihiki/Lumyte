@@ -5,7 +5,7 @@
 
 ## 背景
 
-byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw bufferも同じ生成名を使っていた。またArgument Tableのsetterは後続描画の状態を変更せず、互換入口として検査だけを行っていた。
+byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw bufferも同じ生成名を使っていた。またArgument Tableのsetterが後続描画へ選択状態を渡しておらず、引数が指定tableの外を参照していないか検証できていなかった。
 
 ## 決定
 
@@ -39,11 +39,13 @@ byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw b
      }
      public interface IRenderEncoder
      {
--        void SetArgumentTable(IArgumentTable table);
+         // このtableに属する参照だけをdraw／dispatchで受け付ける。
+         void SetArgumentTable(IArgumentTable table);
      }
      public interface IComputeEncoder
      {
--        void SetArgumentTable(IArgumentTable table);
+         // このtableに属する参照だけをdraw／dispatchで受け付ける。
+         void SetArgumentTable(IArgumentTable table);
      }
 +    public static class RenderEncoderExtensions
 +    {
@@ -62,16 +64,21 @@ SetDynamicStateはviewport、scissor、blend constant、stencil referenceを順�
 
 ### Argument Table
 
-[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)のtable選択契約だけを置き換える。SetArgumentTableは削除し、bindingは引数に含まれるIGpuRefが保持する登録情報から生成する。一回のdraw／dispatchの参照が同じdeviceの同じtableに属し、有効であることを利用者が保証する。[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)に従い検証専用の再走査は追加しない。
+SetArgumentTableを正式な状態設定として維持し、[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)のtable選択契約を実装する。指定tableは同じdeviceに属する生存中のtableに限り、別deviceや別backendのtableはArgumentException、破棄済みtableはObjectDisposedExceptionで拒否する。選択はpassごとに独立し、SetArgumentsの前後どちらでも変更できる。
+
+draw／dispatch（indirectを含む）のbinding収集時に、root引数と到達するshader data内のすべてのIGpuRefが、現在選択したtableに属することをReferenceEqualsで検証する。参照があるのにtable未設定ならInvalidOperationException、別tableの参照ならArgumentExceptionで拒否し、native描画・dispatchを記録しない。slot番号や実体resourceが同じでも、別tableの登録は受け付けない。command内の明示的copyで転送したmetadataにも同じ検証を適用し、循環は既存の到達集合で停止させる。
+
+所属検証はbinding生成に必要な既存の参照収集と同時に行い、検証専用の再走査は増やさない。この所属検証を除き、[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)の寿命・登録失効・GPU同期を利用者が管理する契約は変えない。値だけの引数と引数なしpipelineではtableを要求しない。
 
 root引数のないpipelineへ切り替えた場合は以前のsnapshotを使用しない。root引数のある別pipelineへはSetArgumentsを再度必要とする。
 
 ## 検討した代替案
 
 - 旧interfaceと別名拡張を両方残す案は、同じ操作の入口が増えるため採用しない。
+- SetArgumentTableを削除して参照自身からtableを推論する案は、指定table外の参照を拒否する境界がなくなるため採用しない。
 - 暗黙の描画初期化は設定箇所が見えなくなるため、明示的なhelperとする。
 - bufferの共通基底interfaceはraw layoutとshader ABIやreadback対応の違いを隠すため作らない。
 
 ## 結果と影響
 
-外部backendと利用側は新しいinterfaceへ移行する必要がある。単位・shader ABI・キャンセルの契約はAPI名と引数に表れる。範囲、mappingの取消と解放、描画初期化、backendのpipeline切り替えと未対応設定の拒否を検証する。
+外部backendと利用側は新しいinterfaceへ移行する必要がある。単位・shader ABI・キャンセルの契約はAPI名と引数に表れる。範囲、mappingの取消と解放、描画初期化、backendのpipeline切り替えと未対応設定の拒否を検証する。table未設定・別table・間接参照・table切り替え・値だけの引数についても検証し、サンプルと描画ライブラリは使用するtableを明示する。

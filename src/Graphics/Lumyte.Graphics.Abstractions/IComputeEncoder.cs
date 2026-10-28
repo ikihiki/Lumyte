@@ -3,6 +3,10 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Provides a non-owning recording scope.</summary>
 public interface IComputeEncoder
 {
+    /// <summary>Selects the same-device table against which draw or dispatch references are validated.</summary>
+    /// <param name="table">The live argument table containing all directly and transitively referenced resources.</param>
+    void SetArgumentTable(IArgumentTable table);
+
     /// <summary>Snapshots application root values using their generated codec.</summary>
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>

@@ -243,6 +243,7 @@ public static class AdvancedCommandExercise
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(generator);
+        compute.SetArgumentTable(table);
         compute.SetArguments(in root);
         compute.Dispatch(1);
         compute.End();
@@ -250,6 +251,7 @@ public static class AdvancedCommandExercise
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
         compute = commands.BeginComputePass(new());
         compute.SetPipeline(consumer);
+        compute.SetArgumentTable(table);
         var execution = new IndirectExecuteArguments(root.Output);
         compute.SetArguments(in execution);
         compute.DispatchIndirect(command.SliceElements(0, 1));

@@ -36,6 +36,21 @@ internal static class BindingRegressionExercise
         Console.WriteLine("Shader binding regressions completed.");
     }
 
+    internal static void Expect<TException>(Action action)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+    }
+
     private static ShaderArtifact Artifact(string name) => ShaderArtifact.LoadEmbedded(typeof(BindingRegressionExercise).Assembly, "Lumyte.Shaders." + name + ".lshader");
 
     private static void CheckIncompatibleStages(IGraphicDevice device)
@@ -90,6 +105,16 @@ internal static class BindingRegressionExercise
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
         compute.SetArguments(in arguments);
+        Expect<InvalidOperationException>(() => compute.Dispatch(1));
+        using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 4 });
+        using IGraphicsBuffer<DispatchIndirectArguments> indirect = device.CreateBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect });
+        compute.SetArgumentTable(outside);
+        Expect<ArgumentException>(() => compute.Dispatch(1));
+        Expect<ArgumentException>(() => compute.DispatchIndirect(indirect.SliceElements(0, 1)));
+        outside.Dispose();
+        Expect<ObjectDisposedException>(() => compute.SetArgumentTable(outside));
+        Expect<ArgumentNullException>(() => compute.SetArgumentTable(null!));
+        compute.SetArgumentTable(table);
         compute.Dispatch(1);
         compute.End();
         uint[] values = await ReadOutputAsync(device, commands, output, readback);
@@ -122,12 +147,27 @@ internal static class BindingRegressionExercise
         RecordUpload(commands, secondStaging, second, elementOffset);
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
+        compute.SetArgumentTable(table);
         var arguments = new BindingComputeArguments(default, 0, a, result);
         compute.SetArguments(in arguments);
         compute.Dispatch(1);
         compute.End();
         uint[] values = await ReadOutputAsync(device, commands, output, readback);
         Require(values[0] == 13, "A reference stored in shader data did not follow the cycle across separate buffer allocations.");
+
+        // The root references still belong to table; only the copied node points outside it.
+        using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 1 });
+        IGpuRef<BindingNode> foreign = outside.WriteBuffer(0, second.SliceElements(elementOffset, 1));
+        await WriteAsync(firstStaging, [new(3, foreign)]);
+        using IGraphicsCommandBuffer rejected = device.CreateCommandBuffer(new());
+        RecordUpload(rejected, firstStaging, first, elementOffset);
+        IComputeEncoder invalid = rejected.BeginComputePass(new());
+        invalid.SetPipeline(pipeline);
+        invalid.SetArgumentTable(table);
+        invalid.SetArguments(in arguments);
+        Expect<ArgumentException>(() => invalid.Dispatch(1));
+        invalid.End();
+        rejected.Finish();
     }
 
     private static async Task CheckRangesAsync(IGraphicDevice device, ulong allocationSize, ulong alignment)
@@ -155,6 +195,7 @@ internal static class BindingRegressionExercise
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = storage.SliceElements(secondOffset, 4), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead) });
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
+        compute.SetArgumentTable(table);
         compute.SetArguments(in arguments);
         compute.Dispatch(1);
         compute.End();

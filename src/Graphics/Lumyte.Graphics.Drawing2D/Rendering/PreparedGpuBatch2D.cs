@@ -187,6 +187,7 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         var arguments = new DrawingArguments(command.InstructionRef, dataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(_pipeline);
+        render.SetArgumentTable(command.Table);
         render.SetRenderState(new()
         {
             Rasterization = new() { Cull = CullMode.None },

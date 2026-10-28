@@ -182,6 +182,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             var arguments = new DrawingArguments(command.InstructionRef, dataRef, (uint)command.Program.Instructions.Count, command.Root, command.Source is null ? 0u : command.Original is null ? 1u : 2u, command.Opacity, Bounds(command.Source), Bounds(command.Original), new(target.PixelOrigin, 0, 0), sourceRef, originalRef, command.Sampler);
             IRenderEncoder render = context.Commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
             render.SetPipeline(_pipeline);
+            render.SetArgumentTable(command.Table);
             render.SetRenderState(new()
             {
                 Rasterization = new() { Cull = CullMode.None },

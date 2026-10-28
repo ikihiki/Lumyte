@@ -19,6 +19,20 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
+    private BrowserArgumentTable? _table;
+
+    public void SetArgumentTable(IArgumentTable table)
+    {
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(table);
+        if (table is not BrowserArgumentTable selected || !selected.BelongsTo(owner.Owner))
+        {
+            throw new ArgumentException("Argument table belongs to another device.", nameof(table));
+        }
+
+        selected.ThrowIfDisposed();
+        _table = selected;
+    }
 
     public void SetArguments<T>(in T value)
         where T : struct, IShaderArguments
@@ -180,7 +194,8 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         ShaderBindingData? bindingData = null;
         if (_pipeline.RequiresArguments && _arguments != null)
         {
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
+            _table?.ThrowIfDisposed();
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);
         }
 

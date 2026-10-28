@@ -9,6 +9,20 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
     private ShaderValueSnapshot? _arguments;
     private object? _argumentProgram;
+    private VulkanArgumentTable? _table;
+
+    public void SetArgumentTable(IArgumentTable table)
+    {
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(table);
+        if (table is not VulkanArgumentTable selected || !selected.BelongsTo(owner.Owner))
+        {
+            throw new ArgumentException("Argument table belongs to another device.", nameof(table));
+        }
+
+        selected.ThrowIfDisposed();
+        _table = selected;
+    }
 
     public void SetArguments<T>(in T value)
         where T : struct, IShaderArguments
@@ -82,7 +96,8 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         ShaderBindingSnapshot? bindingSnapshot = null;
         if (_pipeline.RequiresArguments && _arguments != null)
         {
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, owner.ReadShaderData);
+            _table?.ThrowIfDisposed();
+            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             bindingSnapshot = snapshot;
         }
 

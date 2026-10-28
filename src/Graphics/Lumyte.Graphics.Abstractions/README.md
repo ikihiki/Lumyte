@@ -133,9 +133,11 @@ IGpuRef<uint> value = values.GetElement(2);
 
 slotは利用者が管理する論理位置です。種類ごとに独立し、同時shader binding数ではありません。IGpuRefのCountは論理要素数で、bufferのGetElementは登録範囲から単一要素を選びます。GPU addressやbinding番号への変換は公開しません。
 
-SetArgumentTableは削除しました。
-bindingは引数に含まれるIGpuRefの登録情報から生成します。一回のdraw／dispatchで使う参照が
-同じdeviceの同じtableに属し、有効であることは利用者が保証します。
+draw／dispatchで参照を使う場合は、encoder.SetArgumentTable(table)で使用するtableを明示します。
+backendはbindingの収集時に、root引数とshader dataから間接的に辿るすべてのIGpuRefが、
+そのtableに属することを検証します。table未設定はInvalidOperationException、別tableの参照はArgumentExceptionです。
+同じresourceやslotを登録していても、別tableから発行された参照は使えません。
+tableを切り替えた後のdraw／dispatchにも現在のtableで検証を行います。値だけの引数にはtableは不要です。
 
 slotの置換・Release・table Dispose後の古い参照と派生要素は使用できません。その有効期間を利用者が管理し、登録世代やresourceの生存を走査して検証しません。登録・参照を使い終わってからbuffer／view／samplerを解放してください。tableを解放しても登録resource自体はDisposeしません。
 

@@ -63,6 +63,7 @@ public static class ShaderBindingExercise
         RecordUpload(commands, staging, nodes);
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
+        compute.SetArgumentTable(table);
         var first = new BindingComputeArguments(Matrix4x4.CreateScale(3), 20, node.GetElement(0), results.GetElement(3));
         compute.SetArguments(in first);
         compute.Dispatch(1);
@@ -74,6 +75,7 @@ public static class ShaderBindingExercise
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 8), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
         compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
+        compute.SetArgumentTable(table);
         BindingComputeArguments second = first with { Output = results.GetElement(4) };
         compute.SetArguments(in second);
         compute.Dispatch(1);
@@ -137,6 +139,7 @@ public static class ShaderBindingExercise
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, Before = default, AfterState = TextureState.ColorAttachment, After = colorWrite });
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = targetView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
             render.SetPipeline(pipeline);
+            render.SetArgumentTable(table);
             render.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
             render.SetViewport(new(0, 0, Width, 4, 0, 1));
             render.SetBlendConstant(new(0, 0, 0, 0));
@@ -146,6 +149,15 @@ public static class ShaderBindingExercise
             var rangeArguments = new BindingDrawArguments(table.WriteBuffer(1, materials.SliceElements(0, 5)), 5);
             render.SetArguments(in rangeArguments);
             render.SetScissor(new(0, 0, 20, 4));
+            using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+            using IGraphicsBuffer<DrawIndirectArguments> indirect = device.CreateBuffer<DrawIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect });
+            render.SetArgumentTable(outside);
+            BindingRegressionExercise.Expect<ArgumentException>(() => render.Draw(3));
+            BindingRegressionExercise.Expect<ArgumentException>(() => render.DrawIndirect(indirect.SliceElements(0, 1)));
+            outside.Dispose();
+            BindingRegressionExercise.Expect<ObjectDisposedException>(() => render.SetArgumentTable(outside));
+            BindingRegressionExercise.Expect<ArgumentNullException>(() => render.SetArgumentTable(null!));
+            render.SetArgumentTable(table);
             render.Draw(3);
             for (int i = 5; i < Count; i++)
             {

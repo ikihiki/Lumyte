@@ -229,6 +229,7 @@ public sealed class DrawingGpuTests
                 DepthStencilAttachment = new() { View = context.CreateTextureView(depthHandle) },
             });
             Setup(render, pipeline, ModelDrawing.CreateRenderState(material, doubleSided: true));
+            render.SetArgumentTable(table);
             render.SetArguments(in arguments);
             mesh.Draw(render);
             render.End();

@@ -86,6 +86,14 @@ public static class ArgumentTableExercise
         Expect<ArgumentException>(() => table.WriteTexture(0, view));
         Expect<ArgumentException>(() => table.WriteSampler(0, sampler));
         Expect<ArgumentException>(() => table.WriteBuffer(0, buffer.SliceElements(0, 1)));
+
+        using IArgumentTable foreignTable = foreign.CreateArgumentTable(new() { BufferCapacity = 1 });
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        IComputeEncoder compute = commands.BeginComputePass(new());
+        Expect<ArgumentException>(() => compute.SetArgumentTable(foreignTable));
+        compute.SetArgumentTable(table);
+        compute.End();
+        commands.Finish();
     }
 
     private static void Require(bool condition, string message)
