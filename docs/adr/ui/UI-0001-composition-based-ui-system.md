@@ -8,7 +8,7 @@
 
 既存のComposition、Input、Windowing、Drawing2Dの上に、ゲーム内画面とツールのためのUIを構築する。構築構文、親子関係、レイアウト、入力、GPU実行をそれぞれの責務へ分け、実装を段階的にレビューできる必要がある。
 
-本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0008で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。UI-0001は未取り込みの提案なので、以前のAPI案を詳細ADRへ整理し、置換済み扱いにはしない。
+本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0008で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
 
 ## 決定
 
@@ -26,7 +26,7 @@ Compositionの生成ファクトリ → UIツリー → 制約駆動layout・入
 UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 ```
 
-初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。Text・Imageコントロール、Grid、scroll、仮想化、テーマ、binding、編集・IME、アクセシビリティは別途設計する。現在mainに存在する[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
+初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。Text・Imageコントロール、Grid、scroll、仮想化、テーマ、binding、編集・IME、アクセシビリティは別途設計する。[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
 
 ### 実装PRと対応ADR
 
@@ -46,13 +46,15 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 
 ### 共通の契約
 
-ツリーは参照同一性で状態を保持し、単一親・単一surface・非循環とする。接続中のツリーはsurface作成スレッドで扱う。layout・描画中の変更と再入を拒否し、Click中の通常の変更は許可する。GPU資源とWindowはUIが所有しない。
+以下は全体の要約であり、詳細は対応ADRを正本とする。後続ADRは共通契約を参照し、その範囲で追加・変更する条件を記載する。
 
-レイアウトはFlutter型の「制約を子へ渡す→子が制約内のサイズを返す→親が位置を決める」方式とする。親はlayout済みの子を別サイズへ変えない。公開値は確定SizeとBoundsであり、希望サイズと最終配置を別々に公開しない。通常の子layoutを一度で完結させ、intrinsic計測や兄弟を揃える再計測は初期対象外とする。具体的なtight/loose/unbounded制約と各部品の規則はUI-0003で定義する。
+ツリーは参照同一性を保つ単一親・単一surface・非循環の構造とする。所有権、作成スレッド、実行phase、破棄はUI-0002で定義する。WindowとGPU資源はホストが所有する。
 
-UI座標は論理pixelである。viewportは論理サイズだけを受け取り、DPI変換はホストがCanvasへ一度だけ適用し、Drawing2DのPixelScaleは1とする。以前の案の`SetViewport(size, scale)`は、未使用のscaleをUIへ保存しない`SetViewport(logicalSize)`へ具体化する。非一様scale、Hostedの原点・clipの合成はUI-0007で定義する。
+レイアウトはFlutter型の「制約を子へ渡す→子がサイズを返す→親が位置を決める」方式とする。一回の子layout、制約、公開Size/Bounds、拡張境界はUI-0003で定義する。描画とhit testは共通の幾何を使う。
 
-各詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。先行PRのAPIは相対リンクで参照する。テスト名・配置は実装の目標であり、現時点で存在するという記述ではない。
+UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ集約し、PixelScale、Hosted原点・clip、入力座標の契約はUI-0007で定義する。
+
+各詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
 
 ## 検討した代替案
 
