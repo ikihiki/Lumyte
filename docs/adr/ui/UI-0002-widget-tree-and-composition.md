@@ -1,8 +1,9 @@
 # ADR-UI-0002: Widgetツリーの所有権とCompositionによる構築
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-27
 - 対応: 実装PR 1
+- 更新: 2026-10-28
 
 ## 背景
 
@@ -85,6 +86,8 @@ setterとBackground操作は次の手順で実行する。
 
 失敗保証は一つの列の置換単位である。Compositionは通常内容を置換後にスロットを記述順に実行するため、後のスロット失敗時には先の成功が残る。同じ背景スロットを複数指定すると最後の成功が有効になる。
 
+入力列のCount/indexerは利用側のコードを実行し得るため、コピー開始からcommit完了まで同じ所有treeの変更・接続・Disposeの再入をInvalidOperationExceptionで拒否する。未接続treeも変更中のadoption/接続を拒否する。入力評価の例外時には旧列を保ち、finallyで再入guardを解除して次の正当な変更を許可する。commitに必要な配列・view・部分木走査の確保は全て事前に済ませる。
+
 公開する子リストはコピーした配列の変更不能なviewであり、入力列の後からの変更は反映しない。外した部分木の内部親子関係は保持する。別親へ移す場合は先に元の列から外す。surfaceのrootはDisposeで接続を解除してから別surfaceへ移す。
 
 ### スレッドとライフサイクル
@@ -92,6 +95,10 @@ setterとBackground操作は次の手順で実行する。
 UiSurfaceは作成スレッド専用で、接続中のWidget操作にも同じ制約を適用する。未接続の部分木は利用側が同期して単一スレッドで操作でき、接続時にsurfaceの制約を適用する。UIは未接続ツリーの同時操作を検出・同期する保証を持たない。
 
 内部phaseはIdle/Layout/Record/Dispatch/Disposedとし、後続PRが利用する。公開操作はtry/finallyでIdleへ復帰し、再入・別スレッドはInvalidOperationException、破棄後はObjectDisposedException。DisposeをLayout/Record/Dispatch中に呼ぶことも拒否する。Click中の通常の値・子の変更は許可するが、surface破棄はcallbackを抜けてから行う。
+
+Root、Parent、子リストの読取も接続中の作成スレッド制約に従う。UiSurface.Rootは破棄後ObjectDisposedException、Disposeの冪等呼出しも別threadではInvalidOperationExceptionとする。接続解除後のWidgetは再び未接続treeの契約に戻る。
+
+本PRはIdle/Disposedの接続寿命を実装する。Layout/Record/Dispatchのphase遷移と無効化・入力解除のhookは、それぞれのAPIを導入する後続PRで接続し、将来APIのstubを公開しない。
 
 Disposeは自身の入力状態をcallbackなしで解除するhookを持ち、全Widgetのsurface所属を外す。rootの内部親子関係、保持しているコールバック参照、外部リソースには触れない。不要なdelegate参照は利用側がプロパティへnullを代入して解除する。
 
@@ -109,3 +116,11 @@ Composition側にParentや保存領域を追加すると汎用構築基盤の責
 - null、循環、複数親・スロット・surface、同じ列の並べ替え、入力配列変更の遮断を確認する。
 - 検証失敗で列を保つことと、後続スロット失敗時に先の成功を保つことを区別して確認する。
 - 作成スレッド、Disposeの冪等性、接続解除後の再利用、外部資源を破棄しないことを確認する。
+
+## 実装・検証記録
+
+2026-10-28、.NET SDK 10.0.401 / Linux x64で実装した。UIの25件がRelease/Debugの両方で成功し、既存Compositionの47件もReleaseで成功した。生成APIを別assemblyのテストから使用し、失敗後の旧列維持、slotの部分適用、参照同一性、入力評価中の再入、スレッド制約、再接続、外部資源を破棄しないこと、20,000段の接続・解除を確認した。
+
+solutionへsource/testを登録し、既存のsolution検証と全srcのpack列挙へ含めた。描画、入力、Signalは本PRの実装対象に含めない。Windows/Browserと後続機能の検証完了を示すものではない。
+
+C#の書式検証とMarkdown検証を実施した。Composition/UIのNuGetパッケージを作成し、ProjectReferenceやGenerator参照を持たない別consumerから通常のusing static構文、背景slot、surface再接続が成功した。UIパッケージの実行時依存はCompositionのみである。
