@@ -2,7 +2,7 @@
 
 - 状態: 提案
 - 日付: 2026-10-26
-- 更新: 2026-10-28
+- 更新: 2026-10-29
 
 ## 背景
 
@@ -16,7 +16,7 @@
 
 `src/UI/Lumyte.UI`に.NET 10のmanagedライブラリを置く。assembly・名前空間・NuGet名は`Lumyte.UI`とし、実行時の直接依存はComposition、Input.Abstractions、Graphics.Drawing2Dに限定する。GeneratorはAnalyzer参照する。UI本体からPlatform、Windowing管理、InputSystem、RenderGraph、Resources、Animation、DI、Diagnosticsへ直接依存しない。任意の統合層がWindow managerを注入して利用し、UiSurfaceやWidgetに具象Windowの生成・管理を組み込まない。
 
-[COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md)の生成ファクトリ、with、子インデクサー、名前付きスロットを使う。UIは保持型Widgetツリーと値を所有し、毎frameの再生成・自動reconciliationは行わない。CompositionへUI保存領域や寿命管理を追加しない。通常内容・背景はWidgetChildrenへそれぞれ一回だけ初期化する。readonlyストレージへの生成規則は[COMPOSITION-0004](../composition/COMPOSITION-0004-owned-content-collections.md)、所有権と動的UIへの影響は[UI-0002](UI-0002-widget-tree-and-composition.md)を正本とする。
+[COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md)の生成ファクトリ、with、子インデクサー、名前付きスロットを使う。UIは表示中の要素と状態を保持し、構築関数の再実行で得たWidget宣言を既存の表示要素と照合する。構造に関係する状態の変更時に再構築を行い、追加・削除・並べ替えを反映する。再構築は要求されたときに行い、毎frameの描画命令生成とは独立させる。CompositionへUI保存領域や寿命管理を追加しない。通常内容・背景はWidgetChildrenへそれぞれ一回だけ初期化する。readonlyストレージへの生成規則は[COMPOSITION-0004](../composition/COMPOSITION-0004-owned-content-collections.md)、所有権と動的UIへの影響は[UI-0002](UI-0002-widget-tree-and-composition.md)を正本とする。
 
 イベントコールバックは`Button(onClick: () => Save())`のように生成ファクトリの名前付きパラメーターで渡す。UI側はnullableなdelegateプロパティとして保持し、省略・nullはハンドラーなし、代入は置換とする。public eventとComposeActionによる追加購読はUIのイベント設定APIとして提供しない。直接delegate型を生成するためのComposition契約の追加は実装PR 4の担当範囲とする。
 

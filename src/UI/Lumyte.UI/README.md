@@ -25,7 +25,7 @@ factory、子インデクサー、`Button.Background()`は既存Composition Gene
 
 直接初期化する場合は`panel.Children.Initialize(child1, child2)`または配列を使います。任意のIReadOnlyListを渡すoverloadはありません。Compositionで生成するカスタムWidgetのComposeContentもWidgetChildrenかつget-onlyに限定され、違反はGeneratorのLYC001診断になります。単純なプロパティ代入でrootをたどるMutationScopeは使いません。layout・描画中の変更禁止はsurfaceが検査します。
 
-子の動的な置換を伴うnavigation・Items等は専用コンテナーとして別途設計し、固定のChildrenを繰り返し初期化する経路にはしません。
+動的な子の変更は、構築関数を再実行して新しいWidgetツリーを宣言する方式で設計します。各構築結果のChildrenは一回だけ初期化し、UI内部のreconcilerが表示要素を対応付けて追加・削除・並べ替えを反映します。一般的な条件分岐・列挙に専用の変更可能コンテナーは要求しません。モデルはSignal等へ保持し、継続する要素の状態はUIが管理します。構築関数の登録・key・reconciliationと自動再実行は後続実装であり、現在の静的なUiSurfaceにはまだ接続していません。詳細は[再構築の契約](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md#構築関数の再実行による動的な子の変更)を参照してください。
 
 ライブラリはCompositionと、既存のRect2Dを使うGraphics.Drawing2Dを参照し、Generatorはビルド時のAnalyzerとして使用します。OS、GPU、Windowや入力pumpは所有しません。
 

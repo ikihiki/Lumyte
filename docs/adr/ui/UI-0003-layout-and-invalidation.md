@@ -9,7 +9,7 @@
 
 [UI-0002](UI-0002-widget-tree-and-composition.md)の保持型ツリーをviewportへ配置する。広い制約で希望サイズを求め、後から別サイズへ配置する方式では、幅に応じて高さが変わるText等の内容を再計算する必要がある。サイズが確定する時点と、親が決められる範囲を明確にしたい。
 
-Flutterのbox layoutを参考に、親が制約を渡し、子がその制約内の確定サイズを返し、親が子の位置を決める方式を採用する。Compositionによる構築、Widgetの参照同一性、既存の所有ツリーは変更しない。FlutterのWidget/Element/RenderObjectの三層構造やreconciliationは導入しない。
+Flutterのbox layoutを参考に、親が制約を渡し、子がその制約内の確定サイズを返し、親が子の位置を決める方式を採用する。Compositionによる構築を使用し、構築関数の再実行と表示要素の対応付けは[UI-0002](UI-0002-widget-tree-and-composition.md#構築関数の再実行による動的な子の変更)に従う。再構築とlayoutは別段階とし、layout・入力・描画で共通の表示要素のツリーを使う。現在の静的ツリーの実装に対する宣言と表示状態の分離は、reconcilerの実装で整理する。
 
 ## 決定
 
