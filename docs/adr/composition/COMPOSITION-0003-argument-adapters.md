@@ -67,6 +67,122 @@ AttachToは対象自身が所有する受動的な設定情報だけを登録し
 
 publicな通常のgeneric struct一引数でない型（ref structや未構築のgeneric外側型を持つadapterを含む）、閉じた型がIComposeArgumentを実装しない場合、型制約不一致、非対応member、アクセス不能、生成名衝突は既存LYC001のerrorで拒否する。adapterのconstructorやGetInitialValueをGenerator自身が実行して検証しない。実行時reflection、DynamicInvoke、新しいruntimeの作成は行わない。
 
+## コード例と実行時の動き
+
+### UIに依存しない最小例
+
+次の`Source<T>`は値の読み直しを説明するための単純な箱で、Signalではなく、変更通知も持たない。`Arg<T>`は通常値またはその箱を受け取る利用側のadapterである。この例ではhostが明示的に再構築するため、`AttachTo`に保存する付加情報はない。
+
+```csharp
+using Lumyte.Composition;
+
+namespace AdapterExample;
+
+public sealed class Source<T>(T value)
+{
+    public T Value { get; set; } = value;
+}
+
+public readonly struct Arg<T> : IComposeArgument<T>
+{
+    private readonly T _constant;
+    private readonly Source<T>? _source;
+
+    private Arg(T constant, Source<T>? source)
+    {
+        _constant = constant;
+        _source = source;
+        IsSpecified = true;
+    }
+
+    public bool IsSpecified { get; }
+
+    public static implicit operator Arg<T>(T value) => new(value, null);
+
+    public static Arg<T> From(Source<T> source) => new(default!, source);
+
+    public T GetInitialValue() => _source is { } source ? source.Value : _constant;
+
+    public void AttachTo<TTarget>(TTarget target, object memberKey, T initialValue,
+        Action<TTarget, T> setter) where TTarget : class
+    {
+        // この例では購読もsetterの再実行も行わない。
+    }
+}
+
+public static partial class Compose
+{
+    public static partial class Definitions
+    {
+        [Composable, ComposeArgumentAdapter(typeof(Arg<>))]
+        public partial class Gauge : ICompositionRebuildable
+        {
+            [ComposeParameter]
+            public int Value { get; set; } = 10;
+
+            [ComposeParameter]
+            public string? Label { get; set; } = "default label";
+
+            [ComposeParameter]
+            public Action? OnClick { get; set; }
+
+            public Func<object> Factory { get; private set; } = null!;
+
+            void ICompositionRebuildable.SetCompositionFactory(Func<object> factory)
+                => Factory = factory;
+        }
+    }
+}
+```
+
+この定義から生成されたfactoryは、`value`を`Arg<int>`、`label`を`Arg<string?>`で受け取る。delegateの`onClick`は`Action?`のままなので、lambdaをそのまま渡せる。利用側のコードは次のようになる。
+
+```csharp
+using AdapterExample;
+using static AdapterExample.Compose;
+
+var source = new Source<int>(20);
+int clicks = 0;
+var first = Gauge(value: Arg<int>.From(source), onClick: () => clicks++);
+// first.Value == 20。GetInitialValue → 構築 → AttachTo → recipe登録が完了。
+
+source.Value = 30;
+// first.Valueは20のまま。Compositionは購読や既存宣言の変更を行わない。
+
+var next = (Compose.Definitions.Gauge)first.Factory();
+// hostがrecipeを実行したので、同じsourceを読み直し、next.Value == 30。
+// ReferenceEquals(first, next) == false。first.Valueは20のまま。
+next.OnClick!(); // clicks == 1。callbackも引き継がれる。
+
+var omitted = Gauge();                          // Value == 10, Label == "default label"
+var explicitZero = Gauge(value: 0);             // Value == 0
+var explicitNull = Gauge(label: (string?)null); // Label == null
+var omittedAdapter = Gauge(value: default(Arg<int>)); // Value == 10
+```
+
+`default(Arg<int>)`は未指定だが、`0`からの暗黙変換では`IsSpecified == true`になる。明示した`null`も同じく指定済みである。requiredな変更可能propertyでは未指定adapterが例外になり、init-only propertyはadapterを使わず、通常の値を受け取る。
+
+`with`を指定した場合は、初期property設定の後、`AttachTo`の前に実行される。recipe実行でも同じ`with`が再実行されるため、そこに書いた副作用も繰り返される。`AttachTo`に渡す`initialValue`は`with`実行前に読み取った値である。
+
+### UIとSignalを組み合わせる場合
+
+以下はUIスタック側の`UiArgument<T>`を使う例であり、上の最小adapterとは別の実装である。Composition単体の参照だけではUIやSignalsは提供されない。
+
+```csharp
+using Lumyte.Signals;
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+// Widthのproperty型float?に合わせたSignal。adapterもUiArgument<float?>になる。
+var width = Signal.Create<float?>(100);
+var constant = Rectangle(width: 100);
+var reactive = Rectangle(width: width);
+```
+
+UIのWidget基底型には`[ComposeArgumentAdapter(typeof(UiArgument<>))]`がある。`Rectangle(width: width)`では`UiArgument<float?>`への暗黙変換後、`GetInitialValue`で現在値を読み、`AttachTo`でsourceと初期値の比較情報をWidgetへ受動的に登録する。この時点では購読を開始しない。
+
+その宣言を`UiSurface`へ接続すると、UIが依存関係の追跡と寿命を管理する。Signalの変更を検知したUIは、登録されたrecipeで新しい宣言を構築し、ツリーへ反映する。通常のSignal更新で以前のRectangleの`Width`を書き換えることはない。上の`reactive`は以前の宣言を指したままであり、新しい宣言はsurfaceが保持する。アニメーションの表示値を扱う専用経路はUI側の責務で、この契約だけでは開始しない。
+
 ## 検討した代替案
 
 - CompositionへSignal型を直接追加するとUI以外の構築基盤もSignalsへ依存する。genericなadapter契約で分離する。
