@@ -183,6 +183,49 @@ UIのWidget基底型には`[ComposeArgumentAdapter(typeof(UiArgument<>))]`があ
 
 その宣言を`UiSurface`へ接続すると、UIが依存関係の追跡と寿命を管理する。Signalの変更を検知したUIは、登録されたrecipeで新しい宣言を構築し、ツリーへ反映する。通常のSignal更新で以前のRectangleの`Width`を書き換えることはない。上の`reactive`は以前の宣言を指したままであり、新しい宣言はsurfaceが保持する。アニメーションの表示値を扱う専用経路はUI側の責務で、この契約だけでは開始しない。
 
+### Signalを含むテキストテンプレート（追加設計・未実装）
+
+文字列propertyは、文字列リテラル、通常のstring値、`Signal<string>`/`Computed<string>`だけでなく、固定文字列と複数のSignalを組み合わせたテキストテンプレートも同じ値引数で受け取れる必要がある。テンプレートは`Computed<string>`へ変換し、既存のadapter契約を利用する。Compositionへ文字列専用契約やSignals依存を追加しない。
+
+現行APIでも次のように表現できる。UIの文字列propertyへ渡す前の引数を示す。
+
+```csharp
+using Lumyte.Signals;
+using Lumyte.UI;
+
+var name = Signal.Create("Alice");
+var count = Signal.Create(3);
+
+UiArgument<string> literal = "固定テキスト";
+string message = "通常のstring値";
+UiArgument<string> constant = message;
+UiArgument<string> direct = name;
+
+var summary = Signal.Computed(() => $"{name.Value}さん: {count.Value:N0}件");
+UiArgument<string> template = summary;
+```
+
+追加する簡略APIは、UIから独立したLumyte.Signals側の`Signal.Text`とする。以下は予定APIであり、現時点では上記の`Signal.Computed`を使用する。
+
+```csharp
+// 予定API。補間handlerがSignalそのものを保持し、評価時にValueを読む。
+Computed<string> summary = Signal.Text($"{name}さん: {count:N0}件");
+UiArgument<string> template = summary;
+```
+
+`Signal.Text`はC#のcustom interpolated string handlerでリテラル部分と補間要素を保存し、同期的・遅延評価の`Computed<string>`を返す。必要な契約は次のとおりとする。
+
+- リテラル部分と通常値は作成時に保持する。通常値の補間は作成時に文字列化し、以後の更新対象にしない。通常のstringを渡す場合にSignalの作成を要求しない。
+- `Signal<T>`、`Computed<T>`、`IReadSignal<T>`の補間はsource参照を保持する。評価時に`Value`を読み、依存関係をComputedへ登録する。Signalオブジェクトの`ToString()`で代用しない。
+- 汎用の通常値用`AppendFormatted<T>`にSignalが吸収されないよう、具体的な`Signal<T>`/`Computed<T>`用overloadも定義する。format/alignmentを含む各形で同じ判別を保証する。
+- `:N0`などのformat、`,6`などのalignment、null、リテラルの波括弧を扱う。既定のformat providerは作成時の`CultureInfo.CurrentCulture`を保持し、更新中に暗黙に切り替えない。
+- source変更時はテンプレートの文字列を再評価し、結果が等しければ下流への不要な更新を抑える。通常値の文字列片を再整形しないが、変更時の文字列生成や連結の割り当てがゼロになるとは扱わない。
+- テンプレート生成・未接続状態ではUI購読を開始しない。UIは既存のComputed引数として接続・切断する。共有したテンプレートを一つのWidgetが外れたことだけで破棄せず、Computedの既存の観測者管理に従う。
+
+`$"{count.Value}件"`を通常のstringとして渡す場合、補間時点で値が確定する。構築関数内のValue読出しをUIが追跡すれば再構築で更新できるが、そのstring自体がSignal参照を保持するわけではない。`Signal.Text($"{count}件")`はSignal参照を保持したまま文字列引数へ渡すためのAPIとする。任意の式・分岐・変換が必要な場合は`Signal.Computed(() => ...)`を使用する。
+
+検証時は通常値と各source型の混在、複数source、同じsourceの複数回補間、format/alignment/null、初期評価前の変更、共有・切断・再接続、文字列結果が不変の更新を確認する。この追加APIとテストはSignalsを実装するUIスタック側PRの範囲であり、main向けComposition拡張PRでは実装しない。
+
 ## 検討した代替案
 
 - CompositionへSignal型を直接追加するとUI以外の構築基盤もSignalsへ依存する。genericなadapter契約で分離する。
