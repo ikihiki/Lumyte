@@ -12,7 +12,7 @@ namespace Lumyte.Composition.Generators;
 
 /// <summary>Generates delegate factories, content indexers, and target operation extensions.</summary>
 [Generator(LanguageNames.CSharp)]
-public sealed class CompositionGenerator : IIncrementalGenerator
+public sealed partial class CompositionGenerator : IIncrementalGenerator
 {
     private const string Prefix = "Lumyte.Composition.";
     private static readonly DiagnosticDescriptor _invalidDeclaration = new(
@@ -32,8 +32,14 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 static (node, _) => node is TypeDeclarationSyntax,
                 static (attribute, _) => (INamedTypeSymbol)attribute.TargetSymbol)
             .Collect();
-        context.RegisterSourceOutput(components.Combine(context.CompilationProvider), static (output, input) =>
-            Generate(output, input.Left, input.Right));
+        IncrementalValueProvider<ImmutableArray<IMethodSymbol>> functions = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                Prefix + "ComposableAttribute",
+                static (node, _) => node is MethodDeclarationSyntax,
+                static (attribute, _) => (IMethodSymbol)attribute.TargetSymbol)
+            .Collect();
+        context.RegisterSourceOutput(components.Combine(functions).Combine(context.CompilationProvider), static (output, input) =>
+            Generate(output, input.Left.Left, input.Left.Right, input.Right));
         IncrementalValuesProvider<IMethodSymbol> actions = context.SyntaxProvider.ForAttributeWithMetadataName(
             Prefix + "ComposeActionAttribute",
             static (node, _) => node is MethodDeclarationSyntax,
@@ -64,7 +70,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         });
     }
 
-    private static void Generate(SourceProductionContext context, ImmutableArray<INamedTypeSymbol> components, Compilation compilation)
+    private static void Generate(SourceProductionContext context, ImmutableArray<INamedTypeSymbol> components, ImmutableArray<IMethodSymbol> functions, Compilation compilation)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (INamedTypeSymbol component in components.Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default))
@@ -93,9 +99,11 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 continue;
             }
 
-            string source = Render(component, propertyName);
+            string source = Render(component, propertyName, compilation);
             context.AddSource(component.ToDisplayString().Replace('.', '_').Replace('<', '_').Replace('>', '_').Replace(',', '_') + ".Composition.g.cs", SourceText.From(source, Encoding.UTF8));
         }
+
+        GenerateFunctions(context, functions, compilation, names);
     }
 
     private static string? Validate(INamedTypeSymbol component, Compilation compilation, out string factoryName, out string propertyName)
@@ -149,6 +157,12 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             return "The generated extension class conflicts with an existing namespace type.";
         }
 
+        string? adapterFailure = ValidateAdapter(component, compilation);
+        if (adapterFailure is not null)
+        {
+            return adapterFailure;
+        }
+
         ISymbol[] all = Members(component).ToArray();
         ISymbol[] parameters = all.Where(member => HasAttribute(member, "ComposeParameter")).ToArray();
         ISymbol[] contents = all.Where(member => HasAttribute(member, "ComposeContent")).ToArray();
@@ -160,11 +174,18 @@ public sealed class CompositionGenerator : IIncrementalGenerator
                 return "Hidden or overridden composition members are unsupported.";
             }
 
-            if (!Writable(member) || member.IsStatic || !compilation.IsSymbolAccessibleWithin(member, component)
-                || (member is IPropertySymbol property && (property.IsIndexer || property.SetMethod is null
-                    || !compilation.IsSymbolAccessibleWithin(property.SetMethod, component))))
+            bool managedContent = contents.Contains(member, SymbolEqualityComparer.Default) && ManagedContentItem(MemberType(member)) is not null;
+            if (managedContent && !MemberType(member).IsReferenceType)
             {
-                return "Composition member '" + member.Name + "' must be writable and accessible from its component.";
+                return "Managed content must be a reference type so initialization updates the owned storage.";
+            }
+
+            if ((!managedContent && !Writable(member)) || member.IsStatic || !compilation.IsSymbolAccessibleWithin(member, component)
+                || (member is IPropertySymbol property && (property.IsIndexer || (managedContent
+                    ? property.GetMethod is null || !compilation.IsSymbolAccessibleWithin(property.GetMethod, component)
+                    : property.SetMethod is null || !compilation.IsSymbolAccessibleWithin(property.SetMethod, component)))))
+            {
+                return "Composition member '" + member.Name + "' must be accessible and support generated assignment or initialization.";
             }
 
             if (HasAttribute(member, "ComposeParameter") && HasAttribute(member, "ComposeContent"))
@@ -181,7 +202,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         foreach (ISymbol member in parameters)
         {
             string name = ParameterName(member);
-            if (!ValidName(name) || name == "with" || !parameterNames.Add(name))
+            if (!ValidName(name) || name == "with" || (ArgumentAdapter(component) is not null && (name is "instance" or "rebuildable" || name.StartsWith("__initial", StringComparison.Ordinal))) || !parameterNames.Add(name))
             {
                 return "Factory parameter names must be unique and cannot be 'with'.";
             }
@@ -193,9 +214,24 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         }
 
         if (contents.Length > 1 || (contents.Length == 1 && (ContentItem(MemberType(contents[0])) is null
-            || (contents[0] is IPropertySymbol contentProperty && contentProperty.SetMethod!.IsInitOnly))))
+            || (contents[0] is IPropertySymbol contentProperty && contentProperty.SetMethod?.IsInitOnly == true))))
         {
-            return "Use at most one settable array or supported collection interface for content; init-only content is unsupported.";
+            return "Use at most one supported collection or managed content member; init-only content is unsupported.";
+        }
+
+        for (INamedTypeSymbol? ancestor = component; ancestor is not null; ancestor = ancestor.BaseType)
+        {
+            foreach (AttributeData policy in ancestor.GetAttributes().Where(attribute => attribute.AttributeClass?.MetadataName == "CompositionContentTypeAttribute`1"
+                && attribute.AttributeClass.ContainingNamespace.ToDisplayString() == "Lumyte.Composition"))
+            {
+                ITypeSymbol allowed = policy.AttributeClass!.TypeArguments[0];
+                if (contents.Any(content => !SymbolEqualityComparer.Default.Equals(MemberType(content), allowed)
+                    || (content is IPropertySymbol property && property.SetMethod is not null)
+                    || (content is IFieldSymbol field && !field.IsReadOnly)))
+                {
+                    return "Content must use the inherited CompositionContentType with a getter-only property or readonly field.";
+                }
+            }
         }
 
         if ((contents.Length != 0 || component.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))) && component.GetMembers().OfType<IPropertySymbol>().Any(property => property.IsIndexer))
@@ -236,7 +272,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             if (!method.IsStatic || !method.ReturnsVoid || method.IsAsync || method.Arity != 0
                 || method.MethodKind != MethodKind.Ordinary || method.Parameters.Length != 2
                 || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, component)
-                || ContentItem(method.Parameters[1].Type) is null
+                || ContentItem(method.Parameters[1].Type) is null || ManagedContentItem(method.Parameters[1].Type) is not null
                 || method.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.IsOptional || parameter.IsParams || !PublicType(parameter.Type)))
             {
                 return "ComposeSlot requires a synchronous non-generic static void method accepting its component and a supported child collection.";
@@ -263,11 +299,11 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static string Render(INamedTypeSymbol component, string propertyName)
+    private static string Render(INamedTypeSymbol component, string propertyName, Compilation compilation)
     {
         INamedTypeSymbol outer = component.ContainingType.ContainingType;
         ISymbol[] parameters = Members(component).Where(member => HasAttribute(member, "ComposeParameter"))
-            .OrderByDescending(Required).ToArray();
+            .OrderByDescending(IsRequiredArgument).ToArray();
         ISymbol? content = Members(component).FirstOrDefault(member => HasAttribute(member, "ComposeContent"));
         IMethodSymbol[] actions = component.GetMembers().OfType<IMethodSymbol>().Where(member => HasAttribute(member, "ComposeAction"))
             .OrderBy(member => member.Name, StringComparer.Ordinal).ToArray();
@@ -276,7 +312,8 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         string type = TypeName(component);
         string generics = TypeParameters(component);
         string constraints = Constraints(component);
-        string signature = string.Join(", ", parameters.Select(parameter => ParameterDeclaration(parameter)).Concat(new[]
+        INamedTypeSymbol? adapter = ArgumentAdapter(component);
+        string signature = string.Join(", ", parameters.Select(parameter => ParameterDeclaration(parameter, adapter: adapter)).Concat(new[]
         {
             "global::System.Collections.Generic.IReadOnlyList<global::System.Action<" + type + ">>? @with = null",
         }));
@@ -340,40 +377,113 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         foreach (ISymbol parameter in parameters)
         {
             string name = Escape(ParameterName(parameter));
-            if (!Required(parameter))
+            bool direct = Required(parameter) || IsDelegateParameter(parameter);
+            if (!direct)
             {
                 builder.Append("if (").Append(name).AppendLine(".HasValue)\n{");
             }
 
             builder.Append("this.").Append(Escape(parameter.Name)).Append(" = ").Append(name)
-                .AppendLine(Required(parameter) ? ";" : ".Value;\n}");
+                .AppendLine(direct ? ";" : ".Value;\n}");
         }
 
         builder.AppendLine("}");
-        builder.Append("internal static ").Append(type).Append(" __LumyteCreate(").Append(signature).AppendLine(")\n{");
-        builder.Append("var instance = new ").Append(type).Append("(default(__LumyteConstructor)");
-        foreach (ISymbol parameter in parameters)
+        if (adapter is not null)
         {
-            builder.Append(", ").Append(Escape(ParameterName(parameter)));
+            for (int index = 0; index < parameters.Length; index++)
+            {
+                ISymbol parameter = parameters[index];
+                if (UsesAdapter(parameter, adapter))
+                {
+                    builder.Append("private static readonly object __LumyteArgumentKey").Append(index).AppendLine(" = new object();");
+                    builder.Append("private static void __LumyteArgumentSet").Append(index).Append('(').Append(type).Append(" target, ")
+                        .Append(TypeName(MemberType(parameter))).Append(" value) => target.").Append(Escape(parameter.Name)).AppendLine(" = value;");
+                }
+            }
+        }
+
+        builder.Append("internal static ").Append(type).Append(" __LumyteCreate(").Append(signature).AppendLine(")\n{");
+        if (adapter is not null)
+        {
+            foreach (ISymbol parameter in parameters.Where(parameter => UsesAdapter(parameter, adapter) && Required(parameter)))
+            {
+                string name = Escape(ParameterName(parameter));
+                builder.Append("if (!").Append(name).Append(".IsSpecified) throw new global::System.ArgumentException(\"A required argument was omitted.\", nameof(").Append(name).AppendLine("));");
+            }
+
+            for (int index = 0; index < parameters.Length; index++)
+            {
+                ISymbol parameter = parameters[index];
+                if (UsesAdapter(parameter, adapter))
+                {
+                    string name = Escape(ParameterName(parameter));
+                    builder.Append(TypeName(MemberType(parameter))).Append(" __initial").Append(index).Append(" = ")
+                        .Append(name).Append(".IsSpecified ? ").Append(name).AppendLine(".GetInitialValue() : default!;");
+                }
+            }
+        }
+
+        builder.Append("var instance = new ").Append(type).Append("(default(__LumyteConstructor)");
+        for (int index = 0; index < parameters.Length; index++)
+        {
+            ISymbol parameter = parameters[index];
+            string name = Escape(ParameterName(parameter));
+            builder.Append(", ");
+            if (UsesAdapter(parameter, adapter))
+            {
+                if (Required(parameter))
+                {
+                    builder.Append("__initial").Append(index);
+                }
+                else
+                {
+                    builder.Append(name).Append(".IsSpecified ? new global::Lumyte.Composition.Optional<").Append(TypeName(MemberType(parameter)))
+                        .Append(">(__initial").Append(index).Append(") : default(global::Lumyte.Composition.Optional<").Append(TypeName(MemberType(parameter))).Append(">)");
+                }
+            }
+            else
+            {
+                builder.Append(name);
+            }
         }
 
         builder.AppendLine(");\nif (@with is not null)\n{");
         builder.AppendLine("foreach (var action in @with)\n{\nif (action is null) throw new global::System.ArgumentException(\"Null composition action.\", nameof(@with));\n}");
-        builder.AppendLine("foreach (var action in @with)\n{\naction(instance);\n}\n}\nreturn instance;\n}");
+        builder.AppendLine("foreach (var action in @with)\n{\naction(instance);\n}\n}");
+        if (adapter is not null)
+        {
+            for (int index = 0; index < parameters.Length; index++)
+            {
+                ISymbol parameter = parameters[index];
+                if (UsesAdapter(parameter, adapter))
+                {
+                    string name = Escape(ParameterName(parameter));
+                    builder.Append("if (").Append(name).Append(".IsSpecified) ").Append(name).Append(".AttachTo(instance, __LumyteArgumentKey").Append(index)
+                        .Append(", __initial").Append(index).Append(", __LumyteArgumentSet").Append(index).AppendLine(");");
+                }
+            }
+
+            builder.Append("if ((object)instance is global::Lumyte.Composition.ICompositionRebuildable rebuildable) rebuildable.SetCompositionFactory(() => __LumyteCreate(")
+                .Append(string.Join(", ", parameters.Select(parameter => Escape(ParameterName(parameter))).Concat(new[] { "@with" }))).AppendLine("));");
+        }
+
+        builder.AppendLine("return instance;\n}");
         if (content is not null && slots.Length == 0)
         {
-            builder.AppendLine("/// <summary>Replaces children and returns this same instance.</summary>");
+            builder.AppendLine("/// <summary>Applies ordinary content and returns this same instance.</summary>");
             builder.AppendLine("/// <param name=\"content\">The ordered children.</param>");
             builder.AppendLine("/// <returns>This instance.</returns>");
-            builder.Append("public ").Append(type).Append(" this[params ").Append(TypeName(ContentItem(MemberType(content))!))
+            builder.Append(InheritsContentIndexer(component, ContentItem(MemberType(content))!, compilation) ? "public new " : "public ")
+                .Append(type).Append(" this[params ").Append(TypeName(ContentItem(MemberType(content))!))
                 .AppendLine("[] content]\n{\nget\n{");
             builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
-            builder.Append("this.").Append(Escape(content.Name)).AppendLine(" = content;\nreturn this;\n}\n}");
+            builder.AppendLine(ContentAssignment(content, "content"));
+            builder.AppendLine("return this;\n}\n}");
         }
 
         if (slots.Length != 0)
         {
-            RenderSlotIndexer(builder, type, content);
+            RenderSlotIndexer(builder, type, content, InheritsCompositionChild(component, compilation));
             foreach (IMethodSymbol slot in slots)
             {
                 builder.Append("internal static global::Lumyte.Composition.CompositionSlot<").Append(type).Append(", ")
@@ -431,7 +541,22 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         return builder.ToString();
     }
 
-    private static void RenderSlotIndexer(StringBuilder builder, string type, ISymbol? content)
+    private static bool InheritsCompositionChild(INamedTypeSymbol component, Compilation compilation)
+    {
+        for (INamedTypeSymbol? ancestor = component.BaseType; ancestor is not null; ancestor = ancestor.BaseType)
+        {
+            if (ancestor.GetMembers("CompositionChild").Any(member => compilation.IsSymbolAccessibleWithin(member, component))
+                || (HasAttribute(ancestor, "Composable") && ancestor.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))
+                    && Members(ancestor).Any(member => HasAttribute(member, "ComposeContent"))))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void RenderSlotIndexer(StringBuilder builder, string type, ISymbol? content, bool hidesInheritedChild)
     {
         string assignment = "global::Lumyte.Composition.CompositionSlotAssignment<" + type + ">";
         if (content is null)
@@ -444,7 +569,7 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
         string child = TypeName(ContentItem(MemberType(content))!);
         builder.AppendLine("/// <summary>Represents an ordinary child or a named slot assignment.</summary>");
-        builder.AppendLine("public readonly struct CompositionChild\n{");
+        builder.AppendLine(hidesInheritedChild ? "public new readonly struct CompositionChild\n{" : "public readonly struct CompositionChild\n{");
         builder.Append("internal readonly ").Append(child).AppendLine(" Child;");
         builder.Append("internal readonly ").Append(assignment).AppendLine(" Slot;");
         builder.AppendLine("internal readonly bool IsChild;");
@@ -454,22 +579,24 @@ public sealed class CompositionGenerator : IIncrementalGenerator
         builder.Append("public static implicit operator CompositionChild(").Append(child).AppendLine(" child) => new(child);");
         builder.AppendLine("/// <summary>Wraps a named slot assignment.</summary>");
         builder.Append("public static implicit operator CompositionChild(").Append(assignment).AppendLine(" slot) => new(slot);\n}");
-        builder.AppendLine("/// <summary>Replaces ordinary children when present and applies named slots in order.</summary>");
+        builder.AppendLine("/// <summary>Applies ordinary content when present and named slots in order.</summary>");
         builder.Append("public ").Append(type).AppendLine(" this[params CompositionChild[] content]\n{\nget\n{");
         builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
         builder.Append("var children = new global::System.Collections.Generic.List<").Append(child).AppendLine(">();");
         builder.AppendLine("foreach (var item in content) { if (item.IsChild) children.Add(item.Child); }");
-        builder.Append("if (children.Count != 0 || content.Length == 0) this.").Append(Escape(content.Name)).AppendLine(" = children.ToArray();");
+        builder.Append("if (children.Count != 0 || content.Length == 0) ").AppendLine(ContentAssignment(content, "children.ToArray()"));
         builder.AppendLine("foreach (var item in content) { if (!item.IsChild) item.Slot.Apply(this); }\nreturn this;\n}\n}");
     }
 
     private static string TypeParameters(INamedTypeSymbol type) => type.Arity == 0 ? string.Empty
         : "<" + string.Join(", ", type.TypeParameters.Select(parameter => Escape(parameter.Name))) + ">";
 
-    private static string Constraints(INamedTypeSymbol type)
+    private static string Constraints(INamedTypeSymbol type) => Constraints(type.TypeParameters);
+
+    private static string Constraints(IEnumerable<ITypeParameterSymbol> parameters)
     {
         var builder = new StringBuilder();
-        foreach (ITypeParameterSymbol parameter in type.TypeParameters)
+        foreach (ITypeParameterSymbol parameter in parameters)
         {
             var items = new List<string>();
             if (parameter.HasUnmanagedTypeConstraint)
@@ -515,6 +642,30 @@ public sealed class CompositionGenerator : IIncrementalGenerator
     private static string ActionArguments(IMethodSymbol method) => string.Join(", ", method.Parameters.Skip(1)
         .Select(parameter => Escape(parameter.Name)));
 
+    private static bool InheritsContentIndexer(INamedTypeSymbol component, ITypeSymbol itemType, Compilation compilation)
+    {
+        for (INamedTypeSymbol? ancestor = component.BaseType; ancestor is not null; ancestor = ancestor.BaseType)
+        {
+            if (ancestor.GetMembers().OfType<IPropertySymbol>().Any(property => property.IsIndexer
+                && compilation.IsSymbolAccessibleWithin(property, component)
+                && property.Parameters.Length == 1 && property.Parameters[0].Type is IArrayTypeSymbol array
+                && SymbolEqualityComparer.Default.Equals(array.ElementType, itemType)))
+            {
+                return true;
+            }
+
+            ISymbol? content = Members(ancestor).FirstOrDefault(member => HasAttribute(member, "ComposeContent"));
+            if (HasAttribute(ancestor, "Composable") && content is not null
+                && !ancestor.GetMembers().Any(member => HasAttribute(member, "ComposeSlot"))
+                && SymbolEqualityComparer.Default.Equals(ContentItem(MemberType(content)), itemType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static IEnumerable<ISymbol> Members(INamedTypeSymbol component)
     {
         for (INamedTypeSymbol? type = component; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
@@ -557,6 +708,30 @@ public sealed class CompositionGenerator : IIncrementalGenerator
 
     private static ITypeSymbol MemberType(ISymbol member) => member is IFieldSymbol field ? field.Type : ((IPropertySymbol)member).Type;
 
+    private static string ContentAssignment(ISymbol content, string value)
+    {
+        ITypeSymbol? item = ManagedContentItem(MemberType(content));
+        return item is null
+            ? "this." + Escape(content.Name) + " = " + value + ";"
+            : "((global::Lumyte.Composition.ICompositionContent<" + TypeName(item) + ">)this." + Escape(content.Name) + ").Initialize(" + value + ");";
+    }
+
+    private static ITypeSymbol? ManagedContentItem(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol named)
+        {
+            foreach (INamedTypeSymbol candidate in named.AllInterfaces.Prepend(named))
+            {
+                if (candidate.OriginalDefinition.ToDisplayString() == "Lumyte.Composition.ICompositionContent<T>")
+                {
+                    return candidate.TypeArguments[0];
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static ITypeSymbol? ContentItem(ITypeSymbol type)
     {
         if (type is IArrayTypeSymbol array)
@@ -571,12 +746,127 @@ public sealed class CompositionGenerator : IIncrementalGenerator
             return named.TypeArguments[0];
         }
 
+        return ManagedContentItem(type);
+    }
+
+    private static INamedTypeSymbol? ArgumentAdapter(INamedTypeSymbol component)
+    {
+        for (INamedTypeSymbol? type = component; type is not null; type = type.BaseType)
+        {
+            AttributeData? attribute = type.GetAttributes().FirstOrDefault(value => value.AttributeClass?.ToDisplayString() == Prefix + "ComposeArgumentAdapterAttribute");
+            if (attribute is not null && attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is INamedTypeSymbol adapter)
+            {
+                return adapter.ConstructedFrom;
+            }
+        }
+
         return null;
     }
 
-    private static string ParameterDeclaration(ISymbol parameter, bool optionalDefault = true)
+    private static bool UsesAdapter(ISymbol parameter, INamedTypeSymbol? adapter) => adapter is not null && !IsDelegateParameter(parameter)
+        && !(parameter is IPropertySymbol property && property.SetMethod?.IsInitOnly == true);
+
+    private static string? ValidateAdapter(INamedTypeSymbol component, Compilation compilation)
+    {
+        INamedTypeSymbol? selected = null;
+        for (INamedTypeSymbol? type = component; type is not null; type = type.BaseType)
+        {
+            foreach (AttributeData attribute in type.GetAttributes().Where(value => value.AttributeClass?.ToDisplayString() == Prefix + "ComposeArgumentAdapterAttribute"))
+            {
+                if (attribute.ConstructorArguments.Length != 1 || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol adapter || !adapter.IsUnboundGenericType
+                    || adapter.Arity != 1 || adapter.TypeKind != TypeKind.Struct || adapter.IsRefLikeType || adapter.ContainingType?.IsGenericType == true || !PublicType(adapter.ConstructedFrom))
+                {
+                    return "An argument adapter must be a public unbound generic struct with one type parameter.";
+                }
+
+                adapter = adapter.ConstructedFrom;
+                if (selected is not null && !SymbolEqualityComparer.Default.Equals(selected, adapter))
+                {
+                    return "Conflicting inherited argument adapters.";
+                }
+
+                selected = adapter;
+            }
+        }
+
+        if (selected is null)
+        {
+            return null;
+        }
+
+        if (component.GetMembers().Any(member => member.Name.StartsWith("__LumyteArgumentKey", StringComparison.Ordinal)
+            || member.Name.StartsWith("__LumyteArgumentSet", StringComparison.Ordinal)))
+        {
+            return "An argument adapter generated member name conflicts with an existing member.";
+        }
+
+        ITypeParameterSymbol constraint = selected.TypeParameters[0];
+        foreach (ISymbol member in Members(component).Where(value => HasAttribute(value, "ComposeParameter") && UsesAdapter(value, selected)))
+        {
+            ITypeSymbol value = MemberType(member);
+            if ((constraint.HasValueTypeConstraint && (!value.IsValueType || value.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T))
+                || (constraint.HasReferenceTypeConstraint && !value.IsReferenceType) || (constraint.HasUnmanagedTypeConstraint && !value.IsUnmanagedType)
+                || (constraint.HasNotNullConstraint && value.NullableAnnotation == NullableAnnotation.Annotated)
+                || (constraint.HasConstructorConstraint && !value.IsValueType && !(value is ITypeParameterSymbol parameter && parameter.HasConstructorConstraint)
+                    && !(value is INamedTypeSymbol named && !named.IsAbstract && named.InstanceConstructors.Any(constructor => constructor.DeclaredAccessibility == Accessibility.Public && constructor.Parameters.Length == 0)))
+                || constraint.ConstraintTypes.Any(required => !compilation.ClassifyCommonConversion(value, SubstituteConstraint(required, constraint, value, compilation)).IsImplicit))
+            {
+                return "The member type does not satisfy argument adapter constraints.";
+            }
+
+            INamedTypeSymbol closed = selected.Construct(value);
+            if (!closed.AllInterfaces.Any(contract => contract.OriginalDefinition.ToDisplayString() == Prefix + "IComposeArgument<T>"
+                && SymbolEqualityComparer.Default.Equals(contract.TypeArguments[0], value)))
+            {
+                return "The adapter must implement IComposeArgument for the exact member type.";
+            }
+        }
+
+        return null;
+    }
+
+    private static ITypeSymbol SubstituteConstraint(ITypeSymbol type, ITypeParameterSymbol parameter, ITypeSymbol value, Compilation compilation)
+    {
+        if (SymbolEqualityComparer.Default.Equals(type, parameter))
+        {
+            return value;
+        }
+
+        if (type is IArrayTypeSymbol array)
+        {
+            return compilation.CreateArrayTypeSymbol(SubstituteConstraint(array.ElementType, parameter, value, compilation), array.Rank);
+        }
+
+        if (type is not INamedTypeSymbol named)
+        {
+            return type;
+        }
+
+        ITypeSymbol[] arguments = named.TypeArguments.Select(argument => SubstituteConstraint(argument, parameter, value, compilation)).ToArray();
+        if (named.ContainingType is { } containing)
+        {
+            var substituted = (INamedTypeSymbol)SubstituteConstraint(containing, parameter, value, compilation);
+            named = substituted.GetTypeMembers(named.Name, named.Arity)
+                .First(candidate => SymbolEqualityComparer.Default.Equals(candidate.OriginalDefinition, named.OriginalDefinition));
+        }
+
+        return named.Arity == 0 ? named : named.ConstructedFrom.Construct(arguments);
+    }
+
+    private static string ParameterDeclaration(ISymbol parameter, bool optionalDefault = true, INamedTypeSymbol? adapter = null)
     {
         string type = TypeName(MemberType(parameter));
+        if (UsesAdapter(parameter, adapter))
+        {
+            return TypeName(adapter!.Construct(MemberType(parameter))) + " " + Escape(ParameterName(parameter))
+                + (optionalDefault && !Required(parameter) ? " = default" : string.Empty);
+        }
+
+        if (IsDelegateParameter(parameter))
+        {
+            return type + " " + Escape(ParameterName(parameter)) + (optionalDefault && !IsRequiredArgument(parameter) ? " = null" : string.Empty);
+        }
+
         return Required(parameter) ? type + " " + Escape(ParameterName(parameter))
             : "global::Lumyte.Composition.Optional<" + type + "> " + Escape(ParameterName(parameter)) + (optionalDefault ? " = default" : string.Empty);
     }
@@ -590,6 +880,11 @@ public sealed class CompositionGenerator : IIncrementalGenerator
     private static string TypeName(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
         .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
             | SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers | SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
+
+    private static bool IsDelegateParameter(ISymbol member) => MemberType(member).TypeKind == TypeKind.Delegate;
+
+    private static bool IsRequiredArgument(ISymbol member) => Required(member)
+        || (IsDelegateParameter(member) && MemberType(member).NullableAnnotation != NullableAnnotation.Annotated);
 
     private static bool HasAttribute(ISymbol member, string name) => member.GetAttributes().Any(attribute => IsAttribute(attribute, name));
 

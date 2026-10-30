@@ -7,6 +7,14 @@ namespace Lumyte.Composition.Tests;
 /// <summary>Tests generated factories and attached settings across an assembly boundary.</summary>
 public sealed class CompositionTests
 {
+    /// <summary>Checks the policy exposes its closed generic argument as the required content type.</summary>
+    [Fact]
+    public void GenericContentPolicyExposesItsTypeArgument()
+    {
+        var policy = new CompositionContentTypeAttribute<IReadOnlyList<int>>();
+        Assert.Equal(typeof(IReadOnlyList<int>), policy.ContentType);
+    }
+
     /// <summary>Tests the requested expression using only generated factories and extensions.</summary>
     [Fact]
     public void RequestedExpressionAttachesColumnToText()
