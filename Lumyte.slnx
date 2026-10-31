@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Sample/Lumyte.UI.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Resources.Sample/Lumyte.Resources.Sample.csproj" />

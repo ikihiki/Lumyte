@@ -1,10 +1,11 @@
 using System.Numerics;
+using Lumyte.Graphics.Drawing2D;
 using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
 namespace Lumyte.UI;
 
 /// <summary>Connects a widget tree with caller-managed synchronization.</summary>
-/// <remarks>Run layout and disposal sequentially; keep declarations unchanged during a pass.</remarks>
+/// <remarks>Run layout, recording and disposal sequentially; keep declarations unchanged during a pass.</remarks>
 public sealed partial class UiSurface : IDisposable
 {
     private Widget _root;
@@ -89,6 +90,31 @@ public sealed partial class UiSurface : IDisposable
         }
     }
 
+    /// <summary>Updates layout and records every visible widget into an active borrowed canvas.</summary>
+    /// <param name="canvas">A begun canvas whose transform and clip are restored, including on callback failure.</param>
+    /// <remarks>Does not clear or submit the target. After a failure, cancel the caller's entire recording.</remarks>
+    public void Record(DrawingCanvas2D canvas)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(canvas);
+
+        // Save also validates Begin before layout can invoke user code.
+        canvas.Save();
+        try
+        {
+            UpdateLayout();
+            if (!_isDisposed && _viewport.X > 0 && _viewport.Y > 0)
+            {
+                canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
+                RecordWidget(_root, canvas);
+            }
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+    }
+
     /// <summary>Disconnects the complete tree, preserving its structure and external resources.</summary>
     public void Dispose()
     {
@@ -105,6 +131,30 @@ public sealed partial class UiSurface : IDisposable
 
         _isDisposed = true;
         _pendingRebuild = null;
+    }
+
+    internal static void RecordWidget(Widget widget, DrawingCanvas2D canvas)
+    {
+        if (!widget.IsVisible)
+        {
+            return;
+        }
+
+        canvas.Save();
+        try
+        {
+            canvas.Translate(new(widget.Bounds.X, widget.Bounds.Y));
+            if (widget.ClipToBounds)
+            {
+                canvas.ClipRect(new(0, 0, widget.Size.X, widget.Size.Y));
+            }
+
+            widget.InvokeRecord(canvas);
+        }
+        finally
+        {
+            canvas.Restore();
+        }
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_isDisposed, this);
