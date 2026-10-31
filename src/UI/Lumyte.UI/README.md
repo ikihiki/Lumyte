@@ -1,6 +1,6 @@
 # Lumyte.UI
 
-Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。入力は後続PRで追加します。
+Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。ポインター配送・capture・callback引数にも対応します。キーボードfocusとWindow入力の接続は後続PRで追加します。
 
 ```csharp
 using Lumyte.UI;
@@ -95,3 +95,44 @@ dotnet test tests/Graphics/Lumyte.Graphics.Drawing2D.Tests -c Release
 命令snapshotの統合テストはDrawing2D.Testsに配置しています。実GPUの画素・連続frameの検証はGraphics.TestsのUiDrawingTestsを使い、実行環境で`LUMYTE_GRAPHICS_GPU_TESTS=1`を設定します。
 
 子コレクションの名前と役割は各コンポーネントが定義します。カスタムコンポーネントはconstructorでCreateChildrenを呼び、ForegroundやEmbeddeds等のget-onlyプロパティへ保持できます。Widget基盤は登録された全コレクションを所有権・接続・解除のために走査し、Background専用の保存領域は持ちません。配置・描画順は各コンポーネントの責務です。
+
+## ポインター入力
+
+```csharp
+using System.Numerics;
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+int clicks = 0;
+var button = Button(onClick: () => clicks++)[Panel(width: 80, height: 24)];
+using var surface = new UiSurface(Panel()[button]);
+surface.SetViewport(new Vector2(320, 200));
+surface.UpdateLayout(); // 入力配送の前に配置と入力情報を更新
+bool down = surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(10, 10)));
+bool pressed = button.IsPressed;
+bool up = surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(10, 10)));
+// down/upはtrue、押下時のpressedはtrue、clicksは1。Up後のIsPressedはfalse。
+surface.Dispatch(new UiFocusLostInput());
+```
+
+hostが対象surface、pointer ID、論理座標を選んで渡します。Window情報・DPI変換・ゲームへの入力消費の伝達は後続のhost接続の責務です。ホストは初回・表示状態変更後のUpdateLayoutを成功させてからDispatchします。Dispatchは配置・入力情報を更新せず、前面のhit要素から親へOnInputを配送します。透明な前面要素も背面のButtonを遮り、Buttonは自身の背景を入力へ公開しません。独自コンポーネントはGetInputChildrenで対象の子と後面→前面の順序を定義できます。返す列は重複のない直接の子だけとします。
+
+capture中は外へ移動してもUp/Cancelまで配送し、IsPressedは最後の位置がButton・viewport・祖先clipの内側かを表します。Upではowner/captureを先に解除してから、その時点のOnClickを一度呼びます。nullでも入力消費は同じです。callbackの例外は伝播し、押下状態は残りません。callbackによる次のDispatchやDisposeをphase検査で拒否しません。通常利用ではモデルを更新し、次の構築結果へ反映します。
+
+CancelとFocusLostはlayout・hit test・OnClickを実行せず、コンポーネントに喪失・取消を通知します。UpdateLayoutの例外ではその場で更新を中断し、途中結果を戻しません。hostは描画・通常入力を停止します。hostが配送を止める場合はFocusLostで残りを清掃し、消費済みの系列を物理終端までゲームへ転送しないよう管理します。Disposeも全captureを解除します。未処理の入力・未知pointer phaseはfalseです。作成threadへの固定、phase検査、lockは導入しません。
+
+[入力のADR](../../../docs/adr/ui/UI-0005-pointer-dispatch-and-capture.md)／[callback生成のADR](../../../docs/adr/composition/COMPOSITION-0002-callback-parameters.md)
+
+入力用の子列・geometry・clipは各Widget内に保存し、UpdateLayoutで更新します。独立した入力snapshotやButton矩形のmapは作りません。WidgetはButtonを参照・判定しません。UiSurfaceも具体的なコントロールを判定せず、hit要素から親へOnInputを配送します。Button自身がcaptureとClickを認識し、独自コントロールも同じ経路を使います。通常の値変更は再構築で扱い、コンポーネント専用のruntime入力更新はInvalidateInput、geometryも変わる場合はInvalidateLayoutを使います。いずれも次のUpdateLayoutで反映し、Dispatchでは再計算しません。GetInputChildrenは無効化まで安定した列を返してください。
+
+[入力snapshotの性能測定](../../../docs/performance/ui-input-snapshots.md)／[再測定用ツール](../../../tools/benchmarks/ui-input/README.md)
+
+## 独自コントロールの入力
+
+Widgetの `OnInput(in UiInputContext context)` をoverrideします。`Unhandled` は親へ伝播、`Handled` は消費、`StopPropagation` は非消費で伝播を停止します。`PointerPosition` はclip前のローカル座標です。ポインターDown/Moveで `context.CapturePointer()` を呼ぶと、そのWidgetへ領域外のMove/Up/Cancelも直接届きます。capture配送は親へ伝播しません。同じコントロールの複数pointerも可能です。
+
+`OnPointerCaptureChanged(UiPointerCaptureState state)` で取得・geometry更新・喪失を受け取れます。Up/Cancelは所有を先に解除してから `IsCaptured=true` のcontextで届きます。Clickの認識はButton側だけが行います。明示解放・対象除外・FocusLost・Disposeでも喪失とCancelを通知し、独自通知が失敗しても所有状態を残しません。
+
+contextは配送中だけ使い、保存しないでください。pointer以外のUiInputも同じhookへ渡せます。この段階ではrootへの配送で、focus対象へのキー配送は次のPR、TextBoxとIME文書の編集は後続のTextEditing PRで追加します。
+
+hit testでは、UpdateLayoutで各Widgetへ保存した「子のoverflowを含む部分木の入力領域」を使い、点を含まない枝を探索しません。clip・viewport・入力対象の選択を反映し、子の前後関係と親外のhitを保ちます。領域内の候補は従来どおり探索するため、重なりや多数の兄弟がある場合の最悪線形走査は残ります。

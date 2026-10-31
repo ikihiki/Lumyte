@@ -1,11 +1,17 @@
 # UIの直接描画サンプル
 
-`using static Lumyte.UI.Compose;`でPanel、Stack、RectangleとButtonの背景を組み立て、二つのviewportで再配置します。入力・Window・RenderGraphを使わないoffscreenサンプルです。
+`using static Lumyte.UI.Compose;`でPanel、Stack、RectangleとButtonの背景を組み立て、二つのviewportで再配置します。Window・RenderGraphを使わないoffscreenサンプルです。
 
 GPUなしで構築・layout・Canvasへの記録を実行できます。
 
 ```sh
 dotnet run --project samples/Lumyte.UI.Sample -c Release -- record-only
+```
+
+GPUなしのpointer-onlyはDown→領域外Move→内側Move→Upを配送し、callbackが一回だけ実行され、押下が解除されることを確認します。
+
+```sh
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- pointer-only
 ```
 
 Vulkanまたはwgpuで描画し、作業ディレクトリに`ui-240x160.ppm`と`ui-320x220.ppm`を出力します。
