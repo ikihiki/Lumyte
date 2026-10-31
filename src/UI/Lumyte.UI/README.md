@@ -1,6 +1,6 @@
 # Lumyte.UI
 
-Compositionで構築する保持型UIの基盤です。Panel、Stack、Button、背景スロット、親子関係、UiSurfaceの接続と一方向layoutを提供します。描画と入力は後続PRで追加します。
+Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。入力は後続PRで追加します。
 
 ```csharp
 using Lumyte.UI;
@@ -53,12 +53,45 @@ surface.UpdateLayout();
 
 ソースからのビルドには、既存Graphics.Drawing2Dが使うSlang環境を用意します。NuGetの利用者がlayoutを使うためにshaderを実行時コンパイルすることはありません。
 
-[所有ツリーのADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)／[layoutのADR](../../../docs/adr/ui/UI-0003-layout-and-invalidation.md)
+## 描画とクリップ
+
+```csharp
+using Lumyte.Graphics.Drawing2D;
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+var root = Stack(clipToBounds: true)
+[
+    Rectangle(width: 80, height: 80, fill: new Color2D(1, 0, 0, 0.5f)),
+    Button()[Rectangle(width: 60, height: 80, fill: new Color2D(0, 0, 1, 1)),
+        Button.Background()[Rectangle(fill: new Color2D(0.2f, 0.2f, 0.2f, 1))]]
+];
+using var surface = new UiSurface(root);
+surface.SetViewport(new(200, 100));
+var canvas = new Canvas2D();
+canvas.Begin();
+surface.Record(canvas); // 必要なlayoutを自動実行
+DrawList2D list = canvas.End();
+// listを既存Renderer2D.PrepareAsyncへ渡す。
+```
+
+Recordは毎回、可視ツリーをコンポーネントが定義する順で記録します。既定は自身→登録された子で、Buttonが背景→自身→通常内容を指定します。独自コンポーネントはRecordOverrideで順序を定義し、RecordSelfとRecordChildを使用します。Fillはfiniteな[0,1]のstraight-alpha sRGBで、既定は透明です。色の検証はColor2Dの生成・init/withで行い、UIのsetterでは再検証しません。FillとClipToBoundsの変更はlayoutを無効化しません。viewportは常にclipされ、ClipToBoundsは自身と部分木を最終サイズの矩形へclipします。overflowした子のサイズは変更しません。
+
+カスタムWidgetはOnRecord(DrawingCanvas2D)をoverrideし、原点0のローカル座標で記録します。親のclipは子の移動に追従せず、ホストのCanvas変換の内側へUIの原点を合成します。DPI変換はホストの責務です。OnRecordの変換・clipは内容や兄弟へ漏れません。Save/Restoreは釣り合わせ、借用中にBegin/End/Cancelを呼ばないでください。
+
+描画対象を確定してから記録し、その間は対象を書き換えず、layout/Record/Disposeを重ねない呼出し契約です。phase検査で拒否する仕組みは設けません。例外時もCanvas状態を復元しますが、成功済み命令は残ります。frame全体をCancelしてからBeginで再試行してください。不均衡なSave/Restore等の契約違反による状態破壊は隔離しません。snapshotはsurfaceの変更・Dispose後も利用できますが、カスタム描画の借用GPU資源はGPU完了まで別途保持します。
+
+RecordはCanvas、renderer、GPU、ClearやPresentを所有しません。単独UIでは各frameで描画先をClearし、重ね合わせではそのframeで再構成した背景へLoadします。複数surfaceのClearは最初に一度だけ行います。[直接描画サンプル](../../../samples/Lumyte.UI.Sample/README.md)に通常のCanvas→Renderer→Submit/Waitとviewport変更を示します。
+
+[ツリーのADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)／[layoutのADR](../../../docs/adr/ui/UI-0003-layout-and-invalidation.md)／[描画のADR](../../../docs/adr/ui/UI-0004-drawing-and-clipping.md)
 
 検証:
 
 ```sh
 dotnet test tests/UI/Lumyte.UI.Tests -c Release
+dotnet test tests/Graphics/Lumyte.Graphics.Drawing2D.Tests -c Release
 ```
+
+命令snapshotの統合テストはDrawing2D.Testsに配置しています。実GPUの画素・連続frameの検証はGraphics.TestsのUiDrawingTestsを使い、実行環境で`LUMYTE_GRAPHICS_GPU_TESTS=1`を設定します。
 
 子コレクションの名前と役割は各コンポーネントが定義します。カスタムコンポーネントはconstructorでCreateChildrenを呼び、ForegroundやEmbeddeds等のget-onlyプロパティへ保持できます。Widget基盤は登録された全コレクションを所有権・接続・解除のために走査し、Background専用の保存領域は持ちません。配置・描画順は各コンポーネントの責務です。
