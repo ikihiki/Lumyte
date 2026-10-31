@@ -1,5 +1,6 @@
 using Lumyte.Diagnostics;
 using Lumyte.Diagnostics.UI.Automation;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application.Diagnostics;
 
@@ -31,6 +32,7 @@ public static class UiApplicationDiagnosticsExtensions
 
         builder.Services.AddDiagnosticExecutionPoint<UiApplicationDiagnosticsPoint>("ui.application");
         builder.Services.AddUiAutomationDiagnostics<UiApplicationDiagnosticsPoint>(configured.Runtime);
+        builder.Services.AddSingleton<UiApplicationViewRegistry>();
         var registration = new Registration(configured);
         builder.Participants.Add(registration.Create);
         return builder;

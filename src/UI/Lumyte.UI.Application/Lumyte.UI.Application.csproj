@@ -26,6 +26,8 @@
     <InternalsVisibleTo Include="Lumyte.UI.Application.Browser" />
     <InternalsVisibleTo Include="Lumyte.UI.Application.Headless" />
     <InternalsVisibleTo Include="Lumyte.UI.Application.Diagnostics" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Navigation" />
+    <InternalsVisibleTo Include="Lumyte.UI.Navigation.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application.Tests" />
     <SlangShader Include="Shaders/present-vertex.slang" ResourceName="Lumyte.UI.Application.present-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/present-fragment.slang" ResourceName="Lumyte.UI.Application.present-fragment" Stage="fragment" />

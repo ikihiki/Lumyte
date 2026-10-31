@@ -89,6 +89,10 @@ public sealed partial class UiApplication : IAsyncDisposable
 
     internal IUiWindowManager Windows => _windows ?? throw new InvalidOperationException("The window manager is not initialized.");
 
+    internal IEnumerable<IUiApplicationViewParticipant> ViewParticipants => _participants.OfType<IUiApplicationViewParticipant>();
+
+    internal ulong GraphicsGeneration { get; private set; }
+
     internal UiPopupManager Popups => _popups ?? throw new InvalidOperationException("The popup coordinator is not initialized.");
 
     internal IUiTextLayoutProvider? TextLayoutProvider { get; private set; }

@@ -14,7 +14,7 @@ public sealed partial class UiApplication
     private readonly ConditionalWeakTable<Lumyte.UI.Compose.Definitions.Widget, EditorValidation> _validatedEditors = new();
     private readonly Dictionary<Guid, PopupSite> _popupHosts = [];
 
-    internal TextSite? AttachText(UiSurface surface, UiWindowId window, UiApplicationAutomationHost automation)
+    internal TextSite? AttachText(UiSurface surface, UiWindowId window, UiApplicationAutomationHost automation, bool staged = false)
     {
         if (Driver.TextInput is not { } service)
         {
@@ -22,7 +22,7 @@ public sealed partial class UiApplication
         }
 
         IUiTextInputTargetResolver targets = Driver.CreateTextTargets(this);
-        var connection = new UiTextInputConnection(surface, Windows, window, service, targets, Driver.Clipboard);
+        var connection = new UiTextInputConnection(surface, Windows, window, service, targets, Driver.Clipboard, staged);
         UiImeCandidateController? candidates = TextLayoutProvider is { } provider ? new(connection, new(Windows, provider), Popups, _options.ImeCandidates, clock: TimeProvider) : null;
         var site = new TextSite(this, surface, window, connection, candidates, automation);
         _textSites.Add(site);
@@ -157,7 +157,7 @@ public sealed partial class UiApplication
         private Task<IAsyncDisposable>? _pause;
         private bool _disposed;
 
-        internal TextSite(UiApplication application, UiSurface surface, UiWindowId window, UiTextInputConnection connection, UiImeCandidateController? candidates, UiApplicationAutomationHost automation)
+        internal TextSite(UiApplication application, UiSurface surface, UiWindowId window, UiTextInputConnection connection, UiImeCandidateController? candidates, UiApplicationAutomationHost automation, bool staged = false)
         {
             _application = application;
             Surface = surface;

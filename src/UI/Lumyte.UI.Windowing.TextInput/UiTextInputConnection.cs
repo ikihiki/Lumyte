@@ -53,12 +53,17 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
     /// <param name = "targets">The targets.</param>
     /// <param name = "clipboard">The clipboard.</param>
     public UiTextInputConnection(UiSurface surface, IUiWindowManager windows, UiWindowId window, ITextInputService service, IUiTextInputTargetResolver targets, IClipboard? clipboard = null)
+        : this(surface, windows, window, service, targets, clipboard, false)
+    {
+    }
+
+    internal UiTextInputConnection(UiSurface surface, IUiWindowManager windows, UiWindowId window, ITextInputService service, IUiTextInputTargetResolver targets, IClipboard? clipboard, bool staged)
     {
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(targets);
-        if (!windows.IsBound(window, surface))
+        if (!staged && !windows.IsBound(window, surface))
         {
             throw new ArgumentException("The surface must be bound to the supplied window.", nameof(window));
         }

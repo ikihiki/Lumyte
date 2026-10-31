@@ -40,3 +40,9 @@ Menuは最深surfaceへkeyboardを配送し、Widgetが処理したキーを重�
 IUiWindowSourceAdapterはfallbackの描画ID/revision変換を維持する透過境界です。Native実装はInnerSourceを辿って実backend sourceを調べ、新しい物理sourceにもAdaptSourceを適用します。source/presentationへ公開WindowIdと単調なGeometryRevisionを渡し、提示ackとHitTestも同じrevisionで照合できます。
 
 通常Hosted画面をpointerで選ぶ場合は論理keyboard targetを更新し、Popup/Passive/Candidateの表示では変更しない。借用rootは最小化・非表示・0寸法になっても登録と描画bindingを維持し、Popupだけを閉じる。復帰後は同じroot IDで再び開ける。
+
+## ページの表示差し替え
+
+`IUiWindowPresentationReplacementManager`は任意の追加capabilityです。Hosted／WindowSystem／Fallbackの各managerは、`IUiWindowPresentationStager`を持つsourceへ非公開の候補準備を委譲します。候補はcommitまで描画・hit testへ公開せず、commit後も初回提示まで新しい入力を待ちます。旧bindingの返却で新しいページを退役させることはありません。
+
+独自manager/sourceでnavigationを使う場合はこの準備・検証・commit・退役の契約を実装してください。既存のstatic rootは追加capabilityなしで利用できます。Native factoryは任意の`IUiNativePresentationStager`で、同じOS Window内の描画登録を差し替えます。詳細は[UI-0017](../../../docs/adr/ui/UI-0017-navigation-and-page-lifetime.md)を参照してください。
