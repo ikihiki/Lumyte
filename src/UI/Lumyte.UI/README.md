@@ -193,3 +193,27 @@ surface.UpdateLayout();
 ```
 
 購読は接続中だけUIが管理し、更新は新しい宣言へ再構築します。動的な子は`new UiSurface(() => Build())`の構築関数からValueを読み、既存の型・key・slot照合で内部状態を保ちます。手書きnewを含むSignalツリーも構築関数を使ってください。標準Applicationはdispatcherとページ寿命を自動接続します。
+
+## アニメーション
+
+独立したモデルSignalを通常の`Animate`へ渡し、戻り値をWidget引数に指定します。標準Applicationが時計・フレーム・購読寿命を管理します。
+
+```csharp
+using Lumyte.Animation;
+using Lumyte.Core.Time;
+using Lumyte.Signals;
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+var width = Signal.Create<float?>(80);
+var animated = Animate(width, Duration.FromSeconds(0.2),
+    UiAnimationInterpolators.Nullable(AnimationInterpolators.Float));
+var root = Rectangle(width: animated, height: 24);
+// callbackでwidth.Valueを変えると、現在の表示値から新しい目標へ補間する。
+```
+
+`UiAnimated.Select`は同じproducerの型変換を提供します。一般のComputedで包むと所属は伝わりません。モデルSignalは複数Windowで共有できますが、Animateはsurfaceごとに作ります。Timelineは`Animate(timeline)`から取得したclipの`Value(channel, initialValue)`を引数に指定し、Pause/Resume/Seek/Stop/Cancelをcallbackから予約できます。clipをページのfieldなどへ保持すると、構築関数の再実行でも同じ再生状態を使えます。
+
+埋込みhostでは`surface.AdvanceAnimations()`をlayout前に一度呼びます。UpdateLayout/Record/Value読取だけでは時間は進みません。表示できない間は`SetAnimationUpdatesEnabled(false)`で休止します。標準Applicationでこれらを手動実行する必要はありません。
+
+[値・TimelineアニメーションのADR](../../../docs/adr/ui/UI-0020-animation-and-frame-lifetime.md)／[決定的Headlessサンプル](../../../samples/Lumyte.UI.Application.Headless.Sample/README.md)

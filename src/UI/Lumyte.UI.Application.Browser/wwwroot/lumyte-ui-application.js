@@ -1,3 +1,8 @@
+let animationEpoch = 0;
+for (const type of ["visibilitychange", "freeze", "resume"]) {
+    document.addEventListener(type, () => { animationEpoch++; });
+}
+export function animationGeneration() { return animationEpoch; }
 export function canvas(id) {
     const result = document.getElementById(id);
     if (!(result instanceof HTMLCanvasElement)) throw new Error("platform-unavailable: canvas not found");

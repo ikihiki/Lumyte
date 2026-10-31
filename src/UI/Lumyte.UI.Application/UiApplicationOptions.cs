@@ -1,3 +1,4 @@
+using Lumyte.Core.Time;
 using Lumyte.Graphics.Drawing2D;
 
 namespace Lumyte.UI.Application;
@@ -7,6 +8,9 @@ public sealed record UiApplicationOptions
 {
     /// <summary>Gets the application clock.</summary>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
+    /// <summary>Gets the borrowed monotonic animation clock, or null to use TimeProvider timestamps.</summary>
+    public IMonotonicClock? AnimationClock { get; init; }
 
     /// <summary>Gets the opaque background cleared once per presentation.</summary>
     public Color2D Background { get; init; } = new(1, 1, 1, 1);

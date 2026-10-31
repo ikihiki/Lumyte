@@ -24,9 +24,8 @@ public sealed partial class UiSurface
     /// <param name="root">The disconnected declaration root.</param>
     /// <param name="dispatcher">The borrowed owner dispatcher.</param>
     public UiSurface(Widget root, IUiDispatcher dispatcher)
-        : this(root)
+        : this(RequireDispatcher(root, dispatcher))
     {
-        ArgumentNullException.ThrowIfNull(dispatcher);
         _signalDispatcher = dispatcher;
     }
 
@@ -46,7 +45,7 @@ public sealed partial class UiSurface
     }
 
     /// <summary>Gets the connection generation and latest dependency change, including while paused.</summary>
-    public UiSignalRevision SignalRevision => new(_signalConnections, Math.Max(_signals?.Revision ?? 0, _pendingRebuild?.Signals?.Revision ?? 0));
+    public UiSignalRevision SignalRevision => new(_signalConnections, Math.Max(Math.Max(_signals?.Revision ?? 0, _pendingRebuild?.Signals?.Revision ?? 0), AnimationRevision));
 
     /// <summary>Pauses or resumes automatic application; explicit layout still prepares current values.</summary>
     /// <param name="enabled">Whether to apply automatically at owner boundaries.</param>
@@ -118,6 +117,12 @@ public sealed partial class UiSurface
         }
     }
 
+    private static Widget RequireDispatcher(Widget root, IUiDispatcher dispatcher)
+    {
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        return root;
+    }
+
     private SignalBinding? PrepareSignals(Widget root)
     {
         Func<bool>[] readers = root.CollectSubtree().SelectMany(widget => widget.SignalArguments).ToArray();
@@ -134,14 +139,28 @@ public sealed partial class UiSurface
             throw new InvalidOperationException("Signal declarations need generated composition factories or a surface construction function.");
         }
 
-        var binding = new SignalBinding(this, build, reads, readers);
-        binding.Initialize();
-        return binding;
+        AnimationLease animations = PrepareAnimationArguments(root);
+        var binding = new SignalBinding(this, build, reads, readers, animations);
+        try
+        {
+            foreach (Widget widget in root.CollectSubtree())
+            {
+                widget.InitializeAnimationArguments();
+            }
+
+            binding.Initialize();
+            return binding;
+        }
+        catch
+        {
+            binding.Dispose();
+            throw;
+        }
     }
 
     private void ProcessSignals(bool explicitUpdate)
     {
-        if (_isDisposed || _updatingSignals || _dispatchDepth != 0 || _rebuildDepth != 0 || _layoutPass is not null || _recordDepth != 0 || (!explicitUpdate && !_signalUpdatesEnabled))
+        if (_isDisposed || _updatingSignals || _publishingAnimations || _dispatchDepth != 0 || _rebuildDepth != 0 || _layoutPass is not null || _recordDepth != 0 || (!explicitUpdate && !_signalUpdatesEnabled))
         {
             return;
         }
@@ -214,7 +233,7 @@ public sealed partial class UiSurface
             _ = ObserveDispatchAsync(dispatcher.InvokeAsync(() =>
             {
                 ProcessSignals(false);
-                if (!_isDisposed && _signalUpdatesEnabled && _dispatchDepth == 0 && _layoutPass is null && _recordDepth == 0)
+                if (!_isDisposed && _signalUpdatesEnabled && !_publishingAnimations && _dispatchDepth == 0 && _layoutPass is null && _recordDepth == 0)
                 {
                     ApplyRebuild();
                 }
@@ -223,7 +242,7 @@ public sealed partial class UiSurface
         else
         {
             ProcessSignals(false);
-            if (!_isDisposed && _signalUpdatesEnabled && _dispatchDepth == 0 && _layoutPass is null && _recordDepth == 0)
+            if (!_isDisposed && _signalUpdatesEnabled && !_publishingAnimations && _dispatchDepth == 0 && _layoutPass is null && _recordDepth == 0)
             {
                 ApplyRebuild();
             }
@@ -266,7 +285,7 @@ public sealed partial class UiSurface
         }
     }
 
-    private sealed class SignalBinding(UiSurface surface, Func<Widget> build, SignalReadSet? reads, Func<bool>[] readers) : ISignalScheduler, IDisposable
+    private sealed class SignalBinding(UiSurface surface, Func<Widget> build, SignalReadSet? reads, Func<bool>[] readers, AnimationLease animations) : ISignalScheduler, IDisposable
     {
         private readonly SignalScope _scope = new();
 
@@ -280,7 +299,11 @@ public sealed partial class UiSurface
 
         public void Schedule(Action work) => surface.PostSignal(work);
 
-        public void Dispose() => _scope.Dispose();
+        public void Dispose()
+        {
+            _scope.Dispose();
+            animations.Dispose();
+        }
 
         internal void Initialize()
         {

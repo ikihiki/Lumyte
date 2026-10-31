@@ -173,6 +173,10 @@ return Panel()[
 
 FromAsyncの非同期結果は処理identity・取消を確認してSignalへ公開し、UIの観測は既存schedulerがownerへ配送する。手動で取得したデータも従来どおりSignalへ代入できる。UIと独立したSignalを保持するモデルも同じ引数へ渡せる。通常利用者はruntime、Bind、EnterBuild、UI購読scopeを管理しない。
 
+### Animationへの表示値の接続
+
+実装PR 16の[UI-0020](UI-0020-animation-and-frame-lifetime.md)でUiAnimated引数とTimelineを追加する。目標値はモデルSignalのまま、Animationの補間結果をUI所有の表示Signalへ一括反映する。producerはsurface接続transactionへ含め、model target監視のstampもSignalRevisionへ含める。購読・frame・表示休止はUIが管理し、通常Composeで構築する。Signalsの公開API/依存は変更せず、UiAnimatedの変換には所属を維持するSelectを使う。
+
 ### PopupとWindowのSignal引数
 
 2026-10-29追記。[UI-0011のPopup](UI-0011-popup-windowing-and-fallback.md#宣言的なpopupの利用者api)と[UI-0016のWindow](UI-0016-ui-application-framework.md#複数windowの宣言api)も同じ「値を引数として受ける」方式へ接続する。本PRで再構築/引数adapterと同時に実装する。

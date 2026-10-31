@@ -106,16 +106,25 @@ public sealed partial class UiApplicationViewSlot
 
     internal void SynchronizeFocus() => _current?.Text?.Connection.SynchronizeFocus();
 
-    internal void Advance()
+    internal void Advance(bool animationFrame)
     {
         if (_current is { } view && !_stopping)
         {
             _application.ValidateEditors(view.Surface.Root);
+            bool visible = _application.Driver.CanAnimate && _application.State != UiApplicationState.Recovering
+                && _application.Windows.TryGetSnapshot(_window, out UiWindowSnapshot? state) && state is { IsVisible: true, ClientSize.X: > 0, ClientSize.Y: > 0 };
+            view.Surface.SetAnimationUpdatesEnabled(visible && !view.Gated);
+            if (animationFrame || view.Surface.HasPendingAnimationUpdates)
+            {
+                view.Surface.AdvanceAnimations();
+            }
+
             view.Surface.UpdateLayout();
             view.Portals?.Advance();
             if (view.Gated && _application.Windows.TryGetSnapshot(_window, out UiWindowSnapshot? snapshot) && snapshot is { IsVisible: true })
             {
                 view.Surface.SetSignalUpdatesEnabled(true);
+                view.Surface.SetAnimationUpdatesEnabled(visible);
                 view.Portals?.SetUpdatesEnabled(true);
                 view.Gated = false;
                 view.Host.Resume();
@@ -158,7 +167,7 @@ public sealed partial class UiApplicationViewSlot
         {
             _application = application;
             _window = window;
-            Surface = new(root, application.Dispatcher);
+            Surface = new(root, application.Dispatcher, application.AnimationClock);
             Host = UiApplicationAutomationHost.Create(application, () => Surface);
         }
 
@@ -201,6 +210,7 @@ public sealed partial class UiApplicationViewSlot
         internal void BeginStop()
         {
             Surface.SetSignalUpdatesEnabled(false);
+            Surface.SetAnimationUpdatesEnabled(false);
             Portals?.Dispose();
             Host.BeginStop();
             Text?.BeginStop();

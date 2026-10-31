@@ -294,6 +294,7 @@ public sealed partial class UiApplication : IAsyncDisposable
             Driver.DispatchPendingInput();
             PumpExecution();
             _dispatcher.Pump();
+            bool animationFrame = BeginAnimationFrame();
             foreach (Entry entry in _entries.Values.ToArray())
             {
                 if (entry.Content is { IsStopped: false } content)
@@ -302,9 +303,10 @@ public sealed partial class UiApplication : IAsyncDisposable
                 }
 
                 entry.Context.Chrome?.Advance();
-                entry.Slot?.Advance();
+                entry.Slot?.Advance(animationFrame);
             }
 
+            AdvancePopupAnimations(animationFrame);
             AdvanceText();
             foreach (IUiApplicationParticipant participant in _participants)
             {
