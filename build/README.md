@@ -77,47 +77,84 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・benchmark動作確認／BenchmarkDotNet測定結果の保存 |
-| `TestBrowserContracts` / `TestWindowing` | Graphics・AudioのJavaScript契約／Linux X11・Browser Windowingの検証 |
+| `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
 | `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
 | `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
 | `DiagnosticGallery` | 検証結果から診断galleryを生成 |
 | `Samples` / `TestAot` | CPU・Audio等のsample／NativeAOT publishと実行 |
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
-| `Ci` | 共通のCI向け検証target群を実行 |
+| `CiNative` | solutionのrestore・build・単体テスト |
+| `CiBrowser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
+| `CiDistribution` | sample実行・NuGet pack |
+| `CiQuality` | C#・C/C++・Markdownの書式検査 |
+| `Ci` | 上記4カテゴリとRustテスト。個別Textテストはsolutionテストに含まれる |
 | `ArchiveCiBuild` / `VerifyCiBuild` | ビルド済みsolutionをtar化／後段runnerとの互換性と主要出力を検証 |
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
 OS別の実行対象は[workflow](../.github/workflows/composition.yml)で確認できます。
-WindowsのNative smokeを通常ユーザーで起動する処理や、GitHub Pagesの配信権限は分離したままです。
+GitHub Pagesの配信権限はCIから分離したままです。
 
-## CIのcacheと成果物共有
+### CIの対象と再利用
 
-CIは4環境の`build` jobでRelease solutionをビルドし、同じrunner image・architectureの
-`validate` jobへ成果物を渡します。Linux x64の`quality` jobも同じ成果物を使い、
-sample・NativeAOT・pack・Debug build・lintを並列に検証します。
-`package` jobは`validate`と`quality`の成功後に全RIDのParley資産をまとめます。
+LinuxとWindowsは別jobとし、それぞれx64／arm64でnative検証を実行します。
+`--host-only`は正本の`Lumyte.slnx`から現在のOS用solutionを`artifacts/ci/`へ生成します。
+LinuxではWindows Platform・Direct3D12と専用sample／testを除外し、WindowsではLinux Platformを除外します。
+Platformのテストprojectもhost用の参照とソースだけをコンパイルします。
+共通projectの追加は正本への登録だけで反映されます。OS専用projectを追加した場合は`Build.Ci.cs`の分類も更新してください。
+引数を省略した通常のsolution操作は従来どおり全projectを対象にします。
 
-[setup-ci](../.github/actions/setup-ci/action.yml)はNuGet、miseのインストール済みtool、
-vcpkgのdownload／binary cache、Linux DXC、ParleyのCargo増分ビルドを復元します。
-NuGetの保存先は`artifacts/dev-env/nuget-packages`です。
-NuGet・mise・vcpkg・Cargoのキーはrunner image・OS・architectureとSDK／依存定義を含み、NuGetとCargoのみ互換範囲のprefix fallbackを使います。
-キャッシュは成功したjobの終了時に保存されます。miseのキーはtool／setup入力が変わると更新され、
-後段で追加したWASM workloadは既存のcacheへ追記されません。
+Browserは独立したLinux x64 jobで、nativeのLinux／Windows jobと並列に実行します。
+Browser jobはsolution全体をビルドせず、検証するBrowser sampleとその依存だけをpublishします。
+共通のsample・package検証はnativeのLinux x64で実行します。
+AOTは独立したLinux x64 jobで、対象sampleだけをpublish・実行します。
+Windows専用packageとWindow sampleはWindows側で検証します。
+FormatはLinux／Windows各x64の独立したjobで、前段のhost用Release成果物を受け取りC#の書式を検査します。
+native／Markdown lintはLinuxのFormat jobで一度だけ実行します。
+AOT・Browser・4環境のbuildは並列に開始します。native検証とFormatはbuildの成果物を受け取り、すべて成功してからParleyの統合packageを作成します。
+環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
+Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
+
+セットアップ後は`dotnet run --no-build --no-restore`でrunnerを再利用します。
+`--`より後の同名引数は対象projectの再ビルドを抑制するもので、両方を指定する意味が異なります。
+Release成果物をnative検証・配布検証で再利用します。
+Browser publishは別checkoutで実行し、nativeと`bin/obj`を共有しません。
+書式検査のためだけのDebug全体ビルドは行いません。
+
+CIの依存キャッシュは`.github/actions/cache-dependencies`で管理します。
+ツールはOS・architecture・native／browser・固定バージョン定義で分け、BrowserのWasm workloadも専用SDK内に保存します。
+NuGetとCargoのダウンロード済みpackageはSDK・依存定義でキーを更新し、同じrunner image・OS・architecture・profile・SDKの以前のキャッシュも利用します。
+Rustの保存先はcheckout内の`artifacts/build/tools/`に固定します。
+Windowsのmise bootstrap・Mesa・vcpkgダウンロードも別キャッシュで再利用し、セットアップ時のハッシュ検証は維持します。
+vcpkgのbinary cacheとParleyのCargo増分ビルドも保存し、Cargoは互換性のあるtool／依存定義の範囲で以前のcacheへfallbackします。
 cache hitでもsetupは実行し、manifest・環境設定・OS依存関係を準備します。
+projectの`bin/obj`や生成済みNuGetは実行をまたぐcacheには保存しません。
 
+project指定のない`Pack`は`src/`からhost・Parley除外条件に合うprojectを集め、MSBuild一回で順にpackします。
+`IsPackable`は各projectのMSBuild評価に従い、復元・コンパイルは再実行しません。
+
+```sh
+dotnet run --project build -c Release -- --target CiNative --host-only
+dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package
+dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --host-only --no-build --no-restore
+dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser
+dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
+```
+
+### ビルド成果物の共有
+
+4環境の`build` jobがhost用Releaseビルドを行い、`linux`・`windows`と各x64の`format` jobへ成果物を渡します。
 `ArchiveCiBuild`は`artifacts/ci/build.tar`を作成します。
 対象は`build`・`src`・`tests`・`samples`・`benchmarks`の`bin`／`obj`、
 Parleyのnative資産・notice・package資産、Direct3D 12のnative DLLです。
 tool cache、Cargo／CMakeの中間出力、ログは含みません。
 tarで実行権限とsymlinkを保持し、`build-<runner image>-<architecture>-Release` artifactとして7日間保存します。
-Browser publishがdesktop向け出力を変更する前に保存するため、後段は同じdesktop成果物から開始できます。
 
 [restore-ci-build](../.github/actions/restore-ci-build/action.yml)は同じworkflow runのartifactを展開し、
-`VerifyCiBuild`でcheckoutの絶対パス・OS／architecture・configurationと主要出力を確認します。
+`VerifyCiBuild`でcheckoutの絶対パス・OS／architecture・configuration・host-only指定と主要出力を確認します。
 `obj`やテストfixtureに絶対パスが含まれるため、producerとconsumerは同じrunner label・checkout位置を使います。
-その後`Restore`でNuGet依存を補い、cache miss時にも動作するようにします。
+その後`Restore --host-only`でNuGet依存を補い、cache miss時にも動作するようにします。
 通常のテストではrunner自身と対象projectの両方に`--no-build --no-restore`を指定します。
-WASM・NativeAOTのpublishとDebug buildは別構成のため、それぞれ後段でビルドします。
+BrowserとNativeAOTは別構成のため、引き続き独立したjobで必要なprojectだけをpublishします。
 
 ## ParleyのNative／WASM
 

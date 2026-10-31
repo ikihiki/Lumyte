@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Xml.Linq;
 using Xunit;
 
 namespace Lumyte.Build.Tests;
@@ -26,11 +27,14 @@ public sealed class RepositoryBuildTests
 
     /// <summary>Tests depend on the explicit restore/build targets and suppress their own implicit work.</summary>
     /// <returns>The asynchronous process assertion.</returns>
-    [Fact]
-    public async Task TestRunsOnlyAfterTheExplicitBuildAsync()
+    /// <param name="target">The direct or grouped test entry point.</param>
+    [Theory]
+    [InlineData("Test")]
+    [InlineData("CiNative")]
+    public async Task TestRunsOnlyAfterTheExplicitBuildAsync(string target)
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
+        BuildFixture.ProcessResult result = await fixture.RunAsync(target, "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["restore", "build", "test"], Commands(records));
@@ -114,7 +118,7 @@ public sealed class RepositoryBuildTests
         Assert.Equal(fixture.Output, Value(arguments, "--output"));
     }
 
-    /// <summary>Default packaging discovers packable source projects while excluding opted-out and intermediate projects.</summary>
+    /// <summary>Default packaging evaluates source project packability in one MSBuild process, excluding intermediate projects.</summary>
     /// <returns>The asynchronous project-discovery assertion.</returns>
     [Fact]
     public async Task PackDiscoversOnlyPackableSourceProjectsAsync()
@@ -125,14 +129,20 @@ public sealed class RepositoryBuildTests
         string packable = Path.Combine(source, "Packable.csproj");
         File.WriteAllText(packable, File.ReadAllText(fixture.Project));
         File.WriteAllText(Path.Combine(source, "Unpackable.csproj"), "<Project><PropertyGroup><IsPackable>false</IsPackable></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(source, "Lumyte.Graphics.Text.Parley.csproj"), File.ReadAllText(fixture.Project));
         File.WriteAllText(Path.Combine(source, "obj", "Intermediate.csproj"), File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
-        Assert.Equal(2, records.Count(record => Arguments(record)[0] == "msbuild"));
-        JsonElement pack = Assert.Single(records, record => Arguments(record)[0] == "pack");
-        Assert.Contains(packable, Arguments(pack));
-        Assert.DoesNotContain(records, record => Arguments(record).Any(argument => argument.EndsWith("Intermediate.csproj", StringComparison.Ordinal)));
+        JsonElement pack = Assert.Single(records);
+        Assert.Equal("msbuild", Arguments(pack)[0]);
+        Assert.Contains("-p:NoBuild=true", Arguments(pack));
+        var traversal = XDocument.Load(Arguments(pack)[1]);
+        string[] projects = traversal.Descendants("PackageProject").Select(element => element.Attribute("Include")!.Value).ToArray();
+        Assert.Equal(2, projects.Length);
+        Assert.Contains(packable, projects);
+        Assert.DoesNotContain(projects, path => path.EndsWith("Intermediate.csproj", StringComparison.Ordinal));
+        Assert.Equal("Pack", Assert.Single(traversal.Descendants("MSBuild")).Attribute("Targets")!.Value);
     }
 
     /// <summary>Explicit package opt-out avoids invoking dotnet pack for the native Parley package.</summary>
@@ -146,6 +156,97 @@ public sealed class RepositoryBuildTests
         BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
+    }
+
+    /// <summary>A failure in the packaging traversal fails the build runner.</summary>
+    /// <returns>The asynchronous failure assertion.</returns>
+    [Fact]
+    public async Task BatchPackFailureIsPropagatedAsync()
+    {
+        using var fixture = new BuildFixture();
+        string source = Path.Combine(fixture.Root, "src");
+        Directory.CreateDirectory(source);
+        File.Copy(fixture.Project, Path.Combine(source, "Packable.csproj"));
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "msbuild";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("23", result.Output + result.Error, StringComparison.Ordinal);
+        Assert.Single(fixture.Records("dotnet"));
+    }
+
+    /// <summary>Host selection keeps new shared projects and removes only foreign platform projects.</summary>
+    /// <returns>The asynchronous solution-selection assertion.</returns>
+    [Fact]
+    public async Task HostSolutionPreservesSharedProjectsAndBuildMetadataAsync()
+    {
+        using var fixture = new BuildFixture();
+        const string Solution = """
+            <Solution>
+              <Folder Name="/src/">
+                <Project Path="src/Lumyte.Platform.Linux.csproj" />
+                <Project Path="src/Lumyte.Platform.Windows.csproj" />
+                <Project Path="src/Lumyte.Graphics.Direct3D12.csproj" />
+                <Project Path="src/New.Shared.csproj" />
+                <Project Path="build/_build.csproj"><Build Project="false" /></Project>
+              </Folder>
+            </Solution>
+            """;
+        File.WriteAllText(fixture.Solution, Solution);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("CiNative", "--dotnet-path", fixture.DotnetTool, "--host-only");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["restore", "build", "test"], Commands(records));
+        string solution = Arguments(records[0])[1];
+        Assert.All(records, record => Assert.Contains(solution, Arguments(record)));
+        var document = XDocument.Load(solution);
+        string[] paths = document.Descendants("Project").Select(project => project.Attribute("Path")!.Value).ToArray();
+        Assert.All(paths, path => Assert.True(Path.IsPathFullyQualified(path)));
+        Assert.Contains(Path.Combine(fixture.Root, "src", "New.Shared.csproj"), paths);
+        Assert.Equal(OperatingSystem.IsLinux(), paths.Any(path => path.EndsWith("Lumyte.Platform.Linux.csproj", StringComparison.Ordinal)));
+        Assert.Equal(OperatingSystem.IsWindows(), paths.Any(path => path.EndsWith("Lumyte.Platform.Windows.csproj", StringComparison.Ordinal)));
+        Assert.Equal(OperatingSystem.IsWindows(), paths.Any(path => path.EndsWith("Lumyte.Graphics.Direct3D12.csproj", StringComparison.Ordinal)));
+        Assert.Equal("false", Assert.Single(document.Descendants("Build")).Attribute("Project")!.Value);
+    }
+
+    /// <summary>Default host packaging cannot select an unbuilt foreign platform project.</summary>
+    /// <returns>The asynchronous package-selection assertion.</returns>
+    [Fact]
+    public async Task HostPackExcludesForeignPlatformProjectsAsync()
+    {
+        using var fixture = new BuildFixture();
+        string source = Path.Combine(fixture.Root, "src");
+        Directory.CreateDirectory(source);
+        foreach (string name in new[] { "Lumyte.Platform.Linux", "Lumyte.Platform.Windows", "New.Shared" })
+        {
+            File.Copy(fixture.Project, Path.Combine(source, name + ".csproj"));
+        }
+
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
+        AssertSuccess(result);
+        JsonElement pack = Assert.Single(fixture.Records("dotnet"));
+        var traversal = XDocument.Load(Arguments(pack)[1]);
+        string[] packed = traversal.Descendants("PackageProject").Select(element => Path.GetFileNameWithoutExtension(element.Attribute("Include")!.Value)).ToArray();
+        Assert.Contains("New.Shared", packed);
+        Assert.Equal(OperatingSystem.IsLinux(), packed.Contains("Lumyte.Platform.Linux", StringComparer.Ordinal));
+        Assert.Equal(OperatingSystem.IsWindows(), packed.Contains("Lumyte.Platform.Windows", StringComparer.Ordinal));
+    }
+
+    /// <summary>Formatting resolves generators from the same configuration as the compiled solution.</summary>
+    /// <param name="configuration">The configuration whose build outputs are reused.</param>
+    /// <returns>The asynchronous format-configuration assertion.</returns>
+    [Theory]
+    [InlineData("Release")]
+    [InlineData("Debug")]
+    public async Task CheckFormatUsesTheSelectedConfigurationAsync(string configuration)
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("CheckFormat", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project, "--configuration", configuration);
+        AssertSuccess(result);
+        JsonElement format = Assert.Single(fixture.Records("dotnet"));
+        Assert.Equal("format", Arguments(format)[0]);
+        Assert.Equal(configuration, format.GetProperty("environment").GetProperty("Configuration").GetString());
+        Assert.Contains("--no-restore", Arguments(format));
     }
 
     private static string[] Commands(JsonElement[] records) => records.Select(record => Arguments(record)[0]).ToArray();

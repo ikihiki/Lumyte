@@ -12,7 +12,7 @@ internal static class Program
         "DOTNET_EMSCRIPTEN_NODE_JS", "EM_CONFIG", "EM_CACHE", "EM_FROZEN_CACHE", "EMSDK_PYTHON",
         "PYTHON", "PYTHON3", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "CC_wasm32_unknown_emscripten",
         "AR_wasm32_unknown_emscripten", "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER",
-        "LUMYTE_BUILD_ASSEMBLY",
+        "LUMYTE_BUILD_ASSEMBLY", "Configuration",
     ];
 
     private static int Main(string[] args)

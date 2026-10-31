@@ -23,9 +23,9 @@ runs:
       run: |
         tar -xf artifacts/ci/build.tar
         source tools/setup/activate.sh
-        dotnet run --project build -c Release --no-build --no-restore -- --target VerifyCiBuild --configuration Release
+        dotnet run --project build -c Release --no-build --no-restore -- --target VerifyCiBuild --configuration Release --host-only
         # A cache miss must remain correct: recover packages referenced by obj files.
-        dotnet run --project build -c Release --no-build --no-restore -- --target Restore
+        dotnet run --project build -c Release --no-build --no-restore -- --target Restore --host-only
 
     - name: Extract and restore dependencies (Windows)
       if: runner.os == 'Windows'
@@ -33,5 +33,5 @@ runs:
       run: |
         . ./tools/setup/activate.ps1
         Invoke-LumyteCommand tar @('-xf', 'artifacts/ci/build.tar')
-        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'VerifyCiBuild', '--configuration', 'Release')
-        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Restore')
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'VerifyCiBuild', '--configuration', 'Release', '--host-only')
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Restore', '--host-only')

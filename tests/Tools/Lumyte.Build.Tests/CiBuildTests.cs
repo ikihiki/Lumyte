@@ -122,6 +122,20 @@ public sealed class CiBuildTests
         Assert.Contains("same runner label", result.Output + result.Error, StringComparison.Ordinal);
     }
 
+    /// <summary>Host-only artifacts cannot be mistaken for a full solution build.</summary>
+    /// <returns>The asynchronous scope assertion.</returns>
+    [Fact]
+    public async Task VerifyRejectsAnotherHostOnlyScopeAsync()
+    {
+        using var fixture = new BuildFixture();
+        PrepareOutputs(fixture);
+        AssertSuccess(await fixture.RunAsync("ArchiveCiBuild", "--host-only"));
+        AssertSuccess(await fixture.RunAsync("VerifyCiBuild", "--host-only"));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("VerifyCiBuild");
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("host-only scope", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
     /// <summary>An empty checkout cannot publish an apparently successful build artifact.</summary>
     /// <returns>The asynchronous missing-build assertion.</returns>
     [Fact]

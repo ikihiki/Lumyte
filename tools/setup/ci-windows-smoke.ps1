@@ -33,7 +33,7 @@ try {
 try {
     Set-Location '$escapedRoot'
     . './tools/setup/activate.ps1' -RequireCompiler
-    Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--', '--target', 'VerifyEnvironment')
+    Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'NativeSmoke')
     `$exitCode = 0
 } catch {
     Write-Output `$_.ToString()

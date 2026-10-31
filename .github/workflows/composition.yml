@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_HOME: ${{ github.workspace }}/artifacts/build/tools/cargo
+  RUSTUP_HOME: ${{ github.workspace }}/artifacts/build/tools/rustup
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -38,65 +42,63 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Set up cached build environment
-        uses: ./.github/actions/setup-ci
+      - name: Cache Linux DXC libraries
+        if: runner.os == 'Linux'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
+          path: |
+            artifacts/dev-env/dxc/lib
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
           runner-image: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
 
-      - name: Verify environment (Linux)
+      - name: Mise setup (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target VerifyEnvironment
+        run: bash tools/setup/setup.sh
 
-      - name: Verify environment (Windows)
+      - name: Mise setup (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $log = Join-Path $env:RUNNER_TEMP 'lumyte-smoke.log'
-          try {
-            & {
-              .\tools\setup\ci-windows-smoke.ps1
-            } *>&1 | Tee-Object -FilePath $log
-          } catch {
-            $details = $_.ToString()
-            if (Test-Path $log) {
-              $details += "`n" + ((Get-Content $log -Tail 60) -join "`n")
-            }
-            $details = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Host "::error title=Windows environment verification failed::$details"
-            exit 1
-          }
+          .\tools\setup\setup.ps1
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
 
       - name: Build solution (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target Compile --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
 
       - name: Build solution (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--', '--target', 'Compile', '--configuration', 'Release')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
 
       - name: Archive compiled solution (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target ArchiveCiBuild --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target ArchiveCiBuild --configuration Release --host-only
 
       - name: Archive compiled solution (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'ArchiveCiBuild', '--configuration', 'Release')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'ArchiveCiBuild', '--configuration', 'Release', '--host-only')
 
       - name: Upload compiled solution
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -115,7 +117,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # Capture the native P/Invoke assembly before a Browser build selects its static module.
+      # The native job supplies the desktop P/Invoke assembly for packaging.
       - name: Upload managed Parley package assets
         if: matrix.os == 'ubuntu-24.04'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -125,8 +127,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  validate:
-    name: ${{ matrix.platform }} (${{ matrix.arch }})
+  linux:
+    name: Linux (${{ matrix.arch }})
     needs: build
     strategy:
       fail-fast: false
@@ -138,22 +140,30 @@ jobs:
           - os: ubuntu-24.04-arm
             platform: Linux
             arch: aarch64
-          - os: windows-2022
-            platform: Windows
-            arch: x64
-          - os: windows-11-arm
-            platform: Windows
-            arch: aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Set up cached build environment
-        uses: ./.github/actions/setup-ci
+      - name: Cache Linux DXC libraries
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
+          path: |
+            artifacts/dev-env/dxc/lib
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
           runner-image: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
+
+      - name: Mise setup (Linux)
+        shell: bash
+        run: bash tools/setup/setup.sh
 
       - name: Restore compiled solution
         uses: ./.github/actions/restore-ci-build
@@ -169,7 +179,6 @@ jobs:
           sudo apt-get install -y libopenal1
 
       - name: Run solution tests (Linux)
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
@@ -179,21 +188,12 @@ jobs:
             export LUMYTE_OPENAL_TESTS=1
             export ALSOFT_DRIVERS=null
           fi
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestBrowserContracts
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiNative --configuration Release --host-only --no-build --no-restore
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
             dotnet run --project build -c Release --no-build --no-restore -- --target PipelineBenchmark --configuration Release --no-build --no-restore
           fi
 
-      - name: Run solution tests (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--configuration', 'Release', '--no-build', '--no-restore')
-
-      - name: Run X11 and browser Windowing tests
-        if: runner.os == 'Linux'
+      - name: Native / X11 windowing
         shell: bash
         run: |
           source tools/setup/activate.sh
@@ -203,26 +203,14 @@ jobs:
           fi
           dotnet run --project build -c Release --no-build --no-restore -- --target TestWindowing --configuration Release --no-build --no-restore
 
-      - name: Run Wasm and browser WebGPU tests
-        if: matrix.os == 'ubuntu-24.04'
+      - name: Distribution / samples and packages
+        if: matrix.arch == 'x64'
         shell: bash
-        env:
-          CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestWasm --configuration Release
-
-      - name: Run browser audio contracts
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
-        env:
-          CHROME: /usr/bin/google-chrome
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestBrowserAudio --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --configuration Release --host-only --no-build --no-restore --skip-parley-package
 
       - name: Verify diagnostic server and game processes
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
@@ -265,55 +253,226 @@ jobs:
           path: artifacts/test-results/
           if-no-files-found: ignore
 
-  quality:
-    name: Samples, packages and lint (Linux x64)
+  windows:
+    name: Windows (${{ matrix.arch }})
     needs: build
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: Windows
+            arch: x64
+          - os: windows-11-arm
+            platform: Windows
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Set up cached build environment
-        uses: ./.github/actions/setup-ci
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
         with:
-          runner-image: ubuntu-24.04
-          arch: x64
+          profile: native
+          runner-image: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+      - name: Mise setup (Windows)
+        shell: powershell
+        run: |
+          .\tools\setup\setup.ps1
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
 
       - name: Restore compiled solution
         uses: ./.github/actions/restore-ci-build
         with:
+          runner-image: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+      - name: Run solution tests (Windows)
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CiNative', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
+      - name: Distribution / Windows window sample
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'PublishWindowSample', '--configuration', 'Release', '--no-build', '--no-restore')
+
+      - name: Distribution / Windows packages
+        if: matrix.arch == 'x64'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
+            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Pack', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
+          }
+
+  browser:
+    name: Browser (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Cache Linux DXC libraries
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            artifacts/dev-env/dxc/lib
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: browser
           runner-image: ubuntu-24.04
           arch: x64
 
-      - name: Prepare Linux validation dependencies
-        shell: bash
+      - name: Mise setup (Browser)
+        run: bash tools/setup/setup.sh
+
+      - name: Prepare browser runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenal1
+          google-chrome --version
+
+      - name: Browser / contracts, WebGPU and audio
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser --configuration Release
+
+      - name: Upload browser results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
+  aot:
+    name: AOT (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Cache Linux DXC libraries
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            artifacts/dev-env/dxc/lib
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
+          runner-image: ubuntu-24.04
+          arch: x64
+
+      - name: Mise setup (AOT)
+        run: bash tools/setup/setup.sh
+
+      - name: Prepare AOT audio dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libopenal1
 
-      - name: Sample, pack and lint
+      - name: Distribution / AOT publish and execution
+        run: |
+          source tools/setup/activate.sh
+          # Each AOT publish restores and builds its own project references.
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --configuration Release --host-only --no-build --no-restore
+
+  format:
+    name: Format (${{ matrix.platform }} x64)
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: Linux
+          - os: windows-2022
+            platform: Windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Cache Linux DXC libraries
+        if: runner.os == 'Linux'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            artifacts/dev-env/dxc/lib
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
+          runner-image: ${{ matrix.os }}
+          arch: x64
+
+      - name: Mise setup (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash tools/setup/setup.sh
+
+      - name: Mise setup (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          .\tools\setup\setup.ps1
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
+
+      - name: Restore compiled solution
+        uses: ./.github/actions/restore-ci-build
+        with:
+          runner-image: ${{ matrix.os }}
+          arch: x64
+
+      - name: Quality / format and lint (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Samples --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target Pack --configuration Release --no-build --no-restore --skip-parley-package
-          dotnet run --project build -c Release --no-build --no-restore -- --target PublishWindowSample --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Debug --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target CheckFormat --configuration Debug --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target CheckMarkdown
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --configuration Release --host-only
 
-      - name: Upload sample and packaging test results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-quality-Linux-x64
-          path: artifacts/test-results/
-          if-no-files-found: ignore
+      - name: Quality / format (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CheckFormat', '--configuration', 'Release', '--host-only')
 
   package:
     name: Parley native NuGet package
-    needs: [validate, quality]
+    needs: [linux, windows, browser, aot, format]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -343,7 +502,7 @@ jobs:
           dotnet run --project build -c Release -- --target Restore --project src/Graphics/Lumyte.Graphics.Text.Parley
 
       - name: Package validated runtime assets
-        run: dotnet run --project build -c Release -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
+        run: dotnet run --project build -c Release --no-build --no-restore -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
