@@ -99,6 +99,7 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/src/UI/">
+    <Project Path="src/UI/Lumyte.UI.Automation/Lumyte.UI.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI/Lumyte.UI.csproj" />
   </Folder>
   <Folder Name="/tests/" />
@@ -164,6 +165,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.Automation.Tests/Lumyte.UI.Automation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />
   </Folder>

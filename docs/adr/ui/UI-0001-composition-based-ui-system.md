@@ -12,7 +12,7 @@ Signals本体（同期グラフ・非同期変換・性能改善）はPR #99でm
 
 既存のComposition、Input、Windowing、Drawing2Dの上に、ゲーム内画面とツールのためのUIを構築する。構築構文、親子関係、レイアウト、入力、GPU実行をそれぞれの責務へ分け、実装を段階的にレビューできる必要がある。
 
-本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0008で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
+本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0009で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
 
 ## 決定
 
@@ -34,7 +34,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 
 ### 実装PRと対応ADR
 
-実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く7本のdraft PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
+実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く8本のdraft PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
 
 | 実装PR | 対応ADR | 追加する機能 | 実装の前提 |
 | --- | --- | --- | --- |
@@ -45,6 +45,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 5 | UI-0006 | focus、Tab、キー押下、入力競合 | PR 4 |
 | 6 | UI-0007・INPUT-0007 | 取得元Window付きInput、source順序、Window/Input接続、Hosted、DPI | PR 3・5 |
 | 7 | UI-0008 | 親RenderGraph、Resources、device世代の接続 | PR 3・6 |
+| 8 | UI-0009 | Locator、自動待機、通常入力による操作、状態検証 | PR 5・6。積み上げ先はPR 7 |
 
 描画とhit testは同じBounds・座標・clip規則を使うため、PR 3で幾何走査を確定し、PR 4はそれを前提にする。全公開APIを先にstubで追加せず、動作が完成するPRで段階的に公開する。
 
@@ -59,6 +60,8 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 レイアウトはFlutter型の「制約を子へ渡す→子がサイズを返す→親が位置を決める」方式とする。一回の子layout、制約、公開Size/Bounds、拡張境界はUI-0003で定義する。描画とhit testは共通の幾何を使う。
 
 UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ集約し、PixelScale、Hosted原点・clip、入力座標の契約はUI-0007で定義する。取得時に確定したInputWindowIdをINPUT-0007で保持し、後から決まるUI上の配送先Windowと分ける。
+
+任意のLumyte.UI.Automationは、snapshotに基づく検索・待機と通常入力による操作を提供する。C#の同一プロセスAPI、host、失敗・取消はUI-0009で定義する。
 
 各詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
 

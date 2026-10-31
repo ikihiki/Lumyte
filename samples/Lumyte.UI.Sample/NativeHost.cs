@@ -6,15 +6,15 @@ using Lumyte.Input.Abstractions;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Linux;
 using Lumyte.Platform.Windows;
+using Lumyte.UI.Automation;
 using Lumyte.UI.SampleSupport;
 using Lumyte.Windowing.Abstractions;
-using static Lumyte.UI.Compose;
 
 namespace Lumyte.UI.Sample;
 
 internal static class NativeHost
 {
-    internal static int Run()
+    internal static int Run(bool automate = false)
     {
         int result = 1;
         Exception? failure = null;
@@ -22,7 +22,7 @@ internal static class NativeHost
         {
             try
             {
-                RunCore();
+                RunCore(automate);
                 result = 0;
             }
             catch (Exception error)
@@ -45,7 +45,7 @@ internal static class NativeHost
         return result;
     }
 
-    private static void RunCore()
+    private static void RunCore(bool automate)
     {
         using IPlatform platform = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763) ? new WindowsPlatform() : OperatingSystem.IsLinux() ? new LinuxPlatform() : throw new PlatformNotSupportedException();
         using IWindow window = platform.CreateWindow(new() { Title = "Lumyte UI — click or Tab / Space", ClientSize = new(480, 320) });
@@ -53,7 +53,7 @@ internal static class NativeHost
         var map = (IWindowInputSource)source;
         using var input = new InputSystem([source]);
         int clicks = 0;
-        using var ui = new UiSurface(Panel()[Stack(spacing: 16)[Rectangle(width: 300, height: 40, fill: new Color2D(0.2f, 0.5f, 0.9f, 1)), Button(onClick: () => window.SetTitle($"Clicks: {++clicks}"))[Rectangle(width: 200, height: 100, fill: new Color2D(0.7f, 0.3f, 0.1f, 1))]]]);
+        using UiSurface ui = UiAutomationExercise.CreateSurface(() => window.SetTitle($"Clicks: {++clicks}"));
         var router = new UiHostInputRouter(map, map);
         router.Attach(window, ui);
         if (!map.TryGetInputWindowId(window.Id, out InputWindowId origin))
@@ -78,6 +78,37 @@ internal static class NativeHost
         IGraphicsSwapchain? swapchain = null;
         try
         {
+            if (automate)
+            {
+                ui.SetViewport(window.State.ClientSize);
+                var host = new UiSampleAutomationHost(ui, _ =>
+                {
+                    platform.PumpEvents();
+                    ui.SetViewport(window.State.ClientSize);
+                    ui.UpdateLayout();
+                    var canvas = new Canvas2D();
+                    canvas.Begin();
+                    UiHostDrawing.Record(canvas, window, ui);
+                    SwapchainDesc configuration = UiHostPresenter.Configuration(graphics, window.State.PixelSize.Width, window.State.PixelSize.Height);
+                    swapchain ??= graphics.CreateSwapchain(configuration);
+                    presenter.DrawAsync(swapchain, canvas.End()).GetAwaiter().GetResult();
+                    return ValueTask.CompletedTask;
+                });
+                try
+                {
+                    var screenshot = new UiSampleScreenshotHost(host, token => UiSampleScreenshot.CaptureAsync(device, ui, window.State.Scale, token));
+                    UiAutomationExercise.RunAsync(screenshot).GetAwaiter().GetResult();
+                    var page = new UiAutomationPage(screenshot, new() { Timeout = TimeSpan.FromSeconds(30) });
+                    File.WriteAllBytes("ui-native-automation.png", page.ScreenshotAsync().GetAwaiter().GetResult());
+                }
+                finally
+                {
+                    host.DisposeAsync().GetAwaiter().GetResult();
+                }
+
+                window.Close();
+            }
+
             while (window.State.Lifetime == WindowLifetime.Open)
             {
                 platform.PumpEvents();

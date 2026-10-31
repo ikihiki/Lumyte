@@ -61,3 +61,18 @@ dotnet run --project samples/Lumyte.UI.Sample -c Release -- --resources wgpu
 `--render-graph`はResourcesなし、`--resources`はDIで設定した既存Drawing2D pipelineを使う独立した経路です。同じCPU layoutをCanvas2DとRenderGraphCanvas2Dへ記録し、同じ形式・DPI (1.5, 2)・Clear/Load条件でreadbackを厳密比較します。直接描画用とgraph用のtargetをそれぞれ3 frame再利用し、UI移動・削除後の背景復元を確認します。Load時は親graphにdisplay-linearの青い背景passを置き、UI、readbackの順で実行します。3D rendererは使用せず、tone mapping済み背景との合成境界を確認します。
 
 2026-10-29にVulkanとwgpu（Mesa lavapipeのソフトウェアGPU）で上記4経路を実行しました。HotReloadとdevice世代切り替えはResourcesの統合fixture、Append/Compile/Recordの失敗・取消とcleanup再試行はUI／Drawing2Dのfixtureで検証します。実機GPUのdeviceロスト・復旧後の再描画は未検証です。
+
+## Locatorによる自動操作
+
+```sh
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --automation record-only
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --automation vulkan
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --automation wgpu
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- native --automation
+```
+
+role/nameで保存Buttonを探し、Click、成功indicatorの表示、Enterによる二回目の保存、focusを確認します。専用モード中はOS入力をUIへ渡さず、通常のUiSurface.Dispatchを自動操作のleaseから使います。record-onlyはGPU不要です。
+
+GPUのoffscreen経路は新しい描画frameの実readbackを`ui-automation.png`へ保存します。Native Windowの経路は提示も進め、`ui-native-automation.png`を保存して終了します。PNGには対象surfaceだけを含みます。GPUのcold pipeline準備を含めサンプルの期限は30秒、ライブラリの既定は5秒です。
+
+2026-10-29にheadless、Vulkan／wgpu（Mesa lavapipe）の自動操作とPNG保存を確認しました。NativeのWindow経路はビルドを確認し、Windows/X11 displayがないため実機提示・操作は未検証です。UIレベルの合成入力の確認と、OS入力取得の確認は区別します。

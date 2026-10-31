@@ -21,3 +21,11 @@ frame ownerはpreparedとrendererだけを所有します。GPU完了後、comma
 サンプルは毎frame、取消tokenを渡さずにGPU完了を待ちます。並行frameや取消可能なホストでは、Waitの取消を完了と扱わず、実際の完了またはdevice退役までframe・plan・command・外部資源を保持してください。device復旧は既存のIGraphicsDeviceServiceとRebuildRuntimeAsyncを使い、新しいtarget/bindings/rendererを作ります。CPUのUiSurfaceは維持できます。自動復旧を行う常駐coordinatorはこのサンプルに含めません。
 
 [設計と所有権](../../docs/adr/ui/UI-0008-render-graph-and-resource-lifetime.md)／[実行と画素比較](../Lumyte.UI.Sample/README.md)／[Browserの選択方法](../Lumyte.UI.Browser.Sample/README.md)
+
+## UIの自動操作
+
+`UiSampleAutomationHost`は、一つのsurfaceとframe進行処理を借りる専用モード用の例です。自動操作中は外部入力をsurfaceへ転送せず、中立の入力をleaseで予約します。leaseのDispatchは送信前にpointer/keyを追跡し、途中例外でも自分のCancel／KeyCancel→Upを配送して予約を返します。surface終了時もhost側の予約を残しません。通常ホストに組み込む場合は物理入力の中立待ちと保留、UI dispatcherを実装してください。
+
+`UiAutomationExercise`は同じ保存Buttonをrole/nameで検索し、Click→indicator表示のExpect→Enter→focusのExpectを実行します。`UiSavedIndicator`は部品自身の状態更新でlayout/inputを無効化する例です。宣言setterに副作用を追加しません。
+
+`UiSampleScreenshotHost`は実readbackができる場合だけPNG取得を提供します。`UiSampleScreenshot`は新しいsurface描画をoffscreenで完了し、RGBA8の実画素をPNGへ符号化します。取消はGPU使用前または完了待機後に確認し、使用中の資源を早期返却しません。他のHosted surfaceやWindow装飾は含みません。

@@ -71,14 +71,16 @@ public sealed partial class UiSurface
             return;
         }
 
+        Dictionary<Widget, UiAutomationId> identities = plan.CaptureIdentities();
+
         Widget? previousFocus = _focusedWidget;
         Widget? nextFocus = previousFocus is not null ? matches.GetValueOrDefault(previousFocus) : null;
         var input = new RebuildInputTransfer(this);
-        PublishDeclaration(candidate, plan);
+        PublishDeclaration(candidate, plan, identities);
         input.Restore(this, plan, previousFocus, nextFocus);
     }
 
-    private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan)
+    private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan, Dictionary<Widget, UiAutomationId> identities)
     {
         Widget next = candidate.Root;
         foreach (Widget node in plan.Previous)
@@ -95,6 +97,10 @@ public sealed partial class UiSurface
         foreach (Widget node in plan.Next)
         {
             node.SetSurface(this);
+            if (identities.TryGetValue(node, out UiAutomationId identity))
+            {
+                node.RestoreAutomationIdentity(identity);
+            }
         }
     }
 }
