@@ -292,4 +292,81 @@ public sealed class AsyncTests
         Assert.Throws<InvalidOperationException>(() => _ = computed.Value);
         Assert.Equal(0, calls);
     }
+
+    /// <summary>Checks all asynchronous publication paths can synchronously deliver to a different thread.</summary>
+    /// <param name="transition">The state transition to publish.</param>
+    /// <returns>The asynchronous verification.</returns>
+    [Theory]
+    [InlineData("completion")]
+    [InlineData("reload")]
+    [InlineData("cancel")]
+    public async Task PublicationReleasesTheGraphBeforeSchedulingAsync(string transition)
+    {
+        var pending = new TaskCompletionSource<int>();
+        int calls = 0;
+        using AsyncSignal<int> signal = Signal.FromAsync(() => ++calls == 1 && transition == "reload" ? Task.FromResult(1) : pending.Task);
+        var scheduler = new SynchronousThreadScheduler();
+        var statuses = new ConcurrentQueue<AsyncSignalStatus>();
+        using SignalEffect effect = Signal.Effect(() => statuses.Enqueue(signal.Value.Status), scheduler);
+        if (transition == "completion")
+        {
+            pending.SetResult(7);
+            Assert.Equal(7, (await signal.Completion.WaitAsync(TimeSpan.FromSeconds(10))).Result);
+        }
+        else if (transition == "reload")
+        {
+            Task<AsyncSignalState<int>> completion = signal.ReloadAsync();
+            Assert.Equal(AsyncSignalStatus.Pending, signal.Value.Status);
+            pending.SetResult(7);
+            Assert.Equal(7, (await completion.WaitAsync(TimeSpan.FromSeconds(10))).Result);
+        }
+        else
+        {
+            signal.Cancel();
+            Assert.Equal(AsyncSignalStatus.Canceled, (await signal.Completion).Status);
+            pending.SetResult(7);
+        }
+
+        Assert.Null(effect.Failure);
+        Assert.True(scheduler.Deliveries > 0);
+        Assert.Equal(signal.Value.Status, statuses.Last());
+    }
+
+    /// <summary>Checks cancel delivery failure is reported to both the caller and the captured completion.</summary>
+    /// <returns>The asynchronous verification.</returns>
+    [Fact]
+    public async Task CancelDeliveryFailureFaultsCompletionAsync()
+    {
+        var pending = new TaskCompletionSource<int>();
+        using AsyncSignal<int> signal = Signal.FromAsync(() => pending.Task);
+        var failure = new ArithmeticException("cancellation observer");
+        using SignalEffect effect = Signal.Effect(() =>
+        {
+            if (signal.Value.Status == AsyncSignalStatus.Canceled)
+            {
+                pending.SetResult(7);
+                throw failure;
+            }
+        });
+        Task<AsyncSignalState<int>> completion = signal.Completion;
+        Assert.Same(failure, Assert.Throws<ArithmeticException>(signal.Cancel));
+        Assert.Same(failure, await Assert.ThrowsAsync<ArithmeticException>(() => completion));
+        Assert.Equal(AsyncSignalStatus.Canceled, signal.Value.Status);
+        Assert.Same(completion, signal.Completion);
+    }
+
+    private sealed class SynchronousThreadScheduler : ISignalScheduler
+    {
+        internal int Deliveries { get; private set; }
+
+        public void Schedule(Action work)
+        {
+            Deliveries++;
+            Task delivery = Task.Factory.StartNew(work, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            if (!delivery.Wait(TimeSpan.FromSeconds(2)))
+            {
+                throw new TimeoutException("Signal delivery was blocked by the graph lock.");
+            }
+        }
+    }
 }

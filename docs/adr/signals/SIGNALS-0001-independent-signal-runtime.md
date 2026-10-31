@@ -171,3 +171,9 @@ Signal.Batch(() => { count.Value = 1; count.Value = 2; });
 ## 実装記録
 
 2026-10-31、main向け独立PRで[Core package](../../../src/Core/Lumyte.Signals/README.md)と[独立console consumer](../../../samples/Lumyte.Signals.Sample/README.md)を追加した。単体テスト23件（同期グラフ8件、非同期変換15件）でdiamond・動的依存・未観測Computed・batch・Peek・受動read set・schedulerの集約と失効・Pause中のrevision・失敗・scope・thread間の順次更新を確認した。NuGet packの依存groupは空であり、UI/Compositionへの実行時依存を持たない。linux-x64のNative AOTをILLink/Ilc warning-as-errorでpublishし、生成した実行ファイルでbatchと購読解放を確認した。
+
+### PR #99レビュー対応
+
+Computedの読出しは例外の場合も外側の依存として記録する。Effectが例外を捕捉して正常終了しても、入力復旧時の再評価を継続する。未購読Computedの旧依存確認は最初の変更検知で打ち切り、本体を再評価して現行の分岐だけを読む。
+
+初回/後続のComputed例外捕捉と、Value/Peekで不要になった旧分岐の例外を避ける回帰テストを追加した。

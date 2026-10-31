@@ -20,9 +20,14 @@ public sealed class Computed<T> : IReadSignal<T>
         {
             lock (SignalContext.Gate)
             {
-                T value = _source.Read();
-                SignalContext.Track(_source);
-                return value;
+                try
+                {
+                    return _source.Read();
+                }
+                finally
+                {
+                    SignalContext.Track(_source);
+                }
             }
         }
     }
@@ -67,6 +72,7 @@ public sealed class Computed<T> : IReadSignal<T>
                         if (revision != node.Revision)
                         {
                             _dirty = true;
+                            break;
                         }
                     }
                 }
@@ -117,8 +123,14 @@ public sealed class Computed<T> : IReadSignal<T>
 
         internal override void ReadTracked()
         {
-            _ = Read();
-            SignalContext.Track(this);
+            try
+            {
+                _ = Read();
+            }
+            finally
+            {
+                SignalContext.Track(this);
+            }
         }
 
         protected override void Activate()

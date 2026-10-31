@@ -25,20 +25,10 @@ public sealed class Signal<T> : IReadSignal<T>
 
         set
         {
-            lock (SignalContext.Gate)
+            if (SetValue(value))
             {
-                SignalContext.CheckMutation();
-                if (_source.EqualsValue(value))
-                {
-                    return;
-                }
-
-                ulong revision = SignalContext.NextRevision();
-                _source.Value = value;
-                _source.Changed(revision, []);
+                SignalContext.Current.Flush();
             }
-
-            SignalContext.Current.Flush();
         }
     }
 
@@ -48,6 +38,23 @@ public sealed class Signal<T> : IReadSignal<T>
         lock (SignalContext.Gate)
         {
             return _source.Value;
+        }
+    }
+
+    internal bool SetValue(T value)
+    {
+        lock (SignalContext.Gate)
+        {
+            SignalContext.CheckMutation();
+            if (_source.EqualsValue(value))
+            {
+                return false;
+            }
+
+            ulong revision = SignalContext.NextRevision();
+            _source.Value = value;
+            _source.Changed(revision, []);
+            return true;
         }
     }
 

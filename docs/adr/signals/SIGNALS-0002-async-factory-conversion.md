@@ -34,3 +34,9 @@ loaderの例外はFailed、OperationCanceledExceptionはCanceledとしてComplet
 ## 結果と影響
 
 呼出元はruntimeやUIを用意せず結果と状態を観測できる。awaitをまたいだ暗黙の依存追跡、旧結果の保持、入力変更による自動再取得は含めない。既存の同期Computedをasync対応に変える案は、読出しと完了の契約が異なるため採用しない。
+
+## PR #99レビュー対応
+
+状態の更新と処理identityの検証はgraph gate内で一体に行い、observerの配送はgate解放後に行う。完了・ReloadAsync・Cancelのいずれも同じ境界に従い、別threadへ同期配送しても配送先がgateを取得できるようにする。
+
+Cancelの同期通知が失敗した場合は呼出元へ例外を返し、その処理のCompletionも同じ例外でfaultさせる。取消中に旧loaderが完了しても、失効済み処理はCompletionを成功へ上書きしない。Cancelの通知失敗、通知中の旧処理完了、および3種類の状態更新の同期thread配送を回帰テストで検証する。

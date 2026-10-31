@@ -206,6 +206,55 @@ public sealed class GraphTests
         Assert.Equal(8, doubled.Value);
     }
 
+    /// <summary>Checks a caught computed failure remains subscribed, including a failure on the first read.</summary>
+    /// <param name="initialFailure">Whether the first computed read fails.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CaughtComputedFailuresKeepTheirDependencies(bool initialFailure)
+    {
+        var divisor = Signal.Create(initialFailure ? 0 : 1);
+        Computed<int> quotient = Signal.Computed(() => 10 / divisor.Value);
+        var results = new List<string>();
+        using SignalEffect effect = Signal.Effect(() =>
+        {
+            try
+            {
+                results.Add(quotient.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            catch (DivideByZeroException)
+            {
+                results.Add("error");
+            }
+        });
+        if (!initialFailure)
+        {
+            divisor.Value = 0;
+        }
+
+        divisor.Value = 2;
+        Assert.Equal(initialFailure ? ["error", "5"] : new[] { "10", "error", "5" }, results);
+        Assert.Null(effect.Failure);
+    }
+
+    /// <summary>Checks an unobserved computed stops checking obsolete branches as soon as a dependency changes.</summary>
+    /// <param name="peek">Whether the read is untracked.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnobservedComputedSkipsObsoleteFailingBranches(bool peek)
+    {
+        var chooseLeft = Signal.Create(true);
+        var divisor = Signal.Create(1);
+        Computed<int> left = Signal.Computed(() => 10 / divisor.Value);
+        Computed<int> selected = Signal.Computed(() => chooseLeft.Value ? left.Value : 42);
+        Assert.Equal(10, selected.Value);
+        chooseLeft.Value = false;
+        divisor.Value = 0;
+        Assert.Equal(42, peek ? selected.Peek() : selected.Value);
+        Assert.Equal(42, selected.Value);
+    }
+
     private sealed class ManualScheduler : ISignalScheduler
     {
         internal Queue<Action> Work { get; } = [];

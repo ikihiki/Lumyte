@@ -57,7 +57,7 @@ public sealed class AsyncSignal<T> : IReadSignal<AsyncSignalState<T>>, IDisposab
             previous?.Completion.TrySetResult(new(AsyncSignalStatus.Canceled));
             try
             {
-                _state.Value = new(AsyncSignalStatus.Pending);
+                _state.SetValue(new(AsyncSignalStatus.Pending));
             }
             catch (Exception error)
             {
@@ -68,6 +68,27 @@ public sealed class AsyncSignal<T> : IReadSignal<AsyncSignalState<T>>, IDisposab
                 }
 
                 next.Completion.TrySetException(error);
+            }
+        }
+
+        if (failure is null)
+        {
+            try
+            {
+                SignalContext.Current.Flush();
+            }
+            catch (Exception error)
+            {
+                failure = error;
+                lock (SignalContext.Gate)
+                {
+                    if (ReferenceEquals(_operation, next))
+                    {
+                        _operation = null;
+                    }
+
+                    next.Completion.TrySetException(error);
+                }
             }
         }
 
@@ -109,16 +130,20 @@ public sealed class AsyncSignal<T> : IReadSignal<AsyncSignalState<T>>, IDisposab
                 _operation = null;
                 if (operation is not null)
                 {
-                    try
-                    {
-                        _state.Value = new(AsyncSignalStatus.Canceled);
-                    }
-                    finally
-                    {
-                        operation.Completion.TrySetResult(new(AsyncSignalStatus.Canceled));
-                    }
+                    _state.SetValue(new(AsyncSignalStatus.Canceled));
                 }
             }
+
+            if (operation is not null)
+            {
+                SignalContext.Current.Flush();
+                operation.Completion.TrySetResult(new(AsyncSignalStatus.Canceled));
+            }
+        }
+        catch (Exception error)
+        {
+            operation?.Completion.TrySetException(error);
+            throw;
         }
         finally
         {
@@ -179,13 +204,16 @@ public sealed class AsyncSignal<T> : IReadSignal<AsyncSignalState<T>>, IDisposab
         {
             lock (SignalContext.Gate)
             {
-                if (!_disposed && ReferenceEquals(_operation, operation))
+                if (_disposed || !ReferenceEquals(_operation, operation))
                 {
-                    _operation = null;
-                    _state.Value = result;
+                    return;
                 }
+
+                _operation = null;
+                _state.SetValue(result);
             }
 
+            SignalContext.Current.Flush();
             operation.Completion.TrySetResult(result);
         }
         catch (Exception error)
