@@ -161,6 +161,53 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
         return node.PlaceRequest.Value;
     }
 
+    public UiWindowRequestId Resize(UiWindowId window, Vector2 clientSize)
+    {
+        Check();
+        if (!float.IsFinite(clientSize.X) || !float.IsFinite(clientSize.Y) || clientSize.X <= 0 || clientSize.Y <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(clientSize));
+        }
+
+        Node node = Get(window);
+        UiWindowRequestId request = Issue(window);
+        if (node.Presentation != UiWindowPresentation.Hosted || node.Role is not (UiWindowRole.Normal or UiWindowRole.Tool) || node.Terminal || node.Retiring)
+        {
+            Complete(request, "unsupported");
+            return request;
+        }
+
+        if (node.ResizeRequest is { } previous)
+        {
+            Complete(previous, "superseded");
+        }
+
+        node.RequestedSize = clientSize;
+        node.ResizeRequest = request;
+        return request;
+    }
+
+    public UiWindowRequestId BringToFront(UiWindowId window)
+    {
+        Check();
+        Node node = Get(window);
+        UiWindowRequestId request = Issue(window);
+        if (node.Presentation != UiWindowPresentation.Hosted || node.Role is not (UiWindowRole.Normal or UiWindowRole.Tool) || node.Terminal || node.Retiring)
+        {
+            Complete(request, "unsupported");
+            return request;
+        }
+
+        if (node.StackingRequest is { } previous)
+        {
+            Complete(previous, "superseded");
+        }
+
+        node.StackingOrder = checked(_nodes.Values.Max(current => Math.Max(current.StackingOrder, current.Id.Value)) + 1);
+        node.StackingRequest = request;
+        return request;
+    }
+
     public UiWindowRequestId Show(UiWindowId window)
     {
         Check();
@@ -256,7 +303,7 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
     {
         Check();
         _ = Get(presentationRoot);
-        foreach (Node node in _nodes.Values.Where(n => n.Root == presentationRoot).OrderByDescending(n => UiWindowStacking.Key(n.Role, n.Id, 0)))
+        foreach (Node node in _nodes.Values.Where(n => n.Root == presentationRoot).OrderByDescending(n => UiWindowStacking.Key(n.Role, n.Id, n.Committed?.StackingOrder ?? 0)))
         {
             if (node.Mode != UiWindowInputMode.Passive && node.Phase == UiWindowState.Open && node.State.IsVisible && node.State.ClientSize.X > 0 && node.State.ClientSize.Y > 0 && node.Committed is { } view && view.IsVisible && Contains(view.ClipInPresentation, position))
             {
@@ -427,7 +474,7 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
 
     private void ValidateRequest(UiWindowCreateRequest r)
     {
-        if (!Finite(r.ClientSize) || r.ClientSize.X <= 0 || r.ClientSize.Y <= 0 || r.Role is not (UiWindowRole.Normal or UiWindowRole.Popup or UiWindowRole.ContextMenu or UiWindowRole.ImeCandidates) || r.InputMode is < UiWindowInputMode.Interactive or > UiWindowInputMode.Candidate || r.Policy is < UiWindowPolicy.HostedOnly or > UiWindowPolicy.RequireNative || (r.Role == UiWindowRole.ImeCandidates) != (r.InputMode == UiWindowInputMode.Candidate))
+        if (!Finite(r.ClientSize) || r.ClientSize.X <= 0 || r.ClientSize.Y <= 0 || r.Role is not (UiWindowRole.Normal or UiWindowRole.Tool or UiWindowRole.Popup or UiWindowRole.ContextMenu or UiWindowRole.ImeCandidates) || r.InputMode is < UiWindowInputMode.Interactive or > UiWindowInputMode.Candidate || r.Policy is < UiWindowPolicy.HostedOnly or > UiWindowPolicy.RequireNative || (r.Role == UiWindowRole.ImeCandidates) != (r.InputMode == UiWindowInputMode.Candidate))
         {
             throw new ArgumentException("Invalid window request.", nameof(r));
         }
@@ -650,6 +697,21 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
             node.Bind!.TrySetResult(new(node.Id, () => Retire(node)));
         }
 
+        if (node.Committed?.GeometryRevision == node.Desired!.GeometryRevision)
+        {
+            if (node.ResizeRequest is { } resize)
+            {
+                Complete(resize);
+                node.ResizeRequest = null;
+            }
+
+            if (node.StackingRequest is { } stacking)
+            {
+                Complete(stacking);
+                node.StackingRequest = null;
+            }
+        }
+
         if (node.PlaceRequest is { } placement && node.Committed?.GeometryRevision == node.Desired!.GeometryRevision)
         {
             Complete(placement);
@@ -762,7 +824,7 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
             Refresh(root);
             Rect2D anchor = Anchor(node);
             Vector2 limit = root.State.ClientSize;
-            node.Size = Vector2.Min(node.Create!.ClientSize, limit);
+            node.Size = Vector2.Min(node.RequestedSize ?? node.Create!.ClientSize, limit);
             Vector2 at = PlacePoint(anchor, node.Size, limit, node.Placement!.PreferredSide, node.Placement.Gap);
             bounds = new(at.X, at.Y, node.Size.X, node.Size.Y);
         }
@@ -774,7 +836,7 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
         }
 
         bool visible = node.Registration is not null ? node.State.IsVisible : node.ShowIssued;
-        UiWindowPresentationView next = new(node.Id, node.Source!.SourceId, node.Role, bounds, clip, node.State.Scale, 0, visible);
+        UiWindowPresentationView next = new(node.Id, node.Source!.SourceId, node.Role, bounds, clip, node.State.Scale, 0, visible) { StackingOrder = node.StackingOrder };
         if (node.Desired is { } previous && previous with
         {
             GeometryRevision = 0,
@@ -1018,6 +1080,14 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
         internal UiWindowRequestId? CloseRequest { get; set; }
 
         internal Vector2 Size { get; set; }
+
+        internal Vector2? RequestedSize { get; set; }
+
+        internal ulong StackingOrder { get; set; }
+
+        internal UiWindowRequestId? ResizeRequest { get; set; }
+
+        internal UiWindowRequestId? StackingRequest { get; set; }
 
         internal ulong Revision { get; set; }
 

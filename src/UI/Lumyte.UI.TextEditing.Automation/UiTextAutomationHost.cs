@@ -199,7 +199,21 @@ public sealed class UiTextAutomationHost : IUiAutomationHost, IUiAutomationTextH
                         throw new InvalidOperationException("The candidate list changed before input acquisition.");
                     }
 
-                    return _connection.AcquireInputGate(token is not null);
+                    IDisposable guard = _connection.AcquireInputGate(token is not null);
+                    if (lease is IUiAutomationOwnedRoutingLease owned)
+                    {
+                        try
+                        {
+                            owned.RegisterCleanup(guard);
+                        }
+                        catch
+                        {
+                            guard.Dispose();
+                            throw;
+                        }
+                    }
+
+                    return guard;
                 },
  cancellationToken);
             }
@@ -211,7 +225,7 @@ public sealed class UiTextAutomationHost : IUiAutomationHost, IUiAutomationTextH
 
             if (gate is not null)
             {
-                return new Lease(_host, lease, gate);
+                return lease is IUiAutomationOwnedRoutingLease ? lease : new Lease(_host, lease, gate);
             }
 
             await lease.DisposeAsync();

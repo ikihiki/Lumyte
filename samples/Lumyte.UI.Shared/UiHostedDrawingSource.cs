@@ -40,7 +40,7 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
 
         _frame = new();
         _recorded.Clear();
-        foreach (Presentation presentation in _presentations.Where(p => !p.Closing).OrderBy(p => p.View.Role == UiWindowRole.ImeCandidates ? 2 : p.View.Role is UiWindowRole.Popup or UiWindowRole.ContextMenu ? 1 : 0).ThenBy(p => p.View.Window.Value).ToArray())
+        foreach (Presentation presentation in _presentations.Where(p => !p.Closing).OrderBy(p => p.View.Role == UiWindowRole.ImeCandidates ? 2 : p.View.Role is UiWindowRole.Popup or UiWindowRole.ContextMenu ? 1 : 0).ThenBy(p => p.View.StackingOrder == 0 ? p.View.Window.Value : p.View.StackingOrder).ToArray())
         {
             UiWindowPresentationView view = presentation.View;
             _recorded.Add(presentation, view);

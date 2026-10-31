@@ -91,6 +91,12 @@ public sealed class WindowSystemUiWindowManager : IUiWindowManager, IUiWindowReq
     public UiWindowRequestId Place(UiWindowId window, UiWindowPlacement placement) => _inner.Place(window, placement);
 
     /// <inheritdoc/>
+    public UiWindowRequestId Resize(UiWindowId window, Vector2 clientSize) => _inner.Resize(window, clientSize);
+
+    /// <inheritdoc/>
+    public UiWindowRequestId BringToFront(UiWindowId window) => _inner.BringToFront(window);
+
+    /// <inheritdoc/>
     public UiWindowRequestId Show(UiWindowId window) => _inner.Show(window);
 
     /// <inheritdoc/>

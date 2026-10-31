@@ -182,6 +182,9 @@ public sealed partial class ResourceManager : IAsyncDisposable, IMemoryReclaimer
     /// <remarks>The manager joins monitoring before releasing resources. Terminal errors remain observable here after disposal.</remarks>
     public Task HotReloadCompletion => _hotReload?.Completion ?? Task.CompletedTask;
 
+    /// <summary>Gets a detached list of the immutable runtime dependency identifiers.</summary>
+    public IReadOnlyList<string> RuntimeDependencyIds => Array.AsReadOnly(_runtimes.Keys.ToArray());
+
     /// <summary>Gets the latest completed automatic reload result, or null before the first completed attempt.</summary>
     public ResourceReloadResult? LastReloadResult => _hotReload?.LastResult;
 

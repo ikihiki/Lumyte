@@ -12,4 +12,8 @@ namespace Lumyte.UI.Windowing;
 /// <param name="Scale">The Scale value.</param>
 /// <param name="GeometryRevision">The GeometryRevision value.</param>
 /// <param name="IsVisible">Whether the binding contributes to presentation.</param>
-public sealed record UiWindowPresentationView(UiWindowId Window, Guid SourceId, UiWindowRole Role, Rect2D BoundsInPresentation, Rect2D ClipInPresentation, Vector2 Scale, ulong GeometryRevision, bool IsVisible = false);
+public sealed record UiWindowPresentationView(UiWindowId Window, Guid SourceId, UiWindowRole Role, Rect2D BoundsInPresentation, Rect2D ClipInPresentation, Vector2 Scale, ulong GeometryRevision, bool IsVisible = false)
+{
+    /// <summary>Gets the order within the role layer; zero retains creation order.</summary>
+    public ulong StackingOrder { get; init; }
+}

@@ -94,7 +94,7 @@ internal sealed class UiAutomationRun : IDisposable
         Check();
         Trace("acquire input lease");
         IUiAutomationInputLease lease = await (acquire is null ? Host.AcquireInputAsync(Token) : acquire(Token));
-        if (Host is IUiAutomationRoutingHost routing)
+        if (Host is IUiAutomationRoutingHost routing && lease is not IUiAutomationOwnedRoutingLease)
         {
             lease = new RoutingLease(Host, routing, lease);
         }
