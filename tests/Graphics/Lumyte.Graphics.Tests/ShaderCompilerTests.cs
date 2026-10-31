@@ -21,7 +21,7 @@ public sealed class ShaderCompilerTests
         using Stream source = typeof(ShaderExercise).Assembly.GetManifestResourceStream("Lumyte.Shaders.increment.slang")!;
         using var reader = new StreamReader(source);
         ShaderArtifact artifact = await compiler.CompileAsync(new ShaderCompilationDesc { Source = await reader.ReadToEndAsync(), Target = target });
-        ShaderTarget[] expected = target is { } selected ? [selected] : Enum.GetValues<ShaderTarget>();
+        ShaderTarget[] expected = target is { } selected ? [selected] : new[] { ShaderTarget.Wgsl, ShaderTarget.SpirV };
         foreach (ShaderTarget current in expected)
         {
             ShaderTargetData data = artifact.GetTarget(current);

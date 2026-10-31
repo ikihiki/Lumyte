@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../../build/Targets/AgilitySdk.props" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Direct3D 12 device and explicit buffer transfers for Windows.</Description>
+    <IsPackable Condition="!$([MSBuild]::IsOSPlatform('Windows'))">false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Direct3D.D3D12" Version="$(LumyteAgilityPackageVersion)" GeneratePathProperty="true" PrivateAssets="all" IncludeAssets="none" />
+    <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <Import Project="../../../build/Targets/Direct3D12Native.targets" />
+</Project>

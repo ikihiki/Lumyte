@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../../build/Targets/AgilitySdk.props" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="AgilitySdkVersion" Value="$(LumyteAgilitySdkVersion)" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Direct3D12/Lumyte.Graphics.Direct3D12.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Shaders/Lumyte.Graphics.Shaders.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

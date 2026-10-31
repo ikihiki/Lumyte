@@ -21,6 +21,11 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             throw new ArgumentException("Unknown shader target or stage.", nameof(desc));
         }
 
+        if (desc.Target == ShaderTarget.Dxil)
+        {
+            throw new NotSupportedException("The Lumyte DXIL shader ABI is not implemented yet.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         string directory = Path.Combine(Path.GetTempPath(), $"lumyte-shader-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -37,7 +42,7 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             }
 
             string compilerVersion = (await RunCompilerAsync(["-version"], cancellationToken)).Trim();
-            ShaderTarget[] targets = desc.Target is { } selected ? [selected] : Enum.GetValues<ShaderTarget>();
+            ShaderTarget[] targets = desc.Target is { } selected ? [selected] : [ShaderTarget.Wgsl, ShaderTarget.SpirV];
             var results = new List<ShaderTargetData>();
             foreach (ShaderTarget target in targets)
             {

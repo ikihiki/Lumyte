@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <LumyteAgilityChannel Condition="'$(LumyteAgilityChannel)' == ''">Stable</LumyteAgilityChannel>
+    <LumyteAgilityPackageVersion Condition="'$(LumyteAgilityChannel)' == 'Stable'">1.620.1</LumyteAgilityPackageVersion>
+    <LumyteAgilitySdkVersion Condition="'$(LumyteAgilityChannel)' == 'Stable'">620</LumyteAgilitySdkVersion>
+    <LumyteAgilityPackageVersion Condition="'$(LumyteAgilityChannel)' == 'Preview'">1.722.0-preview</LumyteAgilityPackageVersion>
+    <LumyteAgilitySdkVersion Condition="'$(LumyteAgilityChannel)' == 'Preview'">722</LumyteAgilitySdkVersion>
+  </PropertyGroup>
+  <Target Name="ValidateLumyteAgilityChannel" BeforeTargets="CollectPackageReferences;PrepareForBuild">
+    <Error Condition="'$(LumyteAgilityChannel)' != 'Stable' and '$(LumyteAgilityChannel)' != 'Preview'" Text="LumyteAgilityChannel must be Stable or Preview." />
+  </Target>
+</Project>

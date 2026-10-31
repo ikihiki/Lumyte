@@ -55,7 +55,7 @@ public sealed class DrawingTests
         ShaderArtifact[] artifacts = [DrawingShaders.LoadColorVertex(), DrawingShaders.LoadColorFragment(), DrawingShaders.LoadTextureVertex(), DrawingShaders.LoadTextureFragment(), DrawingShaders.LoadModelVertex(), DrawingShaders.LoadModelFragment()];
         for (int i = 0; i < artifacts.Length; i++)
         {
-            foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
+            foreach (ShaderTarget target in new[] { ShaderTarget.Wgsl, ShaderTarget.SpirV })
             {
                 ShaderTargetData data = artifacts[i].GetTarget(target);
                 Assert.Equal(i % 2 == 0 ? ShaderStage.Vertex : ShaderStage.Fragment, data.Stage);
