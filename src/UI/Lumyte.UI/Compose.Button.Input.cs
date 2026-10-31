@@ -12,8 +12,9 @@ public static partial class Compose
         public partial class Button
         {
             private long? _pressedPointer;
+            private bool _pointerInside;
 
-            /// <summary>Gets a value indicating whether a captured pointer is inside the current button geometry.</summary>
+            /// <summary>Gets a value indicating whether this button owns a key press or its captured pointer is inside the current geometry.</summary>
             public bool IsPressed { get; private set; }
 
             /// <summary>Gets or sets the callback invoked synchronously after a successful press is released.</summary>
@@ -28,6 +29,8 @@ public static partial class Compose
             {
                 var button = (Button)previous;
                 _pressedPointer = button._pressedPointer;
+                _pointerInside = button._pointerInside;
+                _pressedKey = button._pressedKey;
                 IsPressed = button.IsPressed;
             }
 
@@ -36,7 +39,7 @@ public static partial class Compose
             {
                 if (context.Input is not UiPointerInput pointer)
                 {
-                    return UiInputResult.Unhandled;
+                    return HandleKeyInput(in context);
                 }
 
                 switch (pointer.Phase)
@@ -47,14 +50,21 @@ public static partial class Compose
                             return UiInputResult.StopPropagation;
                         }
 
-                        if (_pressedPointer is not null)
+                        if (_pressedPointer is not null || _pressedKey is not null)
                         {
                             return UiInputResult.Handled;
                         }
 
-                        return context.CapturePointer() ? UiInputResult.Handled : UiInputResult.StopPropagation;
+                        if (!context.CapturePointer())
+                        {
+                            return UiInputResult.StopPropagation;
+                        }
+
+                        context.RequestFocus();
+                        return UiInputResult.Handled;
                     case UiPointerPhase.Move when context.IsCaptured:
-                        IsPressed = context.IsInside;
+                        _pointerInside = context.IsInside;
+                        UpdatePressedState();
                         return UiInputResult.Handled;
                     case UiPointerPhase.Up when context.IsCaptured:
                         if (context.IsInside)
@@ -75,7 +85,8 @@ public static partial class Compose
             protected override void OnPointerCaptureChanged(UiPointerCaptureState state)
             {
                 _pressedPointer = state.IsCaptured ? state.PointerId : null;
-                IsPressed = state.IsCaptured && state.IsInside;
+                _pointerInside = state.IsCaptured && state.IsInside;
+                UpdatePressedState();
             }
 
             /// <inheritdoc/>

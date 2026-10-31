@@ -16,6 +16,7 @@ public static partial class Compose
             /// <summary>Initializes a new instance of the <see cref="Button"/> class.</summary>
             public Button()
             {
+                Focusable = true;
                 Children = CreateChildren(1);
                 BackgroundChildren = CreateChildren();
             }

@@ -71,9 +71,11 @@ public sealed partial class UiSurface
             return;
         }
 
+        Widget? previousFocus = _focusedWidget;
+        Widget? nextFocus = previousFocus is not null ? matches.GetValueOrDefault(previousFocus) : null;
         var input = new RebuildInputTransfer(this);
         PublishDeclaration(candidate, plan);
-        input.Restore(this, plan);
+        input.Restore(this, plan, previousFocus, nextFocus);
     }
 
     private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan)
