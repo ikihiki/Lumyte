@@ -30,6 +30,9 @@ public static partial class Compose
             public WidgetChildren BackgroundChildren { get; }
 
             /// <inheritdoc/>
+            protected override bool SupportsLocalDeclarationValidation => GetType() == typeof(Button);
+
+            /// <inheritdoc/>
             protected override bool SupportsTransitionCapture => GetType() == typeof(Button);
 
             /// <inheritdoc/>

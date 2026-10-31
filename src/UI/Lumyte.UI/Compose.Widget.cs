@@ -11,6 +11,7 @@ public static partial class Compose
         /// <summary>A node with one parent and at most one connected surface.</summary>
         [CompositionContentType<WidgetChildren>]
         [ComposeArgumentAdapter(typeof(UiArgument<>))]
+        [ComposeFunctionAdapter(typeof(UiFunctionWidget))]
         public abstract partial class Widget
         {
             private readonly List<WidgetChildren> _childCollections = new();
@@ -34,7 +35,13 @@ public static partial class Compose
 
             internal IReadOnlyList<WidgetChildren> ChildCollections => _childCollections;
 
+            internal bool CanRebuildLocally => SupportsLocalDeclarationValidation && SharedElementKey is null;
+
             internal bool CanRetainInputOnRebuild => RetainsInputOnRebuild;
+
+            /// <summary>Gets a value indicating whether declaration validation uses only this subtree, without surface-wide references or uniqueness rules.</summary>
+            /// <remarks>Custom components opt in explicitly. Otherwise reactive function updates conservatively reconstruct the surface.</remarks>
+            protected virtual bool SupportsLocalDeclarationValidation => false;
 
             /// <summary>Gets a value indicating whether transferred component state can continue captured input.</summary>
             protected virtual bool RetainsInputOnRebuild => false;

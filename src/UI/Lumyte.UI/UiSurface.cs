@@ -23,6 +23,7 @@ public sealed partial class UiSurface : IDisposable
             throw new ArgumentException("The root must have neither a parent nor a surface.", nameof(root));
         }
 
+        BuildFunctions(root, null);
         ValidateRebuildKeys(root);
         List<Widget> nodes = root.CollectSubtree();
         _root = root;

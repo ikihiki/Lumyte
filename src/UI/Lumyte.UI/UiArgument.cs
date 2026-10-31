@@ -80,6 +80,13 @@ public readonly struct UiArgument<T> : IComposeArgument<T>
             {
                 widget.AddAnimationArgument(memberKey, projection, () =>
                 {
+                    // A function's concrete parameters have already produced its immutable body.
+                    // Retain the original comparison value so inherited poses request another build.
+                    if (widget is UiFunctionWidget)
+                    {
+                        return;
+                    }
+
                     T current = source.Peek();
                     setter(target, current);
                     initialValue = current;

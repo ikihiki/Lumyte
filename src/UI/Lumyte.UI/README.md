@@ -25,7 +25,7 @@ factory、子インデクサー、`Button.Background()`は既存Composition Gene
 
 直接初期化する場合は`panel.Children.Initialize(child1, child2)`または配列を使います。任意のIReadOnlyListを渡すoverloadはありません。Compositionで生成するカスタムWidgetのComposeContentもWidgetChildrenかつget-onlyに限定され、違反はGeneratorのLYC001診断になります。単純なプロパティ代入でrootをたどるMutationScopeは使いません。プロパティ・初回内容設定・surface処理にphase検査は設けません。
 
-低水準APIは最初の実装PRから`surface.Rebuild(Build())`で新しい宣言を予約し、`surface.UpdateTree()`で適用します。同じ親・子slot内で型/key（keyなしは型/位置）を照合し、componentの`OnReconcile`で管理する内部状態を引き継ぎます。任意fieldの自動コピーは行いません。layout導入後は`UpdateLayout()`がこの境界を自動実行します。通常の子コレクションは各宣言につき一回だけ初期化します。構築関数の登録・Signalによる自動再実行・表示要素の全差分再利用は後続実装です。
+低水準APIは最初の実装PRから`surface.Rebuild(Build())`で新しい宣言を予約し、`surface.UpdateTree()`で適用します。同じ親・子slot内で型/key（keyなしは型/位置）を照合し、componentの`OnReconcile`で管理する内部状態を引き継ぎます。任意fieldの自動コピーは行いません。layout導入後は`UpdateLayout()`がこの境界を自動実行します。通常の子コレクションは各宣言につき一回だけ初期化します。Signalによる構築関数の自動再実行は下記のSignal節、静的関数Widget内の状態保持は関数Widget節を参照してください。
 
 ライブラリはCompositionと、既存のRect2Dを使うGraphics.Drawing2Dを参照し、Generatorはビルド時のAnalyzerとして使用します。OS、GPU、Windowや入力pumpは所有しません。
 
@@ -47,7 +47,7 @@ surface.UpdateLayout();
 
 親は制約を渡し、子は制約内のサイズを返し、親は位置だけを決めます。Width/Heightは親制約内でtight化し、rootのサイズはviewportのtight制約を優先します。Stackは主軸をunboundedとして内容を一回ずつlayoutし、gapは可視の子同士の間だけに入れます。Buttonは内容から自身を決め、そのサイズで背景をlayoutします。
 
-宣言プロパティのsetterはlayoutを無効化しません。値の変更は構築関数で新しいツリーを作ります。低水準APIでは新しい構築結果を`surface.Rebuild(root)`へ渡します。キーは同じ親・slot内で型と組み合わせて識別し、省略時は位置と型を使います。切替は次のUpdateLayoutで行い、Signalによる自動の再構築は後続実装です。接続・子の初回初期化・viewport・表示側のruntime状態が変わるとdirtyになり、次のUpdateLayoutでrootから更新します。cleanなUpdateLayoutは再実行しません。Size/Boundsの読取はlayoutを実行せず、計算した値は各Widgetへ直接保存します。例外時は更新を中断し、先行ノードの変更を戻しません。ホストは描画と通常入力を停止し、破棄するか原因を修正して明示的に更新し直します。
+宣言プロパティのsetterはlayoutを無効化しません。値の変更は構築関数で新しいツリーを作ります。低水準APIでは新しい構築結果を`surface.Rebuild(root)`へ渡します。キーは同じ親・slot内で型と組み合わせて識別し、省略時は位置と型を使います。切替は次のUpdateLayoutで行い、Signalによる自動の再構築もこの経路を使います。接続・子の初回初期化・viewport・表示側のruntime状態が変わるとdirtyになり、次のUpdateLayoutでrootから更新します。cleanなUpdateLayoutは再実行しません。Size/Boundsの読取はlayoutを実行せず、計算した値は各Widgetへ直接保存します。例外時は更新を中断し、先行ノードの変更を戻しません。ホストは描画と通常入力を停止し、破棄するか原因を修正して明示的に更新し直します。
 
 カスタムの葉はWidgetのLayoutOverrideを、カスタムコンテナーはPanelのLayoutOverrideを拡張します。直接の可視子をLayoutChildで一回ずつ処理し、その返値を使ってSetChildOffsetで一回ずつ配置します。宣言値は構築時に設定し、setterからInvalidateLayoutを呼びません。表示側のruntime状態を変更する専用経路ではInvalidateLayoutを使えます。処理中の宣言を変更せず、同じsurfaceの処理を重ねない順序で呼び出します。phaseや再入の検出は行いません。別threadへの順次移行は接続中も利用できます。
 
@@ -221,3 +221,32 @@ var root = Rectangle(width: animated, height: 24);
 表示・退出には`isPresent: shownSignal`と`transitions: new UiElementTransitions { Enter = FadeIn(duration), Exit = FadeOut(duration) }`を静的構築関数へ渡せます。退出中はlayout領域を保持して入力を止め、最終通常frameの提示後に`onEntered`／`onExited`を通知します。再構築ではtype/key/slotが一致する状態を継承し、直接detachすると演出と未通知callbackを破棄します。標準Applicationがcaptureとframe更新を管理し、単独Surfaceや非対応描画では演出だけを省略します。`isVisible`は即時表示制御のままです。
 
 通常の演出は保持した描画commandを再生し、半透明groupの中間bufferは内容変更時に更新します。custom描画もliveで参加でき、固定snapshotへのopt-inは不要です。決定的な描画commandのcacheと旧snapshotに対応する部品は`SupportsTransitionCapture`をoverrideし、独自の可変状態の変更を`InvalidateTransitionCapture()`で通知します。共有要素とページ演出の利用例は[transitions sample](../../../samples/Lumyte.UI.Transitions.Sample/README.md)を参照してください。
+
+## 静的関数によるカスタムWidget
+
+アプリケーションの部品は`Compose.Definitions`へ`[Composable] public static Widget Counter(...)`を書くことで定義できます。引数はパラメータ、戻り値はUIツリーになり、`using static`から生成factoryを普通の関数として呼びます。
+
+```csharp
+[Composable]
+public static Widget Counter(string label, int start = 0)
+{
+    Signal<int> count = UseSignal(start);
+    return Button(automationName: $"{label}: {count.Value}",
+        onClick: () => count.Value++);
+}
+
+// using static Example.Compose;
+// Counter(label: labelSignal, key: "counter");
+```
+
+`UseSignal`は`using static Lumyte.UI.Compose;`で使えます。同じ型・Key・子slot（Keyなしは位置）の関数なら、再構築で内部の値を維持します。lazy initializerも使えます。Key変更・削除後の再追加は初期化し直します。UIが関数内の直接読取と引数のSignalを購読し、関数の再実行・新しい子ツリーの生成・購読解除を自動管理します。スコープを手動で開く必要はありません。
+
+関数bodyはsurfaceの接続またはRebuild準備で評価します。UseSignalはそのbody内で呼び、状態の更新は入力callback等から行います。明示的な`Signal.Create`は通常の独立値の生成であり、ローカル値の再利用を行いません。UseSignalの識別はソースの呼出位置を使うため、一行に複数の呼出しを書かず、ループ内では必要に応じて`key:`を指定します。Effectや外部資源の所有は既存のページcontext等で管理してください。
+
+関数定義projectにはComposition GeneratorのAnalyzer参照が必要です。[動くサンプル](../../../samples/Lumyte.UI.Functions.Sample/README.md)と[API・状態規則のADR](../../../docs/adr/ui/UI-0023-function-widgets-and-local-signals.md)を参照してください。
+
+共通の`Use(() => value)`で関数ごとの任意の値を保持でき、`UseSignal`もこの基盤を使います。初期化は同じ呼出位置の初回だけ行い、資源の自動破棄は行いません。親から借用値を渡す場合は、`UiContextKey<T>`を作り、`Provide(key, value, content)`と関数内の`UseContext(key)`を使います。子の関数へ自動的に引き継がれ、近い提供元が優先されます。
+
+任意のNavigationパッケージには`UseNavigation()`を用意しています。ページhostがそのWindowのnavigatorを自動提供し、単独のSurfaceでは`ProvideNavigation(navigation, Home())`で明示提供できます。Use系はUIが同期的に関数bodyを評価している間だけ呼べます。
+
+関数内のSignal変更は、その関数境界の宣言とbodyだけを再構築します。無関係な兄弟とrootは保持し、dirtyな親子は親の更新へまとめます。通常のWidget引数も最も近い関数の依存になります。明示的なRebuild、関数外の依存、全体検証が必要な部品・共有要素keyがある場合は全体再構築へ戻ります。独自WidgetはSupportsLocalDeclarationValidationで、検証が部分木内に閉じることを明示して参加できます。公開の子collectionは一回初期化のままです。geometryの変更は祖先のlayoutと入力計算へ伝播します。

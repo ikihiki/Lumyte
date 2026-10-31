@@ -23,6 +23,9 @@ public static partial class Compose
             public Color2D Fill { get; set; }
 
             /// <inheritdoc/>
+            protected override bool SupportsLocalDeclarationValidation => GetType() == typeof(Rectangle);
+
+            /// <inheritdoc/>
             protected override bool SupportsTransitionCapture => GetType() == typeof(Rectangle);
 
             /// <inheritdoc/>

@@ -80,6 +80,7 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
         {
             foreach (Widget child in snapshot)
             {
+                UiSurface.BuildFunctions(child, null, _owner.BuildContexts);
                 attached.AddRange(child.CollectSubtree());
             }
         }
@@ -110,4 +111,33 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
 
     /// <inheritdoc/>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    internal Action PrepareReplacements(IReadOnlyDictionary<Widget, Widget> replacements)
+    {
+        Widget[] next = _items.ToArray();
+        for (int index = 0; index < next.Length; index++)
+        {
+            if (replacements.TryGetValue(next[index], out Widget? replacement))
+            {
+                next[index] = replacement;
+            }
+        }
+
+        ReadOnlyCollection<Widget> view = Array.AsReadOnly(next);
+        return () =>
+        {
+            foreach (Widget previous in _items)
+            {
+                if (replacements.TryGetValue(previous, out Widget? replacement))
+                {
+                    previous.SetParent(null);
+                    replacement.SetParent(_owner);
+                }
+            }
+
+            _items = view;
+            _owner.InvalidateStructure();
+            _owner.InvalidateChildVisuals();
+        };
+    }
 }

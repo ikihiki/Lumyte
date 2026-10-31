@@ -37,6 +37,9 @@ public static partial class Compose
             }
 
             /// <inheritdoc/>
+            protected override bool SupportsLocalDeclarationValidation => GetType() == typeof(Stack);
+
+            /// <inheritdoc/>
             protected override bool SupportsTransitionCapture => GetType() == typeof(Stack);
 
             /// <inheritdoc/>

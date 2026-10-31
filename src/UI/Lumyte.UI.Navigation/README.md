@@ -41,3 +41,17 @@ Navigation専用の診断metadataは[Application.Navigation.Diagnostics](../Lumy
 `request.Completion`は論理commit時に確定します。`request.VisualCompletion`は最終通常frameの提示後にCompleted／Skipped／Interrupted等を返し、faulted Taskにはなりません。`request.SkipAnimation()`は演出だけを省略します。Animatingと退役中の次の要求はBusyです。旧page scopeは演出と最後のGPU使用が終わるまで保持します。公開した新pageのSignal/値アニメーションは入力gateと分離して再開し、内容更新で演出を中断しません。
 
 高度な埋込みhostは任意の`IUiNavigationVisualChange`を実装できます。標準Application.Navigationはこのbridgeを自動提供します。capture非対応のhostでは論理遷移を維持してSkippedになります。基本Applicationは引き続きNavigation packageへ依存しません。
+
+## 関数コンポーネント
+
+`using static Lumyte.UI.Navigation.UiNavigationHooks;`で、評価中の関数から`UseNavigation()`を使えます。
+
+```csharp
+// [Composable]な定義関数のbody内。
+var navigation = UseNavigation();
+return Button(onClick: () => navigation.RequestNavigate("/details"));
+```
+
+`MapPage`のページhostはactivationのnavigatorを自動提供します。子の関数にも引き継がれるため、引数での転送は不要です。独立したhostでは`new UiSurface(ProvideNavigation(navigation, Home()))`とし、生成factoryのrootへ借用値を提供します。イベント内からUseNavigationを呼び直さず、bodyで取得した参照をcaptureします。
+
+[共通Use基盤・入れ子と単独実行の契約](../../../docs/adr/ui/UI-0023-function-widgets-and-local-signals.md)

@@ -20,7 +20,7 @@ public sealed partial class UiSurface
             surface._inputReset++;
         }
 
-        internal void Restore(UiSurface surface, RebuildPlan plan, Widget? previousFocus, Widget? nextFocus, bool layoutUnchanged)
+        internal void Restore(UiSurface surface, Dictionary<Widget, Widget> matches, Widget? previousFocus, Widget? nextFocus, bool layoutUnchanged, IReadOnlySet<Widget>? replaced = null)
         {
             Widget candidateRoot = surface._root;
             surface._focusedWidget = nextFocus;
@@ -30,10 +30,10 @@ public sealed partial class UiSurface
                 candidateRoot.MarkLayoutDirty();
             }
 
-            bool inputUnchanged = layoutUnchanged;
-            foreach ((Widget previous, Widget current) in plan.Matches)
+            bool inputUnchanged = layoutUnchanged && replaced is null;
+            foreach ((Widget previous, Widget current) in matches)
             {
-                inputUnchanged &= current.TryReuseSignalInput(previous, plan.Matches);
+                inputUnchanged &= current.TryReuseSignalInput(previous, matches);
             }
 
             if (inputUnchanged)
@@ -48,7 +48,8 @@ public sealed partial class UiSurface
             List<Exception>? failures = null;
             foreach ((long id, PointerCapture capture) in _pointers)
             {
-                if (!surface._isDisposed && plan.Matches.TryGetValue(capture.Target, out Widget? target) && target.CanRetainInputOnRebuild)
+                Widget? target = Retained(capture.Target);
+                if (!surface._isDisposed && target is not null && (ReferenceEquals(target, capture.Target) || target.CanRetainInputOnRebuild))
                 {
                     surface._pointerCaptures.Add(id, new(target, capture.Position));
                     continue;
@@ -66,7 +67,8 @@ public sealed partial class UiSurface
 
             foreach ((Lumyte.Input.Abstractions.Key key, Widget owner) in _keys)
             {
-                if (!surface._isDisposed && plan.Matches.TryGetValue(owner, out Widget? target) && target.CanRetainInputOnRebuild)
+                Widget? target = Retained(owner);
+                if (!surface._isDisposed && target is not null && (ReferenceEquals(target, owner) || target.CanRetainInputOnRebuild))
                 {
                     surface._keyCaptures.Add(key, target);
                     continue;
@@ -96,6 +98,9 @@ public sealed partial class UiSurface
             {
                 throw new AggregateException(failures);
             }
+
+            Widget? Retained(Widget previous) => matches.TryGetValue(previous, out Widget? current)
+                ? current : replaced is not null && !replaced.Contains(previous) ? previous : null;
         }
     }
 }

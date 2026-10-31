@@ -55,6 +55,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 15 | UI-0019 | 独立Signalsとの接続、通常Composeの値引数拡張、UI本体の自動購読 | PR 1〜14 |
 | 16 | UI-0020 | Animationの値/Timeline接続、フレーム更新と表示producerの寿命 | PR 12〜15・ANIMATION-0001〜0005 |
 | 17 | UI-0021 | 表示・退出・page/connected演出、入力gateとGPU資源寿命 | PR 16 |
+| 18 | UI-0023 | 静的関数によるWidget、引数factory、ローカルSignalの状態保持 | PR 15〜17 |
 
 PR 16の実装時に、値評価とフレーム更新をPR 16、隔離capture・入力gate・GPU退役を伴う視覚遷移をPR 17へ分割した。PR 1〜15の番号と依存順は維持し、各PRで対応ADRを実装に合わせて確定する。UI-0021はPR 17で採用し、PR 16にはその公開APIを追加しない。
 
@@ -137,3 +138,5 @@ Minimal API風のページ登録は[UI-0018](UI-0018-minimal-page-registration.m
 | ページ交換 | 交換tokenは準備・静止・commit・解放/破棄の段階を持つ。Viewが自分の清掃進捗を所有し、成功済み手順を再実行しない | #90 |
 
 論理commitは新しい入力と宣言の公開、最終提示は演出の終了、GPU退役は旧資源を参照する処理の完了、DI解放はページの所有scopeの返却を意味する。これらは一つの完了flagへまとめない。Viewの清掃再試行と、Navigationが所有するページRetire・DI scope解放も別の進捗として扱う。
+
+関数Widgetを導入する#97では、[UI-0023](UI-0023-function-widgets-and-local-signals.md)に基づき関数境界の部分木更新を追加する。関数の依存だけが変わった場合は無関係な宣言を保持する。明示Rebuild、関数外の依存、Surface全体の検証が必要な場合は従来の全体再構築を使い分ける。layoutと入力geometryの再計算範囲は、宣言の構築範囲と分離する。

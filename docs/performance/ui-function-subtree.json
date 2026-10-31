@@ -1,0 +1,167 @@
+{
+  "date": "2026-10-31",
+  "baselineCommit": "3b6c54dde342f291df1fd1474db855f648e5abef",
+  "candidatePr": 97,
+  "candidateSourceSha256": {
+    "src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs": "c90dbbb324e22a041d65764bb6bfa60ee6bc34c1a941a1f1b44312c8fc41148d",
+    "src/UI/Lumyte.UI.TextEditing/Compose.TextBox.cs": "1c7d4e1d0d8272150d54d5a31bcd4e6044eb8bb10167414ada201ce4947599f3",
+    "src/UI/Lumyte.UI/Compose.Button.cs": "7f71306b606e5d7c158c9f3eb377b55378b51ec6597449c7f5d33add089d63cc",
+    "src/UI/Lumyte.UI/Compose.Panel.cs": "2c2cbaa9c61ca47d3d3c8bef625a28454d5bc0aef3606f62bccd4fe695a1cdda",
+    "src/UI/Lumyte.UI/Compose.Rectangle.cs": "5fa8f3aa38f897ac0c4c198e90aa66c62f752077352e96bc30164a4ee0388b57",
+    "src/UI/Lumyte.UI/Compose.Stack.cs": "4f679eea18ba7f4b30c634b668564f2c57f655ae0f9152f70c86e531f4feea12",
+    "src/UI/Lumyte.UI/Compose.Widget.Transitions.cs": "911c2029d57daba75fc592b7615f313f9c2a80b3398251501539069674d748d2",
+    "src/UI/Lumyte.UI/Compose.Widget.cs": "c3b7b55929717c615932936ef53979f1b3b4b6fcb2ebac2a372b6fa563111008",
+    "src/UI/Lumyte.UI/UiFunctionWidget.cs": "4ef223d3fedba32cfd52a223712a692b14c076db24af39dff9a11de99ffd4141",
+    "src/UI/Lumyte.UI/UiSurface.Animations.cs": "dd14943786ddd2406069c9c2862f98186ffec32a3d22ec6ea330d2882ecfa451",
+    "src/UI/Lumyte.UI/UiSurface.FunctionUpdates.cs": "d87355710a193c14ad418de937a8347ab97cac7f866cdc18bdad6db52a5cbf96",
+    "src/UI/Lumyte.UI/UiSurface.Rebuild.cs": "0c6625ad43c0d93c80afeabdbba0d371dac116cc12e28608c606cd06c6a4d694",
+    "src/UI/Lumyte.UI/UiSurface.RebuildInputTransfer.cs": "39fb1b36ef31ea6a1184c5c4feb9b0f914d46e028e672013728bd337782a70a6",
+    "src/UI/Lumyte.UI/UiSurface.SignalBinding.cs": "8ffdc4e784b8b994bf03146e082f183d38fa4894364510baee37e1a161c4b5b5",
+    "src/UI/Lumyte.UI/UiSurface.Signals.cs": "0525c00b8f1527f0f0c0e49e7ce30495a3ffe0e3db5e21a01c6fb5620859116b",
+    "src/UI/Lumyte.UI/WidgetChildren.cs": "b5a51fa629c2ae67cc3c9ce7689939a924467e615694454bb908952d006d7938",
+    "tools/benchmarks/ui-functions/Program.cs": "c760e04ddb819bf67ee09370773940fb158bf7290e513020056c86daf57ec4ad"
+  },
+  "environment": {
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "architecture": "x86_64",
+    "sdk": "10.0.401",
+    "runtime": "Microsoft.AspNetCore.App 10.0.12 [/workspace/.dotnet/shared/Microsoft.AspNetCore.App]\nMicrosoft.NETCore.App 10.0.12 [/workspace/.dotnet/shared/Microsoft.NETCore.App]",
+    "configuration": "Release",
+    "tieredCompilation": false,
+    "serverGc": false
+  },
+  "workload": {
+    "component": "FunctionTestUi.Counter",
+    "buttonSize": [
+      40,
+      20
+    ],
+    "viewport": [
+      800,
+      600
+    ],
+    "layout": "overlapping siblings in Panel",
+    "changedSourcesPerUpdate": 1,
+    "warmup": 5,
+    "batchCount": 5,
+    "iterationsPerBatch": 100,
+    "includes": "Signal assignment, declaration update, UpdateLayout/input geometry",
+    "excludes": "setup, assertions, console output, drawing/GPU"
+  },
+  "before": [
+    {
+      "Name": "one-function-of-100",
+      "RetainedUnrelatedDeclarations": false,
+      "Batches": [
+        {
+          "Nanoseconds": 698574.63,
+          "Bytes": 571775.68
+        },
+        {
+          "Nanoseconds": 408835.91,
+          "Bytes": 571776
+        },
+        {
+          "Nanoseconds": 377130.79,
+          "Bytes": 571776
+        },
+        {
+          "Nanoseconds": 377217.32,
+          "Bytes": 571776
+        },
+        {
+          "Nanoseconds": 373612.47,
+          "Bytes": 571776
+        }
+      ],
+      "MedianNanoseconds": 377217.32,
+      "MedianBytes": 571776
+    },
+    {
+      "Name": "one-function-of-1000",
+      "RetainedUnrelatedDeclarations": false,
+      "Batches": [
+        {
+          "Nanoseconds": 5620586.72,
+          "Bytes": 6034156.48
+        },
+        {
+          "Nanoseconds": 5681975.48,
+          "Bytes": 6034104
+        },
+        {
+          "Nanoseconds": 5693850.92,
+          "Bytes": 6034105.92
+        },
+        {
+          "Nanoseconds": 5476507.39,
+          "Bytes": 6034136
+        },
+        {
+          "Nanoseconds": 5570053.24,
+          "Bytes": 6034136
+        }
+      ],
+      "MedianNanoseconds": 5620586.72,
+      "MedianBytes": 6034136
+    }
+  ],
+  "after": [
+    {
+      "Name": "one-function-of-100",
+      "RetainedUnrelatedDeclarations": true,
+      "Batches": [
+        {
+          "Nanoseconds": 43134.54,
+          "Bytes": 11535.68
+        },
+        {
+          "Nanoseconds": 41786.35,
+          "Bytes": 11536
+        },
+        {
+          "Nanoseconds": 41225.54,
+          "Bytes": 11536
+        },
+        {
+          "Nanoseconds": 41090.22,
+          "Bytes": 11536
+        },
+        {
+          "Nanoseconds": 41020.53,
+          "Bytes": 11536
+        }
+      ],
+      "MedianNanoseconds": 41225.54,
+      "MedianBytes": 11536
+    },
+    {
+      "Name": "one-function-of-1000",
+      "RetainedUnrelatedDeclarations": true,
+      "Batches": [
+        {
+          "Nanoseconds": 348786.98,
+          "Bytes": 18704
+        },
+        {
+          "Nanoseconds": 351316.83,
+          "Bytes": 18704
+        },
+        {
+          "Nanoseconds": 345995.5,
+          "Bytes": 18705.92
+        },
+        {
+          "Nanoseconds": 356493.38,
+          "Bytes": 18736
+        },
+        {
+          "Nanoseconds": 352686.67,
+          "Bytes": 18736
+        }
+      ],
+      "MedianNanoseconds": 351316.83,
+      "MedianBytes": 18705.92
+    }
+  ]
+}

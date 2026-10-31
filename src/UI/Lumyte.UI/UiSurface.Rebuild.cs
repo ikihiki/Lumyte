@@ -24,6 +24,7 @@ public sealed partial class UiSurface
             throw new ArgumentException("A rebuilt tree must be disconnected and parentless.", nameof(root));
         }
 
+        BuildFunctions(root, _root);
         ValidateRebuildKeys(root);
         SignalBinding? candidate = PrepareSignals(root);
         if (_pendingRebuild is not { IsApplying: true })
@@ -140,7 +141,7 @@ public sealed partial class UiSurface
         Widget? nextFocus = previousFocus is not null ? matches.GetValueOrDefault(previousFocus) : null;
         var input = new RebuildInputTransfer(this);
         PublishDeclaration(candidate, plan, identities);
-        input.Restore(this, plan, previousFocus, nextFocus, layoutUnchanged);
+        input.Restore(this, plan.Matches, previousFocus, nextFocus, layoutUnchanged);
     }
 
     private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan, Dictionary<Widget, UiAutomationId> identities)
