@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />
     <ProjectReference Include="../../src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Direct3D12/Lumyte.Graphics.Direct3D12.csproj" />

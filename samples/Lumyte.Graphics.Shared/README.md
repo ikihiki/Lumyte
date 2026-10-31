@@ -10,6 +10,10 @@ SamplerExercise.Runは共通APIだけでfilter／address／comparison、LOD 0、
 
 ArgumentTableExercise.Runは共通APIで種類別slot、buffer要素参照、登録の置き換え、用途・範囲を検証します。CheckForeignDeviceは別deviceのresourceを登録できないことを確認します。shaderやGPU bindingの生成は行いません。
 
+## 共通カタログ
+
+`GraphicsExercises.RunAsync(device, name, report)` が個別の exercise または `suite` を実行します。Vulkan / wgpu / Direct3D 12 / Browser の host はこの一覧を共有します。device の生成・window / canvas・オンライン compiler は host 側の責務です。
+
 ## シェーダー
 
 `Shaders/increment.slang` をビルド時に WGSL と SPIR-V へ変換し、反射情報・entry・stage・compiler version・行列layoutと一つのbinaryにpackし、このDLLに埋め込みます。利用側はtargetを選ばず同じbinaryを渡します。生成 code はコミットせず、実行時に外部ファイルを読みません。オンライン検証用の Slang source も DLL に埋め込みます。

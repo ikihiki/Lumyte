@@ -19,17 +19,7 @@ internal static partial class Program
         using BrowserDevice device = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
         List<string> reports = [];
         Record(CapsDisplay.Describe(device), reports);
-        Record(await BufferExercise.RunAsync(device), reports);
-        Record(TextureExercise.Run(device), reports);
-        Record(SamplerExercise.Run(device), reports);
-        Record(ArgumentTableExercise.Run(device), reports);
-        Record(ShaderExercise.Run(device), reports);
-        Record(await CommandExercise.RunAsync(device), reports);
-        Record(await RenderGraphExercise.RunAsync(device), reports);
-        Record(await SemaphoreExercise.RunAsync(device), reports);
-        Record(await PipelineExercise.RunAsync(device), reports);
-        Record(await AdvancedCommandExercise.RunAsync(device), reports);
-        Record(await ShaderBindingExercise.RunAsync(device), reports);
+        await GraphicsExercises.RunAsync(device, "suite", report => Record(report, reports));
         using JSObject context = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no GPUCanvasContext.");
         using JSObject secondContext = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSecondSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no second GPUCanvasContext.");
         using JSObject invalidContext = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteInvalidSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no invalid context.");

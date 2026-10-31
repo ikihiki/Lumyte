@@ -1,15 +1,17 @@
 # Direct3D 12 サンプル
 
-`IGraphicDevice` で Upload → Default → Readback を実行し、4093 byte の内容を照合します。
-copy の開始位置はそれぞれ異なる非ゼロ offset を使用します。GUI は表示しません。
+Direct3D 12 / WARP を生成し、共通の `GraphicsExercises` を実行する host です。
+通常は `caps`、GPU 転送は `commands`、全契約検証は `suite`、三角形の表示は `window` を選びます。
+backend / exercise が不足すると Spectre.Console で選択します。非対話実行では両方を指定してください。
+入口は [共通ランチャー](../README.md) の `graphics` / `graphics-window` です。
 Agility SDK は一般版 `1.620.1`（SDK 620）が既定です。ビルド引数 `--agility-channel Preview` で
 `1.722.0-preview`（SDK 722）へ切り替えられます。Preview の実行には Windows の開発者モードが必要です。
 結果には実際の device の SDK version を表示します。
 
 ```powershell
 dotnet run --project build -c Release -- --target Compile --project samples/Lumyte.Graphics.Direct3D12.Sample --agility-channel Stable
-dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- warp
-dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- hardware
+dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- warp commands
+dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- hardware commands
 ```
 
 プレビュー版へ切り替える場合は、上のビルドコマンドの `Stable` を `Preview` に変更して再ビルドします。

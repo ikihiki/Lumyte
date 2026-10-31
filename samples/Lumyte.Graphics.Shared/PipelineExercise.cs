@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Samples;
@@ -162,7 +163,16 @@ public static class PipelineExercise
                 if (exact != null)
                 {
                     int index = checked((int)((y * pitch) + (x * layout.BytesPerTexel)));
-                    Require(bytes.AsSpan(index, exact.Length).SequenceEqual(exact), "Extended format draw changed a pixel.");
+                    if (format == TextureFormat.Rgb10A2Unorm)
+                    {
+                        // Alpha 0.5 lies halfway between the two middle UNORM2 values.
+                        // Float-to-UNORM conversion tolerance permits either neighbor; RGB remains exact.
+                        uint packed = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(index, 4));
+                        Require(packed is 0x400003ff or 0x800003ff, $"{format} draw changed pixel ({x}, {y}): actual {packed:X8}.");
+                        continue;
+                    }
+
+                    Require(bytes.AsSpan(index, exact.Length).SequenceEqual(exact), $"{format} draw changed pixel ({x}, {y}): expected {Convert.ToHexString(exact)}, actual {Convert.ToHexString(bytes.AsSpan(index, exact.Length))}.");
                     continue;
                 }
 

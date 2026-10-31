@@ -3,6 +3,8 @@
     <Project Path="benchmarks/Lumyte.Signals.Benchmarks/Lumyte.Signals.Benchmarks.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />
+    <Project Path="samples/Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
@@ -153,6 +155,7 @@
     <Project Path="tests/Input/Lumyte.Input.Tests/Lumyte.Input.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Tools/">
+    <Project Path="tests/Tools/Lumyte.Samples.Tests/Lumyte.Samples.Tests.csproj" />
     <Project Path="tests/Tools/Lumyte.Build.Tests/Lumyte.Build.Tests.csproj" />
   </Folder>
   <Folder Name="/build/">
