@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: ${{ matrix.platform }} (${{ matrix.arch }})
+  build:
+    name: Build ${{ matrix.platform }} (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -38,25 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Cache Linux DXC libraries
-        if: runner.os == 'Linux'
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      - name: Set up cached build environment
+        uses: ./.github/actions/setup-ci
         with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
-
-      - name: Mise setup (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: bash tools/setup/setup.sh
-
-      - name: Mise setup (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: .\tools\setup\setup.ps1
+          runner-image: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
 
       - name: Verify environment (Linux)
         if: runner.os == 'Linux'
@@ -84,13 +70,6 @@ jobs:
             exit 1
           }
 
-      - name: Prepare Linux validation dependencies
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenal1
-
       - name: Build solution (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -105,29 +84,28 @@ jobs:
           . ./tools/setup/activate.ps1
           Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--', '--target', 'Compile', '--configuration', 'Release')
 
-      - name: Run solution tests (Linux)
+      - name: Archive compiled solution (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
-            export LUMYTE_GRAPHICS_GPU_TESTS=1
-            export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-            export LUMYTE_OPENAL_TESTS=1
-            export ALSOFT_DRIVERS=null
-          fi
-          dotnet run --project build -c Release -- --target Test --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target TestBrowserContracts
-          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
-            dotnet run --project build -c Release -- --target PipelineBenchmark --configuration Release --no-build --no-restore
-          fi
+          dotnet run --project build -c Release --no-build --no-restore -- --target ArchiveCiBuild --configuration Release
 
-      - name: Run solution tests (Windows)
+      - name: Archive compiled solution (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--', '--target', 'Test', '--configuration', 'Release', '--no-build', '--no-restore')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'ArchiveCiBuild', '--configuration', 'Release')
+
+      - name: Upload compiled solution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-${{ matrix.os }}-${{ matrix.arch }}-Release
+          path: artifacts/ci/build.tar
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload native Parley package assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -147,6 +125,73 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  validate:
+    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: Linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: Linux
+            arch: aarch64
+          - os: windows-2022
+            platform: Windows
+            arch: x64
+          - os: windows-11-arm
+            platform: Windows
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up cached build environment
+        uses: ./.github/actions/setup-ci
+        with:
+          runner-image: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+      - name: Restore compiled solution
+        uses: ./.github/actions/restore-ci-build
+        with:
+          runner-image: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+      - name: Prepare Linux validation dependencies
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenal1
+
+      - name: Run solution tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
+            export LUMYTE_GRAPHICS_GPU_TESTS=1
+            export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+            export LUMYTE_OPENAL_TESTS=1
+            export ALSOFT_DRIVERS=null
+          fi
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestBrowserContracts
+          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
+            dotnet run --project build -c Release --no-build --no-restore -- --target PipelineBenchmark --configuration Release --no-build --no-restore
+          fi
+
+      - name: Run solution tests (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--configuration', 'Release', '--no-build', '--no-restore')
+
       - name: Run X11 and browser Windowing tests
         if: runner.os == 'Linux'
         shell: bash
@@ -156,7 +201,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y xvfb xauth
           fi
-          dotnet run --project build -c Release -- --target TestWindowing --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestWindowing --configuration Release --no-build --no-restore
 
       - name: Run Wasm and browser WebGPU tests
         if: matrix.os == 'ubuntu-24.04'
@@ -165,7 +210,7 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestWasm --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestWasm --configuration Release
 
       - name: Run browser audio contracts
         if: matrix.os == 'ubuntu-24.04'
@@ -174,14 +219,14 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestBrowserAudio --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestBrowserAudio --configuration Release
 
       - name: Verify diagnostic server and game processes
         if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestDiagnosticsProcesses --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestDiagnosticsProcesses --configuration Release --no-build --no-restore
 
       - name: Verify server-hosted diagnostic UI
         if: matrix.os == 'ubuntu-24.04'
@@ -190,7 +235,7 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestDiagnosticsUi --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestDiagnosticsUi --configuration Release --no-build --no-restore
 
       - name: Generate diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -201,7 +246,7 @@ jobs:
           PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target DiagnosticGallery
+          dotnet run --project build -c Release --no-build --no-restore -- --target DiagnosticGallery
 
       - name: Upload diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -220,22 +265,55 @@ jobs:
           path: artifacts/test-results/
           if-no-files-found: ignore
 
+  quality:
+    name: Samples, packages and lint (Linux x64)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up cached build environment
+        uses: ./.github/actions/setup-ci
+        with:
+          runner-image: ubuntu-24.04
+          arch: x64
+
+      - name: Restore compiled solution
+        uses: ./.github/actions/restore-ci-build
+        with:
+          runner-image: ubuntu-24.04
+          arch: x64
+
+      - name: Prepare Linux validation dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenal1
+
       - name: Sample, pack and lint
-        if: matrix.os == 'ubuntu-24.04'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target Samples --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target TestAot --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target Pack --configuration Release --no-build --no-restore --skip-parley-package
-          dotnet run --project build -c Release -- --target PublishWindowSample --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target Compile --configuration Debug --no-restore
-          dotnet run --project build -c Release -- --target CheckFormat --configuration Debug --no-restore
-          dotnet run --project build -c Release -- --target CheckMarkdown
+          dotnet run --project build -c Release --no-build --no-restore -- --target Samples --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Pack --configuration Release --no-build --no-restore --skip-parley-package
+          dotnet run --project build -c Release --no-build --no-restore -- --target PublishWindowSample --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Debug --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target CheckFormat --configuration Debug --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target CheckMarkdown
+
+      - name: Upload sample and packaging test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-quality-Linux-x64
+          path: artifacts/test-results/
+          if-no-files-found: ignore
 
   package:
     name: Parley native NuGet package
-    needs: validate
+    needs: [validate, quality]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

@@ -84,10 +84,40 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `Samples` / `TestAot` | CPU・Audio等のsample／NativeAOT publishと実行 |
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
 | `Ci` | 共通のCI向け検証target群を実行 |
+| `ArchiveCiBuild` / `VerifyCiBuild` | ビルド済みsolutionをtar化／後段runnerとの互換性と主要出力を検証 |
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
 OS別の実行対象は[workflow](../.github/workflows/composition.yml)で確認できます。
 WindowsのNative smokeを通常ユーザーで起動する処理や、GitHub Pagesの配信権限は分離したままです。
+
+## CIのcacheと成果物共有
+
+CIは4環境の`build` jobでRelease solutionをビルドし、同じrunner image・architectureの
+`validate` jobへ成果物を渡します。Linux x64の`quality` jobも同じ成果物を使い、
+sample・NativeAOT・pack・Debug build・lintを並列に検証します。
+`package` jobは`validate`と`quality`の成功後に全RIDのParley資産をまとめます。
+
+[setup-ci](../.github/actions/setup-ci/action.yml)はNuGet、miseのインストール済みtool、
+vcpkgのdownload／binary cache、Linux DXC、ParleyのCargo増分ビルドを復元します。
+NuGetの保存先は`artifacts/dev-env/nuget-packages`です。
+NuGet・mise・vcpkg・Cargoのキーはrunner image・OS・architectureとSDK／依存定義を含み、NuGetとCargoのみ互換範囲のprefix fallbackを使います。
+キャッシュは成功したjobの終了時に保存されます。miseのキーはtool／setup入力が変わると更新され、
+後段で追加したWASM workloadは既存のcacheへ追記されません。
+cache hitでもsetupは実行し、manifest・環境設定・OS依存関係を準備します。
+
+`ArchiveCiBuild`は`artifacts/ci/build.tar`を作成します。
+対象は`build`・`src`・`tests`・`samples`・`benchmarks`の`bin`／`obj`、
+Parleyのnative資産・notice・package資産、Direct3D 12のnative DLLです。
+tool cache、Cargo／CMakeの中間出力、ログは含みません。
+tarで実行権限とsymlinkを保持し、`build-<runner image>-<architecture>-Release` artifactとして7日間保存します。
+Browser publishがdesktop向け出力を変更する前に保存するため、後段は同じdesktop成果物から開始できます。
+
+[restore-ci-build](../.github/actions/restore-ci-build/action.yml)は同じworkflow runのartifactを展開し、
+`VerifyCiBuild`でcheckoutの絶対パス・OS／architecture・configurationと主要出力を確認します。
+`obj`やテストfixtureに絶対パスが含まれるため、producerとconsumerは同じrunner label・checkout位置を使います。
+その後`Restore`でNuGet依存を補い、cache miss時にも動作するようにします。
+通常のテストではrunner自身と対象projectの両方に`--no-build --no-restore`を指定します。
+WASM・NativeAOTのpublishとDebug buildは別構成のため、それぞれ後段でビルドします。
 
 ## ParleyのNative／WASM
 
