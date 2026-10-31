@@ -91,7 +91,7 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
 OS別の実行対象は[workflow](../.github/workflows/composition.yml)で確認できます。
-WindowsのNative smokeを通常ユーザーで起動する処理や、GitHub Pagesの配信権限は分離したままです。
+GitHub Pagesの配信権限はCIから分離したままです。
 
 ### CIの対象と再利用
 
@@ -104,7 +104,7 @@ Platformのテストprojectもhost用の参照とソースだけをコンパイ�
 
 Browser・共通の配布検証・native／Markdown lintはLinux x64に集約します。
 Windows専用packageとWindow sampleはWindows側で検証し、C#の書式は各OSのx64で検査します。
-Native smokeは4環境で維持し、そこでのlint再実行は行いません。
+環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
 Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
 
 セットアップ後は`dotnet run --no-build --no-restore`でrunnerを再利用します。
