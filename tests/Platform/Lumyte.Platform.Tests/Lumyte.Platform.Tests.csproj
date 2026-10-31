@@ -9,8 +9,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
-    <ProjectReference Include="../../../src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
-    <ProjectReference Include="../../../src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+    <ProjectReference Include="../../../src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <ProjectReference Include="../../../src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <ProjectReference Include="../../../src/Platform/Lumyte.Windowing/Lumyte.Windowing.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Linux'))">
+    <Compile Remove="LinuxNativeTests.cs;LinuxFactAttribute.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <Compile Remove="WindowsNativeTests.cs;WindowsFactAttribute.cs" />
   </ItemGroup>
 </Project>

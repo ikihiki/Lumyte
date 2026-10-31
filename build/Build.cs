@@ -28,6 +28,9 @@ internal sealed partial class Build : FalloutBuild
     [Parameter("Exclude Parley packaging until native assets from all supported RIDs have been collected.")]
     public bool SkipParleyPackage { get; set; }
 
+    [Parameter("Build and package only projects supported by the current host OS.")]
+    public bool HostOnly { get; set; }
+
     [Parameter("Explicit dotnet executable for child build commands.")]
     public string? DotnetPath { get; set; }
 
@@ -48,7 +51,7 @@ internal sealed partial class Build : FalloutBuild
         .OnlyWhenDynamic(() => !NoRestore && !NoBuild)
         .Executes(async () =>
         {
-            var arguments = new List<string> { "restore", Project ?? Solution };
+            var arguments = new List<string> { "restore", Project ?? BuildSolution };
             if (Runtime is not null)
             {
                 arguments.AddRange(["--runtime", Runtime]);
@@ -62,7 +65,7 @@ internal sealed partial class Build : FalloutBuild
         .OnlyWhenDynamic(() => !NoBuild)
         .Executes(async () =>
         {
-            var arguments = new List<string> { "build", Project ?? Solution, "--configuration", Configuration, "--no-restore" };
+            var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
             if (Runtime is not null)
             {
                 arguments.AddRange(["--runtime", Runtime]);
@@ -75,50 +78,18 @@ internal sealed partial class Build : FalloutBuild
         .DependsOn(Compile)
         .Executes(async () =>
         {
-            await DotNetAsync("test", Project ?? Solution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
+            await DotNetAsync("test", Project ?? BuildSolution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
         });
 
     private Target Clean => definition => definition
         .Executes(async () =>
         {
-            await DotNetAsync("clean", Project ?? Solution, "--configuration", Configuration).ConfigureAwait(false);
+            await DotNetAsync("clean", Project ?? BuildSolution, "--configuration", Configuration).ConfigureAwait(false);
         });
 
     private Target Pack => definition => definition
         .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            string output = Path.GetFullPath(Output ?? Path.Combine(ArtifactRoot, "nuget"));
-            Directory.CreateDirectory(output);
-            IEnumerable<string> projects = Project is string project
-                ? [project]
-                : Directory.EnumerateFiles(Path.Combine(RootDirectory, "src"), "*.csproj", SearchOption.AllDirectories)
-                    .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"));
-            foreach (string path in projects.Order(StringComparer.Ordinal))
-            {
-                if (SkipParleyPackage && Path.GetFileName(path) == "Lumyte.Graphics.Text.Parley.csproj")
-                {
-                    continue;
-                }
-
-                if (Project is null)
-                {
-                    string packable = await DotNetAsync("msbuild", path, "-nologo", "-getProperty:IsPackable").ConfigureAwait(false);
-                    if (!string.Equals(packable.Trim(), "true", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-                }
-
-                var arguments = new List<string> { "pack", path, "--configuration", Configuration, "--no-build", "--no-restore", "--output", output };
-                if (Runtime is not null)
-                {
-                    arguments.Add("-p:RuntimeIdentifier=" + Runtime);
-                }
-
-                await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
-            }
-        });
+        .Executes(PackAsync);
 
     private Target PreparePublish => definition => definition
         .OnlyWhenDynamic(() => !NoBuild && (Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample").Contains("Browser", StringComparison.Ordinal))
@@ -155,11 +126,12 @@ internal sealed partial class Build : FalloutBuild
     private Target CheckFormat => definition => definition
         .Executes(async () =>
         {
-            await DotNetAsync("format", Project ?? Solution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
+            await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["Configuration"] = Configuration },
+                "format", Project ?? BuildSolution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
         });
 
     private Target Ci => definition => definition
-        .DependsOn(Test, TestBrowserContracts, TestRust, TestText, TestWasm, Samples, Pack, TestAot, CheckFormat, CheckMarkdown);
+        .DependsOn(CiNative, CiBrowser, CiDistribution, TestAot, CiQuality, TestRust);
 
     public static int Main() => Execute<Build>(build => build.Compile);
 

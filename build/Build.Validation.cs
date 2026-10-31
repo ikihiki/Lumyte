@@ -36,6 +36,7 @@ internal sealed partial class Build
         {
             await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
+            await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
         });
 
     private Target TestSignals => definition => definition
@@ -85,7 +86,6 @@ internal sealed partial class Build
             await ToolAsync("xvfb-run", "-a", DotNetExecutable, "test", "tests/Platform/Lumyte.Platform.Tests", "-c", Configuration,
                 "--no-build", "--no-restore", "--filter", "FullyQualifiedName~LinuxNativeTests", "--logger", "trx",
                 "--results-directory", Path.Combine(ArtifactRoot, "test-results", "x11")).ConfigureAwait(false);
-            await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
         });
 
     private Target TestBrowserAudio => definition => definition

@@ -1,0 +1,39 @@
+name: Cache CI dependencies
+description: Reuse pinned toolchains and downloaded packages without sharing project build outputs.
+inputs:
+  profile:
+    description: Separate native SDK installations from Browser workload installations.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Cache Windows bootstrap dependencies
+      if: runner.os == 'Windows'
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          artifacts/dev-env/mise-bin
+          artifacts/dev-env/mesa-*
+          artifacts/dev-env/vcpkg-downloads
+        key: windows-bootstrap-v1-${{ runner.arch }}-${{ hashFiles('mise.toml', 'tools/setup/mise-bootstrap.json', 'tools/setup/setup-native.ps1') }}
+
+    - name: Cache pinned toolchains
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          artifacts/dev-env/mise/data/installs
+          artifacts/build/tools/rustup
+          artifacts/build/tools/cargo/bin
+          artifacts/build/tools/python
+        key: tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ hashFiles('global.json', 'mise.toml', 'mise.lock', 'tools/setup/mise-bootstrap.json', 'build/RustBootstrap.json', 'build/PythonRuntimes.json', 'build/Build.Parley.cs', 'build/Targets/ParleyNative.targets', 'build/Targets/ParleyBrowser.targets') }}
+
+    - name: Cache downloaded packages
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          artifacts/dev-env/nuget-packages
+          artifacts/build/tools/cargo/registry
+          artifacts/build/tools/cargo/git
+        key: packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ hashFiles('global.json', 'src/**/*.csproj', 'tests/**/*.csproj', 'samples/**/*.csproj', 'benchmarks/**/*.csproj', 'build/_build.csproj', 'build/packages.lock.json', 'native/**/Cargo.lock', 'Directory.Build.props', 'build/Directory.Build.props') }}
+        restore-keys: |
+          packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-

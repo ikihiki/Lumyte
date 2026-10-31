@@ -77,17 +77,65 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・benchmark動作確認／BenchmarkDotNet測定結果の保存 |
-| `TestBrowserContracts` / `TestWindowing` | Graphics・AudioのJavaScript契約／Linux X11・Browser Windowingの検証 |
+| `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
 | `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
 | `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
 | `DiagnosticGallery` | 検証結果から診断galleryを生成 |
 | `Samples` / `TestAot` | CPU・Audio等のsample／NativeAOT publishと実行 |
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
-| `Ci` | 共通のCI向け検証target群を実行 |
+| `CiNative` | solutionのrestore・build・単体テスト |
+| `CiBrowser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
+| `CiDistribution` | sample実行・NuGet pack |
+| `CiQuality` | C#・C/C++・Markdownの書式検査 |
+| `Ci` | 上記4カテゴリとRustテスト。個別Textテストはsolutionテストに含まれる |
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
 OS別の実行対象は[workflow](../.github/workflows/composition.yml)で確認できます。
-WindowsのNative smokeを通常ユーザーで起動する処理や、GitHub Pagesの配信権限は分離したままです。
+GitHub Pagesの配信権限はCIから分離したままです。
+
+### CIの対象と再利用
+
+LinuxとWindowsは別jobとし、それぞれx64／arm64でnative検証を実行します。
+`--host-only`は正本の`Lumyte.slnx`から現在のOS用solutionを`artifacts/ci/`へ生成します。
+LinuxではWindows Platform・Direct3D12と専用sample／testを除外し、WindowsではLinux Platformを除外します。
+Platformのテストprojectもhost用の参照とソースだけをコンパイルします。
+共通projectの追加は正本への登録だけで反映されます。OS専用projectを追加した場合は`Build.Ci.cs`の分類も更新してください。
+引数を省略した通常のsolution操作は従来どおり全projectを対象にします。
+
+Browserは独立したLinux x64 jobで、nativeのLinux／Windows jobと並列に実行します。
+Browser jobはsolution全体をビルドせず、検証するBrowser sampleとその依存だけをpublishします。
+共通のsample・package検証はnativeのLinux x64で実行します。
+AOTは独立したLinux x64 jobで、対象sampleだけをpublish・実行します。
+Windows専用packageとWindow sampleはWindows側で検証します。
+FormatはLinux／Windows各x64の独立したjobで、host用Releaseビルドを準備してC#の書式を検査します。
+native／Markdown lintはLinuxのFormat jobで一度だけ実行します。
+AOT・Format・Browser・nativeは並列に開始し、すべて成功してからParleyの統合packageを作成します。
+環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
+Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
+
+セットアップ後は`dotnet run --no-build --no-restore`でrunnerを再利用します。
+`--`より後の同名引数は対象projectの再ビルドを抑制するもので、両方を指定する意味が異なります。
+Release成果物をnative検証・配布検証で再利用します。
+Browser publishは別checkoutで実行し、nativeと`bin/obj`を共有しません。
+書式検査のためだけのDebug全体ビルドは行いません。
+
+CIの依存キャッシュは`.github/actions/cache-dependencies`で管理します。
+ツールはOS・architecture・native／browser・固定バージョン定義で分け、BrowserのWasm workloadも専用SDK内に保存します。
+NuGetとCargoのダウンロード済みpackageは依存定義でキーを更新し、同じOS・architecture・profileの以前のキャッシュも利用します。
+Rustの保存先はcheckout内の`artifacts/build/tools/`に固定します。
+Windowsのmise bootstrap・Mesa・vcpkgダウンロードも別キャッシュで再利用し、セットアップ時のハッシュ検証は維持します。
+projectの`bin/obj`や生成済みNuGetはキャッシュせず、毎回検証します。
+
+project指定のない`Pack`は`src/`からhost・Parley除外条件に合うprojectを集め、MSBuild一回で順にpackします。
+`IsPackable`は各projectのMSBuild評価に従い、復元・コンパイルは再実行しません。
+
+```sh
+dotnet run --project build -c Release -- --target CiNative --host-only
+dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package
+dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --host-only --no-build --no-restore
+dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser
+dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
+```
 
 ## ParleyのNative／WASM
 

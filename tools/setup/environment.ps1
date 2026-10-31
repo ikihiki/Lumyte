@@ -59,15 +59,22 @@ function Get-LumyteVerifiedDownload {
     param([string]$Url, [string]$Destination, [string]$Sha256)
     if (-not $Url.StartsWith('https://')) { throw 'Downloads require HTTPS.' }
     $protocol = [Net.ServicePointManager]::SecurityProtocol
+    $savedProgressPreference = $ProgressPreference
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Downloading $([IO.Path]::GetFileName($Destination))"
     try {
+        # Windows PowerShell's per-chunk progress rendering is expensive on CI.
+        $ProgressPreference = 'SilentlyContinue'
         [Net.ServicePointManager]::SecurityProtocol = $protocol -bor [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -ErrorAction Stop
     } finally {
         [Net.ServicePointManager]::SecurityProtocol = $protocol
+        $ProgressPreference = $savedProgressPreference
     }
     if ($Sha256 -and (Get-FileHash $Destination -Algorithm SHA256).Hash -ne $Sha256) {
         throw "SHA-256 verification failed: $Destination"
     }
+    Write-Host "Download completed in $([Math]::Round($timer.Elapsed.TotalSeconds, 1)) seconds."
 }
 
 function Get-LumyteVisualStudio {
