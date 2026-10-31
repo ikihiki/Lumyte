@@ -85,7 +85,7 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
 | `CiNative` | solutionのrestore・build・単体テスト |
 | `CiBrowser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
-| `CiDistribution` | sample実行・NativeAOT・NuGet pack |
+| `CiDistribution` | sample実行・NuGet pack |
 | `CiQuality` | C#・C/C++・Markdownの書式検査 |
 | `Ci` | 上記4カテゴリとRustテスト。個別Textテストはsolutionテストに含まれる |
 
@@ -104,8 +104,12 @@ Platformのテストprojectもhost用の参照とソースだけをコンパイ�
 
 Browserは独立したLinux x64 jobで、nativeのLinux／Windows jobと並列に実行します。
 Browser jobはsolution全体をビルドせず、検証するBrowser sampleとその依存だけをpublishします。
-共通の配布検証・native／Markdown lintはnativeのLinux x64に集約します。
-Windows専用packageとWindow sampleはWindows側で検証し、C#の書式は各OSのx64で検査します。
+共通のsample・package検証はnativeのLinux x64で実行します。
+AOTは独立したLinux x64 jobで、対象sampleだけをpublish・実行します。
+Windows専用packageとWindow sampleはWindows側で検証します。
+FormatはLinux／Windows各x64の独立したjobで、host用Releaseビルドを準備してC#の書式を検査します。
+native／Markdown lintはLinuxのFormat jobで一度だけ実行します。
+AOT・Format・Browser・nativeは並列に開始し、すべて成功してからParleyの統合packageを作成します。
 環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
 Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
 
@@ -128,6 +132,7 @@ project指定のない`Pack`は`src/`からhost・Parley除外条件に合うpro
 ```sh
 dotnet run --project build -c Release -- --target CiNative --host-only
 dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package
+dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --host-only --no-build --no-restore
 dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser
 dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
 ```

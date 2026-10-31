@@ -131,7 +131,7 @@ internal sealed partial class Build : FalloutBuild
         });
 
     private Target Ci => definition => definition
-        .DependsOn(CiNative, CiBrowser, CiDistribution, CiQuality, TestRust);
+        .DependsOn(CiNative, CiBrowser, CiDistribution, TestAot, CiQuality, TestRust);
 
     public static int Main() => Execute<Build>(build => build.Compile);
 

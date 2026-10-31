@@ -12,7 +12,7 @@ internal sealed partial class Build
         .DependsOn(TestBrowserContracts, TestWasm, TestBrowserAudio);
 
     private Target CiDistribution => definition => definition
-        .DependsOn(Samples, TestAot, Pack);
+        .DependsOn(Samples, Pack);
 
     private Target CiQuality => definition => definition
         .DependsOn(CheckFormat, CheckNativeFormat, CheckMarkdown);
