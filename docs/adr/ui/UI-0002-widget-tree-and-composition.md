@@ -139,6 +139,8 @@ Widget Build(bool showDetails) => Panel()[
 
 PR #77で一回初期化のWidgetChildren、型/keyまたは型/位置の照合、component-ownedな状態の引き継ぎ、queued RebuildとUpdateTreeの更新境界を実装する。再構築の基盤をTextBoxやSignalの導入まで延期しない。layoutは#78でUpdateLayoutの先頭へ接続し、pointer captureは#80、keyboard/focusは#81、Automation IDは#84、focus bookmarkは#86で同じ照合結果へ接続する。TextBoxは#87で編集文書・選択・preeditをOnReconcileへ接続する。専用表示要素の全差分再利用とSignalによる構築の自動再実行は後続の対象であり、#77の状態保持とは区別する。
 
+実装PR 15の[UI-0019](UI-0019-signals-and-reactive-state.md)でSignal引数を受動的に保存し、surface接続で購読するhookを追加する。子列の変更では追加分の購読をcommit前に準備し、失敗なら旧列を維持する。取り外しとsurface.Disposeで外部購読を自動解除するが、再接続用の引数記録と共有Signal値は保持する。Signalの生成threadとの一致は要求せず、標準hostがUI ownerへ配送する。
+
 ## 検討した代替案
 
 setterを残して内部で一回に制限するだけでは、任意のリスト実装を受け入れるAPIが残る。readonlyな専用ストレージを公開し、初期化入力も配列へ限定する。init-only setterは構築後の生成インデクサーから呼べないため採用しない。

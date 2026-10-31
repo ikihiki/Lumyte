@@ -406,6 +406,11 @@ public sealed partial class UiApplication : IAsyncDisposable
 
     private void RecordFailure(Exception error)
     {
+        if (error is UiStateUpdateException)
+        {
+            error = new UiApplicationException("state-update-failed", error);
+        }
+
         _executionFailure ??= error;
         _failure = _executionFailure;
     }

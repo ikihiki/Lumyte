@@ -20,13 +20,31 @@ public sealed partial class UiSurface
             surface._inputReset++;
         }
 
-        internal void Restore(UiSurface surface, RebuildPlan plan, Widget? previousFocus, Widget? nextFocus)
+        internal void Restore(UiSurface surface, RebuildPlan plan, Widget? previousFocus, Widget? nextFocus, bool layoutUnchanged)
         {
             Widget candidateRoot = surface._root;
             surface._focusedWidget = nextFocus;
             surface._focusCandidates.Clear();
-            candidateRoot.MarkLayoutDirty();
-            surface.InvalidateInput();
+            if (!layoutUnchanged)
+            {
+                candidateRoot.MarkLayoutDirty();
+            }
+
+            bool inputUnchanged = layoutUnchanged;
+            foreach ((Widget previous, Widget current) in plan.Matches)
+            {
+                inputUnchanged &= current.TryReuseSignalInput(previous, plan.Matches);
+            }
+
+            if (inputUnchanged)
+            {
+                surface.RebuildFocusCandidates();
+            }
+            else
+            {
+                surface.InvalidateInput();
+            }
+
             List<Exception>? failures = null;
             foreach ((long id, PointerCapture capture) in _pointers)
             {

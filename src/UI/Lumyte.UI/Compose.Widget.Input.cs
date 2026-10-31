@@ -95,7 +95,7 @@ public static partial class Compose
             protected virtual IEnumerable<Widget> GetInputChildren() => ChildCollections.Count switch
             {
                 0 => Array.Empty<Widget>(),
-                1 => ChildCollections[0],
+                1 => ChildCollections[0].IsPortal ? Array.Empty<Widget>() : ChildCollections[0],
                 _ => EnumerateInputCollections(),
             };
 
@@ -138,7 +138,7 @@ public static partial class Compose
 
             private IEnumerable<Widget> EnumerateInputCollections()
             {
-                foreach (WidgetChildren collection in ChildCollections)
+                foreach (WidgetChildren collection in ChildCollections.Where(collection => !collection.IsPortal))
                 {
                     foreach (Widget child in collection)
                     {

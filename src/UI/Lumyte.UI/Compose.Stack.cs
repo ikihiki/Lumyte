@@ -37,6 +37,12 @@ public static partial class Compose
             }
 
             /// <inheritdoc/>
+            protected override bool CanReuseInput(Widget previous) => CanReuseLayout(previous);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseLayout(Widget previous) => GetType() == typeof(Stack) && previous is Stack stack && Orientation == stack.Orientation && Spacing == stack.Spacing;
+
+            /// <inheritdoc/>
             protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
             {
                 bool vertical = Orientation == UiOrientation.Vertical;

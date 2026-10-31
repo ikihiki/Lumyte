@@ -166,6 +166,10 @@ RetireAsyncの失敗ではscopeと必要なhostを維持して同じactivation�
 
 scopeのDisposeAsync自体が失敗した場合は、RetireAsyncとは異なる終端cleanup failureとして保存・報告する。標準DIではdispose済みフラグが先に立つため、同じscopeを呼び直して残余serviceの清掃が再開すると保証しない。adapterの再呼出でも保存した失敗を成功へ変えず、同じscopeを新ページへ再利用しない。アプリ終了の扱いはUI-0016のfault/終了報告へ接続する。
 
+### シグナル状態管理との接続
+
+[UI-0019](UI-0019-signals-and-reactive-state.md)ではUI本体がSignalsへ依存し、通常のCompose引数とsurfaceの寿命に従って自動購読する。Buildの利用者は構築scopeを開かず、返したtreeをframeworkがsurfaceへ接続する。navigationは候補/旧surfaceの自動配送停止・再開、SignalRevision検証、最終解放を管理する。任意の業務EffectだけはOwnとCreateSignalScope拡張でpageの寿命へ接続でき、本packageからSignalsを参照してよい。UI購読用のcontext propertyやRegisterViewParticipantは追加しない。
+
 ### AOTと利用例
 
 MapPageの型引数には標準DIと同じPublicConstructors保持注釈を付ける。inlineは閉じたgenericの直接呼出にし、Delegate.DynamicInvoke、Expression.Compile、名前からの型ロードを使わない。Compositionが生成した独自factory delegateは`static context => Compose.*(...)`で包み、任意Delegateとして解析しない。新しいGeneratorは不要で、serviceの明示factory登録も使える。

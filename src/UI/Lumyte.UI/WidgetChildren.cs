@@ -13,17 +13,22 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
     private ReadOnlyCollection<Widget> _items = Array.AsReadOnly(Array.Empty<Widget>());
     private bool _initialized;
 
-    internal WidgetChildren(Widget owner, int maximumCount)
+    internal WidgetChildren(Widget owner, int maximumCount, bool isPortal = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maximumCount);
         _owner = owner;
         _maximumCount = maximumCount;
+        IsPortal = isPortal;
     }
 
     /// <summary>Gets the number of initialized children, or zero before initialization.</summary>
     public int Count => _items.Count;
 
     internal IReadOnlyList<Widget> Items => _items;
+
+    internal bool IsPortal { get; }
+
+    internal bool IsInitialized => _initialized;
 
     /// <summary>Gets a child by its zero-based position.</summary>
     /// <param name="index">The child position.</param>
@@ -71,7 +76,7 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
         // Finish validation and allocations before publishing ownership, without invoking user code.
         ReadOnlyCollection<Widget> view = Array.AsReadOnly(snapshot);
         var attached = new List<Widget>();
-        if (_owner.Surface is not null)
+        if (_owner.Surface is not null && !IsPortal)
         {
             foreach (Widget child in snapshot)
             {
@@ -93,6 +98,10 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
         _initialized = true;
         _owner.InvalidateStructure();
         _owner.MarkLayoutDirty();
+        if (!IsPortal)
+        {
+            _owner.Surface?.RefreshSignalArguments();
+        }
     }
 
     /// <summary>Returns an enumerator over the immutable child snapshot.</summary>

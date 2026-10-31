@@ -23,7 +23,7 @@ public static partial class Compose
             protected virtual void RecordOverride(DrawingCanvas2D canvas)
             {
                 RecordSelf(canvas);
-                foreach (WidgetChildren collection in ChildCollections)
+                foreach (WidgetChildren collection in ChildCollections.Where(collection => !collection.IsPortal))
                 {
                     foreach (Widget child in collection)
                     {

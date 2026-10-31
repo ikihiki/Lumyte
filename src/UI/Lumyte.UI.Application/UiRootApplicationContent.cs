@@ -6,7 +6,7 @@ internal sealed class UiRootApplicationContent(Func<UiApplicationWindowContext, 
 {
     public bool IsStopped { get; private set; }
 
-    public ValueTask InitializeAsync(UiApplicationWindowContext context, CancellationToken cancellationToken) => context.View.SetInitialRootAsync(factory(context), cancellationToken);
+    public ValueTask InitializeAsync(UiApplicationWindowContext context, CancellationToken cancellationToken) => context.View.SetInitialRootAsync(UiSurface.CaptureBuild(() => factory(context)), cancellationToken);
 
     public void Advance()
     {
@@ -16,7 +16,7 @@ internal sealed class UiRootApplicationContent(Func<UiApplicationWindowContext, 
 
     public ValueTask RebuildGraphicsAsync(UiApplicationWindowContext context)
     {
-        context.View.CurrentSurface!.Rebuild(factory(context));
+        context.View.CurrentSurface!.Rebuild(UiSurface.CaptureBuild(() => factory(context)));
         return ValueTask.CompletedTask;
     }
 

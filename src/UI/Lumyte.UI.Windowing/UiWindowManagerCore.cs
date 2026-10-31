@@ -808,6 +808,13 @@ internal sealed partial class UiWindowManagerCore(TimeProvider clock, IUiNativeW
             throw new UiWindowOperationException("placement-failed");
         }
 
+        if (p.AlignEnd && p.PreferredSide is UiWindowPlacementSide.Above or UiWindowPlacementSide.Below)
+        {
+            float width = node.Presentation == UiWindowPresentation.Native ? node.State.ClientSize.X
+                : Math.Min((node.RequestedSize ?? node.Create!.ClientSize).X, Get(Get(node.Owner.Value).Root).State.ClientSize.X);
+            return new(at.X + p.Anchor.Width - width, at.Y, width, p.Anchor.Height);
+        }
+
         return new(at.X, at.Y, p.Anchor.Width, p.Anchor.Height);
     }
 

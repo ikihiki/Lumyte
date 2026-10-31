@@ -1,3 +1,4 @@
+using Lumyte.Signals;
 using Lumyte.UI.Application.Diagnostics;
 using Lumyte.UI.Application.Headless;
 using Lumyte.UI.Automation;
@@ -10,6 +11,103 @@ namespace Lumyte.UI.Application.Tests;
 /// <summary>Exercises actual keyed declarations, routed input and hosted cleanup.</summary>
 public sealed class WindowTests
 {
+    /// <summary>Checks closed declarations remain observed and title changes retain an existing content lifetime.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task SignalsOpenAndCloseWindowsWithoutExplicitRebuildAsync()
+    {
+        var open = Signal.Create(false);
+        var title = Signal.Create("First");
+        var include = Signal.Create(true);
+        int created = 0;
+        int closed = 0;
+        int opened = 0;
+        UiApplicationWindowContext? child = null;
+        UiApplicationBuilder builder = Builder();
+        builder.UseWindows(_ =>
+        {
+            UiWindowDeclaration main = Window("main", "Main", root: _ => Panel());
+            if (!include.Value)
+            {
+                return [main];
+            }
+
+            return [main, Window(
+                "child",
+                title,
+                root: context =>
+                {
+                    created++;
+                    child = context;
+                    return Panel();
+                },
+                isOpen: open,
+                onOpened: _ => opened++,
+                onClosed: _ => closed++)];
+        });
+        await using UiApplication app = builder.Build();
+        Task run = app.RunAsync();
+        await WaitAsync(app, () => app.State == UiApplicationState.Running);
+        Assert.Equal(0, created);
+        open.Value = true;
+        await WaitAsync(app, () => opened == 1);
+        Guid identity = child!.Id;
+        title.Value = "Second";
+        var chrome = new UiAutomationPage(child.Chrome!.Header);
+        await chrome.Expect(chrome.GetByRole(UiRole.Button, "Second")).ToBeVisibleAsync();
+        await app.Dispatcher.InvokeAsync(() =>
+        {
+            Assert.Equal(1, created);
+            Assert.Equal(identity, child.Id);
+        });
+        open.Value = false;
+        await WaitAsync(app, () => closed == 1);
+        open.Value = true;
+        await WaitAsync(app, () => opened == 2);
+        Assert.NotEqual(identity, child.Id);
+        include.Value = false;
+        await WaitAsync(app, () => closed == 2);
+        include.Value = true;
+        await WaitAsync(app, () => opened == 3);
+        await app.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await run;
+        open.Value = false;
+        Assert.Equal(3, closed);
+    }
+
+    /// <summary>Checks a model change between snapshot construction and observer attachment cannot be lost.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task WindowAttachmentObservesChangesAfterTheInitialSnapshotAsync()
+    {
+        var source = new SnapshotRaceSignal();
+        int opened = 0;
+        UiApplicationBuilder builder = Builder();
+        builder.UseWindows(_ => [Window("main", "Main", root: _ => Panel()), Window("child", "Child", root: _ => Panel(), isOpen: UiArgument<bool>.FromSignal(source), onOpened: _ => opened++)]);
+        await using UiApplication app = builder.Build();
+        Task run = app.RunAsync();
+        await WaitAsync(app, () => opened == 1);
+        await app.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await run;
+    }
+
+    /// <summary>Checks reactive failure stops frame work and still completes normal resource cleanup.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task SignalFailureStopsTheApplicationAndDrainsAsync()
+    {
+        var fail = Signal.Create(false);
+        Computed<float?> width = Signal.Computed<float?>(() => fail.Value ? throw new ArithmeticException("source") : 20);
+        UiApplication app = Builder().UseRoot(_ => Rectangle(width: width)).Build();
+        Task running = app.RunAsync();
+        await WaitAsync(app, () => app.State == UiApplicationState.Running);
+        fail.Value = true;
+        UiApplicationException error = await Assert.ThrowsAsync<UiApplicationException>(() => running.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("state-update-failed", error.Code);
+        Assert.Equal(UiApplicationState.Failed, app.State);
+        await Assert.ThrowsAsync<UiApplicationException>(() => app.DisposeAsync().AsTask());
+    }
+
     /// <summary>Checks a hosted window retains content while the declaration key remains and recreates after close.</summary>
     /// <returns>The verification.</returns>
     [Fact]
@@ -218,6 +316,25 @@ public sealed class WindowTests
             }
 
             await Task.Delay(1, timeout.Token);
+        }
+    }
+
+    private sealed class SnapshotRaceSignal : IReadSignal<bool>
+    {
+        private readonly Signal<bool> _value = Signal.Create(false);
+        private int _peeks;
+
+        public bool Value => _value.Value;
+
+        public bool Peek()
+        {
+            bool value = _value.Peek();
+            if (++_peeks == 2)
+            {
+                _value.Value = true;
+            }
+
+            return value;
         }
     }
 }

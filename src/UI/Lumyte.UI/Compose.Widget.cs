@@ -10,6 +10,7 @@ public static partial class Compose
     {
         /// <summary>A node with one parent and at most one connected surface.</summary>
         [CompositionContentType<WidgetChildren>]
+        [ComposeArgumentAdapter(typeof(UiArgument<>))]
         public abstract partial class Widget
         {
             private readonly List<WidgetChildren> _childCollections = new();
@@ -40,6 +41,8 @@ public static partial class Compose
 
             /// <summary>Gets the borrowed surface while this widget is connected, or null after detachment.</summary>
             protected UiSurface? ConnectedSurface => _surface;
+
+            internal void ValidateForConnection(Widget root) => ValidateDeclaration(root);
 
             internal void ReconcileFrom(Widget previous) => OnReconcile(previous);
 
@@ -80,7 +83,10 @@ public static partial class Compose
                     result.Add(node);
                     foreach (WidgetChildren collection in node._childCollections)
                     {
-                        PushChildren(collection);
+                        if (!collection.IsPortal)
+                        {
+                            PushChildren(collection);
+                        }
                     }
                 }
 
@@ -96,10 +102,25 @@ public static partial class Compose
                 }
             }
 
+            /// <summary>Validates component-specific references before a candidate tree is connected.</summary>
+            /// <param name="root">The complete disconnected declaration root for this surface.</param>
+            protected virtual void ValidateDeclaration(Widget root)
+            {
+            }
+
             /// <summary>Prepares component-owned state from a matched declaration without changing the previous view.</summary>
             /// <param name="previous">The previous declaration of the same concrete type and logical identity.</param>
             protected virtual void OnReconcile(Widget previous)
             {
+            }
+
+            /// <summary>Creates a declaration slot whose contents connect only to an independent surface.</summary>
+            /// <returns>Single-assignment declaration storage, excluded from owner layout, input and drawing.</returns>
+            protected WidgetChildren CreatePortalChildren()
+            {
+                var collection = new WidgetChildren(this, int.MaxValue, true);
+                _childCollections.Add(collection);
+                return collection;
             }
 
             /// <summary>Creates and registers fixed child storage owned by this component.</summary>

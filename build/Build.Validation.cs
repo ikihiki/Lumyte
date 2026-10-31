@@ -48,6 +48,15 @@ internal sealed partial class Build
             await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
         });
 
+    private Target TestSignals => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore", "--", "--smoke").ConfigureAwait(false);
+        });
+
     private Target TestUiApplication => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
@@ -70,15 +79,6 @@ internal sealed partial class Build
         {
             await DotNetAsync("test", "tests/UI/Lumyte.UI.Application.Navigation.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
             await DotNetAsync("run", "--project", "samples/Lumyte.UI.Pages.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-        });
-
-    private Target TestSignals => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore", "--", "--smoke").ConfigureAwait(false);
         });
 
     private Target BenchmarkSignals => definition => definition
