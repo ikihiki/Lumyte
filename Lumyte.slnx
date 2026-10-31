@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.TextEditing.Sample/Lumyte.UI.TextEditing.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.UI.Automation.Game.Sample/Lumyte.Diagnostics.UI.Automation.Game.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.UI.Automation.Operator.Sample/Lumyte.Diagnostics.UI.Automation.Operator.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Popup.Sample/Lumyte.UI.Popup.Sample.csproj" />
@@ -36,6 +37,9 @@
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Platform/">
+    <Project Path="src/Platform/Lumyte.Platform.TextInput.Abstractions/Lumyte.Platform.TextInput.Abstractions.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Windows.TextInput/Lumyte.Platform.Windows.TextInput.csproj" />
+    <Project Path="src/Platform/Lumyte.Platform.Browser.TextInput/Lumyte.Platform.Browser.TextInput.csproj" />
     <Project Path="src/Platform/Lumyte.Resources.FileSystem/Lumyte.Resources.FileSystem.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
     <Project Path="src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
@@ -49,6 +53,7 @@
   </Folder>
   <Folder Name="/src/Core/">
     <Project Path="src/Core/Lumyte.Signals/Lumyte.Signals.csproj" />
+    <Project Path="src/Core/Lumyte.TextEditing/Lumyte.TextEditing.csproj" />
     <Project Path="src/Core/Lumyte.Worlds/Lumyte.Worlds.csproj" />
     <Project Path="src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
     <Project Path="src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
@@ -105,6 +110,10 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/src/UI/">
+    <Project Path="src/UI/Lumyte.UI.TextEditing/Lumyte.UI.TextEditing.csproj" />
+    <Project Path="src/UI/Lumyte.UI.TextEditing.Parley/Lumyte.UI.TextEditing.Parley.csproj" />
+    <Project Path="src/UI/Lumyte.UI.Windowing.TextInput/Lumyte.UI.Windowing.TextInput.csproj" />
+    <Project Path="src/UI/Lumyte.UI.TextEditing.Automation/Lumyte.UI.TextEditing.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Automation/Lumyte.UI.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing.Automation/Lumyte.UI.Windowing.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing.WindowSystem/Lumyte.UI.Windowing.WindowSystem.csproj" />
@@ -113,6 +122,7 @@
   </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Platform/">
+    <Project Path="tests/Platform/Lumyte.Platform.Windows.TextInput.Tests/Lumyte.Platform.Windows.TextInput.Tests.csproj" />
     <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Audio/">
@@ -175,6 +185,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.TextEditing.Tests/Lumyte.UI.TextEditing.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Automation.Tests/Lumyte.UI.Automation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />

@@ -30,6 +30,7 @@ public sealed class WindowsPlatform : IPlatform
     private bool _pumping;
     private bool _notifying;
     private WindowsInputSource? _source;
+    private Func<WindowsWindow, uint, nuint, nint, InputCaptureStamp, WindowsTextInputDisposition>? _textFilter;
 
     /// <summary>Initializes a new instance of the <see cref="WindowsPlatform"/> class.</summary>
     public WindowsPlatform()
@@ -82,6 +83,8 @@ public sealed class WindowsPlatform : IPlatform
 
     internal IEnumerable<WindowsWindow> Windows => _windows;
 
+    internal WindowsInputSource? InputSource => _source;
+
     /// <inheritdoc/>
     public IWindow CreateWindow(WindowDescriptor descriptor)
     {
@@ -98,7 +101,7 @@ public sealed class WindowsPlatform : IPlatform
     public IInputSource CreateInputSource()
     {
         CheckMutation();
-        if (_source is not null)
+        if (_source is not null || _textFilter is not null)
         {
             throw new InvalidOperationException("Only one input source can acquire this thread's input.");
         }
@@ -140,13 +143,46 @@ public sealed class WindowsPlatform : IPlatform
                     continue;
                 }
 
-                if (message.Id is 0x100 or 0x101 or 0x104 or 0x105 && _handles.TryGetValue(message.Window, out WindowsWindow? target))
+                bool boundary = false;
+                bool consumed = false;
+                if (_handles.TryGetValue(message.Window, out WindowsWindow? target))
                 {
-                    _source?.Receive(target, message.Id, message.WParam, message.LParam);
+                    bool key = message.Id is 0x100 or 0x101 or 0x104 or 0x105;
+                    InputCaptureStamp stamp = key ? _source?.BeginKeyAcquisition(message.WParam, message.LParam, message.Id is 0x100 or 0x104) ?? default : default;
+                    WindowsTextInputDisposition disposition = _textFilter?.Invoke(target, message.Id, message.WParam, message.LParam, stamp) ?? WindowsTextInputDisposition.Pass;
+                    consumed = (disposition & WindowsTextInputDisposition.Consumed) != 0;
+                    boundary = (disposition & WindowsTextInputDisposition.Yield) != 0;
+                    if ((disposition & WindowsTextInputDisposition.Translate) != 0)
+                    {
+                        NativeMethods.TranslateMessage(ref message);
+                    }
+
+                    if (key)
+                    {
+                        if (consumed)
+                        {
+                            _source?.ConsumeKey(target, message.LParam, stamp);
+                        }
+                        else
+                        {
+                            _source?.Receive(target, message.Id, message.WParam, message.LParam, stamp.Sequence == 0 ? null : stamp.Sequence);
+                        }
+                    }
+
+                    boundary |= _textFilter is not null && (message.Id is 0x201 or 0x202 or 0x204 or 0x205 or 0x207 or 0x208 or 0x20B or 0x20C || (key && message.WParam == 9));
                 }
 
-                NativeMethods.TranslateMessage(ref message);
-                NativeMethods.DispatchMessageW(ref message);
+                if (!consumed)
+                {
+                    NativeMethods.TranslateMessage(ref message);
+                    NativeMethods.DispatchMessageW(ref message);
+                }
+
+                if (boundary)
+                {
+                    // The host drains this prefix and synchronizes focus before the next MSG.
+                    break;
+                }
             }
 
             foreach (WindowsWindow window in _windows.ToArray())
@@ -202,6 +238,19 @@ public sealed class WindowsPlatform : IPlatform
         NativeMethods.SetThreadDpiAwarenessContext(_oldDpiContext);
         _threadClaimed = false;
         _disposed = true;
+    }
+
+    internal IDisposable RegisterTextFilter(Func<WindowsWindow, uint, nuint, nint, InputCaptureStamp, WindowsTextInputDisposition> filter)
+    {
+        CheckMutation();
+        ArgumentNullException.ThrowIfNull(filter);
+        if (_textFilter is not null)
+        {
+            throw new InvalidOperationException("Only one TSF acquisition service is allowed.");
+        }
+
+        _textFilter = filter;
+        return new TextFilterRegistration(() => _textFilter = null);
     }
 
     internal void Check()
@@ -363,5 +412,12 @@ public sealed class WindowsPlatform : IPlatform
         }
 
         return NativeMethods.DefWindowProcW(handle, message, wParam, lParam);
+    }
+
+    private sealed class TextFilterRegistration(Action release) : IDisposable
+    {
+        private Action? _release = release;
+
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
 }

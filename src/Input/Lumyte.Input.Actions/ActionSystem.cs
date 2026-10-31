@@ -349,6 +349,12 @@ public sealed class ActionSystem : IDisposable
                     continue;
                 }
 
+                if (record.Data is KeyCanceledData canceledKey)
+                {
+                    CancelControl(record.DeviceId, InputControl.ForKey(canceledKey.Key), record.RecordedAt);
+                    continue;
+                }
+
                 if (record.Data is MouseButtonCanceledData canceled)
                 {
                     CancelControl(record.DeviceId, new(InputControlKind.MouseButton, (int)canceled.Button), record.RecordedAt);

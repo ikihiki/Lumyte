@@ -36,6 +36,7 @@ internal sealed partial class Build
         {
             await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
+            await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
         });
 
     private Target TestSignals => definition => definition

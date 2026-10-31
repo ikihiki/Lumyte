@@ -25,21 +25,21 @@ public sealed partial class UiAutomationDiagnosticsRuntime
     }
 
     private static UiRemoteNode MapNode(UiAutomationNode node) => new(
-        node.Id.Value.ToString(CultureInfo.InvariantCulture),
-        node.ParentId?.Value.ToString(CultureInfo.InvariantCulture),
-        node.TestId,
-        node.Name,
-        node.Role.ToString().ToLowerInvariant(),
-        new(node.Bounds.X, node.Bounds.Y, node.Bounds.Width, node.Bounds.Height),
-        new(node.ClippedBounds.X, node.ClippedBounds.Y, node.ClippedBounds.Width, node.ClippedBounds.Height),
-        node.IsVisible,
-        node.IsEnabled,
-        node.HitTestVisible,
-        node.IsFocusable,
-        node.IsFocused,
-        node.IsPressed,
-        node.HasActivePress,
-        new[] { UiAutomationActions.Click, UiAutomationActions.Focus }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray());
+ node.Id.Value.ToString(CultureInfo.InvariantCulture),
+ node.ParentId?.Value.ToString(CultureInfo.InvariantCulture),
+ node.TestId,
+ node.Name,
+ node.Role == UiRole.ImeCandidates ? "ime-candidates" : node.Role.ToString().ToLowerInvariant(),
+ new(node.Bounds.X, node.Bounds.Y, node.Bounds.Width, node.Bounds.Height),
+ new(node.ClippedBounds.X, node.ClippedBounds.Y, node.ClippedBounds.Width, node.ClippedBounds.Height),
+ node.IsVisible,
+ node.IsEnabled,
+ node.HitTestVisible,
+ node.IsFocusable,
+ node.IsFocused,
+ node.IsPressed,
+ node.HasActivePress,
+ new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray());
 
     private static UiLocator Locate(UiAutomationPage page, UiRemoteLocatorStep[] steps)
     {
@@ -52,7 +52,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             }
             else
             {
-                UiRole role = step.Role == "button" ? UiRole.Button : UiRole.Group;
+                UiRole role = step.Role switch { "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, _ => UiRole.Group };
                 locator = locator is null ? page.GetByRole(role, step.Name, step.IncludeHidden) : locator.GetByRole(role, step.Name, step.IncludeHidden);
             }
         }
@@ -79,7 +79,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
         try
         {
             IUiAutomationHost host = job.Host is IUiAutomationScreenshotHost screenshot ? new TrackedScreenshotHost(job.Host, job, screenshot) : new TrackedHost(job.Host!, job);
-            var page = new UiAutomationPage(host, new() { Timeout = Remaining(job.Started, job.Timeout) });
+            var page = new UiAutomationPage(host, new() { Timeout = Remaining(job.Started, job.Timeout), });
             UiRemotePlan plan = job.Plan!;
             UiLocator? locator = plan.Locator.Length == 0 ? null : Locate(page, plan.Locator);
             CancellationToken token = job.Cancellation.Token;
@@ -88,7 +88,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             switch (plan.Kind)
             {
                 case "click":
-                    UiClickOptions? click = plan.Position is { } point ? new() { Position = new Vector2((float)point.X, (float)point.Y) } : null;
+                    UiClickOptions? click = plan.Position is { } point ? new() { Position = new Vector2((float)point.X, (float)point.Y), } : null;
                     await locator!.ClickAsync(click, token);
                     break;
                 case "focus":
@@ -102,6 +102,32 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                     }
 
                     await locator!.PressAsync(Enum.Parse<Key>(plan.Key!, ignoreCase: false), modifiers, cancellationToken: token);
+                    break;
+                case "fill":
+                    await locator!.FillAsync(plan.Text!, cancellationToken: token);
+                    break;
+                case "expect-value":
+                    await page.Expect(locator!).ToHaveValueAsync(plan.Text!, cancellationToken: token);
+                    break;
+                case "ime-candidates":
+                    UiImeCandidateSnapshot? candidates = await page.CaptureImeCandidatesAsync(token);
+                    UiRemoteCandidates? remote = candidates is null ? null : new(new(candidates.Token.SessionId, candidates.Token.SessionGeneration.ToString(CultureInfo.InvariantCulture), candidates.Token.ElementGeneration.ToString(CultureInfo.InvariantCulture), candidates.Token.Revision.ToString(CultureInfo.InvariantCulture)), candidates.Candidates.ToArray(), candidates.SelectedIndex, candidates.PageStarts.ToArray(), candidates.CurrentPage, candidates.Operations.ToArray());
+                    result = SerializeBounded(remote, UiAutomationJsonContext.Default.UiRemoteCandidates);
+                    break;
+                case "ime-select":
+                case "ime-page":
+                case "ime-finalize":
+                case "ime-abort":
+                    UiRemoteCandidateToken candidate = plan.Candidate!;
+                    var candidateToken = new UiImeCandidateToken(candidate.SessionId, ulong.Parse(candidate.SessionGeneration, CultureInfo.InvariantCulture), ulong.Parse(candidate.ElementGeneration, CultureInfo.InvariantCulture), ulong.Parse(candidate.Revision, CultureInfo.InvariantCulture));
+                    Task candidateTask = plan.Kind switch
+                    {
+                        "ime-select" => page.SelectImeCandidateAsync(candidateToken, plan.CandidateIndex!.Value, token),
+                        "ime-page" => page.ChangeImeCandidatePageAsync(candidateToken, plan.CandidateIndex!.Value, token),
+                        "ime-finalize" => page.FinalizeImeCandidateAsync(candidateToken, token),
+                        _ => page.AbortImeCandidatesAsync(candidateToken, token),
+                    };
+                    await candidateTask;
                     break;
                 case "count":
                     result = JsonSerializer.SerializeToUtf8Bytes(await locator!.CountAsync(token), UiAutomationJsonContext.Default.Int32);
@@ -211,7 +237,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
 
     private void Forget(Job job)
     {
-        foreach (Guid id in new[] { job.ResultId, job.TraceId }.OfType<Guid>())
+        foreach (Guid id in new[] { job.ResultId, job.TraceId, }.OfType<Guid>())
         {
             if (_artifacts.Remove(id, out Artifact? artifact))
             {
@@ -223,12 +249,38 @@ public sealed partial class UiAutomationDiagnosticsRuntime
         job.Cancellation.Dispose();
     }
 
-    private class TrackedHost(IUiAutomationHost host, Job job) : IUiAutomationHost, IUiAutomationRoutingHost
+    private class TrackedHost(IUiAutomationHost host, Job job) : IUiAutomationHost, IUiAutomationRoutingHost, IUiAutomationTextHost, IUiAutomationImeHost
     {
         public TimeProvider TimeProvider => host.TimeProvider;
 
+        private IUiAutomationTextHost Text => host as IUiAutomationTextHost ?? throw new NotSupportedException();
+
+        private IUiAutomationImeHost Ime => host as IUiAutomationImeHost ?? throw new NotSupportedException();
+
+        public void Fill(UiSurface surface, UiAutomationId editor, string text) => Text.Fill(surface, editor, text);
+
+        public string ReadValue(UiSurface surface, UiAutomationId editor) => Text.ReadValue(surface, editor);
+
+        public UiImeCandidateSnapshot? CaptureImeCandidates(UiSurface surface) => Ime.CaptureImeCandidates(surface);
+
+        public ValueTask<UiImeCandidateResult> ExecuteImeCandidateAsync(UiImeCandidateCommand command, CancellationToken cancellationToken = default) => Ime.ExecuteImeCandidateAsync(command, cancellationToken);
+
+        public async ValueTask<IUiAutomationInputLease> AcquireTextInputAsync(CancellationToken cancellationToken = default)
+        {
+            IUiAutomationInputLease lease = await Text.AcquireTextInputAsync(cancellationToken);
+            job.MarkInputSent();
+            return lease;
+        }
+
+        public async ValueTask<IUiAutomationInputLease> AcquireImeCandidateInputAsync(UiImeCandidateToken token, CancellationToken cancellationToken = default)
+        {
+            IUiAutomationInputLease lease = await Ime.AcquireImeCandidateInputAsync(token, cancellationToken);
+            job.MarkInputSent();
+            return lease;
+        }
+
         public ValueTask<T> RunOnUiThreadAsync<T>(Func<UiSurface, T> action, CancellationToken cancellationToken = default) => host.RunOnUiThreadAsync(
-            surface =>
+ surface =>
         {
             if (!ReferenceEquals(surface, job.RegisteredSurface))
             {
@@ -237,7 +289,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
 
             return action(surface);
         },
-            cancellationToken);
+ cancellationToken);
 
         public UiPointerProbe ProbePointer(UiSurface surface, Vector2 position) => host is IUiAutomationRoutingHost routing ? routing.ProbePointer(surface, position) : surface.ProbePointer(position);
 

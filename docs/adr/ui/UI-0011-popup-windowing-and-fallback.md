@@ -231,6 +231,8 @@ Open後のdevice/presenter喪失はPresenterLostで閉じ、再表示には新�
 
 UiPopupManagerは注入managerとownerのwindow/surfaceを借用し、生成Popupのsurface接続、UiWindowId、描画bindingだけを所有する。実Native/Hostedの所有権はIUiWindowManagerが管理する。owner解放はchain全終了を待ち、元のroot登録やWindowを閉じる前にUiPopupOwner.Dispose→IsReleasedを確認する。外部から先に親が閉じた場合も新規描画を止めて清掃するが、その順序でbackendのGPU使用が安全になるとは保証しない。
 
+IMEとの連携は[UI-0012](UI-0012-ime-and-text-editing.md)のPR 11で具体化する。Menuのopen前guardでcomposition終了をdrainし、IMEが消費したEnter/Escape/矢印をMenuへ渡さない。OS候補Windowを通常Popupとして生成・診断登録しない。OS focusと描画先を区別してcaret位置を渡す。同PRで追加するmanagerのProbePointerへrouting hostも委譲し、TextBox adapterがDownを消費する点を親Buttonの操作可能点として返さない。
+
 ### AutomationとDiagnosticsの接続
 
 Popupは独立surfaceなので[UI-0009](UI-0009-ui-automation.md)のpageから通常子として検索しない。任意の`Lumyte.UI.Windowing.Automation`がmanagerの確定したOpen/Closing状態をowner thread上で読み、PopupごとのIUiAutomationHostとUiAutomationPageを生成する。host factoryは登録したsurfaceのSurfaceIdを検証し、実際のNative/Hosted合成描画と同じ入力router・clip・leaseを使う。Core UI.WindowingからAutomationへ依存しない。

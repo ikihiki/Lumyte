@@ -1,0 +1,52 @@
+<!doctype html>
+<meta charset="utf-8"><canvas id="canvas" tabindex="0" style="width:300px;height:150px"></canvas><button id="outside">outside</button><pre id="result">running</pre>
+<script type="module">
+import * as api from "../../src/Platform/Lumyte.Platform.Browser.TextInput/wwwroot/lumyte-text-input.js";
+const windows=await import("../../src/Platform/Lumyte.Platform.Browser/wwwroot/lumyte-windowing.js");
+let checks=0;
+function check(condition,message) { if(!condition)throw new Error(message); checks++; }
+try {
+ const canvas=document.querySelector("canvas"); canvas.focus();
+ const h=api.create(canvas), proxy=api.proxy(h);
+ check(api.begin(h,"first","1","A",1,1),"begin focuses proxy");
+ check(document.activeElement===proxy,"textarea is active");
+ proxy.dispatchEvent(new CompositionEvent("compositionstart"));
+ proxy.dispatchEvent(new CompositionEvent("compositionupdate",{data:"かな"}));
+ proxy.value="Aかな";proxy.setSelectionRange(3,3);
+ proxy.dispatchEvent(new InputEvent("input",{data:"かな",inputType:"insertCompositionText",isComposing:true}));
+ proxy.dispatchEvent(new CompositionEvent("compositionend",{data:"かな"}));
+ proxy.dispatchEvent(new InputEvent("input",{data:"かな",inputType:"insertFromComposition"}));
+ let packets=JSON.parse(api.drain(h));
+ check(packets.every(p=>p.value==="A"||p.value==="Aかな"),"authoritative values never append composition twice");
+ check(packets.some(p=>p.kind==="input"&&p.composing&&p.start===1&&p.length===2),"preedit range");
+ check(packets.at(-1).value==="Aかな","committed DOM value");
+ check(packets.every((p,i)=>BigInt(p.sequence)===BigInt(i+1)),"causal sequence");
+ api.setInputGate(h,true);check(proxy.readOnly,"gate disables physical editing");
+ api.requestEnd(h);api.drain(h);check(api.endReady(h),"uncomposed end drains");api.release(h);
+ check(api.begin(h,"second","2","B",1,1),"next editor session");
+ check(proxy.readOnly,"gate survives focus change");api.setInputGate(h,false);
+ proxy.lumyteFocusBridge=()=>false;
+ proxy.dispatchEvent(new KeyboardEvent("keydown",{code:"Tab",key:"Tab",cancelable:true}));
+ check(JSON.parse(api.drain(h)).some(p=>p.kind==="overflow"),"unsafe boundary cancels acquired packets");
+ delete proxy.lumyteFocusBridge;
+ document.querySelector("button").focus();
+ check(JSON.parse(api.drain(h)).some(p=>p.kind==="lost"),"external blur ends logical session");
+ api.destroy(h);check(!proxy.isConnected,"destroy removes proxy");
+ check(h.listeners.length===0,"destroy removes all listeners");
+ const wh=windows.attach(canvas,"IME",300,150,false);windows.show(wh,true);windows.activate(wh);
+ const next=api.create(canvas);const nextProxy=api.proxy(next);
+ windows.registerTextProxy(wh,nextProxy,"a");api.begin(next,"a","1","A",1,1);windows.drainInput(wh);
+ windows.setTextFocusBridge(wh,()=>{
+   api.drain(next);api.requestEnd(next);api.drain(next);api.release(next);windows.unregisterTextProxy(wh,"a");
+   windows.registerTextProxy(wh,nextProxy,"b");api.begin(next,"b","2","B",1,1);return true;
+ });
+ nextProxy.dispatchEvent(new KeyboardEvent("keydown",{code:"Tab",key:"Tab",cancelable:true,bubbles:true}));
+ check(next.session==="b"&&document.activeElement===nextProxy,"Tab boundary reconnects before returning");
+ check(!JSON.parse(windows.drainInput(wh)).some(p=>p.type===4&&!p.down),"proxy transfer preserves logical window focus");
+ nextProxy.dispatchEvent(new KeyboardEvent("keyup",{code:"Tab",key:"Tab",cancelable:true,bubbles:true}));
+ check(!JSON.parse(api.drain(next)).some(p=>p.kind==="key"),"old physical Up is not routed into new editor");
+ api.destroy(next);windows.unregisterTextProxy(wh,"b");windows.detach(wh);
+ check(wh.proxies.size===0,"window teardown releases proxy registration");
+ document.querySelector("pre").textContent="PASS "+checks;
+} catch(error) { document.querySelector("pre").textContent="FAIL "+error.stack; }
+</script>

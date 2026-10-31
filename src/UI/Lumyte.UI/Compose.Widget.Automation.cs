@@ -38,7 +38,10 @@ public static partial class Compose
             [ComposeParameter]
             public UiRole Role { get; set; }
 
-            internal UiAutomationId AutomationId { get; private set; }
+            /// <summary>Gets the identity of this surface attachment; zero denotes a disconnected widget.</summary>
+            public UiAutomationId AutomationId { get; private set; }
+
+            internal UiAutomationExposure EffectiveAutomationExposure => AutomationExposure;
 
             internal IEnumerable<Widget> AutomationChildren => GetAutomationChildren();
 
@@ -47,6 +50,9 @@ public static partial class Compose
             internal bool AutomationPressed => IsAutomationPressed;
 
             internal bool AutomationActivePress => HasAutomationActivePress;
+
+            /// <summary>Gets the metadata and subtree exposure policy.</summary>
+            protected virtual UiAutomationExposure AutomationExposure => UiAutomationExposure.Default;
 
             /// <summary>Gets actual component capabilities, independently of role.</summary>
             protected virtual UiAutomationActions AutomationActions => Focusable ? UiAutomationActions.Focus : UiAutomationActions.None;

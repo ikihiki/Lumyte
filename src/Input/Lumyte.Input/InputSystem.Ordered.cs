@@ -74,13 +74,16 @@ public sealed partial class InputSystem
         ThrowErrors(errors);
     }
 
-    private static bool IsTerminal(InputData data) => data is KeyData { IsDown: false } or MouseButtonData { IsDown: false } or MouseButtonCanceledData or TouchData { Phase: TouchPhase.Ended or TouchPhase.Canceled } or PenData { Phase: PenPhase.Left or PenPhase.Canceled };
+    private static bool IsTerminal(InputData data) => data is KeyCanceledData or KeyData { IsDown: false } or MouseButtonData { IsDown: false } or MouseButtonCanceledData or TouchData { Phase: TouchPhase.Ended or TouchPhase.Canceled } or PenData { Phase: PenPhase.Left or PenPhase.Canceled };
 
     private static bool SameControl(InputData a, InputData b) => (a, b) switch
     {
         (MouseMoveData, MouseMoveData) or (MouseWheelData, MouseWheelData) => true,
         (TouchData x, TouchData y) => x.ContactId == y.ContactId && x.Phase == y.Phase,
         (PenData x, PenData y) => x.PointerId == y.PointerId && x.Phase == y.Phase && x.IsInContact == y.IsInContact && x.Buttons == y.Buttons,
+        (KeyCanceledData x, KeyData y) => x.Key == y.Key,
+        (KeyData x, KeyCanceledData y) => x.Key == y.Key,
+        (KeyCanceledData x, KeyCanceledData y) => x.Key == y.Key,
         (KeyData x, KeyData y) => x.Key == y.Key,
         (MouseButtonData x, MouseButtonData y) => x.Button == y.Button,
         (ControllerButtonData x, ControllerButtonData y) => x.Button == y.Button,

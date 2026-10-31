@@ -100,6 +100,8 @@ focus変更も先に状態を変更して旧キーownerへ取消を通知し、�
 
 UiKeyInputはUI-0005の汎用DispatchとOnInputを使い、layoutや入力geometryを更新しない。IsRepeat=trueかつIsDown=falseはArgumentException、未知modifier bitはArgumentOutOfRangeExceptionとする。Key.Unknownはfalse。Keyの定義済み値を列挙して検査せず、それ以外の値はcustom handlerへ渡す。Button等が扱わないキーは未処理とし、将来の取得側のキー追加を定義検査で拒否しない。
 
+編集・IMEのfocus/session同期は[UI-0012](UI-0012-ime-and-text-editing.md)のPR 11で追加する。取得側がIMEのキー消費を判定し、UIへ渡した系列の途中取消にはUiKeyCancelInputを使う。確定EnterからButtonのOnClickを発火させない。
+
 ## 検討した代替案
 
 キーDownだけでClickするとrepeatやキー押下中の取り消しを扱いにくい。pointerとキーが別々の押下状態を持つと一つのButtonが二重認識するため、共通ownerと対応Upまでの消費集合を使う。

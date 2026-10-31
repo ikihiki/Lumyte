@@ -49,4 +49,13 @@ internal static partial class BrowserInterop
 
     [JSImport("drainInput", "Lumyte.Platform.Browser")]
     internal static partial string DrainInput(JSObject handle);
+
+    [JSImport("registerTextProxy", "Lumyte.Platform.Browser")]
+    internal static partial void RegisterTextProxy(JSObject handle, JSObject proxy, string token);
+
+    [JSImport("unregisterTextProxy", "Lumyte.Platform.Browser")]
+    internal static partial void UnregisterTextProxy(JSObject handle, string token);
+
+    [JSImport("setTextFocusBridge", "Lumyte.Platform.Browser")]
+    internal static partial void SetTextFocusBridge(JSObject handle, [JSMarshalAs<JSType.Function<JSType.Boolean>>] Func<bool>? bridge);
 }

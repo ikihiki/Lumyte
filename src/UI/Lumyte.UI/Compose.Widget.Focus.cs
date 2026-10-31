@@ -17,6 +17,9 @@ public static partial class Compose
 
             internal bool InputFocusable { get; private set; }
 
+            /// <summary>Gets a value indicating whether this component permits focus for its current declaration.</summary>
+            protected virtual bool CanReceiveFocus => Focusable;
+
             internal void CollectFocusCandidates(List<Widget> candidates, object version)
             {
                 if (!ReferenceEquals(InputVersion, version))

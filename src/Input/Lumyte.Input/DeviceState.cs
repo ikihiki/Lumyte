@@ -122,6 +122,9 @@ internal sealed class DeviceState(InputDeviceKind kind)
 
         switch (data)
         {
+            case KeyCanceledData canceledKey:
+                Keys[(int)canceledKey.Key] = false;
+                break;
             case KeyData key:
                 if (key.Key != Key.Unknown && (!key.IsRepeat || Keys[(int)key.Key]))
                 {
@@ -235,6 +238,9 @@ internal sealed class DeviceState(InputDeviceKind kind)
                 return;
             case MouseButtonCanceledData canceled when Kind == InputDeviceKind.Mouse:
                 CheckEnum(canceled.Button);
+                return;
+            case KeyCanceledData canceledKey when Kind == InputDeviceKind.Keyboard:
+                CheckEnum(canceledKey.Key);
                 return;
             case KeyData key when Kind == InputDeviceKind.Keyboard:
                 CheckEnum(key.Key);

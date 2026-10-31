@@ -139,6 +139,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         var effective = new UiAutomationTargetOptions
         {
             AllowInput = target.Options.AllowInput && (options?.AllowInput ?? false),
+            AllowTextInput = target.Options.AllowTextInput && (options?.AllowTextInput ?? false),
+            AllowTextInspection = target.Options.AllowTextInspection && (options?.AllowTextInspection ?? false),
             AllowScreenshots = target.Options.AllowScreenshots && (options?.AllowScreenshots ?? false),
         };
         UiAutomationDiagnosticRegistration registration = Register(name, surface, host, effective);

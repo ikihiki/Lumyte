@@ -89,11 +89,11 @@ internal sealed class UiAutomationRun : IDisposable
         Check();
     }
 
-    internal async ValueTask<T> WithInputAsync<T>(Func<IUiAutomationInputLease, ValueTask<T>> action)
+    internal async ValueTask<T> WithInputAsync<T>(Func<IUiAutomationInputLease, ValueTask<T>> action, Func<CancellationToken, ValueTask<IUiAutomationInputLease>>? acquire = null)
     {
         Check();
         Trace("acquire input lease");
-        IUiAutomationInputLease lease = await Host.AcquireInputAsync(Token);
+        IUiAutomationInputLease lease = await (acquire is null ? Host.AcquireInputAsync(Token) : acquire(Token));
         if (Host is IUiAutomationRoutingHost routing)
         {
             lease = new RoutingLease(Host, routing, lease);

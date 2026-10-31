@@ -415,6 +415,25 @@ public sealed class InputSystemTests
         Assert.Throws<AggregateException>(input.Update);
     }
 
+    /// <summary>Checks explicit cancellation clears logical key state and remains visible in history.</summary>
+    [Fact]
+    public void KeyCancellationDoesNotBecomeAnOrdinaryRelease()
+    {
+        var device = new Device(InputDeviceKind.Keyboard);
+        var source = new Source(device);
+        using var input = new InputSystem([source]);
+        device.Add(new FocusData(true), new KeyData(Key.A, true, false));
+        input.Update();
+        Assert.True(input.GetState(source.Id).IsDown(Key.A));
+        device.Add(new KeyCanceledData(Key.A));
+        input.Update();
+        Assert.False(input.GetState(source.Id).IsDown(Key.A));
+        Assert.IsType<KeyCanceledData>(input.GetRecords(source.Id).ToArray()[^1].Data);
+        device.Add(new KeyData(Key.A, true, true));
+        input.Update();
+        Assert.False(input.GetState(source.Id).IsDown(Key.A));
+    }
+
     private static void AssertDense<T>()
         where T : struct, Enum
     {

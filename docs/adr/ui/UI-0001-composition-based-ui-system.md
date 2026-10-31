@@ -12,7 +12,7 @@ Signals本体（同期グラフ・非同期変換・性能改善）はPR #99でm
 
 既存のComposition、Input、Windowing、Drawing2Dの上に、ゲーム内画面とツールのためのUIを構築する。構築構文、親子関係、レイアウト、入力、GPU実行をそれぞれの責務へ分け、実装を段階的にレビューできる必要がある。
 
-本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0011で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
+本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0012、およびWindow managerのUI-0014・IME候補表示のUI-0015で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
 
 ## 決定
 
@@ -30,11 +30,11 @@ Compositionの生成ファクトリ → UIツリー → 制約駆動layout・入
 UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 ```
 
-初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。Text・Imageコントロール、Grid、scroll、仮想化、テーマ、binding、編集・IME、アクセシビリティは別途設計する。[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
+初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。Image・一般のTextコントロール、Grid、一般scroll、仮想化、テーマ、binding、アクセシビリティは別途設計する。編集・IMEは実装PR 11の任意TextBoxで追加し、IME候補の独自描画には同PRのImeCandidateViewを使う。[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
 
 ### 実装PRと対応ADR
 
-実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く10本のdraft PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
+実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く11本のdraft PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
 
 | 実装PR | 対応ADR | 追加する機能 | 実装の前提 |
 | --- | --- | --- | --- |
@@ -48,6 +48,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 8 | UI-0009 | Locator、自動待機、通常入力による操作、状態検証 | PR 5・6。積み上げ先はPR 7 |
 | 9 | UI-0010 | Diagnostics経由の操作、Job、操作権lease、結果取得 | PR 8 |
 | 10 | UI-0011・UI-0014 | Window manager注入、独立Hosted fallback、Popup・入力scope・診断操作権 | PR 6〜9 |
+| 11 | UI-0012・UI-0015 | TextBox・編集文書、TSF/Browser IME、任意の候補描画・候補操作、Fill | PR 6〜10・GRAPHICS-0024 |
 
 描画とhit testは同じBounds・座標・clip規則を使うため、PR 3で幾何走査を確定し、PR 4はそれを前提にする。全公開APIを先にstubで追加せず、動作が完成するPRで段階的に公開する。
 
@@ -69,7 +70,9 @@ UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ�
 
 任意のLumyte.UI.WindowingはIUiWindowManagerを受け取り、通常画面の登録とPopupを扱う。[UI-0014](UI-0014-injectable-window-manager.md)で注入契約、独立HostedUiWindowManager、Nativeとのfallback合成を定義する。Popupの内容・入力scope・寿命・Automation/Diagnostics連携はUI-0011で定義し、WindowSystemへの接続は専用adapterに限定する。
 
-各詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
+任意のUI.TextEditingとPlatform adapterがIMEと編集を提供する。共通文書、Windows TSF、Browser textarea、focus・入力順と候補位置は[UI-0012](UI-0012-ime-and-text-editing.md)で定義する。候補一覧の独自描画と候補専用操作は[UI-0015](UI-0015-custom-ime-candidate-presentation.md)で定義し、Browserや未対応IMEではSystem表示へ戻す。
+
+初期詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。Window/Diagnostics/IME接続の比較元revisionは各ADRに記載する。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
 
 ## 検討した代替案
 
