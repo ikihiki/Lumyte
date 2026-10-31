@@ -13,6 +13,9 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
 
     private readonly HashSet<UiSurface> _paused = [];
 
+    private readonly Dictionary<Presentation, (UiPresenceEntry Entry, ulong Generation)[]> _visualPresentations = [];
+    private readonly Dictionary<Presentation, bool> _ordinaryVisualFrames = [];
+    private readonly Dictionary<Presentation, ulong> _visualRevisions = [];
     private TaskCompletionSource? _frame;
 
     public Guid SourceId { get; } = Guid.NewGuid();
@@ -59,6 +62,9 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
 
         _frame = new();
         _recorded.Clear();
+        _visualPresentations.Clear();
+        _ordinaryVisualFrames.Clear();
+        _visualRevisions.Clear();
         try
         {
             foreach (Presentation presentation in _presentations.Where(p => !p.Closing && p.Active).OrderBy(p => UiWindowStacking.Key(p.View.Role, p.View.Window, p.View.StackingOrder)).ToArray())
@@ -77,7 +83,11 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
                     canvas.ClipRect(view.ClipInPresentation);
                     canvas.Translate(new(view.BoundsInPresentation.X, view.BoundsInPresentation.Y));
                     ValidateRoot?.Invoke(presentation.Surface.Root);
+                    (presentation.Surface.VisualHost as UiVisualCoordinator)?.BeginRecord();
                     presentation.Surface.Record(canvas);
+                    _visualPresentations[presentation] = presentation.Surface.CaptureVisualPresentation();
+                    _visualRevisions[presentation] = presentation.Surface.VisualRevision;
+                    _ordinaryVisualFrames[presentation] = presentation.Surface.VisualHost is not UiVisualCoordinator { Page: { Committed: true, IsFinal: false } };
                 }
                 finally
                 {
@@ -103,6 +113,12 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
         {
             foreach ((Presentation token, UiWindowPresentationView view) in _recorded)
             {
+                (token.Surface.VisualHost as UiVisualCoordinator)?.Presented(view, _ordinaryVisualFrames.GetValueOrDefault(token), _visualRevisions.GetValueOrDefault(token));
+                if (!token.Surface.PageTransitioning && _visualPresentations.TryGetValue(token, out (UiPresenceEntry Entry, ulong Generation)[]? entries))
+                {
+                    token.Surface.ConfirmVisualPresentation(entries);
+                }
+
                 token.Presented = view;
                 token.PresentedGeometryRevision = view.GeometryRevision;
             }
@@ -110,8 +126,13 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
 
         _frame = null;
         _recorded.Clear();
+        _visualPresentations.Clear();
+        _ordinaryVisualFrames.Clear();
+        _visualRevisions.Clear();
         frame.TrySetResult();
     }
+
+    internal UiVisualSnapshot[] RecordedVisuals() => _recorded.Where(pair => pair.Value.IsVisible).Select(pair => pair.Key.Surface.VisualHost).OfType<UiVisualCoordinator>().SelectMany(coordinator => coordinator.Recorded).Distinct().ToArray();
 
     internal UiWindowPresentationView? Recorded(UiSurface surface) => _recorded.FirstOrDefault(pair => ReferenceEquals(pair.Key.Surface, surface)).Value;
 

@@ -53,6 +53,9 @@ public sealed partial class UiApplication
             {
                 surface.AdvanceAnimations();
             }
+
+            surface.UpdateLayout();
+            (surface.VisualHost as UiVisualCoordinator)?.Advance();
         }
     }
 

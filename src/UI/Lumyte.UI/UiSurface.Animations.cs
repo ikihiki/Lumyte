@@ -29,10 +29,10 @@ public sealed partial class UiSurface
     }
 
     /// <summary>Gets a value indicating whether any visible producer needs continuous time progression.</summary>
-    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && HasVisibleAnimation(true);
+    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || _presenceEntries.Any(entry => entry.IsActive));
 
     /// <summary>Gets a value indicating whether visible animations have a one-shot target or control update.</summary>
-    public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && HasVisibleAnimation(false);
+    public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(false) || _presenceEntries.Any(entry => entry.WantsCapture || entry.HasNotification));
 
     private ulong AnimationRevision => _animationProducers.Count == 0 ? 0 : _animationProducers.Max(producer => producer.Revision);
 
@@ -47,6 +47,11 @@ public sealed partial class UiSurface
         }
 
         _animationUpdatesEnabled = enabled;
+        if (!enabled)
+        {
+            InterruptVisuals();
+        }
+
         foreach (UiAnimationProducer producer in _animationProducers)
         {
             producer.Freeze();
@@ -76,6 +81,11 @@ public sealed partial class UiSurface
         try
         {
             UpdateTree();
+            if (_presenceEntries.Count != 0)
+            {
+                AdvanceVisuals(_animationClock.Now);
+            }
+
             if (_isDisposed || _animationProducers.Count == 0)
             {
                 return;
@@ -194,7 +204,7 @@ public sealed partial class UiSurface
     {
         for (Widget? current = widget; current is not null; current = current.Parent)
         {
-            if (!current.IsVisible)
+            if (!current.LayoutVisible || current.PresenceState == UiPresenceState.Exiting)
             {
                 return false;
             }

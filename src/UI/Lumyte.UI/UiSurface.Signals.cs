@@ -325,7 +325,13 @@ public sealed partial class UiSurface
                 error => surface._signalFailure = new UiStateUpdateException(error)));
         }
 
-        internal void Pause() => Effect?.Pause();
+        internal void Pause()
+        {
+            if (Effect is { Failure: null } effect)
+            {
+                effect.Pause();
+            }
+        }
 
         internal void Resume() => Effect?.Resume();
     }

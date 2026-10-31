@@ -37,6 +37,12 @@ public static partial class Compose
             }
 
             /// <inheritdoc/>
+            protected override bool SupportsTransitionCapture => GetType() == typeof(Stack);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseTransitionCapture(Widget previous) => GetType() == typeof(Stack) && ((Stack)previous).Orientation == Orientation && ((Stack)previous).Spacing == Spacing;
+
+            /// <inheritdoc/>
             protected override bool CanReuseInput(Widget previous) => CanReuseLayout(previous);
 
             /// <inheritdoc/>
@@ -55,7 +61,7 @@ public static partial class Compose
                 foreach (Widget child in Children)
                 {
                     Vector2 size = LayoutChild(child, childConstraints);
-                    if (!child.IsVisible)
+                    if (!child.LayoutVisible)
                     {
                         SetChildOffset(child, Vector2.Zero);
                         continue;

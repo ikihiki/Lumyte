@@ -103,3 +103,5 @@ validateResourcesにはResourceLease.Value等の有効性検査を接続でき�
 Resources連携はLumyte.Resources.Graphics.Drawing2Dを使います。
 AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成します。
 元のResourceLeaseを所有者として一つだけ保持し、描画用のproviderや別のpipeline leaseは作りません。
+
+`DrawingCanvas2D.Replay(DrawList2D)`で保持した描画commandを現在のtransform/clipの下へ再生できます。元のDrawListを変更せず、Widget等の上位構築やOnRecordの再実行を要求しません。描画commandが参照するtexture/font等の借用資源は通常どおりGPU完了まで保持してください。

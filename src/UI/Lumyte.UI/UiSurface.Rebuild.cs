@@ -41,12 +41,20 @@ public sealed partial class UiSurface
         ThrowIfDisposed();
         ProcessSignals(true);
         ApplyRebuild();
+        ReconcileVisuals();
     }
 
     private static void ValidateRebuildKeys(Widget root)
     {
+        var sharedKeys = new HashSet<UiSharedElementKey>();
         foreach (Widget node in root.CollectSubtree())
         {
+            node.Transitions?.Validate();
+            if (node.SharedElementKey is { } sharedKey && (string.IsNullOrEmpty(sharedKey.Value) || !sharedKeys.Add(sharedKey)))
+            {
+                throw new ArgumentException("Shared visual keys must be valid and unique within a surface.", nameof(root));
+            }
+
             node.ValidateForConnection(root);
             foreach (WidgetChildren slot in node.ChildCollections)
             {
@@ -107,6 +115,12 @@ public sealed partial class UiSurface
             throw new UiStateUpdateException(new InvalidOperationException("Signal values changed during declaration reconciliation."));
         }
 
+        foreach ((Widget previous, Widget current) in matches)
+        {
+            current.TransferPresence(previous);
+        }
+
+        InvalidateVisualRevision();
         Dictionary<Widget, UiAutomationId> identities = plan.CaptureIdentities();
 
         SignalBinding? previousSignals = _signals;

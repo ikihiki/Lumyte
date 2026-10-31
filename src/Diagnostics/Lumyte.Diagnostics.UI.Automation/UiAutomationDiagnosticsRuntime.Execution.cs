@@ -39,7 +39,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  node.IsFocused,
  node.IsPressed,
  node.HasActivePress,
- new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray());
+ new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray(),
+ node.IsTransitioning);
 
     private static UiLocator Locate(UiAutomationPage page, UiRemoteLocatorStep[] steps)
     {

@@ -5,7 +5,7 @@ namespace Lumyte.UI;
 /// <summary>An immutable, detached copy of one element's semantics and logical geometry.</summary>
 public sealed class UiAutomationNode
 {
-    internal UiAutomationNode(UiAutomationId id, UiAutomationId? parentId, string? testId, string? name, UiRole role, Rect2D bounds, Rect2D clippedBounds, bool visible, bool enabled, bool hitTestVisible, bool focusable, bool focused, bool pressed, bool activePress, UiAutomationActions actions)
+    internal UiAutomationNode(UiAutomationId id, UiAutomationId? parentId, string? testId, string? name, UiRole role, Rect2D bounds, Rect2D clippedBounds, bool visible, bool enabled, bool hitTestVisible, bool focusable, bool focused, bool pressed, bool activePress, UiAutomationActions actions, bool transitioning = false)
     {
         Id = id;
         ParentId = parentId;
@@ -22,6 +22,7 @@ public sealed class UiAutomationNode
         IsPressed = pressed;
         HasActivePress = activePress;
         Actions = actions;
+        IsTransitioning = transitioning;
     }
 
     /// <summary>Gets the connection identity.</summary>
@@ -65,6 +66,9 @@ public sealed class UiAutomationNode
 
     /// <summary>Gets a value indicating whether an active component pointer or key press, even outside its bounds.</summary>
     public bool HasActivePress { get; }
+
+    /// <summary>Gets a value indicating whether an ancestor, element or page transition gates actions.</summary>
+    public bool IsTransitioning { get; }
 
     /// <summary>Gets component capabilities independent of role.</summary>
     public UiAutomationActions Actions { get; }

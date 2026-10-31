@@ -25,6 +25,12 @@ public static partial class Compose
             public WidgetChildren Children { get; }
 
             /// <inheritdoc/>
+            protected override bool SupportsTransitionCapture => GetType() == typeof(Panel);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseTransitionCapture(Widget previous) => GetType() == typeof(Panel);
+
+            /// <inheritdoc/>
             protected override bool CanReuseInput(Widget previous) => CanReuseLayout(previous);
 
             /// <inheritdoc/>

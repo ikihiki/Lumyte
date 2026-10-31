@@ -23,6 +23,12 @@ public static partial class Compose
             public Color2D Fill { get; set; }
 
             /// <inheritdoc/>
+            protected override bool SupportsTransitionCapture => GetType() == typeof(Rectangle);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseTransitionCapture(Widget previous) => GetType() == typeof(Rectangle) && ((Rectangle)previous).Fill == Fill;
+
+            /// <inheritdoc/>
             protected override bool CanReuseInput(Widget previous) => CanReuseLayout(previous);
 
             /// <inheritdoc/>

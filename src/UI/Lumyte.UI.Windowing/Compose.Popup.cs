@@ -54,6 +54,12 @@ public static partial class Compose
             public Action<UiPopupClosed>? OnClosed { get; set; }
 
             /// <inheritdoc/>
+            protected override bool SupportsTransitionCapture => GetType() == typeof(Popup);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseTransitionCapture(Widget previous) => GetType() == typeof(Popup);
+
+            /// <inheritdoc/>
             protected override void ValidateDeclaration(Widget root)
             {
                 ArgumentException.ThrowIfNullOrWhiteSpace(Key);

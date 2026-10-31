@@ -63,8 +63,17 @@ public static partial class Compose
             {
                 if (!ReferenceEquals(_surface, surface))
                 {
+                    if (_surface is not null)
+                    {
+                        DisconnectPresence(_surface);
+                    }
+
                     AutomationId = surface?.AllocateAutomationId() ?? default;
                     _surface = surface;
+                    if (surface is not null)
+                    {
+                        ConnectPresence(surface);
+                    }
                 }
             }
 

@@ -39,6 +39,7 @@ public sealed class UiNavigator : IUiNavigator
         _host = host;
         _options = options ?? new();
         _onCompleted = onCompleted;
+        _options.Transitions?.Validate();
         if (_options.MaxHistoryEntries < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(options));
@@ -92,6 +93,12 @@ public sealed class UiNavigator : IUiNavigator
         for (int i = 0; i < notifications; i++)
         {
             UiNavigationResult notification = _notifications.Dequeue();
+            if (_work is { Committed: true } active && active.Request.Id == notification.RequestId)
+            {
+                _notifications.Enqueue(notification);
+                continue;
+            }
+
             _onCompleted?.Invoke(notification);
         }
 
@@ -187,6 +194,13 @@ public sealed class UiNavigator : IUiNavigator
                     work.Pending = work.Candidate!.View!.QuiesceAsync(work.Origin, work.Cancellation.Token).AsTask();
                     break;
                 case 4:
+                    if (work.Candidate!.View is IUiNavigationVisualChange visual)
+                    {
+                        work.Pending = visual.PrepareVisualsAsync(_options.Transitions, () => work.Request.SkipRequested, work.Cancellation.Token).AsTask();
+                    }
+
+                    break;
+                case 5:
                     if (!ReferenceEquals(work.Previous, _active) || !ReferenceEquals(work.Candidate!.Root, work.Candidate.Page!.Root) || !work.Candidate.View!.TryValidateCommit(out string code))
                     {
                         Abort(work, UiNavigationStatus.Failed, "candidate-stale");
@@ -249,6 +263,7 @@ public sealed class UiNavigator : IUiNavigator
             activation.Cancel();
         }
 
+        (_work?.Candidate?.View as IUiNavigationVisualChange)?.StopVisuals();
         _stop = StopPreparationAsync();
     }
 
@@ -391,9 +406,35 @@ public sealed class UiNavigator : IUiNavigator
         _index = index;
         _active = work.Candidate;
         work.Cancellation.Dispose();
-        _phase = UiNavigationPhase.Retiring;
+        _phase = UiNavigationPhase.Animating;
         Complete(work.Request, UiNavigationStatus.Committed, string.Empty, work.Entry.Id, _active.Context.ActivationId);
-        work.Cleanup = CleanupAsync(work, false);
+        work.Cleanup = FinishVisualsAsync(work);
+    }
+
+    private async Task FinishVisualsAsync(Work work)
+    {
+        UiVisualTransitionResult result = new(UiVisualTransitionStatus.Skipped, _options.Transitions is null ? "not-configured" : "capture-unavailable");
+        try
+        {
+            if (work.Candidate!.View is IUiNavigationVisualChange visual)
+            {
+                await OnOwnerAsync(async () => result = await visual.RunVisualsAsync());
+            }
+        }
+        catch
+        {
+            result = new(UiVisualTransitionStatus.Failed, "host-failed");
+        }
+
+        await OnOwnerActionAsync(() =>
+        {
+            work.Request.CompleteVisual(result);
+            if (!_stopping)
+            {
+                _phase = UiNavigationPhase.Retiring;
+            }
+        });
+        await CleanupAsync(work, false);
     }
 
     private void Abort(Work work, UiNavigationStatus status, string code, Exception? error = null)

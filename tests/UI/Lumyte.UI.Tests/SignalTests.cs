@@ -128,6 +128,20 @@ public sealed class SignalTests
         Assert.Equal(40, connected.Root.Width);
     }
 
+    /// <summary>Checks shutdown can pause a faulted subscription without replacing its original failure.</summary>
+    [Fact]
+    public void PausingAfterAnEffectFailurePreservesTheOriginalStateError()
+    {
+        var fail = Signal.Create(false);
+        Computed<float?> width = Signal.Computed<float?>(() => fail.Value ? throw new ArithmeticException("source") : 20);
+        using var surface = new UiSurface(Rectangle(width: width));
+        fail.Value = true;
+        Assert.Throws<UiStateUpdateException>(surface.UpdateLayout);
+        surface.SetSignalUpdatesEnabled(false);
+        UiStateUpdateException error = Assert.Throws<UiStateUpdateException>(surface.UpdateLayout);
+        Assert.IsType<ArithmeticException>(error.InnerException);
+    }
+
     /// <summary>Checks generated reconstruction replays with after the argument initial values.</summary>
     [Fact]
     public void WithOverridesArePreserved()
