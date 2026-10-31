@@ -269,7 +269,7 @@ callerの取消はOperationCanceledException（Data["Lumyte.UI.Automation.Trace"
 
 ScreenshotHostは新しい描画frameの記録とGPU完了・readbackを待ち、実画素からPNGを返す。通常のNextFrameAsyncの完了をGPU完了とみなさない。キャンセル時の資源保持はUI-0008に従い、透過画像やsnapshotの図示を実スクリーンショットの代わりに返さない。PNG取得時のframeは以前のsnapshotと同一とは限らない。厳密な状態固定は利用側のテストfixtureで行う。
 
-外部プロセスからの操作、Diagnostics経由の接続、JavaScript用client、DOM/ARIA bridge、OSアクセシビリティ、録画・codegen・視覚差分の閾値は別途設計する。初期APIのrole/nameは意味情報の入口であり、OSのアクセシビリティ実装が完成したという主張にはしない。
+外部プロセスからのDiagnostics経由の操作は、任意の接続として[UI-0010](UI-0010-diagnostics-ui-automation.md)で定義する。この同一プロセスAPIをゲーム側で再利用し、UI本体とUI.Automationへ通信依存を追加しない。JavaScript用client、DOM/ARIA bridge、OSアクセシビリティ、録画・codegen・視覚差分の閾値は別途設計する。初期APIのrole/nameは意味情報の入口であり、OSのアクセシビリティ実装が完成したという主張にはしない。
 
 ## 検討した代替案
 
