@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Resources.Sample/Lumyte.Resources.Sample.csproj" />
@@ -38,6 +39,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Signals/Lumyte.Signals.csproj" />
     <Project Path="src/Core/Lumyte.Worlds/Lumyte.Worlds.csproj" />
     <Project Path="src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
     <Project Path="src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
@@ -103,6 +105,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.AotSmoke/Lumyte.Resources.AotSmoke.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj" />
