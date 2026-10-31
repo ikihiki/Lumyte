@@ -6,9 +6,9 @@
 
 ## 背景
 
-UIの保持型Widgetでは、名前付き引数へ通常値とSignalを同じ表記で渡したい。現行factoryはOptionalで具体値を受け、値を一回設定する。UI側に別factoryや明示Bindを要求せず、元のusing static構文を維持するため、生成引数を型付きadapterへ委譲するopt-in契約を追加する。
+部品の名前付き引数へ、通常値・値ソース・補間文字列などを直接渡したい。宣言されたパラメーター型と呼出し側の入力形式を分離し、元のusing static構文を維持するため、生成引数を利用側の型付きadapterへ委譲するopt-in契約を追加する。
 
-CompositionはUIやSignalsの型を参照せず、adapterの値解決と対象への付加情報登録だけを呼び出す。購読、描画、親子関係や対象の寿命は利用側の責務とする。
+Compositionは利用側の値ソースや実行基盤の型を参照せず、adapterの値解決と対象への付加情報登録だけを呼び出す。購読、描画、親子関係や対象の寿命は利用側の責務とする。
 
 ## 決定
 
@@ -19,11 +19,14 @@ CompositionはUIやSignalsの型を参照せず、adapterの値解決と対象�
 ```diff
 +namespace Lumyte.Composition
 +{
-+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
++    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
 +    public sealed class ComposeArgumentAdapterAttribute : Attribute
 +    {
 +        // publicなgeneric structの未構築型。閉じる型引数は対象propertyの型。
 +        public ComposeArgumentAdapterAttribute(Type adapterType);
++        // 宣言型ごとの指定。完全一致またはgeneric定義で選択する。
++        public ComposeArgumentAdapterAttribute(Type parameterType, Type adapterType);
++        public Type? ParameterType { get; }
 +        public Type AdapterType { get; }
 +    }
 +    public interface ICompositionRebuildable
@@ -44,11 +47,11 @@ CompositionはUIやSignalsの型を参照せず、adapterの値解決と対象�
 +}
 ```
 
-attributeは定義classまたは基底classへ付ける。Generatorが継承階層を走査して採用するadapterを決定し、矛盾する複数指定はLYC001 errorとする。adapter指定のないcomponentでは現行生成APIを変えない。具体的なadapterの実装・購読・寿命は利用側が提供する。CompositionにUIやSignalsの参照を追加しない。
+attributeは定義classまたは基底classへ付ける。Generatorが継承階層と対象の宣言型から採用するadapterを決定し、同じ対象への矛盾する複数指定はLYC001 errorとする。adapter指定のないcomponentでは現行生成APIを変えない。具体的なadapterの実装・購読・寿命は利用側が提供する。Compositionに利用側の実行基盤への参照を追加しない。
 
 ### 引数の生成規則
 
-変更可能な非delegateのComposeParameterだけを対象にする。adapterをpropertyの型Tで閉じ、optional引数はそのstructのdefault、requiredな変更可能値は省略不能なadapter引数とする。Optionalを外側に重ねず、二段のuser-defined conversionを要求しない。
+変更可能な非delegateのComposeParameterだけを対象にする。propertyの宣言型に対応するadapterを選び、optional引数はそのstructのdefault、requiredな変更可能値は省略不能なadapter引数とする。Optionalを外側に重ねず、二段のuser-defined conversionを要求しない。
 
 init-only値は後から変更できないためadapterを使わず、元の値型/Optional規則を維持する。delegate型は[COMPOSITION-0002](COMPOSITION-0002-callback-parameters.md)に従う元のdelegate引数とし、lambdaをstructへ変換させない。content、with、操作、slotは従来の型と表記を維持する。
 
@@ -65,13 +68,13 @@ AttachToは対象自身が所有する受動的な設定情報だけを登録し
 
 再構築を必要とする対象は追加の`ICompositionRebuildable.SetCompositionFactory(Func<object> factory)`を実装する。adapter指定のfactoryはAttachTo成功後に、元の引数とwithから新しい同型宣言を構築する受動的recipeを一回登録する。recipeを実行するのは利用側であり、Generatorは購読を開始しない。init、callback、withも再実行され、withの優先順位を保つ。子のindexerはfactoryの後なのでrecipeには含めず、利用側が登録済みslot構造と子recipeを組み合わせる。手書きnewを含む動的ツリーの再構築方法も利用側が定義する。
 
-publicな通常のgeneric struct一引数でない型（ref structや未構築のgeneric外側型を持つadapterを含む）、閉じた型がIComposeArgumentを実装しない場合、型制約不一致、非対応member、アクセス不能、生成名衝突は既存LYC001のerrorで拒否する。adapterのconstructorやGetInitialValueをGenerator自身が実行して検証しない。実行時reflection、DynamicInvoke、新しいruntimeの作成は行わない。
+指定形式に合わない型（ref structやgeneric外側型を持つadapterを含む）、選択した閉じた型が宣言型に一致するIComposeArgumentを実装しない場合、型制約不一致、非対応member、アクセス不能、生成名衝突は既存LYC001のerrorで拒否する。adapterのconstructorやGetInitialValueをGenerator自身が実行して検証しない。実行時reflection、DynamicInvoke、新しいruntimeの作成は行わない。
 
 ## コード例と実行時の動き
 
 ### UIに依存しない最小例
 
-次の`Source<T>`は値の読み直しを説明するための単純な箱で、Signalではなく、変更通知も持たない。`Arg<T>`は通常値またはその箱を受け取る利用側のadapterである。この例ではhostが明示的に再構築するため、`AttachTo`に保存する付加情報はない。
+次の`Source<T>`は値の読み直しを説明するための単純な箱で、変更通知は持たない。`Arg<T>`は通常値またはその箱を受け取る利用側のadapterである。この例ではhostが明示的に再構築するため、`AttachTo`に保存する付加情報はない。
 
 ```csharp
 using Lumyte.Composition;
@@ -99,7 +102,7 @@ public readonly struct Arg<T> : IComposeArgument<T>
 
     public static implicit operator Arg<T>(T value) => new(value, null);
 
-    public static Arg<T> From(Source<T> source) => new(default!, source);
+    public static implicit operator Arg<T>(Source<T> source) => new(default!, source);
 
     public T GetInitialValue() => _source is { } source ? source.Value : _constant;
 
@@ -143,7 +146,7 @@ using static AdapterExample.Compose;
 
 var source = new Source<int>(20);
 int clicks = 0;
-var first = Gauge(value: Arg<int>.From(source), onClick: () => clicks++);
+var first = Gauge(value: source, onClick: () => clicks++);
 // first.Value == 20。GetInitialValue → 構築 → AttachTo → recipe登録が完了。
 
 source.Value = 30;
@@ -164,72 +167,64 @@ var omittedAdapter = Gauge(value: default(Arg<int>)); // Value == 10
 
 `with`を指定した場合は、初期property設定の後、`AttachTo`の前に実行される。recipe実行でも同じ`with`が再実行されるため、そこに書いた副作用も繰り返される。`AttachTo`に渡す`initialValue`は`with`実行前に読み取った値である。
 
-### UIとSignalを組み合わせる場合
+### 宣言型と入力形式を分ける
 
-以下はUIスタック側の`UiArgument<T>`を使う例であり、上の最小adapterとは別の実装である。Composition単体の参照だけではUIやSignalsは提供されない。
-
-```csharp
-using Lumyte.Signals;
-using Lumyte.UI;
-using static Lumyte.UI.Compose;
-
-// Widthのproperty型float?に合わせたSignal。adapterもUiArgument<float?>になる。
-var width = Signal.Create<float?>(100);
-var constant = Rectangle(width: 100);
-var reactive = Rectangle(width: width);
-```
-
-UIのWidget基底型には`[ComposeArgumentAdapter(typeof(UiArgument<>))]`がある。`Rectangle(width: width)`では`UiArgument<float?>`への暗黙変換後、`GetInitialValue`で現在値を読み、`AttachTo`でsourceと初期値の比較情報をWidgetへ受動的に登録する。この時点では購読を開始しない。
-
-その宣言を`UiSurface`へ接続すると、UIが依存関係の追跡と寿命を管理する。Signalの変更を検知したUIは、登録されたrecipeで新しい宣言を構築し、ツリーへ反映する。通常のSignal更新で以前のRectangleの`Width`を書き換えることはない。上の`reactive`は以前の宣言を指したままであり、新しい宣言はsurfaceが保持する。アニメーションの表示値を扱う専用経路はUI側の責務で、この契約だけでは開始しない。
-
-### Signalを含むテキストテンプレート（追加設計・未実装）
-
-文字列propertyは、文字列リテラル、通常のstring値、`Signal<string>`/`Computed<string>`だけでなく、固定文字列と複数のSignalを組み合わせたテキストテンプレートも同じ値引数で受け取れる必要がある。テンプレートは`Computed<string>`へ変換し、既存のadapter契約を利用する。Compositionへ文字列専用契約やSignals依存を追加しない。
-
-現行APIでも次のように表現できる。UIの文字列propertyへ渡す前の引数を示す。
+一引数の指定は従来の共通adapterである。二引数の指定で、元のpropertyまたは構築関数のパラメーター型に応じたadapterを選べる。
 
 ```csharp
-using Lumyte.Signals;
-using Lumyte.UI;
-
-var name = Signal.Create("Alice");
-var count = Signal.Create(3);
-
-UiArgument<string> literal = "固定テキスト";
-string message = "通常のstring値";
-UiArgument<string> constant = message;
-UiArgument<string> direct = name;
-
-var summary = Signal.Computed(() => $"{name.Value}さん: {count.Value:N0}件");
-UiArgument<string> template = summary;
+// 各adapterは利用側が実装する。Source<T>も利用側の値ソース型。
+[ComposeArgumentAdapter(typeof(Arg<>))]
+[ComposeArgumentAdapter(typeof(Source<>), typeof(SourceArg<>))]
+[ComposeArgumentAdapter(typeof(string), typeof(TextArg))]
+[ComposeArgumentAdapter(typeof(Source<string>), typeof(SourceTextArg))]
+public class Component { }
 ```
 
-追加する簡略APIは、UIから独立したLumyte.Signals側の`Signal.Text`とする。以下は予定APIであり、現時点では上記の`Signal.Computed`を使用する。
+選択順序は「宣言型との完全一致 → 宣言型のgeneric定義との一致 → 共通adapter」とする。設定は基底classからも読み、同じ対象に異なるadapterを重複指定した場合はLYC001とする。異なる対象への指定と共通指定は併用できる。対象型の変換可能性や基底class/interfaceへの変換による曖昧な一致は使わない。
+
+| 宣言された型 | 生成引数型 | adapterが返す型 |
+| --- | --- | --- |
+| `int` | `Arg<int>` | `int` |
+| `Source<int>` | `SourceArg<int>` | `Source<int>` |
+| `string` | `TextArg` | `string` |
+| `Source<string>` | `SourceTextArg` | `Source<string>` |
+
+共通adapterはpublicな一引数の未構築generic structとし、宣言型全体で閉じる。generic対象への指定も一引数の未構築generic型同士とし、対象の型引数をadapterへ引き継ぐ。完全一致への指定では閉じたpublic structを使う。どの場合も、選択したadapterが`IComposeArgument<宣言された型>`を実装することを確認する。
+
+例えば`SourceArg<int>`は`IComposeArgument<Source<int>>`を実装する。通常値からは定数sourceを作り、既存sourceからは同じ参照を保持する暗黙変換を利用側で定義できる。Generatorは宣言型を剥がしたり、購読・再構築を自動で選んだりしない。通常値への読み出しとsourceそのものの保持を、異なるadapterとして選べる。
+
+### 補間文字列を直接受け取る
+
+文字列用の`TextArg`と`SourceTextArg`は、利用側が`InterpolatedStringHandlerAttribute`を付けた通常のstructとして実装できる。Generatorはhandler型をそのまま引数型に使う。補間文字列の外側にfactoryや変換helperを要求しない。
 
 ```csharp
-// 予定API。補間handlerがSignalそのものを保持し、評価時にValueを読む。
-Computed<string> summary = Signal.Text($"{name}さん: {count:N0}件");
-UiArgument<string> template = summary;
+// using static Example.Compose;
+// Scalar.Value: int、LiveScalar.Value: Source<int> として定義した場合。
+Scalar(value: 10);
+Scalar(value: source);
+LiveScalar(value: 10);
+LiveScalar(value: source);
+
+// Label.Text: string、LiveLabel.Text: Source<string> として定義した場合。
+Label(text: "固定テキスト");
+Label(text: message);
+Label(text: textSource);
+Label(text: $"件数: {source:N0}件");
+LiveLabel(text: "固定テキスト");
+LiveLabel(text: textSource);
+LiveLabel(text: $"件数: {source:N0}件");
 ```
 
-`Signal.Text`はC#のcustom interpolated string handlerでリテラル部分と補間要素を保存し、同期的・遅延評価の`Computed<string>`を返す。必要な契約は次のとおりとする。
+この例のfactory・値ソース・adapterは利用側が定義する。`TextArg`は`IComposeArgument<string>`、`SourceTextArg`は`IComposeArgument<Source<string>>`を実装し、それぞれの`GetInitialValue`から宣言型どおりの値を返す。リテラルや通常のstring/sourceはadapterへの一段の暗黙変換で受け取り、補間文字列はC#のhandler変換で直接受け取る。
 
-- リテラル部分と通常値は作成時に保持する。通常値の補間は作成時に文字列化し、以後の更新対象にしない。通常のstringを渡す場合にSignalの作成を要求しない。
-- `Signal<T>`、`Computed<T>`、`IReadSignal<T>`の補間はsource参照を保持する。評価時に`Value`を読み、依存関係をComputedへ登録する。Signalオブジェクトの`ToString()`で代用しない。
-- 汎用の通常値用`AppendFormatted<T>`にSignalが吸収されないよう、具体的な`Signal<T>`/`Computed<T>`用overloadも定義する。format/alignmentを含む各形で同じ判別を保証する。
-- `:N0`などのformat、`,6`などのalignment、null、リテラルの波括弧を扱う。既定のformat providerは作成時の`CultureInfo.CurrentCulture`を保持し、更新中に暗黙に切り替えない。
-- source変更時はテンプレートの文字列を再評価し、結果が等しければ下流への不要な更新を抑える。通常値の文字列片を再整形しないが、変更時の文字列生成や連結の割り当てがゼロになるとは扱わない。
-- テンプレート生成・未接続状態ではUI購読を開始しない。UIは既存のComputed引数として接続・切断する。共有したテンプレートを一つのWidgetが外れたことだけで破棄せず、Computedの既存の観測者管理に従う。
+handlerは`(int literalLength, int formattedCount)`のconstructor、`AppendLiteral`、`AppendFormatted`を利用側で提供する。source要素を保持する場合はその型のoverloadを用意し、汎用の通常値overloadでオブジェクトのToStringへ変換しない。format/alignment/null/波括弧をどう評価し、いつ文字列を確定するかも利用側の契約とする。`ref struct`はrecipeへ保持できないためadapterとして指定できない。
 
-`$"{count.Value}件"`を通常のstringとして渡す場合、補間時点で値が確定する。構築関数内のValue読出しをUIが追跡すれば再構築で更新できるが、そのstring自体がSignal参照を保持するわけではない。`Signal.Text($"{count}件")`はSignal参照を保持したまま文字列引数へ渡すためのAPIとする。任意の式・分岐・変換が必要な場合は`Signal.Computed(() => ...)`を使用する。
-
-検証時は通常値と各source型の混在、複数source、同じsourceの複数回補間、format/alignment/null、初期評価前の変更、共有・切断・再接続、文字列結果が不変の更新を確認する。この追加APIとテストはSignalsを実装するUIスタック側PRの範囲であり、main向けComposition拡張PRでは実装しない。
+生成factoryは引数型をstringやobjectへ戻さず、handler変換・暗黙変換はC#コンパイラーに任せる。未指定の`default(adapter)`と明示した空文字列・既定値は引き続き区別する。関数factoryも同じ選択規則を使い、元の定義関数には解決後の宣言型の値を渡す。
 
 ## 検討した代替案
 
-- CompositionへSignal型を直接追加するとUI以外の構築基盤もSignalsへ依存する。genericなadapter契約で分離する。
-- Signal専用の別factory群やscope付きinstanceは、同じ構築表記を維持しにくい。元のstatic入口へopt-inする。
+- 特定の値ソース型をCompositionへ直接追加すると、すべての利用側がその実行基盤へ依存する。型付きadapter契約で分離する。
+- 入力形式ごとの別factory群やscope付きinstanceは、同じ構築表記を維持しにくい。元のstatic入口へopt-inする。
 - adapterをOptionalで包むとliteralから二段変換になり、通常の値引数が扱いづらい。三状態はadapter自身が保持する。
 
 ## 結果と影響
@@ -244,4 +239,4 @@ using static、子インデクサー、slot、withを維持して値引数を拡
 
 ## 実装記録
 
-2026-10-30、元のUIスタックで契約3型とGeneratorのopt-in処理を実装し、UI非依存の契約・生成・テストをmain向け独立PRへ移した。既存consumerを含むCompositionテスト78件が通過した。UIを参照しない別consumerの継承adapter・init・delegate lambdaの実compilationと、不正adapterのLYC001を確認した。UIの実consumerではliteral/Signal/Computed、with、背景slot、再構築で旧宣言を変更しないことを確認し、通常のHeadless/Browserとlinux-x64 Native AOTで生成factoryを実行した。
+2026-10-30、元のUIスタックで契約3型とGeneratorのopt-in処理を実装し、UI非依存の契約・生成・テストをmain向け独立PRへ移した。既存consumerを含むCompositionテスト78件が通過した。UIを参照しない別consumerの継承adapter・init・delegate lambdaの実compilationと、不正adapterのLYC001を確認した。この記録は当初の共通adapter契約の検証である。2026-10-31、宣言型ごとの選択と、通常値・値ソース・補間文字列を直接渡す独立consumerの検証を追加した。

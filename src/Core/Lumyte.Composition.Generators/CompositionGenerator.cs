@@ -202,7 +202,7 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         foreach (ISymbol member in parameters)
         {
             string name = ParameterName(member);
-            if (!ValidName(name) || name == "with" || (ArgumentAdapter(component) is not null && (name is "instance" or "rebuildable" || name.StartsWith("__initial", StringComparison.Ordinal))) || !parameterNames.Add(name))
+            if (!ValidName(name) || name == "with" || (HasArgumentAdapters(component) && (name is "instance" or "rebuildable" || name.StartsWith("__initial", StringComparison.Ordinal))) || !parameterNames.Add(name))
             {
                 return "Factory parameter names must be unique and cannot be 'with'.";
             }
@@ -312,8 +312,8 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         string type = TypeName(component);
         string generics = TypeParameters(component);
         string constraints = Constraints(component);
-        INamedTypeSymbol? adapter = ArgumentAdapter(component);
-        string signature = string.Join(", ", parameters.Select(parameter => ParameterDeclaration(parameter, adapter: adapter)).Concat(new[]
+        bool hasAdapters = HasArgumentAdapters(component);
+        string signature = string.Join(", ", parameters.Select(parameter => ParameterDeclaration(parameter, adapter: ParameterAdapter(component, parameter))).Concat(new[]
         {
             "global::System.Collections.Generic.IReadOnlyList<global::System.Action<" + type + ">>? @with = null",
         }));
@@ -388,12 +388,12 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         }
 
         builder.AppendLine("}");
-        if (adapter is not null)
+        if (hasAdapters)
         {
             for (int index = 0; index < parameters.Length; index++)
             {
                 ISymbol parameter = parameters[index];
-                if (UsesAdapter(parameter, adapter))
+                if (ParameterAdapter(component, parameter) is not null)
                 {
                     builder.Append("private static readonly object __LumyteArgumentKey").Append(index).AppendLine(" = new object();");
                     builder.Append("private static void __LumyteArgumentSet").Append(index).Append('(').Append(type).Append(" target, ")
@@ -403,9 +403,9 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         }
 
         builder.Append("internal static ").Append(type).Append(" __LumyteCreate(").Append(signature).AppendLine(")\n{");
-        if (adapter is not null)
+        if (hasAdapters)
         {
-            foreach (ISymbol parameter in parameters.Where(parameter => UsesAdapter(parameter, adapter) && Required(parameter)))
+            foreach (ISymbol parameter in parameters.Where(parameter => ParameterAdapter(component, parameter) is not null && Required(parameter)))
             {
                 string name = Escape(ParameterName(parameter));
                 builder.Append("if (!").Append(name).Append(".IsSpecified) throw new global::System.ArgumentException(\"A required argument was omitted.\", nameof(").Append(name).AppendLine("));");
@@ -414,7 +414,7 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
             for (int index = 0; index < parameters.Length; index++)
             {
                 ISymbol parameter = parameters[index];
-                if (UsesAdapter(parameter, adapter))
+                if (ParameterAdapter(component, parameter) is not null)
                 {
                     string name = Escape(ParameterName(parameter));
                     builder.Append(TypeName(MemberType(parameter))).Append(" __initial").Append(index).Append(" = ")
@@ -429,7 +429,7 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
             ISymbol parameter = parameters[index];
             string name = Escape(ParameterName(parameter));
             builder.Append(", ");
-            if (UsesAdapter(parameter, adapter))
+            if (ParameterAdapter(component, parameter) is not null)
             {
                 if (Required(parameter))
                 {
@@ -450,12 +450,12 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         builder.AppendLine(");\nif (@with is not null)\n{");
         builder.AppendLine("foreach (var action in @with)\n{\nif (action is null) throw new global::System.ArgumentException(\"Null composition action.\", nameof(@with));\n}");
         builder.AppendLine("foreach (var action in @with)\n{\naction(instance);\n}\n}");
-        if (adapter is not null)
+        if (hasAdapters)
         {
             for (int index = 0; index < parameters.Length; index++)
             {
                 ISymbol parameter = parameters[index];
-                if (UsesAdapter(parameter, adapter))
+                if (ParameterAdapter(component, parameter) is not null)
                 {
                     string name = Escape(ParameterName(parameter));
                     builder.Append("if (").Append(name).Append(".IsSpecified) ").Append(name).Append(".AttachTo(instance, __LumyteArgumentKey").Append(index)
@@ -706,7 +706,12 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         _ => false,
     };
 
-    private static ITypeSymbol MemberType(ISymbol member) => member is IFieldSymbol field ? field.Type : ((IPropertySymbol)member).Type;
+    private static ITypeSymbol MemberType(ISymbol member) => member switch
+    {
+        IFieldSymbol field => field.Type,
+        IParameterSymbol parameter => parameter.Type,
+        _ => ((IPropertySymbol)member).Type,
+    };
 
     private static string ContentAssignment(ISymbol content, string value)
     {
@@ -749,82 +754,6 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         return ManagedContentItem(type);
     }
 
-    private static INamedTypeSymbol? ArgumentAdapter(INamedTypeSymbol component)
-    {
-        for (INamedTypeSymbol? type = component; type is not null; type = type.BaseType)
-        {
-            AttributeData? attribute = type.GetAttributes().FirstOrDefault(value => value.AttributeClass?.ToDisplayString() == Prefix + "ComposeArgumentAdapterAttribute");
-            if (attribute is not null && attribute.ConstructorArguments.Length == 1 && attribute.ConstructorArguments[0].Value is INamedTypeSymbol adapter)
-            {
-                return adapter.ConstructedFrom;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool UsesAdapter(ISymbol parameter, INamedTypeSymbol? adapter) => adapter is not null && !IsDelegateParameter(parameter)
-        && !(parameter is IPropertySymbol property && property.SetMethod?.IsInitOnly == true);
-
-    private static string? ValidateAdapter(INamedTypeSymbol component, Compilation compilation)
-    {
-        INamedTypeSymbol? selected = null;
-        for (INamedTypeSymbol? type = component; type is not null; type = type.BaseType)
-        {
-            foreach (AttributeData attribute in type.GetAttributes().Where(value => value.AttributeClass?.ToDisplayString() == Prefix + "ComposeArgumentAdapterAttribute"))
-            {
-                if (attribute.ConstructorArguments.Length != 1 || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol adapter || !adapter.IsUnboundGenericType
-                    || adapter.Arity != 1 || adapter.TypeKind != TypeKind.Struct || adapter.IsRefLikeType || adapter.ContainingType?.IsGenericType == true || !PublicType(adapter.ConstructedFrom))
-                {
-                    return "An argument adapter must be a public unbound generic struct with one type parameter.";
-                }
-
-                adapter = adapter.ConstructedFrom;
-                if (selected is not null && !SymbolEqualityComparer.Default.Equals(selected, adapter))
-                {
-                    return "Conflicting inherited argument adapters.";
-                }
-
-                selected = adapter;
-            }
-        }
-
-        if (selected is null)
-        {
-            return null;
-        }
-
-        if (component.GetMembers().Any(member => member.Name.StartsWith("__LumyteArgumentKey", StringComparison.Ordinal)
-            || member.Name.StartsWith("__LumyteArgumentSet", StringComparison.Ordinal)))
-        {
-            return "An argument adapter generated member name conflicts with an existing member.";
-        }
-
-        ITypeParameterSymbol constraint = selected.TypeParameters[0];
-        foreach (ISymbol member in Members(component).Where(value => HasAttribute(value, "ComposeParameter") && UsesAdapter(value, selected)))
-        {
-            ITypeSymbol value = MemberType(member);
-            if ((constraint.HasValueTypeConstraint && (!value.IsValueType || value.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T))
-                || (constraint.HasReferenceTypeConstraint && !value.IsReferenceType) || (constraint.HasUnmanagedTypeConstraint && !value.IsUnmanagedType)
-                || (constraint.HasNotNullConstraint && value.NullableAnnotation == NullableAnnotation.Annotated)
-                || (constraint.HasConstructorConstraint && !value.IsValueType && !(value is ITypeParameterSymbol parameter && parameter.HasConstructorConstraint)
-                    && !(value is INamedTypeSymbol named && !named.IsAbstract && named.InstanceConstructors.Any(constructor => constructor.DeclaredAccessibility == Accessibility.Public && constructor.Parameters.Length == 0)))
-                || constraint.ConstraintTypes.Any(required => !compilation.ClassifyCommonConversion(value, SubstituteConstraint(required, constraint, value, compilation)).IsImplicit))
-            {
-                return "The member type does not satisfy argument adapter constraints.";
-            }
-
-            INamedTypeSymbol closed = selected.Construct(value);
-            if (!closed.AllInterfaces.Any(contract => contract.OriginalDefinition.ToDisplayString() == Prefix + "IComposeArgument<T>"
-                && SymbolEqualityComparer.Default.Equals(contract.TypeArguments[0], value)))
-            {
-                return "The adapter must implement IComposeArgument for the exact member type.";
-            }
-        }
-
-        return null;
-    }
-
     private static ITypeSymbol SubstituteConstraint(ITypeSymbol type, ITypeParameterSymbol parameter, ITypeSymbol value, Compilation compilation)
     {
         if (SymbolEqualityComparer.Default.Equals(type, parameter))
@@ -856,9 +785,9 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
     private static string ParameterDeclaration(ISymbol parameter, bool optionalDefault = true, INamedTypeSymbol? adapter = null)
     {
         string type = TypeName(MemberType(parameter));
-        if (UsesAdapter(parameter, adapter))
+        if (adapter is not null)
         {
-            return TypeName(adapter!.Construct(MemberType(parameter))) + " " + Escape(ParameterName(parameter))
+            return TypeName(adapter) + " " + Escape(ParameterName(parameter))
                 + (optionalDefault && !Required(parameter) ? " = default" : string.Empty);
         }
 

@@ -74,6 +74,6 @@ var declaration = (Compose.Definitions.FunctionWidget)Greeting(key: "greeting");
 Compose.Definitions.Widget result = declaration.Evaluate();
 ```
 
-このhostはUI・Signals・OSを参照しません。状態や購読を保持する場合の寿命もhost側で定義します。
+このhostはUIやOSなどの実行基盤を参照しません。状態や購読を保持する場合の寿命もhost側で定義します。
 
 [関数factoryのADR](../../docs/adr/composition/COMPOSITION-0005-function-factories.md)

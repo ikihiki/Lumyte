@@ -52,11 +52,11 @@ public sealed class ComposeFunctionAdapterAttribute(Type adapterType) : Attribut
 - 公開書込み可能なstring Keyを持つ。生成factoryのnullを受け取れるよう、nullableまたはnullable未指定の契約で宣言する。
 - Build以外に、生成wrapperが実装する必要のあるabstract memberを要求しない。
 
-hostは任意の時期にBuildを呼ぶ。UIツリー、状態表、Signal、購読、layout、描画、thread制御はCompositionへ追加しない。キーの照合や保持する状態の寿命もhostが実装する。サンプルのFunctionWidgetは公開EvaluateからBuildを呼び、UIを参照せず生成結果を実行する。
+hostは任意の時期にBuildを呼ぶ。UIツリー、状態表、購読、layout、描画、thread制御はCompositionへ追加しない。キーの照合や保持する状態の寿命もhostが実装する。サンプルのFunctionWidgetは公開EvaluateからBuildを呼び、UIを参照せず生成結果を実行する。
 
 ### 値adapterと再構築recipe
 
-戻り値の基底型のComposeArgumentAdapterを既存と同じ規則で解決する。関数の非delegate値引数をそのadapterで受け取り、GetInitialValueで具体値を取得してwrapperへ保存し、AttachToで受動的な情報を登録する。関数引数用adapterは型引数を制約しないpublicなgeneric structとし、各引数型に一致するIComposeArgumentを実装する。
+戻り値の基底型のComposeArgumentAdapterを既存と同じ規則で解決する。関数の非delegate値引数をそのadapterで受け取り、GetInitialValueで具体値を取得してwrapperへ保存し、AttachToで受動的な情報を登録する。関数引数用adapterも[COMPOSITION-0003](COMPOSITION-0003-argument-adapters.md)の完全一致・generic定義・共通指定の順で選び、各宣言型に一致するIComposeArgumentを実装する。選択後の型引数の制約も検証する。
 
 省略可能なadapter引数のdefaultは未指定を表し、定義関数の既定値を使う。具体型として渡したnull/defaultは指定値として扱い、必要ならadapter側のConstant等で指定する。必須引数の未指定はGetInitialValueで失敗する。
 
@@ -66,7 +66,7 @@ wrapperがICompositionRebuildableを実装する場合、元の引数とkeyか�
 
 不正宣言は既存のLYC001で拒否する。async、非public/non-static、ref戻り値、ref/out/in・params、ref struct、非公開のパラメータ型、予約引数名key・__始まりは非対応とする。型パラメータの公開制約を引き継ぎ、allows ref structは拒否する。重複factory名はクラス方式を含めて拒否し、overloadはComposable.Nameで別名を付ける。
 
-実行時reflectionやDynamicInvoke、新しいruntime、暗黙のSignal保持を導入しない。Buildが返した値の検証や例外・副作用の扱いはhostの責務である。
+実行時reflectionやDynamicInvoke、新しいruntime、暗黙の外部状態保持を導入しない。Buildが返した値の検証や例外・副作用の扱いはhostの責務である。
 
 ## 互換性
 
@@ -83,4 +83,4 @@ wrapperがICompositionRebuildableを実装する場合、元の引数とkeyか�
 
 ## 代案と結果
 
-戻り値を即時に構築する通常の関数だけでは、hostが状態を照合してから関数を評価できない。GeneratorへUI型やSignalの管理を組み込むとCompositionの独立性を失う。生成wrapperをhostのabstract classへ適応させる方式により、実行時の責務を利用側へ残す。
+戻り値を即時に構築する通常の関数だけでは、hostが状態を照合してから関数を評価できない。GeneratorへUI型や外部状態の管理を組み込むとCompositionの独立性を失う。生成wrapperをhostのabstract classへ適応させる方式により、実行時の責務を利用側へ残す。

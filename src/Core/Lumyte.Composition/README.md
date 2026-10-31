@@ -57,6 +57,6 @@ callbackは構築時には実行せず、引数の代入→with→内容の順�
 
 `[Composable]`は`Compose.Definitions`のpublic static関数にも指定できます。関数の引数から外側のfactoryを生成し、関数の戻り値をhostが管理するwrapperへ格納します。既定値、具体的delegate、generic型制約を引き継ぎ、`key`を追加します。戻り値の基底型に`[ComposeFunctionAdapter(typeof(HostFunction))]`が必要です。既存のComposeArgumentAdapterがあれば、値引数もそのadapterで受け取ります。
 
-UIのWidgetはこの契約を標準で提供します。CompositionはUIやSignalsに依存せず、具体的な実行・状態保持・寿命はhostの責務です。関数とクラスは同じDefinitionsへ混在できます。生成factoryの名前重複や非対応のasync/ref/params等はLYC001になります。
+UIのWidgetはこの契約を標準で提供します。Compositionは利用側の実行基盤に依存せず、具体的な実行・状態保持・寿命はhostの責務です。関数とクラスは同じDefinitionsへ混在できます。生成factoryの名前重複や非対応のasync/ref/params等はLYC001になります。
 
 [関数factoryのADRと独立hostの利用例](../../../docs/adr/composition/COMPOSITION-0005-function-factories.md)
