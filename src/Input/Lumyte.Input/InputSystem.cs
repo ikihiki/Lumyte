@@ -4,7 +4,7 @@ using Lumyte.Input.Abstractions;
 namespace Lumyte.Input;
 
 /// <summary>Coordinates injected input sources, device state, history and notifications.</summary>
-public sealed class InputSystem : IDisposable
+public sealed partial class InputSystem : IDisposable
 {
     private readonly IInputSource[] _sources;
     private readonly Registry[] _registries;
@@ -53,6 +53,15 @@ public sealed class InputSystem : IDisposable
             if (!seen.Add(source))
             {
                 throw new ArgumentException("A source instance can only appear once.", nameof(sources));
+            }
+        }
+
+        var streams = new HashSet<Guid>();
+        foreach (IOrderedInputSource ordered in _sources.OfType<IOrderedInputSource>())
+        {
+            if (ordered.StreamId == Guid.Empty || !streams.Add(ordered.StreamId))
+            {
+                throw new ArgumentException("Ordered sources require distinct nonempty stream IDs.", nameof(sources));
             }
         }
 
@@ -160,6 +169,11 @@ public sealed class InputSystem : IDisposable
         {
             foreach (Registry registry in _registries)
             {
+                if (_stopped.Contains(registry.Source))
+                {
+                    continue;
+                }
+
                 registry.Allowed = true;
                 try
                 {
@@ -175,11 +189,21 @@ public sealed class InputSystem : IDisposable
                 }
             }
 
-            foreach (Entry entry in _activeEntries)
+            foreach (Registry registry in _registries)
             {
-                if (entry.State.Connected)
+                if (registry.Source is IOrderedInputSource ordered)
                 {
-                    Collect(entry, notifications, errors);
+                    if (!_stopped.Contains(ordered))
+                    {
+                        Capture(() => CollectOrdered(registry, ordered, notifications, errors), errors);
+                    }
+                }
+                else
+                {
+                    foreach (Entry entry in _activeEntries.Where(entry => entry.Owner == registry && entry.State.Connected))
+                    {
+                        Collect(entry, notifications, errors);
+                    }
                 }
             }
 
@@ -224,7 +248,8 @@ public sealed class InputSystem : IDisposable
         return new InputReadResult(
             entry.Records.Where(record => record.Sequence > afterSequence).ToArray(),
             _sequence,
-            entry.RemovedThrough > afterSequence);
+            entry.RemovedThrough > afterSequence,
+            entry.AcquisitionGapAfter is ulong gap && afterSequence <= gap);
     }
 
     /// <summary>Gets the device history retention policy.</summary>
@@ -302,7 +327,14 @@ public sealed class InputSystem : IDisposable
                 foreach (Entry entry in _entries.Values.Where(entry => entry.Owner == registry && entry.State.Connected))
                 {
                     entry.Removing = true;
-                    Collect(entry, notifications, errors);
+                    if (registry.Source is IOrderedInputSource)
+                    {
+                        DisconnectOrdered(entry, notifications);
+                    }
+                    else
+                    {
+                        Collect(entry, notifications, errors);
+                    }
                 }
             }
 
@@ -535,6 +567,10 @@ public sealed class InputSystem : IDisposable
         internal InputRecord[]? RecordSnapshot { get; set; }
 
         internal InputDeviceState? StateSnapshot { get; set; }
+
+        internal Dictionary<Guid, DeviceState> Scopes { get; set; } = [];
+
+        internal ulong? AcquisitionGapAfter { get; set; }
 
         internal ulong RemovedThrough { get; set; }
 

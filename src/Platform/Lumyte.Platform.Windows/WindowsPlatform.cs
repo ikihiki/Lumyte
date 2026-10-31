@@ -274,13 +274,7 @@ public sealed class WindowsPlatform : IPlatform
 
     internal void ForgetHandle(nint handle) => _handles.Remove(handle);
 
-    internal void StopInput(WindowsWindow window)
-    {
-        if (window.State.IsActive)
-        {
-            _source?.Deactivate();
-        }
-    }
+    internal void StopInput(WindowsWindow window) => _source?.Close(window);
 
     internal void Release(WindowsInputSource source)
     {

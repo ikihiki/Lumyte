@@ -78,7 +78,16 @@ public sealed class WindowsNativeTests
         var registry = new DeviceRegistry();
         source.Initialize(registry);
         bool expected = window.State.IsActive;
-        Assert.All(registry.Devices, device => Assert.Contains(device.DrainEvents(), data => data is FocusData focus && focus.IsFocused == expected));
+        Lumyte.Platform.Abstractions.IWindowInputSource ordered = Assert.IsAssignableFrom<Lumyte.Platform.Abstractions.IWindowInputSource>(source);
+        Assert.True(ordered.TryGetInputWindowId(window.Id, out InputWindowId origin));
+        InputEventBatch batch = Assert.IsType<InputEventBatch>(ordered.PeekEvents());
+        Assert.Equal(2, batch.Events.Count);
+        Assert.All(batch.Events, item =>
+        {
+            Assert.Equal(origin, item.WindowId);
+            Assert.Equal(expected, Assert.IsType<FocusData>(item.Data).IsFocused);
+        });
+        ordered.CommitEvents(batch.Id);
         source.Shutdown();
         foreach (IInputDevice device in registry.Devices)
         {

@@ -5,6 +5,8 @@
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Sample/Lumyte.UI.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Shared/Lumyte.UI.Shared.csproj" />
+    <Project Path="samples/Lumyte.UI.Browser.Sample/Lumyte.UI.Browser.Sample.csproj" />
     <Project Path="samples/Lumyte.Audio.Execution.Sample/Lumyte.Audio.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Execution.Sample/Lumyte.Execution.Sample.csproj" />
     <Project Path="samples/Lumyte.Resources.Sample/Lumyte.Resources.Sample.csproj" />
@@ -163,5 +165,6 @@
   </Folder>
   <Folder Name="/tests/UI/">
     <Project Path="tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj" />
+    <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />
   </Folder>
 </Solution>

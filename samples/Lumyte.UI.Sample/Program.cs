@@ -8,9 +8,14 @@ using Lumyte.Input.Abstractions;
 using Lumyte.UI;
 using static Lumyte.UI.Compose;
 
+if (args is ["native"])
+{
+    return Lumyte.UI.Sample.NativeHost.Run();
+}
+
 if (args is not ["record-only"] and not ["pointer-only"] and not ["keyboard-only"] and not ["vulkan"] and not ["wgpu"])
 {
-    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|keyboard-only|vulkan|wgpu");
+    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|keyboard-only|vulkan|wgpu|native");
     return 1;
 }
 

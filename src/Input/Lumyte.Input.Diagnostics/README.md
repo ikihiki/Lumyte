@@ -26,3 +26,11 @@ actions.Advance(records, input.ElapsedTime);
 ```
 
 診断操作は`OverrideInput`権限を要求する。`override-acquire`／`override-get`／`override-update`／`override-release`、`tape-play`／`tape-get`／`tape-stop`、`live-begin`／`live-send`／`live-heartbeat`／`live-stop`を公開する。profile変更、ActionSystem破棄、または所有スレッドからの`NotifySessionClosed`で予約と値を解除する。操作値とTapeはメモリ上だけに保持し、設定保存システムへ永続化しない。
+
+## Window scopeとschema 2
+
+snapshotのschemaVersionと診断subsystemのSchemaVersionは2です。deviceは一件を維持し、windowScopesに個別状態・操作targetを記録します。履歴の直近32件/deviceにはwindowId／stateWindowId／captureを保持し、UInt64はdecimal stringで送ります。旧schemaの画面として解釈しません。
+
+Window付きのkey/button/controlにはGetWindowTarget、mouse/touch/penには既存名のWindow引数付きoverloadを使用します。未知・退役済み・切断済みscopeを現在Windowで補いません。Windowなしの集約targetをWindow付きdeviceへ適用する要求はwindow-requiredで拒否します。Focus喪失・取消・終了は該当scopeのleaseだけを終了させます。
+
+Tapeは取得レコードの再送ではなく、aliasの操作プログラムです。再生時にWindow付きtargetを明示してbindします。Captureの取得stampを新入力へ再利用しません。

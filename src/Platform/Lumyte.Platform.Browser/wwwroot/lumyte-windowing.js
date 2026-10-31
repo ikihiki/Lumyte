@@ -15,6 +15,16 @@ export function attach(canvas, title, width, height, preserveFocus) {
         height: canvas.height
     };
     const handle = { canvas, gpu, saved, width, height, preserveFocus, visible: false, events: [], input: [], buttons: new Set(), detached: false };
+    handle.inputEnabled = true;
+    const record = (...events) => {
+        if (!handle.inputEnabled || handle.inputFault) return;
+        if (handle.input.length + events.length > 16384) {
+            handle.inputFault = true;
+            handle.cancelMouse();
+            return;
+        }
+        handle.input.push(...events);
+    };
     handle.capture = () => {
         if (!handle.detached) handle.events.push(...snapshot(handle));
     };
@@ -28,30 +38,92 @@ export function attach(canvas, title, width, height, preserveFocus) {
         window.addEventListener(name, callback);
         handle.windowListeners.push([name, callback]);
     };
-    listen("keydown", event => handle.input.push({ type: 0, code: event.code, down: true, repeat: event.repeat }));
-    listen("keyup", event => handle.input.push({ type: 0, code: event.code, down: false, repeat: false }));
-    listen("mousemove", event => {
+    listen("keydown", event => record({ type: 0, code: event.code, down: true, repeat: event.repeat }));
+    listen("keyup", event => record({ type: 0, code: event.code, down: false, repeat: false }));
+    // Capture is acquired during the physical Down, before any managed frame consumes input.
+    let mousePointer = null;
+    let physicalButtons = 0;
+    let blocked = false;
+    const masks = [[1, 0], [2, 2], [4, 1], [8, 3], [16, 4]];
+    const cancelMouse = () => {
+        const pointer = mousePointer;
+        mousePointer = null;
+        blocked = physicalButtons !== 0;
+        for (const button of handle.buttons) record({ type: 5, x: button });
+        handle.buttons.clear();
+        if (pointer !== null && canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer);
+    };
+    handle.cancelMouse = cancelMouse;
+    const mouse = event => {
+        if (event.pointerType !== "mouse") return;
+        physicalButtons = event.buttons;
+        if (!handle.inputEnabled) {
+            cancelMouse();
+            return;
+        }
+        if (event.type === "pointercancel") {
+            cancelMouse();
+            return;
+        }
+        if (blocked) {
+            if (physicalButtons === 0) blocked = false;
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
-        handle.input.push({ type: 1, x: (event.clientX - rect.left) * canvas.clientWidth / rect.width, y: (event.clientY - rect.top) * canvas.clientHeight / rect.height });
+        if (!(rect.width > 0 && rect.height > 0)) {
+            cancelMouse();
+            return;
+        }
+        if (event.buttons && mousePointer === null) {
+            try {
+                canvas.setPointerCapture(event.pointerId);
+                if (!canvas.hasPointerCapture(event.pointerId)) throw new Error("Mouse capture failed.");
+                mousePointer = event.pointerId;
+            } catch {
+                cancelMouse();
+                return;
+            }
+            if (handle.preserveFocus) event.preventDefault();
+            else canvas.focus({ preventScroll: true });
+        }
+        const position = { type: 1, x: (event.clientX - rect.left) * canvas.clientWidth / rect.width, y: (event.clientY - rect.top) * canvas.clientHeight / rect.height };
+        let changed = false;
+        for (const [mask, button] of masks) {
+            const down = !!(event.buttons & mask);
+            if (down === handle.buttons.has(button)) continue;
+            changed = true;
+            if (down) handle.buttons.add(button); else handle.buttons.delete(button);
+            // Position and button are one acquisition and must remain adjacent.
+            const capture = ++handle.captureSequence;
+            record({ ...position, capture }, { type: 2, x: button, down, capture });
+        }
+        if (!changed) record({ ...position, capture: ++handle.captureSequence });
+        if (event.buttons === 0 && mousePointer !== null) {
+            const pointer = mousePointer;
+            mousePointer = null;
+            if (canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer);
+        }
+    };
+    handle.captureSequence = 0;
+    for (const name of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) listen(name, mouse);
+    listen("lostpointercapture", event => { if (event.pointerId === mousePointer) cancelMouse(); });
+    listenWindow("pointerup", event => {
+        if (event.pointerType === "mouse" && blocked) {
+            physicalButtons = event.buttons;
+            if (!physicalButtons) blocked = false;
+        }
     });
-    listen("mousedown", event => {
-        if (handle.preserveFocus) event.preventDefault();
-        handle.buttons.add(event.button);
-        handle.input.push({ type: 2, x: event.button, down: true });
-    });
-    listen("mouseup", event => {
-        handle.buttons.delete(event.button);
-        handle.input.push({ type: 2, x: event.button, down: false });
-    });
-    listenWindow("mouseup", event => {
-        if (handle.buttons.delete(event.button)) handle.input.push({ type: 2, x: event.button, down: false });
-    });
+    const visibility = () => { if (document.hidden || !canvas.isConnected) cancelMouse(); };
+    document.addEventListener("visibilitychange", visibility);
+    handle.visibility = visibility;
+    handle.connectionObserver = new MutationObserver(visibility);
+    handle.connectionObserver.observe(document, { childList: true, subtree: true });
     listen("wheel", event => {
         const divisor = event.deltaMode === 0 ? 120 : event.deltaMode === 1 ? 3 : 1;
-        handle.input.push({ type: 3, x: event.deltaX / divisor, y: -event.deltaY / divisor });
+        record({ type: 3, x: event.deltaX / divisor, y: -event.deltaY / divisor });
     });
-    listen("focus", () => handle.input.push({ type: 4, down: true }));
-    listen("blur", () => handle.input.push({ type: 4, down: false }));
+    listen("focus", () => record({ type: 4, down: true }));
+    listen("blur", () => { cancelMouse(); record({ type: 4, down: false }); });
     canvas.title = title;
     if (preserveFocus) canvas.tabIndex = -1;
     else if (canvas.tabIndex < 0) canvas.tabIndex = 0;
@@ -91,6 +163,7 @@ export function drain(handle) {
 }
 
 export function show(handle, visible) {
+    if (!visible) handle.cancelMouse();
     handle.visible = visible;
     handle.canvas.style.display = visible ? "block" : "none";
     if (visible && !handle.preserveFocus) activate(handle);
@@ -115,7 +188,10 @@ export function activate(handle) {
 
 export function detach(handle) {
     if (handle.detached) return;
+    handle.cancelMouse();
     handle.detached = true;
+    handle.connectionObserver.disconnect();
+    document.removeEventListener("visibilitychange", handle.visibility);
     handle.observer.disconnect();
     for (const [name, callback] of handle.listeners) handle.canvas.removeEventListener(name, callback);
     for (const [name, callback] of handle.windowListeners) window.removeEventListener(name, callback);
@@ -144,5 +220,15 @@ export function readClipboard() { return navigator.clipboard.readText(); }
 export function writeClipboard(text) { return navigator.clipboard.writeText(text); }
 
 export function drainInput(handle) {
-    return JSON.stringify(handle.input.splice(0));
+    const events = handle.input.splice(0);
+    if (handle.inputFault) events.push({ type: 6 });
+    return JSON.stringify(events);
+}
+
+export function setInputEnabled(handle, enabled) {
+    if (!enabled) handle.cancelMouse();
+    handle.inputEnabled = enabled;
+    handle.inputFault = false;
+    handle.input.length = 0;
+    if (enabled) handle.input.push({ type: 4, down: document.hasFocus() && document.activeElement === handle.canvas });
 }

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <ProjectReference Include="../../../samples/Lumyte.UI.Shared/Lumyte.UI.Shared.csproj" />
+    <ProjectReference Include="../../../src/Input/Lumyte.Input.Processing/Lumyte.Input.Processing.csproj" />
+    <ProjectReference Include="../../../src/Input/Lumyte.Input.Actions/Lumyte.Input.Actions.csproj" />
+    <ProjectReference Include="../../../src/Input/Lumyte.Input.Diagnostics/Lumyte.Input.Diagnostics.csproj" />
+    <Compile Include="../../Platform/Lumyte.Platform.Tests/TestPlatform.cs" Link="Fixtures/TestPlatform.cs" />
+    <Compile Include="../../Platform/Lumyte.Platform.Tests/TestWindow.cs" Link="Fixtures/TestWindow.cs" />
+    <Compile Include="../../../src/Platform/Shared/BufferedInputSource.cs" Link="Fixtures/BufferedInputSource.cs" />
+  </ItemGroup>
+</Project>

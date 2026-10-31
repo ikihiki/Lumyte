@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.UI.Shared/Lumyte.UI.Shared.csproj" />
+    <ProjectReference Include="../../src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <Content Include="../../src/Platform/Lumyte.Platform.Browser/wwwroot/lumyte-windowing.js" Link="wwwroot/lumyte-windowing.js" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../src/Graphics/Lumyte.Graphics.Browser/wwwroot/lumyte-graphics.js" Link="wwwroot/lumyte-graphics.js" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

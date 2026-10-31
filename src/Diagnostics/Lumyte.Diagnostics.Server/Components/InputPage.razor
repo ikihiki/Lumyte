@@ -58,6 +58,10 @@
                 </FluentCard>
             }
             </div>
+            @foreach (WindowScopeModel scope in system.WindowScopes)
+            {
+                <details><summary>Window @scope.WindowId · device @scope.DeviceId @(scope.Retired ? "(retired)" : "")</summary><pre>@scope.State</pre><pre>@scope.Targets</pre></details>
+            }
         }
     }
     else if (_view == "actions")
