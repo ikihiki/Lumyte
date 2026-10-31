@@ -205,6 +205,11 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
+        if ((ulong)desc.TextureCapacity + desc.SamplerCapacity + desc.BufferCapacity == 0)
+        {
+            throw new ArgumentException("An argument table must have at least one logical slot.", nameof(desc));
+        }
+
         return new Direct3D12ArgumentTable(this, desc);
     }
 

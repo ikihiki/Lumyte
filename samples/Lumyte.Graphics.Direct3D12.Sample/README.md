@@ -48,5 +48,5 @@ dotnet run --project build -c Release -- --target Compile --project samples/Lumy
 dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- hardware suite partial
 ```
 
-一般版の window モードは実 GPU で表示確認済みです。suite 全体と Preview の部分プログラムは、この確認には含みません。
+一般版の window モードは実 GPU で表示確認済みです。Stable の WARP（debug layer 有効）では suite と同じ共通 exercise 全体もテスト済みです。Preview の部分プログラムは未実行です。
 画面表示の接続は `Direct3D12Device.CreateSurface(hwnd)` を使用します。既存 HWND を渡し、window と message loop は呼び出し元で管理してください。

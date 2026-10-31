@@ -19,7 +19,7 @@ internal static class PipelineValidation
         JsonElement entry = root.GetProperty("entryPoints").EnumerateArray().Single(e => e.GetProperty("name").GetString() == data.EntryPoint);
         if (root.TryGetProperty("parameters", out JsonElement globals))
         {
-            int roots = globals.EnumerateArray().Count(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer");
+            int roots = globals.EnumerateArray().Count(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" && p.GetProperty("name").GetString() != "lumyteDrawInfo");
             if (roots > 1)
             {
                 throw new NotSupportedException("A stage accepts one logical root structure.");

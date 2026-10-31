@@ -21,7 +21,7 @@ public sealed class TransferTests
             return;
         }
 
-        using var device = Direct3D12Device.Create(new() { UseWarp = true });
+        using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         string? expectedSdk = typeof(TransferTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Single(attribute => attribute.Key == "AgilitySdkVersion").Value;
         Assert.Equal(expectedSdk, device.SdkVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using IGraphicsBuffer<byte> upload = Create(device, MemoryPreference.Upload);
@@ -44,7 +44,7 @@ public sealed class TransferTests
             second.Finish();
             Assert.Throws<InvalidOperationException>(() => first.Finish());
             using IGraphicsSubmission submission = device.Queue.Submit(split ? [first, second] : [first]);
-            Assert.Throws<ArgumentException>(() => device.Queue.Submit([first]));
+            Assert.Throws<InvalidOperationException>(() => device.Queue.Submit([first]));
             await submission.WaitAsync();
             Assert.Equal(SubmissionStatus.Completed, submission.Status);
             Assert.Equal(CommandBufferState.Completed, first.State);
@@ -66,7 +66,7 @@ public sealed class TransferTests
             return;
         }
 
-        using var device = Direct3D12Device.Create(new() { UseWarp = true });
+        using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         using IGraphicsBuffer<byte> upload = Create(device, MemoryPreference.Upload);
         using IGraphicsBuffer<byte> gpu = Create(device, MemoryPreference.Automatic);
         using IGraphicsBuffer<byte> readback = Create(device, MemoryPreference.Readback);
@@ -103,8 +103,8 @@ public sealed class TransferTests
         }
 
         Assert.Throws<ArgumentException>(() => Direct3D12Device.Create(new() { UseWarp = true, AdapterIndex = 1 }));
-        using var first = Direct3D12Device.Create(new() { UseWarp = true });
-        using var second = Direct3D12Device.Create(new() { UseWarp = true });
+        using var first = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
+        using var second = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         using IGraphicsBuffer<byte> source = Create(first, MemoryPreference.Upload);
         using IGraphicsBuffer<byte> destination = Create(second, MemoryPreference.Readback);
         using IGraphicsCommandBuffer command = first.CreateCommandBuffer(new());

@@ -27,14 +27,20 @@ static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcep
     ranges[1] = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 64, 0, 1, 128};
     ranges[2] = {D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 64, 0, 1, 192};
     D3D12_DESCRIPTOR_RANGE samplers{D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, 0};
-    D3D12_ROOT_PARAMETER parameters[3]{};
+    D3D12_ROOT_PARAMETER parameters[5]{};
     parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     parameters[0].Descriptor = {8, 0};
     parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[1].DescriptorTable = {3, ranges};
     parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[2].DescriptorTable = {1, &samplers};
-    D3D12_ROOT_SIGNATURE_DESC desc{3, parameters, 0, nullptr,
+    parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    parameters[3].Constants = {9, 0, 2};
+    parameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    parameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+    parameters[4].Descriptor = {0, 2};
+    parameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    D3D12_ROOT_SIGNATURE_DESC desc{5, parameters, 0, nullptr,
                                    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
     ComPtr<ID3DBlob> blob, errors;
     CHECK(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &errors));
@@ -210,6 +216,9 @@ API void commands_indices(Commands* commands, ID3D12Resource* buffer, UINT64 off
 API void commands_draw(Commands* commands, UINT count, UINT instances, UINT first, INT base, UINT first_instance,
                        int indexed) noexcept
 {
+    const UINT info[]{0, indexed ? static_cast<UINT>(base) : first};
+    commands->list->SetGraphicsRoot32BitConstants(3, 2, info, 0);
+    commands->list->SetGraphicsRootShaderResourceView(4, 0);
     if (indexed)
     {
         commands->list->DrawIndexedInstanced(count, instances, first, base, first_instance);
@@ -232,6 +241,12 @@ API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource
                                 : D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
     D3D12_COMMAND_SIGNATURE_DESC desc{kind == 0 ? 16u : kind == 1 ? 20u : 12u, 1, &argument, 0};
     CHECK(device->device->CreateCommandSignature(&desc, nullptr, IID_PPV_ARGS(output)));
+    if (kind < 2)
+    {
+        const UINT info[]{kind + 1, 0};
+        commands->list->SetGraphicsRoot32BitConstants(3, 2, info, 0);
+        commands->list->SetGraphicsRootShaderResourceView(4, buffer->GetGPUVirtualAddress() + offset);
+    }
     commands->list->ExecuteIndirect(*output, 1, buffer, offset, nullptr, 0);
     return S_OK;
 }

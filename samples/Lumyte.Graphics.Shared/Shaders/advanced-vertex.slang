@@ -9,6 +9,9 @@ VertexOutput main(uint index : SV_VertexID)
 VertexOutput main(uint index : SV_VulkanVertexID)
 #endif
 {
+#ifdef LUMYTE_DXIL
+    index = LumyteVertexIndex(index);
+#endif
     float2 positions[3] = { float2(-1, -1), float2(3, -1), float2(-1, 3) };
     VertexOutput result;
     result.position = float4(positions[index], arguments.Depth, 1);

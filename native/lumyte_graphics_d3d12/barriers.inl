@@ -7,7 +7,7 @@ static D3D12_BARRIER_SYNC barrier_sync(UINT stages) noexcept
     }
     if (stages & 4)
     {
-        result |= D3D12_BARRIER_SYNC_EXECUTE_INDIRECT;
+        result |= D3D12_BARRIER_SYNC_EXECUTE_INDIRECT | D3D12_BARRIER_SYNC_VERTEX_SHADING;
     }
     if (stages & 8)
     {
@@ -52,7 +52,7 @@ static D3D12_BARRIER_ACCESS barrier_access(UINT access, bool unordered_reads = t
     }
     if (access & 32)
     {
-        result |= D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT;
+        result |= D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT | D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
     }
     if (access & 64)
     {
@@ -97,13 +97,16 @@ API void commands_buffer_dependency(Commands* commands, ID3D12Resource* buffer, 
                                     UINT after_access) noexcept
 {
     const bool unordered_reads = (buffer->GetDesc().Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0;
+    // D3D12 currently requires whole-buffer barriers; managed validation still checks the requested slice.
+    (void)offset;
+    (void)size;
     D3D12_BUFFER_BARRIER barrier{barrier_sync(before_stages),
                                  barrier_sync(after_stages),
                                  barrier_access(before_access, unordered_reads),
                                  barrier_access(after_access, unordered_reads),
                                  buffer,
-                                 offset,
-                                 size};
+                                 0,
+                                 UINT64_MAX};
     D3D12_BARRIER_GROUP group{};
     group.Type = D3D12_BARRIER_TYPE_BUFFER;
     group.NumBarriers = 1;

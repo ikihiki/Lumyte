@@ -57,9 +57,14 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
         var unique = new HashSet<Direct3D12CommandBuffer>();
         for (int i = 0; i < commands.Length; i++)
         {
-            if (desc.CommandBuffers[i] is not Direct3D12CommandBuffer command || !ReferenceEquals(command.Owner, owner) || command.State != CommandBufferState.Executable || !unique.Add(command))
+            if (desc.CommandBuffers[i] is not Direct3D12CommandBuffer command || !ReferenceEquals(command.Owner, owner) || !unique.Add(command))
             {
-                throw new ArgumentException("Each command must be unique, executable and belong to this device.", nameof(desc));
+                throw new ArgumentException("Each command must be unique and belong to this device.", nameof(desc));
+            }
+
+            if (command.State != CommandBufferState.Executable)
+            {
+                throw new InvalidOperationException("Finish each command before submitting it exactly once.");
             }
 
             commands[i] = command;

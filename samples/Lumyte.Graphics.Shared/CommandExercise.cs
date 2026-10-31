@@ -136,6 +136,11 @@ public static class CommandExercise
         uint rowBytes = 3 * constraints.BytesPerTexel;
         uint pitch = checked(((rowBytes + constraints.BytesPerRowAlignment - 1) / constraints.BytesPerRowAlignment) * constraints.BytesPerRowAlignment);
         uint rows = 3;
+        while (((ulong)rows * pitch) % constraints.BufferOffsetAlignmentInBytes != 0)
+        {
+            rows++;
+        }
+
         uint offset = checked((uint)constraints.BufferOffsetAlignmentInBytes);
         uint bytes = checked(offset + (pitch * rows * 2));
         byte[] expected = new byte[bytes];

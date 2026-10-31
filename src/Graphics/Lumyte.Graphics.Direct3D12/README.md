@@ -63,7 +63,7 @@ Vulkan と同じ `IGraphicDevice`／command／encoder API を実装します。
 | Shader | Slang DXIL SM 6.6、root 定数、参照を含む shader data、オンライン／オフライン共通 ABI |
 | Graphics | clear／load／store、depth／stencil、blend、viewport／scissor、indexed／indirect draw |
 | Compute | root 引数、dispatch／indirect dispatch、GPU 書き込み |
-| Synchronization | Enhanced global／buffer range／texture subresource barrier、binary semaphore、submission fence |
+| Synchronization | Enhanced global／whole-buffer／texture subresource barrier、binary semaphore、submission fence |
 | Presentation | 借用 HWND、DXGI flip-discard、acquire／present／resize、frame lease |
 
 buffer の実装上限は 128 MiB、copy offset／size alignment は 1 です。Count と stride は丸めません。
@@ -79,6 +79,10 @@ raw SRV／UAV buffer は `t0/u0, space1`。shader data の stride は Slang の 
 root は constant-buffer layout を reflection から取得し、同じレイアウトだと仮定しません。
 GPU へ渡す root と descriptor は command が保持し、以降の SetArguments や table 変更で書き換えません。
 GPU 書き込み buffer は UAV を作成し、readonly buffer は SRV を使用します。
+SM 6.6 の頂点番号に開始位置を加える場合は `LumyteVertexIndex(SV_VertexID)` を使います。
+内部予約の `b9, space0` に直接描画の開始位置を渡し、間接描画では `t0, space2` から GPU 上の引数を読みます。
+間接引数のレイアウトは変更せず、IndirectRead の同期にはこの vertex shader 読み取りも含めます。
+`lumyteDrawInfo` は内部定数なのでアプリの root schema から除外します。
 helper の texture sampling は単一 layer の Texture2D のみです。array／cube view は作成できますが、helper への binding は拒否します。
 
 ## PSO と Preview の分離
@@ -114,7 +118,7 @@ link コストと cache 比較は未測定です。初回 link 時間・native s
 ## 提出・寿命
 
 Upload は GPU read 用途、Readback は CopyDestination 専用です。buffer barrier は範囲を指定でき、
-Enhanced Barriers の access／sync として記録します。legacy resource state decay をアプリ側で追跡する必要はありません。
+managed 側で範囲を検証した後、D3D12 の制約に合わせて全バッファへ広げ、Enhanced Barriers の access／sync として記録します。legacy resource state decay をアプリ側で追跡する必要はありません。
 texture の layout、access、subresource は利用側が指定します。Undefined からの遷移は内容を破棄します。
 同じ提出の list は一度の ExecuteCommandLists にまとめます。semaphore の待機は指定 stage を含む queue 全体を待ち、
 binary signal の消費を native fence の値に対応付けます。未 signal の wait、二重 signal、同一提出の重複 semaphore は拒否します。
@@ -170,4 +174,4 @@ dotnet run --project build -c Release -- --target Test --project tests/Graphics/
 GPU を使わないテストは DXIL container、helper の binding、natural／constant-buffer layout、オンライン／オフライン一致、
 stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
 一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
-未実施の suite 全体・WARP・Preview partial program の実行検証を区別してください。
+Stable の WARP（debug layer 有効）では共通 suite 全体も成功しました。Preview partial program は未実行です。
