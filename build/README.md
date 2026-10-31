@@ -102,15 +102,27 @@ Platformのテストprojectもhost用の参照とソースだけをコンパイ�
 共通projectの追加は正本への登録だけで反映されます。OS専用projectを追加した場合は`Build.Ci.cs`の分類も更新してください。
 引数を省略した通常のsolution操作は従来どおり全projectを対象にします。
 
-Browser・共通の配布検証・native／Markdown lintはLinux x64に集約します。
+Browserは独立したLinux x64 jobで、nativeのLinux／Windows jobと並列に実行します。
+Browser jobはsolution全体をビルドせず、検証するBrowser sampleとその依存だけをpublishします。
+共通の配布検証・native／Markdown lintはnativeのLinux x64に集約します。
 Windows専用packageとWindow sampleはWindows側で検証し、C#の書式は各OSのx64で検査します。
 環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
 Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
 
 セットアップ後は`dotnet run --no-build --no-restore`でrunnerを再利用します。
 `--`より後の同名引数は対象projectの再ビルドを抑制するもので、両方を指定する意味が異なります。
-Release成果物をnative検証・配布検証で再利用し、その後にBrowser publishを実行します。
+Release成果物をnative検証・配布検証で再利用します。
+Browser publishは別checkoutで実行し、nativeと`bin/obj`を共有しません。
 書式検査のためだけのDebug全体ビルドは行いません。
+
+CIの依存キャッシュは`.github/actions/cache-dependencies`で管理します。
+ツールはOS・architecture・native／browser・固定バージョン定義で分け、BrowserのWasm workloadも専用SDK内に保存します。
+NuGetとCargoのダウンロード済みpackageは依存定義でキーを更新し、同じOS・architecture・profileの以前のキャッシュも利用します。
+Rustの保存先はcheckout内の`artifacts/build/tools/`に固定します。
+projectの`bin/obj`や生成済みNuGetはキャッシュせず、毎回検証します。
+
+project指定のない`Pack`は`src/`からhost・Parley除外条件に合うprojectを集め、MSBuild一回で順にpackします。
+`IsPackable`は各projectのMSBuild評価に従い、復元・コンパイルは再実行しません。
 
 ```sh
 dotnet run --project build -c Release -- --target CiNative --host-only

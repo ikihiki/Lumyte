@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_HOME: ${{ github.workspace }}/artifacts/build/tools/cargo
+  RUSTUP_HOME: ${{ github.workspace }}/artifacts/build/tools/rustup
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -40,6 +44,11 @@ jobs:
             artifacts/dev-env/dxc/version.txt
             artifacts/dev-env/dxc/LICENSE.TXT
           key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
 
       - name: Mise setup (Linux)
         shell: bash
@@ -175,6 +184,11 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
+
       - name: Mise setup (Windows)
         shell: powershell
         run: |
@@ -247,6 +261,11 @@ jobs:
             artifacts/dev-env/dxc/version.txt
             artifacts/dev-env/dxc/LICENSE.TXT
           key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
+
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: browser
 
       - name: Mise setup (Browser)
         run: bash tools/setup/setup.sh
