@@ -48,7 +48,8 @@ internal sealed partial class Build
         else if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
         {
             // Microsoft does not publish a Linux ARM64 archive. Build the same release,
-            // without SPIR-V or tests; Slang only needs the compiler and validator libraries.
+            // without tests; this release always enables SPIR-V on Linux, so its
+            // pinned dependencies are required even when Slang only emits DXIL.
             string source = Path.Combine(root, "source");
             string output = Path.Combine(root, "build");
             Directory.CreateDirectory(source);
@@ -59,7 +60,8 @@ internal sealed partial class Build
 
             await ProcessRunner.RunAsync("git", ["-C", source, "fetch", "--depth", "1", "https://github.com/microsoft/DirectXShaderCompiler.git", Commit], RootDirectory).ConfigureAwait(false);
             await ProcessRunner.RunAsync("git", ["-C", source, "checkout", "--detach", Commit], RootDirectory).ConfigureAwait(false);
-            await ProcessRunner.RunAsync("cmake", ["-S", source, "-B", output, "-G", "Ninja", "-C", Path.Combine(source, "cmake", "caches", "PredefinedParams.cmake"), "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DHLSL_INCLUDE_TESTS=OFF", "-DLLVM_INCLUDE_TESTS=OFF", "-DENABLE_SPIRV_CODEGEN=OFF", "-DLLVM_ENABLE_ASSERTIONS=OFF", "-DLLVM_ENABLE_ZLIB=OFF", "-DHLSL_ENABLE_WERROR=OFF"], RootDirectory).ConfigureAwait(false);
+            await ProcessRunner.RunAsync("git", ["-C", source, "submodule", "update", "--init", "--depth", "1", "--", "external/DirectX-Headers", "external/SPIRV-Headers", "external/SPIRV-Tools"], RootDirectory).ConfigureAwait(false);
+            await ProcessRunner.RunAsync("cmake", ["-S", source, "-B", output, "-G", "Ninja", "-C", Path.Combine(source, "cmake", "caches", "PredefinedParams.cmake"), "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DHLSL_INCLUDE_TESTS=OFF", "-DLLVM_INCLUDE_TESTS=OFF", "-DENABLE_SPIRV_CODEGEN=ON", "-DSPIRV_BUILD_TESTS=OFF", "-DLLVM_ENABLE_ASSERTIONS=OFF", "-DLLVM_ENABLE_ZLIB=OFF", "-DHLSL_ENABLE_WERROR=OFF"], RootDirectory).ConfigureAwait(false);
             await ProcessRunner.RunAsync("cmake", ["--build", output, "--target", "dxcompiler", "dxildll", "--parallel", "2"], RootDirectory).ConfigureAwait(false);
             Directory.CreateDirectory(library);
             foreach (string name in new[] { "libdxcompiler.so", "libdxil.so" })
