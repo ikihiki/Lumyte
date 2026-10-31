@@ -119,6 +119,7 @@ CIの依存キャッシュは`.github/actions/cache-dependencies`で管理しま
 ツールはOS・architecture・native／browser・固定バージョン定義で分け、BrowserのWasm workloadも専用SDK内に保存します。
 NuGetとCargoのダウンロード済みpackageは依存定義でキーを更新し、同じOS・architecture・profileの以前のキャッシュも利用します。
 Rustの保存先はcheckout内の`artifacts/build/tools/`に固定します。
+Windowsのmise bootstrap・Mesa・vcpkgダウンロードも別キャッシュで再利用し、セットアップ時のハッシュ検証は維持します。
 projectの`bin/obj`や生成済みNuGetはキャッシュせず、毎回検証します。
 
 project指定のない`Pack`は`src/`からhost・Parley除外条件に合うprojectを集め、MSBuild一回で順にpackします。
