@@ -53,7 +53,7 @@ public sealed class Signal<T> : IReadSignal<T>
 
             ulong revision = SignalContext.NextRevision();
             _source.Value = value;
-            _source.Changed(revision, []);
+            _source.Changed(revision);
             return true;
         }
     }
@@ -62,7 +62,7 @@ public sealed class Signal<T> : IReadSignal<T>
     {
         internal T Value { get; set; } = value;
 
-        internal bool EqualsValue(T next) => SignalContext.Evaluate(() => comparer.Equals(Value, next), out _);
+        internal bool EqualsValue(T next) => SignalContext.EqualsValue(comparer, Value, next);
 
         internal override void ReadTracked() => SignalContext.Track(this);
     }

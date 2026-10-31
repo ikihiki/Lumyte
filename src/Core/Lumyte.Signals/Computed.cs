@@ -47,6 +47,7 @@ public sealed class Computed<T> : IReadSignal<T>
         private bool _initialized;
         private bool _evaluating;
         private bool _dirty = true;
+        private ulong _validatedMutationRevision;
         private T _value = default!;
         private Exception? _failure;
 
@@ -60,15 +61,11 @@ public sealed class Computed<T> : IReadSignal<T>
             _evaluating = true;
             try
             {
-                if (!Observed && _initialized && !_dirty)
+                if (!Observed && _initialized && !_dirty && _validatedMutationRevision != SignalContext.MutationRevision)
                 {
                     foreach ((SignalNode node, ulong revision) in _observer.Dependencies)
                     {
-                        Signal.Untracked(() =>
-                        {
-                            node.ReadTracked();
-                            return true;
-                        });
+                        SignalContext.ReadUntracked(node);
                         if (revision != node.Revision)
                         {
                             _dirty = true;
@@ -79,17 +76,17 @@ public sealed class Computed<T> : IReadSignal<T>
 
                 if (_dirty || !_initialized)
                 {
-                    Dictionary<SignalNode, ulong> dependencies = [];
+                    Dictionary<SignalNode, ulong> dependencies = _observer.RentReads();
                     try
                     {
-                        T next = SignalContext.Evaluate(compute, out dependencies);
-                        if (!_initialized || !SignalContext.Evaluate(() => comparer.Equals(_value, next), out _))
+                        T next = SignalContext.Evaluate(compute, dependencies);
+                        if (!_initialized || !SignalContext.EqualsValue(comparer, _value, next))
                         {
                             _value = next;
                         }
 
                         _observer.Replace(dependencies, Observed);
-                        Revision = Math.Max(Revision, dependencies.Count == 0 ? 0 : dependencies.Keys.Max(node => node.Revision));
+                        Revision = Math.Max(Revision, SignalContext.GetDependencyRevision(dependencies));
                         _initialized = true;
                         _failure = null;
                         _dirty = false;
@@ -113,6 +110,8 @@ public sealed class Computed<T> : IReadSignal<T>
                     ExceptionDispatchInfo.Capture(_failure).Throw();
                 }
 
+                // Failed reads never reach this point and must remain retryable.
+                _validatedMutationRevision = SignalContext.MutationRevision;
                 return _value;
             }
             finally
@@ -145,10 +144,10 @@ public sealed class Computed<T> : IReadSignal<T>
         {
             internal Source? Node { get; set; }
 
-            internal override void Invalidate(ulong revision, HashSet<SignalObserver> visited)
+            internal override void Invalidate(ulong revision)
             {
                 Node!._dirty = true;
-                Node.Changed(revision, visited);
+                Node.Changed(revision);
             }
         }
     }

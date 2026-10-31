@@ -24,15 +24,15 @@ internal abstract class SignalNode
         }
     }
 
-    internal void Changed(ulong revision, HashSet<SignalObserver> visited)
+    internal void Changed(ulong revision)
     {
         Revision = revision;
-        foreach (SignalObserver observer in _observers.ToArray())
+
+        // The caller holds Gate. Invalidation only marks or queues observers;
+        // evaluations and subscription changes occur after this traversal ends.
+        foreach (SignalObserver observer in _observers)
         {
-            if (visited.Add(observer))
-            {
-                observer.Invalidate(revision, visited);
-            }
+            observer.InvalidateOnce(revision);
         }
     }
 

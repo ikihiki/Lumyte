@@ -22,11 +22,7 @@ public sealed class SignalReadSet
             {
                 foreach ((SignalNode node, ulong revision) in _reads)
                 {
-                    Signal.Untracked(() =>
-                        {
-                            node.ReadTracked();
-                            return true;
-                        });
+                    SignalContext.ReadUntracked(node);
                     if (node.Revision != revision)
                     {
                         return false;

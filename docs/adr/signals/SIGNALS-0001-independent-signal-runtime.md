@@ -14,7 +14,7 @@ Preact Signals、Solid、Vueでは、通常の状態作成はsignal/createSignal
 
 ### 配置と通常API
 
-.NET 10の`Lumyte.Signals`を`src/Core/Lumyte.Signals`へ追加する。namespaceとNuGet名も同名とし、BCLだけへ依存する。UI、Composition、Window、Graphics、DI、Diagnosticsを参照しない。ResourcesのResourceStreamSignalは資源ストリームの通知であり、別の型とする。
+.NET 10の`Lumyte.Signals`を`src/Core/Lumyte.Signals`へ追加する。namespaceとNuGet名も同名とし、BCLと依存辞書を再利用する`Microsoft.Extensions.ObjectPool` 10.0.0へ依存する。UI、Composition、Window、Graphics、DI、Diagnosticsを参照しない。ResourcesのResourceStreamSignalは資源ストリームの通知であり、別の型とする。
 
 通常利用はSignal.Create、Signal.Computed、Signal.Effect、Signal.Batchで完結する。公開SignalRuntime、runtimeの引数/property、runtimeを作るcontext拡張、Flush/Stop/ObservePending等のpump操作は設けない。内部の依存追跡・batch queue・評価contextを利用者へ渡さない。
 
@@ -119,6 +119,16 @@ Computed/comparerは副作用なしとする。Computed/Effect/comparer内のSig
 
 Revisionは全nodeで共有する単調な変更stampであり、別threadから作ったEffect間でも比較できる。上流変更はPause済み・既にdirtyのEffectへもRevisionとして伝播する。一回の書込みにつき依存走査を重複除去し、準備後の変更をdirtyのまま見落とさない。Revisionのoverflowはwrapせず、当該変更前にOverflowExceptionで失敗する。Computed同値時にもEffectを一回再実行してよく、利用側は出力比較で副作用を抑制できる。
 
+### 依存辞書の再利用と検証の省略
+
+依存辞書は`DefaultObjectPool<Dictionary<SignalNode, ulong>>`で共有する。返却前にClearしてnodeへの参照を解放し、割当て済み容量が1,024を超える辞書は保持しない。未使用辞書は最大64個保持する。この制限は保持数であり、貸出し数・生成数・グラフの大きさの上限ではない。DIコンテナは不要で、ObjectPoolの型を公開APIへ露出させない。net10.0向けObjectPool packageの推移的依存はない。
+
+辞書の貸出し・所有権の交換・返却はgraph gate内で行う。評価が使用中の辞書を共有せず、依存集合の交換後に旧辞書を返す。Computed失敗時は旧依存と今回の依存を新しい辞書へ統合して保持し、Effect評価失敗時は一時辞書を返す。EffectのDisposeでは購読を解除してから所有辞書を返す。外部へ渡すCaptureReadsの辞書はSignalReadSetが保持し、プールへ返さない。
+
+未購読Computedは、正常な読出しの末尾で確認済みの変更stampを保存する。次の読出しでstampが同じなら依存の再検証を省略する。変更があれば旧依存を順に検証し、最初の不一致で本体の再評価へ移る。dirtyや評価失敗の場合はstampが同じでも再試行し、失敗した読出しでは確認済みstampを進めない。異なるグラフの変更でも共有stampは進むため、未購読Computedの次回検証は行う。
+
+無効化ではobserverごとに最後に処理した変更stampを保存し、再帰する前に更新して同一変更の重複走査を防ぐ。無効化はgraph gate内でdirty設定と配送予約だけを行い、利用者callbackや購読変更を実行しない。この条件の下でobserver集合を直接列挙し、書込みごとのvisited集合やobserver配列を作らない。評価・比較・配送の同期規則と公開Revisionの意味は変えない。
+
 ### 寿命と失敗
 
 Signal/ComputedはUIや購読scopeに所有されず、通常の参照とGCで保持する。購読解除後もアプリが持つ値は利用できる。Effectと非同期adapterは明示的な解除責任を持ち、戻ったhandleのDisposeまたは任意のSignalScopeで解放する。
@@ -152,7 +162,7 @@ Signal.Batch(() => { count.Value = 1; count.Value = 2; });
 
 状態・導出値・Effectを直接記述でき、UIの有無と独立して使える。通常利用者へruntime、scheduler、手動更新を要求せず、購読の寿命だけを必要に応じて管理する。
 
-内部の自動配送と同期規則を実装する必要がある。非同期Computed、collection差分、state persistence、性能最適化は後続設計とする。非同期関数の明示変換は[SIGNALS-0002](SIGNALS-0002-async-factory-conversion.md)へ分離し、UIへの適用は利用側で設計する。
+内部の自動配送と同期規則を実装する必要がある。非同期Computed、collection差分、state persistenceは後続設計とする。非同期関数の明示変換は[SIGNALS-0002](SIGNALS-0002-async-factory-conversion.md)へ分離し、UIへの適用は利用側で設計する。
 
 ## 検証方針
 
@@ -161,19 +171,26 @@ Signal.Batch(() => { count.Value = 1; count.Value = 2; });
 - 初回/後続Effect、Batch内の新規Effect、ネストbatch、途中例外、配送の集約、複数schedulerと配送拒否を検証する。
 - Pause中や既にdirtyのRevision、失敗の観測・通知例外、Dispose後の遅延仕事を確認する。
 - 任意scopeの捕捉と解除、解除後の共有Signal、未観測Computedの購読解除とGC、AOT/trimmingを確認する。
+- 辞書再利用後も動的依存・失敗復旧・外部へ保持したread setを維持し、プールが解除済みグラフを保持しないことを確認する。
+- [独立ベンチマーク](../../../benchmarks/Lumyte.Signals.Benchmarks/README.md)でキャッシュ検証、更新配送、生成・破棄の時間と割当量を測定する。
 
 ## 参考資料
 
 - [Preact Signals Core](https://github.com/preactjs/signals/blob/main/packages/core/README.md)
 - [Solid createRoot](https://docs.solidjs.com/reference/reactive-utilities/create-root)
 - [Vue effectScope](https://vuejs.org/api/reactivity-advanced.html#effectscope)
+- [Microsoft ObjectPool](https://learn.microsoft.com/en-us/aspnet/core/performance/objectpool?view=aspnetcore-10.0)
 
 ## 実装記録
 
-2026-10-31、main向け独立PRで[Core package](../../../src/Core/Lumyte.Signals/README.md)と[独立console consumer](../../../samples/Lumyte.Signals.Sample/README.md)を追加した。単体テスト23件（同期グラフ8件、非同期変換15件）でdiamond・動的依存・未観測Computed・batch・Peek・受動read set・schedulerの集約と失効・Pause中のrevision・失敗・scope・thread間の順次更新を確認した。NuGet packの依存groupは空であり、UI/Compositionへの実行時依存を持たない。linux-x64のNative AOTをILLink/Ilc warning-as-errorでpublishし、生成した実行ファイルでbatchと購読解放を確認した。
+2026-10-31、main向け独立PRで[Core package](../../../src/Core/Lumyte.Signals/README.md)と[独立console consumer](../../../samples/Lumyte.Signals.Sample/README.md)を追加した。単体テスト23件（同期グラフ8件、非同期変換15件）でdiamond・動的依存・未観測Computed・batch・Peek・受動read set・schedulerの集約と失効・Pause中のrevision・失敗・scope・thread間の順次更新を確認した。初期実装のNuGet packの依存groupは空であった。後述の最適化でObjectPool packageを追加したが、UI/Compositionへの実行時依存は持たない。linux-x64のNative AOTをILLink/Ilc warning-as-errorでpublishし、生成した実行ファイルでbatchと購読解放を確認した。
 
 ### PR #99レビュー対応
 
 Computedの読出しは例外の場合も外側の依存として記録する。Effectが例外を捕捉して正常終了しても、入力復旧時の再評価を継続する。未購読Computedの旧依存確認は最初の変更検知で打ち切り、本体を再評価して現行の分岐だけを読む。
 
 初回/後続のComputed例外捕捉と、Value/Peekで不要になった旧分岐の例外を避ける回帰テストを追加した。
+
+### PR #99の性能改善
+
+2026-10-31、変更stampによる未購読Computedの検証省略、無効化の重複除去、依存辞書の共有プール、同期評価と配送の割当削減を採用した。短命なEffect間でも辞書を再利用し、observerごとに予備辞書を持つ方式より保持メモリを減らすため、BCLのみという当初の依存方針を変更した。ObjectPoolを導入しても利用者の初期化手順、公開API、UI/DIからの独立性は変わらない。測定条件・比較元・制限は[ベンチマークの記録](../../../benchmarks/Lumyte.Signals.Benchmarks/README.md)へ集約する。

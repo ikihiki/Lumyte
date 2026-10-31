@@ -1,6 +1,6 @@
 # Lumyte.Signals
 
-UIやCompositionに依存しない状態・導出値・同期Effectです。`Signal.Create`、`Signal.Computed`、`Signal.Effect`、`Signal.Batch`だけで動作し、runtimeや手動pumpは不要です。
+.NET 10向けの、UIやCompositionに依存しない状態・導出値・同期Effectです。`Signal.Create`、`Signal.Computed`、`Signal.Effect`、`Signal.Batch`だけで動作し、runtimeや手動pumpは不要です。
 
 ```csharp
 var count = Signal.Create(0);
@@ -12,6 +12,8 @@ Signal.Batch(() => { count.Value = 1; count.Value = 2; });
 グラフ操作は内部で直列化し、生成threadへの固定を要求しません。通常Effectは変更したcaller上で実行します。UIなど配送先を持つhostはISignalSchedulerを内部接続します。Effect/Computed/comparerは短い同期評価とし、その内部からの状態書込み・Effect/scope/batch操作を拒否します。
 
 EffectのDisposeまたは任意のSignalScopeが購読を返します。Signal/ComputedはGCで管理し、共有値の寿命を購読へ従属させません。CaptureReads/SignalReadSetはhostが構築と購読準備を別々に行うための受動的な接続APIです。
+
+依存辞書の再利用に`Microsoft.Extensions.ObjectPool` 10.0.0を使用します。DIコンテナやサービス登録は不要です。返却時に参照を消去し、容量1,024以下の辞書を最大64個保持します。この上限は未使用辞書の保持数であり、グラフの大きさや同時に使用する辞書数を制限しません。外部へ渡す`SignalReadSet`の辞書はプールへ返しません。測定方法と結果は[ベンチマーク](../../../benchmarks/Lumyte.Signals.Benchmarks/README.md)を参照してください。
 
 ## async関数からの変換
 

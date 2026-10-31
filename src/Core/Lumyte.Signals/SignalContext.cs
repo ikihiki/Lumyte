@@ -12,6 +12,9 @@ internal sealed class SignalContext
 
     internal static SignalContext Current => _current ??= new();
 
+    // Accessed only while holding Gate, just like node revisions.
+    internal static ulong MutationRevision => _revision;
+
     internal Dictionary<SignalNode, ulong>? Reads { get; set; }
 
     internal int Evaluating { get; set; }
@@ -36,11 +39,70 @@ internal sealed class SignalContext
 
     internal static void Track(SignalNode node) => Current.Reads?.TryAdd(node, node.Revision);
 
-    internal static T Evaluate<T>(Func<T> read, out Dictionary<SignalNode, ulong> dependencies)
+    internal static bool EqualsValue<T>(IEqualityComparer<T> comparer, T value, T next)
     {
         SignalContext context = Current;
         Dictionary<SignalNode, ulong>? previous = context.Reads;
-        dependencies = [];
+        context.Reads = null;
+        context.Evaluating++;
+        try
+        {
+            return comparer.Equals(value, next);
+        }
+        finally
+        {
+            context.Evaluating--;
+            context.Reads = previous;
+        }
+    }
+
+    internal static void ReadUntracked(SignalNode node)
+    {
+        SignalContext context = Current;
+        Dictionary<SignalNode, ulong>? previous = context.Reads;
+        context.Reads = null;
+        try
+        {
+            node.ReadTracked();
+        }
+        finally
+        {
+            context.Reads = previous;
+        }
+    }
+
+    internal static ulong GetDependencyRevision(Dictionary<SignalNode, ulong> dependencies)
+    {
+        ulong revision = 0;
+        foreach (KeyValuePair<SignalNode, ulong> dependency in dependencies)
+        {
+            revision = Math.Max(revision, dependency.Key.Revision);
+        }
+
+        return revision;
+    }
+
+    internal static void Evaluate(Action action, Dictionary<SignalNode, ulong> dependencies)
+    {
+        SignalContext context = Current;
+        Dictionary<SignalNode, ulong>? previous = context.Reads;
+        context.Reads = dependencies;
+        context.Evaluating++;
+        try
+        {
+            action();
+        }
+        finally
+        {
+            context.Evaluating--;
+            context.Reads = previous;
+        }
+    }
+
+    internal static T Evaluate<T>(Func<T> read, Dictionary<SignalNode, ulong> dependencies)
+    {
+        SignalContext context = Current;
+        Dictionary<SignalNode, ulong>? previous = context.Reads;
         context.Reads = dependencies;
         context.Evaluating++;
         try

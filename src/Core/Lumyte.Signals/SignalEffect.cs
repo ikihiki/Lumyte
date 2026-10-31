@@ -118,16 +118,19 @@ public sealed class SignalEffect : IDisposable
 
     internal void Initialize()
     {
-        Dictionary<SignalNode, ulong> dependencies = [];
-        SignalContext.Evaluate(
-            () =>
-            {
-                _effect!();
-                return true;
-            },
-            out dependencies);
+        Dictionary<SignalNode, ulong> dependencies = _observer.RentReads();
+        try
+        {
+            SignalContext.Evaluate(_effect!, dependencies);
+        }
+        catch
+        {
+            _observer.ReturnReads(dependencies);
+            throw;
+        }
+
         _observer.Replace(dependencies, true);
-        Revision = Math.Max(Revision, dependencies.Count == 0 ? 0 : dependencies.Keys.Max(node => node.Revision));
+        Revision = Math.Max(_revision, SignalContext.GetDependencyRevision(dependencies));
     }
 
     internal void Deliver(ulong expectedGeneration)
@@ -136,7 +139,7 @@ public sealed class SignalEffect : IDisposable
         ISignalScheduler? scheduler;
         lock (SignalContext.Gate)
         {
-            if (!_queued || _paused || _disposed || Failure is not null || expectedGeneration != _generation)
+            if (!_queued || _paused || _disposed || _failure is not null || expectedGeneration != _generation)
             {
                 return;
             }
@@ -151,6 +154,12 @@ public sealed class SignalEffect : IDisposable
             return;
         }
 
+        Schedule(scheduler, generation);
+    }
+
+    private void Schedule(ISignalScheduler scheduler, ulong generation)
+    {
+        // Keep the reservation closure off the default synchronous path.
         try
         {
             scheduler.Schedule(() => Run(generation, false));
@@ -169,7 +178,7 @@ public sealed class SignalEffect : IDisposable
 
     private void Queue()
     {
-        if (IsPending && !_queued && !_paused && !_disposed && Failure is null)
+        if (_pending && !_queued && !_paused && !_disposed && _failure is null)
         {
             _queued = true;
             SignalContext.Current.Pending.Enqueue((this, _generation));
@@ -181,7 +190,7 @@ public sealed class SignalEffect : IDisposable
         Exception? failure = null;
         lock (SignalContext.Gate)
         {
-            if (_disposed || _paused || generation != _generation || Failure is not null || !IsPending)
+            if (_disposed || _paused || generation != _generation || _failure is not null || !_pending)
             {
                 return;
             }
@@ -244,7 +253,7 @@ public sealed class SignalEffect : IDisposable
 
     private sealed class Observer(SignalEffect effect) : SignalObserver
     {
-        internal override void Invalidate(ulong revision, HashSet<SignalObserver> visited)
+        internal override void Invalidate(ulong revision)
         {
             effect.Revision = revision;
             effect.IsPending = true;
