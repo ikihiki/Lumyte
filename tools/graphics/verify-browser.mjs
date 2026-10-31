@@ -110,6 +110,27 @@ try {
         if (result.result) { break; }
         await delay(100);
     }
+    if (result?.result !== "passed") {
+        const version = await (await fetch(`http://127.0.0.1:${debuggerPort}/json/version`)).json();
+        console.error("Browser version:", JSON.stringify(version));
+        const gpuSocket = new WebSocket(version.webSocketDebuggerUrl);
+        try {
+            const info = await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error("GPU diagnostics timed out")), 10000);
+                gpuSocket.addEventListener("open", () => gpuSocket.send(JSON.stringify({ id: 1, method: "SystemInfo.getInfo" })), { once: true });
+                gpuSocket.addEventListener("message", event => {
+                    const message = JSON.parse(event.data);
+                    if (message.id === 1) { clearTimeout(timeout); resolve(message); }
+                });
+                gpuSocket.addEventListener("error", error => { clearTimeout(timeout); reject(error); }, { once: true });
+            });
+            console.error("Browser GPU diagnostics:", JSON.stringify(info));
+        } catch (error) {
+            console.error("GPU diagnostics unavailable:", error);
+        } finally {
+            gpuSocket.close();
+        }
+    }
     assert.equal(result?.result, "passed", `${result?.report ?? "Browser timed out"}\n${progress.slice(-40).join("\n")}\n${errors.join("\n")}\n${diagnostics}`);
     assert.match(result.report, /MaxBufferSize: [1-9]\d* bytes/);
     assert.match(result.report, /MaxTextureDimension2D: [1-9]\d* texels/);

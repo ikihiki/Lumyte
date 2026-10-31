@@ -270,6 +270,12 @@ jobs:
       - name: Mise setup (Browser)
         run: bash tools/setup/setup.sh
 
+      - name: Prepare browser runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenal1
+          google-chrome --version
+
       - name: Browser / contracts, WebGPU and audio
         env:
           CHROME: /usr/bin/google-chrome
