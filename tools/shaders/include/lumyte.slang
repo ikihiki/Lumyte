@@ -4,7 +4,12 @@
 struct GpuTextureRef { uint Id; uint Offset; uint Count; uint Reserved; };
 struct GpuSamplerRef { uint Id; uint Offset; uint Count; uint Reserved; };
 
-#ifdef LUMYTE_SPIRV
+#ifdef LUMYTE_DXIL
+Texture2D<float4> lumyteTextures[128] : register(t0, space0);
+SamplerState lumyteSamplers[16] : register(s0, space0);
+ByteAddressBuffer lumyteBuffers[64] : register(t0, space1);
+RWByteAddressBuffer lumyteRWBuffers[64] : register(u0, space1);
+#elif defined(LUMYTE_SPIRV)
 [[vk::binding(0, 0)]] Texture2D<float4> lumyteTextures[];
 [[vk::binding(1, 0)]] SamplerState lumyteSamplers[];
 #else
@@ -30,7 +35,11 @@ struct GpuBufferRef<T>
         uint64_t address = uint64_t(Id) | (uint64_t(Offset) << 32);
         return ((T*)address)[index];
 #else
+#ifdef LUMYTE_DXIL
+        return lumyteBuffers[NonUniformResourceIndex(Id)].Load<T>(Offset + index * sizeof(T));
+#else
         return lumyteBuffer0.Load<T>(Offset + index * sizeof(T));
+#endif
 #endif
     }
 };
@@ -48,7 +57,11 @@ struct GpuRWBufferRef<T>
         uint64_t address = uint64_t(Id) | (uint64_t(Offset) << 32);
         return ((T*)address)[index];
 #else
+#ifdef LUMYTE_DXIL
+        return lumyteRWBuffers[NonUniformResourceIndex(Id)].Load<T>(Offset + index * sizeof(T));
+#else
         return lumyteRWBuffer0.Load<T>(Offset + index * sizeof(T));
+#endif
 #endif
     }
 
@@ -58,14 +71,18 @@ struct GpuRWBufferRef<T>
         uint64_t address = uint64_t(Id) | (uint64_t(Offset) << 32);
         ((T*)address)[index] = value;
 #else
+#ifdef LUMYTE_DXIL
+        lumyteRWBuffers[NonUniformResourceIndex(Id)].Store<T>(Offset + index * sizeof(T), value);
+#else
         lumyteRWBuffer0.Store<T>(Offset + index * sizeof(T), value);
+#endif
 #endif
     }
 };
 
 float4 LumyteSampleGrad(GpuTextureRef textureRef, GpuSamplerRef samplerRef, float2 uv, float2 dx, float2 dy)
 {
-#ifdef LUMYTE_SPIRV
+#if defined(LUMYTE_SPIRV) || defined(LUMYTE_DXIL)
     return lumyteTextures[NonUniformResourceIndex(textureRef.Id)].SampleGrad(
         lumyteSamplers[NonUniformResourceIndex(samplerRef.Id)], uv, dx, dy);
 #else

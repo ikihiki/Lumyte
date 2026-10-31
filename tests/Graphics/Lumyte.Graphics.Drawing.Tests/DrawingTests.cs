@@ -48,9 +48,9 @@ public sealed class DrawingTests
         Assert.Throws<ArgumentOutOfRangeException>(() => DrawingPrimitives.Line(new(float.PositiveInfinity, 0, 0), Vector3.Zero, Vector4.One));
     }
 
-    /// <summary>Checks every drawing entry is embedded for both supported targets.</summary>
+    /// <summary>Checks every drawing entry is embedded for all supported targets.</summary>
     [Fact]
-    public void DrawingShadersContainBothTargets()
+    public void DrawingShadersContainEveryTarget()
     {
         ShaderArtifact[] artifacts = [DrawingShaders.LoadColorVertex(), DrawingShaders.LoadColorFragment(), DrawingShaders.LoadTextureVertex(), DrawingShaders.LoadTextureFragment(), DrawingShaders.LoadModelVertex(), DrawingShaders.LoadModelFragment()];
         for (int i = 0; i < artifacts.Length; i++)

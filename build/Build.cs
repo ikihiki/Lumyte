@@ -177,6 +177,7 @@ internal sealed partial class Build : FalloutBuild
         var overrides = new Dictionary<string, string?>(environment)
         {
             ["LUMYTE_BUILD_ASSEMBLY"] = Assembly.GetExecutingAssembly().Location,
+            ["LumyteAgilityChannel"] = SelectedAgilityChannel,
         };
         // Browser project references can evaluate the same managed dependency
         // with distinct interop properties. Serialize publication to keep their

@@ -8,4 +8,7 @@ public enum ShaderTarget
 
     /// <summary>Uses the SpirV representation.</summary>
     SpirV = 1,
+
+    /// <summary>Uses the DirectX intermediate language representation.</summary>
+    Dxil = 2,
 }
