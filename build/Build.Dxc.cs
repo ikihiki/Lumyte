@@ -61,7 +61,9 @@ internal sealed partial class Build
             await ProcessRunner.RunAsync("git", ["-C", source, "fetch", "--depth", "1", "https://github.com/microsoft/DirectXShaderCompiler.git", Commit], RootDirectory).ConfigureAwait(false);
             await ProcessRunner.RunAsync("git", ["-C", source, "checkout", "--detach", Commit], RootDirectory).ConfigureAwait(false);
             await ProcessRunner.RunAsync("git", ["-C", source, "submodule", "update", "--init", "--depth", "1", "--", "external/DirectX-Headers", "external/SPIRV-Headers", "external/SPIRV-Tools"], RootDirectory).ConfigureAwait(false);
-            await ProcessRunner.RunAsync("cmake", ["-S", source, "-B", output, "-G", "Ninja", "-C", Path.Combine(source, "cmake", "caches", "PredefinedParams.cmake"), "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DHLSL_INCLUDE_TESTS=OFF", "-DLLVM_INCLUDE_TESTS=OFF", "-DENABLE_SPIRV_CODEGEN=ON", "-DSPIRV_BUILD_TESTS=OFF", "-DLLVM_ENABLE_ASSERTIONS=OFF", "-DLLVM_ENABLE_ZLIB=OFF", "-DHLSL_ENABLE_WERROR=OFF"], RootDirectory).ConfigureAwait(false);
+            // Use the release's checked-in generated headers; regeneration compares against
+            // a specific upstream clang-format version, not our development formatter.
+            await ProcessRunner.RunAsync("cmake", ["-S", source, "-B", output, "-G", "Ninja", "-C", Path.Combine(source, "cmake", "caches", "PredefinedParams.cmake"), "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DHLSL_DISABLE_SOURCE_GENERATION=ON", "-DHLSL_INCLUDE_TESTS=OFF", "-DLLVM_INCLUDE_TESTS=OFF", "-DENABLE_SPIRV_CODEGEN=ON", "-DSPIRV_BUILD_TESTS=OFF", "-DLLVM_ENABLE_ASSERTIONS=OFF", "-DLLVM_ENABLE_ZLIB=OFF", "-DHLSL_ENABLE_WERROR=OFF"], RootDirectory).ConfigureAwait(false);
             await ProcessRunner.RunAsync("cmake", ["--build", output, "--target", "dxcompiler", "dxildll", "--parallel", "2"], RootDirectory).ConfigureAwait(false);
             Directory.CreateDirectory(library);
             foreach (string name in new[] { "libdxcompiler.so", "libdxil.so" })
