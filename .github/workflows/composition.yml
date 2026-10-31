@@ -46,7 +46,7 @@ jobs:
             artifacts/dev-env/dxc/lib
             artifacts/dev-env/dxc/version.txt
             artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v1
+          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
 
       - name: Mise setup (Linux)
         if: runner.os == 'Linux'
