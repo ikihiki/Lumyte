@@ -28,7 +28,7 @@ public sealed partial class UiApplicationViewSlot
             return _preparing;
         }
 
-        private sealed class Change(UiApplicationViewSlot slot, ViewHost host) : IUiApplicationViewChange
+        private sealed class Change(UiApplicationViewSlot slot, ViewHost host) : IUiApplicationViewChange, IUiApplicationVisualChange
         {
             private readonly List<IUiApplicationViewDiagnosticChange> _diagnostics = [];
             private View? _previous = slot._current;
@@ -45,6 +45,7 @@ public sealed partial class UiApplicationViewSlot
             private ChangePhase _phase;
             private bool _gated;
             private Task? _cleanup;
+            private UiPageVisualFlight? _visual;
 
             private enum ChangePhase
             {
@@ -60,7 +61,8 @@ public sealed partial class UiApplicationViewSlot
             {
                 slot._application.Owner.CheckOwner();
                 slot._application.ValidateEditors(root);
-                _candidate = new(slot._application, slot._window, root);
+                _candidate = new(slot._application, slot._window, root) { Suspended = true };
+                _candidate.Visuals.SuspendPublication();
                 _candidate.Host.Pause();
                 _candidate.Surface.SetSignalUpdatesEnabled(false);
                 _candidate.Surface.SetAnimationUpdatesEnabled(false);
@@ -102,6 +104,7 @@ public sealed partial class UiApplicationViewSlot
 
                 if (_previous is { } previous)
                 {
+                    previous.Suspended = true;
                     previous.Surface.SetSignalUpdatesEnabled(false);
                     previous.Surface.SetAnimationUpdatesEnabled(false);
                     _bookmark = previous.Surface.CaptureFocus();
@@ -119,6 +122,17 @@ public sealed partial class UiApplicationViewSlot
                 _phase = ChangePhase.Quiesced;
             }
 
+            public async ValueTask PrepareVisualsAsync(UiViewVisualPlan? plan, Func<bool> skip, CancellationToken token)
+            {
+                _visual = new(slot._application, _candidate!.Visuals, _previous?.Visuals, plan, skip);
+                _candidate.Visuals.Page = _visual;
+                await _visual.PrepareAsync(token);
+            }
+
+            public ValueTask<UiViewVisualOutcome> RunVisualsAsync() => new(_visual!.Completion);
+
+            public void StopVisuals() => _visual?.Stop();
+
             public bool TryValidateCommit(out string code)
             {
                 code = "candidate-stale";
@@ -129,6 +143,8 @@ public sealed partial class UiApplicationViewSlot
             public void Commit(object metadata)
             {
                 _candidate!.Binding = _replacement!.Commit();
+                _visual?.Commit();
+                _candidate.Visuals.Publish();
                 _owner!.Commit();
                 _inputCommit!();
                 _inputCommit = null;
@@ -138,6 +154,7 @@ public sealed partial class UiApplicationViewSlot
                     change.Commit();
                 }
 
+                _candidate.Suspended = false;
                 slot._current = _candidate;
                 _candidate.Gated = true;
                 slot._publication = (metadata, _surfaceId, _diagnostics.Count == 0 ? null : _diagnostics[0].TargetId);
@@ -148,9 +165,14 @@ public sealed partial class UiApplicationViewSlot
 
             public async ValueTask DrainRetiredAsync(CancellationToken cancellationToken)
             {
+                if (_visual is not null)
+                {
+                    await _visual.DrainAsync();
+                }
+
                 if (_previous is { } previous)
                 {
-                    previous.BeginStop();
+                    previous.BeginStop(false);
                     while (!previous.IsStopped)
                     {
                         await slot._application.NextTurnAsync().AsTask().WaitAsync(cancellationToken);
@@ -172,7 +194,19 @@ public sealed partial class UiApplicationViewSlot
                 _phase = ChangePhase.Released;
             }
 
-            public ValueTask DrainCandidateAsync(CancellationToken cancellationToken) => _replacement?.DrainCandidateAsync(cancellationToken) ?? ValueTask.CompletedTask;
+            public async ValueTask DrainCandidateAsync(CancellationToken cancellationToken)
+            {
+                _visual?.Stop();
+                if (_visual is not null)
+                {
+                    await _visual.DrainAsync();
+                }
+
+                if (_replacement is not null)
+                {
+                    await _replacement.DrainCandidateAsync(cancellationToken);
+                }
+            }
 
             public ValueTask RunContentCleanupAsync(Func<CancellationToken, ValueTask> cleanup, CancellationToken cancellationToken)
             {
@@ -195,10 +229,16 @@ public sealed partial class UiApplicationViewSlot
                     throw new InvalidOperationException("A published view cannot be discarded.");
                 }
 
+                _visual?.Stop();
+                if (_visual is not null)
+                {
+                    await _visual.DrainAsync();
+                }
+
                 _owner?.Discard();
                 if (_candidate is { } candidate)
                 {
-                    candidate.BeginStop();
+                    candidate.BeginStop(false);
                     while (!candidate.IsStopped)
                     {
                         await slot._application.NextTurnAsync().AsTask().WaitAsync(cancellationToken);
@@ -233,6 +273,7 @@ public sealed partial class UiApplicationViewSlot
                         slot._application.Popups.GateOwner(previous.Owner!, false);
                     }
 
+                    previous.Suspended = false;
                     previous.Surface.UpdateLayout();
                     previous.Surface.SetSignalUpdatesEnabled(true);
                     previous.Surface.SetAnimationUpdatesEnabled(true);

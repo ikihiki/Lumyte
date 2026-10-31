@@ -91,25 +91,27 @@ public sealed partial class UiSurface
             foreach ((Widget previous, Widget current) in Matches.Reverse())
             {
                 bool childrenMatch = previous.ChildCollections.Count == current.ChildCollections.Count;
-                if (childrenMatch)
+                bool visualChildrenSame = childrenMatch;
+                for (int slot = 0; slot < current.ChildCollections.Count && (childrenMatch || visualChildrenSame); slot++)
                 {
-                    for (int slot = 0; slot < current.ChildCollections.Count && childrenMatch; slot++)
+                    WidgetChildren before = previous.ChildCollections[slot];
+                    WidgetChildren after = current.ChildCollections[slot];
+                    if (before.IsPortal && after.IsPortal)
                     {
-                        WidgetChildren before = previous.ChildCollections[slot];
-                        WidgetChildren after = current.ChildCollections[slot];
-                        if (before.IsPortal && after.IsPortal)
-                        {
-                            continue;
-                        }
+                        continue;
+                    }
 
-                        childrenMatch &= before.Count == after.Count;
-                        for (int index = 0; index < after.Count && childrenMatch; index++)
-                        {
-                            childrenMatch &= Matches.TryGetValue(before[index], out Widget? matched) && ReferenceEquals(matched, after[index]) && !after[index].IsLayoutDirty;
-                        }
+                    childrenMatch &= before.Count == after.Count;
+                    visualChildrenSame &= before.IsPortal == after.IsPortal && before.Count == after.Count;
+                    for (int index = 0; index < after.Count && (childrenMatch || visualChildrenSame); index++)
+                    {
+                        bool sameChild = Matches.TryGetValue(before[index], out Widget? matched) && ReferenceEquals(matched, after[index]);
+                        childrenMatch &= sameChild && !after[index].IsLayoutDirty;
+                        visualChildrenSame &= sameChild && before[index].VisualRevision == after[index].VisualRevision;
                     }
                 }
 
+                current.RetainVisualRevision(previous, visualChildrenSame);
                 if (childrenMatch)
                 {
                     current.TryReuseSignalLayout(previous);

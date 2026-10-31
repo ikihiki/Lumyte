@@ -70,7 +70,7 @@ public static partial class Compose
 
             internal bool TryReuseSignalLayout(Widget previous)
             {
-                if (Width != previous.Width || Height != previous.Height || IsVisible != previous.IsVisible || !CanReuseLayout(previous))
+                if (Width != previous.Width || Height != previous.Height || LayoutVisible != previous.LayoutVisible || !CanReuseLayout(previous))
                 {
                     return false;
                 }
@@ -84,7 +84,7 @@ public static partial class Compose
             internal bool TryReuseSignalInput(Widget previous, Dictionary<Widget, Widget> matches)
             {
                 if (IsEnabled != previous.IsEnabled || HitTestVisible != previous.HitTestVisible || Focusable != previous.Focusable
-                    || ClipToBounds != previous.ClipToBounds || IsVisible != previous.IsVisible || !CanReuseInput(previous))
+                    || ClipToBounds != previous.ClipToBounds || LayoutVisible != previous.LayoutVisible || IsTransitioning != previous.IsTransitioning || !CanReuseInput(previous))
                 {
                     return false;
                 }

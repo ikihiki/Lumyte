@@ -115,6 +115,7 @@ public sealed partial class UiApplication
         }
 
         _popups = new(_windows, _options.TimeProvider);
+        _popups.VisualLifetime = surface => AttachVisuals(surface, () => _popups?.FindWindow(surface));
         TextLayoutProvider = _textFactory?.Invoke(_services) ?? (_textFactory is not null ? throw new UiApplicationException("invalid-editor") : null);
         if (Driver.InputSource is { } source)
         {

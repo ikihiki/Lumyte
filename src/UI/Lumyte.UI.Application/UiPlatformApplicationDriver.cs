@@ -39,6 +39,8 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
     private UiHostPresenter? _presenter;
     private bool _faulted;
 
+    internal override bool SupportsVisuals => true;
+
     internal override bool SupportsScreenshots => true;
 
     internal override IWindowInputSource? InputSource => _map;
@@ -240,10 +242,110 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
 
     internal override void DispatchPendingInput() => PumpInput();
 
+    internal override async ValueTask DrainVisualsAsync()
+    {
+        await _renderGate.WaitAsync();
+        try
+        {
+            if (_presenter is not null)
+            {
+                await _presenter.DrainVisualsAsync();
+            }
+        }
+        finally
+        {
+            _renderGate.Release();
+        }
+    }
+
+    internal override async ValueTask<UiVisualSnapshot?> CaptureVisualAsync(DrawList2D commands, uint width, uint height, IDisposable reservation, IReadOnlyList<UiVisualSnapshot>? visuals = null)
+    {
+        ulong epoch = _lease?.State.Epoch ?? 0;
+        IDisposable[] leases = visuals?.Select(image => image.Retain()).ToArray() ?? [];
+        bool handedOff = false;
+        using UiFrameSubmissionQueue.Flight flight = await _framesInFlight.EnterAsync();
+        try
+        {
+            if (_presenter is null || _lease?.IsUsable == false || epoch != (_lease?.State.Epoch ?? 0))
+            {
+                reservation.Dispose();
+                return null;
+            }
+
+            handedOff = true;
+            UiVisualSnapshot? image = await _presenter.CaptureVisualAsync(commands, width, height, reservation, visuals, flight.Submitted);
+            await flight.ResumeAsync();
+            if (_lease?.IsUsable == false || epoch != (_lease?.State.Epoch ?? 0))
+            {
+                image?.Dispose();
+                return null;
+            }
+
+            return image;
+        }
+        catch (Exception) when (_lease?.IsUsable == false || epoch != (_lease?.State.Epoch ?? 0))
+        {
+            if (!handedOff)
+            {
+                reservation.Dispose();
+            }
+
+            return null;
+        }
+        catch
+        {
+            if (!handedOff)
+            {
+                reservation.Dispose();
+            }
+
+            throw;
+        }
+        finally
+        {
+            foreach (IDisposable lease in leases)
+            {
+                lease.Dispose();
+            }
+        }
+    }
+
+    internal override async ValueTask<bool> UpdateVisualAsync(UiVisualSnapshot image, DrawList2D commands, IReadOnlyList<UiVisualSnapshot> visuals)
+    {
+        ulong epoch = _lease?.State.Epoch ?? 0;
+        using IDisposable target = image.Retain();
+        IDisposable[] leases = visuals.Select(value => value.Retain()).ToArray();
+        using UiFrameSubmissionQueue.Flight flight = await _framesInFlight.EnterAsync();
+        try
+        {
+            if (_presenter is null || _lease?.IsUsable == false || epoch != (_lease?.State.Epoch ?? 0))
+            {
+                return false;
+            }
+
+            await _presenter.UpdateVisualAsync(image, commands, visuals, flight.Submitted);
+            await flight.ResumeAsync();
+            return _lease?.IsUsable != false && epoch == (_lease?.State.Epoch ?? 0);
+        }
+        catch (Exception) when (_lease?.IsUsable == false || epoch != (_lease?.State.Epoch ?? 0))
+        {
+            return false;
+        }
+        finally
+        {
+            foreach (IDisposable lease in leases)
+            {
+                lease.Dispose();
+            }
+        }
+    }
+
     internal override async Task<bool> DrawAsync(UiDriverWindow target, DrawList2D commands)
     {
         var window = (Window)target;
         ulong epoch = _lease?.State.Epoch ?? 0;
+        UiVisualSnapshot[] visuals = window.Source.RecordedVisuals();
+        IDisposable[] visualLeases = visuals.Select(visual => visual.Retain()).ToArray();
         Capture[] captures = window.Captures.Where(capture => !capture.Token.IsCancellationRequested).ToArray();
         using UiFrameSubmissionQueue.Flight flight = await _framesInFlight.EnterAsync();
         try
@@ -325,7 +427,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             SurfaceStatus status;
             try
             {
-                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, submitted: flight.Submitted);
+                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted);
             }
             catch (NotSupportedException error) when (crops.Count != 0)
             {
@@ -334,7 +436,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                     capture.Completion.TrySetException(error);
                 }
 
-                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, submitted: flight.Submitted);
+                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted);
             }
 
             await flight.ResumeAsync();
@@ -379,6 +481,13 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         {
             _faulted = true;
             throw;
+        }
+        finally
+        {
+            foreach (IDisposable lease in visualLeases)
+            {
+                lease.Dispose();
+            }
         }
     }
 

@@ -49,11 +49,25 @@ public static class UiNavigationViewExtensions
         public IUiNavigationViewChange BeginChange(Guid activationId) => new Change(host.BeginChange());
     }
 
-    private sealed class Change(IUiApplicationViewChange change) : IUiNavigationViewChange
+    private sealed class Change(IUiApplicationViewChange change) : IUiNavigationViewChange, IUiNavigationVisualChange
     {
         public ValueTask PrepareAsync(Widget root, CancellationToken cancellationToken) => change.PrepareAsync(root, cancellationToken);
 
         public ValueTask QuiesceAsync(Guid? originatingInputOperation, CancellationToken cancellationToken) => change.QuiesceAsync(originatingInputOperation, cancellationToken);
+
+        public ValueTask PrepareVisualsAsync(UiPageTransitions? transitions, Func<bool> skipRequested, CancellationToken cancellationToken)
+        {
+            UiViewVisualPlan? plan = transitions is null ? null : new(transitions.Enter, transitions.Exit, transitions.Order == UiPageTransitionOrder.ExitThenEnter, transitions.ConnectSharedElements, transitions.ConnectedDuration, transitions.ConnectedEasing);
+            return ((IUiApplicationVisualChange)change).PrepareVisualsAsync(plan, skipRequested, cancellationToken);
+        }
+
+        public async ValueTask<UiVisualTransitionResult> RunVisualsAsync()
+        {
+            UiViewVisualOutcome outcome = await ((IUiApplicationVisualChange)change).RunVisualsAsync();
+            return new(outcome.Interrupted ? UiVisualTransitionStatus.Interrupted : outcome.Played ? UiVisualTransitionStatus.Completed : UiVisualTransitionStatus.Skipped, outcome.Code);
+        }
+
+        public void StopVisuals() => ((IUiApplicationVisualChange)change).StopVisuals();
 
         public bool TryValidateCommit(out string code) => change.TryValidateCommit(out code);
 

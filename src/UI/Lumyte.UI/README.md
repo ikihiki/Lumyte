@@ -217,3 +217,7 @@ var root = Rectangle(width: animated, height: 24);
 埋込みhostでは`surface.AdvanceAnimations()`をlayout前に一度呼びます。UpdateLayout/Record/Value読取だけでは時間は進みません。表示できない間は`SetAnimationUpdatesEnabled(false)`で休止します。標準Applicationでこれらを手動実行する必要はありません。
 
 [値・TimelineアニメーションのADR](../../../docs/adr/ui/UI-0020-animation-and-frame-lifetime.md)／[決定的Headlessサンプル](../../../samples/Lumyte.UI.Application.Headless.Sample/README.md)
+
+表示・退出には`isPresent: shownSignal`と`transitions: new UiElementTransitions { Enter = FadeIn(duration), Exit = FadeOut(duration) }`を静的構築関数へ渡せます。退出中はlayout領域を保持して入力を止め、最終通常frameの提示後に`onEntered`／`onExited`を通知します。再構築ではtype/key/slotが一致する状態を継承し、直接detachすると演出と未通知callbackを破棄します。標準Applicationがcaptureとframe更新を管理し、単独Surfaceや非対応描画では演出だけを省略します。`isVisible`は即時表示制御のままです。
+
+通常の演出は保持した描画commandを再生し、半透明groupの中間bufferは内容変更時に更新します。custom描画もliveで参加でき、固定snapshotへのopt-inは不要です。決定的な描画commandのcacheと旧snapshotに対応する部品は`SupportsTransitionCapture`をoverrideし、独自の可変状態の変更を`InvalidateTransitionCapture()`で通知します。共有要素とページ演出の利用例は[transitions sample](../../../samples/Lumyte.UI.Transitions.Sample/README.md)を参照してください。

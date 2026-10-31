@@ -73,6 +73,7 @@ public sealed partial class UiSurface : IDisposable
         if (!_root.IsLayoutDirty)
         {
             UpdateInput();
+            CompleteVirtualPresentation();
             return;
         }
 
@@ -99,6 +100,8 @@ public sealed partial class UiSurface : IDisposable
         {
             _layoutPass = null;
         }
+
+        CompleteVirtualPresentation();
     }
 
     /// <summary>Updates layout and records every visible widget into an active borrowed canvas.</summary>
@@ -166,7 +169,7 @@ public sealed partial class UiSurface : IDisposable
 
     internal static void RecordWidget(Widget widget, DrawingCanvas2D canvas)
     {
-        if (!widget.IsVisible)
+        if (!widget.LayoutVisible || (widget.Surface?._visualExclusions?.Contains(widget) ?? false))
         {
             return;
         }
@@ -180,7 +183,10 @@ public sealed partial class UiSurface : IDisposable
                 canvas.ClipRect(new(0, 0, widget.Size.X, widget.Size.Y));
             }
 
-            widget.InvokeRecord(canvas);
+            if (widget.Surface is not { } surface || surface._logicalVisualCapture || surface.VisualHost?.Record(widget, canvas) != true)
+            {
+                widget.InvokeRecord(canvas);
+            }
         }
         finally
         {

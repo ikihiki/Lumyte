@@ -56,7 +56,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 16 | UI-0020 | Animationの値/Timeline接続、フレーム更新と表示producerの寿命 | PR 12〜15・ANIMATION-0001〜0005 |
 | 17 | UI-0021 | 表示・退出・page/connected演出、入力gateとGPU資源寿命 | PR 16 |
 
-PR 16の実装時に、値評価とフレーム更新をPR 16、隔離capture・入力gate・GPU退役を伴う視覚遷移をPR 17へ分割した。PR 1〜15の番号と依存順は維持し、各PRで対応ADRを実装に合わせて確定する。UI-0021は提案のままで、PR 16にはその公開APIを追加しない。
+PR 16の実装時に、値評価とフレーム更新をPR 16、隔離capture・入力gate・GPU退役を伴う視覚遷移をPR 17へ分割した。PR 1〜15の番号と依存順は維持し、各PRで対応ADRを実装に合わせて確定する。UI-0021はPR 17で採用し、PR 16にはその公開APIを追加しない。
 
 コンポーネント拡充はUI-0013でP0/P1/P2とC1〜C9の後続PR案に整理する。既存の実装PR番号は維持する。
 
