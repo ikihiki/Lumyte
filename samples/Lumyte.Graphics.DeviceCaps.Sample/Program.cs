@@ -1,9 +1,33 @@
+using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
 using Lumyte.Graphics.Shaders;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Samples.Framework;
 
-if (args is ["vulkan", "pipeline-benchmark"])
+if (args.Length > 2)
+{
+    Console.Error.WriteLine("Usage: backend [caps|suite|exercise|pipeline-benchmark]");
+    return 1;
+}
+
+string backend;
+string exercise;
+try
+{
+    backend = SampleSelector.SelectValue(args.ElementAtOrDefault(0), ["vulkan", "wgpu"], "backend");
+    string[] exercises = backend == "vulkan"
+        ? ["caps", .. GraphicsExercises.Names, "suite", "pipeline-benchmark"]
+        : ["caps", .. GraphicsExercises.Names, "suite"];
+    exercise = SampleSelector.SelectValue(args.ElementAtOrDefault(1), exercises, "exercise");
+}
+catch (ArgumentException exception)
+{
+    Console.Error.WriteLine(exception.Message);
+    return 1;
+}
+
+if (backend == "vulkan" && exercise == "pipeline-benchmark")
 {
     const int Rounds = 8;
     for (int round = 0; round < Rounds; round++)
@@ -20,28 +44,12 @@ if (args is ["vulkan", "pipeline-benchmark"])
     return 0;
 }
 
-if (args is ["wgpu"] or ["wgpu", "buffers"] or ["wgpu", "textures"] or ["wgpu", "samplers"] or ["wgpu", "arguments"] or ["wgpu", "shaders"] or ["wgpu", "commands"] or ["wgpu", "pipelines"])
+using IDisposable owner = backend == "vulkan" ? VulkanDevice.Create() : WgpuDevice.Create();
+var selectedDevice = (IGraphicDevice)owner;
+await GraphicsExercises.RunAsync(selectedDevice, exercise, Console.WriteLine);
+if (exercise == "shaders")
 {
-    using var device = WgpuDevice.Create();
-    Console.WriteLine(CapsDisplay.Describe(device));
-    if (args.Length == 2)
-    {
-        Console.WriteLine(args[1] == "buffers" ? await BufferExercise.RunAsync(device) : args[1] == "textures" ? TextureExercise.Run(device) : args[1] == "samplers" ? SamplerExercise.Run(device) : args[1] == "arguments" ? ArgumentTableExercise.Run(device) : args[1] == "commands" ? await CommandExercise.RunAsync(device) : args[1] == "pipelines" ? await PipelineExercise.RunAsync(device) : ShaderExercise.Run(device) + "\n" + await ShaderExercise.RunOnlineAsync(device, new SlangShaderCompiler()));
-    }
-}
-else if (args is ["vulkan"] or ["vulkan", "buffers"] or ["vulkan", "textures"] or ["vulkan", "samplers"] or ["vulkan", "arguments"] or ["vulkan", "shaders"] or ["vulkan", "commands"] or ["vulkan", "pipelines"])
-{
-    using var device = VulkanDevice.Create();
-    Console.WriteLine(CapsDisplay.Describe(device));
-    if (args.Length == 2)
-    {
-        Console.WriteLine(args[1] == "buffers" ? await BufferExercise.RunAsync(device) : args[1] == "textures" ? TextureExercise.Run(device) : args[1] == "samplers" ? SamplerExercise.Run(device) : args[1] == "arguments" ? ArgumentTableExercise.Run(device) : args[1] == "commands" ? await CommandExercise.RunAsync(device) : args[1] == "pipelines" ? await PipelineExercise.RunAsync(device) : ShaderExercise.Run(device) + "\n" + await ShaderExercise.RunOnlineAsync(device, new SlangShaderCompiler()));
-    }
-}
-else
-{
-    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.Graphics.DeviceCaps.Sample -- wgpu|vulkan [buffers|textures|samplers|arguments|shaders|commands|pipelines|pipeline-benchmark]");
-    return 1;
+    Console.WriteLine(await ShaderExercise.RunOnlineAsync(selectedDevice, new SlangShaderCompiler()));
 }
 
 return 0;
