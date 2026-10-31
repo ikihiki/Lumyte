@@ -152,6 +152,41 @@ try {
         assert.deepEqual(repeated, captured, "Repeated captures of the static page must retain the same GPU pixels");
     }
     await writeFile(process.env.LUMYTE_UI_APPLICATION_HOST_SCREENSHOT ?? resolve(tmpdir(), "lumyte-ui-application-host.png"), captured);
+    async function waitWidth(expected) {
+        const end = Date.now() + 15000;
+        while (Date.now() < end) {
+            if (await evaluate(`globalThis.lumyteApplicationProbe.GetWidth() === ${expected}`)) return;
+            await delay(50);
+        }
+        assert.fail(`Animation did not apply width ${expected}`);
+    }
+    function pngPixel(png, x, y) {
+        const parts = [];
+        for (let offset = 8; offset < png.length;) {
+            const count = png.readUInt32BE(offset);
+            if (png.subarray(offset + 4, offset + 8).toString() === "IDAT") parts.push(png.subarray(offset + 8, offset + 8 + count));
+            offset += count + 12;
+        }
+        const bytes = inflateSync(Buffer.concat(parts));
+        const row = y * (png.readUInt32BE(16) * 4 + 1);
+        assert.equal(bytes[row], 0);
+        return [...bytes.subarray(row + 1 + x * 4, row + 5 + x * 4)];
+    }
+    await evaluate("globalThis.lumyteApplicationProbe.ExpandAsync()");
+    await delay(100);
+    await evaluate("globalThis.lumyteApplicationProbe.AdvanceAsync(0.5)");
+    await waitWidth(200);
+    const middle = Buffer.from(await evaluate("globalThis.lumyteApplicationProbe.CapturePngAsync()"), "base64");
+    assert.ok(pngPixel(middle, 180, 20).slice(0, 3).every(value => Math.abs(value - 128) <= 2));
+    assert.deepEqual(pngPixel(middle, 220, 20), [255, 255, 255, 255]);
+    await evaluate("document.dispatchEvent(new Event('freeze')); document.dispatchEvent(new Event('resume')); globalThis.lumyteApplicationProbe.AdvanceAsync(10)");
+    await delay(200);
+    assert.equal(await evaluate("globalThis.lumyteApplicationProbe.GetWidth()"), 200, "A frozen browser must not catch up skipped time");
+    await evaluate("globalThis.lumyteApplicationProbe.AdvanceAsync(0.5)");
+    await waitWidth(240);
+    const final = Buffer.from(await evaluate("globalThis.lumyteApplicationProbe.CapturePngAsync()"), "base64");
+    assert.ok(pngPixel(final, 220, 20).slice(0, 3).every(value => Math.abs(value - 128) <= 2));
+    assert.equal(await evaluate("globalThis.lumyteApplicationProbe.GetCompletions()"), 1);
     const image = await command("Page.captureScreenshot", { format: "png" });
     await writeFile(process.env.LUMYTE_UI_APPLICATION_SCREENSHOT ?? resolve(tmpdir(), "lumyte-ui-application-browser.png"), Buffer.from(image.data, "base64"));
     const rect = JSON.parse(await evaluate("JSON.stringify(document.querySelector('canvas').getBoundingClientRect().toJSON())"));
@@ -164,7 +199,7 @@ try {
     assert.equal(await evaluate("globalThis.lumyteApplicationFinished"), true, "UI click must stop the application");
     assert.equal(await evaluate("document.querySelectorAll('canvas').length"), 1, "Borrowed canvas remains in the DOM");
     assert.deepEqual(errors, [], "Browser reported errors");
-    console.log("UI Application Browser WebGPU smoke passed: presentation, automation GPU PNG, normal input, orderly stop and borrowed canvas.");
+    console.log("UI Application Browser WebGPU smoke passed: presentation, animation midpoint/final GPU pixels, freeze/resume, automation GPU PNG, normal input, orderly stop and borrowed canvas.");
 } finally {
     socket?.close();
     if (browser?.pid && browser.exitCode === null && browser.signalCode === null) {

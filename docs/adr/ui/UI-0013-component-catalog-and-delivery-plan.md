@@ -378,3 +378,9 @@ C8の検証には、command/チェック/submenu、Escape/外側pressの要求�
 ### シグナル状態管理との関係
 
 [SIGNALS-0001](../signals/SIGNALS-0001-independent-signal-runtime.md)の独立状態管理と[COMPOSITION-0003](../composition/COMPOSITION-0003-argument-adapters.md)の引数adapter、[UI-0019](UI-0019-signals-and-reactive-state.md)のUI自動購読を実装PR 15として追加する。通常のusing static構築からSignalを部品の値引数へ渡し、接続・動的な子変更・取り外し・終了に伴う購読をUIが管理する。値はSignal.Create/Computedで直接作り、利用者に構築scopeやruntimeを要求しない。非Widgetの状態管理なので部品数へ加算しない。C1〜C9の値入力部品もcallbackからモデルを更新し、IME文書編集の専用契約を維持する。
+
+### アニメーションとの関係
+
+[UI-0020](UI-0020-animation-and-frame-lifetime.md)を実装PR 16として追加する。Animateによる表示値は通常Composeの値引数へ渡し、UIが既存Animationの評価と接続寿命を管理する。これは非Widgetの表示値なので46 Widgetへ加算しない。寸法の変化は一方向layoutを毎frame進め、入力やIMEは提示済みgeometryを使う。部品側に独自timerやTweenを実装しない。
+
+[UI-0021](UI-0021-connected-and-presence-transitions.md)は実装PR 17へ分離し、表示意図IsPresent、Transitions、SharedElementKeyとcallbackを既存Widgetの共通parameterとして追加する。新Widgetを増やさず46種類を維持する。初回表示/表示反転と通常値更新を区別し、明示の子除去は即時解除のままとする。page/共有要素はhostの視覚資源として保持し、部品側へ独自snapshotやnavigation寿命を実装しない。

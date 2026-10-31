@@ -279,6 +279,10 @@ ScreenshotHostは新しい描画frameの記録とGPU完了・readbackを待ち�
 
 外部プロセスからのDiagnostics経由の操作は、任意の接続として[UI-0010](UI-0010-diagnostics-ui-automation.md)で定義する。この同一プロセスAPIをゲーム側で再利用し、UI本体とUI.Automationへ通信依存を追加しない。JavaScript用client、DOM/ARIA bridge、OSアクセシビリティ、録画・codegen・視覚差分の閾値は別途設計する。初期APIのrole/nameは意味情報の入口であり、OSのアクセシビリティ実装が完成したという主張にはしない。
 
+### 視覚遷移中の操作待機
+
+実装PR 17の[UI-0021](UI-0021-connected-and-presence-transitions.md)でUiAutomationNode.IsTransitioningを追加する。Click/Focus/Pressは先祖/pageを含む演出の入力gateが開くまで通常のframeと共通期限で待ち、IsEnabledやcapabilityの意味を変更しない。snapshotはcommit済みの論理viewだけを扱い、shared-elementのghostをnodeとして公開しない。無関係な演出や他Windowの完了を全体で待たず、操作のために演出を強制停止しない。
+
 ## 検討した代替案
 
 - 固定座標だけではlayoutやDPIの変更でテストが壊れやすい。TestIdとrole/nameのLocatorを主な入口にする。

@@ -13,6 +13,8 @@ public static partial class Compose
         public abstract partial class Widget : ICompositionRebuildable
         {
             private Dictionary<object, Func<bool>>? _signalArguments;
+            private Dictionary<object, IUiAnimationProjection>? _animationArguments;
+            private List<Action>? _animationInitializers;
             private Func<object>? _compositionFactory;
 
             internal Func<Widget>? Construction { get; set; }
@@ -24,6 +26,8 @@ public static partial class Compose
             internal SignalReadSet? ConstructionReads { get; set; }
 
             internal IEnumerable<Func<bool>> SignalArguments => _signalArguments is { } arguments ? arguments.Values : [];
+
+            internal IReadOnlyDictionary<object, IUiAnimationProjection>? AnimationArguments => _animationArguments;
 
             internal Func<object>? CompositionFactory => _compositionFactory;
 
@@ -37,6 +41,23 @@ public static partial class Compose
                 }
 
                 _compositionFactory = factory;
+            }
+
+            internal void AddAnimationArgument(object key, IUiAnimationProjection projection, Action initialize)
+            {
+                (_animationArguments ??= []).Add(key, projection);
+                (_animationInitializers ??= []).Add(initialize);
+            }
+
+            internal void InitializeAnimationArguments()
+            {
+                if (Surface is null && _animationInitializers is { } initializers)
+                {
+                    foreach (Action initialize in initializers)
+                    {
+                        initialize();
+                    }
+                }
             }
 
             internal void AddSignalArgument(object key, Func<bool> reader)

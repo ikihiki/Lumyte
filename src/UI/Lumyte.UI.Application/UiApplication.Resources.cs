@@ -46,6 +46,7 @@ public sealed partial class UiApplication
             {
                 if (entry.Slot.CurrentSurface is { } surface)
                 {
+                    surface.SetAnimationUpdatesEnabled(false);
                     _recoveryFocus[surface] = surface.CaptureFocus();
                     surface.Dispatch(new UiFocusLostInput());
                 }

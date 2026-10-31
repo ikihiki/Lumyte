@@ -239,6 +239,14 @@ IME接続は全通常Windowと編集Popupについてhostが集約する。同�
 
 `UiApplicationOptions.ImeCandidates`は既存`UiImeCandidateOptions`を受け取り、Systemを既定とする。PreferCustomを選んでもbackendの能力を拡張したことにはならず、UI-0015のsystem fallbackを維持する。
 
+### アニメーション接続の追加範囲
+
+実装PR 16の[UI-0020](UI-0020-animation-and-frame-lifetime.md)で、上記手順3のqueue/content処理後、手順4のlayout前にanimation phaseを追加する。標準hostが単調時計をturnごとに固定し、全surfaceのAdvanceAnimationsを呼ぶ。optionsのAnimationClockによる借用時計とTimeProviderからの既定時計、継続/一回frame要求、非表示・graphics復旧中の時計休止を同ADRで定義する。通常ページへtimerやframe更新を要求しない。Signalの自動配送停止とanimation休止をhostが両方管理し、cleanup/入力/IMEの進行は維持する。
+
+### 表示とページの視覚遷移
+
+実装PR 17の[UI-0021](UI-0021-connected-and-presence-transitions.md)で、motion options、要素のenter/exit、page/connected演出を追加する。標準frame coordinatorは既存Canvas/親RenderGraphの隔離captureとgroup合成、入力gate、予算、最終提示、GPU退役を所有する。UI本体とのcapture内部bridgeは既知の標準hostへのfriend accessに限定し、UIへRenderGraph依存を追加しない。通常値producerの休止とは別に、短いsnapshot演出は非表示/世代変更時に最終状態へ打ち切る。低水準hostとHeadlessのfallbackはUI-0021に従う。
+
 ### 描画とdevice世代
 
 初期描画はUI-0004の全体再描画とする。提示先ごとに不透明背景を一回Clearし、root、Hosted surface、候補を描く。前frameのUIへLoadを重ねず、damage領域、保持buffer、部分Presentは導入しない。UiSurface.Recordを既存Canvas/Drawing2Dへ渡し、独自描画リストを追加しない。層が必要な場合も既存RenderGraphへAppendし、内側の独立graphを作らない。
