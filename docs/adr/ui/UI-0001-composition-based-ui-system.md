@@ -12,7 +12,7 @@ Signals本体（同期グラフ・非同期変換・性能改善）はPR #99でm
 
 既存のComposition、Input、Windowing、Drawing2Dの上に、ゲーム内画面とツールのためのUIを構築する。構築構文、親子関係、レイアウト、入力、GPU実行をそれぞれの責務へ分け、実装を段階的にレビューできる必要がある。
 
-本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0012、およびWindow managerのUI-0014・IME候補表示のUI-0015で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
+本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0012、およびWindow managerのUI-0014・IME候補表示のUI-0015で定義する。追加する部品の一覧・優先度・後続PR分割は[UI-0013](UI-0013-component-catalog-and-delivery-plan.md)で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
 
 ## 決定
 
@@ -30,7 +30,7 @@ Compositionの生成ファクトリ → UIツリー → 制約駆動layout・入
 UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 ```
 
-初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。Image・一般のTextコントロール、Grid、一般scroll、仮想化、テーマ、binding、アクセシビリティは別途設計する。編集・IMEは実装PR 11の任意TextBoxで追加し、IME候補の独自描画には同PRのImeCandidateViewを使う。[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
+初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。一般Text/Image、拡張layout、scroll、値入力・選択部品の対象はUI-0013で計画し、各導入PRで詳細設計する。テーマのruntime、binding、OSアクセシビリティbridgeは別途設計する。編集・IMEは実装PR 11の任意TextBoxで追加し、IME候補の独自描画には同PRのImeCandidateViewを使う。[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
 
 ### 実装PRと対応ADR
 
@@ -49,6 +49,8 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 9 | UI-0010 | Diagnostics経由の操作、Job、操作権lease、結果取得 | PR 8 |
 | 10 | UI-0011・UI-0014 | Window manager注入、独立Hosted fallback、Popup・入力scope・診断操作権 | PR 6〜9 |
 | 11 | UI-0012・UI-0015 | TextBox・編集文書、TSF/Browser IME、任意の候補描画・候補操作、Fill | PR 6〜10・GRAPHICS-0024 |
+
+コンポーネント拡充はUI-0013でP0/P1/P2とC1〜C9の後続PR案に整理する。既存の実装PR番号は維持する。
 
 描画とhit testは同じBounds・座標・clip規則を使うため、PR 3で幾何走査を確定し、PR 4はそれを前提にする。全公開APIを先にstubで追加せず、動作が完成するPRで段階的に公開する。
 

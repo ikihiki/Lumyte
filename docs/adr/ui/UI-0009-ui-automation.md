@@ -269,6 +269,8 @@ TextBoxのEdit capability、任意text host、Fill/確定値assertionは[UI-0012
 
 IME候補の専用snapshot・操作・任意hostは[UI-0015](UI-0015-custom-ime-candidate-presentation.md)で追加する。候補操作は現在のcompositionを維持したまま通常の候補controllerを通し、汎用Click/Fillやcallback直呼びでは代用しない。取得元Windowと配送先の対応は注入されたWindow managerで解決する。
 
+拡充するcontrol一覧と導入順は[UI-0013](UI-0013-component-catalog-and-delivery-plan.md)を参照する。新roleだけでClick可能とせず、導入PRでsemantic target・通常入力・probe・focus・閉じた操作planを同時に追加する。仮想itemはkeyによる実体化待ちを設計し、内部templateのpartを独立した操作対象として重複公開しない。
+
 ### 実ホスト・スクリーンショット・対応範囲
 
 初期は同一プロセスのC# APIを提供する。headless hostはGPUなしで検索・状態・通常入力を検証し、native/browser hostは実frameを進めて同じAPIを使う。UIレベルのDispatchはOS入力取得やDPI変換を通過しないため、その経路を検証したという扱いにはせず、UI-0007の実入力検証を残す。
