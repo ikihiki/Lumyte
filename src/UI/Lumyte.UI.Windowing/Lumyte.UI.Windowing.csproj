@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <ProjectReference Include="../Lumyte.UI/Lumyte.UI.csproj" />
+    <InternalsVisibleTo Include="Lumyte.UI.Windowing.WindowSystem" />
+    <InternalsVisibleTo Include="Lumyte.UI.Windowing.Automation" />
+    <InternalsVisibleTo Include="Lumyte.UI.Windowing.Tests" />
+  </ItemGroup>
+</Project>

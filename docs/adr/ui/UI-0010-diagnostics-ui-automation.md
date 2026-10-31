@@ -71,6 +71,8 @@ Observeで対象一覧、snapshot、count、Expect、許可されたScreenshot�
 
 leaseを解放・失効したら、そのleaseの入力JobをCancelRequestedにし、hostの入力leaseと未解放キー・pointerの後処理を待ってからReleasedにする。後処理中は別のcontrolを取得できない。所有者が同じ再取得要求は生存中の同じleaseを返し、それだけでは寿命を延ばさない。
 
+Popupの親子Targetは[UI-0011](UI-0011-popup-windowing-and-fallback.md)の実装PR 10で追加する。rootとsubmenuまで一つのcontrol groupにまとめ、lease・入力Job一つ・Sequence high-waterを共有する。このPR単独では一Targetが一groupに相当し、Popupの表示方式へ依存するOperationを作らない。追加metadata、RegisterPopupとclientのPageForはUI-0011のAPI diffを正本とする。
+
 ### Operationと公開API
 
 比較元はDiagnostics実装のmain `20f666ff8f64a63e65407936d32fb98cfa19c9d8`。UI側はUI-0009のAPIを前提とする。DiagnosticOperation、DiagnosticResult、DiagnosticMember、Traffic等は既存のDiagnostics型を使う。

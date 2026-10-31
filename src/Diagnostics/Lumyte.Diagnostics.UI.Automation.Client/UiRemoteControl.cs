@@ -6,7 +6,9 @@ namespace Lumyte.Diagnostics.UI.Automation.Client;
 public sealed class UiRemoteControl : IAsyncDisposable
 {
     private readonly UiAutomationDiagnosticsClient _client;
+
     private readonly CancellationTokenSource _renewalStop = new();
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Task _heartbeat;
     private long _sequence;
@@ -34,80 +36,15 @@ public sealed class UiRemoteControl : IAsyncDisposable
     /// <param name="action">A validated input-only plan.</param>
     /// <param name="cancellationToken">Cancels submission.</param>
     /// <returns>A low-level job; observe terminal status and ReleaseAsync its retained result.</returns>
-    public async Task<UiRemoteJob> StartAsync(UiRemotePlan action, CancellationToken cancellationToken = default)
+    public Task<UiRemoteJob> StartAsync(UiRemotePlan action, CancellationToken cancellationToken = default) => StartTargetAsync(Page.TargetId, action, cancellationToken);
+
+    /// <summary>Creates a page sharing this control's heartbeat and sequence; the server enforces live group membership on every action.</summary>
+    /// <param name="targetId">A target in this control's root group.</param>
+    /// <returns>A lazy page using this control's input sequence.</returns>
+    public UiRemotePage PageFor(Guid targetId)
     {
-        string plan = UiRemoteSchema.SerializePlan(action);
-        if (!UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(plan)))
-        {
-            throw new ArgumentException("The control accepts only input plans.", nameof(action));
-        }
-
         ThrowIfUnavailable();
-        if (Interlocked.CompareExchange(ref _active, 1, 0) != 0)
-        {
-            throw new InvalidOperationException("A control cannot run parallel input operations.");
-        }
-
-        bool acquired = false;
-        try
-        {
-            await _gate.WaitAsync(cancellationToken);
-            acquired = true;
-            ThrowIfUnavailable();
-            Dictionary<string, DiagnosticValue> args = new()
-            {
-                ["target-id"] = DiagnosticValue.From(Page.TargetId.ToString("D")),
-                ["control-id"] = DiagnosticValue.From(Id.ToString("D")),
-                ["sequence"] = DiagnosticValue.From(_sequence),
-                ["plan-json"] = DiagnosticValue.From(plan),
-                ["job-timeout-ms"] = DiagnosticValue.From((long)_client.Options.JobTimeoutMilliseconds),
-            };
-            IReadOnlyDictionary<string, DiagnosticValue> receipt;
-            try
-            {
-                receipt = await _client.InvokeAsync("action-start", args, null, cancellationToken, maySendInput: true);
-            }
-            catch (UiRemoteAutomationException failure)
-            {
-                _uncertain = failure.InputMayHaveBeenSent || failure.Code == "invalid-response";
-                throw;
-            }
-            catch
-            {
-                _uncertain = true;
-                throw;
-            }
-
-            UiRemoteJob job;
-            try
-            {
-                job = new(_client, Guid.ParseExact(UiAutomationDiagnosticsClient.Text(receipt, "job-id"), "D"), true, this);
-            }
-            catch (Exception failure)
-            {
-                _uncertain = true;
-                throw new UiRemoteAutomationException("outcome-unknown", inputMayHaveBeenSent: true, inner: failure);
-            }
-
-            _sequence = checked(_sequence + 1);
-            return job;
-        }
-        catch
-        {
-            if (!_uncertain)
-            {
-                Interlocked.Exchange(ref _active, 0);
-            }
-
-            throw;
-        }
-        finally
-        {
-            if (acquired)
-            {
-                _gate.Release();
-            }
-        }
+        return new(_client, targetId, this);
     }
 
     /// <summary>Stops renewal, reconciles revision, requests release and waits a bounded time for host cleanup.</summary>
@@ -164,6 +101,82 @@ public sealed class UiRemoteControl : IAsyncDisposable
             }
 
             _client.Released(this);
+        }
+    }
+
+    internal async Task<UiRemoteJob> StartTargetAsync(Guid targetId, UiRemotePlan action, CancellationToken cancellationToken)
+    {
+        string plan = UiRemoteSchema.SerializePlan(action);
+        if (!UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(plan)))
+        {
+            throw new ArgumentException("The control accepts only input plans.", nameof(action));
+        }
+
+        ThrowIfUnavailable();
+        if (Interlocked.CompareExchange(ref _active, 1, 0) != 0)
+        {
+            throw new InvalidOperationException("A control cannot run parallel input operations.");
+        }
+
+        bool acquired = false;
+        try
+        {
+            await _gate.WaitAsync(cancellationToken);
+            acquired = true;
+            ThrowIfUnavailable();
+            Dictionary<string, DiagnosticValue> args = new()
+            {
+                ["target-id"] = DiagnosticValue.From(targetId.ToString("D")),
+                ["control-id"] = DiagnosticValue.From(Id.ToString("D")),
+                ["sequence"] = DiagnosticValue.From(_sequence),
+                ["plan-json"] = DiagnosticValue.From(plan),
+                ["job-timeout-ms"] = DiagnosticValue.From((long)_client.Options.JobTimeoutMilliseconds),
+            };
+            IReadOnlyDictionary<string, DiagnosticValue> receipt;
+            try
+            {
+                receipt = await _client.InvokeAsync("action-start", args, null, cancellationToken, maySendInput: true);
+            }
+            catch (UiRemoteAutomationException failure)
+            {
+                _uncertain = failure.InputMayHaveBeenSent || failure.Code == "invalid-response";
+                throw;
+            }
+            catch
+            {
+                _uncertain = true;
+                throw;
+            }
+
+            UiRemoteJob job;
+            try
+            {
+                job = new(_client, Guid.ParseExact(UiAutomationDiagnosticsClient.Text(receipt, "job-id"), "D"), true, this);
+            }
+            catch (Exception failure)
+            {
+                _uncertain = true;
+                throw new UiRemoteAutomationException("outcome-unknown", inputMayHaveBeenSent: true, inner: failure);
+            }
+
+            _sequence = checked(_sequence + 1);
+            return job;
+        }
+        catch
+        {
+            if (!_uncertain)
+            {
+                Interlocked.Exchange(ref _active, 0);
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (acquired)
+            {
+                _gate.Release();
+            }
         }
     }
 

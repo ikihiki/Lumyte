@@ -263,6 +263,8 @@ callerの取消はOperationCanceledException（Data["Lumyte.UI.Automation.Trace"
 
 キー取消は既存のUiKeyCancelInputを先に送ってownerを発火なしで解除し、必要なUpで消費状態とhostの修飾キー状態の解放を続ける。Upだけを送って、取消したEnter/SpaceからOnClickが発生することを避ける。hostは既存の物理キーが解放された中立状態でleaseを渡し、lease中に外部入力を同じsurfaceへ割り込ませない。終了中のhostは新しいleaseを拒否し、作成済みleaseの後処理を終了処理へ引き継ぐ。UI、Window、InputSystemの所有権をpageへ移譲しない。
 
+Popupの複数surface連携は[UI-0011](UI-0011-popup-windowing-and-fallback.md)で追加する。PopupIdを明示して別pageを選び、任意のrouting host契約で合成入力とprobeを実際のWindow/keyboard scopeへ通す。親画面とPopupは同じ入力leaseを共有する。PR 8単独のdriverは引き続き単一surfaceへ通常Dispatchする。
+
 ### 実ホスト・スクリーンショット・対応範囲
 
 初期は同一プロセスのC# APIを提供する。headless hostはGPUなしで検索・状態・通常入力を検証し、native/browser hostは実frameを進めて同じAPIを使う。UIレベルのDispatchはOS入力取得やDPI変換を通過しないため、その経路を検証したという扱いにはせず、UI-0007の実入力検証を残す。

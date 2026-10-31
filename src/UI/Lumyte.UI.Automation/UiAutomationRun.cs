@@ -9,6 +9,7 @@ internal sealed class UiAutomationRun : IDisposable
     private readonly CancellationTokenSource _linked;
     private readonly long _started;
     private readonly TimeSpan _timeout;
+
     private readonly Queue<string> _trace = new();
 
     internal UiAutomationRun(IUiAutomationHost host, TimeSpan timeout, CancellationToken caller, Action<UiAutomationSnapshot> rememberSurface)
@@ -93,6 +94,11 @@ internal sealed class UiAutomationRun : IDisposable
         Check();
         Trace("acquire input lease");
         IUiAutomationInputLease lease = await Host.AcquireInputAsync(Token);
+        if (Host is IUiAutomationRoutingHost routing)
+        {
+            lease = new RoutingLease(Host, routing, lease);
+        }
+
         Exception? failure = null;
         T result = default!;
         try
@@ -129,9 +135,124 @@ internal sealed class UiAutomationRun : IDisposable
         return result;
     }
 
+    internal UiPointerProbe Probe(UiSurface surface, System.Numerics.Vector2 position) => Host is IUiAutomationRoutingHost routing ? routing.ProbePointer(surface, position) : surface.ProbePointer(position);
+
+    internal bool CanReceiveKeys(UiSurface surface) => Host is not IUiAutomationRoutingHost routing || routing.CanReceiveKeys(surface);
+
     internal void Send(IUiAutomationInputLease lease, UiSurface surface, UiInput input)
     {
         Trace("send " + input);
         lease.Dispatch(surface, input);
+    }
+
+    private sealed class RoutingLease(IUiAutomationHost host, IUiAutomationRoutingHost routing, IUiAutomationInputLease inner) : IUiAutomationInputLease
+    {
+        private readonly HashSet<Lumyte.Input.Abstractions.Key> _keys = [];
+        private UiSurface? _pointerSurface;
+        private bool _disposed;
+
+        public long PointerId => inner.PointerId;
+
+        public bool Dispatch(UiSurface surface, UiInput input)
+        {
+            if (input is UiKeyInput key)
+            {
+                if (key.IsDown)
+                {
+                    _keys.Add(key.Key);
+                }
+                else
+                {
+                    _keys.Remove(key.Key);
+                }
+            }
+
+            if (input is UiPointerInput pointer)
+            {
+                if (pointer.Phase == UiPointerPhase.Down)
+                {
+                    _pointerSurface = surface;
+                }
+            }
+
+            bool result = routing.Dispatch(surface, input);
+            if (input is UiKeyInput { IsDown: false } released)
+            {
+                _keys.Remove(released.Key);
+            }
+
+            if (input is UiPointerInput { Phase: UiPointerPhase.Up or UiPointerPhase.Cancel })
+            {
+                _pointerSurface = null;
+            }
+
+            return result;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            Exception? failure = null;
+            try
+            {
+                await host.RunOnUiThreadAsync(surface =>
+                {
+                    var errors = new List<Exception>();
+                    foreach (Lumyte.Input.Abstractions.Key key in _keys)
+                    {
+                        try
+                        {
+                            routing.Dispatch(surface, new UiKeyCancelInput(key));
+                        }
+                        catch (Exception error)
+                        {
+                            errors.Add(error);
+                        }
+                    }
+
+                    if (_pointerSurface is not null)
+                    {
+                        try
+                        {
+                            routing.Dispatch(_pointerSurface, new UiPointerInput(PointerId, UiPointerPhase.Cancel, System.Numerics.Vector2.Zero));
+                        }
+                        catch (Exception error)
+                        {
+                            errors.Add(error);
+                        }
+                    }
+
+                    if (errors.Count != 0)
+                    {
+                        throw new AggregateException(errors);
+                    }
+
+                    return true;
+                });
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+
+            try
+            {
+                await inner.DisposeAsync();
+            }
+            catch (Exception error)
+            {
+                failure = failure is null ? error : new AggregateException(failure, error);
+            }
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+        }
     }
 }

@@ -75,7 +75,10 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         var id = Guid.NewGuid();
         if (!Enabled)
         {
-            return new(id, static () => { }) { IsReleased = true };
+            return new(id, static () =>
+            {
+            })
+            { IsReleased = true };
         }
 
         if (_targets.Count >= _options.MaximumTargets || _targets.Values.Any(target => target.Name == name || ReferenceEquals(target.Surface, surface)))
@@ -92,6 +95,60 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
 
         var registration = new UiAutomationDiagnosticRegistration(id, () => Unregister(id));
         _targets.Add(id, new(id, name, surface, host, options ?? new(), registration));
+        return registration;
+    }
+
+    /// <summary>Registers an explicit popup target in the same input control group as its parent.</summary>
+    /// <param name="parent">A live registration from this runtime.</param>
+    /// <param name="popupId">The nonreused popup identity.</param>
+    /// <param name="name">The unique target name.</param>
+    /// <param name="surface">The borrowed popup surface.</param>
+    /// <param name="host">The same routing host used for physical input and cleanup.</param>
+    /// <param name="options">Explicit input and screenshot opt-ins.</param>
+    /// <returns>A registration which must drain before popup drawing teardown.</returns>
+    public UiAutomationDiagnosticRegistration RegisterPopup(UiAutomationDiagnosticRegistration parent, Guid popupId, string name, UiSurface surface, IUiAutomationHost host, UiAutomationTargetOptions? options = null)
+    {
+        Verify();
+        ArgumentNullException.ThrowIfNull(parent);
+        if (popupId == Guid.Empty)
+        {
+            throw new ArgumentException("A popup identity is required.", nameof(popupId));
+        }
+
+        if (!Enabled)
+        {
+            return Register(name, surface, host, options);
+        }
+
+        if (!_targets.TryGetValue(parent.TargetId, out Target? target) || !ReferenceEquals(target.Registration, parent) || !target.Accepting || _targets.Values.Any(t => t.PopupId == popupId))
+        {
+            throw new ArgumentException("Unknown parent or duplicate popup identity.");
+        }
+
+        if (host is not IUiAutomationRoutingHost || _targets[target.ControlGroupId].Host is not IUiAutomationRoutingHost)
+        {
+            throw new ArgumentException("Popup and root registrations must use the shared window routing host.", nameof(host));
+        }
+
+        if (_targets.Count >= _options.MaximumTargets)
+        {
+            _targets[target.ControlGroupId].AutomationCode = "automation-unavailable";
+            throw new InvalidOperationException("Diagnostic target capacity exceeded; popup display may continue without registration.");
+        }
+
+        var effective = new UiAutomationTargetOptions
+        {
+            AllowInput = target.Options.AllowInput && (options?.AllowInput ?? false),
+            AllowScreenshots = target.Options.AllowScreenshots && (options?.AllowScreenshots ?? false),
+        };
+        UiAutomationDiagnosticRegistration registration = Register(name, surface, host, effective);
+        if (_targets.TryGetValue(registration.TargetId, out Target? added))
+        {
+            added.ParentTargetId = target.Id;
+            added.PopupId = popupId;
+            added.ControlGroupId = target.ControlGroupId;
+        }
+
         return registration;
     }
 
@@ -289,6 +346,11 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         if (_targets.TryGetValue(id, out Target? target))
         {
             target.Accepting = false;
+            foreach (Target child in _targets.Values.Where(t => t.ParentTargetId == id).ToArray())
+            {
+                Unregister(child.Id);
+            }
+
             foreach (Job job in _jobs.Values.Where(job => job.TargetId == id))
             {
                 Cancel(job, "target-released");
@@ -326,7 +388,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         AuditControl("release", control);
         control.State = "Releasing";
         control.Revision++;
-        foreach (Job job in _jobs.Values.Where(job => job.ControlId == control.Id))
+        foreach (Job job in _jobs.Values.Where(job => job.ControlId == control.Id || (job.Session == control.Session && job.Actor == control.Actor && _targets.TryGetValue(job.TargetId, out Target? target) && target.ControlGroupId == control.TargetId)))
         {
             Cancel(job, code);
         }
@@ -344,7 +406,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
             }
         }
 
-        foreach (Target target in _targets.Values.Where(target => !target.Accepting && !_jobs.Values.Any(job => job.TargetId == target.Id && !job.Terminal)).ToArray())
+        foreach (Target target in _targets.Values.Where(target => !target.Accepting && !_targets.Values.Any(child => child.ParentTargetId == target.Id) && !_jobs.Values.Any(job => job.TargetId == target.Id && !job.Terminal)).ToArray())
         {
             target.Registration.IsReleased = true;
             _targets.Remove(target.Id);
@@ -395,6 +457,14 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         internal UiAutomationDiagnosticRegistration Registration { get; } = registration;
 
         internal bool Accepting { get; set; } = true;
+
+        internal string AutomationCode { get; set; } = string.Empty;
+
+        internal Guid? ParentTargetId { get; set; }
+
+        internal Guid? PopupId { get; set; }
+
+        internal Guid ControlGroupId { get; set; } = id;
 
         internal Control? Control { get; set; }
     }

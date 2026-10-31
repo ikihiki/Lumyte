@@ -105,7 +105,7 @@ public sealed class UiRemotePage
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(_client.Options.OperationTimeout);
-        UiRemoteJob job = UiRemoteSchema.IsAction(plan) ? await _control!.StartAsync(plan, deadline.Token) : await StartObservationAsync(plan, deadline.Token);
+        UiRemoteJob job = UiRemoteSchema.IsAction(plan) ? await _control!.StartTargetAsync(TargetId, plan, deadline.Token) : await StartObservationAsync(plan, deadline.Token);
         UiRemoteJobStatus status = await job.WaitAsync(deadline.Token);
         if (status.State != "Succeeded")
         {
