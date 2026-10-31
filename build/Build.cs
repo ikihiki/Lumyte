@@ -163,7 +163,8 @@ internal sealed partial class Build : FalloutBuild
     private Target CheckFormat => definition => definition
         .Executes(async () =>
         {
-            await DotNetAsync("format", Project ?? BuildSolution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
+            await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["Configuration"] = Configuration },
+                "format", Project ?? BuildSolution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
         });
 
     private Target Ci => definition => definition

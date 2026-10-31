@@ -207,6 +207,23 @@ public sealed class RepositoryBuildTests
         Assert.Equal(OperatingSystem.IsWindows(), packed.Contains("Lumyte.Platform.Windows", StringComparer.Ordinal));
     }
 
+    /// <summary>Formatting resolves generators from the same configuration as the compiled solution.</summary>
+    /// <param name="configuration">The configuration whose build outputs are reused.</param>
+    /// <returns>The asynchronous format-configuration assertion.</returns>
+    [Theory]
+    [InlineData("Release")]
+    [InlineData("Debug")]
+    public async Task CheckFormatUsesTheSelectedConfigurationAsync(string configuration)
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("CheckFormat", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project, "--configuration", configuration);
+        AssertSuccess(result);
+        JsonElement format = Assert.Single(fixture.Records("dotnet"));
+        Assert.Equal("format", Arguments(format)[0]);
+        Assert.Equal(configuration, format.GetProperty("environment").GetProperty("Configuration").GetString());
+        Assert.Contains("--no-restore", Arguments(format));
+    }
+
     private static string[] Commands(JsonElement[] records) => records.Select(record => Arguments(record)[0]).ToArray();
 
     private static string[] Arguments(JsonElement record) => record.GetProperty("arguments").EnumerateArray().Select(value => value.GetString()!).ToArray();
