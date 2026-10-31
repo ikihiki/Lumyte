@@ -71,9 +71,9 @@ public sealed partial class UiSurface
             return;
         }
 
+        var input = new RebuildInputTransfer(this);
         PublishDeclaration(candidate, plan);
-
-        next.MarkLayoutDirty();
+        input.Restore(this, plan);
     }
 
     private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan)

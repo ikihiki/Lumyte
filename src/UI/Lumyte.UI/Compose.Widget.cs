@@ -33,6 +33,11 @@ public static partial class Compose
 
             internal IReadOnlyList<WidgetChildren> ChildCollections => _childCollections;
 
+            internal bool CanRetainInputOnRebuild => RetainsInputOnRebuild;
+
+            /// <summary>Gets a value indicating whether transferred component state can continue captured input.</summary>
+            protected virtual bool RetainsInputOnRebuild => false;
+
             internal void ReconcileFrom(Widget previous) => OnReconcile(previous);
 
             internal void InvalidateStructure()

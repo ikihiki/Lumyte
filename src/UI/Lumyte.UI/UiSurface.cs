@@ -70,6 +70,7 @@ public sealed partial class UiSurface : IDisposable
 
         if (!_root.IsLayoutDirty)
         {
+            UpdateInput();
             return;
         }
 
@@ -78,6 +79,8 @@ public sealed partial class UiSurface : IDisposable
         try
         {
             pass.Compute(_root, UiBoxConstraints.Tight(_viewport));
+            InvalidateInput();
+            UpdateInput();
         }
         catch
         {
@@ -124,13 +127,19 @@ public sealed partial class UiSurface : IDisposable
         }
 
         List<Widget> nodes = _root.CollectSubtree();
-        foreach (Widget node in nodes)
-        {
-            node.SetSurface(null);
-        }
-
         _isDisposed = true;
         _pendingRebuild = null;
+        try
+        {
+            CancelAllPointers();
+        }
+        finally
+        {
+            foreach (Widget node in nodes)
+            {
+                node.SetSurface(null);
+            }
+        }
     }
 
     internal static void RecordWidget(Widget widget, DrawingCanvas2D canvas)
