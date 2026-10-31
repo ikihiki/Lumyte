@@ -101,6 +101,8 @@ keyboardの新しいDownは取得Originの提示rootを選び、そのroot内の
 
 Popupは[UI-0011](UI-0011-popup-windowing-and-fallback.md)と[UI-0014](UI-0014-injectable-window-manager.md)の実装PR 10で、注入したIUiWindowManagerへ接続する。managerは取得InputWindowIdから提示rootを解決し、このPRの系列・取消規則を引き継ぐ。Menuが開いている間だけ論理keyboard scopeを優先し、PreserveFocusのWindowSystem.KeyboardTargetは変更しない。Native popupは取得元map・領域外入力・座標変換等の実能力が揃う場合に使用し、Browserまたは能力不足ならHostedへフォールバックする。
 
+IMEの別経路とTextBox接続は[UI-0012](UI-0012-ime-and-text-editing.md)のPR 11で追加する。session世代付き編集、TSF/DOMのキー消費、KeyCanceledData、Browserのcanvas↔textarea内部focusを扱う。このPR単独では文字入力を提供しない。
+
 ### frame順とDPI
 
 NativeはPumpEvents→WindowSystem.Update（使用時）→InputSystem.Update・収集→入力配送→UpdateLayout/Record→GPU実行・提示を基本順とする。pump中にfocusを変え得る入力を取得した場合は、次の文字取得より前に取得済みprefixのInputSystem更新・配送・focus同期を完了する。そこからPumpEventsを再入しない。BrowserもDOM callbackの取得順と同じ境界を保ち、requestAnimationFrameで残りの更新・描画を行う。UI処理を別threadへ移さない。

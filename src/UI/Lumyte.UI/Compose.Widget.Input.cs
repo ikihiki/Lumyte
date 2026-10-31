@@ -44,7 +44,7 @@ public static partial class Compose
                 var bounds = UiInputBounds.From(origin, Size);
                 UiInputBounds clip = ClipToBounds ? ancestorClip.Intersect(bounds) : ancestorClip;
                 InputVersion = version;
-                InputFocusable = Focusable;
+                InputFocusable = CanReceiveFocus;
                 InputBounds = bounds.Intersect(clip);
                 InputOrigin = origin;
                 _inputSubtreeBounds = InputBounds;

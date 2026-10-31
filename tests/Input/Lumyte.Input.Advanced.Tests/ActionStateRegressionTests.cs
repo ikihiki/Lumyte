@@ -148,6 +148,19 @@ public sealed class ActionStateRegressionTests
         Assert.True(session.IsComplete);
     }
 
+    /// <summary>Checks IME consumption cancels an existing action and prevents stale repeats from restarting it.</summary>
+    [Fact]
+    public void KeyCancellationClearsActionWithoutAnOrdinaryUp()
+    {
+        ActionSystem actions = CreateMovement();
+        actions.Advance(new[] { KeyRecord(1, 0, Key.Space, true) }, At(0));
+        Assert.Equal(Vector2.UnitX, actions.GetState("jump").Value);
+        actions.Advance(new[] { new InputRecord(new(1), 2, At(1), new KeyCanceledData(Key.Space)) }, At(1));
+        Assert.Equal(Vector2.Zero, actions.GetState("jump").Value);
+        actions.Advance(new[] { new InputRecord(new(1), 3, At(2), new KeyData(Key.Space, true, true)) }, At(2));
+        Assert.Equal(Vector2.Zero, actions.GetState("jump").Value);
+    }
+
     private static ActionSystem CreateMovement()
     {
         var actions = new ActionSystem(new ActionProfile(

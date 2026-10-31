@@ -1,7 +1,7 @@
 namespace Lumyte.UI.Automation;
 
 /// <summary>Provides strict, frame-driven assertions that share the page operation deadline.</summary>
-public sealed class UiExpect
+public sealed partial class UiExpect
 {
     private readonly UiLocator _locator;
 

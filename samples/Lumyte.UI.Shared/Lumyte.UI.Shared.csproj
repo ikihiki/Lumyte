@@ -21,6 +21,7 @@
     <InternalsVisibleTo Include="Lumyte.UI.Automation.Tests" />
     <InternalsVisibleTo Include="Lumyte.Resources.Graphics.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Sample" />
+    <InternalsVisibleTo Include="Lumyte.UI.TextEditing.Sample" />
     <InternalsVisibleTo Include="Lumyte.UI.Browser.Sample" />
     <ProjectReference Include="../../src/UI/Lumyte.UI.Windowing.Automation/Lumyte.UI.Windowing.Automation.csproj" />
   </ItemGroup>

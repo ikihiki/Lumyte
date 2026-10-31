@@ -265,6 +265,10 @@ callerの取消はOperationCanceledException（Data["Lumyte.UI.Automation.Trace"
 
 Popupの複数surface連携は[UI-0011](UI-0011-popup-windowing-and-fallback.md)で追加する。PopupIdを明示して別pageを選び、任意のrouting host契約で合成入力とprobeを実際のWindow/keyboard scopeへ通す。親画面とPopupは同じ入力leaseを共有する。PR 8単独のdriverは引き続き単一surfaceへ通常Dispatchする。
 
+TextBoxのEdit capability、任意text host、Fill/確定値assertionは[UI-0012](UI-0012-ime-and-text-editing.md)で後から追加する。物理compositionを自動取消せず待ち、通常編集commandを使う。Fillの成功をOS IME試験の代用にしない。
+
+IME候補の専用snapshot・操作・任意hostは[UI-0015](UI-0015-custom-ime-candidate-presentation.md)で追加する。候補操作は現在のcompositionを維持したまま通常の候補controllerを通し、汎用Click/Fillやcallback直呼びでは代用しない。取得元Windowと配送先の対応は注入されたWindow managerで解決する。
+
 ### 実ホスト・スクリーンショット・対応範囲
 
 初期は同一プロセスのC# APIを提供する。headless hostはGPUなしで検索・状態・通常入力を検証し、native/browser hostは実frameを進めて同じAPIを使う。UIレベルのDispatchはOS入力取得やDPI変換を通過しないため、その経路を検証したという扱いにはせず、UI-0007の実入力検証を残す。

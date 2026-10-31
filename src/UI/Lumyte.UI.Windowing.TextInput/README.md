@@ -1,0 +1,16 @@
+# Lumyte.UI.Windowing.TextInput
+
+注入したIUiWindowManagerとtext backendを接続します。UiPlatformTextInputTargetResolverへSourceId→実IWindowのresolverとIWindowInputSourceを渡し、keyboard rootとpresentation rootを明示的に解決します。active Windowへの推定fallbackはありません。
+
+```csharp
+var connection = new UiTextInputConnection(surface, windows, window, service, targets, clipboard);
+using var menuGuard = popups.RegisterMenuGuard(owner, connection.SuspendAsync);
+```
+
+connectionの作成時にSurfaceへ入力handlerを登録し、Disposeで解除します。TextBoxへの個別指定・全子の列挙・再登録は不要です。同一Surfaceへの二重connectionは拒否します。TextBoxは所属Surfaceの登録を都度解決するため、切断・別Surfaceへの再接続で古いhandlerを保持しません。
+
+frame順はPlatform.PumpEvents→windows.Advance→service.Advance→通常Inputとservice.DrainKeysを取得順に配送→connection.Advance→controller.Advance→surface.UpdateLayout→connection.PublishGeometry→controller.PublishGeometry→描画/提示revision通知です。Windows Pumpがfocus境界でyieldしたらfocus同期してから次のPumpへ進みます。Browserでは同期focus bridgeも登録します。clipboard遅延結果はsession・attachment・文書revisionが一致する場合だけ適用します。
+
+独自候補を使う場合は`UiImeCandidatePresenter(windows, provider)`と`UiImeCandidateController(connection, presenter, popups, options)`を作ります。options.PolicyはSystemが既定です。PreferCustom時は最初の変換より前にPrepareAsyncを要求し、通常frameで完了させます。WindowPolicyはHostedOnly/PreferNative/RequireNativeです。候補pointerはmenu外側Downより先に専用層へ配送し、keyboard focusを移しません。
+
+終了はconnection.BeginStop→各Advanceを継続→connection.IsStopped→controller.Dispose→connection.Disposeです。Window/source/backendを先に破棄しません。候補はSystem復帰、GPU退役、Window closeの順でdrainします。

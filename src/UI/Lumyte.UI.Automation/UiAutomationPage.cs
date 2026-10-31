@@ -1,7 +1,7 @@
 namespace Lumyte.UI.Automation;
 
 /// <summary>Provides locator operations for one borrowed host; simultaneous operations on one page are rejected.</summary>
-public sealed class UiAutomationPage
+public sealed partial class UiAutomationPage
 {
     private readonly IUiAutomationHost _host;
     private readonly TimeSpan _timeout;

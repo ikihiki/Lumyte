@@ -142,8 +142,12 @@ public static class UiRemoteSchema
         using var document = JsonDocument.Parse(json, new() { MaxDepth = 16 });
         RejectDuplicates(document.RootElement);
         UiRemotePlan plan = JsonSerializer.Deserialize(json, UiAutomationJsonContext.Default.UiRemotePlan) ?? throw new JsonException("Missing plan.");
-        Require(plan.SchemaVersion == 1 && plan.Locator is not null && plan.Kind is "click" or "focus" or "press" or "count" or "expect" or "snapshot" or "screenshot");
-        Require(plan.Kind is "snapshot" or "screenshot" ? plan.Locator.Length == 0 : plan.Locator.Length is >= 1 and <= 8);
+        Require(plan.SchemaVersion is >= 1 and <= 3 && plan.Locator is not null && plan.Kind is "click" or "focus" or "press" or "count" or "expect" or "snapshot" or "screenshot" or "fill" or "expect-value" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort");
+        Require(plan.SchemaVersion >= 2 || !document.RootElement.TryGetProperty("text", out _));
+        Require(plan.SchemaVersion == 3 || (!document.RootElement.TryGetProperty("candidate", out _) && !document.RootElement.TryGetProperty("candidateIndex", out _)));
+        Require(plan.Kind is "snapshot" or "screenshot" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" ? plan.Locator.Length == 0 : plan.Locator.Length is >= 1 and <= 8);
+        Require(plan.SchemaVersion >= 2 || plan.Locator.All(step => step?.Role is not ("textbox" or "ime-candidates")));
+        Require(plan.SchemaVersion == 3 || plan.Locator.All(step => step?.Role != "ime-candidates"));
         foreach (UiRemoteLocatorStep step in plan.Locator)
         {
             Require(step is not null);
@@ -153,7 +157,7 @@ public static class UiRemoteSchema
             }
             else
             {
-                Require(step.Kind == "role" && step.Role is "button" or "group" && step.Value is null && (step.Name is null || step.Name.Length <= 256));
+                Require(step.Kind == "role" && step.Role is "button" or "group" or "textbox" or "ime-candidates" && step.Value is null && (step.Name is null || step.Name.Length <= 256));
             }
         }
 
@@ -185,6 +189,29 @@ public static class UiRemoteSchema
             Require(plan.Predicate is null && plan.Count is null);
         }
 
+        bool textOperation = plan.Kind is "fill" or "expect-value";
+        bool candidateAction = plan.Kind is "ime-select" or "ime-page" or "ime-finalize" or "ime-abort";
+        Require((plan.SchemaVersion >= 2 || (!textOperation && plan.Text is null)) && (plan.SchemaVersion == 3 || (!candidateAction && plan.Kind != "ime-candidates" && plan.Candidate is null && plan.CandidateIndex is null)));
+        Require(textOperation ? plan.Text is not null && plan.Text.Length <= 32768 : plan.Text is null);
+        if (plan.Text is { } text)
+        {
+            try
+            {
+                _ = new System.Text.UTF8Encoding(false, true).GetByteCount(text);
+            }
+            catch (System.Text.EncoderFallbackException)
+            {
+                throw new JsonException("Invalid text encoding.");
+            }
+        }
+
+        Require(candidateAction == (plan.Candidate is not null));
+        if (plan.Candidate is { } candidate)
+        {
+            Require(candidate.SessionId != Guid.Empty && Counter(candidate.SessionGeneration) && Counter(candidate.ElementGeneration) && Counter(candidate.Revision));
+        }
+
+        Require(plan.Kind is "ime-select" or "ime-page" ? plan.CandidateIndex is >= 0 : plan.CandidateIndex is null);
         return plan;
     }
 
@@ -196,7 +223,9 @@ public static class UiRemoteSchema
     /// <summary>Tests whether a plan can send input.</summary>
     /// <param name="plan">A validated plan.</param>
     /// <returns>Whether input authority is required.</returns>
-    public static bool IsAction(UiRemotePlan plan) => plan.Kind is "click" or "focus" or "press";
+    public static bool IsAction(UiRemotePlan plan) => plan.Kind is "click" or "focus" or "press" or "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort";
+
+    private static bool Counter(string value) => value is not null && value.Length <= 20 && ulong.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong parsed) && parsed != 0 && parsed.ToString(System.Globalization.CultureInfo.InvariantCulture) == value;
 
     private static void Require([DoesNotReturnIf(false)] bool condition)
     {

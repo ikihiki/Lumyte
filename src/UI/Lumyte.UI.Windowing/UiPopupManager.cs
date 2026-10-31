@@ -10,6 +10,10 @@ public sealed class UiPopupManager : IDisposable
 {
     private readonly IUiWindowManager _windows;
 
+    private readonly Dictionary<Guid, List<Func<CancellationToken, ValueTask<IAsyncDisposable>>>> _menuGuards = [];
+
+    private readonly Dictionary<UiWindowId, UiSurface> _candidateSurfaces = [];
+
     private readonly Dictionary<Guid, Owner> _owners = [];
 
     private readonly Dictionary<Guid, Popup> _popups = [];
@@ -57,6 +61,50 @@ public sealed class UiPopupManager : IDisposable
         token = new(() => _commands.Enqueue(() => ReleaseOwner(token!.Id)));
         _owners.Add(token.Id, new(token, window, surface));
         return token;
+    }
+
+    /// <summary>Registers a barrier whose token is retained for each menu's complete lifetime.</summary>
+    /// <param name="owner">The registered logical owner.</param>
+    /// <param name="prepare">Begins cancellation-aware preparation at an owner update point.</param>
+    /// <returns>A registration; disposing it affects future openings only.</returns>
+    public IDisposable RegisterMenuGuard(UiPopupOwner owner, Func<CancellationToken, ValueTask<IAsyncDisposable>> prepare)
+    {
+        Admit();
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(prepare);
+        if (!_owners.TryGetValue(owner.Id, out Owner? current) || !ReferenceEquals(current.Token, owner) || current.Releasing)
+        {
+            throw new ArgumentException("Unknown owner.", nameof(owner));
+        }
+
+        if (!_menuGuards.TryGetValue(owner.Id, out List<Func<CancellationToken, ValueTask<IAsyncDisposable>>>? guards))
+        {
+            guards = [];
+            _menuGuards.Add(owner.Id, guards);
+        }
+
+        guards.Add(prepare);
+        return new InputRegistration(() => _commands.Enqueue(() => guards.Remove(prepare)));
+    }
+
+    /// <summary>Registers a prepared candidate surface ahead of menu outside-press routing.</summary>
+    /// <param name="window">A bound candidate-only window.</param>
+    /// <param name="surface">The borrowed matching surface.</param>
+    /// <returns>An owner-idle registration that cancels retained pointer series on disposal.</returns>
+    public IDisposable RegisterCandidateInput(UiWindowId window, UiSurface surface)
+    {
+        Admit();
+        ArgumentNullException.ThrowIfNull(surface);
+        if (!_windows.IsBound(window, surface) || !_windows.TryGetSnapshot(window, out UiWindowSnapshot? state) || state!.Role != UiWindowRole.ImeCandidates || state.InputMode != UiWindowInputMode.Candidate || !_candidateSurfaces.TryAdd(window, surface))
+        {
+            throw new ArgumentException("Candidate registration requires a unique bound candidate window.", nameof(window));
+        }
+
+        return new InputRegistration(() =>
+        {
+            _candidateSurfaces.Remove(window);
+            CancelWindow(window, surface);
+        });
     }
 
     /// <summary>Queues root popup construction; existing menu cleanup precedes replacement.</summary>
@@ -179,6 +227,7 @@ public sealed class UiPopupManager : IDisposable
 
                 owner.Token.IsReleased = true;
                 _owners.Remove(owner.Token.Id);
+                _menuGuards.Remove(owner.Token.Id);
             }
 
             int callbacks = _callbacks.Count;
@@ -271,6 +320,23 @@ public sealed class UiPopupManager : IDisposable
         _disposed = true;
     }
 
+    /// <summary>Probes the same current window, menu scope and component routing as ordinary input.</summary>
+    /// <param name="surface">The registered surface.</param>
+    /// <param name="position">The surface-local pointer position.</param>
+    /// <returns>The current hit and accepting activation target without sending input.</returns>
+    public UiPointerProbe ProbePointer(UiSurface surface, Vector2 position)
+    {
+        UiWindowId? window = FindWindow(surface);
+        if (window is null || !_windows.TryGetSnapshot(window.Value, out UiWindowSnapshot? snapshot) || snapshot!.State != UiWindowState.Open || !_windows.TryTransformPoint(window.Value, snapshot.PresentationRoot, position, out Vector2 rootPoint))
+        {
+            return default;
+        }
+
+        UiWindowHit? hit = _windows.HitTest(snapshot.PresentationRoot, rootPoint);
+        Popup? menu = Deepest(snapshot.KeyboardScopeId);
+        return hit?.Window == window && (menu is null || _popups.Values.Any(p => p.Window == window && p.Handle.State == UiPopupState.Open)) ? surface.ProbePointer(position) : default;
+    }
+
     internal UiWindowId? FindWindow(UiSurface surface) => _owners.Values.FirstOrDefault(o => ReferenceEquals(o.Surface, surface))?.Window ?? _popups.Values.FirstOrDefault(p => ReferenceEquals(p.Surface, surface))?.Window;
 
     internal bool CanReceiveKeys(UiSurface surface)
@@ -283,19 +349,6 @@ public sealed class UiPopupManager : IDisposable
 
         Popup? menu = Deepest(snapshot!.KeyboardScopeId);
         return menu is not null ? ReferenceEquals(menu.Surface, surface) && menu.Handle.State == UiPopupState.Open : _windows.GetKeyboardTarget(window.Value) == window;
-    }
-
-    internal UiPointerProbe ProbePointer(UiSurface surface, Vector2 position)
-    {
-        UiWindowId? window = FindWindow(surface);
-        if (window is null || !_windows.TryGetSnapshot(window.Value, out UiWindowSnapshot? snapshot) || snapshot!.State != UiWindowState.Open || !_windows.TryTransformPoint(window.Value, snapshot.PresentationRoot, position, out Vector2 rootPoint))
-        {
-            return default;
-        }
-
-        UiWindowHit? hit = _windows.HitTest(snapshot.PresentationRoot, rootPoint);
-        Popup? menu = Deepest(snapshot.KeyboardScopeId);
-        return hit?.Window == window && (menu is null || _popups.Values.Any(p => p.Window == window && p.Handle.State == UiPopupState.Open)) ? surface.ProbePointer(position) : default;
     }
 
     internal bool Dispatch(UiSurface surface, UiInput input)
@@ -331,6 +384,18 @@ public sealed class UiPopupManager : IDisposable
         catch (Exception error)
         {
             return Task.FromException(error);
+        }
+    }
+
+    private static Task<IAsyncDisposable> PrepareGuard(Func<CancellationToken, ValueTask<IAsyncDisposable>> prepare, CancellationToken cancellation)
+    {
+        try
+        {
+            return prepare(cancellation).AsTask();
+        }
+        catch (Exception error)
+        {
+            return Task.FromException<IAsyncDisposable>(error);
         }
     }
 
@@ -418,6 +483,7 @@ public sealed class UiPopupManager : IDisposable
 
         p.Reason = reason;
         p.Handle.State = UiPopupState.Closing;
+        p.GuardCancellation.Cancel();
         foreach (Popup child in _popups.Values.Where(child => child.Parent == p).ToArray())
         {
             Close(child, reason);
@@ -467,6 +533,33 @@ public sealed class UiPopupManager : IDisposable
             if (_popups.Values.Any(other => other != p && other.Closing && other.Mode == UiPopupInputMode.Menu && (p.Parent is null ? other.Parent is null && SameScope(other.Owner, p.Owner) : other.Parent == p.Parent)))
             {
                 return;
+            }
+
+            if (p.Mode == UiPopupInputMode.Menu)
+            {
+                if (!p.GuardsStarted)
+                {
+                    p.GuardsStarted = true;
+                    p.GuardTasks = _menuGuards.GetValueOrDefault(p.Owner.Token.Id, []).ToArray().Select(prepare => PrepareGuard(prepare, p.GuardCancellation.Token)).ToArray();
+                }
+
+                if (p.GuardTasks is { } guards)
+                {
+                    if (guards.Any(task => !task.IsCompleted))
+                    {
+                        return;
+                    }
+
+                    if (guards.Any(task => !task.IsCompletedSuccessfully))
+                    {
+                        p.Handle.FailureCode = "menu-guard-failed";
+                        Close(p, UiPopupCloseReason.OpenFailed);
+                        return;
+                    }
+
+                    p.MenuGuards.AddRange(guards.Select(task => task.GetAwaiter().GetResult()));
+                    p.GuardTasks = null;
+                }
             }
 
             Widget content;
@@ -568,6 +661,28 @@ public sealed class UiPopupManager : IDisposable
             return;
         }
 
+        if (p.GuardTasks is { } guards)
+        {
+            if (guards.Any(task => !task.IsCompleted))
+            {
+                return;
+            }
+
+            foreach (Task<IAsyncDisposable> task in guards)
+            {
+                try
+                {
+                    p.MenuGuards.Add(task.GetAwaiter().GetResult());
+                }
+                catch (Exception error)
+                {
+                    p.Failures.Add(error);
+                }
+            }
+
+            p.GuardTasks = null;
+        }
+
         if (!p.InputCanceled)
         {
             p.InputCanceled = true;
@@ -664,6 +779,28 @@ public sealed class UiPopupManager : IDisposable
             p.Window = null;
         }
 
+        p.GuardRelease ??= p.MenuGuards.Select(DisposeParticipant).ToArray();
+        p.MenuGuards.Clear();
+        if (p.GuardRelease.Any(task => !task.IsCompleted))
+        {
+            return;
+        }
+
+        foreach (Task released in p.GuardRelease)
+        {
+            try
+            {
+                released.GetAwaiter().GetResult();
+            }
+            catch (Exception error)
+            {
+                failures.Add(error);
+            }
+        }
+
+        p.GuardRelease = [];
+        p.GuardCancellation.Dispose();
+
         if (!p.SuppressRestore && p.Previous is not null && p.Bookmark is not null && !p.Owner.Releasing && SameLiveOwner(p.Owner))
         {
             if (!p.Previous.TryRestoreFocus(p.Bookmark))
@@ -699,7 +836,7 @@ public sealed class UiPopupManager : IDisposable
 
     private Popup? Deepest(Guid scope) => _popups.Values.Where(p => p.Accepted && p.Mode == UiPopupInputMode.Menu && _windows.TryGetSnapshot(p.Owner.Window, out UiWindowSnapshot? s) && s!.KeyboardScopeId == scope).OrderByDescending(p => p.Depth).ThenByDescending(p => p.Order).FirstOrDefault();
 
-    private UiSurface? Surface(UiWindowId window) => _owners.Values.FirstOrDefault(o => o.Window == window)?.Surface ?? _popups.Values.FirstOrDefault(p => p.Window == window && !p.Closing)?.Surface;
+    private UiSurface? Surface(UiWindowId window) => _candidateSurfaces.GetValueOrDefault(window) ?? _owners.Values.FirstOrDefault(o => o.Window == window)?.Surface ?? _popups.Values.FirstOrDefault(p => p.Window == window && !p.Closing)?.Surface;
 
     private void CancelWindow(UiWindowId window, UiSurface surface)
     {
@@ -793,6 +930,20 @@ public sealed class UiPopupManager : IDisposable
             UiWindowHit? hit = _windows.HitTest(originRoot, point.Position);
             if (hit?.InputMode == UiWindowInputMode.Candidate)
             {
+                UiWindowId candidateWindow = hit.Value.Window;
+                if (_candidateSurfaces.TryGetValue(candidateWindow, out UiSurface? candidate) && _windows.TryTransformPoint(originRoot, candidateWindow, point.Position, out Vector2 candidatePoint))
+                {
+                    candidate.Dispatch(point with { Position = candidatePoint });
+                    if (point.Phase == UiPointerPhase.Down)
+                    {
+                        _pointers[point.PointerId] = candidateWindow;
+                    }
+                }
+                else if (point.Phase == UiPointerPhase.Down)
+                {
+                    _pointers[point.PointerId] = null;
+                }
+
                 return true;
             }
 
@@ -911,6 +1062,13 @@ public sealed class UiPopupManager : IDisposable
         Close(p, reason);
     }
 
+    private sealed class InputRegistration(Action release) : IDisposable
+    {
+        private Action? _release = release;
+
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
+
     private sealed class Owner(UiPopupOwner token, UiWindowId window, UiSurface surface)
     {
         internal UiPopupOwner Token { get; } = token;
@@ -924,6 +1082,16 @@ public sealed class UiPopupManager : IDisposable
 
     private sealed class Popup(UiPopupHandle handle, Owner owner, Popup? parent, UiPopupRequest request, UiAutomationId anchorId)
     {
+        internal CancellationTokenSource GuardCancellation { get; } = new();
+
+        internal List<IAsyncDisposable> MenuGuards { get; } = [];
+
+        internal bool GuardsStarted { get; set; }
+
+        internal Task<IAsyncDisposable>[]? GuardTasks { get; set; }
+
+        internal Task[]? GuardRelease { get; set; }
+
         internal UiPopupHandle Handle { get; } = handle;
 
         internal Owner Owner { get; } = owner;

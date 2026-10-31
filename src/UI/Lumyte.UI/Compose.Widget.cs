@@ -38,6 +38,9 @@ public static partial class Compose
             /// <summary>Gets a value indicating whether transferred component state can continue captured input.</summary>
             protected virtual bool RetainsInputOnRebuild => false;
 
+            /// <summary>Gets the borrowed surface while this widget is connected, or null after detachment.</summary>
+            protected UiSurface? ConnectedSurface => _surface;
+
             internal void ReconcileFrom(Widget previous) => OnReconcile(previous);
 
             internal void RestoreAutomationIdentity(UiAutomationId identity) => AutomationId = identity;

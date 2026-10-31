@@ -13,6 +13,10 @@ public sealed class WindowsInputSource : IWindowInputSource
 {
     private readonly BufferedInputSource _buffer;
     private readonly HashSet<MouseButton> _buttons = [];
+    private readonly HashSet<Key> _physicalKeys = [];
+    private readonly Dictionary<Key, WindowId> _publishedKeys = [];
+    private readonly HashSet<Key> _textConsumedKeys = [];
+    private readonly Dictionary<Key, int> _virtualKeys = [];
     private WindowsWindow? _captureWindow;
     private nint _captureHandle;
     private bool _blocked;
@@ -25,6 +29,8 @@ public sealed class WindowsInputSource : IWindowInputSource
     /// <inheritdoc/>
     public Guid StreamId => _buffer.StreamId;
 
+    internal IReadOnlyCollection<Key> HeldKeys => _physicalKeys;
+
     /// <inheritdoc/>
     public void Initialize(IInputDeviceRegistry registry) => _buffer.Initialize(registry);
 
@@ -32,7 +38,8 @@ public sealed class WindowsInputSource : IWindowInputSource
     public void Update()
     {
         _buffer.Update();
-        if (_blocked && new[] { 1, 2, 4, 5, 6 }.All(key => (NativeMethods.GetAsyncKeyState(key) & 0x8000) == 0))
+        ReconcilePhysicalKeys();
+        if (_blocked && new[] { 1, 2, 4, 5, 6, }.All(key => (NativeMethods.GetAsyncKeyState(key) & 0x8000) == 0))
         {
             _buttons.Clear();
             _blocked = false;
@@ -65,7 +72,83 @@ public sealed class WindowsInputSource : IWindowInputSource
     /// <inheritdoc/>
     public void Dispose() => _buffer.Dispose();
 
-    internal void Receive(WindowsWindow window, uint message, nuint wParam, nint lParam)
+    internal InputCaptureStamp BeginKeyAcquisition(nuint virtualKey, nint lParam, bool down)
+    {
+        Key key = PhysicalKeys.FromPcScan((int)((lParam >> 16) & 0xFF), (lParam & 0x01000000) != 0);
+        if (down)
+        {
+            _physicalKeys.Add(key);
+            _virtualKeys[key] = (int)virtualKey;
+        }
+        else
+        {
+            _physicalKeys.Remove(key);
+            _virtualKeys.Remove(key);
+        }
+
+        return new(StreamId, _buffer.BeginAcquisition());
+    }
+
+    internal void ReconcilePhysicalKeys()
+    {
+        List<Key>? released = null;
+        foreach ((Key key, int virtualKey) in _virtualKeys)
+        {
+            if ((NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) == 0)
+            {
+                (released ??= []).Add(key);
+            }
+        }
+
+        if (released is null)
+        {
+            return;
+        }
+
+        ulong capture = _buffer.BeginAcquisition();
+        foreach (Key key in released)
+        {
+            _physicalKeys.Remove(key);
+            _virtualKeys.Remove(key);
+            _textConsumedKeys.Remove(key);
+            if (_publishedKeys.Remove(key, out WindowId owner))
+            {
+                _buffer.Keyboard(owner, new KeyCanceledData(key), capture);
+            }
+        }
+    }
+
+    internal void ConsumeKey(WindowsWindow window, nint lParam, InputCaptureStamp capture)
+    {
+        Key key = PhysicalKeys.FromPcScan((int)((lParam >> 16) & 0xFF), (lParam & 0x01000000) != 0);
+        if (_physicalKeys.Contains(key))
+        {
+            _textConsumedKeys.Add(key);
+        }
+        else
+        {
+            _textConsumedKeys.Remove(key);
+        }
+
+        if (_publishedKeys.Remove(key, out WindowId owner))
+        {
+            _buffer.Keyboard(owner, new KeyCanceledData(key), capture.Sequence);
+        }
+    }
+
+    internal void BeginTextScope()
+    {
+        ulong capture = _buffer.BeginAcquisition();
+        foreach ((Key key, WindowId owner) in _publishedKeys)
+        {
+            _buffer.Keyboard(owner, new KeyCanceledData(key), capture);
+        }
+
+        _publishedKeys.Clear();
+        _textConsumedKeys.UnionWith(_physicalKeys);
+    }
+
+    internal void Receive(WindowsWindow window, uint message, nuint wParam, nint lParam, ulong? keyCapture = null)
     {
         if (message is 0x215 or 0x1F)
         {
@@ -92,7 +175,36 @@ public sealed class WindowsInputSource : IWindowInputSource
         {
             Key key = PhysicalKeys.FromPcScan((int)((lParam >> 16) & 0xFF), (lParam & 0x01000000) != 0);
             bool down = message is 0x100 or 0x104;
-            _buffer.Keyboard(window.Id, new KeyData(key, down, down && (lParam & 0x40000000) != 0));
+            if (keyCapture is null)
+            {
+                keyCapture = BeginKeyAcquisition(wParam, lParam, down).Sequence;
+            }
+
+            if (_textConsumedKeys.Contains(key))
+            {
+                if (!down)
+                {
+                    _textConsumedKeys.Remove(key);
+                }
+
+                return;
+            }
+
+            if (down && (lParam & 0x40000000) != 0 && !_publishedKeys.ContainsKey(key))
+            {
+                return;
+            }
+
+            if (down)
+            {
+                _publishedKeys.TryAdd(key, window.Id);
+            }
+            else if (!_publishedKeys.Remove(key))
+            {
+                return;
+            }
+
+            _buffer.Keyboard(window.Id, new KeyData(key, down, down && (lParam & 0x40000000) != 0), keyCapture);
         }
         else if (message is 0x7 or 0x8)
         {

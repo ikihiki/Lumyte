@@ -73,6 +73,10 @@ leaseを解放・失効したら、そのleaseの入力JobをCancelRequestedに�
 
 Popupの親子Targetは[UI-0011](UI-0011-popup-windowing-and-fallback.md)の実装PR 10で追加する。rootとsubmenuまで一つのcontrol groupにまとめ、lease・入力Job一つ・Sequence high-waterを共有する。このPR単独では一Targetが一groupに相当し、Popupの表示方式へ依存するOperationを作らない。追加metadata、RegisterPopupとclientのPageForはUI-0011のAPI diffを正本とする。
 
+IME/TextBoxは[UI-0012](UI-0012-ime-and-text-editing.md)のPR 11で追加する。text入力/検査許可、version 2 planのfill/expect-value、version 1との受付互換をそこで定義する。Diagnostics protocol 2、Operation IDと親子control groupの規則は継続する。
+
+同PRの[UI-0015](UI-0015-custom-ime-candidate-presentation.md)で候補専用の閉じたversion 3 planを追加する。候補文字列には本文検査許可、候補操作には本文入力許可と同じgroupのcontrol leaseを要求し、現compositionを維持する専用入力leaseを使う。任意capabilityの転送とInputMayHaveBeenSent更新は下記のwrapper契約に従う。version 1/2の互換と送信後の自動再実行禁止を維持する。
+
 ### Operationと公開API
 
 比較元はDiagnostics実装のmain `20f666ff8f64a63e65407936d32fb98cfa19c9d8`。UI側はUI-0009のAPIを前提とする。DiagnosticOperation、DiagnosticResult、DiagnosticMember、Traffic等は既存のDiagnostics型を使う。

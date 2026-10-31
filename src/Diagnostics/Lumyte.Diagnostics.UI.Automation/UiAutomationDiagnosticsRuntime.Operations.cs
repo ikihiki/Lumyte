@@ -12,7 +12,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
     internal DiagnosticResult<UiAutomationTargetsReceipt> Targets()
     {
         Verify();
-        UiRemoteTarget[] targets = _targets.Values.Where(target => target.Accepting).Select(target => new UiRemoteTarget(target.Id, target.Name, target.Options.AllowInput, target.Options.AllowScreenshots, target.ParentTargetId, target.PopupId, target.ControlGroupId, target.AutomationCode)).ToArray();
+        UiRemoteTarget[] targets = _targets.Values.Where(target => target.Accepting).Select(target => new UiRemoteTarget(target.Id, target.Name, target.Options.AllowInput, target.Options.AllowScreenshots, target.ParentTargetId, target.PopupId, target.ControlGroupId, target.AutomationCode, target.Options.AllowTextInput, target.Options.AllowTextInspection)).ToArray();
         string json = JsonSerializer.Serialize(targets, UiAutomationJsonContext.Default.UiRemoteTargetArray);
         return json.Length <= 32768 ? DiagnosticResult<UiAutomationTargetsReceipt>.Success(new(json)) : Reject<UiAutomationTargetsReceipt>("result-too-large");
     }
@@ -134,6 +134,16 @@ public sealed partial class UiAutomationDiagnosticsRuntime
         if (plan.Kind == "screenshot" && !target.Options.AllowScreenshots)
         {
             return Reject<UiAutomationJobReceipt>("screenshot-not-allowed");
+        }
+
+        if (plan.Kind is "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" && !target.Options.AllowTextInput)
+        {
+            return Reject<UiAutomationJobReceipt>("text-input-disabled");
+        }
+
+        if (plan.Kind is "expect-value" or "ime-candidates" && !target.Options.AllowTextInspection)
+        {
+            return Reject<UiAutomationJobReceipt>("text-inspection-disabled");
         }
 
         string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(target.Id.ToString("D") + "|" + UiRemoteSchema.SerializePlan(plan) + "|" + jobTimeoutMs.ToString(CultureInfo.InvariantCulture))));
