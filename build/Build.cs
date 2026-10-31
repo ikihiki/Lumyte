@@ -89,44 +89,7 @@ internal sealed partial class Build : FalloutBuild
 
     private Target Pack => definition => definition
         .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            string output = Path.GetFullPath(Output ?? Path.Combine(ArtifactRoot, "nuget"));
-            Directory.CreateDirectory(output);
-            IEnumerable<string> projects = Project is string project
-                ? [project]
-                : Directory.EnumerateFiles(Path.Combine(RootDirectory, "src"), "*.csproj", SearchOption.AllDirectories)
-                    .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"));
-            foreach (string path in projects.Order(StringComparer.Ordinal))
-            {
-                if (Project is null && HostOnly && !IsHostProject(path))
-                {
-                    continue;
-                }
-
-                if (SkipParleyPackage && Path.GetFileName(path) == "Lumyte.Graphics.Text.Parley.csproj")
-                {
-                    continue;
-                }
-
-                if (Project is null)
-                {
-                    string packable = await DotNetAsync("msbuild", path, "-nologo", "-getProperty:IsPackable").ConfigureAwait(false);
-                    if (!string.Equals(packable.Trim(), "true", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-                }
-
-                var arguments = new List<string> { "pack", path, "--configuration", Configuration, "--no-build", "--no-restore", "--output", output };
-                if (Runtime is not null)
-                {
-                    arguments.Add("-p:RuntimeIdentifier=" + Runtime);
-                }
-
-                await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
-            }
-        });
+        .Executes(PackAsync);
 
     private Target PreparePublish => definition => definition
         .OnlyWhenDynamic(() => !NoBuild && (Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample").Contains("Browser", StringComparison.Ordinal))

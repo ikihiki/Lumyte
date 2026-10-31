@@ -118,7 +118,7 @@ public sealed class RepositoryBuildTests
         Assert.Equal(fixture.Output, Value(arguments, "--output"));
     }
 
-    /// <summary>Default packaging discovers packable source projects while excluding opted-out and intermediate projects.</summary>
+    /// <summary>Default packaging evaluates source project packability in one MSBuild process, excluding intermediate projects.</summary>
     /// <returns>The asynchronous project-discovery assertion.</returns>
     [Fact]
     public async Task PackDiscoversOnlyPackableSourceProjectsAsync()
@@ -129,14 +129,20 @@ public sealed class RepositoryBuildTests
         string packable = Path.Combine(source, "Packable.csproj");
         File.WriteAllText(packable, File.ReadAllText(fixture.Project));
         File.WriteAllText(Path.Combine(source, "Unpackable.csproj"), "<Project><PropertyGroup><IsPackable>false</IsPackable></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(source, "Lumyte.Graphics.Text.Parley.csproj"), File.ReadAllText(fixture.Project));
         File.WriteAllText(Path.Combine(source, "obj", "Intermediate.csproj"), File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
-        Assert.Equal(2, records.Count(record => Arguments(record)[0] == "msbuild"));
-        JsonElement pack = Assert.Single(records, record => Arguments(record)[0] == "pack");
-        Assert.Contains(packable, Arguments(pack));
-        Assert.DoesNotContain(records, record => Arguments(record).Any(argument => argument.EndsWith("Intermediate.csproj", StringComparison.Ordinal)));
+        JsonElement pack = Assert.Single(records);
+        Assert.Equal("msbuild", Arguments(pack)[0]);
+        Assert.Contains("-p:NoBuild=true", Arguments(pack));
+        var traversal = XDocument.Load(Arguments(pack)[1]);
+        string[] projects = traversal.Descendants("PackageProject").Select(element => element.Attribute("Include")!.Value).ToArray();
+        Assert.Equal(2, projects.Length);
+        Assert.Contains(packable, projects);
+        Assert.DoesNotContain(projects, path => path.EndsWith("Intermediate.csproj", StringComparison.Ordinal));
+        Assert.Equal("Pack", Assert.Single(traversal.Descendants("MSBuild")).Attribute("Targets")!.Value);
     }
 
     /// <summary>Explicit package opt-out avoids invoking dotnet pack for the native Parley package.</summary>
@@ -150,6 +156,23 @@ public sealed class RepositoryBuildTests
         BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
+    }
+
+    /// <summary>A failure in the packaging traversal fails the build runner.</summary>
+    /// <returns>The asynchronous failure assertion.</returns>
+    [Fact]
+    public async Task BatchPackFailureIsPropagatedAsync()
+    {
+        using var fixture = new BuildFixture();
+        string source = Path.Combine(fixture.Root, "src");
+        Directory.CreateDirectory(source);
+        File.Copy(fixture.Project, Path.Combine(source, "Packable.csproj"));
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "msbuild";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("23", result.Output + result.Error, StringComparison.Ordinal);
+        Assert.Single(fixture.Records("dotnet"));
     }
 
     /// <summary>Host selection keeps new shared projects and removes only foreign platform projects.</summary>
@@ -201,7 +224,9 @@ public sealed class RepositoryBuildTests
 
         BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
         AssertSuccess(result);
-        string[] packed = fixture.Records("dotnet").Where(record => Arguments(record)[0] == "pack").Select(record => Path.GetFileNameWithoutExtension(Arguments(record)[1])).ToArray();
+        JsonElement pack = Assert.Single(fixture.Records("dotnet"));
+        var traversal = XDocument.Load(Arguments(pack)[1]);
+        string[] packed = traversal.Descendants("PackageProject").Select(element => Path.GetFileNameWithoutExtension(element.Attribute("Include")!.Value)).ToArray();
         Assert.Contains("New.Shared", packed);
         Assert.Equal(OperatingSystem.IsLinux(), packed.Contains("Lumyte.Platform.Linux", StringComparer.Ordinal));
         Assert.Equal(OperatingSystem.IsWindows(), packed.Contains("Lumyte.Platform.Windows", StringComparer.Ordinal));
