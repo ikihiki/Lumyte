@@ -90,9 +90,9 @@ public sealed partial class CompositionGenerator
         }
 
         if (!Members(adapter).OfType<IPropertySymbol>().Any(property => property.Name == "Key" && property.Type.SpecialType == SpecialType.System_String
-            && property.SetMethod?.DeclaredAccessibility == Accessibility.Public && !property.SetMethod.IsInitOnly))
+            && property.SetMethod?.DeclaredAccessibility == Accessibility.Public))
         {
-            return "A function adapter must expose a public writable string Key for declaration identity.";
+            return "A function adapter must expose a public set or init accessor on its string Key.";
         }
 
         if (method.TypeParameters.Any(parameter => parameter.AllowsRefLikeType || parameter.Name == "key" || parameter.Name.StartsWith("__", StringComparison.Ordinal) || parameter.ConstraintTypes.Any(type => !PublicType(type)))
