@@ -14,6 +14,8 @@ UIライブラリがSignalへ依存し、Widgetの接続・取り外し・surfac
 
 Compositionのgeneric値adapterと受動recipeはPR #98でmainへ統合済みである。本PRはUiArgumentとUI／Window／Popupへの接続を実装し、汎用の生成契約を重複して含めない。
 
+静的関数だけで定義するWidgetと、その関数内のローカルSignal保持は、後続PR 18の[UI-0023](UI-0023-function-widgets-and-local-signals.md)で追加する。独立SignalとUIによる自動購読という本ADRの境界は維持する。
+
 ### 依存方向と配置
 
 Lumyte.UIからLumyte.Signalsへの直接参照を追加する。実行時の直接依存はComposition、Input.Abstractions、Graphics.Drawing2D、Signalsとする。SignalsはBCLとMicrosoft.Extensions.ObjectPoolへ依存し、UI・Composition・contextを参照しない。UI専用のInternalsVisibleToをSignalsに追加しない。
@@ -96,7 +98,7 @@ withが同じpropertyを上書きした場合は初回の優先順位を維持�
 
 UiSurfaceは接続対象のtreeを走査し、受動的な引数readerと構築関数の読出し集合をまとめた一つのEffectを準備する。内部scopeを使い、接続を外側の業務SignalScope内で行ってもUI購読の所有権を利用者scopeへ移さない。Signalの生成threadとの一致を検査しない。標準hostは自身のIUiDispatcherへ配送し、UiSurface(root)のみの利用は従来どおりcallerがUI操作を直列化する。
 
-初回Effectは依存と初期値との差だけを確認し、setterへ配送しない。構築関数を渡した場合はSignal.CaptureReadsで直接のValue読出しを記録する。明示Signal引数の初期値はPeekで読み、引数だけの変更を全Build依存へ混ぜない。再構築時は生成recipeから新しい宣言を作るか、直接読出しがあれば元の構築関数を再実行する。recipeはconstructor・withと全slotを保持し、古いWidgetへの参照連鎖は作らない。手書きnewを含むツリーでSignalを使う場合は`UiSurface(Func<Widget>)`または`Rebuild(Func<Widget>)`へ構築関数を渡す。
+初回Effectは依存と初期値との差だけを確認し、setterへ配送しない。構築関数を渡した場合はSignal.CaptureReadsで直接のValue読出しを記録する。明示Signal引数の初期値はPeekで読み、引数だけの変更を全Build依存へ混ぜない。再構築時は生成recipeから新しい宣言を作るか、直接読出しがあれば元の構築関数を再実行する。recipeはconstructor・withと全slotを保持し、古いWidgetへの参照連鎖は作らない。手書きnewを含むツリーでSignalを使う場合は`UiSurface(Func<Widget>)`または`Rebuild(Func<Widget>)`へ構築関数を渡す。PR 18の関数Widgetではbody自体を再実行するため、そのbody内の手書きnewは例外として個別recipeを必要としない。
 
 構築の自動再実行は#77から実装済みのRebuild/UpdateTree・型/key/slot照合・component状態保持へ接続する。本PRではSignalの依存追跡・再実行の集約と購読寿命を追加し、状態保持の基盤を二重に実装しない。
 
@@ -258,8 +260,8 @@ UI専用の差分反映経路はlayout・入力・描画への影響を分類す
 
 ## 全体レビューに基づく更新境界
 
-構造が変わらない生成recipeは再利用し、子collection初期化や関数bodyの構造変更はStructureRevisionで再捕捉する。全Surfaceの再構築規則は維持するが、重複した走査集合・recipeの確保を省く。静的周辺を含む一要素更新でも全体構築の費用が残るため、部分木単位の更新境界は今回のcacheとは分けて後続設計する。
+構造が変わらない生成recipeは再利用し、子collection初期化や関数bodyの構造変更はStructureRevisionで再捕捉する。この基本経路では全Surfaceの再構築規則を維持し、重複した走査集合・recipeの確保を省く。関数境界の部分木更新は[UI-0023](UI-0023-function-widgets-and-local-signals.md)で追加し、関数外の依存と全体検証が必要な場合はこの基本経路を使う。
 
 ## 再構築候補と購読の所有
 
-予約rootとそのSignalBindingを一つの候補として管理する。公開時に購読をsurfaceへ移し、置き換えた未公開候補の購読は解放する。適用中の候補は次の予約で解放せず、適用のfinallyまで所有を保つ。照合・identity保持・幾何再利用はRebuildPlanへ集約し、公開後の入力引継ぎと例外集約を分離する。全体再構築の粒度は変更しない。
+予約rootとそのSignalBindingを一つの候補として管理する。公開時に購読をsurfaceへ移し、置き換えた未公開候補の購読は解放する。適用中の候補は次の予約で解放せず、適用のfinallyまで所有を保つ。照合・identity保持・幾何再利用はRebuildPlanへ集約し、公開後の入力引継ぎと例外集約を分離する。基本経路の全体再構築に加え、UI-0023の関数境界では購読と再構築を部分木単位に分ける。

@@ -129,6 +129,8 @@ public static partial class Compose
                     ? previous._visualRevision : checked(previous._visualRevision + 1);
             }
 
+            internal void InvalidateChildVisuals() => InvalidateTransitionCapture();
+
             /// <summary>Revokes capture agreement after a mutable custom drawing change.</summary>
             protected void InvalidateTransitionCapture()
             {

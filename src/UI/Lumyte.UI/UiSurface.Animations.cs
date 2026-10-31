@@ -11,6 +11,7 @@ public sealed partial class UiSurface
     private readonly HashSet<UiAnimationProducer> _animationProducers = [];
     private readonly HashSet<UiAnimationProducer> _visibleAnimationProducers = [];
     private Widget? _animationTreeRoot;
+    private ulong _animationTreeRevision;
     private (Widget Widget, UiAnimationProducer Producer)[] _animationParticipants = [];
     private IMonotonicClock _animationClock = new SystemMonotonicClock();
     private bool _animationUpdatesEnabled = true;
@@ -233,22 +234,24 @@ public sealed partial class UiSurface
 
     private (Widget Widget, UiAnimationProducer Producer)[] AnimationParticipants()
     {
-        if (!ReferenceEquals(_animationTreeRoot, _root))
+        if (!ReferenceEquals(_animationTreeRoot, _root) || _animationTreeRevision != _root.StructureRevision)
         {
             _animationParticipants = _root.CollectSubtree()
                 .SelectMany(widget => (widget.AnimationArguments?.Values ?? []).Select(projection => (widget, projection.Producer))).ToArray();
             _animationTreeRoot = _root;
+            _animationTreeRevision = _root.StructureRevision;
         }
 
         return _animationParticipants;
     }
 
-    private AnimationLease PrepareAnimationArguments(Widget root)
+    private void InheritAnimationArguments(Widget root, Widget? beforeRoot)
     {
-        if (!ReferenceEquals(root, _root))
+        beforeRoot ??= _root;
+        if (!ReferenceEquals(root, beforeRoot))
         {
             var matches = new Dictionary<Widget, Widget>(ReferenceEqualityComparer.Instance);
-            RebuildPlan.Match(_root, root, matches);
+            RebuildPlan.Match(beforeRoot, root, matches);
             foreach ((Widget previous, Widget current) in matches)
             {
                 if (previous.AnimationArguments is not { } before || current.AnimationArguments is not { } after)
@@ -265,8 +268,6 @@ public sealed partial class UiSurface
                 }
             }
         }
-
-        return new(this, root.CollectSubtree().SelectMany(widget => widget.AnimationArguments?.Values ?? []).Distinct().ToArray());
     }
 
     private sealed class AnimationLease : IDisposable

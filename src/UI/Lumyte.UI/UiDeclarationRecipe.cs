@@ -2,11 +2,12 @@ using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
 namespace Lumyte.UI;
 
-internal sealed class UiDeclarationRecipe(Func<object> factory, UiDeclarationRecipe[][] children, bool[] initialized)
+internal sealed class UiDeclarationRecipe(Func<object> factory, UiDeclarationRecipe[][] children, bool[] initialized, UiUseEnvironment? contexts)
 {
     private readonly Func<object> _factory = factory;
     private readonly UiDeclarationRecipe[][] _children = children;
     private readonly bool[] _initialized = initialized;
+    private readonly UiUseEnvironment? _contexts = contexts;
 
     internal static UiDeclarationRecipe? Capture(Widget root)
     {
@@ -26,6 +27,12 @@ internal sealed class UiDeclarationRecipe(Func<object> factory, UiDeclarationRec
                 return null;
             }
 
+            if (node is UiFunctionWidget)
+            {
+                recipes.Add(node, new(create, [Array.Empty<UiDeclarationRecipe>()], [false], node.ProvidedContexts));
+                continue;
+            }
+
             if (!frame.Complete)
             {
                 pending.Push((node, true));
@@ -41,7 +48,7 @@ internal sealed class UiDeclarationRecipe(Func<object> factory, UiDeclarationRec
             }
 
             UiDeclarationRecipe[][] slots = node.ChildCollections.Select(collection => collection.Select(child => recipes[child]).ToArray()).ToArray();
-            recipes.Add(node, new(create, slots, node.ChildCollections.Select(collection => collection.IsInitialized).ToArray()));
+            recipes.Add(node, new(create, slots, node.ChildCollections.Select(collection => collection.IsInitialized).ToArray(), node.ProvidedContexts));
         }
 
         root.DeclarationRecipe = recipes[root];
@@ -96,6 +103,7 @@ internal sealed class UiDeclarationRecipe(Func<object> factory, UiDeclarationRec
         {
             Recipe = recipe;
             Root = recipe._factory() as Widget ?? throw new InvalidOperationException("A widget recipe returned another target type.");
+            Root.ProvidedContexts = recipe._contexts;
             if (Root.ChildCollections.Count != recipe._children.Length)
             {
                 throw new InvalidOperationException("A component changed its child collection registration shape.");

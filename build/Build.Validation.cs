@@ -60,6 +60,7 @@ internal sealed partial class Build
             await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
             await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
             await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore", "--", "--smoke").ConfigureAwait(false);
+            await DotNetAsync("run", "--project", "samples/Lumyte.UI.Functions.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
         });
 
     private Target TestUiApplication => definition => definition
@@ -263,6 +264,7 @@ internal sealed partial class Build
             "samples/Lumyte.Signals.Sample",
             "samples/Lumyte.Composition.Sample", "samples/Lumyte.Resources.Sample", "samples/Lumyte.Diagnostics.Sample",
             "samples/Lumyte.Animation.Sample", "samples/Lumyte.StateMachines.Sample", "samples/Lumyte.Animation.StateMachine.Sample",
+            "samples/Lumyte.UI.Functions.Sample",
         })
         {
             await RunManagedSampleAsync(project).ConfigureAwait(false);
@@ -310,6 +312,8 @@ internal sealed partial class Build
         await ToolAsync(graphics, "--host").ConfigureAwait(false);
         string ui = await PublishAotSampleAsync("samples/Lumyte.UI.Application.Headless.Sample", "ui-application-aot", "Lumyte.UI.Application.Headless.Sample", strict: true).ConfigureAwait(false);
         string navigation = await PublishAotSampleAsync("samples/Lumyte.UI.Navigation.Sample", "ui-navigation-aot", "Lumyte.UI.Navigation.Sample", strict: true).ConfigureAwait(false);
+        string functions = await PublishAotSampleAsync("samples/Lumyte.UI.Functions.Sample", "ui-functions-aot", "Lumyte.UI.Functions.Sample", strict: true).ConfigureAwait(false);
+        await ToolAsync(functions).ConfigureAwait(false);
         string pages = await PublishAotSampleAsync("samples/Lumyte.UI.Pages.Sample", "ui-pages-aot", "Lumyte.UI.Pages.Sample", strict: true).ConfigureAwait(false);
         await ToolAsync(pages).ConfigureAwait(false);
         string transitions = await PublishAotSampleAsync("samples/Lumyte.UI.Transitions.Sample", "ui-transitions-aot", "Lumyte.UI.Transitions.Sample", strict: true).ConfigureAwait(false);

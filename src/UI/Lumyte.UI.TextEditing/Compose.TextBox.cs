@@ -86,6 +86,9 @@ public static partial class Compose
 
             internal bool HasSourceValueChange => (_textPending || _lastDeclaredText != Text) && TextDocument.Normalize(Text) != Document.CaptureSnapshot().CommittedText;
 
+            /// <inheritdoc/>
+            protected override bool SupportsLocalDeclarationValidation => GetType() == typeof(TextBox);
+
             /// <summary>Gets a value indicating whether the editing state can continue captured input.</summary>
             protected override bool RetainsInputOnRebuild => true;
 

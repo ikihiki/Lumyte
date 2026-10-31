@@ -123,40 +123,7 @@ public sealed partial class UiSurface
         return root;
     }
 
-    private SignalBinding? PrepareSignals(Widget root)
-    {
-        Func<bool>[] readers = root.CollectSubtree().SelectMany(widget => widget.SignalArguments).ToArray();
-        SignalReadSet? reads = root.ConstructionReads;
-        if (readers.Length == 0 && (reads is null || reads.IsEmpty))
-        {
-            return null;
-        }
-
-        var recipe = UiDeclarationRecipe.Capture(root);
-        Func<Widget>? build = reads is { IsEmpty: false } ? root.Construction : recipe is not null ? recipe.Build : root.Construction;
-        if (build is null)
-        {
-            throw new InvalidOperationException("Signal declarations need generated composition factories or a surface construction function.");
-        }
-
-        AnimationLease animations = PrepareAnimationArguments(root);
-        var binding = new SignalBinding(this, build, reads, readers, animations);
-        try
-        {
-            foreach (Widget widget in root.CollectSubtree())
-            {
-                widget.InitializeAnimationArguments();
-            }
-
-            binding.Initialize();
-            return binding;
-        }
-        catch
-        {
-            binding.Dispose();
-            throw;
-        }
-    }
+    private SignalBinding? PrepareSignals(Widget root, Widget? previous = null) => SignalBinding.Create(this, root, previous);
 
     private void ProcessSignals(bool explicitUpdate)
     {
@@ -165,6 +132,7 @@ public sealed partial class UiSurface
             return;
         }
 
+        ThrowSignalFailure();
         _updatingSignals = true;
         try
         {
@@ -184,8 +152,14 @@ public sealed partial class UiSurface
             }
 
             SignalBinding? binding = _pendingRebuild is { } pending ? pending.Signals : _signals;
-            if (binding is not null && (binding.Dirty || binding.Effect!.IsPending))
+            if (binding is not null && binding.HasChanges)
             {
+                if (_pendingRebuild is null && binding.AllowsLocalRebuild && !binding.HasRootChanges)
+                {
+                    RebuildFunctions(binding);
+                    return;
+                }
+
                 Widget next = CaptureBuild(binding.Build);
                 if (_isDisposed)
                 {
@@ -213,7 +187,7 @@ public sealed partial class UiSurface
         bool post;
         lock (_signalJobs)
         {
-            if (_isDisposed)
+            if (_isDisposed || _signalFailure is not null)
             {
                 return;
             }
@@ -283,56 +257,5 @@ public sealed partial class UiSurface
             _signalJobs.Clear();
             _signalPosted = false;
         }
-    }
-
-    private sealed class SignalBinding(UiSurface surface, Func<Widget> build, SignalReadSet? reads, Func<bool>[] readers, AnimationLease animations) : ISignalScheduler, IDisposable
-    {
-        private readonly SignalScope _scope = new();
-
-        internal Func<Widget> Build { get; } = build;
-
-        internal SignalEffect? Effect { get; private set; }
-
-        internal bool Dirty { get; private set; }
-
-        internal ulong Revision => Effect?.Revision ?? 0;
-
-        public void Schedule(Action work) => surface.PostSignal(work);
-
-        public void Dispose()
-        {
-            _scope.Dispose();
-            animations.Dispose();
-        }
-
-        internal void Initialize()
-        {
-            _scope.Run(() => Effect = Signal.Effect(
-                () =>
-                {
-                    foreach (Func<bool> reader in readers)
-                    {
-                        Dirty |= reader();
-                    }
-
-                    if (reads is not null)
-                    {
-                        reads.Read();
-                        Dirty |= !reads.IsCurrent;
-                    }
-                },
-                this,
-                error => surface._signalFailure = new UiStateUpdateException(error)));
-        }
-
-        internal void Pause()
-        {
-            if (Effect is { Failure: null } effect)
-            {
-                effect.Pause();
-            }
-        }
-
-        internal void Resume() => Effect?.Resume();
     }
 }
