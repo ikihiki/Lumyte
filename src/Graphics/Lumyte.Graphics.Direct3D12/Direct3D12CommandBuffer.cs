@@ -2,34 +2,106 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed class Direct3D12CommandBuffer : IGraphicsCommandBuffer
+internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandBuffer
 {
+    private readonly ShaderDataTransferState _shaderData = new();
+    private readonly List<IDisposable> _bindings = [];
+    private readonly Direct3D12Device _owner;
+    private object? _active;
+
     internal Direct3D12CommandBuffer(Direct3D12Device owner)
     {
-        Owner = owner;
-        owner.Check(NativeMethods.CommandsCreate(owner.Native, out nint native));
-        Native = native;
+        _owner = owner;
+        Initialize();
     }
 
-    public CommandBufferState State { get; private set; }
+    public CommandBufferState State { get; private set; } = CommandBufferState.Recording;
 
-    internal Direct3D12Device Owner { get; }
+    internal Direct3D12Device Owner => _owner;
 
-    internal nint Native { get; }
+    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
+
+    public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
+        where T : struct, IShaderData
+    {
+        RequireRecording();
+        if (source.Buffer is not Direct3D12ShaderDataBuffer<T> src || destination.Buffer is not Direct3D12ShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
+        {
+            throw new ArgumentException("Shader data copy requires equal ranges from this device.");
+        }
+
+        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+    }
+
+    public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
+        where T : struct, IShaderData
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(barrier);
+        if (barrier.Buffer.Buffer is not Direct3D12ShaderDataBuffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner))
+        {
+            throw new ArgumentException("Shader data barrier belongs to another device.");
+        }
+
+        Barrier(new BufferBarrierDesc<byte> { Buffer = buffer.Storage.SliceElements(checked(barrier.Buffer.Offset * buffer.ShaderElementStrideInBytes), checked(barrier.Buffer.Count * buffer.ShaderElementStrideInBytes)), Before = barrier.Before, After = barrier.After });
+    }
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
         where TDestination : unmanaged
     {
         RequireRecording();
-        Direct3D12Buffer<TSource> src = Own(source);
-        Direct3D12Buffer<TDestination> dst = Own(destination);
-        if ((src.Usage & BufferUsage.CopySource) == 0 || (dst.Usage & BufferUsage.CopyDestination) == 0 || source.SizeInBytes != destination.SizeInBytes || ReferenceEquals(src, dst))
+        Direct3D12Buffer<TSource> src = Buffer(source, BufferUsage.CopySource);
+        Direct3D12Buffer<TDestination> dst = Buffer(destination, BufferUsage.CopyDestination);
+        if (ReferenceEquals(src, dst) || source.SizeInBytes != destination.SizeInBytes || source.OffsetInBytes % src.Layout.CopyOffsetAlignmentInBytes != 0 ||
+            destination.OffsetInBytes % dst.Layout.CopyOffsetAlignmentInBytes != 0 || source.SizeInBytes % src.Layout.CopySizeAlignmentInBytes != 0 || destination.SizeInBytes % dst.Layout.CopySizeAlignmentInBytes != 0)
         {
-            throw new ArgumentException("Copy requires distinct buffers, matching byte lengths and copy usages.");
+            throw new ArgumentException("Invalid GPU copy range, allocation or alignment.");
         }
 
-        NativeMethods.CommandsCopy(Native, src.Native, source.OffsetInBytes, dst.Native, destination.OffsetInBytes, source.SizeInBytes);
+        CopyBufferNative(src, source.OffsetInBytes, dst, destination.OffsetInBytes, source.SizeInBytes);
+    }
+
+    public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination)
+    {
+        RequireRecording();
+        Direct3D12Texture src = Texture(source, TextureUsage.CopySource);
+        Direct3D12Texture dst = Texture(destination, TextureUsage.CopyDestination);
+        if (ReferenceEquals(src, dst) || source.Texture.Format != destination.Texture.Format || source.Width != destination.Width || source.Height != destination.Height || source.ArrayLayerCount != destination.ArrayLayerCount)
+        {
+            throw new ArgumentException("Texture copies require distinct allocations and equal format and extent.");
+        }
+
+        CopyTextureNative(source, destination);
+    }
+
+    public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination)
+    {
+        RequireRecording();
+        Direct3D12Texture texture = Texture(destination, TextureUsage.CopyDestination);
+        ArgumentNullException.ThrowIfNull(source);
+        _ = Buffer(source.Buffer, BufferUsage.CopySource);
+        CommandValidation.Layout(source, destination, _owner.GetTextureCopyLayout(texture.Format));
+        CopyBufferTextureNative(source, destination, true);
+    }
+
+    public void CopyTextureToBuffer(TextureCopyRegion source, BufferTextureCopyLayout destination)
+    {
+        RequireRecording();
+        Direct3D12Texture texture = Texture(source, TextureUsage.CopySource);
+        ArgumentNullException.ThrowIfNull(destination);
+        _ = Buffer(destination.Buffer, BufferUsage.CopyDestination);
+        CommandValidation.Layout(destination, source, _owner.GetTextureCopyLayout(texture.Format));
+        CopyBufferTextureNative(destination, source, false);
+    }
+
+    public void Barrier(MemoryBarrierDesc barrier)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(barrier);
+        CommandValidation.Scope(barrier.Before);
+        CommandValidation.Scope(barrier.After);
+        MemoryBarrierNative(barrier);
     }
 
     public void Barrier<T>(BufferBarrierDesc<T> barrier)
@@ -37,23 +109,104 @@ internal sealed class Direct3D12CommandBuffer : IGraphicsCommandBuffer
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);
-        Direct3D12Buffer<T> buffer = Own(barrier.Buffer);
-        uint before = ResolveState(barrier.Before, buffer.Memory, buffer.Usage);
-        uint after = ResolveState(barrier.After, buffer.Memory, buffer.Usage);
+        Direct3D12Buffer<T> buffer = Buffer(barrier.Buffer, 0);
+        CommandValidation.Scope(barrier.Before);
+        CommandValidation.Scope(barrier.After);
+        CommandValidation.BufferAccess(buffer, barrier.Before);
+        CommandValidation.BufferAccess(buffer, barrier.After);
+        BufferBarrierNative(buffer, barrier);
+    }
 
-        // Legacy D3D12 buffer barriers cover the whole resource, never just a byte range.
-        if (barrier.Buffer.OffsetInBytes != 0 || barrier.Buffer.SizeInBytes != buffer.SizeInBytes)
+    public void Barrier(TextureBarrierDesc barrier)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(barrier);
+        Direct3D12Texture texture = OwnTexture(barrier.Texture);
+        CommandValidation.Range(texture, barrier.Range);
+        CommandValidation.TextureState(texture, barrier.BeforeState, false);
+        CommandValidation.TextureState(texture, barrier.AfterState, true);
+        CommandValidation.Scope(barrier.Before);
+        CommandValidation.Scope(barrier.After);
+        CommandValidation.TextureAccess(barrier.BeforeState, barrier.Before);
+        CommandValidation.TextureAccess(barrier.AfterState, barrier.After);
+        TextureBarrierNative(texture, barrier);
+    }
+
+    public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
+        RenderColorAttachmentDesc[] attachments = desc.ColorAttachments.ToArray();
+        if ((attachments.Length == 0 && desc.DepthStencilAttachment == null) || (uint)attachments.Length > _owner.Caps.MaxColorAttachments)
         {
-            throw new NotSupportedException("Direct3D 12 transfer barriers require the whole buffer.");
+            throw new ArgumentException("Invalid color attachment count.");
         }
 
-        NativeMethods.CommandsBarrier(Native, buffer.Native, before, after);
+        (uint Width, uint Height)? size = null;
+        foreach (RenderColorAttachmentDesc attachment in attachments)
+        {
+            ArgumentNullException.ThrowIfNull(attachment);
+            if (attachment.View is not Direct3D12TextureView view || !ReferenceEquals(view.Owner, _owner))
+            {
+                throw new ArgumentException("Attachment belongs to another device.");
+            }
+
+            _ = view.Native;
+            TextureViewInfo info = view.Info;
+            Direct3D12Texture texture = OwnTexture(view.Texture);
+            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
+            ClearColor clear = attachment.ClearValue;
+            if (info.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 || (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
+                (size is { } expected && expected != (width, height)) ||
+                !Enum.IsDefined(attachment.LoadOp) || !Enum.IsDefined(attachment.StoreOp) || !double.IsFinite(clear.Red) || !double.IsFinite(clear.Green) || !double.IsFinite(clear.Blue) || !double.IsFinite(clear.Alpha))
+            {
+                throw new ArgumentException("Invalid color attachment, operation or dimensions.");
+            }
+
+            size = (width, height);
+        }
+
+        RenderDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
+        if (depth != null)
+        {
+            if (depth.View is not Direct3D12TextureView view || !ReferenceEquals(view.Owner, _owner))
+            {
+                throw new ArgumentException("Depth attachment belongs to another device.");
+            }
+
+            _ = view.Native;
+            TextureViewInfo info = view.Info;
+            Direct3D12Texture texture = OwnTexture(view.Texture);
+            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
+            if (info.Format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8) ||
+                (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
+                (size is { } expected && expected != (width, height)) || !Enum.IsDefined(depth.DepthLoadOp) || !Enum.IsDefined(depth.DepthStoreOp) ||
+                !Enum.IsDefined(depth.StencilLoadOp) || !Enum.IsDefined(depth.StencilStoreOp) || !float.IsFinite(depth.DepthClearValue) ||
+                depth.DepthClearValue < 0 || depth.DepthClearValue > 1 || depth.StencilClearValue > 255)
+            {
+                throw new ArgumentException("Invalid depth/stencil attachment, operation or dimensions.");
+            }
+        }
+
+        IRenderEncoder pass = BeginRenderNative(attachments, depth);
+        _active = pass;
+        return pass;
+    }
+
+    public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(desc);
+        IComputeEncoder pass = BeginComputeNative();
+        _active = pass;
+        return pass;
     }
 
     public void Finish()
     {
         RequireRecording();
-        Owner.Check(NativeMethods.CommandsFinish(Native));
+        FinishNative();
         State = CommandBufferState.Executable;
     }
 
@@ -64,31 +217,38 @@ internal sealed class Direct3D12CommandBuffer : IGraphicsCommandBuffer
             return;
         }
 
-        NativeMethods.CommandsDestroy(Native);
+        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
+        {
+            throw new InvalidOperationException("End the pass before disposal.");
+        }
+
+        _active = null;
+
+        DisposeNative();
+        foreach (IDisposable binding in _bindings)
+        {
+            binding.Dispose();
+        }
+
+        _bindings.Clear();
         State = CommandBufferState.Disposed;
     }
 
-    public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => throw Unsupported();
+    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index);
 
-    public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination) => throw Unsupported();
+    internal void ValidateSubmit()
+    {
+        if (State != CommandBufferState.Executable)
+        {
+            throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
+        }
+    }
 
-    public void CopyTextureToBuffer(TextureCopyRegion source, BufferTextureCopyLayout destination) => throw Unsupported();
-
-    public void Barrier(MemoryBarrierDesc barrier) => throw Unsupported();
-
-    public void Barrier(TextureBarrierDesc barrier) => throw Unsupported();
-
-    public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => throw Unsupported();
-
-    public IComputeEncoder BeginComputePass(ComputePassDesc desc) => throw Unsupported();
-
-    public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData => throw Unsupported();
-
-    public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData => throw Unsupported();
-
-    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
+    internal void MarkSubmitted()
+    {
+        _shaderData.Publish();
+        State = CommandBufferState.Submitted;
+    }
 
     internal void Complete(bool success)
     {
@@ -98,40 +258,16 @@ internal sealed class Direct3D12CommandBuffer : IGraphicsCommandBuffer
         }
     }
 
-    private static uint ResolveState(BarrierScope scope, MemoryPreference memory, BufferUsage usage)
-    {
-        ResourceAccess access = scope.Access;
-        if ((scope.Stages & ~(PipelineStage.Host | PipelineStage.Copy)) != 0 ||
-            (access != ResourceAccess.None && access != ResourceAccess.HostRead && access != ResourceAccess.HostWrite && access != ResourceAccess.CopyRead && access != ResourceAccess.CopyWrite) ||
-            ((access is ResourceAccess.CopyRead or ResourceAccess.CopyWrite) && (scope.Stages & PipelineStage.Copy) == 0) ||
-            ((access is ResourceAccess.HostRead or ResourceAccess.HostWrite) && (scope.Stages & PipelineStage.Host) == 0))
-        {
-            throw new NotSupportedException("Only host and copy buffer scopes are supported.");
-        }
+    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
 
-        if ((access == ResourceAccess.CopyRead && (usage & BufferUsage.CopySource) == 0) ||
-            (access == ResourceAccess.CopyWrite && (usage & BufferUsage.CopyDestination) == 0))
-        {
-            throw new ArgumentException("Barrier access is not allowed by the buffer usage.");
-        }
+    internal void ValidatePass(object pass) => ValidateEnd(pass);
 
-        return memory switch
-        {
-            MemoryPreference.Upload when access is ResourceAccess.None or ResourceAccess.HostWrite or ResourceAccess.CopyRead => 0xAC3,
-            MemoryPreference.Readback when access is ResourceAccess.None or ResourceAccess.HostRead or ResourceAccess.CopyWrite => 0x400,
-            MemoryPreference.Automatic when access == ResourceAccess.None => 0,
-            MemoryPreference.Automatic when access == ResourceAccess.CopyRead => 0x800,
-            MemoryPreference.Automatic when access == ResourceAccess.CopyWrite => 0x400,
-            _ => throw new NotSupportedException("The access is incompatible with the heap's fixed resource state."),
-        };
-    }
-
-    private Direct3D12Buffer<T> Own<T>(BufferSlice<T> slice)
+    internal Direct3D12Buffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
         where T : unmanaged
     {
-        if (slice.Buffer is not Direct3D12Buffer<T> buffer || !ReferenceEquals(buffer.Owner, Owner))
+        if (slice.Buffer is not Direct3D12Buffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner) || (buffer.Usage & usage) != usage)
         {
-            throw new ArgumentException("Buffer belongs to another device.", nameof(slice));
+            throw new ArgumentException("Buffer belongs to another device or lacks required usage.");
         }
 
         buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
@@ -141,17 +277,37 @@ internal sealed class Direct3D12CommandBuffer : IGraphicsCommandBuffer
 
     private void RequireRecording()
     {
-        Owner.RequireReady();
+        _owner.RequireReady();
         ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
-        if (State != CommandBufferState.Recording)
+        if (State != CommandBufferState.Recording || _active != null)
         {
-            throw new InvalidOperationException("Commands must be in Recording state.");
+            throw new InvalidOperationException("Commands require Recording state outside a pass.");
         }
     }
 
-    private NotSupportedException Unsupported()
+    private Direct3D12Texture OwnTexture(IGraphicsTexture resource)
     {
-        RequireRecording();
-        return new("Only buffer copies and explicit whole-buffer barriers are supported.");
+        if (resource is not Direct3D12Texture texture || !ReferenceEquals(texture.Owner, _owner))
+        {
+            throw new ArgumentException("Texture belongs to another device.");
+        }
+
+        _ = texture.Native;
+        return texture;
+    }
+
+    private Direct3D12Texture Texture(TextureCopyRegion region, TextureUsage usage)
+    {
+        CommandValidation.Region(region, usage);
+        return OwnTexture(region.Texture);
+    }
+
+    private void ValidateEnd(object pass)
+    {
+        _owner.RequireReady();
+        if (State != CommandBufferState.Recording || !ReferenceEquals(_active, pass))
+        {
+            throw new InvalidOperationException("This pass is not active.");
+        }
     }
 }

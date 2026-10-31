@@ -1,14 +1,32 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Direct3D12;
+using Lumyte.Graphics.Samples;
 
-if (args.Length != 1 || args[0] is not ("hardware" or "warp"))
+if (args.Length is < 1 or > 3 || args[0] is not ("hardware" or "warp") || args.Skip(1).Any(a => a is not ("suite" or "partial")))
 {
-    Console.Error.WriteLine("Usage: Lumyte.Graphics.Direct3D12.Sample hardware|warp");
+    Console.Error.WriteLine("Usage: Lumyte.Graphics.Direct3D12.Sample hardware|warp [suite] [partial]");
     return 1;
 }
 
-using var owner = Direct3D12Device.Create(new() { UseWarp = args[0] == "warp" });
+using var owner = Direct3D12Device.Create(new() { UseWarp = args[0] == "warp", EnablePartialGraphicsPrograms = args.Contains("partial") });
 IGraphicDevice device = owner;
+if (args.Contains("suite"))
+{
+    Console.WriteLine(await BufferExercise.RunAsync(device));
+    Console.WriteLine(TextureExercise.Run(device));
+    Console.WriteLine(SamplerExercise.Run(device));
+    Console.WriteLine(ArgumentTableExercise.Run(device));
+    Console.WriteLine(ShaderExercise.Run(device));
+    Console.WriteLine(await CommandExercise.RunAsync(device));
+    Console.WriteLine(await PipelineExercise.RunAsync(device));
+    Console.WriteLine(await ShaderBindingExercise.RunAsync(device));
+    Console.WriteLine(await AdvancedCommandExercise.RunAsync(device));
+    Console.WriteLine(await SemaphoreExercise.RunAsync(device));
+    Console.WriteLine(await RenderGraphExercise.RunAsync(device));
+    Console.WriteLine($"PASS: Agility SDK {owner.SdkVersion}, partial programs: {owner.PartialGraphicsProgramsEnabled}.");
+    return 0;
+}
+
 using IGraphicsBuffer<byte> upload = device.CreateBuffer(new BufferDesc<byte> { Count = 4100, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
 using IGraphicsBuffer<byte> gpu = device.CreateBuffer(new BufferDesc<byte> { Count = 4100, Usage = BufferUsage.CopySource | BufferUsage.CopyDestination });
 using IGraphicsBuffer<byte> readback = device.CreateBuffer(new BufferDesc<byte> { Count = 4100, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });

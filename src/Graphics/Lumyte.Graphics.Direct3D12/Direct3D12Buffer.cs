@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>
+internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     where T : unmanaged
 {
     private readonly nint _native;
@@ -12,7 +12,7 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>
     internal Direct3D12Buffer(Direct3D12Device owner, BufferDesc<T> desc, BufferLayout<T> layout, ulong size)
     {
         (Owner, Layout, Count, SizeInBytes, Usage, Memory) = (owner, layout, desc.Count, size, desc.Usage, desc.Memory);
-        owner.Check(NativeMethods.BufferCreate(owner.Native, size, Memory == MemoryPreference.Upload ? 1 : Memory == MemoryPreference.Readback ? 2 : 0, out _native));
+        owner.Check(NativeMethods.BufferCreate(owner.Native, size, Memory == MemoryPreference.Upload ? 1 : Memory == MemoryPreference.Readback ? 2 : 0, (Usage & BufferUsage.ShaderWrite) != 0 ? 1 : 0, out _native));
     }
 
     public BufferLayout<T> Layout { get; }
@@ -26,6 +26,8 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>
     public MemoryPreference Memory { get; }
 
     public bool IsMapped => _pointer != 0;
+
+    public object ShaderHandle => Native;
 
     internal Direct3D12Device Owner { get; }
 

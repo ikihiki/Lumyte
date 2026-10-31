@@ -1,21 +1,21 @@
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-/// <summary>Owns a Direct3D 12 device and direct queue for explicit buffer transfers.</summary>
+/// <summary>Owns a Direct3D 12 device and direct queue.</summary>
 public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 {
     private readonly GraphicsDeviceLifetime _lifetime;
     private readonly nint _native;
 
-    private Direct3D12Device(nint native)
+    private Direct3D12Device(nint native, bool partial)
     {
         _native = native;
         _lifetime = new(this);
         Queue = new Direct3D12Queue(this);
         SdkVersion = NativeMethods.DeviceSdkVersion(native);
+        PartialGraphicsProgramsEnabled = partial;
     }
 
     /// <inheritdoc />
@@ -37,6 +37,21 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         ShaderTarget = ShaderTarget.Dxil,
         MaxBufferSize = 128 * 1024 * 1024,
         CopyBytesPerRowAlignment = 256,
+        MaxStorageBufferBindingSize = 128 * 1024 * 1024,
+        MaxTextureDimension2D = 16384,
+        MaxTextureArrayLayers = 2048,
+        MaxColorAttachments = 8,
+        MaxSampledTexturesPerStage = 128,
+        MaxSamplersPerStage = 16,
+        MaxSamplerAnisotropy = 16,
+        MaxUniformBuffersPerStage = 1,
+        MaxStorageBuffersPerStage = 64,
+        MaxComputeInvocationsPerWorkgroup = 1024,
+        MaxComputeWorkgroupsPerDimension = 65535,
+        MaxComputeWorkgroupSizeX = 1024,
+        MaxComputeWorkgroupSizeY = 1024,
+        MaxComputeWorkgroupSizeZ = 64,
+        Features = GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering | GraphicsFeatures.DepthBiasClamp,
     };
 
     /// <inheritdoc />
@@ -44,6 +59,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
     /// <summary>Gets the Agility SDK version queried from the created native device.</summary>
     public uint SdkVersion { get; }
+
+    /// <summary>Gets a value indicating whether Preview partial programs were requested and validated on the selected driver.</summary>
+    public bool PartialGraphicsProgramsEnabled { get; }
 
     internal nint Native
     {
@@ -76,7 +94,12 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new FileNotFoundException("The pinned Agility SDK runtime is missing from the application output.", Path.Combine(sdkPath, "D3D12Core.dll"));
         }
 
-        int result = NativeMethods.DeviceCreate(desc.AdapterIndex, desc.UseWarp ? 1 : 0, desc.EnableDebugLayer ? 1 : 0, sdkPath, out nint native);
+        int result = NativeMethods.DeviceCreate(desc.AdapterIndex, desc.UseWarp ? 1 : 0, desc.EnableDebugLayer ? 1 : 0, desc.EnablePartialGraphicsPrograms ? 1 : 0, sdkPath, out nint native);
+        if (desc.EnablePartialGraphicsPrograms && result == unchecked((int)0x887A0004))
+        {
+            throw new NotSupportedException("Partial Graphics Programs require the Preview SDK, its state-object experiment, and a supporting driver.");
+        }
+
         if (result == unchecked((int)0x887E0003))
         {
             throw new InvalidOperationException("The selected Agility SDK could not be loaded. Verify the runtime deployed in AgilitySDK; preview builds also require Windows Developer Mode.", Marshal.GetExceptionForHR(result));
@@ -85,7 +108,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         Marshal.ThrowExceptionForHR(result);
         try
         {
-            return new(native);
+            return new(native, desc.EnablePartialGraphicsPrograms);
         }
         catch
         {
@@ -110,17 +133,17 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         ArgumentNullException.ThrowIfNull(desc);
         BufferLayout<T> layout = GetBufferLayout<T>();
         ulong size = layout.GetSizeInBytes(desc.Count);
-        const BufferUsage Supported = BufferUsage.CopySource | BufferUsage.CopyDestination;
+        const BufferUsage Supported = BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.Index | BufferUsage.Indirect;
         if (size == 0 || size > Caps.MaxBufferSize || desc.Usage == 0 || !Enum.IsDefined(desc.Memory))
         {
             throw new ArgumentException("Invalid buffer size, usage or memory preference.", nameof(desc));
         }
 
         if ((desc.Usage & ~Supported) != 0 ||
-            (desc.Memory == MemoryPreference.Upload && desc.Usage != BufferUsage.CopySource) ||
+            (desc.Memory == MemoryPreference.Upload && (desc.Usage & (BufferUsage.ShaderWrite | BufferUsage.CopyDestination)) != 0) ||
             (desc.Memory == MemoryPreference.Readback && desc.Usage != BufferUsage.CopyDestination))
         {
-            throw new NotSupportedException("This backend supports transfer buffers; Upload is copy-source only and Readback is copy-destination only.");
+            throw new NotSupportedException("Buffer usage is incompatible with the selected heap.");
         }
 
         return new Direct3D12Buffer<T>(this, desc, layout, size);
@@ -162,32 +185,97 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
-    public IGraphicsTexture CreateTexture(TextureDesc desc) => throw Unsupported();
+    public IGraphicsTexture CreateTexture(TextureDesc desc)
+    {
+        RequireReady();
+        TextureValidation.Validate(desc, Caps);
+        return new Direct3D12Texture(this, desc);
+    }
 
     /// <inheritdoc />
-    public IGraphicsSampler CreateSampler(SamplerDesc desc) => throw Unsupported();
+    public IGraphicsSampler CreateSampler(SamplerDesc desc)
+    {
+        RequireReady();
+        SamplerValidation.Validate(desc, Caps);
+        return new Direct3D12Sampler(this, desc);
+    }
 
     /// <inheritdoc />
-    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw Unsupported();
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
+    {
+        RequireReady();
+        ArgumentNullException.ThrowIfNull(desc);
+        return new Direct3D12ArgumentTable(this, desc);
+    }
 
     /// <inheritdoc />
-    public IGraphicsShader CreateShader(ShaderArtifact artifact) => throw Unsupported();
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        RequireReady();
+        ArgumentNullException.ThrowIfNull(artifact);
+        return new Direct3D12Shader(this, artifact);
+    }
 
     /// <inheritdoc />
-    public IGraphicsSemaphore CreateSemaphore() => throw Unsupported();
+    public IGraphicsSemaphore CreateSemaphore()
+    {
+        RequireReady();
+        return new Direct3D12Semaphore(this);
+    }
 
     /// <inheritdoc />
-    public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw Unsupported();
+    public TextureCopyLayout GetTextureCopyLayout(TextureFormat format)
+    {
+        RequireReady();
+        uint bytes = format switch
+        {
+            TextureFormat.R8Unorm => 1,
+            TextureFormat.Rg8Unorm or TextureFormat.R16Float => 2,
+            TextureFormat.Rgba16Float => 8,
+            TextureFormat.Rgba8Unorm or TextureFormat.Rgba8Srgb or TextureFormat.Bgra8Unorm or TextureFormat.Bgra8Srgb or TextureFormat.Rg16Float or TextureFormat.Rgb10A2Unorm => 4,
+            _ => throw new NotSupportedException("Only color texture copies are supported."),
+        };
+        return new() { BytesPerTexel = bytes, BytesPerRowAlignment = 256, BufferOffsetAlignmentInBytes = 512 };
+    }
 
     /// <inheritdoc />
-    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw Unsupported();
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        RequireReady();
+        ArgumentNullException.ThrowIfNull(desc);
+        return new Direct3D12GraphicsPipeline(this, desc);
+    }
 
     /// <inheritdoc />
-    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw Unsupported();
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
+    {
+        RequireReady();
+        ArgumentNullException.ThrowIfNull(desc);
+        return new Direct3D12ComputePipeline(this, desc);
+    }
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData => throw Unsupported();
+        where T : struct, IShaderData
+    {
+        RequireReady();
+        ArgumentNullException.ThrowIfNull(artifact);
+        return new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
+    }
+
+    /// <summary>Creates a surface borrowing a valid HWND; the caller owns the window and its message loop.</summary>
+    /// <param name="window">An existing Win32 window handle.</param>
+    /// <returns>An independently owned graphics surface.</returns>
+    public IGraphicsSurface CreateSurface(nint window)
+    {
+        RequireReady();
+        if (NativeMethods.WindowValid(window) == 0)
+        {
+            throw new ArgumentException("A valid HWND is required.", nameof(window));
+        }
+
+        return new Direct3D12Surface(this, window);
+    }
 
     internal void RequireReady()
     {
@@ -212,11 +300,5 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         }
 
         Marshal.ThrowExceptionForHR(result);
-    }
-
-    private NotSupportedException Unsupported()
-    {
-        RequireReady();
-        return new("The Direct3D 12 backend currently supports device creation and buffer transfers only.");
     }
 }

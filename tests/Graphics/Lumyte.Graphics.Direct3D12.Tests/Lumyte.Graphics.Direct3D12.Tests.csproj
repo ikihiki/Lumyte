@@ -7,6 +7,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <AssemblyMetadata Include="AgilitySdkVersion" Value="$(LumyteAgilitySdkVersion)" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Direct3D12/Lumyte.Graphics.Direct3D12.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Shaders/Lumyte.Graphics.Shaders.csproj" />

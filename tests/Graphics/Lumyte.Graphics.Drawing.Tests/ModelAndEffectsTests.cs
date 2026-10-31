@@ -25,7 +25,7 @@ public sealed class ModelAndEffectsTests
             LightDirection = Vector3.UnitZ,
             LightColor = Vector3.One,
         };
-        foreach (ShaderTarget target in new[] { ShaderTarget.Wgsl, ShaderTarget.SpirV })
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
             ModelVertex.ValidateShaderLayout(DrawingShaders.LoadModelVertex(), target);
             ModelVertex.ValidateShaderLayout(DrawingShaders.LoadModelFragment(), target);
@@ -56,7 +56,7 @@ public sealed class ModelAndEffectsTests
     [Fact]
     public void ChangedVertexAbiIsRejected()
     {
-        foreach (ShaderTarget target in new[] { ShaderTarget.Wgsl, ShaderTarget.SpirV })
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
             ShaderTargetData data = DrawingShaders.LoadModelVertex().GetTarget(target);
             JsonNode reflection = JsonNode.Parse(data.ReflectionJson)!;

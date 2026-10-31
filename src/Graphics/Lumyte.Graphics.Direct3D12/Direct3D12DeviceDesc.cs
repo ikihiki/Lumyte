@@ -11,4 +11,7 @@ public sealed record Direct3D12DeviceDesc
 
     /// <summary>Gets a value indicating whether to enable the bundled Agility debug layer and DXGI debugging.</summary>
     public bool EnableDebugLayer { get; init; }
+
+    /// <summary>Gets a value indicating whether requires Preview Partial Graphics Programs and a supporting driver; unsupported devices are rejected.</summary>
+    public bool EnablePartialGraphicsPrograms { get; init; }
 }

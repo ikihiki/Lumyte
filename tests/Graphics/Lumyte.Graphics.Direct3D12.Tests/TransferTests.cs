@@ -83,7 +83,7 @@ public sealed class TransferTests
         Assert.Throws<ArgumentOutOfRangeException>(() => upload.SliceElements(299, 2));
         Assert.Throws<ArgumentException>(() => command.CopyBuffer(upload.SliceElements(0, 2), readback.SliceElements(0, 3)));
         Assert.Throws<ArgumentException>(() => command.CopyBuffer(readback.SliceElements(0, 3), gpu.SliceElements(0, 3)));
-        Assert.Throws<NotSupportedException>(() => command.Barrier(new BufferBarrierDesc<byte> { Buffer = gpu.SliceElements(1, 2), Before = new(PipelineStage.None, ResourceAccess.None), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) }));
+        command.Barrier(new BufferBarrierDesc<byte> { Buffer = gpu.SliceElements(1, 2), Before = new(PipelineStage.None, ResourceAccess.None), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
         command.Finish();
         Assert.Throws<ArgumentException>(() => device.Queue.Submit([command, command]));
         Assert.Equal(CommandBufferState.Executable, command.State);
@@ -110,7 +110,7 @@ public sealed class TransferTests
         using IGraphicsCommandBuffer command = first.CreateCommandBuffer(new());
         Assert.Throws<ArgumentException>(() => command.CopyBuffer(source.SliceElements(0, 1), destination.SliceElements(0, 1)));
         Assert.Throws<ArgumentException>(() => first.CreateBuffer(new BufferDesc<byte> { Count = 0, Usage = BufferUsage.CopySource }));
-        Assert.Throws<NotSupportedException>(() => first.CreateBuffer(new BufferDesc<byte> { Count = 1, Usage = BufferUsage.ShaderWrite }));
+        using IGraphicsBuffer<uint> storage = first.CreateBuffer(new BufferDesc<uint> { Count = 1, Usage = BufferUsage.ShaderWrite });
         Assert.Throws<NotSupportedException>(() => first.CreateBuffer(new BufferDesc<byte> { Count = 1, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Upload }));
         command.Finish();
         Assert.Throws<ArgumentException>(() => second.Queue.Submit([command]));

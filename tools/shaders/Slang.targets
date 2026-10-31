@@ -37,9 +37,9 @@
           writer.Write(EntryPoint);
           writer.Write(CompilerVersion);
           writer.Write("row-major");
-          writer.Write(2u);
-          string[] suffixes = { "wgsl", "spv" };
-          for (uint target = 0; target < 2; target++) {
+          writer.Write(3u);
+          string[] suffixes = { "wgsl", "spv", "dxil" };
+          for (uint target = 0; target < 3; target++) {
             byte[] code = File.ReadAllBytes(Prefix + "." + suffixes[target]);
             writer.Write(target);
             writer.Write(code.Length);
@@ -72,7 +72,7 @@
       <Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         string source = File.ReadAllText(Input);
-        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;");
+        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
         if (source.Contains("lumyte.slang")) {
           var probes = new StringBuilder();
           foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{")) {
@@ -99,6 +99,7 @@
     <PrepareSlangSource Input="%(SlangShader.FullPath)" Output="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang" />
     <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target wgsl -DLUMYTE_WGSL=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl&quot;" />
     <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target spirv -DLUMYTE_SPIRV=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv&quot;" />
+    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target dxil -profile sm_6_6 -DLUMYTE_DXIL=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).dxil.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).dxil&quot;" />
     <PackSlangBinary Prefix="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName)"
                      EntryPoint="%(SlangShader.EntryPoint)" Stage="%(SlangShader.Stage)"
                      CompilerVersion="@(_SlangCompilerVersion, ' ')" />
@@ -114,7 +115,7 @@
         <LogicalName>%(_SlangBinaries.Filename)%(_SlangBinaries.Extension)</LogicalName>
         <WithCulture>false</WithCulture>
       </EmbeddedResource>
-      <FileWrites Include="@(_SlangBinaries);@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv.reflection.json')" />
+      <FileWrites Include="@(_SlangBinaries);@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).dxil');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).dxil.reflection.json')" />
     </ItemGroup>
   </Target>
 </Project>

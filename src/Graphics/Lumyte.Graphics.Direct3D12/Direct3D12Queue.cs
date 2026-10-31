@@ -13,12 +13,41 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
-        if (desc.WaitSemaphores.Count != 0 || desc.SignalSemaphores.Count != 0)
+        var semaphores = new HashSet<Direct3D12Semaphore>();
+        Direct3D12Semaphore Own(IGraphicsSemaphore value)
         {
-            throw new NotSupportedException("GPU semaphore submissions are not implemented.");
+            if (value is not Direct3D12Semaphore s || !ReferenceEquals(s.Owner, owner) || !semaphores.Add(s))
+            {
+                throw new ArgumentException("Each semaphore must be unique and belong to this device.");
+            }
+
+            _ = s.Native;
+            return s;
         }
 
-        if (desc.CommandBuffers.Count == 0)
+        Direct3D12Semaphore[] waits = desc.WaitSemaphores.Select(w =>
+        {
+            ArgumentNullException.ThrowIfNull(w);
+            if (w.Stages == PipelineStage.None || (w.Stages & ~PipelineStage.AllCommands) != 0)
+            {
+                throw new ArgumentException("Semaphore waits require nonempty GPU stages.");
+            }
+
+            CommandValidation.Scope(new(w.Stages, ResourceAccess.None));
+            return Own(w.Semaphore);
+        }).ToArray();
+        Direct3D12Semaphore[] signals = desc.SignalSemaphores.Select(Own).ToArray();
+        foreach (Direct3D12Semaphore wait in waits)
+        {
+            wait.ValidateWait();
+        }
+
+        foreach (Direct3D12Semaphore signal in signals)
+        {
+            signal.ValidateSignal();
+        }
+
+        if (desc.CommandBuffers.Count == 0 && waits.Length == 0 && signals.Length == 0)
         {
             throw new ArgumentException("At least one command buffer is required.", nameof(desc));
         }
@@ -41,14 +70,27 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
         var submission = new Direct3D12Submission(owner, commands, fence);
         try
         {
-            fixed (nint* data = handles)
+            foreach (Direct3D12Semaphore wait in waits)
             {
-                owner.Check(NativeMethods.CommandsExecute(owner.Native, data, (uint)handles.Length));
+                wait.Wait();
+            }
+
+            if (handles.Length != 0)
+            {
+                fixed (nint* data = handles)
+                {
+                    owner.Check(NativeMethods.CommandsExecute(owner.Native, data, (uint)handles.Length));
+                }
             }
 
             foreach (Direct3D12CommandBuffer command in commands)
             {
                 command.MarkSubmitted();
+            }
+
+            foreach (Direct3D12Semaphore signal in signals)
+            {
+                signal.Signal();
             }
 
             owner.Check(NativeMethods.QueueSignal(owner.Native, fence));

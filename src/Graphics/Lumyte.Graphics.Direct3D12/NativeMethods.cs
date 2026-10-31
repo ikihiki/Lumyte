@@ -7,7 +7,7 @@ internal static partial class NativeMethods
     private const string Library = "lumyte_graphics_d3d12";
 
     [LibraryImport(Library, EntryPoint = "device_create", StringMarshalling = StringMarshalling.Utf8)]
-    internal static partial int DeviceCreate(uint adapter, int warp, int debug, string sdkPath, out nint device);
+    internal static partial int DeviceCreate(uint adapter, int warp, int debug, int partial, string sdkPath, out nint device);
 
     [LibraryImport(Library, EntryPoint = "device_sdk_version")]
     internal static partial uint DeviceSdkVersion(nint device);
@@ -22,7 +22,7 @@ internal static partial class NativeMethods
     internal static partial void Release(nint handle);
 
     [LibraryImport(Library, EntryPoint = "buffer_create")]
-    internal static partial int BufferCreate(nint device, ulong size, int memory, out nint buffer);
+    internal static partial int BufferCreate(nint device, ulong size, int memory, int writable, out nint buffer);
 
     [LibraryImport(Library, EntryPoint = "buffer_map")]
     internal static partial int BufferMap(nint buffer, ulong size, int read, out nint pointer);
@@ -42,9 +42,6 @@ internal static partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "commands_copy")]
     internal static partial void CommandsCopy(nint commands, nint source, ulong sourceOffset, nint destination, ulong destinationOffset, ulong size);
 
-    [LibraryImport(Library, EntryPoint = "commands_barrier")]
-    internal static partial void CommandsBarrier(nint commands, nint buffer, uint before, uint after);
-
     [LibraryImport(Library, EntryPoint = "fence_create")]
     internal static partial int FenceCreate(nint device, out nint fence);
 
@@ -56,4 +53,10 @@ internal static partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "fence_completed")]
     internal static partial ulong FenceCompleted(nint fence);
+
+    [LibraryImport(Library, EntryPoint = "queue_signal_value")]
+    internal static partial int QueueSignalValue(nint device, nint fence, ulong value);
+
+    [LibraryImport(Library, EntryPoint = "queue_wait_value")]
+    internal static partial int QueueWaitValue(nint device, nint fence, ulong value);
 }

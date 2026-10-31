@@ -1,6 +1,6 @@
 # Lumyte.Graphics.Direct3D12
 
-Windows の Direct3D 12 デバイスとバッファ転送バックエンドです。
+Windows の Direct3D 12 グラフィックスバックエンドです。
 C# の `Direct3D12Device` が `IGraphicDevice` を直接実装し、C++ の小さな C ABI を通じて
 Agility SDK の Direct3D 12 と Windows SDK の DXGI を使用します。外部 binding package は不要です。
 
@@ -48,53 +48,126 @@ IGraphicDevice device = owner;
 
 `AdapterIndex` は DXGI の列挙 index です。既定は hardware の index 0 で、software adapter を拒否します。
 `UseWarp = true` は WARP を明示選択し、hardware index との同時指定は拒否します。
-fallback は行いません。feature level 11.0 以上の D3D12 device と direct queue を生成します。
+fallback は行いません。feature level 11.0 以上と Enhanced Barriers を要求し、direct queue を生成します。
 `EnableDebugLayer` は同梱 SDK Layers と DXGI debug 機能を要求し、利用できなければ生成に失敗します。
 
 ## 対応範囲
 
-- 型付き transfer buffer、Upload／Default／Readback heap、明示的 Map／Unmap。
-- byte 単位の buffer copy、whole-buffer の明示的 transition barrier。
-- one-shot command list、複数 list の一括提出、fence の状態照会とキャンセル可能な待機。
-- HRESULT と fence から観測した device loss の通知。
+Vulkan と同じ `IGraphicDevice`／command／encoder API を実装します。
 
-texture、shader、pipeline、描画、swapchain、semaphore、global barrier は未実装で
-`NotSupportedException` を返します。`Dxil` はバックエンドの対象形式を表し、shader compile 対応を意味しません。
-Caps の未対応用途は 0、buffer の実装上限は D3D12 の保証範囲内の 128 MiB に制限しています。
-copy offset／size alignment は 1。Count と stride を丸めません。
+| 機能 | Direct3D 12 実装 |
+| --- | --- |
+| Buffer | Default／Upload／Readback、型付き・shader data、map、copy、Index／Indirect／SRV／UAV |
+| Texture | 2D、mip、array、color 10 形式、Depth32Float／Depth24Stencil8、view、明示的 copy |
+| Sampler／Argument Table | 論理 slot と参照、draw／dispatch ごとの immutable descriptor heap |
+| Shader | Slang DXIL SM 6.6、root 定数、参照を含む shader data、オンライン／オフライン共通 ABI |
+| Graphics | clear／load／store、depth／stencil、blend、viewport／scissor、indexed／indirect draw |
+| Compute | root 引数、dispatch／indirect dispatch、GPU 書き込み |
+| Synchronization | Enhanced global／buffer range／texture subresource barrier、binary semaphore、submission fence |
+| Presentation | 借用 HWND、DXGI flip-discard、acquire／present／resize、frame lease |
 
-Upload は CopySource 専用で GENERIC_READ、Readback は CopyDestination 専用で COPY_DEST に固定します。
-Default は COMMON から開始します。barrier は None／CopyRead／CopyWrite と、対応 heap の HostRead／HostWrite を扱います。
-legacy buffer barrier は resource 全体へ作用するため、部分 range は拒否します。
-buffer copy の前後状態は利用者が明示します。D3D12 の buffer state decay に従い、
-ExecuteCommandLists 完了後の Default buffer は COMMON として次の提出を記録してください。
-同じ提出の list は一度の ExecuteCommandLists にまとめます。
+buffer の実装上限は 128 MiB、copy offset／size alignment は 1 です。Count と stride は丸めません。
+texture buffer copy は offset 512 byte、row pitch 256 byte alignment を要求します。
+array copy は各 layer の先頭も 512 byte alignment を満たす必要があります。
+color format は RGBA8／BGRA8 Unorm・sRGB、R8／RG8 Unorm、R16／RG16／RGBA16 Float、RGB10A2 Unorm。
+depth/stencil は attachment 用途のみ、sample count は 1 です。
+
+Shader root signature は Resource Binding Tier 2 以上と SM 6.6 を要求します。
+texture 128 slot、sampler 16 slot、buffer 64 slot を設けます。参照は 16 byte の slot／byte offset／count／reserved です。
+DXIL の root は `b8, space0`、texture は `t0, space0`、sampler は `s0, space0`、
+raw SRV／UAV buffer は `t0/u0, space1`。shader data の stride は Slang の natural layout、
+root は constant-buffer layout を reflection から取得し、同じレイアウトだと仮定しません。
+GPU へ渡す root と descriptor は command が保持し、以降の SetArguments や table 変更で書き換えません。
+GPU 書き込み buffer は UAV を作成し、readonly buffer は SRV を使用します。
+helper の texture sampling は単一 layer の Texture2D のみです。array／cube view は作成できますが、helper への binding は拒否します。
+
+## PSO と Preview の分離
+
+共通 API の shader program と draw state の分離は両 channel で使用できます。
+既定では完全な native PSO を state／attachment format ごとに生成して cache します。
+viewport、scissor、blend constant、stencil reference と resource の内容は cache key に含めません。
+
+Preview で native の Partial Graphics Programs を使う場合は明示します。
+
+```csharp
+using var device = Direct3D12Device.Create(new()
+{
+    EnablePartialGraphicsPrograms = true,
+    EnableDebugLayer = true,
+});
+Console.WriteLine(device.PartialGraphicsProgramsEnabled);
+```
+
+この指定は Preview SDK、Windows 開発者モード、state-object experiment、対応ドライバーを必要とします。
+Device Factory に対して experiment を有効にし、`D3D12_FEATURE_PARTIAL_GRAPHICS_PROGRAMS` の Tier 1.0 以上を確認します。
+Stable や非対応ドライバーへの自動 fallback はありません。通常の PSO を使用する場合は指定を false にします。
+
+program 作成時に VS／PS を合わせた partial collection を生成し、draw 時に rasterizer／blend／depth／attachment 等を link します。
+`PreferReuse` は `PREFER_MINIMAL_LINK`、`FullSpecialization` は `FULL_SPECIALIZATION` を executable state object に指定します。
+background specialization は起動しません。通常 PSO 経路ではこの最適化 hint に対応する native 制御がなく、両値で同じ cache 方針です。
+link 結果も program とともに保持して等価な state で再利用します。現在の環境ではドライバー制約により Preview の実行ができないため、
+link コストと cache 比較は未測定です。初回 link 時間・native shader 再コンパイル回数・性能改善を保証しません。
+
+- [Partial Graphics Programs の仕様](https://microsoft.github.io/DirectX-Specs/d3d/PartialGraphicsPrograms.html)
+- [共通の program／draw state 契約](../../../docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)
+
+## 提出・寿命
+
+Upload は GPU read 用途、Readback は CopyDestination 専用です。buffer barrier は範囲を指定でき、
+Enhanced Barriers の access／sync として記録します。legacy resource state decay をアプリ側で追跡する必要はありません。
+texture の layout、access、subresource は利用側が指定します。Undefined からの遷移は内容を破棄します。
+同じ提出の list は一度の ExecuteCommandLists にまとめます。semaphore の待機は指定 stage を含む queue 全体を待ち、
+binary signal の消費を native fence の値に対応付けます。未 signal の wait、二重 signal、同一提出の重複 semaphore は拒否します。
 
 Map は GPU を待ちません。Readback は明示的な submission 完了後に読んでください。
-WaitAsync は fence を非 blocking に照会し、1 ms 間隔で非同期に待機します。
-キャンセルは待機のみを取り消します。Dispose は待機・生存走査を行いません。
-利用者が GPU 使用完了を保証し、submission／command／buffer を device より先に解放します。
-同時操作の同期と記録した native resource の寿命も利用者の責任です。
-Signal が提出後に失敗した場合は command を Faulted とし、再提出を禁止します。
-device loss 後の解放は `WaitForRetirementAsync` で native removal を確認してから行います。
+WaitAsync は fence を非 blocking に照会し、1 ms 間隔で非同期に待機します。キャンセルは待機のみを取り消します。
+Dispose は GPU 待機・依存 resource の生存走査を行いません。利用者が GPU 使用完了と並行操作の同期を保証し、
+submission／command／pipeline／resource を device より先に解放してください。
+提出後の signal 失敗では command を Faulted にし、再提出を禁止します。
+device loss 後は `WaitForRetirementAsync` で native removal を確認してから解放します。
+
+## HWND と画面表示
+
+```csharp
+using IGraphicsSurface surface = device.CreateSurface(hwnd);
+using IGraphicsSwapchain swapchain = surface.CreateSwapchain(new()
+{
+    Width = 640,
+    Height = 480,
+    Format = TextureFormat.Bgra8Unorm,
+});
+```
+
+window の作成、message loop、寿命はアプリが管理します。surface は HWND を破棄しません。
+Fifo を使用でき、DXGI tearing 対応時に Immediate も使用できます。alpha は Auto／Opaque、format は
+RGBA8／BGRA8 Unorm、RGBA16 Float、RGB10A2 Unorm に限定します。要求値の暗黙の変更はしません。
+各 swapchain は一度に一つの frame lease を貸し出します。GPU 提出と present に渡す semaphore は利用側が明示します。
+frame の texture は借用で、texture 単独の Dispose は拒否します。
+WaitForReleaseAsync は present 後の queue fence を待ち、display scanout の完了を意味しません。
+GPU 使用完了と release 待機の後に frame／view を破棄してから再取得・resize してください。
+未提出 frame の破棄も可能です。HWND の失効、device removal、DXGI の失敗は例外として通知します。
 
 ## ビルドと検証
 
-開発環境を有効化した native Windows PowerShell から実行します。
-MSBuild hook は復元済み SDK を `--agility-sdk-root` で Fallout の `Direct3D12Native` leaf target に渡し、CMake／Ninja／MSVC で DLL を生成します。
-native DLL は出力と publish へコピーし、pack は現在の SDK host RID のみを含めます。
-Linux では managed assembly のコンパイルのみ可能で、device 作成は拒否し、pack の対象から外します。
+開発環境を有効化した native Windows PowerShell で実行します。
+MSBuild hook が復元済み SDK を Fallout の Direct3D12Native target に渡し、CMake／Ninja／MSVC で DLL を生成します。
+pack は現在の Windows SDK host RID のみを含みます。Linux は managed assembly のコンパイルのみで、device 生成・pack は非対応です。
 
 ```powershell
-dotnet run --project build -c Release -- --target Compile --project samples/Lumyte.Graphics.Direct3D12.Sample
-dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- warp
-dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- hardware
+# GPU を起動しない検証。Preview でも同様に実行可能。
+$env:LUMYTE_GRAPHICS_GPU_TESTS = '0'
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --agility-channel Stable
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --agility-channel Preview
+
+# 対応環境でのみ有効化する GPU 検証。
 $env:LUMYTE_GRAPHICS_GPU_TESTS = '1'
-dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --agility-channel Stable
+# Preview の partial program テストは別途明示する。
+$env:LUMYTE_D3D12_PARTIAL_TESTS = '1'
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --agility-channel Preview
 ```
 
-GPU テストは既存バックエンドと同じ `LUMYTE_GRAPHICS_GPU_TESTS=1` で明示的に有効化します。
-未指定または Windows 以外では native GPU テストをスキップし、開発者モードを自動変更しません。
-
-Microsoft の [heap の初期状態](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device-createcommittedresource)と
-[readback と fence の同期](https://learn.microsoft.com/en-us/windows/win32/direct3d12/readback-data-using-heaps)に従います。
+GPU を使わないテストは DXIL container、helper の binding、natural／constant-buffer layout、オンライン／オフライン一致、
+stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
+今回の拡張は現環境のドライバー制約を考慮して GPU 実行を行っていません。両 channel のビルドと CPU テストの結果と、
+実 GPU／WARP での描画・compute・presentation／partial program の実行検証を区別してください。

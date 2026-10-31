@@ -9,6 +9,7 @@
     <IsPackable Condition="!$([MSBuild]::IsOSPlatform('Windows'))">false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="Lumyte.Graphics.Shared" />
     <PackageReference Include="Microsoft.Direct3D.D3D12" Version="$(LumyteAgilityPackageVersion)" GeneratePathProperty="true" PrivateAssets="all" IncludeAssets="none" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
