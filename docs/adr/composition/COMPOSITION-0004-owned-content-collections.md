@@ -38,6 +38,125 @@
 
 初期化時の例外は呼出し元へ伝播する。式全体のrollbackは追加しない。後のslotが失敗しても、先行した内容・slotの成功は残る。生成されたインデクサーは同じ対象instanceを返す。
 
+## コード例と実行時の動き
+
+### 利用側の所有コレクションを定義する
+
+次の例では、`OwnedChildren`が初期化回数を制限し、渡された配列をコピーする。Compositionはこの実装を生成せず、生成したインデクサーから`Initialize`を呼ぶ。
+
+```csharp
+using Lumyte.Composition;
+
+namespace ContentExample;
+
+public sealed class OwnedChildren : ICompositionContent<Compose.Definitions.Node>
+{
+    private Compose.Definitions.Node[]? _items;
+
+    public bool IsInitialized => _items is not null;
+    public int Count => _items?.Length ?? 0;
+    public Compose.Definitions.Node this[int index] => (_items ?? [])[index];
+
+    public void Initialize(Compose.Definitions.Node[] content)
+    {
+        if (IsInitialized)
+        {
+            throw new InvalidOperationException("Content has already been initialized.");
+        }
+
+        _items = (Compose.Definitions.Node[])content.Clone();
+    }
+}
+
+public static partial class Compose
+{
+    public static partial class Definitions
+    {
+        [CompositionContentType<OwnedChildren>]
+        public abstract class Node { }
+
+        [Composable]
+        public partial class Leaf : Node
+        {
+            [ComposeParameter]
+            public string Text { get; set; } = "";
+        }
+
+        [Composable]
+        public partial class Panel : Node
+        {
+            [ComposeContent]
+            public OwnedChildren Children { get; } = new();
+        }
+
+        [Composable]
+        public partial class Card : Panel
+        {
+            public OwnedChildren BackgroundChildren { get; } = new();
+
+            [ComposeSlot]
+            private static void Background(Card target, Node[] children)
+                => target.BackgroundChildren.Initialize(children);
+        }
+    }
+}
+```
+
+`Panel.Children`はget-onlyで、生成処理がコレクションを置換することはない。基底の`Node`に指定した型制約が`Panel`と`Card`にも適用される。`BackgroundChildren`はslotメソッドで扱う任意のプロパティであり、その初期化も上の利用側実装が担当する。
+
+### 内容を設定し、同じinstanceを受け取る
+
+```csharp
+using ContentExample;
+using static ContentExample.Compose;
+
+var panel = Panel();
+var storage = panel.Children;
+var result = panel[Leaf(text: "one"), Leaf(text: "two")];
+// ReferenceEquals(panel, result) == true。
+// ReferenceEquals(storage, panel.Children) == true、Children.Count == 2。
+
+Compose.Definitions.Node[] input = [Leaf(text: "before")];
+var copied = Panel()[input];
+input[0] = Leaf(text: "after");
+// ((Compose.Definitions.Leaf)copied.Children[0]).Text == "before"。
+// 入力配列の内容をコピーしたため、後からの配列の変更は反映されない。
+
+try
+{
+    _ = panel[Leaf(text: "third")];
+}
+catch (InvalidOperationException)
+{
+    // このOwnedChildrenの二回目のInitializeが拒否する。
+    // panel.Childrenには最初の二要素が残る。
+}
+```
+
+生成インデクサーの処理は、概念的には`((ICompositionContent<Node>)panel.Children).Initialize(content); return panel;`である。コピーするのは要素参照の配列であり、子のオブジェクト自体を複製するわけではない。内容を変更した別の宣言が必要なら、`Panel()[...]`を改めて呼んで新しい対象を構築する。
+
+### 通常内容とslotを組み合わせる
+
+```csharp
+var card = Card()[
+    Leaf(text: "body"),
+    Card.Background()[Leaf(text: "background")]
+];
+// card.Children.Count == 1、card.BackgroundChildren.Count == 1。
+// 通常内容のInitializeの後、Backgroundメソッドが呼ばれる。
+
+var slotOnly = Card()[Card.Background()[Leaf(text: "background")]];
+// slotOnly.Children.IsInitialized == false。
+// slotOnly.BackgroundChildren.IsInitialized == true。
+
+var empty = Panel()[Array.Empty<Compose.Definitions.Node>()];
+// empty.Children.IsInitialized == true、Count == 0。
+```
+
+slotだけを渡した場合と、空の通常内容を明示した場合は区別される。各slotの回数制限はslot側の実装次第であり、この例では通常内容と背景の各`OwnedChildren`がそれぞれ一回に制限する。後続slotで例外が起きても、既に成功した通常内容の初期化を巻き戻さない。
+
+例えば、`Node`を継承する生成対象に`[ComposeContent] public Node[] Children { get; set; }`を宣言すると、`OwnedChildren`との型不一致でLYC001になる。`OwnedChildren`でもsetterを付けた宣言はLYC001になる。一方、`ComposeContent`を付けない業務データ用コレクションまで禁止するものではない。
+
 ## 検討した代替案
 
 - CompositionへWidgetChildrenを直接組み込むとUI非依存性を失う。

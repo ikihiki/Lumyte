@@ -16,17 +16,57 @@
 既存のpublic static partialな`Compose.Definitions`へ、`[Composable]`を付けたpublic static関数を宣言できるようにする。クラス方式も維持し、両者を混在できる。外側クラス名とfactory名は既存のComposable.Factory・Name、CompositionDefaultsで指定する。
 
 ```csharp
-// Compose.Definitions内。WidgetとFunctionWidgetは利用側が定義する。
-[Composable]
-public static Widget Greeting(string? label = "hello", Action? onBuild = null)
-{
-    onBuild?.Invoke();
-    return Compose.Text(content: label);
-}
+using Lumyte.Composition;
 
-// using static Sample.Compose;
-var declaration = Greeting(label: "sample", key: "greeting");
-// この時点では関数bodyを実行しない。実行時期はhostが選ぶ。
+namespace FunctionExample;
+
+public static partial class Compose
+{
+    public static partial class Definitions
+    {
+        [Composable]
+        public static Node Greeting(string? text = "hello", Action? onBuild = null)
+        {
+            onBuild?.Invoke();
+            return Compose.Label(text: text);
+        }
+
+        [Composable]
+        public static Node Value<T>(T value)
+            where T : notnull => Compose.Label(text: value.ToString());
+
+        [Composable]
+        public static Node Parent(string text)
+            => Compose.Greeting(text: text, key: "inner");
+
+        [ComposeFunctionAdapter(typeof(FunctionNode))]
+        public abstract class Node
+        {
+            public string? Key { get; set; }
+        }
+
+        public abstract class FunctionNode : Node, ICompositionRebuildable
+        {
+            protected FunctionNode() { }
+
+            public Func<object>? Factory { get; private set; }
+
+            public Node Evaluate() => Build();
+
+            void ICompositionRebuildable.SetCompositionFactory(Func<object> factory)
+                => Factory = factory;
+
+            protected abstract Node Build();
+        }
+
+        [Composable]
+        public partial class Label : Node
+        {
+            [ComposeParameter]
+            public string? Text { get; init; }
+        }
+    }
+}
 ```
 
 Generatorは関数ごとに異なる非公開sealed classと外側の静的factoryを生成する。wrapperはhost adapterを継承し、Buildから元の定義関数を型付きで呼ぶ。factoryの戻り値はhostのBuild戻り値型であり、内部wrapper型を公開APIへ要求しない。
@@ -67,6 +107,66 @@ wrapperがICompositionRebuildableを実装する場合、元の引数とkeyか�
 不正宣言は既存のLYC001で拒否する。async、非public/non-static、ref戻り値、ref/out/in・params、ref struct、非公開のパラメータ型、予約引数名key・__始まりは非対応とする。型パラメータの公開制約を引き継ぎ、allows ref structは拒否する。重複factory名はクラス方式を含めて拒否し、overloadはComposable.Nameで別名を付ける。
 
 実行時reflectionやDynamicInvoke、新しいruntime、暗黙の外部状態保持を導入しない。Buildが返した値の検証や例外・副作用の扱いはhostの責務である。
+
+## コード例と実行時の動き
+
+### 宣言を作る時点では関数bodyを実行しない
+
+上の定義に対して、利用側は生成された外側の静的factoryを呼ぶ。`FunctionNode`と`Evaluate`はこの例のhostが用意したAPIであり、Compositionが提供する実行サービスではない。
+
+```csharp
+using FunctionExample;
+using static FunctionExample.Compose;
+
+int calls = 0;
+var first = (Compose.Definitions.FunctionNode)Greeting(
+    onBuild: () => calls++, key: "greeting");
+// calls == 0、first.Key == "greeting"。
+// Generatorが専用wrapperを生成する。Greetingのbodyはまだ呼ばない。
+
+var label = (Compose.Definitions.Label)first.Evaluate();
+// calls == 1、label.Text == "hello"。
+// hostのEvaluate → wrapperのBuild → Definitions.Greetingの順に実行する。
+```
+
+`onBuild`はGeneratorが自動で実行したcallbackではない。この例の`Definitions.Greeting`が自分のbodyで明示的に呼んでいる。`Evaluate`をもう一度呼べばbodyも再実行される。この最小hostには評価結果のキャッシュや状態保持を実装していない。
+
+### recipeで新しい宣言を作り、既定値と明示nullを区別する
+
+```csharp
+var second = (Compose.Definitions.FunctionNode)first.Factory!();
+// ReferenceEquals(first, second) == false、second.Key == "greeting"。
+// callsは1のまま。recipe実行はwrapperを作り、bodyは実行しない。
+
+var secondLabel = (Compose.Definitions.Label)second.Evaluate();
+// secondLabel.Text == "hello"、calls == 2。元のcallbackも引き継ぐ。
+
+var cleared = (Compose.Definitions.FunctionNode)Greeting(text: null);
+var clearedLabel = (Compose.Definitions.Label)cleared.Evaluate();
+// clearedLabel.Text == null。引数を省略した場合の"hello"とは異なる。
+
+var generic = (Compose.Definitions.FunctionNode)Value(7);
+var number = (Compose.Definitions.Label)generic.Evaluate();
+// number.Text == "7"。T=intの型付きwrapperから元のgeneric関数を呼ぶ。
+```
+
+`Factory`はこのhostが保管している受動的recipeである。keyを引き継ぐことと、内部状態を自動で移すことは別であり、状態の照合はhostが実装する。値引数adapterを併用する場合は、recipe実行で元のadapterから値を解決し直す。具体的な呼出し例は[COMPOSITION-0003](COMPOSITION-0003-argument-adapters.md)を参照する。
+
+### 関数から別の関数factoryを返す
+
+```csharp
+var parent = (Compose.Definitions.FunctionNode)Parent(text: "nested", key: "outer");
+var inner = (Compose.Definitions.FunctionNode)parent.Evaluate();
+// parent.Key == "outer"、inner.Key == "inner"。
+// Parentは外側factoryのCompose.Greetingを呼び、新しい宣言を返す。
+
+var nestedLabel = (Compose.Definitions.Label)inner.Evaluate();
+// nestedLabel.Text == "nested"。
+```
+
+外側の関数を評価しただけでは、戻ってきた内側wrapperのbodyまでは自動実行しない。実際のツリーhostは必要な範囲を走査し、各wrapperを評価する。この例では、その二段階を明示的に呼んでいる。
+
+一方、`Compose.Definitions.Greeting(text: "immediate")`を直接呼ぶと、通常のC#関数としてその場でbodyを実行し、`Label`を返す。関数ごとの宣言・key・recipeの境界が必要な場合は、`Greeting(...)`または`Compose.Greeting(...)`という生成factoryを使う。
 
 ## 互換性
 
