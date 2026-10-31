@@ -282,6 +282,8 @@ label/messageは呼び出し元がText等で作成して渡す。recipes内で�
 
 UiSurface/UiBoxConstraints、pointer/keyboard/値gestureの認識器、focus scope、ScrollController、selection model、TextDocument、候補controller/presenter、IUiWindowManagerとNative/Hosted実装、UiPopupManager、Dialog/Toastのhost、文字/画像provider、style値、意味情報とAutomation hostはWidgetの種類数へ含めない。
 
+UI専用アプリのbuilderと標準hostは[UI-0016](UI-0016-ui-application-framework.md)、navigationとページ寿命は[UI-0017](UI-0017-navigation-and-page-lifetime.md)、DIページ群のMapPage/MapGroupは[UI-0018](UI-0018-minimal-page-registration.md)へ置く。これらは非Widgetのフレームワークで、46種類の部品数へ加算しない。ページclassは非Composableとし、内部で既存のComposition部品を組み立てる。既存C1〜C9の前提や優先度を変更せず、UI専用アプリの導入は実装PR 12〜14として分ける。
+
 C3でCompositeWidget相当の安全な単一内容root接続と共通activation/semantic target契約を追加する。内部のCompositionも既存ChildCollectionの検証へ通し、第二の所有ツリーを作らない。各部品がButtonのcapture/key状態をコピーせず、同じ認識器を使う。型階層を深くして見た目を継承させず、内容・背景・値・handlerの組み合わせで構成する。
 
 surface input adapterは一登録なので、任意のcontrol入力とTextInputConnectionは一つのcoordinatorで組み合わせる。controlは[UI-0012](UI-0012-ime-and-text-editing.md)のeditorと同じ配送段階へ接続し、同ADRの優先順位を保って一度だけ配送する。slider/scroll等がcaptureした系列は取消と終端まで所有する。

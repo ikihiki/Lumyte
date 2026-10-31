@@ -8,6 +8,8 @@
     <Project Path="samples/Lumyte.UI.Application.Browser.Sample/Lumyte.UI.Application.Browser.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Application.Headless.Sample/Lumyte.UI.Application.Headless.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Navigation.Sample/Lumyte.UI.Navigation.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Pages.Sample/Lumyte.UI.Pages.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Pages.Browser.Sample/Lumyte.UI.Pages.Browser.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Navigation.Browser.Sample/Lumyte.UI.Navigation.Browser.Sample.csproj" />
 
     <Project Path="samples/Lumyte.UI.TextEditing.Sample/Lumyte.UI.TextEditing.Sample.csproj" />
@@ -201,6 +203,7 @@
   </Folder>
   <Folder Name="/tests/UI/">
     <Project Path="tests/UI/Lumyte.UI.Navigation.Tests/Lumyte.UI.Navigation.Tests.csproj" />
+    <Project Path="tests/UI/Lumyte.UI.Application.Navigation.Tests/Lumyte.UI.Application.Navigation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Application.Tests/Lumyte.UI.Application.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.TextEditing.Tests/Lumyte.UI.TextEditing.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Automation.Tests/Lumyte.UI.Automation.Tests.csproj" />
