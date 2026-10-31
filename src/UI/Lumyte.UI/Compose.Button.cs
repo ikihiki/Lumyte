@@ -30,6 +30,12 @@ public static partial class Compose
             public WidgetChildren BackgroundChildren { get; }
 
             /// <inheritdoc/>
+            protected override bool CanReuseInput(Widget previous) => CanReuseLayout(previous);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseLayout(Widget previous) => GetType() == typeof(Button);
+
+            /// <inheritdoc/>
             protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
             {
                 Vector2 contentSize = Vector2.Zero;

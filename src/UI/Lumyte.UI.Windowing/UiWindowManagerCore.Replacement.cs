@@ -30,6 +30,7 @@ internal sealed partial class UiWindowManagerCore
         private UiWindowSourceSnapshot? _state;
         private object? _root;
         private object? _inputVersion;
+        private UiSignalRevision _signalRevision;
         private bool _ready;
         private bool _committed;
         private bool _discarded;
@@ -78,13 +79,14 @@ internal sealed partial class UiWindowManagerCore
             await _stage.PrepareAsync(cancellationToken);
             _root = candidate.Root;
             _inputVersion = candidate.InputVersionForWindowing;
+            _signalRevision = candidate.SignalRevision;
             _ready = true;
         }
 
         public bool TryValidateCommit(out string code)
         {
             code = "candidate-stale";
-            if (!_ready || _committed || _discarded || manager._stopping || node.Terminal || node.Retiring || node.Source!.CaptureState() != _state || node.Desired != _view || !ReferenceEquals(node.Binding, _previousBinding) || !ReferenceEquals(candidate.Root, _root) || !ReferenceEquals(candidate.InputVersionForWindowing, _inputVersion))
+            if (!_ready || _committed || _discarded || manager._stopping || node.Terminal || node.Retiring || node.Source!.CaptureState() != _state || node.Desired != _view || !ReferenceEquals(node.Binding, _previousBinding) || !ReferenceEquals(candidate.Root, _root) || !ReferenceEquals(candidate.InputVersionForWindowing, _inputVersion) || candidate.SignalRevision != _signalRevision)
             {
                 return false;
             }

@@ -9,7 +9,7 @@ namespace Lumyte.UI;
 public sealed partial class UiSurface : IDisposable
 {
     private Widget _root;
-    private bool _isDisposed;
+    private volatile bool _isDisposed;
     private Vector2 _viewport;
     private UiLayoutPass? _layoutPass;
 
@@ -26,6 +26,8 @@ public sealed partial class UiSurface : IDisposable
         ValidateRebuildKeys(root);
         List<Widget> nodes = root.CollectSubtree();
         _root = root;
+        _signals = PrepareSignals(root);
+        _signalConnections++;
         foreach (Widget node in nodes)
         {
             node.SetSurface(this);
@@ -39,7 +41,7 @@ public sealed partial class UiSurface : IDisposable
     {
         get
         {
-            ThrowIfDisposed();
+            ObjectDisposedException.ThrowIf(_isDisposed, this);
             return _root;
         }
     }
@@ -74,11 +76,17 @@ public sealed partial class UiSurface : IDisposable
             return;
         }
 
+        UiSignalRevision signalRevision = SignalRevision;
         var pass = new UiLayoutPass();
         _layoutPass = pass;
         try
         {
             pass.Compute(_root, UiBoxConstraints.Tight(_viewport));
+            if (SignalRevision != signalRevision)
+            {
+                throw new UiStateUpdateException(new InvalidOperationException("Signal values changed during layout."));
+            }
+
             InvalidateInput();
             UpdateInput();
         }
@@ -109,7 +117,21 @@ public sealed partial class UiSurface : IDisposable
             if (!_isDisposed && _viewport.X > 0 && _viewport.Y > 0)
             {
                 canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
-                RecordWidget(_root, canvas);
+                UiSignalRevision revision = SignalRevision;
+                _recordDepth++;
+                try
+                {
+                    RecordWidget(_root, canvas);
+                }
+                finally
+                {
+                    _recordDepth--;
+                }
+
+                if (SignalRevision != revision)
+                {
+                    throw new UiStateUpdateException(new InvalidOperationException("Signal values changed during recording; discard the frame."));
+                }
             }
         }
         finally
@@ -128,7 +150,7 @@ public sealed partial class UiSurface : IDisposable
 
         List<Widget> nodes = _root.CollectSubtree();
         _isDisposed = true;
-        _pendingRebuild = null;
+        ReleaseSignals();
         try
         {
             CancelAllInput();
@@ -166,5 +188,9 @@ public sealed partial class UiSurface : IDisposable
         }
     }
 
-    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_isDisposed, this);
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ThrowSignalFailure();
+    }
 }

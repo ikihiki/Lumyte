@@ -23,7 +23,7 @@ await app.RunAsync();
 
 `GeneralPage`は通常のclassとして`IUiPage`を実装します。constructorでScoped serviceと`UiPageContext`を受け取り、任意の`PrepareAsync`でデータを準備し、必須の`Build`で未接続rootを返します。`Build`はUI ownerで呼びます。`RetireAsync`でowner資源を返してから、frameworkがDI scopeを一度だけ破棄します。ページ自身をComposableにする必要はありません。
 
-短いページは`MapPage<T1, T2, T3>(key, (context, service1, service2, service3) => root)`のように0〜3個のserviceを受ける同期handlerで書けます。同じactivationのサービスは一つのscopeから解決し、handlerはそのactivationの初回構築で一回呼びます。非同期準備や再試行可能な清掃にはclassページを使います。
+短いページは`MapPage<T1, T2, T3>(key, (context, service1, service2, service3) => root)`のように0〜3個のserviceを受ける同期handlerで書けます。同じactivationのサービスは一つのscopeから解決し、handlerは初回構築で呼び、Build中に直接Valueを読んだSignalが変われば同じactivationで再実行します。モデルはサービスやページinstanceへ保持してください。非同期準備や再試行可能な清掃にはclassページを使います。
 
 `MapPage<TPage, TArgs>(typedKey, copyArguments)`とgroupのtyped overloadで型付き引数を登録できます。コピーは純粋で独立したsnapshotを返す関数とし、ページでは`context.Activation.Destination.GetArguments<TArgs>()`でコピーを取得します。groupはprefixを結合するだけでDI scopeを作りません。
 
@@ -36,3 +36,7 @@ await app.RunAsync();
 独自の`IUiPageActivationProvider`を持つ場合は従来の`UseNavigation(provider, initialKey, arguments)`も利用できます。`UiNavigationApplicationContent`、slotの`CreateNavigationHost`と`CaptureNavigationSnapshot`もこのpackageにあります。標準hostが表示交換・入力・IME・GPU退役を自動管理します。
 
 実行できる[Headless sample](../../../samples/Lumyte.UI.Pages.Sample/README.md)と[Browser sample](../../../samples/Lumyte.UI.Pages.Browser.Sample/README.md)、[ADR UI-0018](../../../docs/adr/ui/UI-0018-minimal-page-registration.md)を参照してください。Navigation専用の診断metadataは任意の[Application.Navigation.Diagnostics](../Lumyte.UI.Application.Navigation.Diagnostics/README.md)へ分離しています。
+
+Signal引数の購読はUIが自動管理します。任意の業務EffectはPrepare/Buildで`context.CreateSignalScope().Run(() => Signal.Effect(...))`と作成できます。`context.Own(IDisposable)`は手動生成した資源を登録し、退役・surface解放後、DI scopeより前に逆順で一度だけ解放します。再構築されるBuildで業務scopeを無条件に作り直さず、ページfieldなどで初回のみにしてください。DI登録型・provider・scope、重複資源、退役後の登録は拒否します。
+
+`CreateSignalScope().Run(...)`内で作成した`Signal.FromAsync(...)`もページが所有します。ページの退役時に処理をキャンセルし、キャンセルを無視した遅い完了もUIへ反映しません。非同期結果の状態と再取得APIは[Signals](../../Core/Lumyte.Signals/README.md)を参照してください。

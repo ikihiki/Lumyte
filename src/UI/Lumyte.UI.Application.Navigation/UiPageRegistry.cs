@@ -4,11 +4,11 @@ using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
 namespace Lumyte.UI.Application.Navigation;
 
-internal sealed class UiPageRegistry(IReadOnlyDictionary<string, UiPageRegistration> pages)
+internal sealed class UiPageRegistry(IReadOnlyDictionary<string, UiPageRegistration> pages, Type[] services)
 {
-    internal IUiPageActivationProvider CreateProvider(UiApplicationWindowContext window) => new Provider(pages, window);
+    internal IUiPageActivationProvider CreateProvider(UiApplicationWindowContext window) => new Provider(pages, services, window);
 
-    private sealed class Provider(IReadOnlyDictionary<string, UiPageRegistration> registrations, UiApplicationWindowContext window) : IUiPageActivationProvider
+    private sealed class Provider(IReadOnlyDictionary<string, UiPageRegistration> registrations, Type[] services, UiApplicationWindowContext window) : IUiPageActivationProvider
     {
         public UiPageDestination Capture<TArgs>(UiPageKey<TArgs> key, TArgs arguments)
         {
@@ -16,15 +16,16 @@ internal sealed class UiPageRegistry(IReadOnlyDictionary<string, UiPageRegistrat
             return Find(key.Value, typeof(TArgs)).Capture(key, arguments);
         }
 
-        public IUiPageActivation Create(UiPageActivationContext context) => new Activation(Find(context.Destination.Route, context.Destination.ArgumentsType), window, context);
+        public IUiPageActivation Create(UiPageActivationContext context) => new Activation(Find(context.Destination.Route, context.Destination.ArgumentsType), window, context, services);
 
         private UiPageRegistration Find(string route, Type type) => registrations.TryGetValue(route, out UiPageRegistration? page) && page.ArgumentsType == type ? page : throw new ArgumentException("The page route and argument type are not registered.");
     }
 
-    private sealed class Activation(UiPageRegistration registration, UiApplicationWindowContext window, UiPageActivationContext activation) : IUiPageActivation
+    private sealed class Activation(UiPageRegistration registration, UiApplicationWindowContext window, UiPageActivationContext activation, Type[] serviceTypes) : IUiPageActivation
     {
         private AsyncServiceScope? _scope;
         private IUiPage? _page;
+        private UiPageContext? _context;
         private Widget? _root;
         private bool _started;
         private bool _retired;
@@ -48,15 +49,27 @@ internal sealed class UiPageRegistry(IReadOnlyDictionary<string, UiPageRegistrat
             _scope = window.Services.CreateAsyncScope();
             IServiceProvider services = _scope.Value.ServiceProvider;
             var context = new UiPageContext(activation, window.TextLayoutProvider);
+            _context = context;
+            context.ServiceTypes = serviceTypes;
             services.GetRequiredService<UiPageContextBinding>().Bind(context);
             _page = registration.Create(services);
-            await _page.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
+            context.SetOwnershipAdmission(true);
+            try
+            {
+                await _page.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                context.SetOwnershipAdmission(false);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
-            _root = await activation.Dispatcher.InvokeAsync(() => _page.Build(context) ?? throw new InvalidOperationException("The page returned no root."), cancellationToken).ConfigureAwait(false);
+            _root = await activation.Dispatcher.InvokeAsync(() => UiSurface.CaptureBuild(() => context.Build(() => _page.Build(context))), cancellationToken).ConfigureAwait(false);
         }
 
         public async ValueTask RetireAsync(CancellationToken cancellationToken)
         {
+            _context?.Retire();
             if (!_retired && _page is not null)
             {
                 await _page.RetireAsync(cancellationToken).ConfigureAwait(false);
@@ -68,9 +81,31 @@ internal sealed class UiPageRegistry(IReadOnlyDictionary<string, UiPageRegistrat
 
         private async Task DisposeScopeAsync()
         {
+            List<Exception> errors = [];
+            try
+            {
+                _context?.DisposeOwned();
+            }
+            catch (Exception error)
+            {
+                errors.Add(error);
+            }
+
             if (_scope is { } scope)
             {
-                await scope.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await scope.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    errors.Add(error);
+                }
+            }
+
+            if (errors.Count != 0)
+            {
+                throw new AggregateException(errors);
             }
         }
     }

@@ -38,6 +38,11 @@ public sealed partial class UiSurface
                 matches.Add(previous, next);
                 for (int slot = 0; slot < Math.Min(previous.ChildCollections.Count, next.ChildCollections.Count); slot++)
                 {
+                    if (previous.ChildCollections[slot].IsPortal || next.ChildCollections[slot].IsPortal)
+                    {
+                        continue;
+                    }
+
                     IReadOnlyList<Widget> before = previous.ChildCollections[slot].Items;
                     IReadOnlyList<Widget> after = next.ChildCollections[slot].Items;
                     Dictionary<string, Widget>? keyed = null;
@@ -79,6 +84,37 @@ public sealed partial class UiSurface
             }
 
             return identities;
+        }
+
+        internal void ReuseGeometry()
+        {
+            foreach ((Widget previous, Widget current) in Matches.Reverse())
+            {
+                bool childrenMatch = previous.ChildCollections.Count == current.ChildCollections.Count;
+                if (childrenMatch)
+                {
+                    for (int slot = 0; slot < current.ChildCollections.Count && childrenMatch; slot++)
+                    {
+                        WidgetChildren before = previous.ChildCollections[slot];
+                        WidgetChildren after = current.ChildCollections[slot];
+                        if (before.IsPortal && after.IsPortal)
+                        {
+                            continue;
+                        }
+
+                        childrenMatch &= before.Count == after.Count;
+                        for (int index = 0; index < after.Count && childrenMatch; index++)
+                        {
+                            childrenMatch &= Matches.TryGetValue(before[index], out Widget? matched) && ReferenceEquals(matched, after[index]) && !after[index].IsLayoutDirty;
+                        }
+                    }
+                }
+
+                if (childrenMatch)
+                {
+                    current.TryReuseSignalLayout(previous);
+                }
+            }
         }
     }
 }

@@ -154,7 +154,8 @@ public sealed partial class UiApplication
 
     private UiWindowDeclaration[] BuildDeclarations()
     {
-        UiWindowDeclaration[] declarations = (_buildWindows(new(this)) ?? throw new UiApplicationException("invalid-window-list")).ToArray();
+        UiWindowDeclaration[] original = Lumyte.Signals.Signal.CaptureReads(() => (_buildWindows(new(this)) ?? throw new UiApplicationException("invalid-window-list")).ToArray(), out Lumyte.Signals.SignalReadSet reads);
+        UiWindowDeclaration[] declarations = original.Select(declaration => declaration?.ResolveSignals() ?? throw new UiApplicationException("invalid-window-list")).ToArray();
         var keys = new Dictionary<string, UiWindowDeclaration>(StringComparer.Ordinal);
         foreach (UiWindowDeclaration declaration in declarations)
         {
@@ -183,6 +184,7 @@ public sealed partial class UiApplication
             }
         }
 
+        ObserveWindowSignals(original, declarations, reads);
         return declarations;
     }
 

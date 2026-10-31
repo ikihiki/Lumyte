@@ -25,7 +25,13 @@ public sealed partial class UiSurface
         }
 
         ValidateRebuildKeys(root);
-        _pendingRebuild = new(root);
+        SignalBinding? candidate = PrepareSignals(root);
+        if (_pendingRebuild is not { IsApplying: true })
+        {
+            _pendingRebuild?.DisposeSignals();
+        }
+
+        _pendingRebuild = new(root, candidate);
     }
 
     /// <summary>Applies the latest queued declaration before layout, input or recording; layout also calls this boundary.</summary>
@@ -33,6 +39,7 @@ public sealed partial class UiSurface
     public void UpdateTree()
     {
         ThrowIfDisposed();
+        ProcessSignals(true);
         ApplyRebuild();
     }
 
@@ -40,6 +47,7 @@ public sealed partial class UiSurface
     {
         foreach (Widget node in root.CollectSubtree())
         {
+            node.ValidateForConnection(root);
             foreach (WidgetChildren slot in node.ChildCollections)
             {
                 var keys = new HashSet<string>(StringComparer.Ordinal);
@@ -56,12 +64,35 @@ public sealed partial class UiSurface
 
     private void ApplyRebuild()
     {
-        if (_pendingRebuild is not { } candidate)
+        if (_rebuildDepth != 0 || _pendingRebuild is not { } candidate)
         {
             return;
         }
 
+        _rebuildDepth++;
+        candidate.IsApplying = true;
+        try
+        {
+            ApplyRebuildCore(candidate);
+        }
+        finally
+        {
+            _rebuildDepth--;
+            candidate.IsApplying = false;
+            if (!ReferenceEquals(candidate, _pendingRebuild))
+            {
+                candidate.DisposeSignals();
+            }
+        }
+    }
+
+    private void ApplyRebuildCore(RebuildCandidate candidate)
+    {
         Widget next = candidate.Root;
+        SignalBinding? candidateSignals = candidate.Signals;
+        ulong activeRevision = _signals?.Revision ?? 0;
+        ulong candidateRevision = candidateSignals?.Revision ?? 0;
+        ulong connections = _signalConnections;
         var plan = new RebuildPlan(_root, next);
         Dictionary<Widget, Widget> matches = plan.Matches;
         plan.ReconcileComponents();
@@ -71,13 +102,31 @@ public sealed partial class UiSurface
             return;
         }
 
+        if (_signalConnections != connections || (_signals?.Revision ?? 0) != activeRevision || (candidateSignals?.Revision ?? 0) != candidateRevision)
+        {
+            throw new UiStateUpdateException(new InvalidOperationException("Signal values changed during declaration reconciliation."));
+        }
+
         Dictionary<Widget, UiAutomationId> identities = plan.CaptureIdentities();
 
+        SignalBinding? previousSignals = _signals;
+        _signals = candidate.TakeSignals();
+
+        _signalConnections++;
+        previousSignals?.Dispose();
+        if (!_signalUpdatesEnabled)
+        {
+            _signals?.Pause();
+        }
+
+        plan.ReuseGeometry();
+
+        bool layoutUnchanged = !next.IsLayoutDirty && matches.Count == plan.Next.Count;
         Widget? previousFocus = _focusedWidget;
         Widget? nextFocus = previousFocus is not null ? matches.GetValueOrDefault(previousFocus) : null;
         var input = new RebuildInputTransfer(this);
         PublishDeclaration(candidate, plan, identities);
-        input.Restore(this, plan, previousFocus, nextFocus);
+        input.Restore(this, plan, previousFocus, nextFocus, layoutUnchanged);
     }
 
     private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan, Dictionary<Widget, UiAutomationId> identities)

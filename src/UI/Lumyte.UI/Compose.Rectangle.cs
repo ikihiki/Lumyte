@@ -23,6 +23,12 @@ public static partial class Compose
             public Color2D Fill { get; set; }
 
             /// <inheritdoc/>
+            protected override bool CanReuseInput(Widget previous) => CanReuseLayout(previous);
+
+            /// <inheritdoc/>
+            protected override bool CanReuseLayout(Widget previous) => GetType() == typeof(Rectangle);
+
+            /// <inheritdoc/>
             protected override void OnRecord(DrawingCanvas2D canvas)
             {
                 if (Size.X > 0 && Size.Y > 0 && Fill.A > 0)

@@ -374,3 +374,7 @@ C8の検証には、command/チェック/submenu、Escape/外側pressの要求�
 - 各詳細ADRで親/slot/child数、入力系列、focus/cancel、状態変更とcallback、資源所有、意味roleとAutomation操作を対応付ける。
 - 一方向layout、失敗後の旧tree維持、背景/clip、非一様DPI、Hosted座標、IME終端キー、Popup入力scopeを部品横断で検証する。
 - pointer/keyboard/Diagnosticsの各操作で同じ値・callback回数を確認し、無効/非表示/取り外し/途中取消と古いIDを確認する。
+
+### シグナル状態管理との関係
+
+[SIGNALS-0001](../signals/SIGNALS-0001-independent-signal-runtime.md)の独立状態管理と[COMPOSITION-0003](../composition/COMPOSITION-0003-argument-adapters.md)の引数adapter、[UI-0019](UI-0019-signals-and-reactive-state.md)のUI自動購読を実装PR 15として追加する。通常のusing static構築からSignalを部品の値引数へ渡し、接続・動的な子変更・取り外し・終了に伴う購読をUIが管理する。値はSignal.Create/Computedで直接作り、利用者に構築scopeやruntimeを要求しない。非Widgetの状態管理なので部品数へ加算しない。C1〜C9の値入力部品もcallbackからモデルを更新し、IME文書編集の専用契約を維持する。

@@ -171,7 +171,7 @@ public sealed partial class UiPopupManager : IDisposable
         {
             foreach (Popup p in _popups.Values.Where(p => p.Owner == current && p.Mode == UiPopupInputMode.Menu).ToArray())
             {
-                Close(p, UiPopupCloseReason.OutsidePress);
+                RequestDismiss(p, UiPopupCloseReason.OutsidePress);
             }
         });
     }
@@ -375,6 +375,16 @@ public sealed partial class UiPopupManager : IDisposable
         return Dispatch(new UiWindowInputEnvelope(origin, input));
     }
 
+    internal void UpdateDeclaration(UiPopupHandle handle, Widget content, UiWindowPlacementSide side, bool alignEnd)
+    {
+        if (_popups.TryGetValue(handle.Id, out Popup? popup) && !popup.Closing && popup.Request is { } request)
+        {
+            request.Side = side;
+            request.AlignEnd = alignEnd;
+            popup.Surface?.Rebuild(content);
+        }
+    }
+
     private static Task DisposeParticipant(IAsyncDisposable participant)
     {
         try
@@ -494,9 +504,15 @@ public sealed partial class UiPopupManager : IDisposable
     {
         rectangle = default;
         UiPopupRequest r = p.Request!;
-        Widget anchor = r.Anchor;
+        Widget? anchor = r.ResolveAnchor is { } resolve ? resolve() : r.Anchor;
+        if (anchor is null)
+        {
+            return false;
+        }
+
+        r.Anchor = anchor;
         UiSurface expected = p.Parent?.Surface ?? p.Owner.Surface;
-        if (!ReferenceEquals(anchor.Surface, expected) || anchor.AutomationId != p.AnchorId || !ReferenceEquals(anchor.InputVersion, expected.InputVersionForWindowing) || !anchor.IsVisible || !anchor.IsEnabled || anchor.InputBounds.Right <= anchor.InputBounds.Left || anchor.InputBounds.Bottom <= anchor.InputBounds.Top)
+        if (!ReferenceEquals(anchor.Surface, expected) || (r.ResolveAnchor is null && anchor.AutomationId != p.AnchorId) || !ReferenceEquals(anchor.InputVersion, expected.InputVersionForWindowing) || !anchor.IsVisible || !anchor.IsEnabled || anchor.InputBounds.Right <= anchor.InputBounds.Left || anchor.InputBounds.Bottom <= anchor.InputBounds.Top)
         {
             return false;
         }
@@ -565,7 +581,7 @@ public sealed partial class UiPopupManager : IDisposable
             Widget content;
             try
             {
-                content = p.Request!.CreateContent() ?? throw new InvalidOperationException("Null popup content.");
+                content = UiSurface.CaptureBuild(p.Request!.CreateContent);
                 p.Surface = new(content);
                 p.SurfaceId = p.Surface.CaptureAutomationSnapshot().SurfaceId;
             }
@@ -578,7 +594,7 @@ public sealed partial class UiPopupManager : IDisposable
 
             Anchor(p, out Rect2D at);
             UiWindowId anchor = p.Parent?.Window ?? p.Owner.Window;
-            var placement = new UiWindowPlacement(anchor, at, p.Request.Side, p.Request.Gap);
+            var placement = new UiWindowPlacement(anchor, at, p.Request.Side, p.Request.Gap) { AlignEnd = p.Request.AlignEnd };
             p.LastPlacement = placement;
             try
             {
@@ -645,7 +661,7 @@ public sealed partial class UiPopupManager : IDisposable
 
         if (p.Handle.State == UiPopupState.Open && Anchor(p, out Rect2D rect))
         {
-            var placement = new UiWindowPlacement(p.Parent?.Window ?? p.Owner.Window, rect, p.Request!.Side, p.Request.Gap);
+            var placement = new UiWindowPlacement(p.Parent?.Window ?? p.Owner.Window, rect, p.Request!.Side, p.Request.Gap) { AlignEnd = p.Request.AlignEnd };
             if (placement != p.LastPlacement)
             {
                 _windows.Place(window, placement);
@@ -1042,7 +1058,7 @@ public sealed partial class UiPopupManager : IDisposable
             }
             else if (navigation.Key == Key.Escape || (navigation.Key == Key.ArrowLeft && menu.Parent is not null))
             {
-                Close(menu, UiPopupCloseReason.Escape);
+                RequestDismiss(menu, UiPopupCloseReason.Escape);
                 _keys[(envelope.Device, navigation.Key)] = null;
             }
         }
@@ -1059,7 +1075,19 @@ public sealed partial class UiPopupManager : IDisposable
             p = p.Parent;
         }
 
-        Close(p, reason);
+        RequestDismiss(p, reason);
+    }
+
+    private void RequestDismiss(Popup popup, UiPopupCloseReason reason)
+    {
+        if (popup.Request?.OnDismissRequested is { } notify)
+        {
+            _callbacks.Enqueue(() => notify(new(reason == UiPopupCloseReason.Escape ? PopupDismissReason.Escape : PopupDismissReason.OutsidePress)));
+        }
+        else
+        {
+            Close(popup, reason);
+        }
     }
 
     private sealed class InputRegistration(Action release) : IDisposable

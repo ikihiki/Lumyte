@@ -179,3 +179,17 @@ Focusableを含む通常の値変更は新しい宣言を構築します。専�
 `ProbePointer`は通常のhit testから親へ進み、OnProbePointerDownが最初に受理する部品のClick capabilityを返します。独自の入力消費部品はこのhookとOnInputで判定を共有してください。probeは副作用を起こさず、通常Downが止まる場所を親Buttonの操作点として返してはいけません。Buttonの型判定をWidget／UiSurfaceへ追加していません。
 
 [Automationパッケージ](../Lumyte.UI.Automation/README.md)／[設計](../../../docs/adr/ui/UI-0009-ui-automation.md)
+
+Signal引数は通常の静的factoryへ渡せます。
+
+```csharp
+using Lumyte.Signals;
+using static Lumyte.UI.Compose;
+
+var width = Signal.Create<float?>(80);
+using var surface = new UiSurface(Panel()[Rectangle(width: width, height: 24)]);
+width.Value = 120;
+surface.UpdateLayout();
+```
+
+購読は接続中だけUIが管理し、更新は新しい宣言へ再構築します。動的な子は`new UiSurface(() => Build())`の構築関数からValueを読み、既存の型・key・slot照合で内部状態を保ちます。手書きnewを含むSignalツリーも構築関数を使ってください。標準Applicationはdispatcherとページ寿命を自動接続します。

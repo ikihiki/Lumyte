@@ -7,6 +7,7 @@ public sealed partial class UiApplication
 {
     private async Task StopCoreAsync()
     {
+        ReleaseWindowSignals();
         _dispatcher.BeginStop();
         _startupCancellation.Cancel();
         foreach (Entry entry in _entries.Values.ToArray())

@@ -11,7 +11,7 @@ public sealed class UiSurfaceTests
     [Fact]
     public void ConstructorValidatesRootOwnership()
     {
-        Assert.Throws<ArgumentNullException>(() => new UiSurface(null!));
+        Assert.Throws<ArgumentNullException>(() => new UiSurface(root: null!));
         Definitions.Panel child = Panel();
         Definitions.Panel root = Panel()[child];
         Assert.Throws<ArgumentException>(() => new UiSurface(child));

@@ -47,6 +47,10 @@ public sealed class UiWindowDeclaration
     /// <summary>Gets the requested presentation.</summary>
     public WindowPresentation Presentation { get; }
 
+    internal UiArgument<string> TitleArgument { get; set; }
+
+    internal UiArgument<bool> OpenArgument { get; set; }
+
     internal Func<UiApplicationWindowContext, Widget>? Root { get; }
 
     internal Func<IServiceProvider, IUiApplicationContent>? Content { get; }
@@ -56,4 +60,22 @@ public sealed class UiWindowDeclaration
     internal Action<UiApplicationWindowResult>? OnOpened { get; }
 
     internal Action<UiApplicationWindowResult>? OnClosed { get; }
+
+    internal UiWindowDeclaration ResolveSignals() => new(Key, TitleArgument.IsSpecified ? TitleArgument.GetInitialValue() : Title, Root, Content, OpenArgument.IsSpecified ? OpenArgument.GetInitialValue() : IsOpen, Owner, InitialClientSize, Presentation, OnCloseRequested, OnOpened, OnClosed);
+
+    internal bool ReadSignals(UiWindowDeclaration resolved)
+    {
+        bool changed = false;
+        if (TitleArgument.Source is { } title)
+        {
+            changed |= title.Value != resolved.Title;
+        }
+
+        if (OpenArgument.Source is { } open)
+        {
+            changed |= open.Value != resolved.IsOpen;
+        }
+
+        return changed;
+    }
 }

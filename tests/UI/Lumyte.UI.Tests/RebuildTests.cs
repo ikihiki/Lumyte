@@ -29,7 +29,7 @@ public sealed class RebuildTests
         Definitions.Panel original = Panel();
         using var surface = new UiSurface(original);
         Assert.Throws<ArgumentException>(() => surface.Rebuild(Panel()[Button(key: "same"), Button(key: "same")]));
-        Assert.Throws<ArgumentNullException>(() => surface.Rebuild(null!));
+        Assert.Throws<ArgumentNullException>(() => surface.Rebuild(root: null!));
         Definitions.Panel foreign = Panel();
         using var other = new UiSurface(foreign);
         Assert.Throws<ArgumentException>(() => surface.Rebuild(foreign));

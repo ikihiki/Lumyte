@@ -19,7 +19,61 @@ public sealed partial class UiSurface
     /// <returns>Whether a widget consumed the input or a captured series was delivered.</returns>
     public bool Dispatch(UiInput input)
     {
+        _dispatchDepth++;
+        try
+        {
+            return DispatchCore(input);
+        }
+        finally
+        {
+            _dispatchDepth--;
+        }
+    }
+
+    internal void InvalidateInput() => _inputDirty = true;
+
+    internal bool IsInside(Widget target, Vector2 position) =>
+        ReferenceEquals(target.InputVersion, _inputVersion) && target.InputBounds.Contains(position);
+
+    internal bool CapturePointer(Widget target, UiInput input)
+    {
         ThrowIfDisposed();
+        if (input is not UiPointerInput { Phase: UiPointerPhase.Down or UiPointerPhase.Move } pointer)
+        {
+            throw new InvalidOperationException("Pointer capture requires pointer Down or Move.");
+        }
+
+        if (!ReferenceEquals(target.Surface, this) || !ReferenceEquals(target.InputVersion, _inputVersion))
+        {
+            return false;
+        }
+
+        if (_pointerCaptures.TryGetValue(pointer.PointerId, out PointerCapture? existing))
+        {
+            return ReferenceEquals(existing.Target, target);
+        }
+
+        var capture = new PointerCapture(target, pointer.Position);
+        _pointerCaptures.Add(pointer.PointerId, capture);
+        NotifyCapture(pointer.PointerId, capture, true);
+        return true;
+    }
+
+    internal bool CancelPointer(long pointerId, Widget? expected = null)
+    {
+        if (!_pointerCaptures.TryGetValue(pointerId, out PointerCapture? capture)
+            || (expected is not null && !ReferenceEquals(capture.Target, expected)))
+        {
+            return false;
+        }
+
+        ReleasePointer(pointerId, true);
+        return true;
+    }
+
+    private bool DispatchCore(UiInput input)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         ArgumentNullException.ThrowIfNull(input);
         if (input is UiFocusLostInput)
         {
@@ -27,6 +81,7 @@ public sealed partial class UiSurface
             return (!_isDisposed && RouteInput(_root, input)) || cancelled;
         }
 
+        ThrowSignalFailure();
         if (input is UiKeyCancelInput keyCancel)
         {
             bool consumed = _consumedKeys.Contains(keyCancel.Key);
@@ -101,47 +156,6 @@ public sealed partial class UiSurface
         }
 
         return handled;
-    }
-
-    internal void InvalidateInput() => _inputDirty = true;
-
-    internal bool IsInside(Widget target, Vector2 position) =>
-        ReferenceEquals(target.InputVersion, _inputVersion) && target.InputBounds.Contains(position);
-
-    internal bool CapturePointer(Widget target, UiInput input)
-    {
-        ThrowIfDisposed();
-        if (input is not UiPointerInput { Phase: UiPointerPhase.Down or UiPointerPhase.Move } pointer)
-        {
-            throw new InvalidOperationException("Pointer capture requires pointer Down or Move.");
-        }
-
-        if (!ReferenceEquals(target.Surface, this) || !ReferenceEquals(target.InputVersion, _inputVersion))
-        {
-            return false;
-        }
-
-        if (_pointerCaptures.TryGetValue(pointer.PointerId, out PointerCapture? existing))
-        {
-            return ReferenceEquals(existing.Target, target);
-        }
-
-        var capture = new PointerCapture(target, pointer.Position);
-        _pointerCaptures.Add(pointer.PointerId, capture);
-        NotifyCapture(pointer.PointerId, capture, true);
-        return true;
-    }
-
-    internal bool CancelPointer(long pointerId, Widget? expected = null)
-    {
-        if (!_pointerCaptures.TryGetValue(pointerId, out PointerCapture? capture)
-            || (expected is not null && !ReferenceEquals(capture.Target, expected)))
-        {
-            return false;
-        }
-
-        ReleasePointer(pointerId, true);
-        return true;
     }
 
     private bool RouteInput(Widget target, UiInput input) => RouteInputResult(target, input) == UiInputResult.Handled;

@@ -318,9 +318,9 @@ HostedのScreenshotは実際の合成済みroot targetから対象矩形を切�
 
 ### 宣言的なPopupの利用者API
 
-2026-10-29追記。PR #86で実装済みなのは上記UiPopupManagerの命令的な基盤である。通常の利用者には、静的なComposition factoryで表示意図を宣言するPopupを提示する。この節は未実装の追加設計であり、PR #86へ公開stubを追加しない。key付き再構築とportal接続を必要とするため、宣言API・照合・検証は後続の再構築/Signal対応PRで実装する。標準Menu/Tooltipはコンポーネント拡充でこのAPIへ接続する。
+2026-10-29追記。PR #86で実装済みなのは上記UiPopupManagerの命令的な基盤である。通常の利用者には、静的なComposition factoryで表示意図を宣言するPopupを提示する。この節の宣言API・照合・portal接続はPR #93で実装する。標準Menu/Tooltipはコンポーネント拡充でこのAPIへ接続する。
 
-追加する型は任意のLumyte.UI.Windowingの`Compose.Definitions.Popup : Widget`、`PopupPlacement`、`PopupPresentation`、`PopupDismissReason`、`PopupDismissRequest`とする。UI本体へWindow依存を追加しない。以下は生成factoryの利用者向け引数一覧であり、property/constructorは通常のComposable定義に従う。keyは再構築の識別子、Contentは一回初期化するWidgetChildrenの宣言slotとする。
+追加する型は任意のLumyte.UI.Windowingの`Compose.Definitions.Popup : Widget`、`PopupPlacement`、`PopupPresentation`、`PopupDismissReason`、`PopupDismissRequest`とする。UI本体へWindow依存を追加しない。以下は生成factoryの主要引数の抜粋であり、他の継承Widget引数と実際の順序は省略する。property/constructorは通常のComposable定義に従う。keyは再構築の識別子で、factoryでは他のWidgetと同じ任意引数だが、Popupの接続前検証で必須・surface内一意を要求する。Contentは一回初期化するWidgetChildrenの宣言slotとする。
 
 ```csharp
 namespace Lumyte.UI.Windowing;
@@ -331,10 +331,11 @@ public enum PopupDismissReason { OutsidePress, Escape, ItemInvoked, OwnerUnavail
 public sealed record PopupDismissRequest(PopupDismissReason Reason);
 
 // using static Lumyte.UI.Windowing.Compose; で使う生成factoryのsignature。
-// Signal対応PRでは値引数をUiArgument<T>へ拡張する。callbackはActionのまま。
-public static Definitions.Popup Popup(string key, string anchor, bool isOpen = false,
-    PopupPlacement placement = PopupPlacement.BottomStart,
-    PopupPresentation presentation = PopupPresentation.Automatic,
+// PR #93の主要引数。callbackはActionのまま。
+public static Definitions.Popup Popup(string anchor, UiArgument<string?> key = default,
+    UiArgument<bool> isOpen = default,
+    UiArgument<PopupPlacement> placement = default,
+    UiArgument<PopupPresentation> presentation = default,
     Action<PopupDismissRequest>? onDismiss = null,
     Action<UiPopupOpened>? onOpened = null, Action<UiPopupClosed>? onClosed = null);
 ```
@@ -354,15 +355,15 @@ Panel()[
 
 例のshowFileMenuはboolであり、変更時は構築関数を再実行する。Signal対応後は`isOpen: menuOpenSignal`を直接渡せる。専用Bind、ambient runtime、利用者が開く構築scopeを要求しない。anchorは同じowner surfaceのWidget keyから解決し、別surfaceを暗黙探索しない。同じsurface内で参照先が複数なら候補宣言のcommitを拒否する。keyは兄弟内の照合に使うものでもあり、anchorに使うkeyはそのsurface内でも一意にする。初回layoutでanchorが見つからない/非表示なら開かず、表示後に消えたら通常の終了経路へ進める。古いWidget参照やAutomation IDを再構築後のanchorとして保持しない。
 
-Popupはowner側では寸法ゼロのportal宣言であり、内容のlayoutは独立surfaceで行う。Contentをowner surfaceの通常の子として接続してからPopupへ移す実装にしない。reconcilerが宣言slotを保持し、その内容を新しいPopup専用surfaceへ一回接続する。親のclipとlayout制約は継承せず、owner/anchorとモデル寿命は宣言位置に属する。新しい宣言に同じkey/型があれば既存の表示要素とPopup sessionを照合し、内容だけを通常の再構築で更新する。値変更だけでClose/Openやfactoryの再実行を起こさない。各openで一回というUiPopupRequestのfactory規則は維持し、同一sessionの内容更新を新たなRequestOpenで代用しない。このportal照合機構自体は未実装である。
+Popupはowner側では寸法ゼロのportal宣言であり、内容のlayoutは独立surfaceで行う。Contentをowner surfaceの通常の子として接続してからPopupへ移す実装にしない。reconcilerが宣言slotを保持し、その内容を新しいPopup専用surfaceへ一回接続する。親のclipとlayout制約は継承せず、owner/anchorとモデル寿命は宣言位置に属する。新しい宣言に同じkey/型があれば既存の表示要素とPopup sessionを照合し、内容だけを通常の再構築で更新する。値変更だけでClose/Openやfactoryの再実行を起こさない。各openで一回というUiPopupRequestのfactory規則は維持し、同一sessionの内容更新を新たなRequestOpenで代用しない。標準Applicationは各viewのUiPopupPortalCoordinatorを自動管理し、独自hostはowner layoutの後にAdvanceし、owner解放前にDisposeする。初期実装の宣言内容は生成Composition factoryで構築する。手書きnewの内容は低水準のUiPopupRequestで扱う。
 
-isOpenは利用者のモデルが正本である。外側press/Escapeでは理由付きonDismissを一入力系列につき一回通知し、Signalやboolをライブラリが書き換えない。trueが継続しても同じ要求をframeごとに繰り返さない。通常のdismiss要求だけでは表示を閉じず、次の構築結果でfalse/除去となってから閉じる。実装時にはUiPopupRequestの末尾へ任意の`Action<PopupDismissRequest>? onDismissRequested = null`を追加し、省略した既存呼出しは現在の自動close、指定した宣言adapterは要求通知だけという契約を追加する。現在のDispatchが行うcloseをadapter側で事後的に取り消す方式にはしない。この追加parameterも後続PRの実装対象である。owner/anchor喪失、停止、能力/描画失敗は安全のため直ちに入力を停止して終了し、onClosedで結果を通知する。強制終了後の同じtrue宣言を毎frame再開せず、false→trueまたは新keyで再試行する。onOpened/onClosedは要求通知と区別した実際の寿命通知であり、一session一回とする。
+isOpenは利用者のモデルが正本である。外側press/Escapeでは理由付きonDismissを一入力系列につき一回通知し、Signalやboolをライブラリが書き換えない。trueが継続しても同じ要求をframeごとに繰り返さない。通常のdismiss要求だけでは表示を閉じず、次の構築結果でfalse/除去となってから閉じる。実装時にはUiPopupRequestの末尾へ任意の`Action<PopupDismissRequest>? onDismissRequested = null`を追加し、省略した既存呼出しは現在の自動close、指定した宣言adapterは要求通知だけという契約を追加する。現在のDispatchが行うcloseをadapter側で事後的に取り消す方式にはしない。この追加parameterはPR #93で実装する。owner/anchor喪失、停止、能力/描画失敗は安全のため直ちに入力を停止して終了し、onClosedで結果を通知する。強制終了後の同じtrue宣言を毎frame再開せず、false→trueまたは新keyで再試行する。onOpened/onClosedは要求通知と区別した実際の寿命通知であり、一session一回とする。
 
-AutomaticはPreferNative、HostedはHostedOnly、NativeRequiredはRequireNativeへ変換する。低水準UiPopupRequestの既定HostedOnlyは変更しない。表示中にpresentationが変わった場合は旧sessionをdrain後に新sessionを準備し、表示済みNativeをHostedへそのまま移送しない。placement/anchorの変更は提示幾何の更新として処理し、入力は新revisionの提示後に切り替える。Start/Endは横書きLTRのanchor左右端（Left/Rightでは上端）を表し、RTLの自動反転は初期対象外とする。既存のsideだけではEnd整列を表せないため、後続実装で配置要求へ整列を追加し、反対側へ開く場合も整列を保持して最後にclampする。内容から有限の希望寸法をlayoutし、managerのroot/monitor制限でclampする。NativeとHostedで同じ内容を二重接続しない。
+AutomaticはPreferNative、HostedはHostedOnly、NativeRequiredはRequireNativeへ変換する。低水準UiPopupRequestの既定HostedOnlyは変更しない。表示中にpresentationが変わった場合は旧sessionをdrain後に新sessionを準備し、表示済みNativeをHostedへそのまま移送しない。placement/anchorの変更は提示幾何の更新として処理し、入力は新revisionの提示後に切り替える。Start/Endは横書きLTRのanchor左右端（Left/Rightでは上端）を表し、RTLの自動反転は初期対象外とする。既存のsideだけではEnd整列を表せないため、PR #93で配置要求へ整列を追加し、反対側へ開く場合も整列を保持して最後にclampする。内容から有限の希望寸法をlayoutし、managerのroot/monitor制限でclampする。NativeとHostedで同じ内容を二重接続しない。
 
 false/宣言除去では新規入力を先に止め、既存系列取消→子Popup→Automation/IME→描画/GPU→surface/binding→Windowの順に既存の終了契約へ接続する。親Widgetの取り外しを非同期setterへ変えず、hostが旧表示資源をdrain完了まで所有する。最終的なvisual exitはanimation統合側が追加し、能力のないhostでは即時の視覚切替とする。UI停止時にアプリのonDismiss応答を待つことはしない。
 
-受け入れ条件は、静的factoryだけで構築可能、同key再構築で入力/focus維持、別keyで新session、bool/Signalからの開閉、anchor消失/重複、dismiss通知一回、応答しないモデル、準備中の反転、除去中のGPU/診断lease保持、Native/Hostedで同じ操作結果となることとする。これは追加設計の条件であり、PR #86の既存テストで検証済みとは扱わない。
+受け入れ条件は、静的factoryだけで構築可能、同key再構築で入力/focus維持、別keyで新session、bool/Signalからの開閉、anchor消失/重複、dismiss通知一回、応答しないモデル、準備中の反転、除去中のGPU/診断lease保持、Native/Hostedで同じ操作結果となることとする。PR #93の検証結果はUI-0019の実装記録へ記載する。
 
 ## 検討した代替案
 

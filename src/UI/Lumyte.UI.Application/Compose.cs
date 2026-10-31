@@ -19,6 +19,10 @@ public static class Compose
     /// <param name="onOpened">Reports a new instance.</param>
     /// <param name="onClosed">Reports a finished instance.</param>
     /// <returns>The immutable declaration.</returns>
-    public static UiWindowDeclaration Window(string key, string title, Func<UiApplicationWindowContext, Widget>? root = null, Func<IServiceProvider, IUiApplicationContent>? content = null, bool isOpen = true, string? owner = null, Vector2? initialClientSize = null, WindowPresentation presentation = WindowPresentation.Automatic, Action<UiWindowCloseRequest>? onCloseRequested = null, Action<UiApplicationWindowResult>? onOpened = null, Action<UiApplicationWindowResult>? onClosed = null) =>
-        new(key, title, root, content, isOpen, owner, initialClientSize ?? new(800, 600), presentation, onCloseRequested, onOpened, onClosed);
+    public static UiWindowDeclaration Window(string key, UiArgument<string> title, Func<UiApplicationWindowContext, Widget>? root = null, Func<IServiceProvider, IUiApplicationContent>? content = null, UiArgument<bool> isOpen = default, string? owner = null, Vector2? initialClientSize = null, WindowPresentation presentation = WindowPresentation.Automatic, Action<UiWindowCloseRequest>? onCloseRequested = null, Action<UiApplicationWindowResult>? onOpened = null, Action<UiApplicationWindowResult>? onClosed = null) =>
+        new(key, title.GetInitialValue(), root, content, isOpen.IsSpecified ? isOpen.GetInitialValue() : true, owner, initialClientSize ?? new(800, 600), presentation, onCloseRequested, onOpened, onClosed)
+        {
+            TitleArgument = title,
+            OpenArgument = isOpen,
+        };
 }

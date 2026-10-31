@@ -147,6 +147,8 @@ Width/Height・IsVisible・Orientation・Spacingの宣言setterはMarkLayoutDirt
 
 通常Dispatchはlayoutを実行しない。UpdateLayout/Recordの失敗でホストが入力配送を止める場合も、Idleへの復帰後にFocusLost等で清掃できる。取消は旧公開値も参照せず、dirtyとlayoutの再試行可能性を保つ。
 
+実装PR 15の[UI-0019](UI-0019-signals-and-reactive-state.md)では、通常UI操作の入口とIdle復帰時にSignal依存の再構築と表示差分の反映を処理する。宣言setterの無効化には依存せず、専用更新経路から表示要素を無効化する。layoutの作業結果を公開する前に依存revisionも確認し、pass中の変更ではdirtyを残して更新を中断する。Size/Boundsの部分更新はrollbackせず、hostは描画を停止する。低水準利用を含め、利用者にSignalの手動pumpを要求しない。
+
 ### 初期対象と拡張境界
 
 one-passはサイズ決定の基本プロトコルであり、任意の制約問題を一回で解く保証ではない。intrinsic/dry layout、兄弟の最大サイズに全員を揃える再計測、一般の循環依存は初期対象外とする。Flex/Expanded、scroll/sliver、baseline、alignmentの追加は別ADRで子への制約と追加計測の可否を定義する。

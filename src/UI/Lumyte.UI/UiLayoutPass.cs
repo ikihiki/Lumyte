@@ -86,7 +86,7 @@ internal sealed class UiLayoutPass
                 throw new InvalidOperationException("Layout must return a finite size within its constraints.");
             }
 
-            foreach (WidgetChildren collection in node.ChildCollections)
+            foreach (WidgetChildren collection in node.ChildCollections.Where(collection => !collection.IsPortal))
             {
                 ValidateChildren(collection);
             }
