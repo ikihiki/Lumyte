@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: ${{ matrix.platform }} (${{ matrix.arch }})
+  linux:
+    name: Linux (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -27,19 +27,12 @@ jobs:
           - os: ubuntu-24.04-arm
             platform: Linux
             arch: aarch64
-          - os: windows-2022
-            platform: Windows
-            arch: x64
-          - os: windows-11-arm
-            platform: Windows
-            arch: aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Cache Linux DXC libraries
-        if: runner.os == 'Linux'
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
@@ -49,40 +42,14 @@ jobs:
           key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
 
       - name: Mise setup (Linux)
-        if: runner.os == 'Linux'
         shell: bash
         run: bash tools/setup/setup.sh
 
-      - name: Mise setup (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: .\tools\setup\setup.ps1
-
       - name: Verify environment (Linux)
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target VerifyEnvironment
-
-      - name: Verify environment (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          $log = Join-Path $env:RUNNER_TEMP 'lumyte-smoke.log'
-          try {
-            & {
-              .\tools\setup\ci-windows-smoke.ps1
-            } *>&1 | Tee-Object -FilePath $log
-          } catch {
-            $details = $_.ToString()
-            if (Test-Path $log) {
-              $details += "`n" + ((Get-Content $log -Tail 60) -join "`n")
-            }
-            $details = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Host "::error title=Windows environment verification failed::$details"
-            exit 1
-          }
+          dotnet run --project build -c Release --no-build --no-restore -- --target NativeSmoke
 
       - name: Prepare Linux validation dependencies
         if: matrix.os == 'ubuntu-24.04'
@@ -92,21 +59,12 @@ jobs:
           sudo apt-get install -y libopenal1
 
       - name: Build solution (Linux)
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target Compile --configuration Release
-
-      - name: Build solution (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--', '--target', 'Compile', '--configuration', 'Release')
+          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
 
       - name: Run solution tests (Linux)
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
@@ -116,18 +74,10 @@ jobs:
             export LUMYTE_OPENAL_TESTS=1
             export ALSOFT_DRIVERS=null
           fi
-          dotnet run --project build -c Release -- --target Test --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target TestBrowserContracts
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiNative --configuration Release --host-only --no-build --no-restore
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
-            dotnet run --project build -c Release -- --target PipelineBenchmark --configuration Release --no-build --no-restore
+            dotnet run --project build -c Release --no-build --no-restore -- --target PipelineBenchmark --configuration Release --no-build --no-restore
           fi
-
-      - name: Run solution tests (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--', '--target', 'Test', '--configuration', 'Release', '--no-build', '--no-restore')
 
       - name: Upload native Parley package assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -147,8 +97,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Run X11 and browser Windowing tests
-        if: runner.os == 'Linux'
+      - name: Native / X11 windowing
         shell: bash
         run: |
           source tools/setup/activate.sh
@@ -156,32 +105,36 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y xvfb xauth
           fi
-          dotnet run --project build -c Release -- --target TestWindowing --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestWindowing --configuration Release --no-build --no-restore
 
-      - name: Run Wasm and browser WebGPU tests
+      - name: Distribution / samples, AOT and packages
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --configuration Release --host-only --no-build --no-restore --skip-parley-package
+
+      - name: Quality / format and lint
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
+
+      - name: Browser / contracts, WebGPU and audio
         if: matrix.os == 'ubuntu-24.04'
         shell: bash
         env:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestWasm --configuration Release
-
-      - name: Run browser audio contracts
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
-        env:
-          CHROME: /usr/bin/google-chrome
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestBrowserAudio --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser --configuration Release
 
       - name: Verify diagnostic server and game processes
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestDiagnosticsProcesses --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestDiagnosticsProcesses --configuration Release --no-build --no-restore
 
       - name: Verify server-hosted diagnostic UI
         if: matrix.os == 'ubuntu-24.04'
@@ -190,7 +143,7 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target TestDiagnosticsUi --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target TestDiagnosticsUi --configuration Release --no-build --no-restore
 
       - name: Generate diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -201,7 +154,7 @@ jobs:
           PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target DiagnosticGallery
+          dotnet run --project build -c Release --no-build --no-restore -- --target DiagnosticGallery
 
       - name: Upload diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -220,22 +173,101 @@ jobs:
           path: artifacts/test-results/
           if-no-files-found: ignore
 
-      - name: Sample, pack and lint
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
+  windows:
+    name: Windows (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: Windows
+            arch: x64
+          - os: windows-11-arm
+            platform: Windows
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Mise setup (Windows)
+        shell: powershell
         run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release -- --target Samples --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target TestAot --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target Pack --configuration Release --no-build --no-restore --skip-parley-package
-          dotnet run --project build -c Release -- --target PublishWindowSample --configuration Release --no-build --no-restore
-          dotnet run --project build -c Release -- --target Compile --configuration Debug --no-restore
-          dotnet run --project build -c Release -- --target CheckFormat --configuration Debug --no-restore
-          dotnet run --project build -c Release -- --target CheckMarkdown
+          .\tools\setup\setup.ps1
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
+
+      - name: Verify environment (Windows)
+        shell: powershell
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'lumyte-smoke.log'
+          try {
+            & {
+              .\tools\setup\ci-windows-smoke.ps1
+            } *>&1 | Tee-Object -FilePath $log
+          } catch {
+            $details = $_.ToString()
+            if (Test-Path $log) {
+              $details += "`n" + ((Get-Content $log -Tail 60) -join "`n")
+            }
+            $details = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host "::error title=Windows environment verification failed::$details"
+            exit 1
+          }
+
+      - name: Build solution (Windows)
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
+
+      - name: Run solution tests (Windows)
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CiNative', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+
+      - name: Upload native Parley package assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: parley-native-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/text-parley/package/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
+      - name: Distribution / Windows window sample
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'PublishWindowSample', '--configuration', 'Release', '--no-build', '--no-restore')
+
+      - name: Distribution / Windows packages
+        if: matrix.arch == 'x64'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
+            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Pack', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
+          }
+
+      - name: Quality / Windows format
+        if: matrix.arch == 'x64'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CheckFormat', '--host-only')
 
   package:
     name: Parley native NuGet package
-    needs: validate
+    needs: [linux, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -265,7 +297,7 @@ jobs:
           dotnet run --project build -c Release -- --target Restore --project src/Graphics/Lumyte.Graphics.Text.Parley
 
       - name: Package validated runtime assets
-        run: dotnet run --project build -c Release -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
+        run: dotnet run --project build -c Release --no-build --no-restore -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

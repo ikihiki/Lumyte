@@ -77,17 +77,47 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・benchmark動作確認／BenchmarkDotNet測定結果の保存 |
-| `TestBrowserContracts` / `TestWindowing` | Graphics・AudioのJavaScript契約／Linux X11・Browser Windowingの検証 |
+| `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
 | `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
 | `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
 | `DiagnosticGallery` | 検証結果から診断galleryを生成 |
 | `Samples` / `TestAot` | CPU・Audio等のsample／NativeAOT publishと実行 |
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
-| `Ci` | 共通のCI向け検証target群を実行 |
+| `CiNative` | solutionのrestore・build・単体テスト |
+| `CiBrowser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
+| `CiDistribution` | sample実行・NativeAOT・NuGet pack |
+| `CiQuality` | C#・C/C++・Markdownの書式検査 |
+| `Ci` | 上記4カテゴリとRustテスト。個別Textテストはsolutionテストに含まれる |
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
 OS別の実行対象は[workflow](../.github/workflows/composition.yml)で確認できます。
 WindowsのNative smokeを通常ユーザーで起動する処理や、GitHub Pagesの配信権限は分離したままです。
+
+### CIの対象と再利用
+
+LinuxとWindowsは別jobとし、それぞれx64／arm64でnative検証を実行します。
+`--host-only`は正本の`Lumyte.slnx`から現在のOS用solutionを`artifacts/ci/`へ生成します。
+LinuxではWindows Platform・Direct3D12と専用sample／testを除外し、WindowsではLinux Platformを除外します。
+Platformのテストprojectもhost用の参照とソースだけをコンパイルします。
+共通projectの追加は正本への登録だけで反映されます。OS専用projectを追加した場合は`Build.Ci.cs`の分類も更新してください。
+引数を省略した通常のsolution操作は従来どおり全projectを対象にします。
+
+Browser・共通の配布検証・native／Markdown lintはLinux x64に集約します。
+Windows専用packageとWindow sampleはWindows側で検証し、C#の書式は各OSのx64で検査します。
+Native smokeは4環境で維持し、そこでのlint再実行は行いません。
+Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
+
+セットアップ後は`dotnet run --no-build --no-restore`でrunnerを再利用します。
+`--`より後の同名引数は対象projectの再ビルドを抑制するもので、両方を指定する意味が異なります。
+Release成果物をnative検証・配布検証で再利用し、その後にBrowser publishを実行します。
+書式検査のためだけのDebug全体ビルドは行いません。
+
+```sh
+dotnet run --project build -c Release -- --target CiNative --host-only
+dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package
+dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser
+dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
+```
 
 ## ParleyのNative／WASM
 

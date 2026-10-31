@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Xml.Linq;
 using Xunit;
 
 namespace Lumyte.Build.Tests;
@@ -26,11 +27,14 @@ public sealed class RepositoryBuildTests
 
     /// <summary>Tests depend on the explicit restore/build targets and suppress their own implicit work.</summary>
     /// <returns>The asynchronous process assertion.</returns>
-    [Fact]
-    public async Task TestRunsOnlyAfterTheExplicitBuildAsync()
+    /// <param name="target">The direct or grouped test entry point.</param>
+    [Theory]
+    [InlineData("Test")]
+    [InlineData("CiNative")]
+    public async Task TestRunsOnlyAfterTheExplicitBuildAsync(string target)
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
+        BuildFixture.ProcessResult result = await fixture.RunAsync(target, "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["restore", "build", "test"], Commands(records));
@@ -146,6 +150,61 @@ public sealed class RepositoryBuildTests
         BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
+    }
+
+    /// <summary>Host selection keeps new shared projects and removes only foreign platform projects.</summary>
+    /// <returns>The asynchronous solution-selection assertion.</returns>
+    [Fact]
+    public async Task HostSolutionPreservesSharedProjectsAndBuildMetadataAsync()
+    {
+        using var fixture = new BuildFixture();
+        const string Solution = """
+            <Solution>
+              <Folder Name="/src/">
+                <Project Path="src/Lumyte.Platform.Linux.csproj" />
+                <Project Path="src/Lumyte.Platform.Windows.csproj" />
+                <Project Path="src/Lumyte.Graphics.Direct3D12.csproj" />
+                <Project Path="src/New.Shared.csproj" />
+                <Project Path="build/_build.csproj"><Build Project="false" /></Project>
+              </Folder>
+            </Solution>
+            """;
+        File.WriteAllText(fixture.Solution, Solution);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("CiNative", "--dotnet-path", fixture.DotnetTool, "--host-only");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["restore", "build", "test"], Commands(records));
+        string solution = Arguments(records[0])[1];
+        Assert.All(records, record => Assert.Contains(solution, Arguments(record)));
+        var document = XDocument.Load(solution);
+        string[] paths = document.Descendants("Project").Select(project => project.Attribute("Path")!.Value).ToArray();
+        Assert.All(paths, path => Assert.True(Path.IsPathFullyQualified(path)));
+        Assert.Contains(Path.Combine(fixture.Root, "src", "New.Shared.csproj"), paths);
+        Assert.Equal(OperatingSystem.IsLinux(), paths.Any(path => path.EndsWith("Lumyte.Platform.Linux.csproj", StringComparison.Ordinal)));
+        Assert.Equal(OperatingSystem.IsWindows(), paths.Any(path => path.EndsWith("Lumyte.Platform.Windows.csproj", StringComparison.Ordinal)));
+        Assert.Equal(OperatingSystem.IsWindows(), paths.Any(path => path.EndsWith("Lumyte.Graphics.Direct3D12.csproj", StringComparison.Ordinal)));
+        Assert.Equal("false", Assert.Single(document.Descendants("Build")).Attribute("Project")!.Value);
+    }
+
+    /// <summary>Default host packaging cannot select an unbuilt foreign platform project.</summary>
+    /// <returns>The asynchronous package-selection assertion.</returns>
+    [Fact]
+    public async Task HostPackExcludesForeignPlatformProjectsAsync()
+    {
+        using var fixture = new BuildFixture();
+        string source = Path.Combine(fixture.Root, "src");
+        Directory.CreateDirectory(source);
+        foreach (string name in new[] { "Lumyte.Platform.Linux", "Lumyte.Platform.Windows", "New.Shared" })
+        {
+            File.Copy(fixture.Project, Path.Combine(source, name + ".csproj"));
+        }
+
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
+        AssertSuccess(result);
+        string[] packed = fixture.Records("dotnet").Where(record => Arguments(record)[0] == "pack").Select(record => Path.GetFileNameWithoutExtension(Arguments(record)[1])).ToArray();
+        Assert.Contains("New.Shared", packed);
+        Assert.Equal(OperatingSystem.IsLinux(), packed.Contains("Lumyte.Platform.Linux", StringComparer.Ordinal));
+        Assert.Equal(OperatingSystem.IsWindows(), packed.Contains("Lumyte.Platform.Windows", StringComparer.Ordinal));
     }
 
     private static string[] Commands(JsonElement[] records) => records.Select(record => Arguments(record)[0]).ToArray();
