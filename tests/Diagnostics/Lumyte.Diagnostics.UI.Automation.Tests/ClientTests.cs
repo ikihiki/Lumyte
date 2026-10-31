@@ -29,6 +29,28 @@ public sealed class ClientTests
         Assert.Equal(3, handler.Clicks);
     }
 
+    /// <summary>Checks child metadata and PageFor submit through the same control sequence over the wire envelope.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task PopupPageSharesRootControlSequenceAsync()
+    {
+        using var handler = new LoopbackHandler(popups: true);
+        using var http = new HttpClient(handler)
+        {
+            BaseAddress = new("http://diagnostics/"),
+        };
+        await using var client = new UiAutomationDiagnosticsClient(http, await handler.Ready);
+        IReadOnlyList<UiRemoteTarget> targets = await client.ListTargetsAsync();
+        UiRemoteTarget root = targets.Single(t => t.Name == "settings");
+        UiRemoteTarget popup = targets.Single(t => t.Name == "popup");
+        Assert.Equal(root.Id, popup.ParentTargetId);
+        Assert.Equal(root.Id, popup.ControlGroupId);
+        await using UiRemoteControl control = await client.AcquireControlAsync(root.Id);
+        await control.PageFor(popup.Id).GetByTestId("save").ClickAsync();
+        await control.Page.GetByTestId("save").ClickAsync();
+        Assert.Equal(2, handler.Clicks);
+    }
+
     /// <summary>Checks lost admission retries identical envelope bytes and sequence rather than issuing a replacement click.</summary>
     /// <returns>The asynchronous check.</returns>
     [Fact]

@@ -66,3 +66,15 @@ python3 tools/diagnostics/ui-browser-smoke.py
 ```
 
 2026-10-29に実ChromiumのHTTP Agentと別プロセスOperatorで、対象発見、control、Click、indicatorのExpect、Enter、count、解放と終了が成功しました。この経路はDOM入力そのものの検証とは分けて扱います。Browser publish時のtrim解析も確認し、既存DI登録のPublicConstructors注釈を修正しました。wasm-toolsによるnative最適化とNative AOTは未検証です。GPU提示／PNGは既知のmapAsync環境エラーにより未検証です。
+
+## Hosted Popupの専用モード
+
+?popupsは注入HostedUiWindowManagerと同じcanvasで通常画面・Popup・submenuを合成します。canvas内を右クリックして開き、緑の保存項目、橙色のsubmenuを操作できます。contextmenuはこのcanvasだけで抑止し、別canvas/tab/window.openは使いません。外側クリックの系列は背面Buttonへ渡さず、canvas外のDOM入力はその要素へ通常どおり配送します。
+
+```sh
+LUMYTE_UI_INPUT_ONLY=1 LUMYTE_UI_POPUPS=1 node samples/Lumyte.UI.Browser.Sample/verify-browser.mjs
+```
+
+実Browserのcontextmenu、submenu、Click/Enter/Escape、canvas内外のoutside press、DPI、resize、blur、canvas削除・終了を検証します。input-onlyはCPUの合成記録までを確認し、GPU提示／PNGの検証とは区別します。
+
+2026-10-29に上記の実Chromium検証が成功しました。canvas削除は次のPlatform/WindowSystem pumpより先に検知して終了へ進み、描画・native保持tokenを返してから元Windowを解放します。popup専用モードと従来の通常UIモードをそれぞれ検証します。

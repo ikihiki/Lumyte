@@ -87,6 +87,21 @@ public sealed class RebuildInputTests
         Assert.Equal(identity, surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "button").Id);
     }
 
+    /// <summary>Checks a saved focus bookmark resolves the logical identity after declarations are replaced.</summary>
+    [Fact]
+    public void FocusBookmarkFollowsTheMatchedDeclaration()
+    {
+        Definitions.Button first = Button(key: "button");
+        using UiSurface surface = Surface(Panel()[first]);
+        Assert.True(surface.TryFocus(first));
+        UiFocusBookmark bookmark = surface.CaptureFocus();
+        Definitions.Button next = Button(key: "button");
+        surface.Rebuild(Panel()[Panel(), next]);
+        surface.UpdateLayout();
+        Assert.True(surface.TryRestoreFocus(bookmark));
+        Assert.Same(next, surface.FocusedWidget);
+    }
+
     private static UiSurface Surface(Definitions.Widget root)
     {
         var surface = new UiSurface(root);

@@ -1,0 +1,13 @@
+# Lumyte.UI.Windowing.WindowSystem
+
+既存WindowSystemをIUiWindowManagerへ接続する任意adapterです。UI.Windowing本体へNative型を持ち込みません。通常WindowはWindowSystemUiWindowSourceで借用登録し、Native Popupは非表示・PreserveFocusで生成します。
+
+IUiNativePresentationFactoryを注入し、monitor work areaの上限、実Windowへの描画登録、GPU退役をホストへ委譲します。Platform.PumpEventsとWindowSystem.Updateを先に進め、UiWindowManager.Advanceを続けて要求IDと実状態を確認します。元のWindowSystem、input source、factoryをadapterがDisposeすることはありません。
+
+Native対応はOwnedWindow／NonActivating／AnchorPlacement、明示InputOrigin、hostが確認したoutside press・跨Window系列取消の全条件を要求します。UiNativeWindowHostCapabilitiesを、未検証の環境でtrueにしないでください。失敗は固定codeで返します。画面座標への推測変換はせず、source間の変換が不明ならfalseを返し、routerが系列を取消します。
+
+Hostedが必要ならHostedUiWindowManagerとFallbackUiWindowManagerを明示注入します。WindowSystem自体へ暗黙fallbackを追加しません。通常rootを含むすべての登録とbindingをdrainしてからadapterをDisposeし、最後に元Window/Platformを終了してください。
+
+Windows/LinuxのOS上での別Window操作は未検証です。テストのNativeTestPlatformは実WindowSystemとadapterの要求・focus・清掃を確認するfixtureであり、実環境対応完了を表しません。
+
+[manager契約](../../../docs/adr/ui/UI-0014-injectable-window-manager.md)／[テスト](../../../tests/UI/Lumyte.UI.Windowing.Tests/README.md)

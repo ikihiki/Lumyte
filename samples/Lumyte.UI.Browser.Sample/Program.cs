@@ -9,6 +9,7 @@ using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Browser;
 using Lumyte.UI.Automation;
 using Lumyte.UI.SampleSupport;
+using Lumyte.UI.Windowing;
 using Lumyte.Windowing;
 using static Lumyte.UI.Compose;
 
@@ -19,7 +20,9 @@ namespace Lumyte.UI.Browser.Sample;
 internal static partial class Program
 {
     private static readonly Queue<InputRecord> _pending = [];
+
     private static readonly TaskCompletionSource _stopped = new();
+
     private static readonly TaskCompletionSource _initialized = new();
     private static BrowserPlatform? _platform;
     private static WindowSystem? _windows;
@@ -34,6 +37,7 @@ internal static partial class Program
     private static WindowNode? _root;
     private static WindowNode? _hosted;
     private static UiSurface? _mainUi;
+    private static UiPopupExercise? _popupExercise;
     private static UiSurface? _hostedUi;
     private static UiSampleResources? _resources;
     private static bool _graph;
@@ -63,6 +67,15 @@ internal static partial class Program
     }
 
     [JSExport]
+    internal static void OpenPopup(bool contextMenu) => _popupExercise?.Open(contextMenu);
+
+    [JSExport]
+    internal static void OutsidePopupPress() => _popupExercise?.OutsidePress();
+
+    [JSExport]
+    internal static string GetPopupState() => $"{_popupExercise?.Ready},{_popupExercise?.Current?.State},{_popupExercise?.Clicks},{_popupExercise?.Popups.CapturePopups().Count},{_popupExercise?.Popups.CapturePopups().Count(p => p.State == UiPopupState.Open)}";
+
+    [JSExport]
     internal static string GetState() => $"{_clicks},{_frames},{_mainButton?.IsPressed},{_hostedButton?.IsPressed}";
 
     [JSExport]
@@ -83,6 +96,7 @@ internal static partial class Program
             _hostedUi!.SetViewport(_hosted!.ClientSize);
             _hostedUi.UpdateLayout();
             _diagnostics?.Pump();
+            _popupExercise?.Advance();
             _input!.Update();
             while (_pending.TryDequeue(out InputRecord input))
             {
@@ -107,8 +121,16 @@ internal static partial class Program
                 ((Canvas2D)canvas).Begin();
             }
 
-            UiHostDrawing.Record(canvas, _root, _mainUi);
-            foreach (WindowNode node in _root.GetHostedOrder())
+            if (_popupExercise is not null)
+            {
+                _popupExercise.Source.Record(canvas);
+            }
+            else
+            {
+                UiHostDrawing.Record(canvas, _root, _mainUi);
+            }
+
+            foreach (WindowNode node in _popupExercise is null ? _root.GetHostedOrder() : Array.Empty<WindowNode>())
             {
                 if (node == _hosted)
                 {
@@ -119,6 +141,7 @@ internal static partial class Program
             if (_inputOnly)
             {
                 _ = ((Canvas2D)canvas).End();
+                _popupExercise?.Source.CompleteFrame();
                 _frames++;
                 return;
             }
@@ -142,10 +165,12 @@ internal static partial class Program
                 await _presenter!.DrawAsync(_swapchain, ((Canvas2D)canvas).End());
             }
 
+            _popupExercise?.Source.CompleteFrame();
             _frames++;
         }
         finally
         {
+            _popupExercise?.Source.CompleteFrame(false);
             _drawing = false;
         }
     }
@@ -167,6 +192,12 @@ internal static partial class Program
         _router!.Detach(_hostedUi!);
         _router.Detach(_mainUi!);
         _input!.StopSource(_source!);
+        if (_popupExercise is not null)
+        {
+            await _popupExercise.DisposeAsync();
+            _popupExercise = null;
+        }
+
         _input.Dispose();
         _source!.Dispose();
         _swapchain?.Dispose();
@@ -260,6 +291,27 @@ internal static partial class Program
         _diagnosticMode = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteDiagnostics");
         _automation = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteAutomation");
         _inputOnly = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteInputOnly");
+        if (JSHost.GlobalThis.GetPropertyAsBoolean("lumytePopups"))
+        {
+            if (_automation || _diagnosticMode)
+            {
+                throw new InvalidOperationException("Choose one sample mode.");
+            }
+
+            var scope = Guid.NewGuid();
+            _popupExercise = new(
+                _mainUi,
+                _mainButton,
+                () =>
+            {
+                Lumyte.Windowing.Abstractions.WindowState state = _root.NativeWindow.State;
+                return new UiWindowSourceSnapshot(1, _source.TryGetInputWindowId(state.Id, out Lumyte.Input.Abstractions.InputWindowId origin) ? origin : null, state.ClientSize, state.Scale, state.IsVisible, state.IsActive, state.Lifetime == Lumyte.Windowing.Abstractions.WindowLifetime.Closed, scope);
+            },
+                nativeUnavailableCode: "browser-hosted-only");
+            _router = new(_source, _source, _popupExercise.Dispatch);
+            _router.Attach(_root, _mainUi);
+        }
+
         if (_inputOnly)
         {
             await StartDiagnosticsAsync();

@@ -56,7 +56,7 @@
 +}
 ```
 
-キーはUI-0005のOnInputへ配送し、focusの取得・喪失も型付きUiInputとして通知する。Windowを跨ぐfocus管理はこのPRでは公開しない。Focusable=trueのカスタムWidgetもキーをOnInputで処理し、必要ならキー系列を取得できる。Enter/SpaceのClick認識はButton自身のoverrideへ置く。
+キーはUI-0005のOnInputへ配送し、focusの取得・喪失も型付きUiInputとして通知する。Windowを跨ぐfocus管理はこのPRでは公開しない。[UI-0011](UI-0011-popup-windowing-and-fallback.md)でPopupのfocus bookmark・復帰・候補移動を追加する。Focusable=trueのカスタムWidgetもキーをOnInputで処理し、必要ならキー系列を取得できる。Enter/SpaceのClick認識はButton自身のoverrideへ置く。
 
 ### focus候補と移動
 

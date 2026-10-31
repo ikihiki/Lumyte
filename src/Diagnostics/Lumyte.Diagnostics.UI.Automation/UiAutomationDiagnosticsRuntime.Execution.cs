@@ -223,7 +223,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
         job.Cancellation.Dispose();
     }
 
-    private class TrackedHost(IUiAutomationHost host, Job job) : IUiAutomationHost
+    private class TrackedHost(IUiAutomationHost host, Job job) : IUiAutomationHost, IUiAutomationRoutingHost
     {
         public TimeProvider TimeProvider => host.TimeProvider;
 
@@ -238,6 +238,12 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             return action(surface);
         },
             cancellationToken);
+
+        public UiPointerProbe ProbePointer(UiSurface surface, Vector2 position) => host is IUiAutomationRoutingHost routing ? routing.ProbePointer(surface, position) : surface.ProbePointer(position);
+
+        public bool CanReceiveKeys(UiSurface surface) => host is not IUiAutomationRoutingHost routing || routing.CanReceiveKeys(surface);
+
+        public bool Dispatch(UiSurface surface, UiInput input) => host is IUiAutomationRoutingHost routing ? routing.Dispatch(surface, input) : surface.Dispatch(input);
 
         public ValueTask NextFrameAsync(CancellationToken cancellationToken = default) => host.NextFrameAsync(cancellationToken);
 

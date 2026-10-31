@@ -17,10 +17,12 @@
     <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
     <InternalsVisibleTo Include="Lumyte.Diagnostics.UI.Automation.Tests" />
     <InternalsVisibleTo Include="Lumyte.Diagnostics.UI.Automation.Game.Sample" />
+    <InternalsVisibleTo Include="Lumyte.UI.Popup.Sample" />
     <InternalsVisibleTo Include="Lumyte.UI.Automation.Tests" />
     <InternalsVisibleTo Include="Lumyte.Resources.Graphics.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Sample" />
     <InternalsVisibleTo Include="Lumyte.UI.Browser.Sample" />
+    <ProjectReference Include="../../src/UI/Lumyte.UI.Windowing.Automation/Lumyte.UI.Windowing.Automation.csproj" />
   </ItemGroup>
   <Import Project="../../tools/shaders/Slang.targets" />
 </Project>
