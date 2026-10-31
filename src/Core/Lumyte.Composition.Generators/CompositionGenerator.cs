@@ -408,7 +408,7 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
             foreach (ISymbol parameter in parameters.Where(parameter => ParameterAdapter(component, parameter) is not null && Required(parameter)))
             {
                 string name = Escape(ParameterName(parameter));
-                builder.Append("if (!").Append(name).Append(".IsSpecified) throw new global::System.ArgumentException(\"A required argument was omitted.\", nameof(").Append(name).AppendLine("));");
+                builder.Append("if (!").Append(ArgumentCall(component, parameter, "IsSpecified", name)).Append(") throw new global::System.ArgumentException(\"A required argument was omitted.\", nameof(").Append(name).AppendLine("));");
             }
 
             for (int index = 0; index < parameters.Length; index++)
@@ -418,7 +418,7 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
                 {
                     string name = Escape(ParameterName(parameter));
                     builder.Append(TypeName(MemberType(parameter))).Append(" __initial").Append(index).Append(" = ")
-                        .Append(name).Append(".IsSpecified ? ").Append(name).AppendLine(".GetInitialValue() : default!;");
+                        .Append(ArgumentCall(component, parameter, "IsSpecified", name)).Append(" ? ").Append(ArgumentCall(component, parameter, "GetInitialValue", name)).AppendLine(" : default!;");
                 }
             }
         }
@@ -437,7 +437,7 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    builder.Append(name).Append(".IsSpecified ? new global::Lumyte.Composition.Optional<").Append(TypeName(MemberType(parameter)))
+                    builder.Append(ArgumentCall(component, parameter, "IsSpecified", name)).Append(" ? new global::Lumyte.Composition.Optional<").Append(TypeName(MemberType(parameter)))
                         .Append(">(__initial").Append(index).Append(") : default(global::Lumyte.Composition.Optional<").Append(TypeName(MemberType(parameter))).Append(">)");
                 }
             }
@@ -458,8 +458,9 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
                 if (ParameterAdapter(component, parameter) is not null)
                 {
                     string name = Escape(ParameterName(parameter));
-                    builder.Append("if (").Append(name).Append(".IsSpecified) ").Append(name).Append(".AttachTo(instance, __LumyteArgumentKey").Append(index)
-                        .Append(", __initial").Append(index).Append(", __LumyteArgumentSet").Append(index).AppendLine(");");
+                    builder.Append("if (").Append(ArgumentCall(component, parameter, "IsSpecified", name)).Append(") ").Append(ArgumentHelper(component, parameter))
+                        .Append(".AttachTo(ref ").Append(name).Append(", instance, __LumyteArgumentKey").Append(index)
+                        .Append(", __initial").Append(index).Append("!, __LumyteArgumentSet").Append(index).AppendLine(");");
                 }
             }
 

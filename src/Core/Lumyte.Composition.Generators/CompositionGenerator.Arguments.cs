@@ -38,15 +38,15 @@ public sealed partial class CompositionGenerator
             {
                 fallback = adapter.ConstructedFrom.Construct(value);
             }
-            else if (attribute.ConstructorArguments[0].Value is INamedTypeSymbol match)
+            else if (attribute.ConstructorArguments[0].Value is ITypeSymbol match)
             {
                 if (SymbolEqualityComparer.Default.Equals(match, value))
                 {
                     return adapter;
                 }
 
-                if (match.IsUnboundGenericType && value is INamedTypeSymbol named
-                    && SymbolEqualityComparer.Default.Equals(match.OriginalDefinition, named.OriginalDefinition))
+                if (match is INamedTypeSymbol { IsUnboundGenericType: true } genericMatch && value is INamedTypeSymbol named
+                    && SymbolEqualityComparer.Default.Equals(genericMatch.OriginalDefinition, named.OriginalDefinition))
                 {
                     generic = adapter.ConstructedFrom.Construct(named.TypeArguments.ToArray());
                 }
@@ -55,6 +55,17 @@ public sealed partial class CompositionGenerator
 
         return generic ?? fallback;
     }
+
+    private static string ArgumentHelper(INamedTypeSymbol component, ISymbol parameter)
+    {
+        ITypeSymbol value = MemberType(parameter);
+        INamedTypeSymbol adapter = ParameterAdapter(component, parameter)!;
+        ITypeSymbol contract = adapter.AllInterfaces.First(type => type.OriginalDefinition.ToDisplayString() == Prefix + "IComposeArgument<T>"
+            && SymbolEqualityComparer.Default.Equals(type.TypeArguments[0], value)).TypeArguments[0];
+        return "global::Lumyte.Composition.ComposeArgument<" + TypeName(contract) + ">";
+    }
+
+    private static string ArgumentCall(INamedTypeSymbol component, ISymbol parameter, string method, string name) => ArgumentHelper(component, parameter) + "." + method + "(ref " + name + ")";
 
     private static string? ValidateAdapter(INamedTypeSymbol component, Compilation compilation)
     {

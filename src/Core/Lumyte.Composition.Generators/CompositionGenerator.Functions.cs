@@ -147,8 +147,8 @@ public sealed partial class CompositionGenerator
             if (ParameterAdapter(argumentOwner, parameter) is not null)
             {
                 value = parameter.HasExplicitDefaultValue
-                    ? value + ".IsSpecified ? " + value + ".GetInitialValue() : " + FunctionDefault(parameter)
-                    : value + ".GetInitialValue()";
+                    ? ArgumentCall(argumentOwner, parameter, "IsSpecified", value) + " ? " + ArgumentCall(argumentOwner, parameter, "GetInitialValue", value) + " : " + FunctionDefault(parameter)
+                    : ArgumentCall(argumentOwner, parameter, "GetInitialValue", value);
             }
 
             builder.Append(TypeName(parameter.Type)).Append(" __initial").Append(index).Append(" = ").Append(value).AppendLine(";");
@@ -161,8 +161,9 @@ public sealed partial class CompositionGenerator
             IParameterSymbol parameter = method.Parameters[index];
             if (ParameterAdapter(argumentOwner, parameter) is not null)
             {
-                builder.Append(Escape(parameter.Name)).Append(".AttachTo(__instance, ").Append(wrapper).Append(generic).Append(".__key").Append(index)
-                    .Append(", __initial").Append(index).Append(", static (__target, __value) => __target.__arg").Append(index).AppendLine(" = __value);");
+                builder.Append("if (").Append(ArgumentCall(argumentOwner, parameter, "IsSpecified", Escape(parameter.Name))).Append(") ").Append(ArgumentHelper(argumentOwner, parameter))
+                    .Append(".AttachTo(ref ").Append(Escape(parameter.Name)).Append(", __instance, ").Append(wrapper).Append(generic).Append(".__key").Append(index)
+                    .Append(", __initial").Append(index).Append("!, static (__target, __value) => __target.__arg").Append(index).AppendLine(" = __value);");
             }
         }
 

@@ -64,6 +64,8 @@ init-only値は後から変更できないためadapterを使わず、元の値�
 3. 解決した具体値を使い、従来の生成constructorでrequired/initと通常parameterを設定する。withは従来どおりその後に実行する。
 4. 全て成功したら指定済みadapterのAttachToを引数順に呼び、元の対象instanceを返す。memberKeyは生成memberごとのcached object、setterは定義型内に生成した型付きstatic helperを使う。アクセス可能性とsetterの制約を引き継ぐ。
 
+クラス・関数のfactoryとも、未指定のadapterではGetInitialValueとAttachToを呼ばない。インターフェースを明示実装したadapterも受理し、同名のpublicメンバーを追加で要求しない。生成コードは`ComposeArgument<T>`の制約付きgeneric helperへfactory内のadapter変数をrefで渡し、boxingやstructのコピーで状態を失わずに契約を呼ぶ。nullableな受け側と非nullを返すadapterの組合せでも、helperはadapterが実装したinterfaceの型注釈を保って呼ぶ。このhelperは生成コード向けの型付きdispatchであり、状態や寿命を保持しない。
+
 AttachToは対象自身が所有する受動的な設定情報だけを登録し、外部購読、thread起動、UI接続、global registryへの登録を開始しない。後続AttachToで失敗しても外部から対象を保持する資源がなく、未返却対象はGC可能となる。constructor/withの外部副作用や、利用者がそこから公開した対象への変更をrollbackしたとは扱わない。withの後も初期値localを渡し、withが上書きした値との優先順位はadapter側で定義する。
 
 再構築を必要とする対象は追加の`ICompositionRebuildable.SetCompositionFactory(Func<object> factory)`を実装する。adapter指定のfactoryはAttachTo成功後に、元の引数とwithから新しい同型宣言を構築する受動的recipeを一回登録する。recipeを実行するのは利用側であり、Generatorは購読を開始しない。init、callback、withも再実行され、withの優先順位を保つ。子のindexerはfactoryの後なのでrecipeには含めず、利用側が登録済みslot構造と子recipeを組み合わせる。手書きnewを含む動的ツリーの再構築方法も利用側が定義する。
@@ -180,7 +182,7 @@ var omittedAdapter = Gauge(value: default(Arg<int>)); // Value == 10
 public class Component { }
 ```
 
-選択順序は「宣言型との完全一致 → 宣言型のgeneric定義との一致 → 共通adapter」とする。設定は基底classからも読み、同じ対象に異なるadapterを重複指定した場合はLYC001とする。異なる対象への指定と共通指定は併用できる。対象型の変換可能性や基底class/interfaceへの変換による曖昧な一致は使わない。
+選択順序は「宣言型との完全一致 → 宣言型のgeneric定義との一致 → 共通adapter」とする。設定は基底classからも読み、同じ対象に異なるadapterを重複指定した場合はLYC001とする。異なる対象への指定と共通指定は併用できる。配列型も完全一致の対象とし、一次元・多次元の構築済み型全体で比較する。generic定義の照合だけをnamed typeへ限定し、fallbackの有無で完全一致の優先順位を変えない。対象型の変換可能性や基底class/interfaceへの変換による曖昧な一致は使わない。
 
 | 宣言された型 | 生成引数型 | adapterが返す型 |
 | --- | --- | --- |
