@@ -47,6 +47,8 @@ public sealed class UiSurfaceTests
         Assert.Throws<ArgumentException>(() => new UiSurface(child));
         await Task.Run(() => leaf.Children.Initialize(Panel()));
         Assert.Same(leaf, Assert.Single(leaf.Children).Parent);
+        await Task.Run(() => root.Width = 20);
+        Assert.Equal(20, root.Width);
         await Task.Run(surface.Dispose);
         using var replacement = new UiSurface(root);
         Assert.Same(root, replacement.Root);

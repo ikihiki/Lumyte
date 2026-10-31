@@ -92,6 +92,7 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
         _items = view;
         _initialized = true;
         _owner.InvalidateStructure();
+        _owner.MarkLayoutDirty();
     }
 
     /// <summary>Returns an enumerator over the immutable child snapshot.</summary>

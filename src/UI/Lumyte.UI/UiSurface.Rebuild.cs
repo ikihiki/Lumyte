@@ -72,6 +72,8 @@ public sealed partial class UiSurface
         }
 
         PublishDeclaration(candidate, plan);
+
+        next.MarkLayoutDirty();
     }
 
     private void PublishDeclaration(RebuildCandidate candidate, RebuildPlan plan)
