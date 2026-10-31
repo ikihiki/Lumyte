@@ -6,6 +6,12 @@ internal static class Xlib
 {
     internal delegate int ErrorHandler(nint display, ref ProtocolError error);
 
+    [DllImport("libX11.so.6")]
+    internal static extern int XGrabPointer(nint display, nuint window, int ownerEvents, uint eventMask, int pointerMode, int keyboardMode, nuint confineTo, nuint cursor, nuint time);
+
+    [DllImport("libX11.so.6")]
+    internal static extern int XUngrabPointer(nint display, nuint time);
+
     [DllImport("libX11.so.6", EntryPoint = "XSetErrorHandler")]
     internal static extern nint SetErrorHandler(ErrorHandler handler);
 

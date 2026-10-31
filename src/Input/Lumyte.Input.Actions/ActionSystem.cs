@@ -57,13 +57,29 @@ public sealed class ActionSystem : IDisposable
     {
     }
 
-    private ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions, IActionInspection? inspection, bool inspectionRequired)
+    /// <summary>Initializes a new instance of the <see cref="ActionSystem"/> class for one immutable window scope.</summary>
+    /// <param name="profile">The action profile.</param>
+    /// <param name="bufferOptions">The recognition buffer policy.</param>
+    /// <param name="inspection">The optional observer.</param>
+    /// <param name="windowId">The scope, or null for windowless input.</param>
+    public ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions, IActionInspection? inspection, InputWindowId? windowId)
+        : this(profile, bufferOptions, inspection, inspectionRequired: false, windowId)
+    {
+    }
+
+    private ActionSystem(ActionProfile profile, InputBufferOptions? bufferOptions, IActionInspection? inspection, bool inspectionRequired, InputWindowId? windowId = null)
     {
         if (inspectionRequired)
         {
             ArgumentNullException.ThrowIfNull(inspection);
         }
 
+        if (windowId?.Value == Guid.Empty)
+        {
+            throw new ArgumentException("A window ID cannot be empty.", nameof(windowId));
+        }
+
+        WindowId = windowId;
         profile.Validate();
         _inspection = inspection;
         _profile = profile;
@@ -77,6 +93,9 @@ public sealed class ActionSystem : IDisposable
 
     /// <summary>Occurs when an operation is recognized.</summary>
     public event Action<RecognizedAction>? Recognized;
+
+    /// <summary>Gets the window whose state this system recognizes.</summary>
+    public InputWindowId? WindowId { get; }
 
     /// <summary>Gets buffer.</summary>
     public ActionInputBuffer Buffer { get; private set; }
@@ -325,7 +344,18 @@ public sealed class ActionSystem : IDisposable
             {
                 Timers(record.RecordedAt);
                 _sequence = record.Sequence;
-                if (record.Data is FocusData { IsFocused: false } or DeviceDisconnectedData)
+                if (record.Data is not DeviceDisconnectedData && record.StateWindowId != WindowId)
+                {
+                    continue;
+                }
+
+                if (record.Data is MouseButtonCanceledData canceled)
+                {
+                    CancelControl(record.DeviceId, new(InputControlKind.MouseButton, (int)canceled.Button), record.RecordedAt);
+                    continue;
+                }
+
+                if (record.Data is FocusData { IsFocused: false } or WindowInputClosedData or DeviceDisconnectedData)
                 {
                     ResetCore(record.DeviceId, record.RecordedAt);
                     continue;
@@ -897,6 +927,56 @@ public sealed class ActionSystem : IDisposable
     {
         var action = new RecognizedAction(definition.Id, definition.ContextId, at, value, devices);
         _recognized.Add(action);
+    }
+
+    private void CancelControl(InputDeviceId device, InputControl control, TimeSpan now)
+    {
+        _controls.Remove((device, control));
+        _controlsChanged = true;
+        _captureHeld.Remove((device, control));
+        ReleaseSuppressedControl(device, control);
+        var contexts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, ActionBinding[]> pair in _profileIndex.BindingsByContext)
+        {
+            foreach (ActionBinding binding in pair.Value.Where(binding => binding.Control == control))
+            {
+                (string Key, string ActionId) action = (pair.Key, binding.ActionId);
+                if (_contributors.GetValueOrDefault(action, []).Contains(device))
+                {
+                    CancelState(action, now);
+                    contexts.Add(pair.Key);
+                    if (_processors.TryGetValue(action, out IActionValueProcessor[]? processors))
+                    {
+                        foreach (IActionValueProcessor processor in processors)
+                        {
+                            processor.Reset();
+                        }
+                    }
+                }
+
+                _bindingDown.Remove((pair.Key, binding.Id, device));
+            }
+        }
+
+        foreach (string context in contexts)
+        {
+            if (_recognizers.TryGetValue(context, out IActionRecognizer[]? recognizers))
+            {
+                foreach (IActionRecognizer recognizer in recognizers)
+                {
+                    recognizer.Reset();
+                }
+            }
+
+            _recognizerEventStarts[context] = _events.Count;
+            foreach ((string Context, string Recognition) key in _progress.Keys.Where(key => key.Context == context).ToArray())
+            {
+                _progress.Remove(key);
+            }
+
+            Buffer.ClearContext(context);
+            _recognized.RemoveAll(recognition => recognition.ContextId == context);
+        }
     }
 
     private void ResetCore(InputDeviceId device, TimeSpan now)

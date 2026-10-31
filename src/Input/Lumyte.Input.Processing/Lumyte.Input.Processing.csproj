@@ -5,6 +5,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/InputSeriesOwners.cs" Link="Internal/InputSeriesOwners.cs" />
     <ProjectReference Include="../Lumyte.Input/Lumyte.Input.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>

@@ -36,3 +36,15 @@ dotnet run --project samples/Lumyte.UI.Sample -c Release -- keyboard-only
 ```
 
 GPU・Window入力sourceを使わず、論理viewportのUpdateLayout後にTabでButtonへfocusを移し、SpaceのDown/Upを配送します。Clickが一回、Down中だけIsPressed=true、Up後にfalseになることを確認します。実WindowのfocusやOSキーの取得は後続host接続PRの範囲です。
+
+## 実Windowの入力とDPI
+
+```sh
+dotnet run --project samples/Lumyte.UI.Sample -- native
+```
+
+Windows（STA）または64-bit Linux/X11で、Wgpuの表示先へUIを提示します。色付きButtonのクリック、Tab／Shift-TabとSpace／Enterを扱い、クリック数をタイトルへ反映します。Window外の解放は取消です。標準sourceはWindow付きの取得列を使い、InputSystemのRecorded通知をqueueへ保存してUpdate終了後に配送します。
+
+viewportはWindowの論理ClientSize、CanvasのscaleはWindow.State.Scale、Drawing2D targetのPixelScaleは1です。resizeは次frameでswapchainを再構成します。描画・入力に失敗した場合は通常更新を止め、Detach・GPUの完了と解放・surfaceのDispose・Window終了の順で清掃します。
+
+2026-10-29はNativeサンプルのビルドとheadlessの統合fixtureを確認しました。Windows/X11 displayがないため、Native実機でのcapture・DPI変更・GPU提示は未確認です。BrowserのHosted例と確認範囲は[Browserサンプル](../Lumyte.UI.Browser.Sample/README.md)を参照してください。

@@ -6,6 +6,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Lumyte.UI.Shared/Lumyte.UI.Shared.csproj" />
+    <ProjectReference Include="../../src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+    <ProjectReference Include="../../src/Platform/Lumyte.Platform.Linux/Lumyte.Platform.Linux.csproj" />
     <ProjectReference Include="../../src/UI/Lumyte.UI/Lumyte.UI.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />

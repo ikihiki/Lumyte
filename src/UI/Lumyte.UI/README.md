@@ -1,6 +1,6 @@
 # Lumyte.UI
 
-Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。ポインター配送・capture・callback引数にも対応します。キーボードfocus・キー配送にも対応します。Window入力の接続は後続PRで追加します。
+Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。ポインター配送・capture・callback引数にも対応します。キーボードfocus・キー配送にも対応します。Window入力とDPIの接続は、UI本体から分離した[Native／Browserサンプル](../../../samples/Lumyte.UI.Shared/README.md)で提供します。
 
 ```csharp
 using Lumyte.UI;
@@ -163,3 +163,7 @@ WidgetがHandledまたはStopPropagationにしたTabでは標準巡回を行い�
 Focusableを含む通常の値変更は新しい宣言を構築します。専用runtime更新で入力候補を変えたときはInvalidateInputと次のUpdateLayoutを使い、キー配送中にlayoutを実行しません。切断・破棄済みへのRequestFocusはfalseで、破棄済みsurfaceへのDispatch/FocusedWidget参照はObjectDisposedExceptionです。
 
 [focusとキー入力のADR](../../../docs/adr/ui/UI-0006-focus-and-keyboard.md)／[keyboard-onlyサンプル](../../../samples/Lumyte.UI.Sample/README.md)
+
+## 実Windowとの接続
+
+[UI-0007](../../../docs/adr/ui/UI-0007-window-input-and-dpi-integration.md)では、取得originを持つInputRecordからUiInputへ変換し、NativeとHostedの系列ownerをホストで保持します。InputSystemのUpdate中はRecordedをqueueへ保存し、Updateが戻ってから配送します。DPIはCanvasへ一度だけ適用し、UiSurfaceは論理座標を扱います。UIパッケージのPlatform／Windowing／InputSystemへの依存は追加していません。
