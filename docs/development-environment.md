@@ -43,7 +43,7 @@ mise run verify
 
 ```bash
 mise run setup                 # OS 依存とツールを含む再セットアップ
-mise run setup-native          # vcpkg と lavapipe ICD の準備
+mise run setup-native          # vcpkg、Linux DXC、lavapipe ICD の準備
 mise run setup-wasm            # 固定 workload-set の wasm-tools を導入
 mise run test-wasm             # Wasm publish と browser WebGPU の検証
 mise run verify                # 開発環境の機能検証
@@ -57,6 +57,8 @@ mise ls --current             # 使用するツールのバージョンを確認
 ```
 
 Slang はシェーダー言語のコンパイラー `shader-slang/slang` の 2026.19 を使用する。Linux x64／arm64 は glibc 2.28 向けの公式アーカイブ、Windows x64／ARM64 は公式 ZIP を取得し、GitHub リリースが公開する SHA-256 digest で検証する。mise がアーカイブ内の `bin/` を PATH に追加するため、有効化後は `slangc` を使用できる。
+
+Linux の DXIL 生成には `SetupDxc` target が DXC v1.8.2505.1 を導入する。x64 は公式アーカイブの SHA-256 を検証し、ARM64 は公式ソースの固定 commit から `dxcompiler`／`dxildll` のみをビルドする。`LUMYTE_ENV_ROOT/dxc/lib` を `LD_LIBRARY_PATH` に追加し、Slang のオンライン／オフライン両経路で使用する。初回の ARM64 セットアップにはコンパイル時間が必要だが、CI はライブラリーをキャッシュする。既存環境は `mise run setup-native` の後に再度 `source tools/setup/activate.sh` を実行する。環境検証では SPIR-V に加えて SM 6.6 DXIL の生成も確認する。
 
 共通環境変数は `mise.toml` に定義し、OS ごとの有効化スクリプトが mise とコンパイラー環境を準備する。.NET、CMake、Ninja、Slang は HTTP backend を使用し、公式アーカイブを既知のチェックサムで検証する。mise のデータ・設定・キャッシュも `LUMYTE_ENV_ROOT/mise/` に保存し、書き込めないホームディレクトリに依存しない。
 

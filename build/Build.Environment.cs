@@ -144,6 +144,14 @@ internal sealed partial class Build
                 throw new InvalidDataException("Slang produced invalid SPIR-V.");
             }
 
+            string dxil = Path.Combine(smoke, "shader.dxil");
+            await ToolWithEnvironmentAsync("slangc", environment, Path.Combine(smoke, "shader.slang"), "-entry", "main", "-stage", "compute", "-target", "dxil", "-profile", "sm_6_6", "-o", dxil).ConfigureAwait(false);
+            byte[] container = await File.ReadAllBytesAsync(dxil).ConfigureAwait(false);
+            if (container.Length < 32 || !container.AsSpan(0, 4).SequenceEqual("DXBC"u8))
+            {
+                throw new InvalidDataException("Slang produced invalid DXIL; verify the downstream DXC compiler and validator.");
+            }
+
             string triplet = architecture + (OperatingSystem.IsWindows() ? "-windows-static" : "-linux");
             string rid = (OperatingSystem.IsWindows() ? "win-" : "linux-") + architecture;
             string nativeBuild = Path.Combine(smoke, "build");

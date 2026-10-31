@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <_LumyteAgilityRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_LumyteAgilityRid>
+    <_LumyteAgilityRid Condition="'$(_LumyteAgilityRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_LumyteAgilityRid>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../build/native/$(_LumyteAgilityRid)/*" Link="AgilitySDK/%(Filename)%(Extension)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" Visible="false" Pack="false" />
+  </ItemGroup>
+  <Target Name="ValidateLumyteAgilityRuntime" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true' and $([System.String]::Copy('$(_LumyteAgilityRid)').StartsWith('win-'))">
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)../build/native/$(_LumyteAgilityRid)/D3D12Core.dll')" Text="This Lumyte.Direct3D12 package does not contain the requested Agility SDK runtime $(_LumyteAgilityRid)." />
+  </Target>
+</Project>

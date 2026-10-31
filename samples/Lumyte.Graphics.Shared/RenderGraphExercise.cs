@@ -60,9 +60,15 @@ public static class RenderGraphExercise
     {
         TextureCopyLayout layout = device.GetTextureCopyLayout(TextureFormat.Rgba8Unorm);
         uint pitch = Math.Max(layout.BytesPerRowAlignment, 16);
+        uint rows = 3;
+        while (((ulong)rows * pitch) % layout.BufferOffsetAlignmentInBytes != 0)
+        {
+            rows++;
+        }
+
         var graph = new Graph(device, "texture-layer-readback");
         RenderGraphTexture color = graph.CreateTexture(new() { Width = 4, Height = 3, ArrayLayers = 2, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource }, "color-layers");
-        RenderGraphBuffer<byte> result = graph.CreateBuffer<byte>(new() { Count = pitch * 6, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
+        RenderGraphBuffer<byte> result = graph.CreateBuffer<byte>(new() { Count = pitch * rows * 2, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback }, "readback");
         for (uint layer = 0; layer < 2; layer++)
         {
             uint selectedLayer = layer;
@@ -80,7 +86,7 @@ public static class RenderGraphExercise
 
         graph.AddPass("readback", context => context.Commands.CopyTextureToBuffer(
             new() { Texture = context.GetTexture(color), Width = 4, Height = 3, ArrayLayerCount = 2 },
-            new() { Buffer = context.GetBuffer(result).SliceElements(0, pitch * 6), BytesPerRow = pitch, RowsPerImage = 3 }))
+            new() { Buffer = context.GetBuffer(result).SliceElements(0, pitch * rows * 2), BytesPerRow = pitch, RowsPerImage = rows }))
             .UseTexture(color, TextureState.CopySource, _copyRead).UseBuffer(result, _copyWrite);
         graph.ExportBuffer(result, _hostRead);
         using CompiledRenderGraph plan = graph.Compile();
@@ -102,7 +108,7 @@ public static class RenderGraphExercise
             {
                 for (uint x = 0; x < 4; x++)
                 {
-                    int offset = checked((int)((((layer * 3) + y) * pitch) + (x * 4)));
+                    int offset = checked((int)((((layer * rows) + y) * pitch) + (x * 4)));
                     Require(actual.AsSpan(offset, 4).SequenceEqual(pixel), "Graph texture readback lost texels from a layer write.");
                 }
             }

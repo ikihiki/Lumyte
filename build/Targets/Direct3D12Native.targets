@@ -1,0 +1,19 @@
+<Project>
+  <Import Project="ParleyBuild.targets" />
+  <PropertyGroup>
+    <LumyteDirect3D12Output>$(_LumyteParleyRepositoryRoot)artifacts/direct3d12/$(NETCoreSdkRuntimeIdentifier)/$(LumyteAgilityPackageVersion)/$(Configuration)</LumyteDirect3D12Output>
+    <_LumyteAgilityArch Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">x64</_LumyteAgilityArch>
+    <_LumyteAgilityArch Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64'">arm64</_LumyteAgilityArch>
+  </PropertyGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="$(LumyteDirect3D12Output)/lumyte_graphics_d3d12.dll" Link="lumyte_graphics_d3d12.dll" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" Pack="true" PackagePath="runtimes/$(NETCoreSdkRuntimeIdentifier)/native" />
+    <None Include="$(PkgMicrosoft_Direct3D_D3D12)/build/native/bin/$(_LumyteAgilityArch)/*.dll" Link="AgilitySDK/%(Filename)%(Extension)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" Pack="true" PackagePath="build/native/$(NETCoreSdkRuntimeIdentifier)" />
+    <None Include="$(PkgMicrosoft_Direct3D_D3D12)/LICENSE.txt" Link="AgilitySDK/LICENSE.txt" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" Pack="true" PackagePath="build/native/$(NETCoreSdkRuntimeIdentifier)" />
+    <None Include="$(MSBuildThisFileDirectory)Direct3D12AgilityPackage.targets" Pack="true" PackagePath="buildTransitive/Lumyte.Graphics.Direct3D12.targets" />
+  </ItemGroup>
+  <Target Name="BuildLumyteDirect3D12Native" BeforeTargets="BeforeBuild" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != '$(NETCoreSdkRuntimeIdentifier)'" Text="Direct3D 12 source builds require the native SDK host architecture." />
+    <Error Condition="'$(_LumyteAgilityArch)' == ''" Text="Agility SDK builds require a native Windows x64 or ARM64 SDK host." />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Direct3D12Native --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --configuration &quot;$(Configuration)&quot; --output &quot;$(LumyteDirect3D12Output)&quot; --agility-channel &quot;$(LumyteAgilityChannel)&quot; --agility-sdk-root &quot;$(PkgMicrosoft_Direct3D_D3D12)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+  </Target>
+</Project>

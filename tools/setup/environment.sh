@@ -19,6 +19,7 @@ export MISE_CACHE_DIR="$LUMYTE_ENV_ROOT/mise/cache"
 export MISE_STATE_DIR="$LUMYTE_ENV_ROOT/mise/state"
 export MISE_CONFIG_DIR="$LUMYTE_ENV_ROOT/mise/config"
 export MISE_DISABLE_UPDATE_WARNING=1
+export LD_LIBRARY_PATH="$LUMYTE_ENV_ROOT/dxc/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 if [[ -d "$LUMYTE_ENV_ROOT/sysroot/usr/lib" ]]; then
     _lumyte_arch="$(gcc -dumpmachine)"

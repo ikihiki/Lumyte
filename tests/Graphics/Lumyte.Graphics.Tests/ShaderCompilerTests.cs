@@ -8,12 +8,13 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks compiler contracts on CI hosts without requiring a GPU.</summary>
 public sealed class ShaderCompilerTests
 {
-    /// <summary>Checks online compilation for both device targets.</summary>
+    /// <summary>Checks online compilation for all device targets.</summary>
     /// <param name="target">The requested output target.</param>
     /// <returns>The completion of the compiler checks.</returns>
     [Theory]
     [InlineData(ShaderTarget.Wgsl)]
     [InlineData(ShaderTarget.SpirV)]
+    [InlineData(ShaderTarget.Dxil)]
     [InlineData(null)]
     public async Task CompilerProducesRequestedTargetAsync(ShaderTarget? target)
     {
@@ -48,6 +49,7 @@ public sealed class ShaderCompilerTests
     [Theory]
     [InlineData(ShaderTarget.Wgsl)]
     [InlineData(ShaderTarget.SpirV)]
+    [InlineData(ShaderTarget.Dxil)]
     public async Task CompilerEmbedsReferenceAbiAsync(ShaderTarget target)
     {
         IShaderCompiler compiler = new SlangShaderCompiler();

@@ -13,6 +13,7 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
+        "BenchmarkSignals",
         "CheckFormat",
         "CheckMarkdown",
         "CheckNativeFormat",
@@ -22,6 +23,7 @@
         "ConfigureLavapipe",
         "DiagnosticGallery",
         "DiagnosticPreviews",
+        "Direct3D12Native",
         "FormatMarkdown",
         "FormatNative",
         "NativeSmoke",
@@ -35,6 +37,7 @@
         "PublishWindowSample",
         "Restore",
         "Samples",
+        "SetupDxc",
         "SetupParleyNative",
         "SetupParleyWasm",
         "SetupWasm",
@@ -45,6 +48,7 @@
         "TestDiagnosticsProcesses",
         "TestDiagnosticsUi",
         "TestRust",
+        "TestSignals",
         "TestText",
         "TestWasm",
         "TestWindowing",
@@ -130,6 +134,14 @@
   "allOf": [
     {
       "properties": {
+        "AgilityChannel": {
+          "type": "string",
+          "description": "Agility SDK channel: Stable (default) or Preview"
+        },
+        "AgilitySdkRoot": {
+          "type": "string",
+          "description": "Restored Microsoft.Direct3D.D3D12 package directory containing the selected Agility SDK"
+        },
         "Cache": {
           "type": "string",
           "description": "Emscripten cache from the .NET wasm-tools workload"

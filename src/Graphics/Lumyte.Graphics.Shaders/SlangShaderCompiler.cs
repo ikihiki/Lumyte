@@ -37,11 +37,18 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             }
 
             string compilerVersion = (await RunCompilerAsync(["-version"], cancellationToken)).Trim();
-            ShaderTarget[] targets = desc.Target is { } selected ? [selected] : Enum.GetValues<ShaderTarget>();
+            ShaderTarget[] targets = desc.Target is { } selected ? [selected] : [ShaderTarget.Wgsl, ShaderTarget.SpirV, ShaderTarget.Dxil];
             var results = new List<ShaderTargetData>();
             foreach (ShaderTarget target in targets)
             {
-                string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", desc.Stage.ToString().ToLowerInvariant(), "-target", target == ShaderTarget.Wgsl ? "wgsl" : "spirv", "-matrix-layout-row-major", target == ShaderTarget.SpirV ? "-DLUMYTE_SPIRV=1" : "-DLUMYTE_WGSL=1", "-I", directory, "-reflection-json", reflection, "-o", output];
+                string prepared = ShaderSourcePreparation.Prepare(desc.Source);
+                await File.WriteAllTextAsync(source, prepared, cancellationToken);
+                string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", desc.Stage.ToString().ToLowerInvariant(), "-target", target switch { ShaderTarget.Wgsl => "wgsl", ShaderTarget.Dxil => "dxil", _ => "spirv" }, "-matrix-layout-row-major", target switch { ShaderTarget.SpirV => "-DLUMYTE_SPIRV=1", ShaderTarget.Dxil => "-DLUMYTE_DXIL=1", _ => "-DLUMYTE_WGSL=1" }, "-I", directory, "-reflection-json", reflection, "-o", output];
+                if (target == ShaderTarget.Dxil)
+                {
+                    arguments = [.. arguments, "-profile", "sm_6_6"];
+                }
+
                 _ = await RunCompilerAsync(arguments, cancellationToken);
                 byte[] code = await File.ReadAllBytesAsync(output, cancellationToken);
                 string reflectionJson = ShaderSourcePreparation.CompleteReflection(await File.ReadAllTextAsync(reflection, cancellationToken), desc.Source);

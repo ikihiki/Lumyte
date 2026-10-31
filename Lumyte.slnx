@@ -18,6 +18,7 @@
     <Project Path="samples/Lumyte.StateMachines.Sample/Lumyte.StateMachines.Sample.csproj" />
     <Project Path="samples/Lumyte.Composition.Sample/Lumyte.Composition.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
+    <Project Path="samples/Lumyte.Graphics.Direct3D12.Sample/Lumyte.Graphics.Direct3D12.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
@@ -77,6 +78,7 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D.RenderGraph/Lumyte.Resources.Graphics.Drawing2D.RenderGraph.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing/Lumyte.Resources.Graphics.Drawing.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Direct3D12/Lumyte.Graphics.Direct3D12.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Drawing/Lumyte.Graphics.Drawing.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D/Lumyte.Resources.Graphics.Drawing2D.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
@@ -136,6 +138,7 @@
   <Folder Name="/tests/Graphics/">
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Lumyte.Graphics.Text.Parley.Tests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Graphics.Direct3D12.Tests/Lumyte.Graphics.Direct3D12.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Drawing.Tests/Lumyte.Graphics.Drawing.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/Lumyte.Graphics.Drawing2D.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj" />

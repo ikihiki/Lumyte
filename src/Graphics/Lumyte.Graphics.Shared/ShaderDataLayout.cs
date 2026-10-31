@@ -79,7 +79,7 @@ public sealed class ShaderDataLayout : IShaderDataLayout
         }
 
         using var document = JsonDocument.Parse(vertex.ReflectionJson);
-        string name = document.RootElement.GetProperty("parameters").EnumerateArray().Single(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer").GetProperty("name").GetString()!;
+        string name = document.RootElement.GetProperty("parameters").EnumerateArray().Single(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" && p.GetProperty("name").GetString() != "lumyteDrawInfo").GetProperty("name").GetString()!;
         ShaderDataLayout root = Root(vertex, name);
         if (!HasRoot(fragment, name) || !root.Matches(Root(fragment, name)))
         {
@@ -133,7 +133,7 @@ public sealed class ShaderDataLayout : IShaderDataLayout
     public static bool HasRoot(ShaderTargetData target, string? name = null)
     {
         using var document = JsonDocument.Parse(target.ReflectionJson);
-        return document.RootElement.GetProperty("parameters").EnumerateArray().Any(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" && (name == null || p.GetProperty("name").GetString() == name));
+        return document.RootElement.GetProperty("parameters").EnumerateArray().Any(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" && p.GetProperty("name").GetString() != "lumyteDrawInfo" && (name == null || p.GetProperty("name").GetString() == name));
     }
 
     /// <summary>Provides the immutable root values.</summary>
