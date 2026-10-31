@@ -81,7 +81,7 @@ Recordは毎回、可視ツリーをコンポーネントが定義する順で�
 
 描画対象を確定してから記録し、その間は対象を書き換えず、layout/Record/Disposeを重ねない呼出し契約です。phase検査で拒否する仕組みは設けません。例外時もCanvas状態を復元しますが、成功済み命令は残ります。frame全体をCancelしてからBeginで再試行してください。不均衡なSave/Restore等の契約違反による状態破壊は隔離しません。snapshotはsurfaceの変更・Dispose後も利用できますが、カスタム描画の借用GPU資源はGPU完了まで別途保持します。
 
-RecordはCanvas、renderer、GPU、ClearやPresentを所有しません。単独UIでは各frameで描画先をClearし、重ね合わせではそのframeで再構成した背景へLoadします。複数surfaceのClearは最初に一度だけ行います。[直接描画サンプル](../../../samples/Lumyte.UI.Sample/README.md)に通常のCanvas→Renderer→Submit/Waitとviewport変更を示します。
+RecordはCanvas、renderer、GPU、ClearやPresentを所有しません。単独UIでは各frameで描画先をClearし、重ね合わせではそのframeで再構成した背景へLoadします。複数surfaceのClearは最初に一度だけ行います。[描画サンプル](../../../samples/Lumyte.UI.Sample/README.md)に通常のCanvas→Renderer→Submit/Wait、viewport変更、親RenderGraph・Resources経由の描画を示します。UI本体の依存を増やさず、[サンプル補助](../../../samples/Lumyte.UI.Shared/README.md)でGPU完了までの所有権を管理します。
 
 [ツリーのADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)／[layoutのADR](../../../docs/adr/ui/UI-0003-layout-and-invalidation.md)／[描画のADR](../../../docs/adr/ui/UI-0004-drawing-and-clipping.md)
 

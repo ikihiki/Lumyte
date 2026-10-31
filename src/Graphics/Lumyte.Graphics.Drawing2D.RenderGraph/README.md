@@ -73,7 +73,7 @@ canvas.DrawBackdropEffect(new BackdropEffectOptions2D
 
 任意のコールバックには必要入力ROIの照会契約がないため、背景は現在描画先の有限領域全体を取得します。
 効果の出力は最後にclipされ、元背景との置換はeffect*c + original*(1-c)です。
-Append失敗時は親graphを捨てて再構築します。GPU完了後にcommand、compiled plan、準備ownerの順で解放します。
+Append失敗時は親graphを捨てて再構築します。GPU完了後にcommand、compiled plan、準備ownerの順で解放します。準備ownerのDisposeに失敗した場合は、成功したentryを再解放せず、失敗したentryだけを次回Disposeで再試行できます。
 
 設計・APIは [GRAPHICS-0022](../../../docs/adr/graphics/GRAPHICS-0022-2d-render-graph-layers.md)、
 共通の部分グラフは [GRAPHICS-0017](../../../docs/adr/graphics/GRAPHICS-0017-image-effects.md) を参照してください。

@@ -1,5 +1,10 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
+using Lumyte.Graphics.RenderGraph;
+using Lumyte.Resources;
+using Lumyte.Resources.Graphics.Drawing2D;
+using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.UI.SampleSupport;
 
@@ -43,7 +48,11 @@ internal sealed class UiHostPresenter : IDisposable
         return new() { Width = checked((uint)width), Height = checked((uint)height), Format = format };
     }
 
-    internal async Task DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list)
+    internal Task DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list) => DrawAsync(swapchain, list, null, null);
+
+    internal Task DrawGraphAsync(IGraphicsSwapchain swapchain, RenderGraphDrawList2D list, ResourceReference<Renderer2DResource>? reference = null) => DrawAsync(swapchain, null, list, reference);
+
+    private async Task DrawAsync(IGraphicsSwapchain swapchain, DrawList2D? list, RenderGraphDrawList2D? layered, ResourceReference<Renderer2DResource>? reference)
     {
         using IGraphicsSemaphore acquired = _device.CreateSemaphore();
         using IGraphicsSemaphore rendered = _device.CreateSemaphore();
@@ -61,9 +70,15 @@ internal sealed class UiHostPresenter : IDisposable
         bool released = false;
         try
         {
-            using IGraphicsTexture target = _device.CreateTexture(new() { Width = frame.Texture.Width, Height = frame.Texture.Height, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled });
+            var description = new TextureDesc { Width = frame.Texture.Width, Height = frame.Texture.Height, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled };
+            using IGraphicsTexture target = _device.CreateTexture(description);
             using IGraphicsTextureView targetView = target.CreateView();
-            using PreparedDraw2D prepared = await _renderer.PrepareAsync(list, new() { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0.04f, 0.04f, 0.06f, 1) });
+            using var graph = new Graph(_device, "UI host parent graph");
+            RenderGraphTexture imported = graph.ImportTexture(target, TextureState.Undefined, default);
+            using UiGraphFrame? ui = layered is null ? null : await UiGraphFrame.AppendAsync(graph, layered, new() { Texture = imported, Description = description, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0.04f, 0.04f, 0.06f, 1) }, new(graph), DrawingCommandRenderers2D.CreateDefault(), reference);
+            graph.ExportTexture(imported, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
+            using PreparedDraw2D? prepared = list is null ? null : await _renderer.PrepareAsync(list, new() { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0.04f, 0.04f, 0.06f, 1) });
+            using CompiledRenderGraph? plan = layered is null ? null : graph.Compile();
             using IArgumentTable table = _device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1 });
             var arguments = new UiPresentArguments(table.WriteTexture(0, targetView), table.WriteSampler(0, _sampler), new(target.Width, target.Height));
             using IGraphicsTextureView display = frame.Texture.CreateView();
@@ -72,9 +87,17 @@ internal sealed class UiHostPresenter : IDisposable
             var sample = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
             try
             {
-                commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
-                prepared.Record(commands);
-                commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = color, After = sample });
+                if (plan is not null)
+                {
+                    plan.Record(commands);
+                }
+                else
+                {
+                    commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
+                    prepared!.Record(commands);
+                    commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = color, After = sample });
+                }
+
                 commands.Barrier(new TextureBarrierDesc { Texture = frame.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
                 IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = display, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
                 render.SetPipeline(_pipeline);
