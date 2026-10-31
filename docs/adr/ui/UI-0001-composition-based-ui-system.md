@@ -12,7 +12,7 @@ Signals本体（同期グラフ・非同期変換・性能改善）はPR #99でm
 
 既存のComposition、Input、Windowing、Drawing2Dの上に、ゲーム内画面とツールのためのUIを構築する。構築構文、親子関係、レイアウト、入力、GPU実行をそれぞれの責務へ分け、実装を段階的にレビューできる必要がある。
 
-本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0012およびUI-0014〜0017で定義する。追加する部品の一覧・優先度・後続PR分割は[UI-0013](UI-0013-component-catalog-and-delivery-plan.md)で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
+本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0012およびUI-0014〜0018で定義する。追加する部品の一覧・優先度・後続PR分割は[UI-0013](UI-0013-component-catalog-and-delivery-plan.md)で定義する。全て設計提案であり、コードや環境検証の完了を意味しない。
 
 ## 決定
 
@@ -34,7 +34,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 
 ### 実装PRと対応ADR
 
-実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く13本のdraft PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
+実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く14本のdraft PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
 
 | 実装PR | 対応ADR | 追加する機能 | 実装の前提 |
 | --- | --- | --- | --- |
@@ -51,6 +51,7 @@ UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
 | 11 | UI-0012・UI-0015 | TextBox・編集文書、TSF/Browser IME、任意の候補描画・候補操作、Fill | PR 6〜10・GRAPHICS-0024 |
 | 12 | UI-0016 | UI専用アプリ、builder、標準driver、frame・入力・描画・終了の統合 | PR 6〜11 |
 | 13 | UI-0017 | navigation、型付き引数、履歴、離脱guard、表示切替とページ退役 | PR 12 |
+| 14 | UI-0018 | DIページ、MapPage/MapGroup、関数handler、初期route、AOT | PR 12・13 |
 
 コンポーネント拡充はUI-0013でP0/P1/P2とC1〜C9の後続PR案に整理する。既存の実装PR番号は維持する。
 
@@ -79,6 +80,8 @@ UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ�
 任意のLumyte.UI.Applicationは[UI-0016](UI-0016-ui-application-framework.md)で定義する。UIだけを表示するアプリのbuilder、標準Desktop/Browser/headless driver、Window/Input/IMEと全画面描画のloopを提供し、利用者がGPU実行を記述せずに起動・終了できるようにする。DIとホスト機能はこの統合層へ置く。
 
 ページ遷移は[UI-0017](UI-0017-navigation-and-page-lifetime.md)で定義する。非公開で準備してから表示・入力先・履歴を切り替え、失敗・取消では現画面を保つ。履歴はdestinationと引数を保持し、Back/Forwardでも新しいページを生成する。
+
+Minimal API風のページ登録は[UI-0018](UI-0018-minimal-page-registration.md)で定義する。Build前のMapPage/MapGroup、constructor DIと型付き関数handlerを使い、activationごとに独立したDI scopeを作る。ページはCompositionでWidgetを構築し、ページ自身をComposableにしない。
 
 初期詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。Window/Diagnostics/IME接続の比較元revisionは各ADRに記載する。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
 
