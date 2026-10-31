@@ -21,13 +21,24 @@ public sealed partial class UiSurface
         ArgumentNullException.ThrowIfNull(input);
         if (input is UiFocusLostInput)
         {
-            bool cancelled = CancelAllPointers();
+            bool cancelled = CancelAllInput();
             return (!_isDisposed && RouteInput(_root, input)) || cancelled;
+        }
+
+        if (input is UiKeyCancelInput keyCancel)
+        {
+            bool consumed = _consumedKeys.Contains(keyCancel.Key);
+            return CancelKey(keyCancel.Key) || consumed;
+        }
+
+        if (input is UiKeyInput key)
+        {
+            return DispatchKey(key);
         }
 
         if (input is not UiPointerInput pointer)
         {
-            return RouteInput(_root, input);
+            return RouteInput(_focusedWidget ?? _root, input);
         }
 
         ArgumentOutOfRangeException.ThrowIfNegative(pointer.PointerId);
@@ -69,11 +80,25 @@ public sealed partial class UiSurface
 
         if (!UiInputGeometry.Contains(Vector2.Zero, _viewport, pointer.Position))
         {
+            if (pointer.Phase == UiPointerPhase.Down)
+            {
+                ChangeFocus(null);
+            }
+
             return false;
         }
 
         Widget? hit = _root.FindInputHit(pointer.Position, _inputVersion);
-        return hit is not null && RouteInput(hit, pointer);
+        long focusChange = _focusChange;
+        long focusRequest = _focusRequest;
+        bool handled = hit is not null && RouteInput(hit, pointer);
+        if (!_isDisposed && pointer.Phase == UiPointerPhase.Down && _focusChange == focusChange && _focusRequest == focusRequest
+            && (!handled || _pointerCaptures.ContainsKey(pointer.PointerId)))
+        {
+            ChangeFocus(null);
+        }
+
+        return handled;
     }
 
     internal void InvalidateInput() => _inputDirty = true;
@@ -117,33 +142,41 @@ public sealed partial class UiSurface
         return true;
     }
 
-    private bool RouteInput(Widget target, UiInput input)
+    private bool RouteInput(Widget target, UiInput input) => RouteInputResult(target, input) == UiInputResult.Handled;
+
+    private UiInputResult RouteInputResult(Widget target, UiInput input)
     {
         for (Widget? node = target; node is not null; node = node.Owner)
         {
             UiInputResult result = DeliverInput(node, input, false);
             if (input is UiPointerInput pointer && _pointerCaptures.ContainsKey(pointer.PointerId))
             {
-                return true;
+                return UiInputResult.Handled;
+            }
+
+            if (input is UiKeyInput key && _keyCaptures.ContainsKey(key.Key))
+            {
+                return UiInputResult.Handled;
             }
 
             if (result != UiInputResult.Unhandled)
             {
-                return result == UiInputResult.Handled;
+                return result;
             }
 
             if (_isDisposed || !ReferenceEquals(node.Surface, this))
             {
-                return false;
+                return UiInputResult.StopPropagation;
             }
         }
 
-        return false;
+        return UiInputResult.Unhandled;
     }
 
-    private UiInputResult DeliverInput(Widget target, UiInput input, bool isCaptured)
+    private UiInputResult DeliverInput(Widget target, UiInput input, bool isCaptured, bool isKeyCaptured = false)
     {
-        var context = new UiInputContext(this, target, input, isCaptured);
+        var context = new UiInputContext(this, target, input, isCaptured, isKeyCaptured);
+        long reset = _inputReset;
         try
         {
             return target.InvokeInput(in context);
@@ -155,6 +188,23 @@ public sealed partial class UiSurface
                 try
                 {
                     CancelPointer(pointer.PointerId, target);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException(failure, cleanupFailure);
+                }
+            }
+
+            if (input is UiKeyInput { IsDown: true } key)
+            {
+                if (!_isDisposed && _inputReset == reset)
+                {
+                    _consumedKeys.Add(key.Key);
+                }
+
+                try
+                {
+                    CancelKey(key.Key, target);
                 }
                 catch (Exception cleanupFailure)
                 {
@@ -212,41 +262,6 @@ public sealed partial class UiSurface
         }
     }
 
-    private bool CancelAllPointers()
-    {
-        if (_pointerCaptures.Count == 0)
-        {
-            return false;
-        }
-
-        KeyValuePair<long, PointerCapture>[] captures = _pointerCaptures.ToArray();
-        _pointerCaptures.Clear();
-        List<Exception>? failures = null;
-        foreach ((long pointerId, PointerCapture capture) in captures)
-        {
-            try
-            {
-                NotifyReleased(pointerId, capture, true);
-            }
-            catch (Exception failure)
-            {
-                (failures ??= new()).Add(failure);
-            }
-        }
-
-        if (failures is { Count: 1 })
-        {
-            ExceptionDispatchInfo.Capture(failures[0]).Throw();
-        }
-
-        if (failures is not null)
-        {
-            throw new AggregateException(failures);
-        }
-
-        return true;
-    }
-
     private void UpdateInput()
     {
         if (!_inputDirty)
@@ -256,7 +271,9 @@ public sealed partial class UiSurface
 
         _inputVersion = new object();
         _root.UpdateInput(Vector2.Zero, UiInputBounds.From(Vector2.Zero, _viewport), _inputVersion);
+        RebuildFocusCandidates();
         _inputDirty = false;
+        RefreshFocusState();
 
         List<Exception>? failures = null;
 

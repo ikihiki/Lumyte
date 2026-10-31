@@ -131,7 +131,7 @@ public sealed partial class UiSurface : IDisposable
         _pendingRebuild = null;
         try
         {
-            CancelAllPointers();
+            CancelAllInput();
         }
         finally
         {

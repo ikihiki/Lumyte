@@ -40,6 +40,40 @@ public sealed class RebuildInputTests
         Assert.Throws<ObjectDisposedException>(() => surface.Root);
     }
 
+    /// <summary>Checks a held key and focus continue on the matched button with its latest callback.</summary>
+    [Fact]
+    public void KeyboardPressRetainsFocusAndUsesTheNewCallback()
+    {
+        int clicks = 0;
+        Definitions.Button first = Button(key: "button");
+        using UiSurface surface = Surface(Panel()[first]);
+        Assert.True(surface.TryFocus(first));
+        Assert.True(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, true)));
+        Definitions.Button next = Button(key: "button", onClick: () => clicks++);
+        surface.Rebuild(Panel()[next]);
+        surface.UpdateLayout();
+        Assert.Same(next, surface.FocusedWidget);
+        Assert.True(next.IsPressed);
+        Assert.True(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, false)));
+        Assert.False(next.IsPressed);
+        Assert.Equal(1, clicks);
+    }
+
+    /// <summary>Checks changed keys cancel the removed button's capture and drop its focus.</summary>
+    [Fact]
+    public void ChangedKeyDropsOldFocusAndCapture()
+    {
+        Definitions.Button first = Button(key: "old", width: 20, height: 20);
+        using UiSurface surface = Surface(Panel()[first]);
+        Assert.True(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(1, 1))));
+        Definitions.Button next = Button(key: "new", width: 20, height: 20);
+        surface.Rebuild(Panel()[next]);
+        surface.UpdateLayout();
+        Assert.False(first.IsPressed);
+        Assert.Null(surface.FocusedWidget);
+        Assert.False(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(1, 1))));
+    }
+
     private static UiSurface Surface(Definitions.Widget root)
     {
         var surface = new UiSurface(root);

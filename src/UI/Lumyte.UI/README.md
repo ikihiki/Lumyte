@@ -1,6 +1,6 @@
 # Lumyte.UI
 
-Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。ポインター配送・capture・callback引数にも対応します。キーボードfocusとWindow入力の接続は後続PRで追加します。
+Compositionで構築する保持型UIの基盤です。Panel、Stack、Rectangle、Button、背景スロット、親子関係、一方向layoutとCanvasへの描画記録を提供します。ポインター配送・capture・callback引数にも対応します。キーボードfocus・キー配送にも対応します。Window入力の接続は後続PRで追加します。
 
 ```csharp
 using Lumyte.UI;
@@ -133,6 +133,33 @@ Widgetの `OnInput(in UiInputContext context)` をoverrideします。`Unhandled
 
 `OnPointerCaptureChanged(UiPointerCaptureState state)` で取得・geometry更新・喪失を受け取れます。Up/Cancelは所有を先に解除してから `IsCaptured=true` のcontextで届きます。Clickの認識はButton側だけが行います。明示解放・対象除外・FocusLost・Disposeでも喪失とCancelを通知し、独自通知が失敗しても所有状態を残しません。
 
-contextは配送中だけ使い、保存しないでください。pointer以外のUiInputも同じhookへ渡せます。この段階ではrootへの配送で、focus対象へのキー配送は次のPR、TextBoxとIME文書の編集は後続のTextEditing PRで追加します。
+contextは配送中だけ使い、保存しないでください。pointer以外のUiInputも同じhookへ渡せます。通常キーとpointer以外の入力はfocus対象（なければroot）へ配送します。TextBoxとIME文書の編集は後続のTextEditing PRで追加します。
 
 hit testでは、UpdateLayoutで各Widgetへ保存した「子のoverflowを含む部分木の入力領域」を使い、点を含まない枝を探索しません。clip・viewport・入力対象の選択を反映し、子の前後関係と親外のhitを保ちます。領域内の候補は従来どおり探索するため、重なりや多数の兄弟がある場合の最悪線形走査は残ります。
+
+## キーボードとfocus
+
+```csharp
+using Lumyte.Input.Abstractions;
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+var button = Button(onClick: () => Console.WriteLine("Save"))[Panel(width: 100, height: 24)];
+using var surface = new UiSurface(Panel()[button]);
+surface.SetViewport(new(320, 200));
+surface.UpdateLayout();
+surface.Dispatch(new UiKeyInput(Key.Tab, true));
+surface.Dispatch(new UiKeyInput(Key.Tab, false)); // surface.FocusedWidget == button
+surface.Dispatch(new UiKeyInput(Key.Enter, true)); // IsPressed == true
+surface.Dispatch(new UiKeyInput(Key.Enter, false)); // 所有解除後にcallbackを一回実行
+```
+
+Widget.Focusableは既定false、Buttonは既定trueです。Tab/Shift-TabはGetInputChildrenで公開した確定候補を巡回します。clip外・0寸法の候補も残し、非表示・無効な部分木やButton背景は除外します。ButtonはEnter/Spaceの押下とpointer押下を排他にし、UpでClickを認識します。capture中のpointerはTabでfocusを移しても維持します。
+
+独自のfocusable WidgetはOnInput中にcontext.RequestFocusを呼べます。context.IsFocusedとUiFocusChangedInputで現在状態・通知を参照し、UiKeyInputを処理します。キーのrepeatやUpも受け取るにはcontext.CaptureKeyを使い、context.IsKeyCapturedで終端配送も識別します。UiKeyCancelInput・ReleaseKeyCapture・focus変更で認識を止めても、物理Upまではsurfaceが消費を保持します。FocusLost/Disposeは全状態を解除します。
+
+WidgetがHandledまたはStopPropagationにしたTabでは標準巡回を行いません。キーや任意のUiInputが入力先で未処理なら所有親へ伝播します。キーから文字を合成せず、IMEは後続の文書/session経路で接続します。取得元Window・OS focus・修飾キー状態はhostが決めて渡します。UiKeyInputはInput.AbstractionsのKeyを使い、UIはInputSystemやOS backendへ依存しません。
+
+Focusableを含む通常の値変更は新しい宣言を構築します。専用runtime更新で入力候補を変えたときはInvalidateInputと次のUpdateLayoutを使い、キー配送中にlayoutを実行しません。切断・破棄済みへのRequestFocusはfalseで、破棄済みsurfaceへのDispatch/FocusedWidget参照はObjectDisposedExceptionです。
+
+[focusとキー入力のADR](../../../docs/adr/ui/UI-0006-focus-and-keyboard.md)／[keyboard-onlyサンプル](../../../samples/Lumyte.UI.Sample/README.md)
