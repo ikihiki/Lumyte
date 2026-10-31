@@ -5,7 +5,7 @@ using Lumyte.UI.Windowing;
 namespace Lumyte.UI.Application;
 
 /// <summary>Standard application compositor. The host serializes frames and calls CompleteFrame only after GPU completion/retirement.</summary>
-internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture) : IUiWindowSource
+internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture) : IUiWindowSource, IUiWindowPresentationStager
 {
     private readonly List<Presentation> _presentations = [];
 
@@ -18,6 +18,8 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
     public Guid SourceId { get; } = Guid.NewGuid();
 
     internal Action<Lumyte.UI.Compose.Definitions.Widget>? ValidateRoot { get; set; }
+
+    internal Func<DrawList2D, CancellationToken, ValueTask>? PrepareCandidate { get; set; }
 
     public UiWindowSourceSnapshot CaptureState() => capture();
 
@@ -36,6 +38,16 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
         return ReferenceEquals(destination, this);
     }
 
+    public IUiStagedWindowPresentation BeginReplacement(IUiWindowPresentation? current, UiWindowPresentationView view, UiSurface candidate)
+    {
+        if (current is not null && (current is not Presentation presentation || !ReferenceEquals(presentation.Source, this)))
+        {
+            throw new ArgumentException("The current presentation belongs to another source.", nameof(current));
+        }
+
+        return new Staged(this, current as Presentation, candidate, view);
+    }
+
     internal void Pause(UiSurface surface) => _paused.Add(surface);
 
     internal void Record(DrawingCanvas2D canvas)
@@ -49,7 +61,7 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
         _recorded.Clear();
         try
         {
-            foreach (Presentation presentation in _presentations.Where(p => !p.Closing).OrderBy(p => UiWindowStacking.Key(p.View.Role, p.View.Window, p.View.StackingOrder)).ToArray())
+            foreach (Presentation presentation in _presentations.Where(p => !p.Closing && p.Active).OrderBy(p => UiWindowStacking.Key(p.View.Role, p.View.Window, p.View.StackingOrder)).ToArray())
             {
                 UiWindowPresentationView view = _paused.Contains(presentation.Surface) ? presentation.View with { IsVisible = false } : presentation.View;
                 _recorded.Add(presentation, view);
@@ -111,6 +123,10 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
 
         public ulong PresentedGeometryRevision { get; set; }
 
+        internal UiHostedDrawingSource Source => source;
+
+        internal bool Active { get; set; } = true;
+
         internal UiSurface Surface { get; } = surface;
 
         internal UiWindowPresentationView View { get; private set; } = view;
@@ -137,6 +153,78 @@ internal sealed class UiHostedDrawingSource(Func<UiWindowSourceSnapshot> capture
 
             source._presentations.Remove(this);
             source._paused.Remove(Surface);
+        }
+    }
+
+    private sealed class Staged(UiHostedDrawingSource source, Presentation? current, UiSurface surface, UiWindowPresentationView view) : IUiStagedWindowPresentation
+    {
+        private Presentation? _previous = current;
+        private Presentation? _candidate;
+        private object? _inputVersion;
+        private bool _committed;
+        private bool _discarded;
+        private Lumyte.UI.Compose.Definitions.Widget? _root;
+        private UiWindowSourceSnapshot? _state;
+
+        public async ValueTask PrepareAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            source.ValidateRoot?.Invoke(surface.Root);
+            surface.UpdateLayout();
+            _root = surface.Root;
+            _inputVersion = surface.InputVersionForWindowing;
+            _state = source.CaptureState();
+            _candidate = new(source, surface, view) { Active = false };
+            source._presentations.Add(_candidate);
+            var canvas = new Canvas2D();
+            canvas.Begin();
+            surface.Record(canvas);
+            DrawList2D commands = canvas.End();
+            if (source.PrepareCandidate is { } prepare)
+            {
+                await prepare(commands, cancellationToken);
+            }
+        }
+
+        public bool TryValidateCommit(out string code)
+        {
+            code = "candidate-stale";
+            return _candidate is not null && !_committed && !_discarded && ReferenceEquals(surface.Root, _root) && ReferenceEquals(surface.InputVersionForWindowing, _inputVersion) && source.CaptureState() == _state;
+        }
+
+        public IUiWindowPresentation Commit()
+        {
+            if (_previous is not null)
+            {
+                _previous.Active = false;
+                _previous = null;
+            }
+
+            _candidate!.Active = true;
+            _committed = true;
+            return _candidate;
+        }
+
+        public ValueTask DrainCandidateAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public async ValueTask DiscardAsync(CancellationToken cancellationToken)
+        {
+            if (_candidate is not null)
+            {
+                await _candidate.DisposeAsync().AsTask().WaitAsync(cancellationToken);
+            }
+
+            _discarded = true;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            if (!_committed && !_discarded)
+            {
+                throw new InvalidOperationException("Complete the staged replacement before disposal.");
+            }
+
+            return ValueTask.CompletedTask;
         }
     }
 }

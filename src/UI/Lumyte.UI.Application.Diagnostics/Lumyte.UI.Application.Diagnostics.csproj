@@ -4,6 +4,8 @@
     <ProjectReference Include="../Lumyte.UI.Application/Lumyte.UI.Application.csproj" />
     <ProjectReference Include="../../Diagnostics/Lumyte.Diagnostics.UI.Automation/Lumyte.Diagnostics.UI.Automation.csproj" />
     <ProjectReference Include="../../Diagnostics/Lumyte.Diagnostics.Transport/Lumyte.Diagnostics.Transport.csproj" />
+    <ProjectReference Include="../../Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Navigation.Diagnostics" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

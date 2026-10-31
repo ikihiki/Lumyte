@@ -6,10 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application.Diagnostics;
 
-internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationParticipant
+internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationParticipant, IUiApplicationViewParticipant
 {
     private readonly AsyncServiceScope _scope;
     private readonly UiApplicationDiagnosticsOptions _options;
+    private readonly UiApplicationViewRegistry _views;
+    private readonly TimeProvider _clock;
+    private readonly bool _enabled;
     private readonly Dictionary<Guid, UiAutomationDiagnosticRegistration> _windows = [];
     private readonly Dictionary<Guid, UiAutomationDiagnosticRegistration> _popups = [];
     private readonly Dictionary<Guid, List<UiAutomationDiagnosticRegistration>> _chrome = [];
@@ -25,6 +28,9 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
     internal UiApplicationDiagnosticsParticipant(IServiceProvider services, UiApplicationDiagnosticsOptions options)
     {
         _options = options;
+        _views = services.GetRequiredService<UiApplicationViewRegistry>();
+        _clock = services.GetRequiredService<TimeProvider>();
+        _enabled = services.GetRequiredService<DiagnosticOptions>().Enabled;
         _scope = services.CreateAsyncScope();
     }
 
@@ -51,16 +57,24 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
         _primary ??= context;
         var host = new RegistrationHost(context, context.View.CurrentSurface!, context.View.GetAutomation(_options.Target.AllowTextInspection));
         UiAutomationDiagnosticRegistration token;
-        try
+        if (_windows.TryGetValue(context.Id, out UiAutomationDiagnosticRegistration? existing))
         {
-            token = _windows.Count == 0 ? Runtime.Register(_options.TargetName, context.View.CurrentSurface!, host, _options.Target) : Runtime.RegisterPopup(_windows[_primary.Id], context.Id, Name(context.Id), context.View.CurrentSurface!, host, _options.Target);
+            token = existing;
         }
-        catch (InvalidOperationException)
+        else
         {
-            return;
+            try
+            {
+                token = _windows.Count == 0 ? Runtime.Register(_options.TargetName, context.View.CurrentSurface!, host, _options.Target) : Runtime.RegisterPopup(_windows[_primary.Id], context.Id, Name(context.Id), context.View.CurrentSurface!, host, _options.Target);
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+
+            _windows.Add(context.Id, token);
         }
 
-        _windows.Add(context.Id, token);
         if (context.Chrome is { } chrome)
         {
             var registrations = new List<UiAutomationDiagnosticRegistration>();
@@ -79,6 +93,7 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
 
     public void CloseWindow(UiApplicationWindowContext context)
     {
+        _views.Remove(context.Id);
         if (_windows.TryGetValue(context.Id, out UiAutomationDiagnosticRegistration? registration))
         {
             registration.Dispose();
@@ -134,7 +149,7 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
             }
         }
 
-        var frame = new DiagnosticFrame(_frame++, _primary?.Automation.TimeProvider.GetTimestamp() ?? 0);
+        var frame = new DiagnosticFrame(_frame++, _clock.GetTimestamp());
         _pump.Pump(frame, new(TimeSpan.FromMilliseconds(2), 32));
         _runtime.Advance(frame);
         foreach (Guid id in _windows.Where(pair => pair.Value.IsReleased).Select(pair => pair.Key).ToArray())
@@ -181,7 +196,45 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
         await _scope.DisposeAsync();
     }
 
+    public Guid? CaptureInputOperation(UiApplicationWindowContext context) => _windows.TryGetValue(context.Id, out UiAutomationDiagnosticRegistration? registration) ? Runtime.CaptureCurrentOperation(registration) : null;
+
+    public IUiApplicationViewDiagnosticChange? ReserveViewReplacement(UiApplicationWindowContext context, UiSurface surface, IUiAutomationHost host)
+    {
+        if (!_enabled)
+        {
+            return null;
+        }
+
+        _views.Track(context);
+        _primary ??= context;
+        _windows.TryGetValue(context.Id, out UiAutomationDiagnosticRegistration? current);
+        if (current?.IsReleased == true)
+        {
+            return null;
+        }
+
+        UiAutomationDiagnosticRegistration? parent = current is null && context.Id != _primary.Id ? _windows.GetValueOrDefault(_primary.Id) : null;
+        string name = context.Id == _primary.Id ? _options.TargetName : Name(context.Id);
+        UiAutomationDiagnosticReplacement replacement = Runtime.ReserveReplacement(name, current, surface, new RegistrationHost(context, surface, host), _options.Target, parent, parent is null ? null : context.Id);
+        return new ViewChange(this, context.Id, replacement);
+    }
+
     private string Name(Guid id) => _options.TargetName + "." + id.ToString("N");
+
+    private sealed class ViewChange(UiApplicationDiagnosticsParticipant participant, Guid window, UiAutomationDiagnosticReplacement replacement) : IUiApplicationViewDiagnosticChange
+    {
+        public Guid? TargetId => replacement.CandidateTargetId;
+
+        public bool IsReady => replacement.TryValidateCommit();
+
+        public ValueTask QuiesceAsync(Guid? origin, CancellationToken cancellationToken) => replacement.QuiesceAsync(origin, cancellationToken);
+
+        public void Commit() => participant._windows[window] = replacement.Commit();
+
+        public ValueTask DiscardAsync(CancellationToken cancellationToken) => replacement.DiscardAsync(cancellationToken);
+
+        public ValueTask DisposeAsync() => replacement.DisposeAsync();
+    }
 
     private sealed class RegistrationHost(UiApplicationWindowContext context, UiSurface surface, IUiAutomationHost host) : IUiAutomationHost, IUiAutomationRoutingHost, IUiAutomationTextHost, IUiAutomationImeHost, IUiAutomationScreenshotHost
     {

@@ -50,6 +50,8 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     internal virtual ValueTask RetireResourcesAsync() => ValueTask.CompletedTask;
 
+    internal virtual ValueTask PrepareCandidateAsync(UiDriverWindow window, Lumyte.Graphics.Drawing2D.DrawList2D commands, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
     internal virtual ValueTask DrainWindowAsync(UiDriverWindow window) => ValueTask.CompletedTask;
 
     internal virtual Lumyte.Windowing.Abstractions.IWindow? ResolveNative(Guid source) => null;

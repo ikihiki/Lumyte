@@ -36,6 +36,7 @@ public sealed partial class UiApplication
     {
         await _dispatcher.InvokeAsync(() =>
         {
+            GraphicsGeneration++;
             if (State == UiApplicationState.Running)
             {
                 SetState(UiApplicationState.Recovering);

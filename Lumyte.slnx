@@ -7,6 +7,8 @@
     <Project Path="samples/Lumyte.UI.Application.Desktop.Sample/Lumyte.UI.Application.Desktop.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Application.Browser.Sample/Lumyte.UI.Application.Browser.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Application.Headless.Sample/Lumyte.UI.Application.Headless.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Navigation.Sample/Lumyte.UI.Navigation.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Navigation.Browser.Sample/Lumyte.UI.Navigation.Browser.Sample.csproj" />
 
     <Project Path="samples/Lumyte.UI.TextEditing.Sample/Lumyte.UI.TextEditing.Sample.csproj" />
     <Project Path="samples/Lumyte.Diagnostics.UI.Automation.Game.Sample/Lumyte.Diagnostics.UI.Automation.Game.Sample.csproj" />
@@ -114,6 +116,9 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/src/UI/">
+    <Project Path="src/UI/Lumyte.UI.Navigation/Lumyte.UI.Navigation.csproj" />
+    <Project Path="src/UI/Lumyte.UI.Application.Navigation/Lumyte.UI.Application.Navigation.csproj" />
+    <Project Path="src/UI/Lumyte.UI.Application.Navigation.Diagnostics/Lumyte.UI.Application.Navigation.Diagnostics.csproj" />
     <Project Path="src/UI/Lumyte.UI.Application/Lumyte.UI.Application.csproj" />
     <Project Path="src/UI/Lumyte.UI.Application.Desktop/Lumyte.UI.Application.Desktop.csproj" />
     <Project Path="src/UI/Lumyte.UI.Application.Browser/Lumyte.UI.Application.Browser.csproj" />
@@ -195,6 +200,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.Navigation.Tests/Lumyte.UI.Navigation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Application.Tests/Lumyte.UI.Application.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.TextEditing.Tests/Lumyte.UI.TextEditing.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Automation.Tests/Lumyte.UI.Automation.Tests.csproj" />

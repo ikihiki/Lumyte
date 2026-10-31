@@ -43,7 +43,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
     }
 
     /// <summary>Gets a value indicating whether stop admission, jobs and registration cleanup have completed.</summary>
-    public bool IsStopped => _stopping && _targets.Count == 0 && _jobs.Values.All(job => job.Terminal);
+    public bool IsStopped => _stopping && _targets.Count == 0 && _jobs.Values.All(job => job.Terminal) && _replacements.Values.All(replacement => replacement.Completed);
 
     internal bool Enabled { get; set; } = true;
 
@@ -81,7 +81,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
             { IsReleased = true };
         }
 
-        if (_targets.Count >= _options.MaximumTargets || _targets.Values.Any(target => target.Name == name || ReferenceEquals(target.Surface, surface)))
+        if (_targets.Count + _replacements.Values.Count(item => item.Previous is null && !item.Completed) >= _options.MaximumTargets || _targets.Values.Any(target => target.Name == name || ReferenceEquals(target.Surface, surface))
+            || _replacements.Values.Any(item => !item.Completed && (item.Candidate.Name == name || ReferenceEquals(item.Candidate.Surface, surface))))
         {
             throw new InvalidOperationException("Duplicate target or capacity exceeded.");
         }
@@ -222,6 +223,11 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         }
 
         Settle();
+        foreach (Replacement replacement in _replacements.Values)
+        {
+            replacement.Advance();
+        }
+
         foreach (Job job in _jobs.Values.Where(job => job.Terminal && _clock.GetElapsedTime(job.Completed) >= _options.Retention).ToArray())
         {
             Forget(job);
@@ -322,6 +328,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         }
 
         _controls.Clear();
+        _replacements.Clear();
         _closedSessions.Clear();
         _disposed = true;
     }
@@ -459,6 +466,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime : IDisposable
         internal UiAutomationDiagnosticRegistration Registration { get; } = registration;
 
         internal bool Accepting { get; set; } = true;
+
+        internal bool Paused { get; set; }
 
         internal string AutomationCode { get; set; } = string.Empty;
 

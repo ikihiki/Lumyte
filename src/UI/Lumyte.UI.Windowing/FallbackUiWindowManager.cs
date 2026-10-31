@@ -4,7 +4,7 @@ using Lumyte.Input.Abstractions;
 namespace Lumyte.UI.Windowing;
 
 /// <summary>Composes borrowed native and hosted managers, with cleanup before a pre-show fallback.</summary>
-public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequestLifetime
+public sealed partial class FallbackUiWindowManager : IUiWindowManager, IUiWindowPresentationReplacementManager, IUiWindowRequestLifetime
 {
     private readonly IUiWindowManager _native;
 
@@ -743,7 +743,8 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
 
             if (!e.Closing && !e.FallingBack)
             {
-                e.Bind!.TrySetResult(new(e.Id, () => Retire(e)));
+                e.PublicBinding = new(e.Id, () => Retire(e));
+                e.Bind!.TrySetResult(e.PublicBinding);
             }
         }
 
@@ -962,6 +963,10 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
         internal UiSurface? Surface { get; set; }
 
         internal UiWindowBinding? Binding { get; set; }
+
+        internal UiWindowBinding? PublicBinding { get; set; }
+
+        internal bool Replacing { get; set; }
 
         internal Task<UiWindowBinding>? Pending { get; set; }
 

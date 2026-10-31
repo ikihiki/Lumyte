@@ -13,10 +13,13 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
     private readonly CancellationTokenSource _stop = new();
     private Lease? _lease;
     private bool _stopping;
+    private bool _paused;
     private bool _disposed;
     private int _pending;
 
     public TimeProvider TimeProvider => _application.TimeProvider;
+
+    internal bool HasLease => _lease is not null;
 
     internal bool IsStopped => _stopping && _lease is null && Volatile.Read(ref _pending) == 0;
 
@@ -49,7 +52,7 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
                     ITextInputService? service = _application.Driver.TextInput;
                     bool candidateIdle = service is ITextInputInputGate { IsCandidateInputIdle: true };
                     bool textIdle = service is ITextInputQuiescence { IsInputIdle: true };
-                    if (!_application.Driver.IsPhysicalInputIdle || (service is ITextInputInputGate && !candidateIdle && !textIdle))
+                    if (_paused || !_application.Driver.IsPhysicalInputIdle || (service is ITextInputInputGate && !candidateIdle && !textIdle))
                     {
                         return null;
                     }
@@ -89,6 +92,10 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
     internal static UiApplicationAutomationHost Create(UiApplication application, Func<UiSurface?> surface) => application.Driver.SupportsScreenshots ? new ScreenshotHost(application, surface) : new UiApplicationAutomationHost(application, surface);
 
     internal static long NextPointerIdentity() => Interlocked.Increment(ref _nextPointer);
+
+    internal void Pause() => _paused = true;
+
+    internal void Resume() => _paused = false;
 
     internal void BeginStop()
     {
