@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>UI application lifecycle, dispatcher, windows and standard frame coordination.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <ProjectReference Include="../Lumyte.UI/Lumyte.UI.csproj" />
+    <ProjectReference Include="../Lumyte.UI.Windowing/Lumyte.UI.Windowing.csproj" />
+    <ProjectReference Include="../Lumyte.UI.Windowing.WindowSystem/Lumyte.UI.Windowing.WindowSystem.csproj" />
+    <ProjectReference Include="../Lumyte.UI.Windowing.TextInput/Lumyte.UI.Windowing.TextInput.csproj" />
+    <ProjectReference Include="../Lumyte.UI.Windowing.Automation/Lumyte.UI.Windowing.Automation.csproj" />
+    <ProjectReference Include="../Lumyte.UI.TextEditing.Automation/Lumyte.UI.TextEditing.Automation.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Graphics.Drawing2D.DependencyInjection/Lumyte.Graphics.Drawing2D.DependencyInjection.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Resources.Graphics/Lumyte.Resources.Graphics.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Execution/Lumyte.Execution.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
+    <ProjectReference Include="../../Input/Lumyte.Input/Lumyte.Input.csproj" />
+    <ProjectReference Include="../../Platform/Lumyte.Windowing/Lumyte.Windowing.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Desktop" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Browser" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Headless" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Diagnostics" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Tests" />
+    <SlangShader Include="Shaders/present-vertex.slang" ResourceName="Lumyte.UI.Application.present-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/present-fragment.slang" ResourceName="Lumyte.UI.Application.present-fragment" Stage="fragment" />
+  </ItemGroup>
+  <Import Project="../../../tools/shaders/Slang.targets" />
+</Project>

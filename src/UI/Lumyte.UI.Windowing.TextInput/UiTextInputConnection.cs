@@ -209,7 +209,8 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         AdoptRebuiltEditor();
-        bool liveWindow = _windows.TryGetSnapshot(_window, out UiWindowSnapshot? focusWindow) && focusWindow is { IsVisible: true, IsActive: true, State: UiWindowState.Open };
+        bool liveWindow = _windows.TryGetSnapshot(_window, out UiWindowSnapshot? focusWindow) && focusWindow is { IsVisible: true, State: UiWindowState.Open }
+            && (focusWindow.IsActive || (_windows.TryGetSnapshot(focusWindow.KeyboardRoot, out UiWindowSnapshot? keyboardRoot) && keyboardRoot is { IsActive: true, State: UiWindowState.Open }));
         TextBox? desired = liveWindow && !_stopping && _suspended == 0 ? _surface.FocusedWidget as TextBox : null;
         if (desired is not null && (!ReferenceEquals(desired.InputHandler, this) || desired.Document is null || desired.LayoutProvider is null || desired.IsReadOnly || !desired.IsEnabled || !desired.IsVisible))
         {
