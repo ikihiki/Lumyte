@@ -48,3 +48,16 @@ Windows（STA）または64-bit Linux/X11で、Wgpuの表示先へUIを提示し
 viewportはWindowの論理ClientSize、CanvasのscaleはWindow.State.Scale、Drawing2D targetのPixelScaleは1です。resizeは次frameでswapchainを再構成します。描画・入力に失敗した場合は通常更新を止め、Detach・GPUの完了と解放・surfaceのDispose・Window終了の順で清掃します。
 
 2026-10-29はNativeサンプルのビルドとheadlessの統合fixtureを確認しました。Windows/X11 displayがないため、Native実機でのcapture・DPI変更・GPU提示は未確認です。BrowserのHosted例と確認範囲は[Browserサンプル](../Lumyte.UI.Browser.Sample/README.md)を参照してください。
+
+## 親RenderGraph・Resourcesの確認
+
+```sh
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --render-graph vulkan
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --render-graph wgpu
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --resources vulkan
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- --resources wgpu
+```
+
+`--render-graph`はResourcesなし、`--resources`はDIで設定した既存Drawing2D pipelineを使う独立した経路です。同じCPU layoutをCanvas2DとRenderGraphCanvas2Dへ記録し、同じ形式・DPI (1.5, 2)・Clear/Load条件でreadbackを厳密比較します。直接描画用とgraph用のtargetをそれぞれ3 frame再利用し、UI移動・削除後の背景復元を確認します。Load時は親graphにdisplay-linearの青い背景passを置き、UI、readbackの順で実行します。3D rendererは使用せず、tone mapping済み背景との合成境界を確認します。
+
+2026-10-29にVulkanとwgpu（Mesa lavapipeのソフトウェアGPU）で上記4経路を実行しました。HotReloadとdevice世代切り替えはResourcesの統合fixture、Append/Compile/Recordの失敗・取消とcleanup再試行はUI／Drawing2Dのfixtureで検証します。実機GPUのdeviceロスト・復旧後の再描画は未検証です。

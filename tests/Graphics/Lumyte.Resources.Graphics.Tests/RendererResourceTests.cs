@@ -6,8 +6,11 @@ using Lumyte.Memory.DependencyInjection;
 using Lumyte.Resources.DependencyInjection;
 using Lumyte.Resources.Graphics.Drawing2D;
 using Lumyte.Resources.Graphics.Drawing2D.RenderGraph;
+using Lumyte.UI;
+using Lumyte.UI.SampleSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using static Lumyte.UI.Compose;
 
 namespace Lumyte.Resources.Graphics.Tests;
 
@@ -161,6 +164,85 @@ public sealed class RendererResourceTests
         renderer.Dispose();
         await manager.TrimAsync();
         Assert.True(pipeline.Disposed);
+    }
+
+    /// <summary>Checks UI graph frames pin publication through cancelled waits and reuse CPU declarations after recovery.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task UiFramesRetainGenerationsAcrossReloadWaitCancellationAndRecoveryAsync()
+    {
+        var state = new GraphicsTestState();
+        var source = new MutableShaderSource();
+        await using ServiceProvider services = CreateServices(state, source, custom: true);
+        await using ResourceExecutionHost execution = await ResourceExecutionHost.StartAsync(services);
+        IGraphicsDeviceService devices = services.GetRequiredService<IGraphicsDeviceService>();
+        await devices.InitializeAsync();
+        ResourceManager manager = services.GetRequiredService<ResourceManager>();
+        using ResourceReference<Renderer2DResource> reference = await manager.AcquireRenderer2DAsync();
+        ResourceHandle<Renderer2DResource> handle = reference.Handle;
+        using var surface = new UiSurface(Panel());
+        surface.SetViewport(new(16, 16));
+        surface.UpdateLayout();
+        TestDevice original = state.Devices[0];
+        TestProgramPipeline pipeline = Assert.Single(original.Programs);
+        using var oldGraph = new Lumyte.Graphics.RenderGraph.RenderGraph(original);
+        using UiGraphFrame oldFrame = await AppendAsync(oldGraph);
+        var reload = new TaskCompletionSource<ResourceReloadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                reload.TrySetResult(args.Result);
+            }
+        };
+        manager.ReloadFailed += (_, args) => reload.TrySetException(args.Error);
+        source.Change();
+        await reload.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        using var nextGraph = new Lumyte.Graphics.RenderGraph.RenderGraph(original);
+        using UiGraphFrame nextFrame = await AppendAsync(nextGraph);
+        Assert.Equal(2, original.Programs.Count(program => !program.Disposed));
+
+        // Cancelling a host's wait is not completion: keep the old frame until its completion signal.
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancel = new CancellationTokenSource();
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => completion.Task.WaitAsync(cancel.Token));
+        await manager.TrimAsync();
+        Assert.False(pipeline.Disposed);
+        completion.SetResult();
+        await completion.Task;
+        oldGraph.Dispose();
+        oldFrame.Dispose();
+        oldFrame.Dispose();
+        await manager.TrimAsync();
+        Assert.True(pipeline.Disposed);
+        original.Lose();
+        surface.Dispatch(new UiFocusLostInput());
+        using var lostGraph = new Lumyte.Graphics.RenderGraph.RenderGraph(original);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await AppendAsync(lostGraph));
+        await original.WaitForRetirementAsync();
+        nextGraph.Dispose();
+        nextFrame.Dispose();
+        await devices.RecoverAsync();
+        GraphicsResourceRuntime runtime = services.GetRequiredService<GraphicsResourceRuntime>();
+        Assert.Equal(ResourceReloadStatus.Published, (await manager.RebuildRuntimeAsync([runtime.Id])).Status);
+        using var recoveredGraph = new Lumyte.Graphics.RenderGraph.RenderGraph(state.Devices[1]);
+        using UiGraphFrame recovered = await AppendAsync(recoveredGraph);
+        Assert.Equal(handle, reference.Handle);
+        Assert.Single(state.Devices[1].Programs);
+        Assert.Equal(new System.Numerics.Vector2(16, 16), surface.Root.Size);
+        recoveredGraph.Dispose();
+        recovered.Dispose();
+
+        async ValueTask<UiGraphFrame> AppendAsync(Lumyte.Graphics.RenderGraph.RenderGraph graph)
+        {
+            var description = new TextureDesc { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment };
+            var target = new RenderTargetBinding2D { Texture = graph.CreateTexture(description), Description = description, LoadOp = AttachmentLoadOp.Clear };
+            var canvas = new RenderGraphCanvas2D();
+            canvas.Begin();
+            surface.Record(canvas);
+            return await UiGraphFrame.AppendAsync(graph, canvas.End(), target, new(graph), DrawingCommandRenderers2D.CreateDefault(), reference);
+        }
     }
 
     private static ServiceProvider CreateServices(GraphicsTestState state, MutableShaderSource source, bool custom, Action<IServiceCollection>? configure = null, bool afterDefaults = false)
