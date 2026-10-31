@@ -6,8 +6,149 @@ using Xunit;
 namespace Lumyte.Composition.Tests;
 
 /// <summary>Tests generator diagnostics against compilations containing malformed declarations.</summary>
-public sealed class GeneratorTests
+public sealed partial class GeneratorTests
 {
+    /// <summary>Checks inherited adapters generate exact typed contracts while init and delegates retain their signatures.</summary>
+    [Fact]
+    public void InheritedArgumentAdapterCompilesInAnIndependentConsumer()
+    {
+        const string Source = "using Lumyte.Composition; public readonly struct Arg<T> : IComposeArgument<T> { public bool IsSpecified => true; public T GetInitialValue() => default!; public void AttachTo<TTarget>(TTarget target, object key, T initialValue, System.Action<TTarget,T> setter) where TTarget : class { } public static implicit operator Arg<T>(T value) => default; } [ComposeArgumentAdapter(typeof(Arg<>))] public class Base { [ComposeParameter] public int Count { get; set; } = 5; } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Item : Base { [ComposeParameter] public required string Name { get; init; } [ComposeParameter] public System.Action? OnClick { get; set; } } } } public class Usage { public object Build() => Compose.Item(name: \"demo\", count: 3, onClick: () => { }); }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Contains(result.GeneratedTrees, tree => tree.ToString().Contains("Arg<int>", StringComparison.Ordinal));
+    }
+
+    /// <summary>Checks invalid adapters are diagnosed before producing broken generated code.</summary>
+    /// <param name="adapter">The adapter declaration.</param>
+    /// <param name="member">The mutable member type.</param>
+    [Theory]
+    [InlineData("public struct Arg<T> { }", "int")]
+    [InlineData("public ref struct Arg<T> { }", "int")]
+    [InlineData("internal struct Arg<T> { }", "int")]
+    [InlineData("public struct Arg<T> where T : class { }", "int")]
+    [InlineData("public struct Arg<T> where T : new() { }", "string")]
+    public void InvalidArgumentAdaptersAreDiagnosed(string adapter, string member)
+    {
+        string source = "using Lumyte.Composition; " + adapter + " public static partial class Compose { public static partial class Definitions { [ComposeArgumentAdapter(typeof(Arg<>)), Composable] public partial class Item { [ComposeParameter] public " + member + " Value { get; set; } = default!; } } }";
+        GeneratorDriverRunResult result = Run(source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+        Assert.Empty(result.GeneratedTrees);
+    }
+
+    /// <summary>Checks a component can add mixed slots when its base also generates a mixed child wrapper.</summary>
+    [Fact]
+    public void DerivedMixedSlotsHideTheInheritedChildWrapperDeliberately()
+    {
+        const string Source = "using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel { [ComposeContent] public int[] Children { get; set; } = []; [ComposeSlot] private static void Background(Panel target, int[] children) { } } [Composable] public partial class Button : Panel { [ComposeSlot] private static void Foreground(Button target, int[] children) { } } } } public class Usage { public object Build() => Compose.Button()[1, Compose.Button.Foreground()[2]]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Contains(result.GeneratedTrees, tree => tree.ToString().Contains("public new readonly struct CompositionChild", StringComparison.Ordinal));
+    }
+
+    /// <summary>Checks delegate-like settings without concrete delegate types retain ordinary Optional semantics.</summary>
+    /// <param name="type">The ordinary parameter type.</param>
+    [Theory]
+    [InlineData("int?")]
+    [InlineData("System.Delegate?")]
+    [InlineData("System.Linq.Expressions.Expression<System.Action>?")]
+    [InlineData("T?")]
+    public void NonDelegateParametersKeepOptionalSemantics(string type)
+    {
+        string source = "using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Item<T> where T : System.Delegate { [ComposeParameter] public " + type + " Value { get; set; } } } }";
+        GeneratorDriverRunResult result = Run(source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Contains(result.GeneratedTrees, tree => tree.ToString().Contains("Optional<", StringComparison.Ordinal));
+    }
+
+    /// <summary>Checks automatically recognized delegates still require writable instance storage.</summary>
+    /// <param name="member">The invalid declaration.</param>
+    [Theory]
+    [InlineData("[ComposeParameter] public System.Action? Value { get; }")]
+    [InlineData("[ComposeParameter] public static System.Action? Value { get; set; }")]
+    public void InvalidDelegateStorageIsDiagnosed(string member)
+    {
+        string source = "using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Item { " + member + " } } }";
+        GeneratorDriverRunResult result = Run(source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+    }
+
+    /// <summary>Checks generic policy attributes compare closed content types and resolve qualified or aliased names.</summary>
+    /// <param name="attribute">The policy attribute spelling.</param>
+    /// <param name="itemType">The actual content item type.</param>
+    /// <param name="valid">Whether the content matches the policy.</param>
+    [Theory]
+    [InlineData("CompositionContentType<OwnedContent<int>>", "int", true)]
+    [InlineData("global::Lumyte.Composition.CompositionContentTypeAttribute<OwnedContent<int>>", "int", true)]
+    [InlineData("Policy", "int", true)]
+    [InlineData("CompositionContentType<OwnedContent<int>>", "string", false)]
+    public void GenericContentPolicyComparesClosedTypes(string attribute, string itemType, bool valid)
+    {
+        string source = "using Lumyte.Composition; using Policy = Lumyte.Composition.CompositionContentTypeAttribute<OwnedContent<int>>; public sealed class OwnedContent<T> : ICompositionContent<T> { public void Initialize(T[] content) { } } [" + attribute + "] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel : ContentBase { [ComposeContent] public OwnedContent<" + itemType + "> Children { get; } = new(); } } }";
+        GeneratorDriverRunResult result = Run(source, out Compilation output);
+        if (valid)
+        {
+            Assert.Empty(result.Diagnostics);
+            Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        }
+        else
+        {
+            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+        }
+    }
+
+    /// <summary>Rejects value-type owned storage rather than silently initializing a boxed copy.</summary>
+    /// <param name="policy">Whether an exact storage policy is declared.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ValueTypeManagedContentIsRejected(bool policy)
+    {
+        string source = "using Lumyte.Composition; public struct OwnedContent : ICompositionContent<int> { private int[]? _items; public int Count => _items?.Length ?? 0; public void Initialize(int[] content) => _items = content; } "
+            + (policy ? "[CompositionContentType<OwnedContent>] " : string.Empty)
+            + "public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel : ContentBase { [ComposeContent] public OwnedContent Children { get; } = new(); } } }";
+        GeneratorDriverRunResult result = Run(source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001" && diagnostic.GetMessage().Contains("reference type", StringComparison.Ordinal));
+        Assert.Empty(result.GeneratedTrees);
+    }
+
+    /// <summary>Checks getter-only managed content receives generated arrays, including mixed slots and inherited indexers.</summary>
+    [Fact]
+    public void ManagedContentCompilesWithoutAPropertySetter()
+    {
+        const string Source = "using Lumyte.Composition; public sealed class OwnedContent : ICompositionContent<int> { public void Initialize(int[] content) { } } [CompositionContentType<OwnedContent>] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel : ContentBase { [ComposeContent] public OwnedContent Children { get; } = new(); } [Composable] public partial class Stack : Panel { } [Composable] public partial class Button : ContentBase { [ComposeContent] public OwnedContent Children { get; } = new(); [ComposeSlot] private static void Background(Button target, int[] children) { } } } } public class Usage { public object Build() => Compose.Panel()[Compose.Stack()[1, 2].Children is null ? 0 : 1]; public object Mixed() => Compose.Button()[1, Compose.Button.Background()[2]]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Contains(result.GeneratedTrees, tree => tree.ToString().Contains(").Initialize(content);", StringComparison.Ordinal));
+    }
+
+    /// <summary>Checks an inherited storage policy rejects other collection types and replaceable managed properties.</summary>
+    /// <param name="member">The invalid content declaration.</param>
+    [Theory]
+    [InlineData("[ComposeContent] public int[] Children { get; set; } = [];")]
+    [InlineData("[ComposeContent] public System.Collections.Generic.IReadOnlyList<int> Children { get; set; } = [];")]
+    [InlineData("[ComposeContent] public OwnedContent Children { get; set; } = new();")]
+    [InlineData("[ComposeContent] public OwnedContent Children = new();")]
+    public void InheritedContentPolicyRejectsAlternateStorage(string member)
+    {
+        string source = "using Lumyte.Composition; public sealed class OwnedContent : ICompositionContent<int> { public void Initialize(int[] content) { } } [CompositionContentType<OwnedContent>] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Panel : ContentBase { " + member + " } } }";
+        GeneratorDriverRunResult result = Run(source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Id == "AD0001");
+    }
+
+    /// <summary>Checks descendants cannot replace an ancestor's exact content type constraint.</summary>
+    [Fact]
+    public void DescendantContentPolicyCannotRelaxAncestorConstraint()
+    {
+        const string Source = "using Lumyte.Composition; public sealed class OwnedContent : ICompositionContent<int> { public void Initialize(int[] content) { } } public sealed class OtherContent : ICompositionContent<int> { public void Initialize(int[] content) { } } [CompositionContentType<OwnedContent>] public class ContentBase { } public static partial class Compose { public static partial class Definitions { [Composable, CompositionContentType<OtherContent>] public partial class Panel : ContentBase { [ComposeContent] public OtherContent Children { get; } = new(); } } }";
+        GeneratorDriverRunResult result = Run(Source, out _);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "LYC001");
+    }
+
     /// <summary>Tests that unsupported definitions produce a deliberate diagnostic.</summary>
     /// <param name="member">The malformed component declaration.</param>
     [Theory]
@@ -148,6 +289,26 @@ public sealed class GeneratorTests
         const string Source = "using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Button { [ComposeSlot] private static void Background(Button target, object[] items) { } } [Composable] public partial class Other { [ComposeSlot] private static void Background(Other target, object[] items) { } } } } public class Usage { public object Build() => Compose.Other()[Compose.Button.Background()[new object()]]; }";
         Run(Source, out Compilation output);
         Assert.Contains(output.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    /// <summary>Tests typed indexers inherited through generated containers without hiding warnings.</summary>
+    [Fact]
+    public void DerivedContentIndexerRetainsItsTypeWithoutWarnings()
+    {
+        const string Source = "using System.Collections.Generic; using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { public class Widget { [ComposeParameter] public float? Width { get; set; } } [Composable] public partial class Panel : Widget { [ComposeContent] public IReadOnlyList<Widget> Children { get; set; } = []; } [Composable] public partial class Stack : Panel { } [Composable] public partial class Column : Stack { } } } public class Usage { public Compose.Definitions.Column Build() => Compose.Column(width: 42)[Compose.Panel()]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning);
+    }
+
+    /// <summary>Tests that inaccessible base indexers do not introduce an unnecessary new modifier.</summary>
+    [Fact]
+    public void PrivateBaseIndexerDoesNotRequireHiding()
+    {
+        const string Source = "using System.Collections.Generic; using Lumyte.Composition; public class Container { [ComposeContent] public IReadOnlyList<object> Children { get; set; } = []; private object this[object[] children] => this; } public static partial class Compose { public static partial class Definitions { [Composable] public partial class Child : Container { } } } public class Usage { public Compose.Definitions.Child Build() => Compose.Child()[new object()]; }";
+        GeneratorDriverRunResult result = Run(Source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning);
     }
 
     private static GeneratorDriverRunResult Run(string source, out Compilation output)

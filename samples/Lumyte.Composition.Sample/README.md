@@ -64,3 +64,16 @@ var mixed = Button()[Text(), Button.Background()[Image("sample.jpeg")]];
 ```
 
 子要素はスロット指定で捕捉し、外側のButtonへ適用する。保存領域と置換処理はButton側で定義する。
+
+## 静的な構築関数
+
+DefinitionsのGreetingとTypedは、クラスを定義せず静的関数へComposableを付けています。戻り値の基底WidgetがComposeFunctionAdapterでFunctionWidgetを指定し、生成された宣言をサンプルhostのEvaluateで実行します。生成factoryの呼出し自体はbodyを実行しません。
+
+```csharp
+var declaration = (Compose.Definitions.FunctionWidget)Greeting(key: "greeting");
+Compose.Definitions.Widget result = declaration.Evaluate();
+```
+
+このhostはUIやOSなどの実行基盤を参照しません。状態や購読を保持する場合の寿命もhost側で定義します。
+
+[関数factoryのADR](../../docs/adr/composition/COMPOSITION-0005-function-factories.md)
