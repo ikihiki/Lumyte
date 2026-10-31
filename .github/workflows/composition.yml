@@ -34,9 +34,19 @@ jobs:
             platform: Windows
             arch: aarch64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Cache Linux DXC libraries
+        if: runner.os == 'Linux'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            artifacts/dev-env/dxc/lib
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v1
 
       - name: Mise setup (Linux)
         if: runner.os == 'Linux'

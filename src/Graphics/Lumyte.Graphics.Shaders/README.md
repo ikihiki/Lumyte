@@ -53,3 +53,5 @@ binaryはversion、entry、stage、実際のcompiler version、row-major方針�
 `ShaderArtifact(ReadOnlySpan<byte>)` はbinaryをコピーして検証し、`GetBinary()` もコピーを返します。`GetTarget`、`PackTarget`、`PackTargets` はbackend／compiler実装用で、通常の利用側はbinaryをそのまま渡します。反射情報からGPU参照を配置するserializerとpipeline／command APIは別の設計範囲です。
 
 DXIL は SM 6.6 を使用し、Slang が呼び出す DXC を必要とします。GPU、Agility SDK、ドライバーはオフライン生成に不要です。全 target のコンパイルに失敗した場合は、その target を黙って除外しません。
+
+Linux x64／ARM64 の DXC は共通セットアップの `SetupDxc` target で準備します。既存環境を更新する場合は `mise run setup-native` を再実行してから環境を有効化してください。

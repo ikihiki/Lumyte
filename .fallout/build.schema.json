@@ -37,6 +37,7 @@
         "PublishWindowSample",
         "Restore",
         "Samples",
+        "SetupDxc",
         "SetupParleyNative",
         "SetupParleyWasm",
         "SetupWasm",
