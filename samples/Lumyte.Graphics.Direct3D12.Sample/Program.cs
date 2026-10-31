@@ -1,11 +1,17 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Direct3D12;
+using Lumyte.Graphics.Direct3D12.Sample;
 using Lumyte.Graphics.Samples;
 
-if (args.Length is < 1 or > 3 || args[0] is not ("hardware" or "warp") || args.Skip(1).Any(a => a is not ("suite" or "partial")))
+if (args.Length is < 1 or > 3 || args[0] is not ("hardware" or "warp") || args.Skip(1).Any(a => a is not ("suite" or "partial" or "window")) || (args.Contains("window") && args.Contains("suite")))
 {
-    Console.Error.WriteLine("Usage: Lumyte.Graphics.Direct3D12.Sample hardware|warp [suite] [partial]");
+    Console.Error.WriteLine("Usage: Lumyte.Graphics.Direct3D12.Sample hardware|warp [suite|window] [partial]");
     return 1;
+}
+
+if (args.Contains("window"))
+{
+    return WindowSample.Run(args[0] == "warp", args.Contains("partial"));
 }
 
 using var owner = Direct3D12Device.Create(new() { UseWarp = args[0] == "warp", EnablePartialGraphicsPrograms = args.Contains("partial") });

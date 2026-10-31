@@ -6,7 +6,12 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Direct3D12/Lumyte.Graphics.Direct3D12.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <SlangShader Include="Shaders/triangle-vertex.slang" ResourceName="Lumyte.Shaders.triangle-vertex" Stage="vertex" />
+  </ItemGroup>
+  <Import Project="../../tools/shaders/Slang.targets" />
 </Project>

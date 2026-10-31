@@ -169,5 +169,5 @@ dotnet run --project build -c Release -- --target Test --project tests/Graphics/
 
 GPU を使わないテストは DXIL container、helper の binding、natural／constant-buffer layout、オンライン／オフライン一致、
 stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
-今回の拡張は現環境のドライバー制約を考慮して GPU 実行を行っていません。両 channel のビルドと CPU テストの結果と、
-実 GPU／WARP での描画・compute・presentation／partial program の実行検証を区別してください。
+一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
+未実施の suite 全体・WARP・Preview partial program の実行検証を区別してください。

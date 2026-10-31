@@ -51,7 +51,7 @@ API HRESULT compute_create(Device* device, const void* code, UINT64 size, Pipeli
     {
         return E_OUTOFMEMORY;
     }
-    CHECK(create_root(device, &pipeline->root));
+    CHECK(report_failure(device, create_root(device, &pipeline->root)));
     D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = pipeline->root.Get();
     desc.CS = {code, static_cast<SIZE_T>(size)};
@@ -91,7 +91,7 @@ API HRESULT graphics_create(Device* device, const void* vs, UINT64 vs_size, cons
     }
     else
     {
-        CHECK(create_root(device, &pipeline->root));
+        CHECK(report_failure(device, create_root(device, &pipeline->root)));
     }
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = pipeline->root.Get();
@@ -147,7 +147,8 @@ API HRESULT graphics_create(Device* device, const void* vs, UINT64 vs_size, cons
     }
     else
     {
-        CHECK(device->device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipeline->state)));
+        CHECK(
+            report_failure(device, device->device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipeline->state))));
     }
     *output = pipeline.release();
     return S_OK;

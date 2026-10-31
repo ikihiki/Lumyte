@@ -17,6 +17,20 @@ dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-b
 
 Windows、MSVC、Windows SDK が必要です。[バックエンドの対応範囲](../../src/Graphics/Lumyte.Graphics.Direct3D12/README.md)も参照してください。
 
+## ウィンドウ表示
+
+一般版 SDK でビルドした後、`window` を指定するとネイティブウィンドウにカラー三角形を描画します。
+ウィンドウのリサイズに合わせて swapchain を再構成し、閉じると GPU 資源と HWND を順に解放します。
+
+```powershell
+dotnet run --project build -c Release -- --target Compile --project samples/Lumyte.Graphics.Direct3D12.Sample --agility-channel Stable
+dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- hardware window
+```
+
+`warp window` で WARP を明示選択できます。デバッグレイヤーを有効にし、Present 成功数を標準出力に記録します。
+この環境では一般版 SDK 620・実 GPU による三角形表示と連続 Present を確認しました。
+Preview の部分プログラムの実行確認とは独立した結果です。
+
 ## Vulkan 共通 exercise
 
 `suite` を付けると Vulkan と同じ command、pipeline、shader binding、depth/stencil、間接 draw／dispatch、semaphore、render graph の検証を実行します。
@@ -34,5 +48,5 @@ dotnet run --project build -c Release -- --target Compile --project samples/Lumy
 dotnet run --project samples/Lumyte.Graphics.Direct3D12.Sample -c Release --no-build -- hardware suite partial
 ```
 
-現環境ではドライバーの制約により、この拡張の GPU 実行確認は行っていません。ビルドと GPU 不要の DXIL テストを検証対象にしています。
+一般版の window モードは実 GPU で表示確認済みです。suite 全体と Preview の部分プログラムは、この確認には含みません。
 画面表示の接続は `Direct3D12Device.CreateSurface(hwnd)` を使用します。既存 HWND を渡し、window と message loop は呼び出し元で管理してください。

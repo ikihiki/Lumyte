@@ -1,2 +1,3 @@
+struct VertexOutput { float4 position : SV_Position; float4 color : COLOR0; };
 [shader("fragment")]
-float4 main(float4 color : COLOR0) : SV_Target0 { return color; }
+float4 main(VertexOutput input) : SV_Target0 { return input.color; }

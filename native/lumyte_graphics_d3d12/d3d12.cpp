@@ -6,6 +6,7 @@
 #include <memory>
 #include <new>
 #include <cstring>
+#include <cstdio>
 
 using Microsoft::WRL::ComPtr;
 #define API extern "C" __declspec(dllexport)
@@ -31,6 +32,37 @@ struct Commands
     ComPtr<ID3D12DescriptorHeap> render_targets;
     ComPtr<ID3D12DescriptorHeap> depth_target;
 };
+
+static HRESULT report_failure(Device* device, HRESULT result) noexcept
+{
+    if (FAILED(result))
+    {
+        ComPtr<ID3D12InfoQueue> messages;
+        if (SUCCEEDED(device->device.As(&messages)))
+        {
+            for (UINT64 i = 0; i < messages->GetNumStoredMessagesAllowedByRetrievalFilter(); i++)
+            {
+                SIZE_T size = 0;
+                if (FAILED(messages->GetMessage(i, nullptr, &size)))
+                {
+                    continue;
+                }
+                auto bytes = std::unique_ptr<char[]>(new (std::nothrow) char[size]);
+                if (!bytes)
+                {
+                    break;
+                }
+                auto message = reinterpret_cast<D3D12_MESSAGE*>(bytes.get());
+                if (SUCCEEDED(messages->GetMessage(i, message, &size)))
+                {
+                    std::fprintf(stderr, "D3D12: %s\n", message->pDescription);
+                }
+            }
+            messages->ClearStoredMessages();
+        }
+    }
+    return result;
+}
 
 API HRESULT device_create(UINT adapter_index, int warp, int debug, int partial, const char* sdk_path,
                           Device** output) noexcept
