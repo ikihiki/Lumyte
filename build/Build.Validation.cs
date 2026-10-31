@@ -38,6 +38,23 @@ internal sealed partial class Build
             await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
         });
 
+    private Target TestSignals => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore", "--", "--smoke").ConfigureAwait(false);
+        });
+
+    private Target BenchmarkSignals => definition => definition
+        .DependsOn(TestSignals)
+        .Executes(async () =>
+        {
+            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore",
+                "--", "--filter", "*", "--artifacts", Path.Combine(ArtifactRoot, "signals-benchmarks")).ConfigureAwait(false);
+        });
+
     private Target TestText => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
@@ -203,6 +220,7 @@ internal sealed partial class Build
 
         foreach (string project in new[]
         {
+            "samples/Lumyte.Signals.Sample",
             "samples/Lumyte.Composition.Sample", "samples/Lumyte.Resources.Sample", "samples/Lumyte.Diagnostics.Sample",
             "samples/Lumyte.Animation.Sample", "samples/Lumyte.StateMachines.Sample", "samples/Lumyte.Animation.StateMachine.Sample",
         })
@@ -242,6 +260,8 @@ internal sealed partial class Build
             await ToolAsync(execution, mode).ConfigureAwait(false);
         }
 
+        string signals = await PublishAotSampleAsync("samples/Lumyte.Signals.Sample", "signals-aot", "Lumyte.Signals.Sample", strict: true).ConfigureAwait(false);
+        await ToolAsync(signals).ConfigureAwait(false);
         string resources = await PublishAotSampleAsync("tests/Core/Lumyte.Resources.AotSmoke", "resources-aot", "Lumyte.Resources.AotSmoke", strict: false).ConfigureAwait(false);
         await ToolAsync(resources).ConfigureAwait(false);
         await ToolAsync(resources, "--host").ConfigureAwait(false);
