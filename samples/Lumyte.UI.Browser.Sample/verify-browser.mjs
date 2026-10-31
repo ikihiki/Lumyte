@@ -99,6 +99,7 @@ try {
     await command("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
     await command("Page.bringToFront");
     const query = new URLSearchParams();
+    if (process.env.LUMYTE_UI_AUTOMATION) query.set("automation", "");
     if (process.env.LUMYTE_UI_INPUT_ONLY) query.set("input-only", "");
     if (process.env.LUMYTE_UI_RENDER_GRAPH) query.set("render-graph", "");
     if (process.env.LUMYTE_UI_RESOURCES) query.set("resources", "");
@@ -120,6 +121,9 @@ try {
         throw new Error(`Timed out: ${label} state=${await state()} trace=${await evaluate("JSON.stringify(globalThis.uiTrace)")}\n${progress.join("\n")}\n${errors.join("\n")}`);
     }
     await wait(value => Number(value[1]) >= 2, "initial GPU frames");
+    const initialClicks = process.env.LUMYTE_UI_AUTOMATION ? 2 : 0;
+    assert.equal(Number((await state())[0]), initialClicks);
+    if (process.env.LUMYTE_UI_AUTOMATION) assert.ok(progress.some(line => line.includes("UI automation passed:")));
     await evaluate("globalThis.uiTrace=[]; for(const type of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture']) document.querySelector('canvas').addEventListener(type,e=>uiTrace.push([type,e.buttons,e.clientX,e.clientY]));");
     const rect = JSON.parse(await evaluate("JSON.stringify(document.querySelector('canvas').getBoundingClientRect().toJSON())"));
     async function mouse(type, x, y, buttons) {
@@ -132,22 +136,27 @@ try {
     await delay(50);
     await mouse("mouseReleased", 550, 20, 0);
     await wait(value => value[2] === "False", "outside release");
-    assert.equal((await state())[0], "0", "Outside release must not click.");
+    assert.equal(Number((await state())[0]), initialClicks, "Outside release must not click.");
     await mouse("mousePressed", 20, 20, 1);
     await mouse("mouseReleased", 20, 20, 0);
-    await wait(value => value[0] === "1", "main click");
+    await wait(value => Number(value[0]) === initialClicks + 1, "main click");
     await mouse("mousePressed", 240, 120, 1);
     await mouse("mouseReleased", 240, 120, 0);
-    await wait(value => value[0] === "2", "hosted click");
+    await wait(value => Number(value[0]) === initialClicks + 2, "hosted click");
     await command("Input.dispatchKeyEvent", { type: "keyDown", code: "Space", key: " ", windowsVirtualKeyCode: 32 });
     await wait(value => value[3] === "True", "focused hosted key press");
     await command("Input.dispatchKeyEvent", { type: "keyUp", code: "Space", key: " ", windowsVirtualKeyCode: 32 });
-    await wait(value => value[0] === "3", "focused hosted key activation");
+    await wait(value => Number(value[0]) === initialClicks + 3, "focused hosted key activation");
     await command("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 2, mobile: false });
     await delay(100);
     await mouse("mousePressed", 20, 20, 1);
     await mouse("mouseReleased", 20, 20, 0);
-    await wait(value => value[0] === "4", "DPI-scaled input");
+    await wait(value => Number(value[0]) === initialClicks + 4, "DPI-scaled input");
+    if (process.env.LUMYTE_AUTOMATION_SCREENSHOT) {
+        const png = await evaluate("globalThis.lumyteAutomationPng");
+        assert.ok(png, "No automation GPU PNG was captured.");
+        await writeFile(process.env.LUMYTE_AUTOMATION_SCREENSHOT, Buffer.from(png, "base64"));
+    }
     if (process.env.LUMYTE_SCREENSHOT) {
         const screenshot = await command("Page.captureScreenshot", { format: "png" });
         await writeFile(process.env.LUMYTE_SCREENSHOT, Buffer.from(screenshot.data, "base64"));
@@ -156,7 +165,7 @@ try {
     await evaluate("document.querySelector('button').click()");
     await delay(200);
     assert.deepEqual(errors, [], "Shutdown reported errors.");
-    console.log(`Browser UI ${process.env.LUMYTE_UI_INPUT_ONLY ? "input/CPU drawing" : "WebGPU"} verification passed: DOM capture, outside release, Hosted, keyboard activation, DPI x2 and shutdown.`);
+    console.log(`Browser UI ${process.env.LUMYTE_UI_INPUT_ONLY ? "input/CPU drawing" : "WebGPU"} verification passed: ${process.env.LUMYTE_UI_AUTOMATION ? "Save locator, Enter and assertions; " : ""}DOM capture, outside release, Hosted, keyboard activation, DPI x2 and shutdown.`);
 
 } finally {
     socket?.close();

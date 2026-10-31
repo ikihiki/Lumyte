@@ -167,3 +167,15 @@ Focusableを含む通常の値変更は新しい宣言を構築します。専�
 ## 実Windowとの接続
 
 [UI-0007](../../../docs/adr/ui/UI-0007-window-input-and-dpi-integration.md)では、取得originを持つInputRecordからUiInputへ変換し、NativeとHostedの系列ownerをホストで保持します。InputSystemのUpdate中はRecordedをqueueへ保存し、Updateが戻ってから配送します。DPIはCanvasへ一度だけ適用し、UiSurfaceは論理座標を扱います。UIパッケージのPlatform／Windowing／InputSystemへの依存は追加していません。
+
+## 意味情報と自動操作の接続
+
+`testId`、`automationName`、`role`は通常の構築引数です。PanelはGroup、ButtonはButtonを既定roleとします。roleは検索用の意味で、付与しただけでは操作を生成しません。TestIdの重複はscope付きLocatorで解決します。
+
+`CaptureAutomationSnapshot`はlayoutを確定して、ID、意味情報、surface論理座標のBounds／ClippedBounds、祖先を含む状態を不変コピーにします。通常のDispatchにsnapshotを導入せず、要求時だけ取得します。IDはsurfaceへの接続寿命ごとに変わり、同じWidgetを再接続しても再利用しません。
+
+独自部品はGetAutomationChildrenで直接の意味的な子と順序を選びます。既定は全登録コレクション、Buttonは背景を除くChildrenだけです。重複・直接の子以外・不正な座標を含むsnapshotは公開しません。実際の操作とpressed状態はAutomationActions、IsAutomationPressed、HasAutomationActivePressのoverrideで公開します。
+
+`ProbePointer`は通常のhit testから親へ進み、OnProbePointerDownが最初に受理する部品のClick capabilityを返します。独自の入力消費部品はこのhookとOnInputで判定を共有してください。probeは副作用を起こさず、通常Downが止まる場所を親Buttonの操作点として返してはいけません。Buttonの型判定をWidget／UiSurfaceへ追加していません。
+
+[Automationパッケージ](../Lumyte.UI.Automation/README.md)／[設計](../../../docs/adr/ui/UI-0009-ui-automation.md)

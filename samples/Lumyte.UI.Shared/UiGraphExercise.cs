@@ -74,14 +74,14 @@ internal static class UiGraphExercise
         Console.WriteLine($"UI {(resources ? "Resources + parent graph" : "parent graph")} passed: exact direct/graph pixels, DPI (1.5, 2), Clear/Load, moved/removed UI and background restoration.");
     }
 
-    private static async Task<byte[]> DrawAsync(IGraphicDevice device, IGraphicsTexture texture, TextureDesc description, bool reused, DrawList2D? direct, RenderGraphDrawList2D? layered, ResourceReference<Renderer2DResource>? reference, bool load)
+    internal static async Task<byte[]> DrawAsync(IGraphicDevice device, IGraphicsTexture texture, TextureDesc description, bool reused, DrawList2D? direct, RenderGraphDrawList2D? layered, ResourceReference<Renderer2DResource>? reference, bool load, Color2D? clearColor = null)
     {
-        const uint Width = 96;
-        const uint Height = 64;
+        uint width = description.Width;
+        uint height = description.Height;
         using IGraphicsTextureView view = texture.CreateView();
         uint alignment = device.GetTextureCopyLayout(description.Format).BytesPerRowAlignment;
-        uint pitch = (((Width * 4) + alignment - 1) / alignment) * alignment;
-        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * Height, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        uint pitch = (((width * 4) + alignment - 1) / alignment) * alignment;
+        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * height, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using var graph = new Graph(device, "UI parent frame");
         RenderGraphTexture target = graph.ImportTexture(texture, reused ? TextureState.CopySource : TextureState.Undefined, reused ? new(PipelineStage.Copy, ResourceAccess.CopyRead) : default);
         var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
@@ -93,7 +93,7 @@ internal static class UiGraphExercise
                 .UseTexture(target, TextureState.ColorAttachment, color);
         }
 
-        using UiGraphFrame? ui = layered is null ? null : await UiGraphFrame.AppendAsync(graph, layered, new() { Texture = target, Description = description, PixelScale = 1, LoadOp = load ? AttachmentLoadOp.Load : AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 1) }, new(graph), DrawingCommandRenderers2D.CreateDefault(), reference);
+        using UiGraphFrame? ui = layered is null ? null : await UiGraphFrame.AppendAsync(graph, layered, new() { Texture = target, Description = description, PixelScale = 1, LoadOp = load ? AttachmentLoadOp.Load : AttachmentLoadOp.Clear, ClearColor = clearColor ?? new(0, 0, 1, 1) }, new(graph), DrawingCommandRenderers2D.CreateDefault(), reference);
         RenderGraphBuffer<byte> output = graph.ImportBuffer(readback, default);
         if (layered is not null)
         {
@@ -104,7 +104,7 @@ internal static class UiGraphExercise
         }
 
         using Renderer2D? renderer = direct is null ? null : reference?.CreateRenderer() ?? new(device, DrawingCommandRenderers2D.CreateDefault());
-        using PreparedDraw2D? prepared = direct is null ? null : await renderer!.PrepareAsync(direct, new() { View = view, PixelScale = 1, LoadOp = load ? AttachmentLoadOp.Load : AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 1) });
+        using PreparedDraw2D? prepared = direct is null ? null : await renderer!.PrepareAsync(direct, new() { View = view, PixelScale = 1, LoadOp = load ? AttachmentLoadOp.Load : AttachmentLoadOp.Clear, ClearColor = clearColor ?? new(0, 0, 1, 1) });
         using CompiledRenderGraph? plan = layered is null ? null : graph.Compile();
         if (plan is not null && (plan.PassNames[^1] != "ui.readback" || (load && plan.PassNames[0] != "scene.display-linear-background")))
         {
@@ -137,15 +137,15 @@ internal static class UiGraphExercise
         byte[] bytes = new byte[checked((int)readback.Count)];
         readback.CopyTo(bytes);
         readback.Unmap();
-        byte[] pixels = new byte[Width * Height * 4];
-        for (int y = 0; y < Height; y++)
+        byte[] pixels = new byte[width * height * 4];
+        for (int y = 0; y < height; y++)
         {
-            bytes.AsSpan(checked((int)(y * pitch)), (int)Width * 4).CopyTo(pixels.AsSpan(y * (int)Width * 4));
+            bytes.AsSpan(checked((int)(y * pitch)), (int)width * 4).CopyTo(pixels.AsSpan(y * (int)width * 4));
         }
 
         return pixels;
 
-        void Copy(IGraphicsCommandBuffer buffer) => buffer.CopyTextureToBuffer(new() { Texture = texture, Width = Width, Height = Height }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = Height });
+        void Copy(IGraphicsCommandBuffer buffer) => buffer.CopyTextureToBuffer(new() { Texture = texture, Width = width, Height = height }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = height });
     }
 
     private static void Clear(IGraphicsCommandBuffer commands, IGraphicsTextureView view)

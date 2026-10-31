@@ -69,5 +69,16 @@ public sealed partial class UiSurface
                 current.ReconcileFrom(previous);
             }
         }
+
+        internal Dictionary<Widget, UiAutomationId> CaptureIdentities()
+        {
+            var identities = new Dictionary<Widget, UiAutomationId>(ReferenceEqualityComparer.Instance);
+            foreach ((Widget previous, Widget current) in Matches)
+            {
+                identities.Add(current, previous.AutomationId);
+            }
+
+            return identities;
+        }
     }
 }

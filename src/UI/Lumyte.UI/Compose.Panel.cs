@@ -16,6 +16,7 @@ public static partial class Compose
             /// <summary>Initializes a new instance of the <see cref="Panel"/> class.</summary>
             public Panel()
             {
+                Role = UiRole.Group;
                 Children = CreateChildren();
             }
 

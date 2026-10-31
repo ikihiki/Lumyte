@@ -40,6 +40,8 @@ public static partial class Compose
 
             internal void ReconcileFrom(Widget previous) => OnReconcile(previous);
 
+            internal void RestoreAutomationIdentity(UiAutomationId identity) => AutomationId = identity;
+
             internal void InvalidateStructure()
             {
                 for (Widget? node = this; node is not null; node = node.Owner)
@@ -51,7 +53,14 @@ public static partial class Compose
 
             internal void SetParent(Widget? parent) => _parent = parent;
 
-            internal void SetSurface(UiSurface? surface) => _surface = surface;
+            internal void SetSurface(UiSurface? surface)
+            {
+                if (!ReferenceEquals(_surface, surface))
+                {
+                    AutomationId = surface?.AllocateAutomationId() ?? default;
+                    _surface = surface;
+                }
+            }
 
             internal List<Widget> CollectSubtree()
             {

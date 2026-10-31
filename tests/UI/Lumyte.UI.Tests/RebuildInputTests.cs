@@ -74,6 +74,19 @@ public sealed class RebuildInputTests
         Assert.False(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(1, 1))));
     }
 
+    /// <summary>Checks logical automation identity survives keyed reordering while old declarations detach.</summary>
+    [Fact]
+    public void AutomationIdentityFollowsTheMatchedDeclaration()
+    {
+        Definitions.Button first = Button(key: "button", testId: "button");
+        using UiSurface surface = Surface(Panel()[first]);
+        UiAutomationId identity = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "button").Id;
+        Definitions.Button next = Button(key: "button", testId: "button");
+        surface.Rebuild(Panel()[Panel(), next]);
+        surface.UpdateLayout();
+        Assert.Equal(identity, surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "button").Id);
+    }
+
     private static UiSurface Surface(Definitions.Widget root)
     {
         var surface = new UiSurface(root);
