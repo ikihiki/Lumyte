@@ -95,6 +95,9 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
+  <Folder Name="/src/UI/">
+    <Project Path="src/UI/Lumyte.UI/Lumyte.UI.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Platform/">
     <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
@@ -156,5 +159,8 @@
     <Project Path="build/_build.csproj">
       <Build Project="false" />
     </Project>
+  </Folder>
+  <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj" />
   </Folder>
 </Solution>
