@@ -7,6 +7,8 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.UI.Automation/Lumyte.Diagnostics.UI.Automation.csproj" />
+    <ProjectReference Include="../../src/Diagnostics/Lumyte.Diagnostics.Transport.Http/Lumyte.Diagnostics.Transport.Http.csproj" />
     <ProjectReference Include="../Lumyte.UI.Shared/Lumyte.UI.Shared.csproj" />
     <ProjectReference Include="../../src/Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />

@@ -30,6 +30,9 @@ await new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", resolve);
 });
 
+if (process.env.LUMYTE_UI_ORIGIN_FILE) {
+    await writeFile(process.env.LUMYTE_UI_ORIGIN_FILE, `http://127.0.0.1:${server.address().port}`);
+}
 let browser;
 let socket;
 try {
@@ -96,13 +99,28 @@ try {
         });
     }
     await command("Runtime.enable");
+    await command("Page.enable");
     await command("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
     await command("Page.bringToFront");
     const query = new URLSearchParams();
+    if (process.env.LUMYTE_UI_DIAGNOSTICS) query.set("diagnostics", "");
     if (process.env.LUMYTE_UI_AUTOMATION) query.set("automation", "");
     if (process.env.LUMYTE_UI_INPUT_ONLY) query.set("input-only", "");
     if (process.env.LUMYTE_UI_RENDER_GRAPH) query.set("render-graph", "");
     if (process.env.LUMYTE_UI_RESOURCES) query.set("resources", "");
+    if (process.env.LUMYTE_UI_DIAGNOSTICS) {
+        let ready = false;
+        for (let attempt = 0; attempt < 200 && !ready; attempt++) {
+            try {
+                const response = await fetch(`${process.env.LUMYTE_DIAGNOSTIC_SERVICE}diagnostics/v1/sessions`, { headers: { Authorization: `Bearer ${process.env.LUMYTE_DIAGNOSTICS_OPERATOR_TOKEN}` } });
+                ready = response.ok;
+            } catch {}
+            if (!ready) await delay(50);
+        }
+        assert.ok(ready, "Diagnostic service did not start.");
+        const bootstrap = `globalThis.lumyteDiagnosticService=${JSON.stringify(process.env.LUMYTE_DIAGNOSTIC_SERVICE)};globalThis.lumyteDiagnosticGameToken=${JSON.stringify(process.env.LUMYTE_DIAGNOSTICS_GAME_TOKEN)};`;
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: bootstrap });
+    }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/?${query}` });
     async function evaluate(expression) {
         const response = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -124,6 +142,22 @@ try {
     const initialClicks = process.env.LUMYTE_UI_AUTOMATION ? 2 : 0;
     assert.equal(Number((await state())[0]), initialClicks);
     if (process.env.LUMYTE_UI_AUTOMATION) assert.ok(progress.some(line => line.includes("UI automation passed:")));
+    if (process.env.LUMYTE_UI_DIAGNOSTICS) {
+        const operator = spawn(process.env.DOTNET ?? "dotnet", [
+            "samples/Lumyte.Diagnostics.UI.Automation.Operator.Sample/bin/Release/net10.0/Lumyte.Diagnostics.UI.Automation.Operator.Sample.dll",
+            process.env.LUMYTE_DIAGNOSTIC_SERVICE,
+        ], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, LUMYTE_UI_CLOSE_SAMPLE: "0" } });
+        let output = "";
+        operator.stdout.on("data", data => { output += data; });
+        operator.stderr.on("data", data => { output += data; });
+        const code = await new Promise((resolve, reject) => {
+            operator.once("error", reject);
+            operator.once("exit", resolve);
+        });
+        assert.equal(code, 0, output);
+        assert.ok(output.includes("Remote UI automation passed:"), output);
+        await wait(value => Number(value[0]) === 2, "remote saves");
+    } else {
     await evaluate("globalThis.uiTrace=[]; for(const type of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture']) document.querySelector('canvas').addEventListener(type,e=>uiTrace.push([type,e.buttons,e.clientX,e.clientY]));");
     const rect = JSON.parse(await evaluate("JSON.stringify(document.querySelector('canvas').getBoundingClientRect().toJSON())"));
     async function mouse(type, x, y, buttons) {
@@ -161,11 +195,14 @@ try {
         const screenshot = await command("Page.captureScreenshot", { format: "png" });
         await writeFile(process.env.LUMYTE_SCREENSHOT, Buffer.from(screenshot.data, "base64"));
     }
+    }
     assert.deepEqual(errors, [], "Browser reported errors.");
     await evaluate("document.querySelector('button').click()");
     await delay(200);
     assert.deepEqual(errors, [], "Shutdown reported errors.");
-    console.log(`Browser UI ${process.env.LUMYTE_UI_INPUT_ONLY ? "input/CPU drawing" : "WebGPU"} verification passed: ${process.env.LUMYTE_UI_AUTOMATION ? "Save locator, Enter and assertions; " : ""}DOM capture, outside release, Hosted, keyboard activation, DPI x2 and shutdown.`);
+    console.log(process.env.LUMYTE_UI_DIAGNOSTICS
+        ? "Browser UI Diagnostics HTTP verification passed: external typed Operator, Save, Expect, Enter, count and shutdown."
+        : `Browser UI ${process.env.LUMYTE_UI_INPUT_ONLY ? "input/CPU drawing" : "WebGPU"} verification passed: ${process.env.LUMYTE_UI_AUTOMATION ? "Save locator, Enter and assertions; " : ""}DOM capture, outside release, Hosted, keyboard activation, DPI x2 and shutdown.`);
 
 } finally {
     socket?.close();
