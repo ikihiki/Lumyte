@@ -19,6 +19,18 @@ public sealed partial class GeneratorTests
         Assert.Single(result.GeneratedTrees);
     }
 
+    /// <summary>Checks immutable host identity can be assigned by generated object initializers.</summary>
+    [Fact]
+    public void FunctionsSupportInitializationOnlyIdentity()
+    {
+        string source = FunctionHost.Replace("Key { get; set; }", "Key { get; init; }", StringComparison.Ordinal)
+            + "[Composable] public static Node Item() => new(); } } public class Usage { public Node Build() => Compose.Item(key: \"stable\"); }";
+        GeneratorDriverRunResult result = Run(source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Single(result.GeneratedTrees);
+    }
+
     /// <summary>Checks unsupported function shapes receive a generator error.</summary>
     /// <param name="declaration">The malformed definition.</param>
     [Theory]

@@ -184,3 +184,10 @@ var nestedLabel = (Compose.Definitions.Label)inner.Evaluate();
 ## 代案と結果
 
 戻り値を即時に構築する通常の関数だけでは、hostが状態を照合してから関数を評価できない。GeneratorへUI型や外部状態の管理を組み込むとCompositionの独立性を失う。生成wrapperをhostのabstract classへ適応させる方式により、実行時の責務を利用側へ残す。
+
+## 初期化専用の識別子
+
+function adapterの公開string Keyはsetとinitのどちらでもよい。生成factoryはobject initializerで
+識別子を設定するため、構築後に変更できないinit-only propertyも受け入れる。
+公開setterを持たないpropertyや別の型は従来どおり拒否する。
+この契約はUIやSignalへの依存を追加しない。独立hostのinit-only Keyを使う生成コードをcompileして検証する。
