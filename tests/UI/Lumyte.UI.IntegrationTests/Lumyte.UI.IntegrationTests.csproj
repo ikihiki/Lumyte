@@ -16,5 +16,6 @@
     <Compile Include="../../Platform/Lumyte.Platform.Tests/TestPlatform.cs" Link="Fixtures/TestPlatform.cs" />
     <Compile Include="../../Platform/Lumyte.Platform.Tests/TestWindow.cs" Link="Fixtures/TestWindow.cs" />
     <Compile Include="../../../src/Platform/Shared/BufferedInputSource.cs" Link="Fixtures/BufferedInputSource.cs" />
+    <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/Dispatch*.cs" Link="Fixtures/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Browser;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Input;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Browser;
@@ -32,6 +33,8 @@ internal static partial class Program
     private static WindowNode? _hosted;
     private static UiSurface? _mainUi;
     private static UiSurface? _hostedUi;
+    private static UiSampleResources? _resources;
+    private static bool _graph;
     private static bool _drawing;
     private static bool _ready;
     private static bool _inputOnly;
@@ -71,8 +74,16 @@ internal static partial class Program
                 return;
             }
 
-            var canvas = new Canvas2D();
-            canvas.Begin();
+            DrawingCanvas2D canvas = _graph ? new RenderGraphCanvas2D() : new Canvas2D();
+            if (canvas is RenderGraphCanvas2D graphCanvas)
+            {
+                graphCanvas.Begin();
+            }
+            else
+            {
+                ((Canvas2D)canvas).Begin();
+            }
+
             UiHostDrawing.Record(canvas, _root, _mainUi);
             foreach (WindowNode node in _root.GetHostedOrder())
             {
@@ -84,7 +95,7 @@ internal static partial class Program
 
             if (_inputOnly)
             {
-                _ = canvas.End();
+                _ = ((Canvas2D)canvas).End();
                 _frames++;
                 return;
             }
@@ -99,7 +110,15 @@ internal static partial class Program
                 _swapchain.Reconfigure(configuration);
             }
 
-            await _presenter!.DrawAsync(_swapchain, canvas.End());
+            if (canvas is RenderGraphCanvas2D graph)
+            {
+                await _presenter!.DrawGraphAsync(_swapchain, graph.End(), _resources?.Reference);
+            }
+            else
+            {
+                await _presenter!.DrawAsync(_swapchain, ((Canvas2D)canvas).End());
+            }
+
             _frames++;
         }
         finally
@@ -109,7 +128,7 @@ internal static partial class Program
     }
 
     [JSExport]
-    internal static void Stop()
+    internal static async Task StopAsync()
     {
         if (_drawing)
         {
@@ -123,6 +142,11 @@ internal static partial class Program
         _source!.Dispose();
         _swapchain?.Dispose();
         _presenter?.Dispose();
+        if (_resources is not null)
+        {
+            await _resources.DisposeAsync();
+        }
+
         _graphics?.Dispose();
         _device?.Dispose();
         _retained!.Dispose();
@@ -168,6 +192,13 @@ internal static partial class Program
         }
 
         _device = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
+        _graph = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteRenderGraph") || JSHost.GlobalThis.GetPropertyAsBoolean("lumyteResources");
+        if (JSHost.GlobalThis.GetPropertyAsBoolean("lumyteResources"))
+        {
+            _resources = await UiSampleResources.CreateAsync(_device);
+            Console.WriteLine("UI Resources initialized with cooperative CPU execution.");
+        }
+
         _graphics = _device.CreateSurface(((BrowserWindow)_root.NativeWindow).CanvasContext);
         _presenter = new(_device);
         _ready = true;
