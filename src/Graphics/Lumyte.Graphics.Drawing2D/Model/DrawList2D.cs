@@ -21,79 +21,112 @@ public sealed class DrawList2D
         DrawingCommand2D[] ordered = commands.ToArray();
         Commands = Array.AsReadOnly(ordered);
         _typeOffsets = new int[ordered.Length];
-        var fillRect = new List<FillRectCommand2D>();
-        var fillRoundedRect = new List<FillRoundedRectCommand2D>();
-        var fillCircle = new List<FillCircleCommand2D>();
-        var drawLine = new List<DrawLineCommand2D>();
-        var fillPath = new List<FillPathCommand2D>();
-        var strokePath = new List<StrokePathCommand2D>();
-        var drawImage = new List<DrawImageCommand2D>();
-        var drawCoverageMask = new List<DrawCoverageMaskCommand2D>();
-        var drawDistanceField = new List<DrawDistanceFieldCommand2D>();
-        var drawMesh = new List<DrawMeshCommand2D>();
-        var drawPaintGraph = new List<DrawPaintGraphCommand2D>();
+
+        // Count once so immutable typed storage never grows through temporary list arrays.
+        Span<int> counts = stackalloc int[11];
+        counts.Clear();
+        foreach (DrawingCommand2D command in ordered)
+        {
+            switch (command)
+            {
+                case FillRectCommand2D:
+                    counts[0]++;
+                    break;
+                case FillRoundedRectCommand2D:
+                    counts[1]++;
+                    break;
+                case FillCircleCommand2D:
+                    counts[2]++;
+                    break;
+                case DrawLineCommand2D:
+                    counts[3]++;
+                    break;
+                case FillPathCommand2D:
+                    counts[4]++;
+                    break;
+                case StrokePathCommand2D:
+                    counts[5]++;
+                    break;
+                case DrawImageCommand2D:
+                    counts[6]++;
+                    break;
+                case DrawCoverageMaskCommand2D:
+                    counts[7]++;
+                    break;
+                case DrawDistanceFieldCommand2D:
+                    counts[8]++;
+                    break;
+                case DrawMeshCommand2D:
+                    counts[9]++;
+                    break;
+                case DrawPaintGraphCommand2D:
+                    counts[10]++;
+                    break;
+            }
+        }
+
+        _fillRect = counts[0] == 0 ? [] : new FillRectCommand2D[counts[0]];
+        _fillRoundedRect = counts[1] == 0 ? [] : new FillRoundedRectCommand2D[counts[1]];
+        _fillCircle = counts[2] == 0 ? [] : new FillCircleCommand2D[counts[2]];
+        _drawLine = counts[3] == 0 ? [] : new DrawLineCommand2D[counts[3]];
+        _fillPath = counts[4] == 0 ? [] : new FillPathCommand2D[counts[4]];
+        _strokePath = counts[5] == 0 ? [] : new StrokePathCommand2D[counts[5]];
+        _drawImage = counts[6] == 0 ? [] : new DrawImageCommand2D[counts[6]];
+        _drawCoverageMask = counts[7] == 0 ? [] : new DrawCoverageMaskCommand2D[counts[7]];
+        _drawDistanceField = counts[8] == 0 ? [] : new DrawDistanceFieldCommand2D[counts[8]];
+        _drawMesh = counts[9] == 0 ? [] : new DrawMeshCommand2D[counts[9]];
+        _drawPaintGraph = counts[10] == 0 ? [] : new DrawPaintGraphCommand2D[counts[10]];
+        counts.Clear();
         for (int i = 0; i < ordered.Length; i++)
         {
             switch (ordered[i])
             {
                 case FillRectCommand2D command:
-                    _typeOffsets[i] = fillRect.Count;
-                    fillRect.Add(command);
+                    _typeOffsets[i] = counts[0];
+                    _fillRect[counts[0]++] = command;
                     break;
                 case FillRoundedRectCommand2D command:
-                    _typeOffsets[i] = fillRoundedRect.Count;
-                    fillRoundedRect.Add(command);
+                    _typeOffsets[i] = counts[1];
+                    _fillRoundedRect[counts[1]++] = command;
                     break;
                 case FillCircleCommand2D command:
-                    _typeOffsets[i] = fillCircle.Count;
-                    fillCircle.Add(command);
+                    _typeOffsets[i] = counts[2];
+                    _fillCircle[counts[2]++] = command;
                     break;
                 case DrawLineCommand2D command:
-                    _typeOffsets[i] = drawLine.Count;
-                    drawLine.Add(command);
+                    _typeOffsets[i] = counts[3];
+                    _drawLine[counts[3]++] = command;
                     break;
                 case FillPathCommand2D command:
-                    _typeOffsets[i] = fillPath.Count;
-                    fillPath.Add(command);
+                    _typeOffsets[i] = counts[4];
+                    _fillPath[counts[4]++] = command;
                     break;
                 case StrokePathCommand2D command:
-                    _typeOffsets[i] = strokePath.Count;
-                    strokePath.Add(command);
+                    _typeOffsets[i] = counts[5];
+                    _strokePath[counts[5]++] = command;
                     break;
                 case DrawImageCommand2D command:
-                    _typeOffsets[i] = drawImage.Count;
-                    drawImage.Add(command);
+                    _typeOffsets[i] = counts[6];
+                    _drawImage[counts[6]++] = command;
                     break;
                 case DrawCoverageMaskCommand2D command:
-                    _typeOffsets[i] = drawCoverageMask.Count;
-                    drawCoverageMask.Add(command);
+                    _typeOffsets[i] = counts[7];
+                    _drawCoverageMask[counts[7]++] = command;
                     break;
                 case DrawDistanceFieldCommand2D command:
-                    _typeOffsets[i] = drawDistanceField.Count;
-                    drawDistanceField.Add(command);
+                    _typeOffsets[i] = counts[8];
+                    _drawDistanceField[counts[8]++] = command;
                     break;
                 case DrawMeshCommand2D command:
-                    _typeOffsets[i] = drawMesh.Count;
-                    drawMesh.Add(command);
+                    _typeOffsets[i] = counts[9];
+                    _drawMesh[counts[9]++] = command;
                     break;
                 case DrawPaintGraphCommand2D command:
-                    _typeOffsets[i] = drawPaintGraph.Count;
-                    drawPaintGraph.Add(command);
+                    _typeOffsets[i] = counts[10];
+                    _drawPaintGraph[counts[10]++] = command;
                     break;
             }
         }
-
-        _fillRect = fillRect.ToArray();
-        _fillRoundedRect = fillRoundedRect.ToArray();
-        _fillCircle = fillCircle.ToArray();
-        _drawLine = drawLine.ToArray();
-        _fillPath = fillPath.ToArray();
-        _strokePath = strokePath.ToArray();
-        _drawImage = drawImage.ToArray();
-        _drawCoverageMask = drawCoverageMask.ToArray();
-        _drawDistanceField = drawDistanceField.ToArray();
-        _drawMesh = drawMesh.ToArray();
-        _drawPaintGraph = drawPaintGraph.ToArray();
     }
 
     internal IReadOnlyList<DrawingCommand2D> Commands { get; }
