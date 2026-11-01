@@ -7,6 +7,7 @@ using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Input;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Browser;
+using Lumyte.UI.Automation;
 using Lumyte.UI.SampleSupport;
 using Lumyte.Windowing;
 using static Lumyte.UI.Compose;
@@ -19,6 +20,7 @@ internal static partial class Program
 {
     private static readonly Queue<InputRecord> _pending = [];
     private static readonly TaskCompletionSource _stopped = new();
+    private static readonly TaskCompletionSource _initialized = new();
     private static BrowserPlatform? _platform;
     private static WindowSystem? _windows;
     private static InputSystem? _input;
@@ -38,10 +40,25 @@ internal static partial class Program
     private static bool _drawing;
     private static bool _ready;
     private static bool _inputOnly;
+    private static bool _automation;
     private static int _clicks;
     private static int _frames;
     private static ButtonElement? _mainButton;
     private static ButtonElement? _hostedButton;
+
+    [JSExport]
+    internal static async Task RunAutomationAsync()
+    {
+        try
+        {
+            await RunAutomationCoreAsync();
+        }
+        catch (Exception failure)
+        {
+            Console.Error.WriteLine(failure.ToString());
+            throw;
+        }
+    }
 
     [JSExport]
     internal static string GetState() => $"{_clicks},{_frames},{_mainButton?.IsPressed},{_hostedButton?.IsPressed}";
@@ -66,7 +83,10 @@ internal static partial class Program
             _input!.Update();
             while (_pending.TryDequeue(out InputRecord input))
             {
-                _router!.Dispatch(input);
+                if (!_automation)
+                {
+                    _router!.Dispatch(input);
+                }
             }
 
             if (!UiHostDrawing.Drawable(_root.NativeWindow.State))
@@ -159,6 +179,29 @@ internal static partial class Program
         _stopped.SetResult();
     }
 
+    private static async Task RunAutomationCoreAsync()
+    {
+        await _initialized.Task;
+        await using var host = new UiSampleAutomationHost(_mainUi!, async token =>
+        {
+            token.ThrowIfCancellationRequested();
+            await FrameAsync();
+        });
+        if (_inputOnly)
+        {
+            await UiAutomationExercise.RunAsync(host);
+        }
+        else
+        {
+            var screenshot = new UiSampleScreenshotHost(host, token => UiSampleScreenshot.CaptureAsync(_device!, _mainUi!, _root!.Scale, token));
+            await UiAutomationExercise.RunAsync(screenshot);
+            var page = new UiAutomationPage(screenshot, new() { Timeout = TimeSpan.FromSeconds(30) });
+            JSHost.GlobalThis.SetProperty("lumyteAutomationPng", Convert.ToBase64String(await page.ScreenshotAsync()));
+        }
+
+        _automation = false;
+    }
+
     private static async Task Main()
     {
         using JSObject canvas = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteUiCanvas") ?? throw new InvalidOperationException("The host must supply its canvas.");
@@ -169,9 +212,17 @@ internal static partial class Program
         _source = (IWindowInputSource)_platform.CreateInputSource();
         _input = new([_source]);
         _router = new(_source, _source);
-        Definitions.Button mainButton = Button(onClick: () => Console.WriteLine($"Main clicks: {++_clicks}"))[Rectangle(width: 160, height: 80, fill: new Color2D(0.2f, 0.5f, 0.9f, 1))];
-        _mainUi = new(Panel()[mainButton]);
-        _mainButton = (ButtonElement)_mainUi.RootElement.Children[0];
+        bool saved = false;
+        _mainUi = new(BuildMain());
+        _mainButton = (ButtonElement)_mainUi.RootElement.Children[0].Children[0];
+        Definitions.Widget BuildMain() => Panel()[Stack()[Button(testId: "save", automationName: "保存", onClick: Save)[Rectangle(width: 160, height: 80, fill: new Color2D(0.2f, 0.5f, 0.9f, 1))], new UiSavedIndicator { IsVisible = saved }]];
+        void Save()
+        {
+            saved = true;
+            _mainUi!.Rebuild(BuildMain());
+            Console.WriteLine($"Main clicks: {++_clicks}");
+        }
+
         Definitions.Button hostedButton = Button(onClick: () => Console.WriteLine($"Hosted clicks: {++_clicks}"))[Rectangle(width: 180, height: 120, fill: new Color2D(0.7f, 0.3f, 0.1f, 1))];
         _hostedUi = new(Panel()[hostedButton]);
         _hostedButton = (ButtonElement)_hostedUi.RootElement.Children[0];
@@ -183,10 +234,12 @@ internal static partial class Program
         _platform.PumpEvents();
         _windows.Update();
         _retained = _root.NativeWindow.RetainNativeTarget();
+        _automation = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteAutomation");
         _inputOnly = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteInputOnly");
         if (_inputOnly)
         {
             _ready = true;
+            _initialized.SetResult();
             await _stopped.Task;
             return;
         }
@@ -202,6 +255,7 @@ internal static partial class Program
         _graphics = _device.CreateSurface(((BrowserWindow)_root.NativeWindow).CanvasContext);
         _presenter = new(_device);
         _ready = true;
+        _initialized.SetResult();
         await _stopped.Task;
     }
 }

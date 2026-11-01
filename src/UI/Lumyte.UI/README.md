@@ -85,3 +85,11 @@ UI本体のPlatform / Windowing / InputSystem非依存を維持し、操作対�
 記録した命令を既存のRenderGraph / Resourcesへ接続する。Elementの論理寿命とGPU退役は区別する。
 [UI-0008](../../../docs/adr/ui/UI-0008-render-graph-and-resource-lifetime.md)のticketとleaseの契約を使い、
 後から変わるElementやWidgetの設定をGPU処理が遅延参照しない。
+
+## 自動操作
+
+testId / automationName / roleはWidgetの設定、操作IDとpressed / focusはElementの状態とする。
+CaptureAutomationSnapshotは現在のElementを値へコピーし、通常Dispatchでは取得しない。
+同じ型/key/slotの再構築ではIDを保ち、別のSurfaceや除去後の再追加では別IDになる。
+独自部品のElementでGetAutomationChildrenとOnProbePointerDownを実装できる。
+[Automation](../Lumyte.UI.Automation/README.md)のLocatorは検索条件を保持して毎回現在の実体を探す。

@@ -6,6 +6,7 @@ using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Input.Abstractions;
 using Lumyte.UI;
+using Lumyte.UI.Automation;
 using Lumyte.UI.SampleSupport;
 using static Lumyte.UI.Compose;
 
@@ -18,9 +19,43 @@ if (args is ["--render-graph", "vulkan" or "wgpu"] or ["--resources", "vulkan" o
     return 0;
 }
 
-if (args is ["native"])
+if (args is ["--automation", "record-only" or "vulkan" or "wgpu"])
 {
-    return Lumyte.UI.Sample.NativeHost.Run();
+    int savedCount = 0;
+    using UiSurface automationUi = UiAutomationExercise.CreateSurface(() => savedCount++);
+    automationUi.SetViewport(new(240, 160));
+    await using var host = new UiSampleAutomationHost(automationUi, _ =>
+    {
+        automationUi.UpdateLayout();
+        return ValueTask.CompletedTask;
+    });
+    if (args[1] == "record-only")
+    {
+        await UiAutomationExercise.RunAsync(host);
+    }
+    else
+    {
+        using VulkanDevice? captureVulkan = args[1] == "vulkan" ? VulkanDevice.Create() : null;
+        using WgpuDevice? captureWgpu = args[1] == "wgpu" ? WgpuDevice.Create() : null;
+        IGraphicDevice captureDevice = captureVulkan is not null ? captureVulkan : captureWgpu!;
+        var screenshot = new UiSampleScreenshotHost(host, token => UiSampleScreenshot.CaptureAsync(captureDevice, automationUi, Vector2.One, token));
+        await UiAutomationExercise.RunAsync(screenshot);
+        var page = new UiAutomationPage(screenshot, new() { Timeout = TimeSpan.FromSeconds(30) });
+        await File.WriteAllBytesAsync("ui-automation.png", await page.ScreenshotAsync());
+        Console.WriteLine("Saved actual GPU readback to ui-automation.png.");
+    }
+
+    if (savedCount != 2)
+    {
+        throw new InvalidOperationException("Automation did not activate Save exactly twice.");
+    }
+
+    return 0;
+}
+
+if (args is ["native"] or ["native", "--automation"])
+{
+    return Lumyte.UI.Sample.NativeHost.Run(args.Length == 2);
 }
 
 if (args is not ["record-only"] and not ["pointer-only"] and not ["keyboard-only"] and not ["vulkan"] and not ["wgpu"])

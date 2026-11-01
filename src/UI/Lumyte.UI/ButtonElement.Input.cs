@@ -20,9 +20,10 @@ public partial class ButtonElement
         switch (pointer.Phase)
         {
             case UiPointerPhase.Down:
-                if (!context.IsInside)
+                UiInputResult disposition = OnProbePointerDown(pointer.Position - InputOrigin);
+                if (disposition != UiInputResult.Handled)
                 {
-                    return UiInputResult.StopPropagation;
+                    return disposition;
                 }
 
                 if (_pressedPointer is not null || _pressedKey is not null)
