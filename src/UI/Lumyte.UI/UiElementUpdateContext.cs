@@ -14,6 +14,11 @@ public sealed class UiElementUpdateContext
         _slots = slots;
     }
 
+    internal bool InputCancellationRequested { get; private set; }
+
+    /// <summary>Requests cancellation of this instance's input ownership after publication.</summary>
+    public void CancelInput() => InputCancellationRequested = true;
+
     /// <summary>Gets the child instances planned for one slot of the next configuration.</summary>
     /// <param name="slot">A declaration slot owned by the next configuration.</param>
     /// <returns>The proposed children, including passive new instances.</returns>

@@ -7,19 +7,33 @@ using Lumyte.Graphics.Wgpu;
 using Lumyte.UI;
 using static Lumyte.UI.Compose;
 
-if (args is not ["record-only"] and not ["vulkan"] and not ["wgpu"])
+if (args is not ["record-only"] and not ["pointer-only"] and not ["vulkan"] and not ["wgpu"])
 {
-    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|vulkan|wgpu");
+    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|vulkan|wgpu");
     return 1;
 }
 
+int clicks = 0;
 Definitions.Rectangle accent = Rectangle(width: 72, height: 28, fill: new Color2D(1, 0.3f, 0.1f, 0.7f));
 Definitions.Rectangle header = Rectangle(width: 160, height: 24, fill: new Color2D(0.2f, 0.6f, 1, 1));
-Definitions.Button button = Button()[accent, Button.Background()[Rectangle(fill: new Color2D(0.1f, 0.2f, 0.4f, 1))]];
+Definitions.Button button = Button(onClick: () => clicks++)[accent, Button.Background()[Rectangle(fill: new Color2D(0.1f, 0.2f, 0.4f, 1))]];
 Definitions.Rectangle overflow = Rectangle(width: 220, height: 200, fill: new Color2D(0.3f, 1, 0.5f, 0.5f));
 Definitions.Stack column = Stack(spacing: 12)[header, button, overflow];
 Definitions.Panel root = Panel(clipToBounds: true)[column];
 using var surface = new UiSurface(root);
+if (args is ["pointer-only"])
+{
+    surface.SetViewport(new(240, 160));
+    surface.UpdateLayout();
+    surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(10, 40)));
+    surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Move, new(230, 150)));
+    surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Move, new(10, 40)));
+    surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(10, 40)));
+    surface.Dispatch(new UiFocusLostInput());
+    Console.WriteLine($"Clicks {clicks}; pressed {((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed}");
+    return clicks == 1 && !((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed ? 0 : 1;
+}
+
 using VulkanDevice? vulkan = args[0] == "vulkan" ? VulkanDevice.Create() : null;
 using WgpuDevice? wgpu = args[0] == "wgpu" ? WgpuDevice.Create() : null;
 IGraphicDevice? device = vulkan is not null ? vulkan : wgpu;
