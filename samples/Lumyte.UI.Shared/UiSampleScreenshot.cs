@@ -31,7 +31,7 @@ internal static class UiSampleScreenshot
         return Encode(description.Width, description.Height, pixels);
     }
 
-    private static byte[] Encode(uint width, uint height, byte[] pixels)
+    internal static byte[] Encode(uint width, uint height, byte[] pixels)
     {
         using var output = new MemoryStream();
         output.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });

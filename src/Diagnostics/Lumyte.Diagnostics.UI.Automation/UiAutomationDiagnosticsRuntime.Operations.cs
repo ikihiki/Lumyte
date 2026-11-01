@@ -12,7 +12,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
     internal DiagnosticResult<UiAutomationTargetsReceipt> Targets()
     {
         Verify();
-        UiRemoteTarget[] targets = _targets.Values.Where(target => target.Accepting).Select(target => new UiRemoteTarget(target.Id, target.Name, target.Options.AllowInput, target.Options.AllowScreenshots)).ToArray();
+        UiRemoteTarget[] targets = _targets.Values.Where(target => target.Accepting).Select(target => new UiRemoteTarget(target.Id, target.Name, target.Options.AllowInput, target.Options.AllowScreenshots, target.ParentTargetId, target.PopupId, target.ControlGroupId, target.AutomationCode)).ToArray();
         string json = JsonSerializer.Serialize(targets, UiAutomationJsonContext.Default.UiRemoteTargetArray);
         return json.Length <= 32768 ? DiagnosticResult<UiAutomationTargetsReceipt>.Success(new(json)) : Reject<UiAutomationTargetsReceipt>("result-too-large");
     }
@@ -30,6 +30,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             return Reject<UiAutomationControlReceipt>("input-not-allowed");
         }
 
+        target = _targets[target.ControlGroupId];
         if (target.Control is { } current && current.State != "Released")
         {
             if (current.State == "Active" && Remaining(current.Started, current.Duration) <= TimeSpan.Zero)
@@ -125,7 +126,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
         }
 
         Control? control = action ? FindControl(context, controlId!) : null;
-        if (action && (!target.Options.AllowInput || control is null || control.TargetId != target.Id || control.State != "Active" || Remaining(control.Started, control.Duration) <= TimeSpan.Zero))
+        if (action && (!target.Options.AllowInput || control is null || control.TargetId != target.ControlGroupId || control.State != "Active" || Remaining(control.Started, control.Duration) <= TimeSpan.Zero))
         {
             return Reject<UiAutomationJobReceipt>("lease-gone");
         }
@@ -135,7 +136,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             return Reject<UiAutomationJobReceipt>("screenshot-not-allowed");
         }
 
-        string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(UiRemoteSchema.SerializePlan(plan) + "|" + jobTimeoutMs.ToString(CultureInfo.InvariantCulture))));
+        string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(target.Id.ToString("D") + "|" + UiRemoteSchema.SerializePlan(plan) + "|" + jobTimeoutMs.ToString(CultureInfo.InvariantCulture))));
         if (control is not null)
         {
             if (sequence < control.NextSequence)
@@ -157,7 +158,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             }
         }
 
-        if (_jobs.Count >= _options.MaximumJobs || (action && _jobs.Values.Any(job => job.TargetId == target.Id && job.ControlId is not null && !job.Terminal))
+        if (_jobs.Count >= _options.MaximumJobs || (action && _jobs.Values.Any(job => job.ControlId == control!.Id && !job.Terminal))
             || (plan.Kind == "screenshot" && _jobs.Values.Any(job => job.TargetId == target.Id && job.Plan?.Kind == "screenshot" && !job.Terminal)))
         {
             return Reject<UiAutomationJobReceipt>("busy");

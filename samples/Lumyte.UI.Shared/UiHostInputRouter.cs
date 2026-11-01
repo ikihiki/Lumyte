@@ -10,17 +10,23 @@ namespace Lumyte.UI.SampleSupport;
 internal sealed class UiHostInputRouter
 {
     private readonly IWindowInputSource _map;
+    private readonly Func<InputWindowId, InputDeviceId?, UiInput, bool>? _dispatch;
     private readonly Dictionary<UiSurface, Target> _targets = [];
     private readonly Dictionary<InputWindowId, Target> _keyboardTargets = [];
+
     private readonly Dictionary<(InputDeviceId Device, int Kind, ulong Contact), Pointer> _pointers = [];
+
     private readonly Dictionary<(InputDeviceId Device, Key Key), KeyOwner> _keys = [];
+
     private readonly Dictionary<(InputDeviceId Device, InputWindowId Origin), (Vector2 Position, InputCaptureStamp? Capture, ulong Sequence)> _positions = [];
+
     private readonly Dictionary<InputWindowId, HashSet<(InputDeviceId Device, Key Key)>> _modifiers = [];
     private readonly Dictionary<InputDeviceId, HashSet<MouseButton>> _mouseButtons = [];
     private long _nextPointer;
     private ulong _sequence;
+    private InputDeviceId? _currentDevice;
 
-    internal UiHostInputRouter(IOrderedInputSource source, IWindowInputSource windowMap)
+    internal UiHostInputRouter(IOrderedInputSource source, IWindowInputSource windowMap, Func<InputWindowId, InputDeviceId?, UiInput, bool>? dispatch = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(windowMap);
@@ -31,6 +37,7 @@ internal sealed class UiHostInputRouter
 
         Source = source;
         _map = windowMap;
+        _dispatch = dispatch;
     }
 
     internal IOrderedInputSource Source { get; }
@@ -84,6 +91,7 @@ internal sealed class UiHostInputRouter
         }
 
         _sequence = input.Sequence;
+        _currentDevice = input.DeviceId;
         if (input.Data is DeviceDisconnectedData)
         {
             return Disconnect(input.DeviceId);
@@ -223,6 +231,8 @@ internal sealed class UiHostInputRouter
         _targets.Add(surface, new(window, node, surface, origin));
     }
 
+    private bool Deliver(Target target, UiInput input) => _dispatch is null ? target.Surface.Dispatch(input) : _dispatch(target.Origin, _currentDevice, input);
+
     private bool PointerEvent(InputRecord input, int kind, ulong contact, UiPointerPhase phase, Vector2 position, bool keepMouseSeries = false)
     {
         (InputDeviceId Device, int Kind, ulong Contact) identity = (input.DeviceId, kind, contact);
@@ -249,13 +259,13 @@ internal sealed class UiHostInputRouter
                     if (!Live(owner) || input.WindowId != owner.Origin)
                     {
                         pointer.Target = null;
-                        owner.Surface.Dispatch(new UiPointerInput(pointer.Id, UiPointerPhase.Cancel, default));
+                        Deliver(owner, new UiPointerInput(pointer.Id, UiPointerPhase.Cancel, default));
                     }
                     else
                     {
                         (Vector2 local, bool visible) = Local(owner, position);
                         UiPointerPhase delivered = phase == UiPointerPhase.Up && !visible ? UiPointerPhase.Cancel : phase;
-                        owner.Surface.Dispatch(new UiPointerInput(pointer.Id, delivered, visible ? local : new(-1, -1)));
+                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, visible ? local : new(-1, -1)));
                     }
                 }
             }
@@ -305,7 +315,7 @@ internal sealed class UiHostInputRouter
         bool consumed;
         try
         {
-            consumed = selected.Surface.Dispatch(new UiPointerInput(pointer.Id, phase, point));
+            consumed = Deliver(selected, new UiPointerInput(pointer.Id, phase, point));
         }
         catch
         {
@@ -350,12 +360,12 @@ internal sealed class UiHostInputRouter
             bool knownOrigin = input.WindowId is InputWindowId acquired && _targets.Values.Any(target => target.Origin == acquired && _map.TryGetInputWindowId(target.Window.Id, out InputWindowId live) && live == acquired);
             if (knownOrigin && owned.Target is Target target && Live(target))
             {
-                target.Surface.Dispatch(new UiKeyInput(key.Key, key.IsDown, key.IsRepeat, Modifiers(owned.Origin)));
+                Deliver(target, new UiKeyInput(key.Key, key.IsDown, key.IsRepeat, Modifiers(owned.Origin)));
             }
             else if (owned.Target is Target lost)
             {
                 owned.Target = null;
-                lost.Surface.Dispatch(new UiKeyCancelInput(key.Key));
+                Deliver(lost, new UiKeyCancelInput(key.Key));
             }
 
             return true;
@@ -374,7 +384,7 @@ internal sealed class UiHostInputRouter
 
         try
         {
-            if (!selected.Surface.Dispatch(new UiKeyInput(key.Key, true, false, Modifiers(origin))))
+            if (!Deliver(selected, new UiKeyInput(key.Key, true, false, Modifiers(origin))))
             {
                 return false;
             }
@@ -465,7 +475,7 @@ internal sealed class UiHostInputRouter
             _keyboardTargets.Remove(target.Origin);
         }
 
-        target.Surface.Dispatch(new UiFocusLostInput());
+        Deliver(target, new UiFocusLostInput());
     }
 
     private bool Disconnect(InputDeviceId device)
@@ -492,7 +502,10 @@ internal sealed class UiHostInputRouter
         {
             try
             {
-                pointer.Target?.Surface.Dispatch(new UiPointerInput(pointer.Id, UiPointerPhase.Cancel, default));
+                if (pointer.Target is { } target)
+                {
+                    Deliver(target, new UiPointerInput(pointer.Id, UiPointerPhase.Cancel, default));
+                }
             }
             catch (Exception error)
             {
@@ -504,7 +517,10 @@ internal sealed class UiHostInputRouter
         {
             try
             {
-                pair.Value.Target?.Surface.Dispatch(new UiKeyCancelInput(pair.Key.Key));
+                if (pair.Value.Target is { } target)
+                {
+                    Deliver(target, new UiKeyCancelInput(pair.Key.Key));
+                }
             }
             catch (Exception error)
             {

@@ -143,6 +143,23 @@ public sealed class RebuildInputTests : UiElementTestBase
         Assert.False(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, false)));
     }
 
+    /// <summary>Checks popup focus bookmarks retain the same keyed instance across declaration replacement.</summary>
+    [Fact]
+    public void FocusBookmarkSurvivesKeyedRebuild()
+    {
+        using UiSurface surface = Surface(Panel()[Button(key: "button")]);
+        UiElement target = surface.RootElement.Children[0];
+        Assert.True(surface.TryFocus(target));
+        UiFocusBookmark bookmark = surface.CaptureFocus();
+        surface.Rebuild(Panel()[Panel(), Button(key: "button")]);
+        surface.UpdateLayout();
+        Assert.True(surface.TryRestoreFocus(bookmark));
+        Assert.Same(target, surface.FocusedElement);
+        surface.Rebuild(Panel());
+        surface.UpdateLayout();
+        Assert.False(surface.TryRestoreFocus(bookmark));
+    }
+
     private UiSurface Surface(Definitions.Widget root)
     {
         UiSurface surface = Mount(root);

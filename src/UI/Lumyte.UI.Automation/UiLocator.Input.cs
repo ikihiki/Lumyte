@@ -50,7 +50,7 @@ public sealed partial class UiLocator
             {
                 RequireAction(run, node, UiAutomationActions.Click);
                 if (Actionable(node, options, out Vector2 candidatePoint) && previous is not null && SameGeometry(previous, node)
-                    && await run.Host.RunOnUiThreadAsync(surface => surface.ProbePointer(candidatePoint).ActivationTarget == node.Id, run.Token))
+                    && await run.Host.RunOnUiThreadAsync(surface => run.Probe(surface, candidatePoint).ActivationTarget == node.Id, run.Token))
                 {
                     bool sent = await run.WithInputAsync(async lease => await run.Host.RunOnUiThreadAsync(
                         surface =>
@@ -60,7 +60,7 @@ public sealed partial class UiLocator
                             run.Remember(snapshot);
                             UiAutomationNode? current = Single(run, snapshot);
                             if (current is null || !SameGeometry(node, current) || !Actionable(current, options, out Vector2 point)
-                                || surface.ProbePointer(point).ActivationTarget != current.Id)
+                                || run.Probe(surface, point).ActivationTarget != current.Id)
                             {
                                 return false;
                             }
@@ -71,7 +71,7 @@ public sealed partial class UiLocator
                             run.Remember(moved);
                             UiAutomationNode? afterMove = Single(run, moved);
                             if (afterMove is null || (afterMove.Actions & UiAutomationActions.Click) == 0 || !SameGeometry(current, afterMove) || !Actionable(afterMove, options, out Vector2 movedPoint)
-                                || movedPoint != point || surface.ProbePointer(point).ActivationTarget != current.Id)
+                                || movedPoint != point || run.Probe(surface, point).ActivationTarget != current.Id)
                             {
                                 throw run.Failure(UiAutomationFailureKind.TargetChanged, "The target changed after pointer Move; input will not be retried.");
                             }
@@ -110,12 +110,12 @@ public sealed partial class UiLocator
                     }
 
                     RequireAction(run, node, UiAutomationActions.Focus);
-                    if (!node.IsFocusable)
+                    if (!node.IsFocusable || !run.CanReceiveKeys(surface))
                     {
                         return null;
                     }
 
-                    if (node.IsFocused)
+                    if (node.IsFocused && run.CanReceiveKeys(surface))
                     {
                         return node.Id;
                     }
@@ -146,7 +146,7 @@ public sealed partial class UiLocator
                     UiAutomationSnapshot snapshot = surface.CaptureAutomationSnapshot();
                     run.Remember(snapshot);
                     UiAutomationNode? node = Single(run, snapshot);
-                    if (node is null || node.Id != focused || !node.IsFocused || !node.IsFocusable)
+                    if (node is null || node.Id != focused || !node.IsFocused || !node.IsFocusable || !run.CanReceiveKeys(surface))
                     {
                         return false;
                     }
@@ -164,7 +164,7 @@ public sealed partial class UiLocator
                         UiAutomationSnapshot modified = surface.CaptureAutomationSnapshot();
                         run.Remember(modified);
                         UiAutomationNode? afterModifiers = Single(run, modified);
-                        if (afterModifiers is null || afterModifiers.Id != focused || !afterModifiers.IsFocused || !afterModifiers.IsFocusable)
+                        if (afterModifiers is null || afterModifiers.Id != focused || !afterModifiers.IsFocused || !afterModifiers.IsFocusable || !run.CanReceiveKeys(surface))
                         {
                             throw run.Failure(UiAutomationFailureKind.TargetChanged, "Focus changed after modifier input; the key will not be sent or retried.");
                         }

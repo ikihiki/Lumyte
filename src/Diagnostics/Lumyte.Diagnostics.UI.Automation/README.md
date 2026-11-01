@@ -34,3 +34,5 @@ snapshot、PNG、traceは固定byte列のartifactにし、Jobと所有者へ結�
 監査のLog categoryとActivitySourceは`Lumyte.Diagnostics.UI.Automation`です。既存DiagnosticOptionsの許可リストへ追加すると、操作・取消・完了・controlの変更を観測できます。tokenや要求本文を記録しません。
 
 [設計](../../../docs/adr/ui/UI-0010-diagnostics-ui-automation.md)／[client](../Lumyte.Diagnostics.UI.Automation.Client/README.md)／[別プロセスの確認](../../../samples/Lumyte.Diagnostics.UI.Automation.Game.Sample/README.md)
+
+PopupはRegisterPopup(parent, popupId, name, surface, routingHost, options)で独立targetとして登録します。親子はroot TargetIdをControlGroupIdとし、controlとSequenceを共有します。指紋には対象IDを含め、同Sequenceを別targetで再利用できません。子の許可は親とのANDです。子登録解除はそのtargetを、親解除・control失効はgroup全体を取消します。登録tokenのDisposeAsyncをPopupのBindLifetimeへ渡すと、清掃完了までsurfaceを維持できます。枠不足はroot targetsのAutomationCodeへautomation-unavailableを報告します。
