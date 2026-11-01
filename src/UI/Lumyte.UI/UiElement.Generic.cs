@@ -18,6 +18,15 @@ public class UiElement<TWidget> : UiElement
     public new TWidget Widget => (TWidget)base.Widget;
 
     /// <inheritdoc/>
+    protected sealed override UiInvalidation CompareConfiguration(WidgetDefinition previous, WidgetDefinition next) => CompareConfiguration((TWidget)previous, (TWidget)next);
+
+    /// <summary>Classifies changes specific to this component's configuration.</summary>
+    /// <param name="previous">The previous typed configuration.</param>
+    /// <param name="next">The proposed typed configuration.</param>
+    /// <returns>The runtime work required after publication.</returns>
+    protected virtual UiInvalidation CompareConfiguration(TWidget previous, TWidget next) => UiInvalidation.All;
+
+    /// <inheritdoc/>
     protected sealed override Action? PrepareUpdate(WidgetDefinition next, UiElementUpdateContext context) => PrepareUpdate((TWidget)next, context);
 
     /// <inheritdoc/>

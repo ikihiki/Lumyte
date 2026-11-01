@@ -169,6 +169,7 @@ public sealed partial class UiSurface
 
             foreach (ElementUpdate update in Updates)
             {
+                update.Invalidation = update.Element.ConfigurationChanges(update.Next) | (update.ChildrenChanged ? UiInvalidation.Layout : UiInvalidation.None);
                 update.Commit = update.Element.Prepare(update.Next, new(update.Next, update.Slots));
             }
         }
@@ -200,5 +201,7 @@ public sealed partial class UiSurface
         internal Action? Commit { get; set; }
 
         internal bool UsesTreeValidation { get; set; }
+
+        internal UiInvalidation Invalidation { get; set; }
     }
 }

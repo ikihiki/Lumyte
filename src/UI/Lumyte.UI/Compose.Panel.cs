@@ -21,6 +21,9 @@ public static partial class Compose
             /// <summary>Gets the ordinary children, initialized at most once.</summary>
             [ComposeContent]
             public WidgetChildren Children { get; }
+
+            /// <inheritdoc/>
+            protected override UiElement CreateElement() => new PanelElement(this);
         }
     }
 }
