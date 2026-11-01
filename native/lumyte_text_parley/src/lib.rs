@@ -31,6 +31,7 @@ pub struct LpOptions {
     pub direction: u32,
     pub palette_index: u32,
     pub decorations: u32,
+    pub editing: u32,
     pub fallback_font_ids: *const u32,
     pub fallback_font_count: usize,
     pub features: *const LpFeature,
@@ -143,7 +144,42 @@ struct RegisteredFont {
     blob_id: u64,
     index: u32,
 }
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct LpCaret {
+    pub index: u32,
+    pub affinity: u32,
+    pub previous_index: u32,
+    pub previous_affinity: u32,
+    pub next_index: u32,
+    pub next_affinity: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct LpSelectionRect {
+    pub start: u32,
+    pub end: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LpEditingView {
+    pub carets: *const LpCaret,
+    pub caret_count: usize,
+    pub ranges: *const LpSelectionRect,
+    pub range_count: usize,
+}
+
 pub struct LpLayout {
+    carets: Vec<LpCaret>,
+    ranges: Vec<LpSelectionRect>,
     glyphs: Vec<LpGlyph>,
     paths: Vec<LpPathSegment>,
     paints: Vec<LpPaintEvent>,
@@ -180,7 +216,7 @@ unsafe fn input_slice<'a, T>(data: *const T, len: usize) -> Result<&'a [T], Stri
 
 #[no_mangle]
 pub extern "C" fn lp_abi_version() -> u32 {
-    1
+    2
 }
 /// Returns borrowed UTF-8 describing the last failed operation on this thread.
 ///
@@ -355,4 +391,24 @@ pub unsafe extern "C" fn lp_layout_free(layout: *mut LpLayout) {
     if !layout.is_null() {
         drop(Box::from_raw(layout));
     }
+}
+
+/// Returns borrowed editing geometry from the same shaped paragraph.
+///
+/// # Safety
+/// The layout must be live. The output must be aligned and writable. Copy arrays
+/// before freeing the layout; byte indices are UTF-8 scalar boundaries.
+#[no_mangle]
+pub unsafe extern "C" fn lp_layout_editing_view(layout: *const LpLayout, output: *mut LpEditingView) -> u32 {
+    boundary(|| {
+        let layout = layout.as_ref().ok_or("Missing layout.")?;
+        let output = output.as_mut().ok_or("Missing editing view output.")?;
+        *output = LpEditingView {
+            carets: layout.carets.as_ptr(),
+            caret_count: layout.carets.len(),
+            ranges: layout.ranges.as_ptr(),
+            range_count: layout.ranges.len(),
+        };
+        Ok(())
+    })
 }

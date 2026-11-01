@@ -9,5 +9,6 @@
     <Compile Include="../Shared/BufferedInputSource.cs" Link="Internal/BufferedInputSource.cs" />
     <Compile Include="../Shared/PhysicalKeys.cs" Link="Internal/PhysicalKeys.cs" />
     <None Update="README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="Lumyte.Platform.Windows.TextInput" />
   </ItemGroup>
 </Project>

@@ -12,4 +12,7 @@ public enum UiAutomationActions
 
     /// <summary>Keyboard focus.</summary>
     Focus = 2,
+
+    /// <summary>Committed text editing through a capability host.</summary>
+    Edit = 4,
 }

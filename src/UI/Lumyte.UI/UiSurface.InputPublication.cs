@@ -43,7 +43,7 @@ public sealed partial class UiSurface
 
         foreach ((Lumyte.Input.Abstractions.Key key, UiElement target) in _keyCaptures.ToArray())
         {
-            if (cancelled.Contains(target) || !AcceptsCurrentInput(target) || !target.Widget.Focusable)
+            if (cancelled.Contains(target) || !AcceptsCurrentInput(target) || !target.PermitsFocus)
             {
                 try
                 {
@@ -56,7 +56,7 @@ public sealed partial class UiSurface
             }
         }
 
-        if (_focusedElement is { } focused && (cancelled.Contains(focused) || !AcceptsCurrentInput(focused) || !focused.Widget.Focusable))
+        if (_focusedElement is { } focused && (cancelled.Contains(focused) || !AcceptsCurrentInput(focused) || !focused.PermitsFocus))
         {
             try
             {

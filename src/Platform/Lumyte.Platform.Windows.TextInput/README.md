@@ -1,0 +1,11 @@
+# Lumyte.Platform.Windows.TextInput
+
+Windows 10以降のTSF（ITextStoreACP、ITfThreadMgr）backendです。WindowsPlatformを作成したownerで`new WindowsTextInputService(platform)`を作成します。Platformのイベント取得がTSF keystroke処理を通常Inputより先に呼びます。未消費の文字はWM_CHAR/WM_UNICHARで取り込み、キーコードから文字を合成しません。
+
+テキストストアのread/write lock中は文書変更をstagingし、成功時に公開します。再入同期lockは拒否し、非同期upgradeはAdvanceで処理します。TSF read cookie内でdisplay attributeを読み、下線・選択区間をコピーします。UI geometryをPresentationWindowのDPIとClientToScreenでscreen pixelへ変換します。
+
+候補は既定でSystem表示です。PreferCustomかつcontrollerの非表示presentation準備が済んだ場合だけUIElementを抑止します。Behavior非対応の操作は公開せず、終了・表示失敗時はSystemへ戻してから借用COM参照とpresentationを退役させます。
+
+終了はconnection.BeginStop→service/connection/controllerをAdvance→connection.IsStopped→connection/controller.Dispose→service.Dispose→Platformの順です。実Windows/日本語TIPの手動試験は、Linux上のmanaged text-store fixtureと別に実施してください。
+
+COM interface・vtable・構造体・CLSID・P/InvokeはMicrosoft.Windows.CsWin32 0.3.367から生成します。`NativeMethods.txt`と`NativeMethods.json`を入力とし、`allowMarshaling: false`、全COMメソッドのPreserveSigを指定しています。native参照は型付きポインターと所有handleで保持し、callbackのCCWは.NET ComWrappersとCsWin32生成vtableを接続します。GUIDやvtable順を手書きで複製せず、RCWの動的生成にも依存しません。

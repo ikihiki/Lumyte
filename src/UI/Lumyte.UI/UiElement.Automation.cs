@@ -5,7 +5,10 @@ namespace Lumyte.UI;
 /// <summary>Provides semantic state and side-effect-free routing for mounted instances.</summary>
 public partial class UiElement
 {
-    internal UiAutomationId AutomationId { get; private set; }
+    /// <summary>Gets the nonreused identity of this mounted instance.</summary>
+    public UiAutomationId AutomationId { get; private set; }
+
+    internal UiAutomationExposure EffectiveAutomationExposure => AutomationExposure;
 
     internal IEnumerable<UiElement> AutomationChildren => GetAutomationChildren();
 
@@ -14,6 +17,9 @@ public partial class UiElement
     internal bool AutomationPressed => IsAutomationPressed;
 
     internal bool AutomationActivePress => HasAutomationActivePress;
+
+    /// <summary>Gets the metadata and subtree exposure policy.</summary>
+    protected virtual UiAutomationExposure AutomationExposure => UiAutomationExposure.Default;
 
     /// <summary>Gets actual component capabilities, independently of role.</summary>
     protected virtual UiAutomationActions AutomationActions => Widget.Focusable ? UiAutomationActions.Focus : UiAutomationActions.None;

@@ -11,4 +11,10 @@ public enum UiRole
 
     /// <summary>A button.</summary>
     Button,
+
+    /// <summary>An editable text field.</summary>
+    TextBox,
+
+    /// <summary>A redacted IME candidate presenter.</summary>
+    ImeCandidates,
 }

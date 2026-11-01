@@ -23,19 +23,19 @@ public sealed class UiRemotePage
     internal Guid TargetId { get; }
 
     /// <summary>Creates an exact identity locator, including hidden elements.</summary>
-    /// <param name="testId">A nonempty identity up to 256 characters.</param>
+    /// <param name = "testId">A nonempty identity up to 256 characters.</param>
     /// <returns>A lazy locator.</returns>
     public UiRemoteLocator GetByTestId(string testId) => new(this, [Step(testId)]);
 
     /// <summary>Creates an exact semantic role/name locator.</summary>
-    /// <param name="role">button or group.</param>
-    /// <param name="name">Optional exact name.</param>
-    /// <param name="includeHidden">Whether hidden elements match.</param>
+    /// <param name = "role">button or group.</param>
+    /// <param name = "name">Optional exact name.</param>
+    /// <param name = "includeHidden">Whether hidden elements match.</param>
     /// <returns>A lazy locator.</returns>
     public UiRemoteLocator GetByRole(string role, string? name = null, bool includeHidden = false) => new(this, [Step(role, name, includeHidden)]);
 
     /// <summary>Creates assertions for this page's locator.</summary>
-    /// <param name="locator">A locator owned by this page.</param>
+    /// <param name = "locator">A locator owned by this page.</param>
     /// <returns>The remote assertion entry point.</returns>
     public UiRemoteExpect Expect(UiRemoteLocator locator)
     {
@@ -49,11 +49,12 @@ public sealed class UiRemotePage
     }
 
     /// <summary>Admits an observation-only plan and returns a retained low-level job.</summary>
-    /// <param name="observation">A snapshot/count/expect/screenshot plan.</param>
-    /// <param name="cancellationToken">Cancels admission.</param>
+    /// <param name = "observation">A snapshot/count/expect/screenshot plan.</param>
+    /// <param name = "cancellationToken">Cancels admission.</param>
     /// <returns>The admitted job.</returns>
     public async Task<UiRemoteJob> StartObservationAsync(UiRemotePlan observation, CancellationToken cancellationToken = default)
     {
+        await _client.RequireSchemaAsync(observation.SchemaVersion, cancellationToken);
         string json = UiRemoteSchema.SerializePlan(observation);
         if (UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(json)))
         {
@@ -71,9 +72,22 @@ public sealed class UiRemotePage
     }
 
     /// <summary>Captures and verifies actual PNG bytes, then returns the server job capacity.</summary>
-    /// <param name="cancellationToken">Cancels this high-level operation.</param>
+    /// <param name = "cancellationToken">Cancels this high-level operation.</param>
     /// <returns>Verified PNG bytes.</returns>
     public Task<byte[]> ScreenshotAsync(CancellationToken cancellationToken = default) => ExecuteAsync(new(1, "screenshot", []), cancellationToken);
+
+    /// <summary>Reads the explicit candidate list when text inspection is enabled.</summary>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The completed operation result.</returns>
+    public async Task<UiRemoteCandidates?> CaptureImeCandidatesAsync(CancellationToken cancellationToken = default) => System.Text.Json.JsonSerializer.Deserialize(await ExecuteAsync(new(3, "ime-candidates", []), cancellationToken), UiAutomationJsonContext.Default.UiRemoteCandidates);
+
+    /// <summary>Queues one candidate action without automatic retry.</summary>
+    /// <param name="kind">select, page, finalize or abort.</param>
+    /// <param name="candidate">The inspected candidate token.</param>
+    /// <param name="index">The select or page index; otherwise null.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The completed operation result.</returns>
+    public async Task ExecuteImeCandidateAsync(string kind, UiRemoteCandidateToken candidate, int? index = null, CancellationToken cancellationToken = default) => await ExecuteAsync(new(3, "ime-" + kind, [], Candidate: candidate, CandidateIndex: index), cancellationToken);
 
     internal static UiRemoteLocatorStep Step(string id)
     {
@@ -88,7 +102,7 @@ public sealed class UiRemotePage
 
     internal static UiRemoteLocatorStep Step(string role, string? name, bool hidden)
     {
-        if (role is not ("button" or "group") || name?.Length > 256)
+        if (role is not ("button" or "group" or "textbox" or "ime-candidates") || name?.Length > 256)
         {
             throw new ArgumentException("Unsupported role or name.", nameof(role));
         }
@@ -98,6 +112,7 @@ public sealed class UiRemotePage
 
     internal async Task<byte[]> ExecuteAsync(UiRemotePlan plan, CancellationToken token)
     {
+        await _client.RequireSchemaAsync(plan.SchemaVersion, token);
         if (UiRemoteSchema.IsAction(plan) && _control is null)
         {
             throw new InvalidOperationException("Use a control page for input.");
@@ -117,7 +132,7 @@ public sealed class UiRemotePage
         {
             result = await job.DownloadArtifactAsync(id, deadline.Token);
         }
-        else if (plan.Kind is "count" or "snapshot" or "screenshot")
+        else if (plan.Kind is "count" or "snapshot" or "screenshot" or "ime-candidates")
         {
             throw new UiRemoteAutomationException("invalid-response", job.Id, status.InputMayHaveBeenSent);
         }

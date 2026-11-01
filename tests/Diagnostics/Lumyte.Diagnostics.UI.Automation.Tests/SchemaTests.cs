@@ -14,7 +14,7 @@ public sealed class SchemaTests
     [InlineData("{}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"actorId\":\"admin\"}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"kind\":\"click\",\"locator\":[]}")]
-    [InlineData("{\"schemaVersion\":2,\"kind\":\"snapshot\",\"locator\":[]}")]
+    [InlineData("{\"schemaVersion\":4,\"kind\":\"snapshot\",\"locator\":[]}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"position\":{\"x\":0,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"position\":{\"x\":-1,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"press\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"key\":\"enter\"}")]
@@ -46,5 +46,32 @@ public sealed class SchemaTests
         Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(deep));
         Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(Harness.Plan("click") with { Position = new(double.MaxValue, 0) }));
         Assert.Throws<ArgumentException>(() => UiRemoteSchema.SerializePlan(Harness.Plan("click") with { Position = new(double.NaN, 0) }));
+    }
+
+    /// <summary>Checks versioned text fields and candidate identities stay closed and bounded.</summary>
+    [Fact]
+    public void TextAndCandidatePlansRequireTheirSchemaAndExplicitFields()
+    {
+        var fill = new UiRemotePlan(2, "fill", [new("test-id", Value: "editor")], Text: "かな😀");
+        Assert.True(UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(fill))));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(fill with { SchemaVersion = 1 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(fill with { Text = null }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(fill with { Kind = "click" }));
+        var candidate = new UiRemotePlan(3, "ime-select", [], Candidate: new(Guid.NewGuid(), "1", "2", "3"), CandidateIndex: 0);
+        Assert.True(UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(candidate))));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(candidate with { SchemaVersion = 2 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(candidate with { CandidateIndex = -1 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(candidate with { Candidate = candidate.Candidate! with { Revision = "03" } }));
+    }
+
+    /// <summary>Checks ordinary input authorization does not expose text or permit document mutation.</summary>
+    [Fact]
+    public void TextPermissionsDefaultToDenied()
+    {
+        using var h = new Harness();
+        Guid control = h.Acquire();
+        Assert.Equal("text-input-disabled", h.Start(new(3, "fill", [new("test-id", Value: "editor")], Text: "private"), control).Code);
+        Assert.Equal("text-inspection-disabled", h.Start(new(3, "expect-value", [new("test-id", Value: "editor")], Text: "private")).Code);
+        Assert.Equal("text-inspection-disabled", h.Start(new(3, "ime-candidates", [])).Code);
     }
 }

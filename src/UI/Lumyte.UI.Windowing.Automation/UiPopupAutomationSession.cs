@@ -39,12 +39,12 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return await _dispatcher.RunOnUiThreadAsync(
-            _ =>
+ _ =>
         {
             Prune();
             return _manager.CapturePopups();
         },
-            cancellationToken);
+ cancellationToken);
     }
 
     /// <summary>Creates a routed owner host; use it for both local pages and Diagnostics registration.</summary>
@@ -128,7 +128,7 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
         return host is IUiAutomationScreenshotHost screenshot ? new ScreenshotHost(_manager, surface, host, screenshot) : new Host(_manager, surface, host);
     }
 
-    private class Host : IUiAutomationHost, IUiAutomationRoutingHost, IAsyncDisposable
+    private class Host : IUiAutomationHost, IUiAutomationRoutingHost, IAsyncDisposable, IUiAutomationTextHost, IUiAutomationImeHost
     {
         private readonly UiPopupManager _manager;
 
@@ -157,6 +157,10 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
         public TimeProvider TimeProvider { get; }
 
         internal bool IsReleased => _drained.Task.IsCompleted;
+
+        private IUiAutomationTextHost Text => _inner as IUiAutomationTextHost ?? throw new NotSupportedException();
+
+        private IUiAutomationImeHost Ime => _inner as IUiAutomationImeHost ?? throw new NotSupportedException();
 
         public async ValueTask<T> RunOnUiThreadAsync<T>(Func<UiSurface, T> action, CancellationToken cancellationToken = default)
         {
@@ -192,15 +196,25 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
             }
         }
 
-        public async ValueTask<IUiAutomationInputLease> AcquireInputAsync(CancellationToken cancellationToken = default)
+        public ValueTask<IUiAutomationInputLease> AcquireInputAsync(CancellationToken cancellationToken = default) => AcquireAsync(null, cancellationToken);
+
+        public ValueTask<IUiAutomationInputLease> AcquireTextInputAsync(CancellationToken cancellationToken = default) => AcquireAsync("text", cancellationToken);
+
+        public ValueTask<IUiAutomationInputLease> AcquireImeCandidateInputAsync(UiImeCandidateToken token, CancellationToken cancellationToken = default) => AcquireAsync(token, cancellationToken);
+
+        public void Fill(UiSurface surface, UiAutomationId editor, string text) => Text.Fill(surface, editor, text);
+
+        public string ReadValue(UiSurface surface, UiAutomationId editor) => Text.ReadValue(surface, editor);
+
+        public UiImeCandidateSnapshot? CaptureImeCandidates(UiSurface surface) => Ime.CaptureImeCandidates(surface);
+
+        public async ValueTask<UiImeCandidateResult> ExecuteImeCandidateAsync(UiImeCandidateCommand command, CancellationToken cancellationToken = default)
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
             Interlocked.Increment(ref _calls);
             try
             {
-                IUiAutomationInputLease lease = await (_inner ?? throw new ObjectDisposedException(nameof(Host))).AcquireInputAsync(linked.Token);
-                Interlocked.Increment(ref _leases);
-                return new Lease(this, lease);
+                return await Ime.ExecuteImeCandidateAsync(command, linked.Token);
             }
             finally
             {
@@ -254,6 +268,23 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
         {
         }
 
+        private async ValueTask<IUiAutomationInputLease> AcquireAsync(object? kind, CancellationToken cancellationToken)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
+            Interlocked.Increment(ref _calls);
+            try
+            {
+                IUiAutomationInputLease lease = kind is UiImeCandidateToken candidate ? await Ime.AcquireImeCandidateInputAsync(candidate, linked.Token) : kind is string ? await Text.AcquireTextInputAsync(linked.Token) : await (_inner ?? throw new ObjectDisposedException(nameof(Host))).AcquireInputAsync(linked.Token);
+                Interlocked.Increment(ref _leases);
+                return new Lease(this, lease);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _calls);
+                Complete();
+            }
+        }
+
         private void Complete()
         {
             if (Volatile.Read(ref _closing) != 0 && Volatile.Read(ref _calls) == 0 && Volatile.Read(ref _leases) == 0)
@@ -299,7 +330,10 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
         private IUiAutomationScreenshotHost? _screenshot;
 
         internal ScreenshotHost(UiPopupManager manager, UiSurface surface, IUiAutomationHost inner, IUiAutomationScreenshotHost screenshot)
-            : base(manager, surface, inner)
+            : base(
+ manager,
+ surface,
+ inner)
         {
             _screenshot = screenshot;
         }
@@ -309,11 +343,23 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
         protected override void ReleaseReferences() => _screenshot = null;
     }
 
-    private sealed class DeferredHost(UiPopupAutomationSession session, Guid popupId) : IUiAutomationHost, IUiAutomationRoutingHost, IUiAutomationScreenshotHost
+    private sealed class DeferredHost(UiPopupAutomationSession session, Guid popupId) : IUiAutomationHost, IUiAutomationRoutingHost, IUiAutomationScreenshotHost, IUiAutomationTextHost, IUiAutomationImeHost
     {
         private IUiAutomationHost? _resolved;
 
         public TimeProvider TimeProvider => session._dispatcher.TimeProvider;
+
+        public async ValueTask<IUiAutomationInputLease> AcquireTextInputAsync(CancellationToken cancellationToken = default) => await ((IUiAutomationTextHost)await ResolveAsync(cancellationToken)).AcquireTextInputAsync(cancellationToken);
+
+        public async ValueTask<IUiAutomationInputLease> AcquireImeCandidateInputAsync(UiImeCandidateToken token, CancellationToken cancellationToken = default) => await ((IUiAutomationImeHost)await ResolveAsync(cancellationToken)).AcquireImeCandidateInputAsync(token, cancellationToken);
+
+        public void Fill(UiSurface surface, UiAutomationId editor, string text) => ((IUiAutomationTextHost)_resolved!).Fill(surface, editor, text);
+
+        public string ReadValue(UiSurface surface, UiAutomationId editor) => ((IUiAutomationTextHost)_resolved!).ReadValue(surface, editor);
+
+        public UiImeCandidateSnapshot? CaptureImeCandidates(UiSurface surface) => ((IUiAutomationImeHost)_resolved!).CaptureImeCandidates(surface);
+
+        public async ValueTask<UiImeCandidateResult> ExecuteImeCandidateAsync(UiImeCandidateCommand command, CancellationToken cancellationToken = default) => await ((IUiAutomationImeHost)await ResolveAsync(cancellationToken)).ExecuteImeCandidateAsync(command, cancellationToken);
 
         public async ValueTask<T> RunOnUiThreadAsync<T>(Func<UiSurface, T> action, CancellationToken cancellationToken = default) => await (await ResolveAsync(cancellationToken)).RunOnUiThreadAsync(action, cancellationToken);
 

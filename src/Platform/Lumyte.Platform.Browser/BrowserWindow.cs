@@ -97,6 +97,8 @@ public sealed class BrowserWindow : IWindow
         }
     }
 
+    internal JSObject TextInputHandle => _handle;
+
     /// <inheritdoc/>
     public WindowRequestId Show() => Request(() => BrowserInterop.Show(_handle, true), s => s.IsVisible);
 
@@ -110,7 +112,7 @@ public sealed class BrowserWindow : IWindow
         return Request(() =>
         {
             BrowserInterop.Title(_handle, title);
-            SetState(_state with { Title = title });
+            SetState(_state with { Title = title, });
         });
     }
 
@@ -170,7 +172,7 @@ public sealed class BrowserWindow : IWindow
             {
                 _platform.StopInput(this);
                 BrowserInterop.Show(_handle, false);
-                SetState(_state with { Lifetime = WindowLifetime.Closing, IsVisible = false, IsActive = false });
+                SetState(_state with { Lifetime = WindowLifetime.Closing, IsVisible = false, IsActive = false, });
                 AdvanceClose();
             }
         });
@@ -282,7 +284,7 @@ public sealed class BrowserWindow : IWindow
         if (_close is { } request && _state.Lifetime == WindowLifetime.Closing && _retained == 0)
         {
             Detach();
-            SetState(_state with { Lifetime = WindowLifetime.Closed, IsVisible = false, IsActive = false });
+            SetState(_state with { Lifetime = WindowLifetime.Closed, IsVisible = false, IsActive = false, });
             Finish(request, WindowRequestStatus.Applied);
         }
     }

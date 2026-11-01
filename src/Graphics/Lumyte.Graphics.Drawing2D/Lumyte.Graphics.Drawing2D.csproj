@@ -10,6 +10,7 @@
     <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
+    <InternalsVisibleTo Include="Lumyte.UI.TextEditing.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.RenderGraph" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>

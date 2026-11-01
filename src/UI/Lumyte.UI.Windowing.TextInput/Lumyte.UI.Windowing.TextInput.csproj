@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <ProjectReference Include="../Lumyte.UI.Windowing/Lumyte.UI.Windowing.csproj" />
+    <ProjectReference Include="../Lumyte.UI.TextEditing/Lumyte.UI.TextEditing.csproj" />
+    <ProjectReference Include="../../Platform/Lumyte.Platform.TextInput.Abstractions/Lumyte.Platform.TextInput.Abstractions.csproj" />
+    <ProjectReference Include="../../Platform/Lumyte.Platform.Abstractions/Lumyte.Platform.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

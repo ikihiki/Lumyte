@@ -112,6 +112,23 @@ internal sealed class UiHostInputRouter
             return false;
         }
 
+        if (input.Data is KeyCanceledData keyCanceled)
+        {
+            (InputDeviceId DeviceId, Key Key) identity = (input.DeviceId, keyCanceled.Key);
+            foreach (HashSet<(InputDeviceId Device, Key Key)> modifiers in _modifiers.Values)
+            {
+                modifiers.Remove(identity);
+            }
+
+            if (_keys.Remove(identity, out KeyOwner? owner) && owner.Target is Target target)
+            {
+                Deliver(target, new UiKeyCancelInput(keyCanceled.Key));
+                return true;
+            }
+
+            return false;
+        }
+
         InputWindowId? origin = input.WindowId;
         if (input.Data is MouseMoveData move && origin is InputWindowId positionOrigin)
         {

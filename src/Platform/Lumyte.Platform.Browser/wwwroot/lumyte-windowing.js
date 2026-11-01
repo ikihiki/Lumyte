@@ -15,6 +15,12 @@ export function attach(canvas, title, width, height, preserveFocus) {
         height: canvas.height
     };
     const handle = { canvas, gpu, saved, width, height, preserveFocus, visible: false, events: [], input: [], buttons: new Set(), detached: false };
+    handle.keyboardHeld = new Set();
+    handle.textConsumedKeys = new Set();
+    handle.proxies = new Map();
+    handle.proxyListeners = new Map();
+    handle.logicalFocus = false;
+    handle.ownsFocus = element => element === canvas || [...handle.proxies.values()].includes(element);
     handle.inputEnabled = true;
     const record = (...events) => {
         if (!handle.inputEnabled || handle.inputFault) return;
@@ -38,8 +44,18 @@ export function attach(canvas, title, width, height, preserveFocus) {
         window.addEventListener(name, callback);
         handle.windowListeners.push([name, callback]);
     };
-    listen("keydown", event => record({ type: 0, code: event.code, down: true, repeat: event.repeat }));
-    listen("keyup", event => record({ type: 0, code: event.code, down: false, repeat: false }));
+    listen("keydown", event => {
+        handle.keyboardHeld.add(event.code);
+        if (handle.textConsumedKeys.has(event.code)) { event.preventDefault(); return; }
+        record({ type: 0, code: event.code, down: true, repeat: event.repeat });
+    });
+    listen("keyup", event => {
+        handle.keyboardHeld.delete(event.code);
+        if (handle.textConsumedKeys.delete(event.code)) { event.preventDefault(); return; }
+        record({ type: 0, code: event.code, down: false, repeat: false });
+    });
+    listenWindow("keydown", event => { if (handle.ownsFocus(event.target)) handle.keyboardHeld.add(event.code); });
+    listenWindow("keyup", event => { handle.keyboardHeld.delete(event.code); handle.textConsumedKeys.delete(event.code); });
     // Capture is acquired during the physical Down, before any managed frame consumes input.
     let mousePointer = null;
     let physicalButtons = 0;
@@ -84,7 +100,7 @@ export function attach(canvas, title, width, height, preserveFocus) {
                 return;
             }
             if (handle.preserveFocus) event.preventDefault();
-            else canvas.focus({ preventScroll: true });
+            else if (![...handle.proxies.values()].includes(document.activeElement)) canvas.focus({ preventScroll: true });
         }
         const position = { type: 1, x: (event.clientX - rect.left) * canvas.clientWidth / rect.width, y: (event.clientY - rect.top) * canvas.clientHeight / rect.height };
         let changed = false;
@@ -122,8 +138,18 @@ export function attach(canvas, title, width, height, preserveFocus) {
         const divisor = event.deltaMode === 0 ? 120 : event.deltaMode === 1 ? 3 : 1;
         record({ type: 3, x: event.deltaX / divisor, y: -event.deltaY / divisor });
     });
-    listen("focus", () => record({ type: 4, down: true }));
-    listen("blur", () => { cancelMouse(); record({ type: 4, down: false }); });
+    handle.setLogicalFocus = focused => {
+        if (handle.logicalFocus !== focused) {
+            handle.logicalFocus = focused;
+            if (!focused) cancelMouse();
+            record({ type: 4, down: focused });
+        }
+        handle.capture();
+    };
+    listen("focus", () => handle.setLogicalFocus(true));
+    listen("blur", event => {
+        if (!handle.ownsFocus(event.relatedTarget)) handle.setLogicalFocus(false);
+    });
     canvas.title = title;
     if (preserveFocus) canvas.tabIndex = -1;
     else if (canvas.tabIndex < 0) canvas.tabIndex = 0;
@@ -135,6 +161,31 @@ export function attach(canvas, title, width, height, preserveFocus) {
     window.addEventListener("resize", handle.capture);
     handle.observer = new ResizeObserver(handle.capture);
     handle.observer.observe(canvas);
+    handle.runTextFocusBridge = event => {
+        if (!handle.textFocusBridge) return true;
+        if (handle.textBridgeBusy) { event.preventDefault(); event.stopImmediatePropagation(); return false; }
+        handle.textBridgeBusy = true;
+        try {
+            if (!handle.textFocusBridge()) {
+                handle.input.splice(handle.textBoundaryStart ?? handle.input.length);
+                event.preventDefault(); event.stopImmediatePropagation();
+                return false;
+            } else if (event.type.startsWith("pointer") && document.activeElement !== canvas && handle.ownsFocus(document.activeElement)) {
+                event.preventDefault();
+            }
+            return true;
+        } finally { handle.textBridgeBusy = false; }
+    };
+    for (const name of ["pointerdown", "pointerup", "pointermove", "keydown", "keyup"]) {
+        const start = () => { handle.textBoundaryStart = handle.input.length; };
+        canvas.addEventListener(name, start, true);
+        handle.textBoundaryListeners ??= [];
+        handle.textBoundaryListeners.push([name,start]);
+        listen(name, event => {
+            if (name === "pointermove" && event.buttons === 0) return;
+            handle.runTextFocusBridge(event);
+        });
+    }
     owners.set(canvas, handle);
     snapshot(handle);
     return handle;
@@ -153,7 +204,7 @@ export function snapshot(handle) {
     const pixelHeight = Math.max(1, Math.round(height * scale));
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
-    return [width, height, pixelWidth, pixelHeight, scale, visible ? 1 : 0, document.hasFocus() && document.activeElement === canvas ? 1 : 0, connected ? 1 : 0];
+    return [width, height, pixelWidth, pixelHeight, scale, visible ? 1 : 0, document.hasFocus() && handle.ownsFocus(document.activeElement) ? 1 : 0, connected ? 1 : 0];
 }
 
 export function drain(handle) {
@@ -191,6 +242,8 @@ export function detach(handle) {
     handle.cancelMouse();
     handle.detached = true;
     handle.connectionObserver.disconnect();
+    for (const [name,fn] of handle.textBoundaryListeners ?? []) handle.canvas.removeEventListener(name,fn,true);
+    for (const token of [...handle.proxyListeners.keys()]) unregisterTextProxy(handle, token);
     document.removeEventListener("visibilitychange", handle.visibility);
     handle.observer.disconnect();
     for (const [name, callback] of handle.listeners) handle.canvas.removeEventListener(name, callback);
@@ -232,3 +285,33 @@ export function setInputEnabled(handle, enabled) {
     handle.input.length = 0;
     if (enabled) handle.input.push({ type: 4, down: document.hasFocus() && document.activeElement === handle.canvas });
 }
+
+export function registerTextProxy(handle, proxy, token) {
+    if (handle.detached || handle.proxies.has(token)) throw new Error("Expired or duplicate text proxy registration.");
+    handle.proxies.set(token, proxy);
+    proxy.lumyteBlockedKeys = new Set([...handle.keyboardHeld, ...handle.textConsumedKeys]);
+    proxy.lumyteHeldKeys = handle.keyboardHeld;
+    const focus = () => handle.setLogicalFocus(true);
+    const blur = event => { if (!handle.ownsFocus(event.relatedTarget)) handle.setLogicalFocus(false); };
+    proxy.addEventListener("focus", focus);
+    proxy.addEventListener("blur", blur);
+    handle.proxyListeners.set(token, {proxy, focus, blur});
+    proxy.lumyteFocusBridge = event => handle.runTextFocusBridge(event);
+}
+
+export function unregisterTextProxy(handle, token) {
+    const listeners = handle.proxyListeners.get(token);
+    if (!listeners) return;
+    listeners.proxy.removeEventListener("focus", listeners.focus);
+    listeners.proxy.removeEventListener("blur", listeners.blur);
+    for (const code of listeners.proxy.lumyteConsumedKeys ?? []) handle.textConsumedKeys.add(code);
+    delete listeners.proxy.lumyteConsumedKeys;
+    delete listeners.proxy.lumyteBlockedKeys;
+    delete listeners.proxy.lumyteHeldKeys;
+    delete listeners.proxy.lumyteFocusBridge;
+    handle.proxyListeners.delete(token);
+    handle.proxies.delete(token);
+    if (!handle.ownsFocus(document.activeElement)) handle.setLogicalFocus(false);
+}
+
+export function setTextFocusBridge(handle, bridge) { handle.textFocusBridge = bridge; }
