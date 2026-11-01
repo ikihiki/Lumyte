@@ -179,10 +179,10 @@ float meshCoverage(DrawingInstruction n,float2 p)
     }
     return result;
 }
-float4 evaluate(float2 pixel)
+float4 evaluate<let capacity : int>(float2 pixel)
 {
-    float4 values[256];
-    for(uint clearIndex=0;clearIndex<256;clearIndex++) values[clearIndex]=0;
+    float4 values[capacity];
+    for(uint clearIndex=0;clearIndex<capacity;clearIndex++) values[clearIndex]=0;
     for(uint i=0;i<arguments.Count;i++)
     {
         DrawingInstruction n=arguments.Instructions.Load(i);
@@ -294,7 +294,9 @@ float4 main(float4 position : SV_Position) : SV_Target0
         for(uint x=0;x<4;x++)
         {
             float2 p=origin+(float2(x,y)+0.5)/4;
-            float4 sample=evaluate(p);
+            // Common shapes and short paint/clip graphs avoid the large scratch
+            // array. Keep the full interpreter for the existing 256-node budget.
+            float4 sample=arguments.Count<=8 ? evaluate<8>(p) : arguments.Count<=16 ? evaluate<16>(p) : evaluate<256>(p);
             if(arguments.GraphMode!=0)
             {
                 float coverage=sample.a;
