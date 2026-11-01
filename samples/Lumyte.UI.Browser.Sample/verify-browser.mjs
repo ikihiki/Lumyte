@@ -98,7 +98,11 @@ try {
     await command("Runtime.enable");
     await command("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
     await command("Page.bringToFront");
-    await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/${process.env.LUMYTE_UI_INPUT_ONLY ? "?input-only" : ""}` });
+    const query = new URLSearchParams();
+    if (process.env.LUMYTE_UI_INPUT_ONLY) query.set("input-only", "");
+    if (process.env.LUMYTE_UI_RENDER_GRAPH) query.set("render-graph", "");
+    if (process.env.LUMYTE_UI_RESOURCES) query.set("resources", "");
+    await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/?${query}` });
     async function evaluate(expression) {
         const response = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
         if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);

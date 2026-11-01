@@ -79,3 +79,9 @@ Focusableは宣言の設定、focus対象と押下はElementの状態として�
 [UI-0007](../../../docs/adr/ui/UI-0007-window-input-and-dpi-integration.md)では、取得Window情報付きのInputRecordを
 UiInputへ変換し、native / hostedの入力系列をhostで所有する。DPIはCanvasへ一度だけ適用する。
 UI本体のPlatform / Windowing / InputSystem非依存を維持し、操作対象はSurface内のElementとする。
+
+## RenderGraphと資源寿命
+
+記録した命令を既存のRenderGraph / Resourcesへ接続する。Elementの論理寿命とGPU退役は区別する。
+[UI-0008](../../../docs/adr/ui/UI-0008-render-graph-and-resource-lifetime.md)のticketとleaseの契約を使い、
+後から変わるElementやWidgetの設定をGPU処理が遅延参照しない。

@@ -2,6 +2,8 @@ import { dotnet } from "./_framework/dotnet.js";
 const status = document.querySelector("#status");
 try {
     globalThis.lumyteInputOnly = new URLSearchParams(location.search).has("input-only");
+    globalThis.lumyteRenderGraph = new URLSearchParams(location.search).has("render-graph");
+    globalThis.lumyteResources = new URLSearchParams(location.search).has("resources");
     globalThis.lumyteUiCanvas = document.querySelector("canvas");
     const runtime = await dotnet.create();
     const running = runtime.runMain();
@@ -12,10 +14,10 @@ try {
     let stopped = false;
     let inFlight = false;
     let finished = false;
-    function stop() {
+    async function stop() {
         if (!finished) {
-            ui.Stop();
             finished = true;
+            await ui.StopAsync();
         }
     }
     async function frame() {
@@ -29,7 +31,7 @@ try {
             console.error(error);
         } finally {
             inFlight = false;
-            if (stopped) stop();
+            if (stopped) await stop();
             else requestAnimationFrame(frame);
         }
     }

@@ -6,7 +6,17 @@ using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Input.Abstractions;
 using Lumyte.UI;
+using Lumyte.UI.SampleSupport;
 using static Lumyte.UI.Compose;
+
+if (args is ["--render-graph", "vulkan" or "wgpu"] or ["--resources", "vulkan" or "wgpu"])
+{
+    using VulkanDevice? graphVulkan = args[1] == "vulkan" ? VulkanDevice.Create() : null;
+    using WgpuDevice? graphWgpu = args[1] == "wgpu" ? WgpuDevice.Create() : null;
+    IGraphicDevice graphDevice = graphVulkan is not null ? graphVulkan : graphWgpu!;
+    await UiGraphExercise.RunAsync(graphDevice, resources: args[0] == "--resources");
+    return 0;
+}
 
 if (args is ["native"])
 {
@@ -15,7 +25,7 @@ if (args is ["native"])
 
 if (args is not ["record-only"] and not ["pointer-only"] and not ["keyboard-only"] and not ["vulkan"] and not ["wgpu"])
 {
-    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|keyboard-only|vulkan|wgpu|native");
+    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|keyboard-only|vulkan|wgpu|native | --render-graph vulkan|wgpu | --resources vulkan|wgpu");
     return 1;
 }
 
