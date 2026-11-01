@@ -9,6 +9,7 @@ public sealed class PreparedDraw2D : IDisposable
     private readonly IReadOnlyList<IPreparedCommandBatch2D> _batches;
     private bool _disposed;
     private bool _recorded;
+    private List<IPreparedCommandBatch2D>? _unreleased;
 
     internal PreparedDraw2D(RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches)
     {
@@ -55,25 +56,30 @@ public sealed class PreparedDraw2D : IDisposable
     /// <summary>Disposes fixed batch resources after GPU completion and command disposal.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (_disposed && _unreleased is null)
         {
             return;
         }
 
         _disposed = true;
+        IReadOnlyList<IPreparedCommandBatch2D> remaining = _unreleased ?? _batches;
+        List<IPreparedCommandBatch2D>? failed = null;
         List<Exception>? errors = null;
-        for (int i = _batches.Count - 1; i >= 0; i--)
+        for (int i = remaining.Count - 1; i >= 0; i--)
         {
             try
             {
-                _batches[i].Dispose();
+                remaining[i].Dispose();
             }
             catch (Exception error)
             {
                 (errors ??= []).Add(error);
+                (failed ??= []).Add(remaining[i]);
             }
         }
 
+        failed?.Reverse();
+        _unreleased = failed;
         if (errors is not null)
         {
             throw new AggregateException("Failed to release drawing resources.", errors);
