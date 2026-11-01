@@ -42,6 +42,11 @@ public partial class UiElement
     {
         _widget = widget;
         Surface = surface;
+        if (AutomationId == default)
+        {
+            AutomationId = surface.AllocateAutomationId();
+        }
+
         bool changed = _slots.Length != slots.Length;
         if (changed)
         {

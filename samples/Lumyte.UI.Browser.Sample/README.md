@@ -39,3 +39,16 @@ LUMYTE_UI_RESOURCES=1 node samples/Lumyte.UI.Browser.Sample/verify-browser.mjs
 `?input-only`との併用時はGPUとResourcesを初期化せず、従来のCPU記録確認を行います。自動device復旧はサンプルに含めません。
 
 2026-10-29に新しい2モードもpublishして実行しました。`?resources`はBrowserのcooperative実行を使います。両モードのGPU提示は上記と同じmapAsyncエラーで停止し、描画成功とは扱いません。入力・CPU記録のsmoke testは成功しました。
+
+## Locatorによる自動操作
+
+`?automation`でC#のUiAutomationPageから、保存ButtonのClick、成功indicatorのExpect、Enterによる保存、focusのExpectを実行します。スクリプト実行中は通常のDOM入力をsurfaceへ配送せず、入力leaseを使います。完了後は通常のframeと入力へ戻ります。GPUなしの`?input-only&automation`でも同じ操作を検証できます。
+
+```sh
+LUMYTE_UI_AUTOMATION=1 LUMYTE_UI_INPUT_ONLY=1 node samples/Lumyte.UI.Browser.Sample/verify-browser.mjs
+LUMYTE_UI_AUTOMATION=1 LUMYTE_AUTOMATION_SCREENSHOT=/tmp/ui-automation.png node samples/Lumyte.UI.Browser.Sample/verify-browser.mjs
+```
+
+GPUモードのPNGはC#のScreenshotAsyncが新しく描画・readbackした対象surfaceの実画素です。JSホストへbase64で渡し、上記変数で保存できます。CDPの画面キャプチャとは別です。サンプルはcold pipeline準備を含め30秒の期限を指定します。
+
+2026-10-29にpublishし、実ChromiumでC#の保存操作・Expect・Enter、その後のDOM capture、領域外Up、Hosted、keyboard、DPI×2、終了が成功しました。GPU提示・PNGはこの環境で既知のmapAsyncエラーにより未検証です。trimming／AOTの検証は行っていません。

@@ -1,6 +1,7 @@
 import { dotnet } from "./_framework/dotnet.js";
 const status = document.querySelector("#status");
 try {
+    globalThis.lumyteAutomation = new URLSearchParams(location.search).has("automation");
     globalThis.lumyteInputOnly = new URLSearchParams(location.search).has("input-only");
     globalThis.lumyteRenderGraph = new URLSearchParams(location.search).has("render-graph");
     globalThis.lumyteResources = new URLSearchParams(location.search).has("resources");
@@ -40,5 +41,6 @@ try {
         if (!inFlight) stop();
     };
     status.textContent = "Click the blue or orange UI. Tab / Shift-Tab changes focus; Space activates.";
+    if (globalThis.lumyteAutomation) await ui.RunAutomationAsync();
     requestAnimationFrame(frame);
 } catch (error) { status.textContent = String(error); console.error(error); }
