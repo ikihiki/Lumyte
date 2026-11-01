@@ -1,0 +1,36 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Lumyte.Graphics.Abstractions -> <checkout>/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Graphics.Generators -> <checkout>/src/Graphics/Lumyte.Graphics.Generators/bin/Release/netstandard2.0/Lumyte.Graphics.Generators.dll
+  2026.19
+  ​
+  ╬═════════════════
+  ║ ParleyNative
+  ╬════════
+  ​
+  Running: <checkout>/artifacts/build/tools/cargo/bin/cargo +1.99.1-x86_64-unknown-linux-gnu --version
+  Running: <checkout>/artifacts/build/tools/cargo/bin/cargo +1.99.1-x86_64-unknown-linux-gnu build --manifest-path <checkout>/native/lumyte_text_parley/Cargo.toml --locked --release --target-dir <checkout>/artifacts/text-parley/native/cargo
+      Finished `release` profile [optimized] target(s) in 0.02s
+  Running: <checkout>/artifacts/build/tools/cargo/bin/rustc +1.99.1-x86_64-unknown-linux-gnu --print sysroot
+  <checkout>/artifacts/text-parley/native/liblumyte_text_parley.so
+  ​
+  ═══════════════════════════════════════
+  Target             Status      Duration
+  ───────────────────────────────────────
+  ParleyNative       Succeeded     < 1sec
+  ───────────────────────────────────────
+  Total                            < 1sec
+  ═══════════════════════════════════════
+  ​
+  Build succeeded on 11/2/2026 2:03:38 AM. ＼（＾ᴗ＾）／
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.Drawing2D -> <checkout>/src/Graphics/Lumyte.Graphics.Drawing2D/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.dll
+  Lumyte.Graphics.Text -> <checkout>/src/Graphics/Lumyte.Graphics.Text/bin/Release/net10.0/Lumyte.Graphics.Text.dll
+  Lumyte.Graphics.Text.Parley -> <checkout>/src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/Lumyte.Graphics.Text.Parley.dll
+  Lumyte.Graphics.Text.Parley.Tests -> <checkout>/tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/bin/Release/net10.0/Lumyte.Graphics.Text.Parley.Tests.dll
+Test run for <checkout>/tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/bin/Release/net10.0/Lumyte.Graphics.Text.Parley.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   114, Skipped:     0, Total:   114, Duration: 120 ms - Lumyte.Graphics.Text.Parley.Tests.dll (net10.0)
