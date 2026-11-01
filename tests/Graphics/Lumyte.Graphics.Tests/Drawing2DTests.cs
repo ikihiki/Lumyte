@@ -14,7 +14,7 @@ using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 namespace Lumyte.Graphics.Tests;
 
 /// <summary>Checks the complete 2D pipeline against independently specified GPU pixel results.</summary>
-public sealed class Drawing2DTests
+public sealed partial class Drawing2DTests
 {
     private static readonly Color2D _white = new(1, 1, 1, 1);
     private static readonly Color2D _red = new(1, 0, 0, 1);
