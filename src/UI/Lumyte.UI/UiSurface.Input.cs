@@ -10,6 +10,8 @@ public sealed partial class UiSurface
     private object? _inputVersion;
     private bool _inputDirty = true;
 
+    internal object? InputVersionForWindowing => _inputVersion;
+
     /// <summary>Routes logical input, returning whether this surface consumed it.</summary>
     /// <param name="input">The host-selected input.</param>
     /// <remarks>Call UpdateLayout before normal input delivery. Dispatch never updates geometry.</remarks>

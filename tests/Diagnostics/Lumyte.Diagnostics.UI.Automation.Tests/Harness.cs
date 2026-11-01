@@ -11,6 +11,8 @@ internal sealed class Harness : IDisposable
 {
     private readonly List<TaskCompletionSource> _frames = [];
     private readonly UiSampleAutomationHost _host;
+    private readonly SemaphoreSlim _domain = new(1, 1);
+    private readonly List<(UiSurface Surface, UiSampleAutomationHost Host)> _popups = [];
     private long _frame;
 
     internal Harness(UiAutomationDiagnosticsOptions? options = null, bool screenshots = false)
@@ -18,9 +20,9 @@ internal sealed class Harness : IDisposable
         Runtime = new(Clock, options ?? new());
         Surface = UiAutomationExercise.CreateSurface(() => Clicks++);
         Surface.SetViewport(new(240, 160));
-        _host = new(Surface, WaitFrameAsync, Clock);
+        _host = new(Surface, WaitFrameAsync, Clock, _domain);
         IUiAutomationHost host = screenshots ? new UiSampleScreenshotHost(_host, CaptureAsync) : _host;
-        Registration = Runtime.Register("settings", Surface, host, new() { AllowInput = true, AllowScreenshots = screenshots });
+        Registration = Runtime.Register("settings", Surface, Route(host), new() { AllowInput = true, AllowScreenshots = screenshots });
         Operations = new(new UiAutomationDiagnostics(Runtime));
     }
 
@@ -55,8 +57,17 @@ internal sealed class Harness : IDisposable
         Assert.True(Runtime.IsStopped);
         Runtime.Dispose();
         _host.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        foreach ((UiSurface surface, UiSampleAutomationHost host) in _popups)
+        {
+            host.DisposeAsync().GetAwaiter().GetResult();
+            surface.Dispose();
+        }
+
+        _domain.Dispose();
         Surface.Dispose();
     }
+
+    internal static IUiAutomationHost Route(IUiAutomationHost host) => host is IUiAutomationScreenshotHost screenshot ? new ScreenshotRoutingHost(host, screenshot) : new RoutingHost(host);
 
     internal static UiRemotePlan Plan(string kind, string id = "save") => new(1, kind, kind is "snapshot" or "screenshot" ? [] : [new("test-id", Value: id)]);
 
@@ -69,6 +80,15 @@ internal sealed class Harness : IDisposable
     }
 
     internal static Dictionary<string, DiagnosticValue> Args(params (string Key, object Value)[] values) => values.ToDictionary(pair => pair.Key, pair => pair.Value is string text ? DiagnosticValue.From(text) : DiagnosticValue.From(Convert.ToInt64(pair.Value, System.Globalization.CultureInfo.InvariantCulture)));
+
+    internal UiAutomationDiagnosticRegistration AddPopup()
+    {
+        UiSurface surface = UiAutomationExercise.CreateSurface(() => Clicks++);
+        surface.SetViewport(new(240, 160));
+        var host = new UiSampleAutomationHost(surface, WaitFrameAsync, Clock, _domain);
+        _popups.Add((surface, host));
+        return Runtime.RegisterPopup(Registration, Guid.NewGuid(), "popup", surface, Route(host), new() { AllowInput = true });
+    }
 
     internal Guid Acquire(string actor = "operator") => Guid.Parse(Success(Call("control-acquire", Args(("target-id", Registration.TargetId.ToString("D")), ("duration-ms", 5000L)), actor: actor))["control-id"].String!);
 
@@ -128,5 +148,27 @@ internal sealed class Harness : IDisposable
         var frame = new TaskCompletionSource();
         _frames.Add(frame);
         return new(frame.Task.WaitAsync(token));
+    }
+
+    private class RoutingHost(IUiAutomationHost host) : IUiAutomationHost, IUiAutomationRoutingHost
+    {
+        public TimeProvider TimeProvider => host.TimeProvider;
+
+        public ValueTask<T> RunOnUiThreadAsync<T>(Func<UiSurface, T> action, CancellationToken cancellationToken = default) => host.RunOnUiThreadAsync(action, cancellationToken);
+
+        public ValueTask NextFrameAsync(CancellationToken cancellationToken = default) => host.NextFrameAsync(cancellationToken);
+
+        public ValueTask<IUiAutomationInputLease> AcquireInputAsync(CancellationToken cancellationToken = default) => host.AcquireInputAsync(cancellationToken);
+
+        public UiPointerProbe ProbePointer(UiSurface surface, System.Numerics.Vector2 point) => surface.ProbePointer(point);
+
+        public bool CanReceiveKeys(UiSurface surface) => true;
+
+        public bool Dispatch(UiSurface surface, UiInput input) => surface.Dispatch(input);
+    }
+
+    private sealed class ScreenshotRoutingHost(IUiAutomationHost host, IUiAutomationScreenshotHost screenshot) : RoutingHost(host), IUiAutomationScreenshotHost
+    {
+        public ValueTask<byte[]> CapturePngAsync(CancellationToken cancellationToken = default) => screenshot.CapturePngAsync(cancellationToken);
     }
 }

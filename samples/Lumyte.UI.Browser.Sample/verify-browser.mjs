@@ -104,6 +104,7 @@ try {
     await command("Page.bringToFront");
     const query = new URLSearchParams();
     if (process.env.LUMYTE_UI_DIAGNOSTICS) query.set("diagnostics", "");
+    if (process.env.LUMYTE_UI_POPUPS) query.set("popups", "");
     if (process.env.LUMYTE_UI_AUTOMATION) query.set("automation", "");
     if (process.env.LUMYTE_UI_INPUT_ONLY) query.set("input-only", "");
     if (process.env.LUMYTE_UI_RENDER_GRAPH) query.set("render-graph", "");
@@ -142,7 +143,53 @@ try {
     const initialClicks = process.env.LUMYTE_UI_AUTOMATION ? 2 : 0;
     assert.equal(Number((await state())[0]), initialClicks);
     if (process.env.LUMYTE_UI_AUTOMATION) assert.ok(progress.some(line => line.includes("UI automation passed:")));
-    if (process.env.LUMYTE_UI_DIAGNOSTICS) {
+    if (process.env.LUMYTE_UI_POPUPS) {
+        const rect = JSON.parse(await evaluate("JSON.stringify(document.querySelector('canvas').getBoundingClientRect().toJSON())"));
+        async function pointer(type, x, y, button = "left") {
+            await command("Input.dispatchMouseEvent", { type, x: rect.x + x, y: rect.y + y, button, buttons: type === "mousePressed" ? button === "right" ? 2 : 1 : 0, clickCount: 1 });
+        }
+        async function click(x, y) { await pointer("mousePressed", x, y); await pointer("mouseReleased", x, y); }
+        async function popupState(predicate, label) {
+            for (let i = 0; i < 500; i++) {
+                const value = (await evaluate("globalThis.lumyteUi.GetPopupState()")).split(",");
+                if (predicate(value)) return value;
+                assert.deepEqual(errors, [], label);
+                await delay(20);
+            }
+            throw new Error(`Popup timed out: ${label}: ${await evaluate("globalThis.lumyteUi.GetPopupState()")}`);
+        }
+        await popupState(v => v[0] === "True", "owner registration");
+        await click(20, 20); await wait(v => Number(v[0]) === 1, "owner click");
+        await pointer("mousePressed", 20, 20, "right"); await pointer("mouseReleased", 20, 20, "right");
+        await popupState(v => v[1] === "Open", "context menu");
+        await click(20, 90); await popupState(v => Number(v[2]) === 1, "popup click");
+        await command("Input.dispatchKeyEvent", { type: "keyDown", code: "Enter", key: "Enter", windowsVirtualKeyCode: 13 });
+        await command("Input.dispatchKeyEvent", { type: "keyUp", code: "Enter", key: "Enter", windowsVirtualKeyCode: 13 });
+        await popupState(v => Number(v[2]) === 2, "popup Enter");
+        await click(20, 120); await popupState(v => Number(v[3]) === 2 && Number(v[4]) === 2, "submenu");
+        await click(190, 120); await popupState(v => Number(v[2]) === 3, "submenu click");
+        for (let count = 1; count >= 0; count--) {
+            await command("Input.dispatchKeyEvent", { type: "keyDown", code: "Escape", key: "Escape", windowsVirtualKeyCode: 27 });
+            await command("Input.dispatchKeyEvent", { type: "keyUp", code: "Escape", key: "Escape", windowsVirtualKeyCode: 27 });
+            await popupState(v => Number(v[3]) === count, "Escape depth");
+        }
+        await evaluate("globalThis.lumyteUi.OpenPopup(false)"); await popupState(v => v[1] === "Open", "reopen");
+        await click(20, 20); await popupState(v => Number(v[3]) === 0, "inside-canvas outside press");
+        assert.equal(Number((await state())[0]), 1, "Outside press must not click owner.");
+        await evaluate("globalThis.lumyteUi.OpenPopup(false); globalThis.outsideClicks = 0; const b = document.createElement('button'); b.id = 'outside'; b.textContent = 'Outside'; b.onclick = () => outsideClicks++; b.style.cssText = 'position:fixed;left:600px;top:100px;width:100px;height:40px'; document.body.append(b)");
+        await popupState(v => v[1] === "Open", "reopen for document observer");
+        await command("Input.dispatchMouseEvent", { type: "mousePressed", x: 610, y: 110, button: "left", buttons: 1, clickCount: 1 });
+        await command("Input.dispatchMouseEvent", { type: "mouseReleased", x: 610, y: 110, button: "left", buttons: 0, clickCount: 1 });
+        await popupState(v => Number(v[3]) === 0, "document outside observer");
+        assert.equal(await evaluate("globalThis.outsideClicks"), 1, "DOM input must still reach its element.");
+        await command("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 2, mobile: false });
+        await evaluate("document.querySelector('canvas').focus(); globalThis.lumyteUi.OpenPopup(false)"); await popupState(v => v[1] === "Open", "DPI reopen");
+        await evaluate("document.querySelector('canvas').style.width = '320px'; document.querySelector('canvas').style.height = '240px'");
+        await delay(150); await popupState(v => v[1] === "Open", "resize");
+        await evaluate("document.querySelector('canvas').blur()"); await popupState(v => Number(v[3]) === 0, "blur");
+        assert.equal(await evaluate("document.querySelectorAll('canvas').length"), 1, "Hosted must not create another canvas.");
+        await evaluate("document.querySelector('canvas').remove()"); await delay(200);
+    } else if (process.env.LUMYTE_UI_DIAGNOSTICS) {
         const operator = spawn(process.env.DOTNET ?? "dotnet", [
             "samples/Lumyte.Diagnostics.UI.Automation.Operator.Sample/bin/Release/net10.0/Lumyte.Diagnostics.UI.Automation.Operator.Sample.dll",
             process.env.LUMYTE_DIAGNOSTIC_SERVICE,
@@ -200,7 +247,7 @@ try {
     await evaluate("document.querySelector('button').click()");
     await delay(200);
     assert.deepEqual(errors, [], "Shutdown reported errors.");
-    console.log(process.env.LUMYTE_UI_DIAGNOSTICS
+    console.log(process.env.LUMYTE_UI_POPUPS ? "Browser Hosted popups passed: contextmenu, submenu, Click, Enter, Escape, outside series, document observer, DPI, resize, blur, canvas removal and shutdown." : process.env.LUMYTE_UI_DIAGNOSTICS
         ? "Browser UI Diagnostics HTTP verification passed: external typed Operator, Save, Expect, Enter, count and shutdown."
         : `Browser UI ${process.env.LUMYTE_UI_INPUT_ONLY ? "input/CPU drawing" : "WebGPU"} verification passed: ${process.env.LUMYTE_UI_AUTOMATION ? "Save locator, Enter and assertions; " : ""}DOM capture, outside release, Hosted, keyboard activation, DPI x2 and shutdown.`);
 

@@ -25,3 +25,5 @@ controlは1秒ごとに更新し、同じcontrolの並列入力を拒否しま�
 DisposeAsyncは更新を止め、進行中renewを回収し、Revisionを確認してcontrolを解放します。通信断では既定5秒の終了期限で結果不明を報告し、ゲーム側のlease失効を最終解除手段とします。HttpClientやゲーム接続を閉じて他Actorへ影響させません。
 
 [設計](../../../docs/adr/ui/UI-0010-diagnostics-ui-automation.md)／[実行例](../../../samples/Lumyte.Diagnostics.UI.Automation.Operator.Sample/README.md)
+
+Popupのtarget metadataはParentTargetId、PopupId、ControlGroupIdを含みます。同じgroupの子はcontrol.PageFor(childTargetId)で明示選択し、既存controlのheartbeatとSequenceを使います。所属・許可はサーバーが毎回検証します。この版のContracts/Clientを同時に更新してください。

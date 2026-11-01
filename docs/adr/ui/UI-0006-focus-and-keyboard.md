@@ -153,3 +153,9 @@ FocusedElementとTryFocus(UiElement?)を公開し、宣言更新で対象の参�
 押下とキー認識はButtonElementが保持し、独自部品もElement.OnInputで同じ経路へ参加する。
 Release UI 213件で、focusと押下の継続、最新callback、Tab・repeat・競合、
 独自取消時の物理Up消費、再入通知と破棄、入力情報の更新境界を確認した。
+
+### Window連携でのfocus保存
+
+UI-0011で追加するUiFocusBookmarkはSurfaceとElementの寿命に結び付く。
+同じkey/型/slotの宣言更新では同じElementを復元し、除去済みの実体を別の新規mountへ置き換えて復元しない。
+OSのWindow activationとは分け、候補順のMoveFocusもElementを対象とする。

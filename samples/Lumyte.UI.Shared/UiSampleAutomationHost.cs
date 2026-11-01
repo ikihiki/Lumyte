@@ -3,14 +3,15 @@ using Lumyte.UI.Automation;
 
 namespace Lumyte.UI.SampleSupport;
 
-// The dedicated automation sample forwards no external input. Call from its single UI execution loop.
-internal sealed class UiSampleAutomationHost(UiSurface surface, Func<CancellationToken, ValueTask> nextFrame, TimeProvider? clock = null) : IUiAutomationHost, IAsyncDisposable
+/// <summary>The dedicated automation sample forwards no external input. Call from its single UI execution loop.</summary>
+internal sealed class UiSampleAutomationHost(UiSurface surface, Func<CancellationToken, ValueTask> nextFrame, TimeProvider? clock = null, SemaphoreSlim? inputDomain = null) : IUiAutomationHost, IAsyncDisposable
 {
+    private static long _identity;
     private readonly UiSurface _surface = surface;
-    private readonly SemaphoreSlim _input = new(1, 1);
+
+    private readonly SemaphoreSlim _input = inputDomain ?? new(1, 1);
     private Lease? _lease;
     private bool _closed;
-    private long _identity;
 
     public TimeProvider TimeProvider { get; } = clock ?? TimeProvider.System;
 
@@ -40,7 +41,7 @@ internal sealed class UiSampleAutomationHost(UiSurface surface, Func<Cancellatio
             throw new ObjectDisposedException(nameof(UiSampleAutomationHost));
         }
 
-        _lease = new(this, checked(++_identity));
+        _lease = new(this, Interlocked.Increment(ref _identity));
         return _lease;
     }
 

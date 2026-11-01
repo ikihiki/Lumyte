@@ -10,12 +10,14 @@ internal sealed class LoopbackHandler : HttpMessageHandler
     private readonly ConcurrentQueue<(OperationInvocation? Invocation, TaskCompletionSource<HttpResponseMessage> Completion)> _requests = new();
     private readonly TaskCompletionSource<Guid> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Thread _thread;
+    private readonly bool _popups;
     private bool _stop;
     private int _clicks;
     private int _dropStarts;
 
-    internal LoopbackHandler()
+    internal LoopbackHandler(bool popups = false)
     {
+        _popups = popups;
         _thread = new Thread(Run) { IsBackground = true };
         _thread.Start();
     }
@@ -73,6 +75,11 @@ internal sealed class LoopbackHandler : HttpMessageHandler
         try
         {
             using var h = new Harness(screenshots: true);
+            if (_popups)
+            {
+                h.AddPopup();
+            }
+
             _ready.SetResult(h.Session);
             while (!Volatile.Read(ref _stop))
             {
