@@ -16,6 +16,8 @@ public sealed partial class UiAutomationDiagnosticsClient : IAsyncDisposable
     private bool _catalogChecked;
     private bool _disposed;
 
+    private int _subsystemVersion;
+
     /// <summary>Initializes a new instance of the <see cref="UiAutomationDiagnosticsClient"/> class.</summary>
     /// <param name="http">A borrowed HttpClient with operator authentication and BaseAddress.</param>
     /// <param name="sessionId">The game session, never a game enrollment credential.</param>
@@ -67,7 +69,7 @@ public sealed partial class UiAutomationDiagnosticsClient : IAsyncDisposable
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(Options.OperationTimeout);
-        Dictionary<string, DiagnosticValue> arguments = new() { ["target-id"] = DiagnosticValue.From(targetId.ToString("D")), ["duration-ms"] = DiagnosticValue.From(5000L) };
+        Dictionary<string, DiagnosticValue> arguments = new() { ["target-id"] = DiagnosticValue.From(targetId.ToString("D")), ["duration-ms"] = DiagnosticValue.From(5000L), };
         IReadOnlyDictionary<string, DiagnosticValue> receipt = await InvokeAsync("control-acquire", arguments, null, deadline.Token);
         var control = new UiRemoteControl(this, targetId, Guid.Parse(Text(receipt, "control-id")), Number(receipt, "next-sequence"));
         lock (_controls)
@@ -183,6 +185,15 @@ public sealed partial class UiAutomationDiagnosticsClient : IAsyncDisposable
         }
     }
 
+    internal async Task RequireSchemaAsync(int version, CancellationToken token)
+    {
+        await CheckCatalogAsync(token);
+        if (_subsystemVersion < version)
+        {
+            throw new UiRemoteAutomationException("unsupported-catalog");
+        }
+    }
+
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> type, CancellationToken token)
     {
         const int Limit = 4 * 1024 * 1024;
@@ -229,6 +240,7 @@ public sealed partial class UiAutomationDiagnosticsClient : IAsyncDisposable
                 throw new UiRemoteAutomationException("unsupported-catalog");
             }
 
+            _subsystemVersion = catalog!.Subsystem.SchemaVersion;
             _catalogChecked = true;
         }
         finally

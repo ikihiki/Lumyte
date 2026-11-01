@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.UI.Shared/Lumyte.UI.Shared.csproj" />
+    <ProjectReference Include="../../src/UI/Lumyte.UI.TextEditing.Parley/Lumyte.UI.TextEditing.Parley.csproj" />
+    <ProjectReference Include="../../src/UI/Lumyte.UI.Windowing.TextInput/Lumyte.UI.Windowing.TextInput.csproj" />
+    <ProjectReference Include="../../src/Platform/Lumyte.Platform.Windows.TextInput/Lumyte.Platform.Windows.TextInput.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
+  </ItemGroup>
+</Project>

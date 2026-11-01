@@ -30,6 +30,12 @@ public sealed class UiRemoteExpect
     /// <returns>The completed assertion.</returns>
     public async Task ToBeFocusedAsync(CancellationToken cancellationToken = default) => await _locator.AssertAsync("focused", null, cancellationToken);
 
+    /// <summary>Checks committed text using explicit inspection permission.</summary>
+    /// <param name="text">The expected value.</param>
+    /// <param name="cancellationToken">Cancels the assertion.</param>
+    /// <returns>The completed assertion.</returns>
+    public Task ToHaveValueAsync(string text, CancellationToken cancellationToken = default) => _locator.ToHaveValueAsync(text, cancellationToken);
+
     /// <summary>Waits for an exact nonnegative count.</summary>
     /// <param name="count">The expected count.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>

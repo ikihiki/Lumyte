@@ -29,7 +29,13 @@ public sealed partial class UiSurface
             enabled &= element.Widget.IsEnabled;
             hitTestVisible &= element.Widget.HitTestVisible;
             bool focusable = ReferenceEquals(element.InputVersion, _inputVersion) && element.InputFocusable;
-            nodes.Add(new(element.AutomationId, parent, element.Widget.TestId, element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions));
+            bool redacted = element.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree;
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions));
+            if (redacted)
+            {
+                return;
+            }
+
             var distinct = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             IEnumerable<UiElement> children = element.AutomationChildren ?? throw new InvalidOperationException("Semantic children cannot be null.");
             foreach (UiElement child in children)
@@ -63,14 +69,28 @@ public sealed partial class UiSurface
             if (result != UiInputResult.Unhandled)
             {
                 UiAutomationId? target = result == UiInputResult.Handled && (node.SupportedActions & UiAutomationActions.Click) != 0 ? node.AutomationId : null;
-                return new(hit?.AutomationId, target);
+                return RedactProbe(hit, target);
             }
         }
 
-        return new(hit?.AutomationId, null);
+        return RedactProbe(hit, null);
     }
 
     internal UiAutomationId AllocateAutomationId() => new(_automationSurfaceId, checked(++_automationIdentity));
+
+    private static UiPointerProbe RedactProbe(UiElement? hit, UiAutomationId? target)
+    {
+        UiElement? boundary = null;
+        for (UiElement? node = hit; node is not null; node = node.Parent)
+        {
+            if (node.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+            {
+                boundary = node;
+            }
+        }
+
+        return boundary is null ? new(hit?.AutomationId, target) : new(boundary.AutomationId, null);
+    }
 
     private static Rect2D Rectangle(UiInputBounds bounds)
     {

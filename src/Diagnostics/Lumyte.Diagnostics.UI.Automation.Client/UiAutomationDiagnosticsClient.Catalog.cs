@@ -8,7 +8,7 @@ public sealed partial class UiAutomationDiagnosticsClient
 
     private static bool Supports(DiagnosticSubsystemCatalog? catalog)
     {
-        if (catalog?.Subsystem.SchemaVersion != 1 || catalog.Subsystem.Id != "ui.automation")
+        if (catalog?.Subsystem.SchemaVersion is not (1 or 2 or 3) || catalog.Subsystem.Id != "ui.automation")
         {
             return false;
         }

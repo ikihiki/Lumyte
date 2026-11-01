@@ -319,6 +319,61 @@ public sealed class PopupTests
         Assert.Equal(1, f.Clicks);
     }
 
+    /// <summary>Checks a menu waits for editor suspension and retains it through GPU retirement.</summary>
+    [Fact]
+    public void MenuGuardSpansPreparationAndCompletePresentationDrain()
+    {
+        using var fixture = new Fixture();
+        fixture.Surface.MoveFocus(UiFocusNavigation.First);
+        var suspension = new TaskCompletionSource<IAsyncDisposable>();
+        int releases = 0;
+        using IDisposable registration = fixture.Popups.RegisterMenuGuard(fixture.Owner, _ => new(suspension.Task));
+        UiPopupHandle popup = fixture.Open();
+        Assert.NotEqual(UiPopupState.Open, popup.State);
+        Assert.Same(fixture.Anchor, fixture.Surface.FocusedElement);
+        suspension.SetResult(new GuardToken(() => releases++));
+        fixture.Pump();
+        Assert.Equal(UiPopupState.Open, popup.State);
+        fixture.Source.RetireGate = new();
+        popup.Close();
+        fixture.Pump();
+        Assert.Equal(0, releases);
+        fixture.Source.RetireGate.SetResult();
+        for (int frame = 0; frame < 100 && popup.State != UiPopupState.Closed; frame++)
+        {
+            fixture.Pump();
+            Thread.Yield();
+        }
+
+        Assert.Equal(UiPopupState.Closed, popup.State);
+        Assert.Equal(1, releases);
+    }
+
+    /// <summary>Checks cancellation callbacks observe closing before reentering the popup manager.</summary>
+    [Fact]
+    public void GuardCancellationObservesClosingAndCanRequestCloseAgain()
+    {
+        using var fixture = new Fixture();
+        UiPopupHandle? popup = null;
+        UiPopupState? observed = null;
+        CancellationTokenRegistration cancellation = default;
+        using IDisposable registration = fixture.Popups.RegisterMenuGuard(fixture.Owner, token =>
+        {
+            cancellation = token.Register(() =>
+            {
+                observed = popup!.State;
+                popup.Close();
+            });
+            return ValueTask.FromResult<IAsyncDisposable>(new GuardToken(() => { }));
+        });
+        popup = fixture.Open();
+        popup.Close();
+        fixture.Pump();
+        Assert.Equal(UiPopupState.Closing, observed);
+        Assert.Equal(UiPopupState.Closed, popup.State);
+        cancellation.Dispose();
+    }
+
     private sealed class Participant : IAsyncDisposable
     {
         internal TaskCompletionSource Gate { get; } = new();
@@ -329,6 +384,15 @@ public sealed class PopupTests
         {
             Calls++;
             return new(Gate.Task);
+        }
+    }
+
+    private sealed class GuardToken(Action release) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            release();
+            return ValueTask.CompletedTask;
         }
     }
 }

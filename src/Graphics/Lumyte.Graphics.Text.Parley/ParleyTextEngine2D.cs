@@ -18,7 +18,7 @@ public sealed unsafe class ParleyTextEngine2D : IDisposable
     /// <summary>Initializes a new instance of the <see cref="ParleyTextEngine2D"/> class without reading operating-system fonts.</summary>
     public ParleyTextEngine2D()
     {
-        if (NativeMethods.lp_abi_version() != 1)
+        if (NativeMethods.lp_abi_version() != 2)
         {
             throw new NotSupportedException("The loaded Parley native library has an incompatible ABI.");
         }
@@ -303,6 +303,7 @@ public sealed unsafe class ParleyTextEngine2D : IDisposable
                                 direction = (uint)options.BaseDirection,
                                 palette_index = (uint)options.ColorPaletteIndex,
                                 decorations = (uint)options.Decorations,
+                                editing = options.IncludeEditingGeometry ? 1u : 0u,
                                 fallback_font_ids = fallbackIds,
                                 fallback_font_count = (nuint)fallbacks.Length,
                                 features = featureValues,
@@ -323,6 +324,29 @@ public sealed unsafe class ParleyTextEngine2D : IDisposable
                             LpLayoutView view = default;
                             ParleyNativeStatus.Check(NativeMethods.lp_layout_view(layout, &view));
                             ParleyTextLayout2D snapshot = ParleyLayoutImporter2D.Import(text, source, view, paints, _fontNames);
+                            LpEditingView editing = default;
+                            ParleyNativeStatus.Check(NativeMethods.lp_layout_editing_view(layout, &editing));
+                            if (editing.caret_count > 2097154 || editing.range_count > 2097152)
+                            {
+                                throw new InvalidDataException("The text editing geometry limit was exceeded.");
+                            }
+
+                            var carets = new List<ParleyCaret2D>();
+                            for (nuint i = 0; i < editing.caret_count; i++)
+                            {
+                                LpCaret caret = editing.carets[i];
+                                carets.Add(new(source.Utf16Offset(caret.index), caret.affinity != 0, new(caret.x, caret.y, caret.width, caret.height), source.Utf16Offset(caret.previous_index), caret.previous_affinity != 0, source.Utf16Offset(caret.next_index), caret.next_affinity != 0));
+                            }
+
+                            var ranges = new List<ParleySelectionRect2D>();
+                            for (nuint i = 0; i < editing.range_count; i++)
+                            {
+                                LpSelectionRect range = editing.ranges[i];
+                                int start = source.Utf16Offset(range.start);
+                                ranges.Add(new(start, source.Utf16Offset(range.end) - start, new(range.x, range.y, range.width, range.height)));
+                            }
+
+                            snapshot = new(snapshot.Layout, snapshot.Glyphs, carets, ranges);
                             GC.KeepAlive(owner);
                             return snapshot;
                         }

@@ -1,0 +1,5 @@
+# Lumyte.Platform.TextInput.Abstractions
+
+OS text inputとUIの間の文書session契約です。FocusWindowとPresentationWindowを明示し、UI Widgetをbackendへ渡しません。session/generation/sequenceで古い入力を拒否し、幾何は文書revisionとlayout revision付きのclient論理座標で渡します。
+
+`ITextInputService.Advance`と`DrainKeys`をownerで進め、終了もRequestEnd→Advance→IsReleasedの順でdrainします。ITextInputInputGateは自動操作用の物理編集排他です。候補操作用のidle判定はcompositionを許可し、通常Fill用のidle判定とは分けます。未対応backendはSystem候補を維持します。

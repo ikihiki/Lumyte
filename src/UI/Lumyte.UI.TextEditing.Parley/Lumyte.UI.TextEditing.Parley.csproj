@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <ProjectReference Include="../Lumyte.UI.TextEditing/Lumyte.UI.TextEditing.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
+  </ItemGroup>
+</Project>

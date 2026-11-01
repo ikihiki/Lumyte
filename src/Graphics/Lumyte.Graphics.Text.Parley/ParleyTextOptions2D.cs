@@ -3,6 +3,9 @@ namespace Lumyte.Graphics.Text.Parley;
 /// <summary>Backend-independent paragraph settings consumed by Parley.</summary>
 public sealed record ParleyTextOptions2D
 {
+    /// <summary>Gets a value indicating whether visual caret and selection geometry is included.</summary>
+    public bool IncludeEditingGeometry { get; init; }
+
     /// <summary>Gets the registered primary family; null selects the first registered font.</summary>
     public string? FontFamily { get; init; }
 
