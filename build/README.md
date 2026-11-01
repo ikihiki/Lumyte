@@ -156,6 +156,21 @@ tarで実行権限とsymlinkを保持し、`build-<runner image>-<architecture>-
 通常のテストではrunner自身と対象projectの両方に`--no-build --no-restore`を指定します。
 BrowserとNativeAOTは別構成のため、引き続き独立したjobで必要なprojectだけをpublishします。
 
+LinuxのDXCは`dxc-<architecture>` artifactとして別途1日間保存し、Linuxのtest／format jobでは
+setupより先に展開します。DXCのキャッシュはbuild jobで利用しますが、後段への受け渡しは
+同じrunのartifactで保証します。キャッシュが削除されてもARM64のDXCを再コンパイルしません。
+
+実行時間を評価するときはrunner待機とstep実行時間を分けます。
+PR #103のrun `41230245255`は全体約55分で、Linux ARM64の後段setupが844秒かかりました。
+このjobではDXCキャッシュが見つからず、DXCをソースから再ビルドしていました。
+同runのbuild jobではキャッシュを復元できていたため、後段でも取得できるとは限りません。
+今回のartifact共有はこの再ビルドを除去しますが、短縮量は次のCIで計測する必要があります。
+
+追加の短縮候補は、4環境のbuild matrixをOS別または環境別のjobへ分離し、
+各test jobが必要なproducerだけを待つ構成です。現状の`needs: build`は全matrixの完了を待ちます。
+runnerの開始待ちも長いため、stepの高速化だけで全体時間が同じ割合で短くなるとは限りません。
+Browser／AOTの独立実行と、全検証成功後にpackageを作る条件は維持します。
+
 ## ParleyのNative／WASM
 
 | Target | 処理 |

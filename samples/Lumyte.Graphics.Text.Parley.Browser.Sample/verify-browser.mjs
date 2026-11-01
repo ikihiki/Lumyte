@@ -43,8 +43,9 @@ try {
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
         "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
         ...(process.platform === "win32" ? ["--use-angle=d3d11"] : [
-            "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--use-webgpu-adapter=swiftshader",
-            "--use-angle=vulkan", "--disable-vulkan-surface",
+            // Use bundled SwiftShader for both ANGLE and Dawn. Forcing ANGLE
+            // to Vulkan can select Mesa while Dawn is pinned to SwiftShader.
+            "--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader",
         ]),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"], detached: browserProcessGroup });

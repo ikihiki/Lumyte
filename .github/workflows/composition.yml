@@ -100,6 +100,20 @@ jobs:
           . ./tools/setup/activate.ps1
           Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'ArchiveCiBuild', '--configuration', 'Release', '--host-only')
 
+      # Downstream setup needs DXC before the compiled solution is restored.
+      # Pass it within this run: a cache may be evicted between build and test.
+      - name: Upload Linux DXC libraries
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dxc-${{ matrix.arch }}
+          path: |
+            artifacts/dev-env/dxc/lib/
+            artifacts/dev-env/dxc/version.txt
+            artifacts/dev-env/dxc/LICENSE.TXT
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload compiled solution
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -145,14 +159,11 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Cache Linux DXC libraries
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      - name: Download Linux DXC libraries
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
+          name: dxc-${{ matrix.arch }}
+          path: artifacts/dev-env/dxc/
 
       - name: Cache dependencies
         uses: ./.github/actions/cache-dependencies
@@ -420,15 +431,12 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Cache Linux DXC libraries
+      - name: Download Linux DXC libraries
         if: runner.os == 'Linux'
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
+          name: dxc-x64
+          path: artifacts/dev-env/dxc/
 
       - name: Cache dependencies
         uses: ./.github/actions/cache-dependencies
