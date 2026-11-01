@@ -26,6 +26,9 @@ public static partial class Compose
             /// <summary>Gets an immutable snapshot of the children owned by the background slot.</summary>
             public WidgetChildren BackgroundChildren { get; }
 
+            /// <inheritdoc/>
+            protected override UiElement CreateElement() => new ButtonElement(this);
+
             [ComposeSlot]
             private static void Background(Button target, Widget[] children) =>
                 target.BackgroundChildren.Initialize(children);

@@ -34,3 +34,20 @@ Disposeは冪等で、Elementの寿命を終了して宣言を残す。再接続
 CPUの作成threadへ固定せず、明示的な並行操作は利用者が同期する。
 
 [所有権・状態・公開順のADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)
+
+## レイアウト
+
+SetViewportで論理サイズを渡し、UpdateLayoutで更新する。
+RootElementとruntime slotのSize / Boundsから配置を参照する。Widgetには配置getterを持たせない。
+子へ制約を渡し、確定サイズを受け取り、位置だけを指定するone-pass方式を使う。
+
+```csharp
+surface.SetViewport(new(800, 600));
+surface.UpdateLayout();
+System.Numerics.Vector2 size = surface.RootElement.Size;
+```
+
+独自コンテナーは型付きElementのLayoutOverrideでGetChildren(Widget.Children)を使う。
+LayoutChildとSetChildOffsetは直接の子Elementを受け取り、各可視子に一回ずつ適用する。
+設定差分はCompareConfigurationからUiInvalidationへ分類し、共通の寸法差分は基盤で合成する。
+通常の宣言setterはdirtyを伝播しない。

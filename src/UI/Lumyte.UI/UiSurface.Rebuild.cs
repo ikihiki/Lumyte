@@ -114,6 +114,14 @@ public sealed partial class UiSurface
             }
         }
 
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if ((update.Invalidation & UiInvalidation.Layout) != 0)
+            {
+                update.Element.MarkLayoutDirty();
+            }
+        }
+
         _rootElement = plan.Root;
         TreeRevision = checked(TreeRevision + 1);
         if (structureChanged)
