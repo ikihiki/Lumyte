@@ -5,7 +5,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Shared;
 
 /// <summary>Reads and packs compiled shader structure layouts.</summary>
-public sealed class ShaderDataLayout : IShaderDataLayout
+public sealed partial class ShaderDataLayout : IShaderDataLayout
 {
     private readonly Dictionary<string, ShaderMember> _members = [];
     private readonly JsonElement _referenceTargets;
@@ -32,21 +32,15 @@ public sealed class ShaderDataLayout : IShaderDataLayout
     /// <param name="name">The name input.</param>
     /// <returns>The processed result.</returns>
     public static ShaderDataLayout Data(ShaderTargetData target, string name)
-    {
-        using var document = JsonDocument.Parse(target.ReflectionJson);
-        if (!document.RootElement.TryGetProperty("lumyteAbi", out JsonElement abi) || abi.GetInt32() != 1)
-        {
-            throw new NotSupportedException("The artifact has no supported shader data ABI.");
-        }
+        => GetReflection(target).Data(name);
 
-        JsonElement type = DataType(document.RootElement, name);
-        if (type.ValueKind == JsonValueKind.Undefined)
-        {
-            throw new NotSupportedException("The artifact is missing the shader data type schema: " + name);
-        }
-
-        return new(type, document.RootElement);
-    }
+    /// <summary>Gets a cached data layout without repeatedly extracting the artifact target.</summary>
+    /// <param name="artifact">The immutable shader artifact owning the cache lifetime.</param>
+    /// <param name="target">The backend code target.</param>
+    /// <param name="name">The shader data structure name.</param>
+    /// <returns>The immutable layout shared by buffers using this artifact and target.</returns>
+    public static ShaderDataLayout Data(ShaderArtifact artifact, ShaderTarget target, string name)
+        => _artifacts.GetValue(artifact, static _ => new()).Data(artifact, target, name);
 
     /// <summary>Selects the shader stage declaring a root parameter.</summary>
     /// <param name="vertex">The vertex input.</param>
@@ -131,26 +125,14 @@ public sealed class ShaderDataLayout : IShaderDataLayout
     /// <param name="name">The name input.</param>
     /// <returns>The processed result.</returns>
     public static bool HasRoot(ShaderTargetData target, string? name = null)
-    {
-        using var document = JsonDocument.Parse(target.ReflectionJson);
-        return document.RootElement.GetProperty("parameters").EnumerateArray().Any(p => p.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" && p.GetProperty("name").GetString() != "lumyteDrawInfo" && (name == null || p.GetProperty("name").GetString() == name));
-    }
+        => GetReflection(target).HasRoot(name);
 
     /// <summary>Provides the immutable root values.</summary>
     /// <param name="target">The target input.</param>
     /// <param name="name">The name input.</param>
     /// <returns>The processed result.</returns>
     public static ShaderDataLayout Root(ShaderTargetData target, string name)
-    {
-        using var document = JsonDocument.Parse(target.ReflectionJson);
-        JsonElement parameter = document.RootElement.GetProperty("parameters").EnumerateArray().SingleOrDefault(p => p.GetProperty("name").GetString() == name);
-        if (parameter.ValueKind == JsonValueKind.Undefined)
-        {
-            throw new ArgumentException("The program does not declare this root parameter.", nameof(name));
-        }
-
-        return new(parameter.GetProperty("type").GetProperty("elementType"), document.RootElement, true);
-    }
+        => GetReflection(target).Root(name);
 
     /// <inheritdoc/>
     public string ReferenceKind(string path) => _members[path].Kind;
