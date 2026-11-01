@@ -60,6 +60,11 @@ public partial class UiElement
             result |= UiInvalidation.Layout;
         }
 
+        if (Widget.ClipToBounds != next.ClipToBounds)
+        {
+            result |= UiInvalidation.Input | UiInvalidation.Visual;
+        }
+
         return result;
     }
 

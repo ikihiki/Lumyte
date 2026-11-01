@@ -15,6 +15,8 @@
   <ItemGroup>
     <SlangShader Include="Shaders/drawing-vertex.slang" ResourceName="Lumyte.Drawing2D.drawing-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/drawing-fragment.slang" ResourceName="Lumyte.Drawing2D.drawing-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/rectangles-vertex.slang" ResourceName="Lumyte.Drawing2D.rectangles-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/rectangles-fragment.slang" ResourceName="Lumyte.Drawing2D.rectangles-fragment" Stage="fragment" />
   </ItemGroup>
   <Import Project="../../../tools/shaders/Slang.targets" />
 </Project>

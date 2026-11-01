@@ -2,7 +2,7 @@
 
 - 状態: 採用
 - 日付: 2026-10-10
-- 更新: 2026-10-26
+- 更新: 2026-10-29
 
 ## 背景
 
@@ -33,7 +33,7 @@ DrawList2Dは、描画順の命令列、型別の配列、順序から型別offs
 
 clipは不変のpath列の積集合で、ClipRectも矩形pathへ正規化する。各clipは追加時の変換を保存し、その後のCanvas変換で動かさない。scissorは描画領域を保守的に狭める最適化であり、回転・せん断・曲線の正確なclipはfragment側で評価する。PathBuilder2DはMove前の線・曲線・Closeを拒否し、Buildで配列をコピーする。
 
-Color2Dはstraight alphaのsRGB入力で各成分を[0,1]に限定する。CPUでsRGBをdecodeし、alphaを掛けたlinear premultiplied RGBAをshaderへ渡す。gradientの補間と描画の合成もこの表現で行う。通常合成はRGB・alphaとも `source + destination * (1 - sourceAlpha)`。Rgba8Srgbのencodeはattachmentに任せ、Rgba16Floatもdisplay-linear premultipliedとして使う。Loadする既存内容にも同じ表現を要求する。clear色も同じ変換を通す。
+Color2Dはstraight alphaのsRGB入力で各成分を[0,1]に限定する。constructorと各成分のinitアクセサーでfiniteかつ範囲内であることを確認し、不正値はArgumentOutOfRangeExceptionとする。with・オブジェクト初期化も同じ検証を通し、defaultは全成分0の有効な透明色とする。UIはRGBAを再検証せず、この値型の契約を利用する。CPUでsRGBをdecodeし、alphaを掛けたlinear premultiplied RGBAをshaderへ渡す。gradientの補間と描画の合成もこの表現で行う。通常合成はRGB・alphaとも `source + destination * (1 - sourceAlpha)`。Rgba8Srgbのencodeはattachmentに任せ、Rgba16Floatもdisplay-linear premultipliedとして使う。Loadする既存内容にも同じ表現を要求する。clear色も同じ変換を通す。
 
 ### 基本図形とpaintの標準GPU経路
 
@@ -139,6 +139,7 @@ CPU記録・実装選択・共有資源・GPU実行の境界が明確になり�
 +namespace Lumyte.Graphics.Drawing2D
 +{
 +    public readonly record struct Rect2D(float X, float Y, float Width, float Height);
++    // constructorとinit/withで各成分を検証。既存のrecord APIと名前付き引数を維持する。
 +    public readonly record struct Color2D(float R, float G, float B, float A);
 +    public enum FillRule2D { NonZero, EvenOdd }
 +    public enum PathVerb2D { Move, Line, Quadratic, Cubic, Close }

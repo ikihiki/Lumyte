@@ -4,6 +4,8 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
+Color2Dは生成時と各成分のinit（withを含む）で、RGBAがfiniteかつ0〜1であることを検査します。不正値はArgumentOutOfRangeExceptionです。defaultは透明色として有効で、従来の名前付き引数・分解・値比較も使えます。UI側で同じ色検証を繰り返す必要はありません。
+
 ```csharp
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
@@ -32,6 +34,12 @@ targetViewは同一deviceの単一mip/layerのRgba8SrgbまたはRgba16Float atta
 初期target状態はColorAttachment、入力画像はSampledへ可視化済みとします。
 PrepareAsyncはgraphを作らず、固定資源とbatchを準備します。Recordは一回だけ使い、GPU完了後に
 command buffer、準備ownerの順に解放します。
+
+既定shaderの単色FillRectは、連続する最大1,024矩形をinstance描画へまとめます。
+回転・拡大・DPI・最大8段の矩形clipと、元の4×4 coverage・描画順を維持します。
+任意path clip、他のpaint、外部shaderは汎用の評価経路を使います。
+upload/data bufferとargument tableはRenderer単位で、準備ownerがGPU完了後に解放されてから再利用します。
+idleは最大3組・8 MiBです。未完了の準備間で共有せず、device lossや失敗時は破棄します。
 
 11描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
 CreateDefault()はdeviceやDIを使わず既定構成を作ります。UseGraphics2Dによる登録と後勝ち上書きも可能です。
@@ -99,5 +107,7 @@ rendererとpreparedは内部でその所有者を共有し、最後の使用が�
 validateResourcesにはResourceLease.Value等の有効性検査を接続できます。検査失敗時に埋め込みへ切り替えません。
 
 Resources連携はLumyte.Resources.Graphics.Drawing2Dを使います。
+
+既定fragment shaderは命令数に応じて8・16・256要素の作業配列を使い分けます。単純なshape・paint・clipで256要素を各coverageサンプルに初期化する負荷を避け、既存の256命令上限と4×4サンプルのcoverage評価を維持します。8/9・16/17・256命令はGPU画素テストで検証します。
 AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成します。
 元のResourceLeaseを所有者として一つだけ保持し、描画用のproviderや別のpipeline leaseは作りません。
