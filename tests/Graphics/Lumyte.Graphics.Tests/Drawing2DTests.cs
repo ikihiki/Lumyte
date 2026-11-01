@@ -596,9 +596,9 @@ public sealed partial class Drawing2DTests
         AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
     }
 
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1)
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false)
     {
-        using var resources = new ExternalDrawingResources(device);
+        using ExternalDrawingResources? resources = useDefaultResources ? null : new(device);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         draw(canvas);
@@ -618,7 +618,7 @@ public sealed partial class Drawing2DTests
             Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled | TextureUsage.CopySource,
         };
         RenderGraphTexture target = graph.CreateTexture(description, "canvas");
-        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources.Resources, resourceOwner: resources);
+        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources?.Resources, resourceOwner: resources);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
@@ -663,9 +663,17 @@ public sealed partial class Drawing2DTests
         {
             commands?.Dispose();
             plan?.Dispose();
-            Assert.Equal(0, resources.Disposals);
+            if (resources is not null)
+            {
+                Assert.Equal(0, resources.Disposals);
+            }
+
             drawing.Dispose();
-            Assert.Equal(1, resources.Disposals);
+            if (resources is not null)
+            {
+                Assert.Equal(1, resources.Disposals);
+            }
+
             submission?.Dispose();
         }
     }
