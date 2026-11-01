@@ -4,8 +4,9 @@ namespace Lumyte.UI;
 public partial class ButtonElement
 {
     private long? _pressedPointer;
+    private bool _pointerInside;
 
-    /// <summary>Gets a value indicating whether an owned pointer is inside the prepared input region.</summary>
+    /// <summary>Gets a value indicating whether the instance owns a key press or its pointer is inside.</summary>
     public bool IsPressed { get; private set; }
 
     /// <inheritdoc/>
@@ -13,7 +14,7 @@ public partial class ButtonElement
     {
         if (context.Input is not UiPointerInput pointer)
         {
-            return UiInputResult.Unhandled;
+            return HandleKeyInput(in context);
         }
 
         switch (pointer.Phase)
@@ -24,14 +25,21 @@ public partial class ButtonElement
                     return UiInputResult.StopPropagation;
                 }
 
-                if (_pressedPointer is not null)
+                if (_pressedPointer is not null || _pressedKey is not null)
                 {
                     return UiInputResult.Handled;
                 }
 
-                return context.CapturePointer() ? UiInputResult.Handled : UiInputResult.StopPropagation;
+                if (!context.CapturePointer())
+                {
+                    return UiInputResult.StopPropagation;
+                }
+
+                context.RequestFocus();
+                return UiInputResult.Handled;
             case UiPointerPhase.Move when context.IsCaptured:
-                IsPressed = context.IsInside;
+                _pointerInside = context.IsInside;
+                UpdatePressedState();
                 return UiInputResult.Handled;
             case UiPointerPhase.Up when context.IsCaptured:
                 if (context.IsInside)
@@ -52,7 +60,8 @@ public partial class ButtonElement
     protected override void OnPointerCaptureChanged(UiPointerCaptureState state)
     {
         _pressedPointer = state.IsCaptured ? state.PointerId : null;
-        IsPressed = state.IsCaptured && state.IsInside;
+        _pointerInside = state.IsCaptured && state.IsInside;
+        UpdatePressedState();
     }
 
     /// <inheritdoc/>

@@ -4,12 +4,13 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Input.Abstractions;
 using Lumyte.UI;
 using static Lumyte.UI.Compose;
 
-if (args is not ["record-only"] and not ["pointer-only"] and not ["vulkan"] and not ["wgpu"])
+if (args is not ["record-only"] and not ["pointer-only"] and not ["keyboard-only"] and not ["vulkan"] and not ["wgpu"])
 {
-    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|vulkan|wgpu");
+    Console.Error.WriteLine("Usage: dotnet run --project samples/Lumyte.UI.Sample -- record-only|pointer-only|keyboard-only|vulkan|wgpu");
     return 1;
 }
 
@@ -32,6 +33,20 @@ if (args is ["pointer-only"])
     surface.Dispatch(new UiFocusLostInput());
     Console.WriteLine($"Clicks {clicks}; pressed {((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed}");
     return clicks == 1 && !((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed ? 0 : 1;
+}
+
+if (args is ["keyboard-only"])
+{
+    surface.SetViewport(new(240, 160));
+    surface.UpdateLayout();
+    surface.Dispatch(new UiKeyInput(Key.Tab, true));
+    surface.Dispatch(new UiKeyInput(Key.Tab, false));
+    bool focused = ReferenceEquals(surface.FocusedElement?.Widget, button);
+    surface.Dispatch(new UiKeyInput(Key.Space, true));
+    bool pressed = ((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed;
+    surface.Dispatch(new UiKeyInput(Key.Space, false));
+    Console.WriteLine($"Clicks {clicks}; focused {focused}; pressed during Down {pressed}; pressed after Up {((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed}");
+    return clicks == 1 && focused && pressed && !((ButtonElement)surface.RootElement.Children[0].Children[1]).IsPressed ? 0 : 1;
 }
 
 using VulkanDevice? vulkan = args[0] == "vulkan" ? VulkanDevice.Create() : null;

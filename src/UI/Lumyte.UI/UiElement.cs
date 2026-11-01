@@ -117,6 +117,7 @@ public partial class UiElement
         _inputChildren = Array.Empty<UiElement>();
         _inputSubtreeBounds = default;
         InputVersion = null;
+        InputFocusable = false;
         InputBounds = default;
         InputOrigin = default;
         OnUnmounted();

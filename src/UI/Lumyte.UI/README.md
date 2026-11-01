@@ -66,3 +66,10 @@ UpdateLayout成功後にUiPointerInputをDispatchする。Dispatchは配置の�
 UiInputContext.ReceiverはElementであり、独自部品はElement.OnInputで処理する。
 capture・押下状態は同じ実体に残り、宣言交換だけで作り直さない。
 型/key変更・除去・無効化やPrepareUpdateで要求した取消は、実体の清掃前に通知する。
+
+## Focusとキー
+
+Focusableは宣言の設定、focus対象と押下はElementの状態として保持する。
+通常hostはUiKeyInputをDispatchし、Tabと各コントロールのキー認識を共通経路で処理する。
+低水準の明示操作にはFocusedElementとTryFocus(UiElement?)を使う。
+宣言の再生成ではfocusやkey captureを付け替えず、除去・不適格化・明示取消だけを処理する。

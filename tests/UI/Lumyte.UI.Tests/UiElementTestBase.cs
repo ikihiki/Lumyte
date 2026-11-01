@@ -26,11 +26,16 @@ public abstract class UiElementTestBase
     /// <summary>Reads button state from its runtime instance, including a recently removed instance.</summary>
     /// <param name="declaration">The current or previously adopted test configuration.</param>
     /// <returns>The runtime press state.</returns>
-    protected bool Pressed(Widget declaration)
+    protected bool Pressed(Widget declaration) => ((ButtonElement)Instance(declaration)).IsPressed;
+
+    /// <summary>Finds a test-owned instance without storing runtime handles on product declarations.</summary>
+    /// <param name="declaration">The current or previously adopted configuration.</param>
+    /// <returns>The persistent runtime instance.</returns>
+    protected UiElement Instance(Widget declaration)
     {
         if (_instances.TryGetValue(declaration, out UiElement? known))
         {
-            return ((ButtonElement)known).IsPressed;
+            return known;
         }
 
         foreach (UiSurface surface in _surfaces)
@@ -42,7 +47,7 @@ public abstract class UiElementTestBase
                     if (ReferenceEquals(element.Widget, declaration))
                     {
                         _instances.Add(declaration, element);
-                        return ((ButtonElement)element).IsPressed;
+                        return element;
                     }
                 }
             }

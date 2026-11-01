@@ -88,6 +88,61 @@ public sealed class RebuildInputTests : UiElementTestBase
         Assert.False(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(1, 1))));
     }
 
+    /// <summary>Checks a held key and focus continue on the matched button with its latest callback.</summary>
+    [Fact]
+    public void KeyboardPressRetainsFocusAndUsesTheNewCallback()
+    {
+        int clicks = 0;
+        Definitions.Button first = Button(key: "button");
+        using UiSurface surface = Surface(Panel()[first]);
+        UiElement element = Instance(first);
+        Assert.True(surface.TryFocus(element));
+        Assert.True(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, true)));
+        Definitions.Button next = Button(key: "button", onClick: () => clicks++);
+        surface.Rebuild(Panel()[next]);
+        surface.UpdateLayout();
+        Assert.Same(element, surface.FocusedElement);
+        Assert.Same(next, element.Widget);
+        Assert.True(Pressed(next));
+        Assert.True(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, false)));
+        Assert.False(Pressed(next));
+        Assert.Equal(1, clicks);
+    }
+
+    /// <summary>Checks changed keys cancel the removed button's capture and drop its focus.</summary>
+    [Fact]
+    public void ChangedKeyDropsOldFocusAndCapture()
+    {
+        Definitions.Button first = Button(key: "old", width: 20, height: 20);
+        using UiSurface surface = Surface(Panel()[first]);
+        Assert.True(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(1, 1))));
+        Definitions.Button next = Button(key: "new", width: 20, height: 20);
+        surface.Rebuild(Panel()[next]);
+        surface.UpdateLayout();
+        Assert.False(Pressed(first));
+        Assert.Null(surface.FocusedElement?.Widget);
+        Assert.False(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(1, 1))));
+    }
+
+    /// <summary>Checks an explicit input reset ends a held key but consumes its physical terminal event.</summary>
+    [Fact]
+    public void CustomCancellationEndsFocusAndKeyOwnershipWithoutReplacingTheElement()
+    {
+        var button = new CancelButton { Width = 20, Height = 20 };
+        using UiSurface surface = Surface(button);
+        ButtonElement element = Assert.IsAssignableFrom<ButtonElement>(surface.RootElement);
+        Assert.True(surface.TryFocus(element));
+        Assert.True(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, true)));
+        Assert.True(element.IsPressed);
+        surface.Rebuild(new CancelButton { Width = 20, Height = 20, Cancel = true });
+        surface.UpdateTree();
+        Assert.Same(element, surface.RootElement);
+        Assert.False(element.IsPressed);
+        Assert.Null(surface.FocusedElement);
+        Assert.True(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, false)));
+        Assert.False(surface.Dispatch(new UiKeyInput(Lumyte.Input.Abstractions.Key.Space, false)));
+    }
+
     private UiSurface Surface(Definitions.Widget root)
     {
         UiSurface surface = Mount(root);

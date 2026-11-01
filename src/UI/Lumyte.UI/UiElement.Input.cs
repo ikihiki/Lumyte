@@ -29,6 +29,7 @@ public partial class UiElement
         var bounds = UiInputBounds.From(origin, Size);
         UiInputBounds clip = Widget.ClipToBounds ? ancestorClip.Intersect(bounds) : ancestorClip;
         InputVersion = version;
+        InputFocusable = Widget.Focusable;
         InputBounds = bounds.Intersect(clip);
         InputOrigin = origin;
         _inputSubtreeBounds = InputBounds;
