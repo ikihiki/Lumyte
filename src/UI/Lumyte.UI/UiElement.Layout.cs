@@ -60,7 +60,7 @@ public partial class UiElement
             result |= UiInvalidation.Layout;
         }
 
-        if (Widget.IsEnabled != next.IsEnabled || Widget.HitTestVisible != next.HitTestVisible)
+        if (Widget.IsEnabled != next.IsEnabled || Widget.HitTestVisible != next.HitTestVisible || Widget.Focusable != next.Focusable)
         {
             result |= UiInvalidation.Input;
         }

@@ -367,7 +367,7 @@ public sealed class PointerTests : UiElementTestBase
         root.SetQuery(() => throw new ArithmeticException("input fixture"));
         Assert.True(Send(surface, UiPointerPhase.Cancel));
         Assert.False(Pressed(button));
-        Assert.False(surface.Dispatch(new UiFocusLostInput()));
+        Assert.True(surface.Dispatch(new UiFocusLostInput()));
     }
 
     /// <summary>Checks zero-area buttons cannot start a press.</summary>
@@ -615,7 +615,7 @@ public sealed class PointerTests : UiElementTestBase
         Assert.Throws<ArithmeticException>(() => Send(surface, UiPointerPhase.Up));
         Assert.Equal(1, calls);
         Assert.False(Pressed(button));
-        Assert.False(surface.Dispatch(new UiFocusLostInput()));
+        Assert.True(surface.Dispatch(new UiFocusLostInput()));
         button.OnClick = () => calls++;
         Click(surface);
         Assert.Equal(2, calls);

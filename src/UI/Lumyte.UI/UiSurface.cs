@@ -67,7 +67,7 @@ public sealed partial class UiSurface : IDisposable
         _treeValidators.Clear();
         try
         {
-            CancelAllPointers();
+            CancelAllInput();
         }
         finally
         {

@@ -134,6 +134,7 @@ public sealed partial class UiSurface
             StructureRevision = checked(StructureRevision + 1);
         }
 
+        _inputReset++;
         foreach (UiElement removed in plan.Removed)
         {
             _treeValidators.Remove(removed);

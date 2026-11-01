@@ -28,3 +28,11 @@ dotnet run --project samples/Lumyte.UI.Sample -c Release -- wgpu
 viewportごとに描画先全体をClearしてUIを描きます。連続frameでも前frameのUIに重ね続けず、そのframeの背景を再構成してください。同じtargetへ複数surfaceを重ねる場合は、最初だけClearし、残りは同じCanvasへ追記するかLoadで描画します。Record自身はClearしません。
 
 [UIの利用方法](../../src/UI/Lumyte.UI/README.md)／[描画のADR](../../docs/adr/ui/UI-0004-drawing-and-clipping.md)
+
+## キーボードだけの確認
+
+```sh
+dotnet run --project samples/Lumyte.UI.Sample -c Release -- keyboard-only
+```
+
+GPU・Window入力sourceを使わず、論理viewportのUpdateLayout後にTabでButtonへfocusを移し、SpaceのDown/Upを配送します。Clickが一回、Down中だけIsPressed=true、Up後にfalseになることを確認します。実WindowのfocusやOSキーの取得は後続host接続PRの範囲です。
