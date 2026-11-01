@@ -1,0 +1,11 @@
+# Lumyte.UI.Shared
+
+UIサンプル専用の非配布補助です。UI本体の依存を増やさず、Input・Platform・Windowing・Drawing2Dを接続します。
+
+- `UiHostInputRouter`は、加工後のordered sourceと生成元のWindow mapを借用します。両者のStreamIdは一致させます。Window／surfaceの生成・破棄はホストが管理します。
+- `Recorded`で記録をqueueへ保存し、InputSystem.Updateが成功して戻った後に取得順でDispatchします。履歴から再開する場合はReadRecordsのHasGap／HasAcquisitionGapで影響するoriginをResetします。
+- Attach後、初回と表示更新後のUpdateLayoutを成功させてから通常入力を渡します。layout・入力callbackの例外時は通常入力と描画を停止し、Reset／Detachで所有状態を清掃します。surfaceのDisposeより先にDetachします。
+- `UiHostDrawing`は、Hosted原点と祖先clipをNative論理空間で合成します。rootを先に描き、GetHostedOrderの背面から前面へ各surfaceを記録します。入力にDPIを再適用しません。
+- `UiHostPresenter`はサンプルのGPU提示を担当します。RGBA16FloatからUNORM表示先へ変換し、毎frameの完了を待ちます。
+
+標準Platformの取得対象はkeyboard/mouseです。touch/penのrouter変換は統合fixtureで検証し、OSの取得能力とは分けて扱います。文字・IME、Popup manager、dragのsurface間移動は後続PRの対象です。

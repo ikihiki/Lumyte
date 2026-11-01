@@ -9,7 +9,7 @@ namespace Lumyte.Input.Processing;
 /// <param name = "getTime">The getTime value.</param>
 public sealed class CorrectingInputSource(IInputSource inner, Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> factory, Func<TimeSpan> getTime) : IInputSource, IInputDeviceRegistry
 {
-    private readonly IInputSource _inner = inner;
+    private readonly IInputSource _inner = inner is IOrderedInputSource ? throw new ArgumentException("Use an ordered processing source to preserve window metadata.", nameof(inner)) : inner;
     private readonly Func<TimeSpan> _getTime = getTime;
     private readonly Dictionary<InputDeviceId, CorrectedInputDevice> _devices = new();
     private Func<InputDeviceDescriptor, IEnumerable<IDeviceDataProcessor>> _factory = factory;

@@ -23,3 +23,9 @@ virtual generators change during the next source `Update`.
 
 See [the ADR](../../../docs/adr/input/INPUT-0002-processing-and-recognition.md)
 and [the runnable sample](../../../samples/Lumyte.Input.Advanced.Sample/README.md).
+
+## ordered source
+
+標準Platformの取得列には`OrderedCorrectingInputSource`／`OrderedVirtualizingInputSource`を使用します。legacy wrapperへordered sourceを渡すとArgumentExceptionになります。新wrapperのfactoryは`(descriptor, windowId)`を受け、scopeごとに独立したinstanceを返します。StreamIdと原因のmetadataを維持し、同streamの加工失敗中に後続deviceを追い越させません。
+
+innerは借用です。InputSystemを終了してwrapperを切り離してから、raw sourceをDisposeします。virtual deviceは物理deviceにつき一つ登録し、Windowごとに物理deviceを複製しません。加工結果をfilterして空になったbatchもackし、入力のないUpdateではscopeの時間進行を処理します。

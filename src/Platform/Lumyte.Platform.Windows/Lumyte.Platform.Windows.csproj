@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Lumyte.Platform.Abstractions/Lumyte.Platform.Abstractions.csproj" />
+    <Compile Include="../Shared/BufferedInputSource.cs" Link="Internal/BufferedInputSource.cs" />
     <Compile Include="../Shared/PhysicalKeys.cs" Link="Internal/PhysicalKeys.cs" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/UI/Lumyte.UI/Lumyte.UI.csproj" />
+    <ProjectReference Include="../../src/Input/Lumyte.Input/Lumyte.Input.csproj" />
+    <ProjectReference Include="../../src/Platform/Lumyte.Windowing/Lumyte.Windowing.csproj" />
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <SlangShader Include="Shaders/present-vertex.slang" ResourceName="Lumyte.UI.Sample.present-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/present-fragment.slang" ResourceName="Lumyte.UI.Sample.present-fragment" Stage="fragment" />
+    <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
+    <InternalsVisibleTo Include="Lumyte.UI.Sample" />
+    <InternalsVisibleTo Include="Lumyte.UI.Browser.Sample" />
+  </ItemGroup>
+  <Import Project="../../tools/shaders/Slang.targets" />
+</Project>

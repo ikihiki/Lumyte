@@ -12,6 +12,7 @@ namespace Lumyte.Platform.Linux;
 [SupportedOSPlatform("linux")]
 public sealed class LinuxPlatform : IPlatform
 {
+    private readonly HashSet<MouseButton> _mouseButtons = [];
     private readonly HashSet<Key> _pressed = [];
     private readonly Func<uint, Key> _keyMapping;
     private readonly int _thread = Environment.CurrentManagedThreadId;
@@ -21,6 +22,8 @@ public sealed class LinuxPlatform : IPlatform
     private readonly List<Exception> _errors = [];
     private readonly nint _display;
     private BufferedInputSource? _source;
+    private LinuxWindow? _captureWindow;
+    private bool _mouseBlocked;
     private ulong _nextWindow;
     private bool _disposed;
     private bool _pumping;
@@ -89,7 +92,7 @@ public sealed class LinuxPlatform : IPlatform
             throw new InvalidOperationException("Only one input source is supported.");
         }
 
-        _source = new BufferedInputSource(CheckMutation, _ => _source = null, () => _windows.Values.Any(window => window.State.IsActive), "X11");
+        _source = new BufferedInputSource(CheckMutation, _ => _source = null, () => _windows.Values, "X11", CancelMouse);
         return _source;
     }
 
@@ -205,11 +208,12 @@ public sealed class LinuxPlatform : IPlatform
 
     internal void StopInput(LinuxWindow window)
     {
-        if (window.State.IsActive)
+        if (_captureWindow == window)
         {
-            _pressed.Clear();
-            _source?.Focus(false);
+            CancelMouse();
         }
+
+        _source?.Close(window.Id);
     }
 
     internal void Notify<T>(Action<T>? handlers, T value) => _notifications.Enqueue(() =>
@@ -240,8 +244,19 @@ public sealed class LinuxPlatform : IPlatform
 
     private void Receive(Xlib.Event data)
     {
-        if (_source is null || !_windows.TryGetValue(data.Window, out LinuxWindow? window) || window.State.Lifetime != WindowLifetime.Open)
+        if (_source is null || !_windows.TryGetValue(data.Window, out LinuxWindow? window))
         {
+            return;
+        }
+
+        if (_captureWindow == window && (!window.State.IsVisible || window.State.Lifetime != WindowLifetime.Open))
+        {
+            CancelMouse();
+        }
+
+        if (window.State.Lifetime != WindowLifetime.Open)
+        {
+            _source.Close(window.Id);
             return;
         }
 
@@ -250,9 +265,13 @@ public sealed class LinuxPlatform : IPlatform
             if (data.Type == 10)
             {
                 _pressed.Clear();
+                if (_captureWindow == window)
+                {
+                    CancelMouse();
+                }
             }
 
-            _source.Focus(data.Type == 9);
+            _source.Focus(window.Id, data.Type == 9);
         }
         else if (data.Type is 2 or 3)
         {
@@ -270,11 +289,11 @@ public sealed class LinuxPlatform : IPlatform
                 _pressed.Remove(key);
             }
 
-            _source.Keyboard(new KeyData(key, down, repeat));
+            _source.Keyboard(window.Id, new KeyData(key, down, repeat));
         }
-        else if (data.Type == 6)
+        else if (data.Type == 6 && !_mouseBlocked)
         {
-            _source.Mouse(new MouseMoveData(new Vector2((int)data.Data3, (int)(data.Data3 >> 32))));
+            _source.Mouse(window.Id, new MouseMoveData(new Vector2((int)data.Data3, (int)(data.Data3 >> 32))));
         }
         else if (data.Type is 4 or 5)
         {
@@ -283,7 +302,7 @@ public sealed class LinuxPlatform : IPlatform
             {
                 if (data.Type == 4)
                 {
-                    _source.Mouse(new MouseWheelData(button switch
+                    _source.Mouse(window.Id, new MouseWheelData(button switch
                     {
                         4 => new Vector2(0, 1),
                         5 => new Vector2(0, -1),
@@ -302,8 +321,68 @@ public sealed class LinuxPlatform : IPlatform
                     8 => MouseButton.X1,
                     _ => MouseButton.X2,
                 };
-                _source.Mouse(new MouseButtonData(mapped, data.Type == 4));
+                bool down = data.Type == 4;
+                if (down)
+                {
+                    if (_mouseButtons.Count == 0 && !_mouseBlocked)
+                    {
+                        // ownerEvents=false keeps coordinates in the grabbing client's space.
+                        if (Xlib.XGrabPointer(_display, window.XWindow, 0, (1U << 2) | (1U << 3) | (1U << 6), 1, 1, 0, 0, 0) == 0)
+                        {
+                            _captureWindow = window;
+                        }
+                        else
+                        {
+                            _mouseBlocked = true;
+                        }
+                    }
+
+                    _mouseButtons.Add(mapped);
+                }
+                else
+                {
+                    _mouseButtons.Remove(mapped);
+                }
+
+                try
+                {
+                    if (!_mouseBlocked)
+                    {
+                        ulong capture = _source.BeginAcquisition();
+                        _source.Mouse(window.Id, new MouseMoveData(new Vector2((int)data.Data3, (int)(data.Data3 >> 32))), capture);
+                        _source.Mouse(window.Id, new MouseButtonData(mapped, down), capture);
+                    }
+                }
+                finally
+                {
+                    if (_mouseButtons.Count == 0)
+                    {
+                        LinuxWindow? owner = _captureWindow;
+                        _captureWindow = null;
+                        _mouseBlocked = false;
+                        if (owner is not null)
+                        {
+                            Xlib.XUngrabPointer(_display, 0);
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    private void CancelMouse()
+    {
+        LinuxWindow? owner = _captureWindow;
+        _captureWindow = null;
+        _mouseBlocked = _mouseButtons.Count != 0;
+        if (owner is not null)
+        {
+            foreach (MouseButton button in _mouseButtons)
+            {
+                _source?.Mouse(owner.Id, new MouseButtonCanceledData(button));
+            }
+
+            Xlib.XUngrabPointer(_display, 0);
         }
     }
 
