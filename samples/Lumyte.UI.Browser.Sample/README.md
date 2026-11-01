@@ -25,7 +25,7 @@ LUMYTE_UI_INPUT_ONLY=1 node samples/Lumyte.UI.Browser.Sample/verify-browser.mjs
 
 `CHROME`で実行ファイル、`LUMYTE_SCREENSHOT`で画像保存先を指定できます。DOM capture、canvas外Up、Hosted、keyboard、DPI×2、終了を確認します。`?input-only`はテスト用モードです。描画結果は画面へ提示しません。
 
-2026-10-29の環境では、publishと入力・CPU記録の実Browser操作が成功しました。GPU提示は`mapAsync`の`A valid external Instance reference no longer exists`で失敗し、Lumyteを使わない最小JavaScriptでも同じエラーを再現しました。この環境でGPU提示が成功したとは扱いません。trimming／Native AOTの検証も未実施です。
+2026-10-29の環境では、publishと入力・CPU記録の実Browser操作が成功しました。GPU提示は`mapAsync`の`A valid external Instance reference no longer exists`で失敗し、Lumyteを使わない最小JavaScriptでも同じエラーを再現しました。この環境でGPU提示が成功したとは扱いません。Native AOTは未検証です。
 
 ## RenderGraphとResourcesの選択
 
@@ -51,4 +51,18 @@ LUMYTE_UI_AUTOMATION=1 LUMYTE_AUTOMATION_SCREENSHOT=/tmp/ui-automation.png node 
 
 GPUモードのPNGはC#のScreenshotAsyncが新しく描画・readbackした対象surfaceの実画素です。JSホストへbase64で渡し、上記変数で保存できます。CDPの画面キャプチャとは別です。サンプルはcold pipeline準備を含め30秒の期限を指定します。
 
-2026-10-29にpublishし、実ChromiumでC#の保存操作・Expect・Enter、その後のDOM capture、領域外Up、Hosted、keyboard、DPI×2、終了が成功しました。GPU提示・PNGはこの環境で既知のmapAsyncエラーにより未検証です。trimming／AOTの検証は行っていません。
+2026-10-29にpublishし、実ChromiumでC#の保存操作・Expect・Enter、その後のDOM capture、領域外Up、Hosted、keyboard、DPI×2、終了が成功しました。GPU提示・PNGはこの環境で既知のmapAsyncエラーにより未検証です。Native AOTは未検証です。
+
+## Diagnostics経由の操作
+
+`?input-only&diagnostics`で、既存HTTP Agentからこのsurfaceを診断サービスへ公開できます。GPUを使う`?diagnostics`では実readbackのScreenshotも公開します。専用モードの間はDOM入力をsurfaceへ転送せず、Operatorが通常UI入力を操作します。Rootの終了時にはJobとhost清掃を待ちます。
+
+bootstrapの`globalThis.lumyteDiagnosticService`へサービスURL、`globalThis.lumyteDiagnosticGameToken`へゲーム用tokenをホストが一時供給します。tokenをqueryや生成artifactへ含めません。サービスにはBrowserのoriginを明示してCORSを設定します。OperatorTokenは別プロセスのOperatorだけが持ちます。
+
+publishと、診断サービス・型付きOperatorのRelease build後に実行します。
+
+```sh
+python3 tools/diagnostics/ui-browser-smoke.py
+```
+
+2026-10-29に実ChromiumのHTTP Agentと別プロセスOperatorで、対象発見、control、Click、indicatorのExpect、Enter、count、解放と終了が成功しました。この経路はDOM入力そのものの検証とは分けて扱います。Browser publish時のtrim解析も確認し、既存DI登録のPublicConstructors注釈を修正しました。wasm-toolsによるnative最適化とNative AOTは未検証です。GPU提示／PNGは既知のmapAsync環境エラーにより未検証です。

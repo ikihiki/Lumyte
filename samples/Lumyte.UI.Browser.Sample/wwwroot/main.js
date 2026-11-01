@@ -1,6 +1,7 @@
 import { dotnet } from "./_framework/dotnet.js";
 const status = document.querySelector("#status");
 try {
+    globalThis.lumyteDiagnostics = new URLSearchParams(location.search).has("diagnostics");
     globalThis.lumyteAutomation = new URLSearchParams(location.search).has("automation");
     globalThis.lumyteInputOnly = new URLSearchParams(location.search).has("input-only");
     globalThis.lumyteRenderGraph = new URLSearchParams(location.search).has("render-graph");

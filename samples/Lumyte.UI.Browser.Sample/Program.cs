@@ -41,6 +41,8 @@ internal static partial class Program
     private static bool _ready;
     private static bool _inputOnly;
     private static bool _automation;
+    private static bool _diagnosticMode;
+    private static BrowserUiDiagnostics? _diagnostics;
     private static int _clicks;
     private static int _frames;
     private static ButtonElement? _mainButton;
@@ -80,10 +82,11 @@ internal static partial class Program
             _mainUi.UpdateLayout();
             _hostedUi!.SetViewport(_hosted!.ClientSize);
             _hostedUi.UpdateLayout();
+            _diagnostics?.Pump();
             _input!.Update();
             while (_pending.TryDequeue(out InputRecord input))
             {
-                if (!_automation)
+                if (!_automation && !_diagnosticMode)
                 {
                     _router!.Dispatch(input);
                 }
@@ -155,6 +158,12 @@ internal static partial class Program
             throw new InvalidOperationException("Wait for the current frame before stopping.");
         }
 
+        _ready = false;
+        if (_diagnostics is not null)
+        {
+            await _diagnostics.DisposeAsync();
+        }
+
         _router!.Detach(_hostedUi!);
         _router.Detach(_mainUi!);
         _input!.StopSource(_source!);
@@ -202,6 +211,23 @@ internal static partial class Program
         _automation = false;
     }
 
+    private static async Task StartDiagnosticsAsync()
+    {
+        if (!_diagnosticMode)
+        {
+            return;
+        }
+
+        _mainUi!.SetViewport(_root!.ClientSize);
+        _mainUi.UpdateLayout();
+        Func<CancellationToken, ValueTask<byte[]>>? capture = _inputOnly ? null : token => UiSampleScreenshot.CaptureAsync(_device!, _mainUi, _root.Scale, token);
+        _diagnostics = await BrowserUiDiagnostics.CreateAsync(
+            _mainUi,
+            JSHost.GlobalThis.GetPropertyAsString("lumyteDiagnosticService")!,
+            JSHost.GlobalThis.GetPropertyAsString("lumyteDiagnosticGameToken")!,
+            capture);
+    }
+
     private static async Task Main()
     {
         using JSObject canvas = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteUiCanvas") ?? throw new InvalidOperationException("The host must supply its canvas.");
@@ -234,10 +260,12 @@ internal static partial class Program
         _platform.PumpEvents();
         _windows.Update();
         _retained = _root.NativeWindow.RetainNativeTarget();
+        _diagnosticMode = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteDiagnostics");
         _automation = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteAutomation");
         _inputOnly = JSHost.GlobalThis.GetPropertyAsBoolean("lumyteInputOnly");
         if (_inputOnly)
         {
+            await StartDiagnosticsAsync();
             _ready = true;
             _initialized.SetResult();
             await _stopped.Task;
@@ -254,6 +282,7 @@ internal static partial class Program
 
         _graphics = _device.CreateSurface(((BrowserWindow)_root.NativeWindow).CanvasContext);
         _presenter = new(_device);
+        await StartDiagnosticsAsync();
         _ready = true;
         _initialized.SetResult();
         await _stopped.Task;
