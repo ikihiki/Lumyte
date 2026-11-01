@@ -73,3 +73,9 @@ Focusableは宣言の設定、focus対象と押下はElementの状態として�
 通常hostはUiKeyInputをDispatchし、Tabと各コントロールのキー認識を共通経路で処理する。
 低水準の明示操作にはFocusedElementとTryFocus(UiElement?)を使う。
 宣言の再生成ではfocusやkey captureを付け替えず、除去・不適格化・明示取消だけを処理する。
+
+## 実Windowとの接続
+
+[UI-0007](../../../docs/adr/ui/UI-0007-window-input-and-dpi-integration.md)では、取得Window情報付きのInputRecordを
+UiInputへ変換し、native / hostedの入力系列をhostで所有する。DPIはCanvasへ一度だけ適用する。
+UI本体のPlatform / Windowing / InputSystem非依存を維持し、操作対象はSurface内のElementとする。

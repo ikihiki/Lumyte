@@ -63,7 +63,10 @@ public sealed class BrowserWindow : IWindow
     public event EventHandler<WindowClosingEventArgs>? Closing
     {
         add => Check();
-        remove => Check();
+        remove
+        {
+            // This backend has no cancellable OS close event. Allow owner cleanup after disposal.
+        }
     }
 
     /// <inheritdoc/>
@@ -221,6 +224,8 @@ public sealed class BrowserWindow : IWindow
             throw new ArgumentException("Invalid canvas window descriptor.", nameof(descriptor));
         }
     }
+
+    internal void SetInputEnabled(bool enabled) => BrowserInterop.SetInputEnabled(_handle, enabled);
 
     internal void Observe()
     {

@@ -20,7 +20,7 @@ public partial class InputPage
     private DiagnosticPageContext Context { get; set; } = default!;
 
     private IEnumerable<(SubsystemDescriptor Subsystem, OperationDescriptor Operation)> InputOperations
-        => (Context.Resource?.Catalog ?? []).Where(item => item.Subsystem.Id == "input")
+        => (Context.Resource?.Catalog ?? []).Where(item => item.Subsystem.Id == "input" && item.Subsystem.SchemaVersion == 2)
             .SelectMany(item => item.Operations.Where(operation => operation.Id != "get-snapshot")
                 .Select(operation => (item.Subsystem, operation)));
 
@@ -74,7 +74,7 @@ public partial class InputPage
             return;
         }
 
-        OperationDescriptor? operation = Context.Resource.Catalog.FirstOrDefault(item => item.Subsystem.Id == "input")?.Operations.FirstOrDefault(item => item.Id == "get-snapshot");
+        OperationDescriptor? operation = Context.Resource.Catalog.FirstOrDefault(item => item.Subsystem.Id == "input" && item.Subsystem.SchemaVersion == 2)?.Operations.FirstOrDefault(item => item.Id == "get-snapshot");
         if (operation == null)
         {
             _status = "ゲームはInputスナップショット操作を公開していません。";
@@ -110,10 +110,16 @@ public partial class InputPage
     {
         using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 24 });
         JsonElement root = document.RootElement;
+        if (!root.TryGetProperty("schemaVersion", out JsonElement schema) || schema.GetInt32() != 2)
+        {
+            throw new JsonException("Unsupported Input snapshot schema.");
+        }
+
         InputSystemModel[] inputs = root.GetProperty("inputSystems").EnumerateArray().Select(input => new InputSystemModel(
             input.GetProperty("id").GetGuid(),
             input.GetProperty("sources").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray(),
-            input.GetProperty("devices").EnumerateArray().Select(ParseDevice).ToArray())).ToArray();
+            input.GetProperty("devices").EnumerateArray().Select(ParseDevice).ToArray(),
+            input.GetProperty("windowScopes").EnumerateArray().Select(scope => new WindowScopeModel(scope.GetProperty("deviceId").GetString()!, scope.GetProperty("windowId").GetGuid(), scope.GetProperty("retired").GetBoolean(), scope.GetProperty("state").GetRawText(), scope.GetProperty("targets").GetRawText())).ToArray())).ToArray();
         ActionSystemModel[] actions = root.GetProperty("actionSystems").EnumerateArray().Select(action => new ActionSystemModel(
             action.GetProperty("id").GetGuid(),
             action.GetProperty("timeMs").GetDouble(),
@@ -133,7 +139,7 @@ public partial class InputPage
         Dictionary<string, Guid> targets = device.TryGetProperty("targets", out JsonElement targetObject) ? targetObject.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.GetGuid(), StringComparer.Ordinal) : [];
         JsonElement pointers = state.TryGetProperty("contacts", out JsonElement contacts) ? contacts : state.TryGetProperty("pointers", out JsonElement pens) ? pens : default;
         PointerModel[] pointerModels = pointers.ValueKind == JsonValueKind.Array ? pointers.EnumerateArray().Select(item => new PointerModel(item.GetProperty("id").GetString()!, item.GetProperty("phase").GetString()!, Point(item.GetProperty("position")), item.GetProperty("pressure").ValueKind == JsonValueKind.Null ? null : item.GetProperty("pressure").GetDouble())).ToArray() : [];
-        return new(device.GetProperty("id").GetUInt64(), kind, device.GetProperty("name").GetString()!, device.GetProperty("identity").GetString()!, device.GetProperty("sequence").GetUInt64(), device.GetProperty("connected").GetBoolean(), device.GetProperty("focused").GetBoolean(), pressed, position, sticks, triggers, pointerModels, targets);
+        return new(ulong.Parse(device.GetProperty("id").GetString()!, System.Globalization.CultureInfo.InvariantCulture), kind, device.GetProperty("name").GetString()!, device.GetProperty("identity").GetString()!, ulong.Parse(device.GetProperty("sequence").GetString()!, System.Globalization.CultureInfo.InvariantCulture), device.GetProperty("connected").GetBoolean(), device.GetProperty("focused").GetBoolean(), pressed, position, sticks, triggers, pointerModels, targets);
     }
 
     private static ContextModel ParseContext(JsonElement context) => new(
@@ -174,7 +180,9 @@ public partial class InputPage
 
     private sealed record SnapshotModel(long Revision, InputSystemModel[] Inputs, ActionSystemModel[] Actions);
 
-    private sealed record InputSystemModel(Guid Id, string[] Sources, DeviceModel[] Devices);
+    private sealed record InputSystemModel(Guid Id, string[] Sources, DeviceModel[] Devices, WindowScopeModel[] WindowScopes);
+
+    private sealed record WindowScopeModel(string DeviceId, Guid WindowId, bool Retired, string State, string Targets);
 
     private sealed record DeviceModel(ulong Id, string Kind, string Name, string Identity, ulong Sequence, bool Connected, bool Focused, string[] Pressed, PointModel? Position, Dictionary<string, PointModel> Sticks, Dictionary<string, double> Triggers, PointerModel[] Pointers, Dictionary<string, Guid> Targets);
 

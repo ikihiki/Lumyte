@@ -24,6 +24,15 @@ public sealed class InputDeviceState
     /// <summary>Gets a value indicating whether the input target has focus.</summary>
     public bool IsFocused => _state.Focused;
 
+    /// <summary>Gets the coordinate space of the last mouse position.</summary>
+    public InputWindowId? MousePositionWindowId => _state.PositionWindow;
+
+    /// <summary>Gets each touch coordinate space.</summary>
+    public IReadOnlyDictionary<TouchContactId, InputWindowId?> TouchPositionWindows => new ReadOnlyDictionary<TouchContactId, InputWindowId?>(_state.TouchWindows);
+
+    /// <summary>Gets each pen coordinate space.</summary>
+    public IReadOnlyDictionary<PenPointerId, InputWindowId?> PenPositionWindows => new ReadOnlyDictionary<PenPointerId, InputWindowId?>(_state.PenWindows);
+
     /// <summary>Gets the last mouse position in logical pixels.</summary>
     public Vector2 MousePosition
     {

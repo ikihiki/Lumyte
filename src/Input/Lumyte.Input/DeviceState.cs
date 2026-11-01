@@ -14,6 +14,12 @@ internal sealed class DeviceState(InputDeviceKind kind)
 
     internal Vector2 Position { get; set; }
 
+    internal InputWindowId? PositionWindow { get; set; }
+
+    internal Dictionary<TouchContactId, InputWindowId?> TouchWindows { get; } = [];
+
+    internal Dictionary<PenPointerId, InputWindowId?> PenWindows { get; } = [];
+
     internal bool[] Keys { get; } = kind == InputDeviceKind.Keyboard ? new bool[(int)Key.IntlYen + 1] : [];
 
     internal bool[] MouseButtons { get; } = kind == InputDeviceKind.Mouse ? new bool[(int)MouseButton.X2 + 1] : [];
@@ -57,7 +63,18 @@ internal sealed class DeviceState(InputDeviceKind kind)
             Connected = Connected,
             Focused = Focused,
             Position = Position,
+            PositionWindow = PositionWindow,
         };
+        foreach (KeyValuePair<TouchContactId, InputWindowId?> pair in TouchWindows)
+        {
+            copy.TouchWindows.Add(pair.Key, pair.Value);
+        }
+
+        foreach (KeyValuePair<PenPointerId, InputWindowId?> pair in PenWindows)
+        {
+            copy.PenWindows.Add(pair.Key, pair.Value);
+        }
+
         Keys.CopyTo(copy.Keys, 0);
         MouseButtons.CopyTo(copy.MouseButtons, 0);
         ControllerButtons.CopyTo(copy.ControllerButtons, 0);
@@ -114,6 +131,9 @@ internal sealed class DeviceState(InputDeviceKind kind)
                 break;
             case MouseButtonData mouse:
                 MouseButtons[(int)mouse.Button] = mouse.IsDown;
+                break;
+            case MouseButtonCanceledData canceled:
+                MouseButtons[(int)canceled.Button] = false;
                 break;
             case MouseMoveData move:
                 Position = move.Position;
@@ -203,38 +223,18 @@ internal sealed class DeviceState(InputDeviceKind kind)
         Array.Clear(Triggers);
         Touches.Clear();
         Pens.Clear();
+        TouchWindows.Clear();
+        PenWindows.Clear();
     }
 
-    // All supported non-flags enums are contiguous int values starting at zero.
-    private static void CheckRange(int value, int maximum)
-    {
-        if ((uint)value > (uint)maximum)
-        {
-            throw new ArgumentOutOfRangeException(nameof(value));
-        }
-    }
-
-    private static void PositionValid(Vector2 value)
-    {
-        if (!float.IsFinite(value.X) || !float.IsFinite(value.Y))
-        {
-            throw new ArgumentException("Coordinates must be finite.");
-        }
-    }
-
-    private static void PressureValid(float? pressure)
-    {
-        if (pressure is float value && (!float.IsFinite(value) || value < 0 || value > 1))
-        {
-            throw new ArgumentException("Pressure must be null or between zero and one.");
-        }
-    }
-
-    private void Validate(InputData data)
+    internal void Validate(InputData data)
     {
         switch (data)
         {
-            case FocusData:
+            case FocusData or WindowInputClosedData:
+                return;
+            case MouseButtonCanceledData canceled when Kind == InputDeviceKind.Mouse:
+                CheckEnum(canceled.Button);
                 return;
             case KeyData key when Kind == InputDeviceKind.Keyboard:
                 CheckEnum(key.Key);
@@ -291,6 +291,31 @@ internal sealed class DeviceState(InputDeviceKind kind)
                 return;
             default:
                 throw new ArgumentException("The input does not match the device kind or is system-generated.");
+        }
+    }
+
+    // All supported non-flags enums are contiguous int values starting at zero.
+    private static void CheckRange(int value, int maximum)
+    {
+        if ((uint)value > (uint)maximum)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value));
+        }
+    }
+
+    private static void PositionValid(Vector2 value)
+    {
+        if (!float.IsFinite(value.X) || !float.IsFinite(value.Y))
+        {
+            throw new ArgumentException("Coordinates must be finite.");
+        }
+    }
+
+    private static void PressureValid(float? pressure)
+    {
+        if (pressure is float value && (!float.IsFinite(value) || value < 0 || value > 1))
+        {
+            throw new ArgumentException("Pressure must be null or between zero and one.");
         }
     }
 

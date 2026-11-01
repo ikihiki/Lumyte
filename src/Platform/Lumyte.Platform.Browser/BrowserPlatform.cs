@@ -47,7 +47,10 @@ public sealed class BrowserPlatform : IPlatform
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentException.ThrowIfNullOrWhiteSpace(modulePath);
-        using JSObject module = await JSHost.ImportAsync("Lumyte.Platform.Browser", modulePath);
+        using JSObject location = JSHost.GlobalThis.GetPropertyAsJSObject("location") ?? throw new InvalidOperationException("The browser has no location for resolving the module URL.");
+        string baseUrl = location.GetPropertyAsString("href") ?? throw new InvalidOperationException("The browser location has no URL.");
+        var resolved = new Uri(new Uri(baseUrl), modulePath);
+        using JSObject module = await JSHost.ImportAsync("Lumyte.Platform.Browser", resolved.AbsoluteUri);
         return new BrowserPlatform(canvas);
     }
 
@@ -75,7 +78,8 @@ public sealed class BrowserPlatform : IPlatform
             throw new InvalidOperationException("Only one input source is supported.");
         }
 
-        _source = new BufferedInputSource(CheckMutation, _ => _source = null, () => _window?.State.IsActive == true, "Browser");
+        _window?.SetInputEnabled(false);
+        _source = new BufferedInputSource(CheckMutation, _ => _source = null, () => _window is null ? [] : new IWindow[] { _window }, "Browser", () => _window?.SetInputEnabled(false), () => _window?.SetInputEnabled(true));
         return _source;
     }
 
@@ -176,22 +180,30 @@ public sealed class BrowserPlatform : IPlatform
     {
         if (window.State.IsActive)
         {
-            _source?.Focus(false);
+            _source?.Close(window.Id);
         }
     }
 
     internal void ReceiveInput(string json)
     {
         BrowserInputEvent[] events = JsonSerializer.Deserialize(json, BrowserInputJsonContext.Default.BrowserInputEventArray)!;
+        ulong? lastDomCapture = null;
+        ulong capture = 0;
         foreach (BrowserInputEvent data in events)
         {
+            if (data.Capture is null || data.Capture != lastDomCapture)
+            {
+                capture = _source?.BeginAcquisition() ?? 0;
+                lastDomCapture = data.Capture;
+            }
+
             switch (data.Type)
             {
                 case 0:
-                    _source?.Keyboard(new KeyData(PhysicalKeys.FromDomCode(data.Code ?? string.Empty), data.Down, data.Repeat));
+                    _source?.Keyboard(_window!.Id, new KeyData(PhysicalKeys.FromDomCode(data.Code ?? string.Empty), data.Down, data.Repeat), capture);
                     break;
                 case 1:
-                    _source?.Mouse(new MouseMoveData(new Vector2((float)data.X, (float)data.Y)));
+                    _source?.Mouse(_window!.Id, new MouseMoveData(new Vector2((float)data.X, (float)data.Y)), capture);
                     break;
                 case 2:
                     MouseButton button = (int)data.X switch
@@ -202,13 +214,33 @@ public sealed class BrowserPlatform : IPlatform
                         3 => MouseButton.X1,
                         _ => MouseButton.X2,
                     };
-                    _source?.Mouse(new MouseButtonData(button, data.Down));
+                    _source?.Mouse(_window!.Id, new MouseButtonData(button, data.Down), capture);
                     break;
                 case 3:
-                    _source?.Mouse(new MouseWheelData(new Vector2((float)data.X, (float)data.Y)));
+                    _source?.Mouse(_window!.Id, new MouseWheelData(new Vector2((float)data.X, (float)data.Y)), capture);
+                    break;
+                case 5:
+                    MouseButton canceled = (int)data.X switch
+                    {
+                        0 => MouseButton.Left,
+                        1 => MouseButton.Middle,
+                        2 => MouseButton.Right,
+                        3 => MouseButton.X1,
+                        _ => MouseButton.X2,
+                    };
+                    _source?.Mouse(_window!.Id, new MouseButtonCanceledData(canceled), capture);
+                    break;
+                case 6:
+                    if (_source is not null)
+                    {
+                        var error = new InvalidOperationException("Browser input acquisition exceeded 16384 events; stop the source explicitly.");
+                        _source.FailAcquisition(error);
+                        throw error;
+                    }
+
                     break;
                 case 4:
-                    _source?.Focus(data.Down);
+                    _source?.Focus(_window!.Id, data.Down);
                     break;
             }
         }

@@ -6,6 +6,19 @@ internal static class NativeMethods
 {
     internal delegate nint WindowProcedure(nint window, uint message, nuint wParam, nint lParam);
 
+    [DllImport("user32.dll")]
+    internal static extern short GetAsyncKeyState(int key);
+
+    [DllImport("user32.dll")]
+    internal static extern nint SetCapture(nint window);
+
+    [DllImport("user32.dll")]
+    internal static extern nint GetCapture();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ReleaseCapture();
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern ushort RegisterClassExW(ref WindowClass windowClass);
 

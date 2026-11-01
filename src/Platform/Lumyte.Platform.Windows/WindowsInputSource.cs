@@ -1,128 +1,116 @@
 using System.Numerics;
 using System.Runtime.Versioning;
 using Lumyte.Input.Abstractions;
+using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.Internal;
 using Lumyte.Windowing.Abstractions;
 
 namespace Lumyte.Platform.Windows;
 
-/// <summary>Acquires logical keyboard and mouse input from the platform's single event pump.</summary>
-/// <remarks>This source does not acquire text, IME, gamepads, touch or pen.</remarks>
+/// <summary>Acquires one ordered keyboard/mouse stream with native window identity and mouse capture.</summary>
 [SupportedOSPlatform("windows10.0.17763")]
-public sealed class WindowsInputSource : IInputSource
+public sealed class WindowsInputSource : IWindowInputSource
 {
-    private readonly WindowsPlatform _platform;
-    private BufferedDevice? _keyboard;
-    private BufferedDevice? _mouse;
-    private bool _active;
-    private bool _disposed;
+    private readonly BufferedInputSource _buffer;
+    private readonly HashSet<MouseButton> _buttons = [];
+    private WindowsWindow? _captureWindow;
+    private nint _captureHandle;
+    private bool _blocked;
 
     internal WindowsInputSource(WindowsPlatform platform)
     {
-        _platform = platform;
+        _buffer = new(platform.CheckMutation, _ => platform.Release(this), () => platform.Windows, "Windows");
     }
 
     /// <inheritdoc/>
-    public void Initialize(IInputDeviceRegistry registry)
+    public Guid StreamId => _buffer.StreamId;
+
+    /// <inheritdoc/>
+    public void Initialize(IInputDeviceRegistry registry) => _buffer.Initialize(registry);
+
+    /// <inheritdoc/>
+    public void Update()
     {
-        Check();
-        ArgumentNullException.ThrowIfNull(registry);
-        if (_active)
+        _buffer.Update();
+        if (_blocked && new[] { 1, 2, 4, 5, 6 }.All(key => (NativeMethods.GetAsyncKeyState(key) & 0x8000) == 0))
         {
-            throw new InvalidOperationException("Source is already initialized.");
+            _buttons.Clear();
+            _blocked = false;
         }
-
-        var keyboard = new BufferedDevice(_platform, new InputDeviceDescriptor(InputDeviceKind.Keyboard, "Windows keyboard", InputDeviceIdentityKind.Logical));
-        var mouse = new BufferedDevice(_platform, new InputDeviceDescriptor(InputDeviceKind.Mouse, "Windows mouse", InputDeviceIdentityKind.Logical));
-        InputDeviceId keyboardId;
-        try
-        {
-            keyboardId = registry.RegisterDevice(keyboard);
-        }
-        catch
-        {
-            keyboard.Dispose();
-            mouse.Dispose();
-            throw;
-        }
-
-        try
-        {
-            registry.RegisterDevice(mouse);
-        }
-        catch
-        {
-            mouse.Dispose();
-            registry.UnregisterDevice(keyboardId);
-            throw;
-        }
-
-        _keyboard = keyboard;
-        _mouse = mouse;
-        _active = true;
-        var focus = new FocusData(_platform.Windows.Any(window => window.State.IsActive));
-        keyboard.Add(focus);
-        mouse.Add(focus);
     }
 
     /// <inheritdoc/>
-    public void Update() => Check();
+    public InputEventBatch? PeekEvents() => _buffer.PeekEvents();
+
+    /// <inheritdoc/>
+    public void CommitEvents(ulong batchId) => _buffer.CommitEvents(batchId);
+
+    /// <inheritdoc/>
+    public bool TryGetInputWindowId(WindowId windowId, out InputWindowId inputWindowId) => _buffer.TryGetInputWindowId(windowId, out inputWindowId);
+
+    /// <inheritdoc/>
+    public void AbortEvents()
+    {
+        CancelCapture();
+        _buffer.AbortEvents();
+    }
 
     /// <inheritdoc/>
     public void Shutdown()
     {
-        Check();
-        _active = false;
+        CancelCapture();
+        _buffer.Shutdown();
     }
 
     /// <inheritdoc/>
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        Check();
-        if (_active)
-        {
-            throw new InvalidOperationException("Shut down the consumer before disposing its source.");
-        }
-
-        _disposed = true;
-        _platform.Release(this);
-    }
+    public void Dispose() => _buffer.Dispose();
 
     internal void Receive(WindowsWindow window, uint message, nuint wParam, nint lParam)
     {
-        if (!_active || window.State.Lifetime != WindowLifetime.Open)
+        if (message is 0x215 or 0x1F)
         {
+            if (_captureWindow == window)
+            {
+                CancelCapture();
+            }
+
+            return;
+        }
+
+        if (_captureWindow == window && (!window.State.IsVisible || window.State.Lifetime != WindowLifetime.Open))
+        {
+            CancelCapture();
+        }
+
+        if (window.State.Lifetime != WindowLifetime.Open)
+        {
+            _buffer.Close(window.Id);
             return;
         }
 
         if (message is 0x100 or 0x101 or 0x104 or 0x105)
         {
-            int scan = (int)((lParam >> 16) & 0xFF);
-            bool extended = (lParam & 0x01000000) != 0;
-            Key key = PhysicalKeys.FromPcScan(scan, extended);
+            Key key = PhysicalKeys.FromPcScan((int)((lParam >> 16) & 0xFF), (lParam & 0x01000000) != 0);
             bool down = message is 0x100 or 0x104;
-            _keyboard!.Add(new KeyData(key, down, down && (lParam & 0x40000000) != 0));
+            _buffer.Keyboard(window.Id, new KeyData(key, down, down && (lParam & 0x40000000) != 0));
         }
         else if (message is 0x7 or 0x8)
         {
-            var data = new FocusData(message == 0x7);
-            _keyboard!.Add(data);
-            _mouse!.Add(data);
+            if (message == 0x8 && _captureWindow == window)
+            {
+                CancelCapture();
+            }
+
+            _buffer.Focus(window.Id, message == 0x7);
         }
-        else if (message == 0x200)
+        else if (message == 0x200 && !_blocked)
         {
-            float scale = window.State.Scale.X;
-            _mouse!.Add(new MouseMoveData(new Vector2((short)(lParam & 0xFFFF) / scale, (short)((lParam >> 16) & 0xFFFF) / scale)));
+            _buffer.Mouse(window.Id, new MouseMoveData(Position(window, lParam)));
         }
         else if (message is 0x20A or 0x20E)
         {
             float steps = (short)((wParam >> 16) & 0xFFFF) / 120f;
-            _mouse!.Add(new MouseWheelData(message == 0x20A ? new Vector2(0, steps) : new Vector2(steps, 0)));
+            _buffer.Mouse(window.Id, new MouseWheelData(message == 0x20A ? new Vector2(0, steps) : new Vector2(steps, 0)));
         }
         else if (message is 0x201 or 0x202 or 0x203 or 0x204 or 0x205 or 0x206 or 0x207 or 0x208 or 0x209 or 0x20B or 0x20C or 0x20D)
         {
@@ -133,61 +121,88 @@ public sealed class WindowsInputSource : IInputSource
                 0x207 or 0x208 or 0x209 => MouseButton.Middle,
                 _ => (wParam >> 16) == 1 ? MouseButton.X1 : MouseButton.X2,
             };
-            _mouse!.Add(new MouseButtonData(button, message is not (0x202 or 0x205 or 0x208 or 0x20C)));
-        }
-    }
-
-    internal void Deactivate()
-    {
-        if (_active)
-        {
-            var data = new FocusData(false);
-            _keyboard!.Add(data);
-            _mouse!.Add(data);
-        }
-    }
-
-    private void Check()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _platform.CheckMutation();
-    }
-
-    private sealed class BufferedDevice(WindowsPlatform platform, InputDeviceDescriptor descriptor) : IInputDevice
-    {
-        private readonly List<InputData> _pending = [];
-        private bool _disposed;
-
-        public InputDeviceDescriptor Descriptor { get; } = descriptor;
-
-        public IReadOnlyList<InputData> DrainEvents()
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            platform.CheckMutation();
-            InputData[] batch = _pending.ToArray();
-            IReadOnlyList<InputData> result = Array.AsReadOnly(batch);
-            _pending.Clear();
-            return result;
-        }
-
-        public void Dispose()
-        {
-            if (_disposed)
+            bool down = message is not (0x202 or 0x205 or 0x208 or 0x20C);
+            if (down)
             {
-                return;
+                if (_buttons.Count == 0 && !_blocked)
+                {
+                    NativeMethods.SetCapture(window.Hwnd);
+                    if (NativeMethods.GetCapture() == window.Hwnd)
+                    {
+                        _captureWindow = window;
+                        _captureHandle = window.Hwnd;
+                    }
+                    else
+                    {
+                        _blocked = true;
+                    }
+                }
+
+                _buttons.Add(button);
+            }
+            else
+            {
+                _buttons.Remove(button);
             }
 
-            platform.CheckMutation();
-            _pending.Clear();
-            _disposed = true;
+            try
+            {
+                if (!_blocked)
+                {
+                    ulong capture = _buffer.BeginAcquisition();
+                    _buffer.Mouse(window.Id, new MouseMoveData(Position(window, lParam)), capture);
+                    _buffer.Mouse(window.Id, new MouseButtonData(button, down), capture);
+                }
+            }
+            finally
+            {
+                if (_buttons.Count == 0)
+                {
+                    nint handle = _captureHandle;
+                    _captureHandle = 0;
+                    _captureWindow = null;
+                    _blocked = false;
+                    if (handle != 0 && NativeMethods.GetCapture() == handle)
+                    {
+                        NativeMethods.ReleaseCapture();
+                    }
+                }
+            }
+        }
+    }
+
+    internal void Close(WindowsWindow window)
+    {
+        if (_captureWindow == window)
+        {
+            CancelCapture();
         }
 
-        internal void Add(InputData data)
+        _buffer.Close(window.Id);
+    }
+
+    private static Vector2 Position(WindowsWindow window, nint packed) => new Vector2((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF)) / window.State.Scale;
+
+    private void CancelCapture()
+    {
+        WindowsWindow? owner = _captureWindow;
+        nint handle = _captureHandle;
+        _captureHandle = 0;
+        _captureWindow = null;
+        _blocked = _buttons.Count != 0;
+        if (owner is null)
         {
-            if (!_disposed)
-            {
-                _pending.Add(data);
-            }
+            return;
+        }
+
+        foreach (MouseButton button in _buttons)
+        {
+            _buffer.Mouse(owner.Id, new MouseButtonCanceledData(button));
+        }
+
+        if (handle != 0 && NativeMethods.GetCapture() == handle)
+        {
+            NativeMethods.ReleaseCapture();
         }
     }
 }
