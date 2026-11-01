@@ -1,0 +1,36 @@
+# Lumyte.UI
+
+Compositionの静的factoryでWidget宣言を作り、UiSurfaceが継続するElementを管理する。
+最初のPRは所有権、型/key/slotの照合、状態保持、公開と破棄を提供する。
+レイアウト・描画・入力は後続PRで同じElementへ追加する。
+
+```csharp
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+using var surface = new UiSurface(Panel()[Button(key: "action")]);
+UiElement before = surface.RootElement.Children[0];
+surface.Rebuild(Panel()[Button(key: "action")]);
+surface.UpdateTree();
+// beforeと現在の子は同じ実体。Widget設定だけが新しくなる。
+System.Diagnostics.Debug.Assert(ReferenceEquals(before, surface.RootElement.Children[0]));
+```
+
+通常の子と名前付きslotはそれぞれ一回だけ初期化できる。動的な内容は新しく構築する。
+WidgetChildrenは構築時の宣言、UiElementChildrenは実行時の子を示す。
+Widgetにmounted親、Surface、Element、幾何や状態転送のhookを持たせない。
+
+独自部品はWidgetへ設定を置き、CreateElementから型付きUiElementを返す。
+Elementのfieldは再構築で維持され、OnReconcileによるコピーは不要。
+PrepareUpdateで更新後の子を参照し、公開後に独自の索引や選択先を変更できる。
+OnMountedでリソースを開始し、OnUnmountedで解放する。constructorはpassiveなデータだけを用意する。
+
+keyは同じ親・同じslot内で有効で、keyなしは型/位置を使う。
+型・key・親・slotの変更と除去後の再追加は新しい寿命になる。
+同じ宣言から独立したSurfaceを作っても状態は共有しない。Signal等の借用sourceの制約は別途従う。
+
+準備失敗では現在の状態を保持する。公開後の利用者callbackの例外では更新を停止し、rollbackしない。
+Disposeは冪等で、Elementの寿命を終了して宣言を残す。再接続では新しいElementを作る。
+CPUの作成threadへ固定せず、明示的な並行操作は利用者が同期する。
+
+[所有権・状態・公開順のADR](../../../docs/adr/ui/UI-0002-widget-tree-and-composition.md)
