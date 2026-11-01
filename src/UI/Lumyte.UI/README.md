@@ -51,3 +51,10 @@ System.Numerics.Vector2 size = surface.RootElement.Size;
 LayoutChildとSetChildOffsetは直接の子Elementを受け取り、各可視子に一回ずつ適用する。
 設定差分はCompareConfigurationからUiInvalidationへ分類し、共通の寸法差分は基盤で合成する。
 通常の宣言setterはdirtyを伝播しない。
+
+## 描画
+
+Begin済みCanvasへsurface.Record(canvas)を呼ぶ。Clear・GPU投入・提示はhostが担当する。
+ElementのOnRecord / RecordOverride / RecordChildで描画し、独自の子描画順はruntime slotから定義する。
+RectangleのFillはWidgetの設定、Size / BoundsはElementの幾何を使う。色はColor2Dで検証する。
+成功した描画命令はWidget / Elementを遅延参照せず、後の再構築とは独立する。
