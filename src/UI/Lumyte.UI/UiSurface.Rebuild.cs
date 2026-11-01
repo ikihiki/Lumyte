@@ -120,6 +120,11 @@ public sealed partial class UiSurface
             {
                 update.Element.MarkLayoutDirty();
             }
+
+            if ((update.Invalidation & (UiInvalidation.Layout | UiInvalidation.Input)) != 0)
+            {
+                InvalidateInput();
+            }
         }
 
         _rootElement = plan.Root;
@@ -158,6 +163,15 @@ public sealed partial class UiSurface
         }
         finally
         {
+            try
+            {
+                CancelChangedInput(plan);
+            }
+            catch (Exception error)
+            {
+                (failures ??= []).Add(error);
+            }
+
             try
             {
                 Unmount(plan.Removed);

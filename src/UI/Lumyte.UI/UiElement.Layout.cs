@@ -60,6 +60,11 @@ public partial class UiElement
             result |= UiInvalidation.Layout;
         }
 
+        if (Widget.IsEnabled != next.IsEnabled || Widget.HitTestVisible != next.HitTestVisible)
+        {
+            result |= UiInvalidation.Input;
+        }
+
         if (Widget.ClipToBounds != next.ClipToBounds)
         {
             result |= UiInvalidation.Input | UiInvalidation.Visual;

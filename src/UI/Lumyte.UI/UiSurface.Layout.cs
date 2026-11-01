@@ -27,8 +27,14 @@ public sealed partial class UiSurface
     public void UpdateLayout()
     {
         UpdateTree();
-        if (_isDisposed || !_rootElement.IsLayoutDirty)
+        if (_isDisposed)
         {
+            return;
+        }
+
+        if (!_rootElement.IsLayoutDirty)
+        {
+            UpdateInput();
             return;
         }
 
@@ -37,6 +43,8 @@ public sealed partial class UiSurface
         try
         {
             pass.Compute(_rootElement, UiBoxConstraints.Tight(_viewport));
+            InvalidateInput();
+            UpdateInput();
         }
         catch
         {

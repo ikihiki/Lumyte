@@ -65,7 +65,14 @@ public sealed partial class UiSurface : IDisposable
         _isDisposed = true;
         _pendingRebuild = null;
         _treeValidators.Clear();
-        Unmount(CollectElements(_rootElement));
+        try
+        {
+            CancelAllPointers();
+        }
+        finally
+        {
+            Unmount(CollectElements(_rootElement));
+        }
     }
 
     internal static List<UiElement> CollectElements(UiElement root)

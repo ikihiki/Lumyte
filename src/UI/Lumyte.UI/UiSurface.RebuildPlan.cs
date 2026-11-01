@@ -170,7 +170,9 @@ public sealed partial class UiSurface
             foreach (ElementUpdate update in Updates)
             {
                 update.Invalidation = update.Element.ConfigurationChanges(update.Next) | (update.ChildrenChanged ? UiInvalidation.Layout : UiInvalidation.None);
-                update.Commit = update.Element.Prepare(update.Next, new(update.Next, update.Slots));
+                var context = new UiElementUpdateContext(update.Next, update.Slots);
+                update.Commit = update.Element.Prepare(update.Next, context);
+                update.CancelInput = context.InputCancellationRequested;
             }
         }
 
@@ -203,5 +205,7 @@ public sealed partial class UiSurface
         internal bool UsesTreeValidation { get; set; }
 
         internal UiInvalidation Invalidation { get; set; }
+
+        internal bool CancelInput { get; set; }
     }
 }

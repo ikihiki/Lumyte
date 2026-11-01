@@ -58,3 +58,11 @@ Begin済みCanvasへsurface.Record(canvas)を呼ぶ。Clear・GPU投入・提示
 ElementのOnRecord / RecordOverride / RecordChildで描画し、独自の子描画順はruntime slotから定義する。
 RectangleのFillはWidgetの設定、Size / BoundsはElementの幾何を使う。色はColor2Dで検証する。
 成功した描画命令はWidget / Elementを遅延参照せず、後の再構築とは独立する。
+
+## ポインター入力
+
+通常の値と同じ静的factoryのonClick引数へcallbackを渡す。
+UpdateLayout成功後にUiPointerInputをDispatchする。Dispatchは配置の準備を行わない。
+UiInputContext.ReceiverはElementであり、独自部品はElement.OnInputで処理する。
+capture・押下状態は同じ実体に残り、宣言交換だけで作り直さない。
+型/key変更・除去・無効化やPrepareUpdateで要求した取消は、実体の清掃前に通知する。

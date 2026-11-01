@@ -114,6 +114,11 @@ public partial class UiElement
 
         _children = Array.Empty<UiElement>();
         _slots = [];
+        _inputChildren = Array.Empty<UiElement>();
+        _inputSubtreeBounds = default;
+        InputVersion = null;
+        InputBounds = default;
+        InputOrigin = default;
         OnUnmounted();
     }
 
