@@ -35,6 +35,12 @@ targetViewは同一deviceの単一mip/layerのRgba8SrgbまたはRgba16Float atta
 PrepareAsyncはgraphを作らず、固定資源とbatchを準備します。Recordは一回だけ使い、GPU完了後に
 command buffer、準備ownerの順に解放します。
 
+既定shaderの単色FillRectは、連続する最大1,024矩形をinstance描画へまとめます。
+回転・拡大・DPI・最大8段の矩形clipと、元の4×4 coverage・描画順を維持します。
+任意path clip、他のpaint、外部shaderは汎用の評価経路を使います。
+upload/data bufferとargument tableはRenderer単位で、準備ownerがGPU完了後に解放されてから再利用します。
+idleは最大3組・8 MiBです。未完了の準備間で共有せず、device lossや失敗時は破棄します。
+
 11描画命令には専用interfaceがあり、DrawingCommandRenderers2Dへ実装を直接渡します。
 CreateDefault()はdeviceやDIを使わず既定構成を作ります。UseGraphics2Dによる登録と後勝ち上書きも可能です。
 外部batchはRecordでupload・compute・render等の複数コマンドを発行し、内部同期を記録できます。

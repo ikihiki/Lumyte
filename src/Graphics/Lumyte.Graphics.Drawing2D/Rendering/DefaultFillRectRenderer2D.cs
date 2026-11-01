@@ -13,5 +13,5 @@ public sealed class DefaultFillRectRenderer2D : IFillRectRenderer2D
         RenderPreparationContext2D context,
         ReadOnlyMemory<FillRectCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRectangleBatch2D.PrepareAsync(context, commands, cancellationToken);
 }
