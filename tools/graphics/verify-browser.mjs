@@ -1,3 +1,4 @@
+import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "./browser-gpu.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -35,11 +36,7 @@ try {
     await readFile(resolve(root, "index.html"));
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-        "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
-        ...(process.platform === "win32" ? ["--use-angle=d3d11"] : [
-            "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--use-webgpu-adapter=swiftshader",
-            "--use-angle=vulkan", "--disable-vulkan-surface",
-        ]),
+        ...browserGpuArguments(),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
     let diagnostics = "";
@@ -89,7 +86,7 @@ try {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
-            }, 10000);
+            }, method === "Page.navigate" ? 60000 : 10000);
             pending.set(id, {
                 resolve: value => { clearTimeout(timeout); resolve(value); },
                 reject: error => { clearTimeout(timeout); reject(error); },
@@ -98,6 +95,10 @@ try {
         });
     }
     await command("Runtime.enable");
+    if (requiresSoftwareWebGpu()) {
+        await command("Page.enable");
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
+    }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     const deadline = Date.now() + 180000;
     let result;
@@ -150,6 +151,10 @@ try {
     assert.match(result.report, /Shader binding checks passed:/);
     assert.match(result.report, /MaxTextureArrayLayers: [1-9]\d* layers/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");
+    if (requiresSoftwareWebGpu()) {
+        const audit = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true });
+        verifySoftwareWebGpu(audit.result.value);
+    }
     console.log(`Browser .NET/WebGPU verification passed\n${result.report}`);
 } finally {
     socket?.close();
