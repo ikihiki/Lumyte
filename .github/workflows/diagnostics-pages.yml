@@ -44,7 +44,10 @@ jobs:
       - name: Collect and assemble successful galleries
         env:
           GH_TOKEN: ${{ github.token }}
-        run: dotnet run --project build -c Release -- --target DiagnosticPreviews
+        run: |
+          # NuGet.config registers this checkout-local feed before the runner can start.
+          mkdir -p artifacts/nuget
+          dotnet run --project build -c Release -- --target DiagnosticPreviews
 
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
