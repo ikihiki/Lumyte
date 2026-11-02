@@ -93,3 +93,23 @@ CaptureAutomationSnapshotは現在のElementを値へコピーし、通常Dispat
 同じ型/key/slotの再構築ではIDを保ち、別のSurfaceや除去後の再追加では別IDになる。
 独自部品のElementでGetAutomationChildrenとOnProbePointerDownを実装できる。
 [Automation](../Lumyte.UI.Automation/README.md)のLocatorは検索条件を保持して毎回現在の実体を探す。
+
+## Signal引数と部分木更新
+
+```csharp
+var width = Lumyte.Signals.Signal.Create<float?>(20);
+using var reactive = new UiSurface(Rectangle(width: width));
+reactive.SetViewport(new(800, 600));
+width.Value = 40;
+reactive.UpdateLayout();
+```
+
+標準Applicationは通常の更新点で自動適用する。Elementが購読を所有し、同じsourceの購読は
+再構築でも継続する。引数が変わると新しいWidget設定を生成し、存続するElementへ採用する。
+複数の部分木をまとめて検証・公開し、未変更の親・兄弟・子の実体を保持する。
+現在の階層・設定・幾何を調べる時はRootElementとそのChildren / Widgetを使う。
+Widget.Childrenは構築時の宣言であり、部分更新後の実体の一覧には使わない。
+
+描画中にSignalの通知が届いても、現在の設定でframeを記録し、次の更新点で適用する。
+独自hostも通常のUpdateTree / UpdateLayout / Record入口を使える。
+[Signal連携のADR](../../../docs/adr/ui/UI-0019-signals-and-reactive-state.md)

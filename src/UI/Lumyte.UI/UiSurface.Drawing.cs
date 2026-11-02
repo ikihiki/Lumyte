@@ -20,7 +20,15 @@ public sealed partial class UiSurface
             if (!_isDisposed && _viewport.X > 0 && _viewport.Y > 0)
             {
                 canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
-                RecordElement(_rootElement, canvas);
+                _recordDepth++;
+                try
+                {
+                    RecordElement(_rootElement, canvas);
+                }
+                finally
+                {
+                    _recordDepth--;
+                }
             }
         }
         finally

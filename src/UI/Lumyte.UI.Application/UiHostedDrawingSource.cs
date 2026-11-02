@@ -163,6 +163,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
         private Presentation? _previous = current;
         private Presentation? _candidate;
         private object? _inputVersion;
+        private UiSignalRevision _signalRevision;
         private bool _committed;
         private bool _discarded;
         private Lumyte.UI.Compose.Definitions.Widget? _root;
@@ -174,6 +175,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
             source.PrepareSurface(surface);
             _root = surface.Root;
             _inputVersion = surface.InputVersionForWindowing;
+            _signalRevision = surface.CommittedSignalRevision;
             _state = source.CaptureState();
             _candidate = new(source, surface, view) { Active = false };
             source._presentations.Add(_candidate);
@@ -190,7 +192,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
         public bool TryValidateCommit(out string code)
         {
             code = "candidate-stale";
-            return _candidate is not null && !_committed && !_discarded && ReferenceEquals(surface.Root, _root) && ReferenceEquals(surface.InputVersionForWindowing, _inputVersion) && source.CaptureState() == _state;
+            return _candidate is not null && !_committed && !_discarded && ReferenceEquals(surface.Root, _root) && ReferenceEquals(surface.InputVersionForWindowing, _inputVersion) && surface.SignalRevision == _signalRevision && source.CaptureState() == _state;
         }
 
         public IUiWindowPresentation Commit()

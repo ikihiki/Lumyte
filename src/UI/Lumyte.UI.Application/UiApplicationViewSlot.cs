@@ -63,6 +63,7 @@ public sealed partial class UiApplicationViewSlot
         ObjectDisposedException.ThrowIf(_stopping, this);
         _current.Surface.UpdateLayout();
         _current.Owner = _application.Popups.RegisterOwner(_window, _current.Surface);
+        _current.AttachPortals();
         _current.AttachText(false);
         if (_current.Text is { } text)
         {
@@ -111,8 +112,11 @@ public sealed partial class UiApplicationViewSlot
         {
             view.Surface.UpdateLayout();
             _application.ValidateEditors(view.Surface);
+            view.Portals?.Advance();
             if (view.Gated && _application.Windows.TryGetSnapshot(_window, out UiWindowSnapshot? snapshot) && snapshot is { IsVisible: true })
             {
+                view.Surface.SetSignalUpdatesEnabled(true);
+                view.Portals?.SetUpdatesEnabled(true);
                 view.Gated = false;
                 view.Host.Resume();
                 _application.Popups.GateOwner(view.Owner!, false);
@@ -154,7 +158,7 @@ public sealed partial class UiApplicationViewSlot
         {
             _application = application;
             _window = window;
-            Surface = new(root);
+            Surface = new(root, application.Dispatcher);
             Host = UiApplicationAutomationHost.Create(application, () => Surface);
         }
 
@@ -178,6 +182,8 @@ public sealed partial class UiApplicationViewSlot
 
         internal UiApplication.TextSite? Text { get; private set; }
 
+        internal UiPopupPortalCoordinator? Portals { get; private set; }
+
         internal IDisposable? MenuGuard { get; set; }
 
         internal bool Gated { get; set; }
@@ -188,10 +194,14 @@ public sealed partial class UiApplicationViewSlot
 
         internal IUiAutomationHost GetAutomation(bool inspection) => Text?.CreateAutomation(inspection) ?? Host;
 
+        internal void AttachPortals() => Portals = new(_application.Popups, Owner!, Surface);
+
         internal void AttachText(bool staged) => Text = _application.AttachText(Surface, _window, Host, staged);
 
         internal void BeginStop()
         {
+            Surface.SetSignalUpdatesEnabled(false);
+            Portals?.Dispose();
             Host.BeginStop();
             Text?.BeginStop();
             Owner?.Dispose();
