@@ -30,6 +30,8 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     internal Action? SynchronizeFocus { get; set; }
 
+    internal virtual bool CanAnimate => true;
+
     public abstract ValueTask DisposeAsync();
 
     internal virtual Lumyte.UI.Windowing.TextInput.IUiTextInputTargetResolver CreateTextTargets(UiApplication application) => new Lumyte.UI.Windowing.TextInput.UiPlatformTextInputTargetResolver(application.Windows, InputSource!, application.ResolveNative);

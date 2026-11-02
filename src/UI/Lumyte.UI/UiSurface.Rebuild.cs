@@ -39,6 +39,7 @@ public sealed partial class UiSurface
             try
             {
                 using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators);
+                PrepareAnimationUpdates(plan);
                 plan.Prepare();
                 PrepareSignalUpdates(plan);
                 if (_isDisposed)
@@ -80,6 +81,7 @@ public sealed partial class UiSurface
         try
         {
             using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators);
+            PrepareAnimationUpdates(plan);
             plan.Prepare();
             PrepareSignalUpdates(plan);
             if (!_isDisposed)
@@ -153,6 +155,7 @@ public sealed partial class UiSurface
         {
             foreach (ElementUpdate update in plan.Updates)
             {
+                update.Animations?.Commit();
                 update.Signals?.Commit();
             }
 

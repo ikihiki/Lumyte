@@ -13,6 +13,9 @@ internal static partial class BrowserApplicationInterop
     [JSImport("visible", "Lumyte.UI.Application")]
     internal static partial bool Visible(JSObject canvas);
 
+    [JSImport("animationGeneration", "Lumyte.UI.Application")]
+    internal static partial double AnimationGeneration();
+
     [JSImport("connected", "Lumyte.UI.Application")]
     internal static partial bool Connected(JSObject canvas);
 

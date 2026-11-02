@@ -9,6 +9,8 @@
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../../Core/Lumyte.Composition/Lumyte.Composition.csproj" />
     <ProjectReference Include="../../Core/Lumyte.Signals/Lumyte.Signals.csproj" />
+    <ProjectReference Include="../../Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Core/Lumyte.Core.csproj" />
     <ProjectReference Include="../../Input/Lumyte.Input.Abstractions/Lumyte.Input.Abstractions.csproj" />
     <ProjectReference Include="../../Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
     <ProjectReference Include="../../Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
