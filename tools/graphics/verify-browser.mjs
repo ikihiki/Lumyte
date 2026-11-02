@@ -37,6 +37,9 @@ try {
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
         "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
+        // Keep backend selection unchanged; expose driver initialization failures in CI.
+        "--enable-logging=stderr",
+        "--vmodule=dawn_context_provider=2,webgpu_decoder_impl=2,gpu_init=2,vulkan_instance=2",
         ...(process.platform === "win32" ? ["--use-angle=d3d11"] : [
             "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--use-webgpu-adapter=swiftshader",
             "--use-angle=vulkan", "--disable-vulkan-surface",
