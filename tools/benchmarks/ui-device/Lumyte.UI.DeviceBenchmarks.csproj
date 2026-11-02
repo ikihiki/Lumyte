@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>Lumyte.UI.Application.Tests</AssemblyName>
+    <RunAnalyzers>false</RunAnalyzers>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application/Lumyte.UI.Application.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Desktop/Lumyte.UI.Application.Desktop.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
+    <ProjectReference Include="../../../src/Platform/Lumyte.Platform.Windows/Lumyte.Platform.Windows.csproj" />
+  </ItemGroup>
+</Project>

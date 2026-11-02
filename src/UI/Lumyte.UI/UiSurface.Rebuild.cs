@@ -38,7 +38,7 @@ public sealed partial class UiSurface
             _applyingRebuild = true;
             try
             {
-                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements);
+                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
                 PrepareAnimationUpdates(plan);
                 plan.Prepare();
                 PrepareSignalUpdates(plan);
@@ -81,7 +81,7 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate);
             PrepareAnimationUpdates(plan);
             plan.Prepare();
             PrepareSignalUpdates(plan);
@@ -127,6 +127,12 @@ public sealed partial class UiSurface
         {
             structureChanged |= update.ChildrenChanged || update.Previous is null;
             update.Element.Publish(this, update.Next, update.Slots);
+            update.Element.Contexts = update.Contexts;
+            if (update.Content is not null)
+            {
+                update.Element.ContentReads = update.Content.Reads;
+            }
+
             update.Element.ConnectPresence(this, update.Previous);
             update.Element.UsesTreeValidation = update.UsesTreeValidation;
             if (update.UsesTreeValidation)

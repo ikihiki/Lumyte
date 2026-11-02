@@ -15,17 +15,19 @@ public partial class UiElement
         private readonly SignalScope _scope = new();
         private IReadOnlyDictionary<object, UiSignalArgument>? _arguments;
         private SignalReadSet? _reads;
+        private SignalReadSet? _contentReads;
         private SignalEffect? _effect;
         private bool _admitted;
         private bool _disposed;
         private bool _changed;
 
-        internal SignalObserver(UiSurface surface, UiElement element, Widget widget)
+        internal SignalObserver(UiSurface surface, UiElement element, Widget widget, SignalReadSet? contentReads)
         {
             _surface = surface;
             _element = element;
             _arguments = widget.SignalArguments;
             _reads = widget.ConstructionReads;
+            _contentReads = contentReads;
             try
             {
                 _scope.Run(() => _effect = Signal.Effect(Read, this, surface.FailSignalUpdate));
@@ -55,11 +57,12 @@ public partial class UiElement
             _surface.ForgetSignalObserver(this);
             _arguments = null;
             _reads = null;
+            _contentReads = null;
         }
 
-        internal bool CanReuse(Widget next)
+        internal bool CanReuse(Widget next, SignalReadSet? contentReads)
         {
-            if (!ReferenceEquals(_reads, next.ConstructionReads) || (_arguments?.Count ?? 0) != (next.SignalArguments?.Count ?? 0))
+            if (!ReferenceEquals(_contentReads, contentReads) || !ReferenceEquals(_reads, next.ConstructionReads) || (_arguments?.Count ?? 0) != (next.SignalArguments?.Count ?? 0))
             {
                 return false;
             }
@@ -78,10 +81,11 @@ public partial class UiElement
             return true;
         }
 
-        internal void Adopt(Widget next)
+        internal void Adopt(Widget next, SignalReadSet? contentReads)
         {
             _arguments = next.SignalArguments;
             _reads = next.ConstructionReads;
+            _contentReads = contentReads;
             _changed = false;
             ConstructionChanged = false;
             _admitted = true;
@@ -106,6 +110,12 @@ public partial class UiElement
                 {
                     _changed |= argument.Read();
                 }
+            }
+
+            if (_contentReads is not null)
+            {
+                _contentReads.Read();
+                _changed |= !_contentReads.IsCurrent;
             }
 
             if (_reads is not null)

@@ -112,6 +112,8 @@ public partial class UiElement
         Surface?.ForgetSignalElement(this);
         Signals?.Dispose();
         Signals = null;
+        ContentReads = null;
+        Contexts = null;
         Surface?.ForgetHostValidation(this);
         Surface = null;
         Parent = null;

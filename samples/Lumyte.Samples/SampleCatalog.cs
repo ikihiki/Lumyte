@@ -31,6 +31,7 @@ internal static class SampleCatalog
         new("ui-navigation", "UI: ページ遷移と寿命", Native("headless", "UI.Navigation"), Browser("browser", "UI.Navigation.Browser")),
         new("ui-pages", "UI: DIとMapPage", Native("headless", "UI.Pages"), Browser("browser", "UI.Pages.Browser")),
         new("ui-transitions", "UI: presence とページ間animation", Native("headless", "UI.Transitions"), Browser("browser", "UI.Transitions.Browser")),
+        Managed("ui-functions", "UI: 関数コンポーネントとUseSignal", "UI.Functions"),
         new("pipeline-benchmark", "測定: Vulkan pipeline cache 比較", Native("vulkan", "Graphics.DeviceCaps", "vulkan", "pipeline-benchmark")),
     ];
 

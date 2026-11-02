@@ -113,3 +113,8 @@ Widget.Childrenは構築時の宣言であり、部分更新後の実体の一�
 描画中にSignalの通知が届いても、現在の設定でframeを記録し、次の更新点で適用する。
 独自hostも通常のUpdateTree / UpdateLayout / Record入口を使える。
 [Signal連携のADR](../../../docs/adr/ui/UI-0019-signals-and-reactive-state.md)
+
+Function components keep parameters in passive `UiFunctionWidget` declarations. The UI automatically runs
+`Use` / `UseSignal` / `UseContext` inside a frame owned by the retained `UiFunctionElement`.
+Its `Content` property exposes the currently mounted result. Nested functions get separate frames;
+calling a definition directly shares its caller's frame. Applications use generated static factories.

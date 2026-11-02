@@ -6,6 +6,7 @@
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />
     <Project Path="samples/Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Functions.Sample/Lumyte.UI.Functions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Sample/Lumyte.UI.Transitions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Browser.Sample/Lumyte.UI.Transitions.Browser.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Application.Desktop.Sample/Lumyte.UI.Application.Desktop.Sample.csproj" />
