@@ -16,7 +16,7 @@ UIは既にElement identity、部分木更新、layout cacheを持つため、�
 ## 決定（提案）
 
 **不変content、配置/property/orderの構造、device別compiled asset、frameごとのone-shot実行ownerを分離して保持する。**
-差分更新と[bulk構築（GRAPHICS-0026）](GRAPHICS-0026-bulk-drawing-updates.md)は同じ描画内容とordered plannerへ合流する。
+本ADRは保持内容と差分公開の共通境界を扱う。dense/full更新のbulk builderと転送選択は別PRのGRAPHICS-0026で提案し、ここでは採用しない。
 
 ### 内容・配置・identity
 
@@ -71,6 +71,21 @@ layout、scheduler、surface能力照会、submission待機は別責務であり
 ```diff
 +namespace Lumyte.Graphics.Drawing2D
 +{
++    // 不変なCPU内容の共通契約。bulk構築APIは本ADRに含めない。
++    public sealed class DrawingContent2D;
++    public sealed class DrawingContentRenderers2D
++    {
++        public static DrawingContentRenderers2D CreateDefault();
++        public static DrawingContentRenderers2D FromLegacy(DrawingCommandRenderers2D renderers);
++    }
++    public sealed class PreparedDrawingFrame2D : IDisposable
++    {
++        public void Record(IGraphicsCommandBuffer commands); // 一回だけ
++        public void AttachSubmission(IGraphicsSubmission submission); // 実際のSubmit戻り値を借用
++        public void Retire(); // Completedとcommand破棄後だけslotを返す
++        public void AbortUnsubmitted(); // Submit未試行かつcommand破棄済みのみ
++        public void Dispose(); // pending使用の退役を代行しない
++    }
 +    // scene由来の世代付きID。default/stale/別sceneは拒否。
 +    public readonly struct DrawingNodeId2D;
 +    public sealed class DrawingScene2D : IDisposable
@@ -103,14 +118,16 @@ layout、scheduler、surface能力照会、submission待機は別責務であり
 +    public sealed class Renderer2D
 +    {
 +        // 既存rendererへの追加。毎回freshなone-shot owner。
-+        public ValueTask<PreparedBulkDraw2D> PrepareAsync(DrawingSnapshot2D snapshot,
-+            RenderTarget2D target, DrawingBulkRenderers2D renderers,
++        public ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSnapshot2D snapshot,
++            RenderTarget2D target, DrawingContentRenderers2D renderers,
 +            CancellationToken cancellationToken = default);
 +    }
 +}
 ```
 
-DrawingContent2D、DrawingBulkRenderers2DとPreparedBulkDraw2DはGRAPHICS-0026の候補型を共用する。snapshot経路も明示consumerとcompletion-aware ownerを使い、既存DrawList向けPreparedDraw2Dのone-shot契約を変更しない。既存custom rendererは明示legacy adapterを経由し、resident版は関連submissionの完了とcommand破棄を確認してから公開する。
+DrawingContent2D、DrawingContentRenderers2DとPreparedDrawingFrame2Dは本ADRで共通境界として提案する。bulk builderとは独立した契約であり、GRAPHICS-0026で新しく再定義しない。snapshot経路も明示consumerとcompletion-aware ownerを使い、既存DrawList向けPreparedDraw2Dのone-shot契約を変更しない。既存custom rendererは明示legacy adapterを経由し、resident版は関連submissionの完了とcommand破棄を確認してから公開する。
+
+completion-aware ownerはcommand/submissionを借用し、Submit/Wait/Disposeを代理しない。callerは正確なSubmit戻り値をAttachSubmissionへ渡し、GPU完了確認後にcommandを破棄してRetireし、最後にsubmissionをDisposeする。RetireはStatus=Completed、command.State=Disposed、device有効性を検査してresident版を公開する。associationの正確性はcaller契約とし、成否不明のSubmitやWait取消ではAbort/再利用しない。renderer表はCreateDefaultか指定した既存表を実際に呼ぶFromLegacyを明示し、未対応を既定実装へのhidden fallbackで回避しない。
 
 ## 検討した代替案
 

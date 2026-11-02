@@ -7,7 +7,7 @@
 
 これは設計レビュー用の提案であり、既存ADRの採用事項やAPIを変更しない。合意後に[ADR運用方針](../adr/0001-adr-writing-policy.md)に従って正式ADRへ分割・採番し、採用してから実装する。候補APIと性能目標は実装済み・測定済みではない。
 
-dense/full更新を差分列へ変換せず一括構築する経路は、補完する[bulk経路の設計案](drawing2d-bulk-path.md)に整理した。CPU更新方式とGPU転送方式の選択は別とする。
+dense/full更新のbulk構築とGPU転送選択は、別PRのGRAPHICS-0026で提案する。本PRはそのbuilder/APIを含めず、保持内容と差分公開の共通境界に絞る。
 
 PRレビュー用の主要判断は[GRAPHICS-0025](../adr/graphics/GRAPHICS-0025-retained-drawing-content.md)へ整理した（状態は提案）。本書は詳細仕様・測定計画を補足する。
 
@@ -154,9 +154,9 @@ scene更新のatomic性は、任意の外部I/Oや任意のcustom GPU実装の�
 +    public sealed class Renderer2D
 +    {
 +        // 既存rendererへ追加。CPU scene用に別の描画エンジンを作らない。
-+        public ValueTask<PreparedBulkDraw2D> PrepareAsync(
++        public ValueTask<PreparedDrawingFrame2D> PrepareAsync(
 +            DrawingSnapshot2D snapshot, RenderTarget2D target,
-+            DrawingBulkRenderers2D renderers, CancellationToken cancellationToken = default);
++            DrawingContentRenderers2D renderers, CancellationToken cancellationToken = default);
 +    }
 +}
 ```

@@ -21,8 +21,6 @@ localの元資料はarchive branchと実行artifactへ保持している。公�
 ## 設計の正本
 
 - [GRAPHICS-0025: 状態保持描画content](../adr/graphics/GRAPHICS-0025-retained-drawing-content.md)
-- [GRAPHICS-0026: bulk更新経路](../adr/graphics/GRAPHICS-0026-bulk-drawing-updates.md)
 - [部分更新の詳細設計](../design/drawing2d-incremental-rendering.md)
-- [bulkの詳細設計](../design/drawing2d-bulk-path.md)
 
-ADRはいずれも提案状態。製品API採用/実装/mergeは本PR作成とは別の判断である。
+GRAPHICS-0026とbulk詳細設計は別PRへ分離する。ここに含むADR-0025は提案状態。製品API採用/実装/mergeは本PR作成とは別の判断である。
