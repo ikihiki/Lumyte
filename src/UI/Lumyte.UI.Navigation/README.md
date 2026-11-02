@@ -14,7 +14,7 @@ await using var app = builder.Build();
 await app.RunAsync();
 ```
 
-`pages`は`IUiPageActivationProvider`です。実行できる実装例は[Navigation sample](../../../samples/Lumyte.UI.Navigation.Sample/ExamplePages.cs)を参照してください。DIでのページ登録は後続のUI-0018で追加します。Buttonのcallbackからは、ページのactivation contextを使って要求だけを渡します。
+`pages`は`IUiPageActivationProvider`です。実行できる実装例は[Navigation sample](../../../samples/Lumyte.UI.Navigation.Sample/ExamplePages.cs)を参照してください。DIでのページ登録は任意の[Application.Navigation](../Lumyte.UI.Application.Navigation/README.md)の`MapPage`／`MapGroup`で利用できます。Buttonのcallbackからは、ページのactivation contextを使って要求だけを渡します。
 
 ```csharp
 using static Lumyte.UI.Compose;

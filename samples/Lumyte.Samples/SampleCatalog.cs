@@ -29,6 +29,7 @@ internal static class SampleCatalog
         Managed("diagnostics-ui-operator", "UI診断: Operator (OPERATOR_TOKEN が必要)", "Diagnostics.UI.Automation.Operator"),
         new("ui-application", "UI: アプリケーションhost", Native("headless", "UI.Application.Headless"), new SampleBackend("desktop", Project("UI.Application.Desktop"), [], WindowsOnly: true), Browser("browser", "UI.Application.Browser")),
         new("ui-navigation", "UI: ページ遷移と寿命", Native("headless", "UI.Navigation"), Browser("browser", "UI.Navigation.Browser")),
+        new("ui-pages", "UI: DIとMapPage", Native("headless", "UI.Pages"), Browser("browser", "UI.Pages.Browser")),
         new("pipeline-benchmark", "測定: Vulkan pipeline cache 比較", Native("vulkan", "Graphics.DeviceCaps", "vulkan", "pipeline-benchmark")),
     ];
 

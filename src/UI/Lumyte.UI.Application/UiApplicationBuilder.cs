@@ -31,6 +31,8 @@ public sealed class UiApplicationBuilder
 
     internal List<Func<IServiceProvider, IUiApplicationParticipant>> Participants { get; } = [];
 
+    internal List<Action<IServiceCollection>> BuildValidators { get; } = [];
+
     /// <summary>Sets validated application budgets.</summary>
     /// <param name="options">The immutable options.</param>
     /// <returns>This builder.</returns>
@@ -126,6 +128,11 @@ public sealed class UiApplicationBuilder
         if (_services.Any(descriptor => descriptor.ImplementationInstance is Lumyte.Resources.ResourceManager or Lumyte.Resources.Execution.ResourceRuntime or Lumyte.Execution.ExecutionRuntime))
         {
             throw new UiApplicationException("unsupported-execution-module");
+        }
+
+        foreach (Action<IServiceCollection> validate in BuildValidators)
+        {
+            validate(_services);
         }
 
         var dispatcher = new UiApplicationDispatcher(_options);
