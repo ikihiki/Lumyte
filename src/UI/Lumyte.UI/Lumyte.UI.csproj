@@ -15,4 +15,7 @@
     <InternalsVisibleTo Include="Lumyte.UI.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.UI.Application" />
+  </ItemGroup>
 </Project>

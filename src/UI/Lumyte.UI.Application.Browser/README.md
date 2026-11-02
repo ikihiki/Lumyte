@@ -1,0 +1,3 @@
+# Lumyte.UI.Application.Browser
+
+既存canvasをUseBrowserで借用します。JS ownerからRunAsyncを呼びます。project参照とNuGet packageのbuildTransitive設定で、各backendのJS moduleとlumyte-ui-application.jsを公開先のwwwrootへコピーします。Windowは同canvasのHostedへ解決し、DOM要素を削除しません。非表示中も保守turnを進めます。

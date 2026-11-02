@@ -25,9 +25,12 @@ internal sealed partial class Build
         {
             string graphics = Path.Combine(ArtifactRoot, "browser", "graphics");
             string text = Path.Combine(ArtifactRoot, "browser", "text");
+            string application = Path.Combine(ArtifactRoot, "browser", "ui-application");
             await DotNetAsync("publish", "samples/Lumyte.Graphics.Browser.Sample", "-c", Configuration, "-o", graphics).ConfigureAwait(false);
             await CaptureValidationLogAsync("browser-webgpu.log", () => NodeAsync("tools/graphics/verify-browser.mjs", Path.Combine(graphics, "wwwroot"))).ConfigureAwait(false);
             await DotNetAsync("publish", "samples/Lumyte.Graphics.Text.Parley.Browser.Sample", "-c", Configuration, "-o", text).ConfigureAwait(false);
+            await DotNetAsync("publish", "samples/Lumyte.UI.Application.Browser.Sample", "-c", Configuration, "-o", application).ConfigureAwait(false);
+            await CaptureValidationLogAsync("browser-ui-application.log", () => NodeAsync("samples/Lumyte.UI.Application.Browser.Sample/verify-browser.mjs", Path.Combine(application, "wwwroot"))).ConfigureAwait(false);
             await CaptureValidationLogAsync("browser-text-webgpu.log", () => NodeAsync("samples/Lumyte.Graphics.Text.Parley.Browser.Sample/verify-browser.mjs", Path.Combine(text, "wwwroot"))).ConfigureAwait(false);
         });
 
@@ -37,6 +40,14 @@ internal sealed partial class Build
             await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
+        });
+
+    private Target TestUiApplication => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Application.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("run", "--project", "samples/Lumyte.UI.Application.Headless.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
         });
 
     private Target TestSignals => definition => definition
@@ -268,6 +279,8 @@ internal sealed partial class Build
         string graphics = await PublishAotSampleAsync("tests/Graphics/Lumyte.Resources.Graphics.AotSmoke", "resource-graphics-aot", "Lumyte.Resources.Graphics.AotSmoke", strict: true).ConfigureAwait(false);
         await ToolAsync(graphics).ConfigureAwait(false);
         await ToolAsync(graphics, "--host").ConfigureAwait(false);
+        string ui = await PublishAotSampleAsync("samples/Lumyte.UI.Application.Headless.Sample", "ui-application-aot", "Lumyte.UI.Application.Headless.Sample", strict: true).ConfigureAwait(false);
+        await ToolAsync(ui).ConfigureAwait(false);
         string audio = await PublishAotSampleAsync("tests/Audio/Lumyte.Resources.Audio.IntegrationTests", "resources-audio-aot", "Lumyte.Resources.Audio.IntegrationTests", strict: true).ConfigureAwait(false);
         foreach (string[] mode in _invocationModes)
         {
