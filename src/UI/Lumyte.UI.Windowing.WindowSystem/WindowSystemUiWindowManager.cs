@@ -6,7 +6,7 @@ using Lumyte.Windowing.Abstractions;
 namespace Lumyte.UI.Windowing.WindowSystem;
 
 /// <summary>An optional native adapter; the host pumps Platform and WindowSystem before Advance.</summary>
-public sealed class WindowSystemUiWindowManager : IUiWindowManager, IUiWindowRequestLifetime
+public sealed class WindowSystemUiWindowManager : IUiWindowManager, IUiWindowPresentationReplacementManager, IUiWindowRequestLifetime
 {
     private readonly UiWindowManagerCore _inner;
 
@@ -77,6 +77,9 @@ public sealed class WindowSystemUiWindowManager : IUiWindowManager, IUiWindowReq
 
     /// <inheritdoc/>
     public ValueTask<UiWindowBinding> BindPresentationAsync(UiWindowId window, UiSurface surface, CancellationToken cancellationToken = default) => _inner.BindPresentationAsync(window, surface, cancellationToken);
+
+    /// <inheritdoc/>
+    public IUiWindowPresentationReplacement BeginReplacement(UiWindowId window, UiWindowBinding? current, UiSurface candidate) => _inner.BeginReplacement(window, current, candidate);
 
     /// <inheritdoc/>
     public bool IsBound(UiWindowId window, UiSurface surface) => _inner.IsBound(window, surface);

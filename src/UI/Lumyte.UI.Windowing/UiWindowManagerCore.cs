@@ -4,7 +4,7 @@ using Lumyte.Input.Abstractions;
 
 namespace Lumyte.UI.Windowing;
 
-internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBackend? native = null, string unavailableCode = "native-unavailable") : IUiWindowManager
+internal sealed partial class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBackend? native = null, string unavailableCode = "native-unavailable") : IUiWindowManager, IUiWindowPresentationReplacementManager
 {
     private readonly Dictionary<UiWindowId, Node> _nodes = [];
     private readonly Dictionary<UiWindowId, UiWindowId> _keyboardTargets = [];
@@ -694,7 +694,8 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
         {
             node.PreparationElapsed = clock.GetElapsedTime(node.Started);
             node.Phase = node.Registration is null ? UiWindowState.Ready : UiWindowState.Open;
-            node.Bind!.TrySetResult(new(node.Id, () => Retire(node)));
+            node.Binding = new(node.Id, () => Retire(node));
+            node.Bind!.TrySetResult(node.Binding);
         }
 
         if (node.Committed?.GeometryRevision == node.Desired!.GeometryRevision)
@@ -858,6 +859,11 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
 
     private void Drain(Node node)
     {
+        if (node.Replacement is not null)
+        {
+            return;
+        }
+
         if (node.Terminal && node.Registration is { } finishedRegistration && !_nodes.Values.Any(n => n.Owner == node.Id))
         {
             finishedRegistration.IsReleased = true;
@@ -1048,6 +1054,10 @@ internal sealed class UiWindowManagerCore(TimeProvider clock, IUiNativeWindowBac
         internal UiWindowRegistration? Registration { get; set; }
 
         internal IUiNativeWindow? Native { get; set; }
+
+        internal UiWindowBinding? Binding { get; set; }
+
+        internal Replacement? Replacement { get; set; }
 
         internal UiSurface? Surface { get; set; }
 

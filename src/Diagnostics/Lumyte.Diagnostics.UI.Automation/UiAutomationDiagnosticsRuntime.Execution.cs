@@ -287,7 +287,16 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                 throw new ObjectDisposedException(nameof(IUiAutomationHost), "The registered surface was replaced.");
             }
 
-            return action(surface);
+            Job? previous = _currentOperation.Value;
+            _currentOperation.Value = job;
+            try
+            {
+                return action(surface);
+            }
+            finally
+            {
+                _currentOperation.Value = previous;
+            }
         },
  cancellationToken);
 

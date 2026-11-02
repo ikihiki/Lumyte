@@ -5,7 +5,7 @@ public sealed class UiAutomationDiagnosticRegistration : IDisposable, IAsyncDisp
 {
     private readonly Action _release;
 
-    private readonly TaskCompletionSource _released = new();
+    private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     internal UiAutomationDiagnosticRegistration(Guid id, Action release)
     {

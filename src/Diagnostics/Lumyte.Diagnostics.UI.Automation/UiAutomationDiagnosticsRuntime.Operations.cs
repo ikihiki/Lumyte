@@ -12,7 +12,11 @@ public sealed partial class UiAutomationDiagnosticsRuntime
     internal DiagnosticResult<UiAutomationTargetsReceipt> Targets()
     {
         Verify();
-        UiRemoteTarget[] targets = _targets.Values.Where(target => target.Accepting).Select(target => new UiRemoteTarget(target.Id, target.Name, target.Options.AllowInput, target.Options.AllowScreenshots, target.ParentTargetId, target.PopupId, target.ControlGroupId, target.AutomationCode, target.Options.AllowTextInput, target.Options.AllowTextInspection)).ToArray();
+        UiRemoteTarget[] targets = _targets.Values.Where(target => target.Accepting).Select(target =>
+        {
+            (bool input, bool textInput, bool inspection, bool screenshots) = TargetPermissions(target);
+            return new UiRemoteTarget(target.Id, target.Name, input, screenshots, target.ParentTargetId, target.PopupId, target.ControlGroupId, target.AutomationCode, textInput, inspection);
+        }).ToArray();
         string json = JsonSerializer.Serialize(targets, UiAutomationJsonContext.Default.UiRemoteTargetArray);
         return json.Length <= 32768 ? DiagnosticResult<UiAutomationTargetsReceipt>.Success(new(json)) : Reject<UiAutomationTargetsReceipt>("result-too-large");
     }
@@ -20,12 +24,12 @@ public sealed partial class UiAutomationDiagnosticsRuntime
     internal DiagnosticResult<UiAutomationControlReceipt> Acquire(DiagnosticOperationContext context, string targetId, long durationMs)
     {
         Verify();
-        if (!CanAdmit(context) || !_targets.TryGetValue(Id(targetId), out Target? target) || !target.Accepting)
+        if (!CanAdmit(context) || !_targets.TryGetValue(Id(targetId), out Target? target) || !target.Accepting || target.Paused)
         {
             return Reject<UiAutomationControlReceipt>("not-found");
         }
 
-        if (!target.Options.AllowInput || durationMs is < 1000 or > 5000)
+        if (!TargetPermissions(target).Input || durationMs is < 1000 or > 5000)
         {
             return Reject<UiAutomationControlReceipt>("input-not-allowed");
         }
@@ -104,7 +108,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
     internal DiagnosticResult<UiAutomationJobReceipt> Start(DiagnosticOperationContext context, string targetId, string? controlId, long sequence, string planJson, long jobTimeoutMs)
     {
         Verify();
-        if (!CanAdmit(context) || !_targets.TryGetValue(Id(targetId), out Target? target) || !target.Accepting)
+        if (!CanAdmit(context) || !_targets.TryGetValue(Id(targetId), out Target? target) || !target.Accepting || target.Paused)
         {
             return Reject<UiAutomationJobReceipt>("not-found");
         }
@@ -119,6 +123,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             return Reject<UiAutomationJobReceipt>("invalid-plan");
         }
 
+        (bool input, bool textInput, bool inspection, bool screenshots) = TargetPermissions(target);
         bool action = controlId is not null;
         if (UiRemoteSchema.IsAction(plan) != action || jobTimeoutMs is < 100 or > 10000)
         {
@@ -126,22 +131,22 @@ public sealed partial class UiAutomationDiagnosticsRuntime
         }
 
         Control? control = action ? FindControl(context, controlId!) : null;
-        if (action && (!target.Options.AllowInput || control is null || control.TargetId != target.ControlGroupId || control.State != "Active" || Remaining(control.Started, control.Duration) <= TimeSpan.Zero))
+        if (action && (!input || control is null || control.TargetId != target.ControlGroupId || control.State != "Active" || Remaining(control.Started, control.Duration) <= TimeSpan.Zero))
         {
             return Reject<UiAutomationJobReceipt>("lease-gone");
         }
 
-        if (plan.Kind == "screenshot" && !target.Options.AllowScreenshots)
+        if (plan.Kind == "screenshot" && !screenshots)
         {
             return Reject<UiAutomationJobReceipt>("screenshot-not-allowed");
         }
 
-        if (plan.Kind is "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" && !target.Options.AllowTextInput)
+        if (plan.Kind is "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" && !textInput)
         {
             return Reject<UiAutomationJobReceipt>("text-input-disabled");
         }
 
-        if (plan.Kind is "expect-value" or "ime-candidates" && !target.Options.AllowTextInspection)
+        if (plan.Kind is "expect-value" or "ime-candidates" && !inspection)
         {
             return Reject<UiAutomationJobReceipt>("text-inspection-disabled");
         }

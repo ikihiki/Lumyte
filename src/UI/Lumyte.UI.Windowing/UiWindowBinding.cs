@@ -35,4 +35,14 @@ public sealed class UiWindowBinding : IAsyncDisposable
 
         return new(_completion);
     }
+
+    internal void Redirect(Func<ValueTask> release)
+    {
+        if (_completion is not null)
+        {
+            throw new InvalidOperationException("The binding is already retiring.");
+        }
+
+        _release = release;
+    }
 }
