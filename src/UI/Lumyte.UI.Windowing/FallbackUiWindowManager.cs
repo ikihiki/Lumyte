@@ -224,6 +224,41 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
     }
 
     /// <inheritdoc/>
+    public UiWindowRequestId Resize(UiWindowId window, Vector2 clientSize)
+    {
+        Check();
+        if (!float.IsFinite(clientSize.X) || !float.IsFinite(clientSize.Y) || clientSize.X <= 0 || clientSize.Y <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(clientSize));
+        }
+
+        Entry entry = Get(window);
+        if (entry.Manager is null)
+        {
+            var request = new UiWindowRequestId(Id, checked(++_nextRequest));
+            _requests.Add(request, new(request, window, UiWindowRequestStatus.Failed, "unsupported"));
+            return request;
+        }
+
+        return Track(entry, entry.Manager.Resize(entry.Inner, clientSize));
+    }
+
+    /// <inheritdoc/>
+    public UiWindowRequestId BringToFront(UiWindowId window)
+    {
+        Check();
+        Entry entry = Get(window);
+        if (entry.Manager is null)
+        {
+            var request = new UiWindowRequestId(Id, checked(++_nextRequest));
+            _requests.Add(request, new(request, window, UiWindowRequestStatus.Failed, "unsupported"));
+            return request;
+        }
+
+        return Track(entry, entry.Manager.BringToFront(entry.Inner));
+    }
+
+    /// <inheritdoc/>
     public UiWindowRequestId Show(UiWindowId window)
     {
         Check();
@@ -473,7 +508,7 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
         {
             UiWindowId id = MapId(manager, view.Window);
             Entry entry = Get(id);
-            return view with { Window = id, GeometryRevision = checked(++entry.Geometry) };
+            return view with { Window = id, GeometryRevision = checked(++entry.Geometry), StackingOrder = UiWindowStacking.Key(view.Role, view.Window, view.StackingOrder).Order };
         },
             (window, revision) => Get(window).PresentedGeometry = revision);
     }

@@ -10,5 +10,6 @@
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.WindowSystem" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.Automation" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.Tests" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application" />
   </ItemGroup>
 </Project>
