@@ -1,3 +1,4 @@
+import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -38,9 +39,7 @@ try {
     await readFile(resolve(root, "index.html"));
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-        "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
-        "--enable-features=Vulkan", "--use-vulkan=swiftshader",
-        "--use-angle=swiftshader", "--disable-vulkan-surface",
+        ...browserGpuArguments(process.platform, "swiftshader"),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
     let diagnostics = "";
@@ -96,7 +95,7 @@ try {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
-            }, method === "Runtime.evaluate" ? 45000 : 10000);
+            }, method === "Page.navigate" ? 60000 : method === "Runtime.evaluate" ? 45000 : 10000);
             pending.set(id, {
                 resolve: value => { clearTimeout(timeout); resolve(value); },
                 reject: error => { clearTimeout(timeout); reject(error); },
@@ -111,6 +110,10 @@ try {
     const throttle = Number(process.env.LUMYTE_BROWSER_CPU_THROTTLE ?? 1);
     assert.ok(Number.isFinite(throttle) && throttle >= 1 && throttle <= 20, "CPU throttle must be between 1 and 20");
     if (throttle > 1) await command("Emulation.setCPUThrottlingRate", { rate: throttle });
+    if (requiresSoftwareWebGpu()) {
+        await command("Page.enable");
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
+    }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}${sequential ? "/?sequential" : sameContent ? "/?same-content" : ""}` });
     async function evaluate(expression) {
         const response = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -267,6 +270,10 @@ try {
     assert.equal(await evaluate(`${probe}.GetDisposed()`), 4);
     assert.deepEqual(errors, []);
     await writeFile(resolve(tmpdir(), "lumyte-ui-connected-mid.png"), middle);
+    if (requiresSoftwareWebGpu()) {
+        const audit = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true });
+        verifySoftwareWebGpu(audit.result.value);
+    }
     console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
 } finally {
     socket?.close();
