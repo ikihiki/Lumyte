@@ -106,6 +106,9 @@ public partial class UiElement
             return;
         }
 
+        Surface?.ForgetSignalElement(this);
+        Signals?.Dispose();
+        Signals = null;
         Surface?.ForgetHostValidation(this);
         Surface = null;
         Parent = null;

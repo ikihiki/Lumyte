@@ -5,7 +5,7 @@ namespace Lumyte.UI;
 /// <summary>Owns persistent UI instances with caller-managed synchronization.</summary>
 public sealed partial class UiSurface
 {
-    private sealed class RebuildPlan
+    private sealed class RebuildPlan : IDisposable
     {
         private readonly UiElement[] _validators;
 
@@ -33,8 +33,14 @@ public sealed partial class UiSurface
                 for (int slotIndex = 0; slotIndex < slots.Length; slotIndex++)
                 {
                     WidgetChildren declared = widget.ChildCollections[slotIndex];
+                    if (declared.IsPortal)
+                    {
+                        slots[slotIndex] = Array.Empty<UiElement>();
+                        continue;
+                    }
+
                     IReadOnlyList<UiElement> before = slotIndex < element.Slots.Count ? element.Slots[slotIndex] : Array.Empty<UiElement>();
-                    if (retainUninitialized && ReferenceEquals(element, changedRoot) && !declared.IsInitialized && slotIndex < element.Slots.Count)
+                    if (retainUninitialized && ReferenceEquals(element, changedRoot) && !widget.RebuildsChildTree && !declared.IsInitialized && slotIndex < element.Slots.Count)
                     {
                         slots[slotIndex] = before;
                         unchanged.UnionWith(before);
@@ -80,6 +86,11 @@ public sealed partial class UiSurface
                 for (int slotIndex = slots.Length - 1; slotIndex >= 0; slotIndex--)
                 {
                     WidgetChildren declared = widget.ChildCollections[slotIndex];
+                    if (declared.IsPortal)
+                    {
+                        continue;
+                    }
+
                     for (int index = declared.Count - 1; index >= 0; index--)
                     {
                         pending.Push((slots[slotIndex][index], declared[index]));
@@ -124,11 +135,88 @@ public sealed partial class UiSurface
             }
         }
 
+        internal RebuildPlan(UiElement root, IEnumerable<UiElement> validators)
+        {
+            Root = root;
+            _validators = validators.ToArray();
+            Removed = [];
+        }
+
+        internal RebuildPlan(UiElement root, IReadOnlyList<RebuildPlan> plans, IEnumerable<UiElement> validators)
+        {
+            Root = root;
+            _validators = validators.ToArray();
+            var combined = new Dictionary<UiElement, ElementUpdate>(ReferenceEqualityComparer.Instance);
+            var replacements = new Dictionary<UiElement, UiElement>(ReferenceEqualityComparer.Instance);
+            foreach (RebuildPlan plan in plans)
+            {
+                if (!ReferenceEquals(plan.Root, root))
+                {
+                    Root = plan.Root;
+                }
+
+                foreach (ElementUpdate update in plan.Updates)
+                {
+                    if (ReferenceEquals(update.Previous, update.Next) && update.ChildrenChanged)
+                    {
+                        for (int slot = 0; slot < update.Slots.Length; slot++)
+                        {
+                            for (int index = 0; index < update.Slots[slot].Count; index++)
+                            {
+                                UiElement before = update.Element.Slots[slot][index];
+                                UiElement after = update.Slots[slot][index];
+                                if (!ReferenceEquals(before, after))
+                                {
+                                    replacements[before] = after;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!combined.TryGetValue(update.Element, out ElementUpdate? existing) || !ReferenceEquals(update.Previous, update.Next) || ReferenceEquals(existing.Previous, existing.Next))
+                    {
+                        combined[update.Element] = update;
+                    }
+                }
+            }
+
+            foreach (ElementUpdate update in combined.Values)
+            {
+                bool replaced = false;
+                IReadOnlyList<UiElement>[] slots = update.Slots.Select(slot =>
+                {
+                    if (!slot.Any(replacements.ContainsKey))
+                    {
+                        return slot;
+                    }
+
+                    replaced = true;
+                    return (IReadOnlyList<UiElement>)Array.AsReadOnly(slot.Select(child => replacements.GetValueOrDefault(child, child)).ToArray());
+                }).ToArray();
+                Updates.Add(replaced ? new(update.Element, update.Previous, update.Next, slots, true) : update);
+            }
+
+            Removed = plans.SelectMany(plan => plan.Removed).Distinct().ToArray();
+        }
+
         internal UiElement Root { get; }
 
         internal List<ElementUpdate> Updates { get; } = [];
 
         internal UiElement[] Removed { get; }
+
+        public void Dispose()
+        {
+            foreach (ElementUpdate update in Updates)
+            {
+                update.Signals?.Dispose();
+            }
+        }
+
+        internal static bool CanBatchLeaf(UiElement element, Widget next) => element.Slots.Count == 0
+            && element.Widget.ChildCollections.Count == 0 && next.ChildCollections.Count == 0
+            && !ReferenceEquals(element.Widget, next)
+            && element.Widget.GetType() == next.GetType() && element.Widget.Key == next.Key;
 
         internal void Prepare()
         {
@@ -201,6 +289,8 @@ public sealed partial class UiSurface
         internal bool ChildrenChanged { get; } = childrenChanged;
 
         internal Action? Commit { get; set; }
+
+        internal SignalUpdate? Signals { get; set; }
 
         internal bool UsesTreeValidation { get; set; }
 

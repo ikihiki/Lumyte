@@ -2,6 +2,7 @@ using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text;
 using Lumyte.Platform.TextInput.Abstractions;
+using Lumyte.Signals;
 using Lumyte.TextEditing;
 using Lumyte.UI.Application.Headless;
 using Lumyte.UI.Automation;
@@ -100,6 +101,69 @@ public sealed class TextHostTests
         await app.DisposeAsync();
     }
 
+    /// <summary>Checks validation observes a newly mounted editor inside a locally replaced child without a new root declaration.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task EditorValidationTracksPartialElementPublicationAsync()
+    {
+        var show = Signal.Create(false);
+        Lumyte.UI.Compose.Definitions.Panel root = Lumyte.UI.Compose.Panel()[new SignalChildren(show)];
+        using var surface = new UiSurface(root);
+        surface.SetViewport(new(100, 100));
+        surface.UpdateLayout();
+        await using UiApplication app = UiApplication.CreateBuilder().UseHeadless().UseRoot(_ => root).Build();
+        app.ValidateEditors(surface);
+        show.Value = true;
+        surface.UpdateLayout();
+        Assert.Same(root, surface.Root);
+        UiApplicationException error = Assert.Throws<UiApplicationException>(() => app.ValidateEditors(surface));
+        Assert.Equal("invalid-editor", error.Code);
+        show.Value = false;
+        surface.UpdateLayout();
+        Assert.Empty(surface.RootElement.Children[0].Children);
+        app.ValidateEditors(surface);
+    }
+
+    /// <summary>Checks unrelated paint updates skip editor traversal but editing requirements still invalidate the cache.</summary>
+    /// <returns>The asynchronous verification.</returns>
+    [Fact]
+    public async Task EditorValidationUsesServiceRequirementsInsteadOfEveryTreePublicationAsync()
+    {
+        var color = Signal.Create(new Color2D(1, 0, 0, 1));
+        var readOnly = Signal.Create(true);
+        var provider = new LayoutProvider();
+        using var surface = new UiSurface(Lumyte.UI.Compose.Panel()[
+            Lumyte.UI.Compose.Rectangle(fill: color), TextBox(text: "read only", layoutProvider: provider, isReadOnly: readOnly)]);
+        await using UiApplication app = UiApplication.CreateBuilder().UseHeadless().UseRoot(_ => Lumyte.UI.Compose.Panel()).Build();
+        app.ValidateEditors(surface);
+        ulong serviceRevision = surface.HostValidationRevision;
+        ulong treeRevision = surface.TreeRevision;
+        color.Value = new(0, 1, 0, 1);
+        surface.UpdateTree();
+        Assert.True(surface.TreeRevision > treeRevision);
+        Assert.Equal(serviceRevision, surface.HostValidationRevision);
+        app.ValidateEditors(surface);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int iteration = 0; iteration < 100; iteration++)
+        {
+            app.ValidateEditors(surface);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        readOnly.Value = false;
+        surface.UpdateTree();
+        Assert.True(surface.HostValidationRevision > serviceRevision);
+        Assert.Equal("text-input-unavailable", Assert.Throws<UiApplicationException>(() => app.ValidateEditors(surface)).Code);
+        readOnly.Value = true;
+        surface.UpdateTree();
+        app.ValidateEditors(surface);
+        UiElement editor = surface.RootElement.Children[1];
+        surface.Rebuild(Lumyte.UI.Compose.Panel()[Lumyte.UI.Compose.Rectangle(), new Lumyte.UI.TextEditing.Compose.Definitions.TextBox { Text = "read only", IsReadOnly = true }]);
+        surface.UpdateTree();
+        Assert.Same(editor, surface.RootElement.Children[1]);
+        Assert.Equal("invalid-editor", Assert.Throws<UiApplicationException>(() => app.ValidateEditors(surface)).Code);
+    }
+
     private static async Task WaitAsync(UiApplication app, Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -118,6 +182,27 @@ public sealed class TextHostTests
 
             await Task.Delay(1, timeout.Token);
         }
+    }
+
+    private sealed class SignalChildren : Lumyte.UI.Compose.Definitions.Panel
+    {
+        private readonly UiArgument<bool> _show;
+        private bool _showValue;
+
+        internal SignalChildren(UiArgument<bool> show)
+        {
+            _show = show;
+            _showValue = show.GetInitialValue();
+            show.AttachTo(this, nameof(_showValue), _showValue, static (target, value) => target._showValue = value);
+            if (_showValue)
+            {
+                Children.Initialize(new Lumyte.UI.TextEditing.Compose.Definitions.TextBox());
+            }
+        }
+
+        protected override bool RebuildsChildren => true;
+
+        protected override Lumyte.UI.Compose.Definitions.Widget RebuildDeclaration(UiWidgetRebuildContext context) => new SignalChildren(_show);
     }
 
     private sealed class Driver(Backend backend) : UiApplicationDriver

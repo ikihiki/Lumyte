@@ -4,7 +4,7 @@ using Lumyte.UI.TextEditing;
 namespace Lumyte.UI.Application.Navigation;
 
 /// <summary>Provides immutable borrowed services for one page activation.</summary>
-public sealed class UiPageContext
+public sealed partial class UiPageContext
 {
     internal UiPageContext(UiPageActivationContext activation, IUiTextLayoutProvider? textLayoutProvider)
     {

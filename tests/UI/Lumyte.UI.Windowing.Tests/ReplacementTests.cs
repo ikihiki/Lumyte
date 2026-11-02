@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Signals;
 using Xunit;
 using static Lumyte.UI.Compose;
 using static Lumyte.UI.Windowing.Tests.TestTasks;
@@ -60,21 +61,34 @@ public sealed class ReplacementTests
         }
     }
 
-    /// <summary>Checks resize during preparation invalidates a candidate without detaching the old surface.</summary>
-    [Fact]
-    public void StaleCandidateCanBeDiscardedWithoutReplacingTheOldBinding()
+    /// <summary>Checks resize or a paused Signal update invalidates prepared candidates without detaching the old surface.</summary>
+    /// <param name="signalChange">Whether to change a source instead of the viewport.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StaleCandidateCanBeDiscardedWithoutReplacingTheOldBinding(bool signalChange)
     {
         var windows = new HostedUiWindowManager();
         var source = new Source();
         using var oldSurface = new UiSurface(Panel());
-        using var candidate = new UiSurface(Panel());
+        var width = Signal.Create<float?>(20);
+        using var candidate = new UiSurface(Panel(width: width));
+        candidate.SetSignalUpdatesEnabled(false);
         UiWindowRegistration registration = windows.Register(source);
         Task<UiWindowBinding> initial = windows.BindPresentationAsync(registration.Window, oldSurface).AsTask();
         Pump(windows, source);
         UiWindowBinding binding = Completed(initial);
         IUiWindowPresentationReplacement change = windows.BeginReplacement(registration.Window, binding, candidate);
         Finish(change.PrepareAsync(CancellationToken.None).AsTask());
-        source.Inner.Size = new(100, 100);
+        if (signalChange)
+        {
+            width.Value = 30;
+        }
+        else
+        {
+            source.Inner.Size = new(100, 100);
+        }
+
         Pump(windows, source);
         Assert.False(change.TryValidateCommit(out string code));
         Assert.Equal("candidate-stale", code);

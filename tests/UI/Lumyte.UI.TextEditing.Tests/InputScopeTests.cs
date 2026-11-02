@@ -1,3 +1,5 @@
+using Lumyte.Signals;
+using Lumyte.TextEditing;
 using Xunit;
 
 namespace Lumyte.UI.TextEditing.Tests;
@@ -5,6 +7,32 @@ namespace Lumyte.UI.TextEditing.Tests;
 /// <summary>Checks surface-wide text input registrations release their borrowed handlers.</summary>
 public sealed class InputScopeTests
 {
+    /// <summary>Checks a signal-backed controlled declaration preserves the implementation-owned document and composition.</summary>
+    [Fact]
+    public void SignalReconstructionKeepsTheEditingDocument()
+    {
+        var text = Signal.Create("hello");
+        Compose.Definitions.TextBox first = Compose.TextBox(text: text, key: "editor");
+        using var surface = new UiSurface(first);
+        var element = (TextBoxElement)surface.RootElement;
+        TextDocument document = element.Document;
+        using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Platform))
+        {
+            edit.SetComposition(new(Guid.NewGuid(), new(0, 0), []));
+            edit.Replace(new(0, 0), "かな", new(2, 2));
+            edit.Commit();
+        }
+
+        text.Value = "external";
+        surface.UpdateTree();
+        Compose.Definitions.TextBox current = Assert.IsType<Compose.Definitions.TextBox>(surface.Root);
+        Assert.NotSame(first, current);
+        Assert.Same(element, surface.RootElement);
+        Assert.Same(document, element.Document);
+        Assert.NotNull(element.Document.CaptureSnapshot().Composition);
+        Assert.Equal("external", current.Text);
+    }
+
     /// <summary>Checks duplicate registration, detachment and replacement without assigning any editor handler.</summary>
     [Fact]
     public void RegistrationIsUniqueAndCanBeReplacedAfterDisposal()
