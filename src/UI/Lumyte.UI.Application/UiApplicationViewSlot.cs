@@ -112,7 +112,12 @@ public sealed partial class UiApplicationViewSlot
         {
             bool visible = _application.Driver.CanAnimate && _application.State != UiApplicationState.Recovering
                 && _application.Windows.TryGetSnapshot(_window, out UiWindowSnapshot? state) && state is { IsVisible: true, ClientSize.X: > 0, ClientSize.Y: > 0 };
-            view.Surface.SetAnimationUpdatesEnabled(visible && !view.Gated);
+            if (!view.Suspended)
+            {
+                view.Surface.SetSignalUpdatesEnabled(true);
+            }
+
+            view.Surface.SetAnimationUpdatesEnabled(visible && !view.Suspended);
             if (animationFrame || view.Surface.HasPendingAnimationUpdates)
             {
                 view.Surface.AdvanceAnimations();
@@ -120,8 +125,9 @@ public sealed partial class UiApplicationViewSlot
 
             view.Surface.UpdateLayout();
             _application.ValidateEditors(view.Surface);
+            view.Visuals.Advance();
             view.Portals?.Advance();
-            if (view.Gated && _application.Windows.TryGetSnapshot(_window, out UiWindowSnapshot? snapshot) && snapshot is { IsVisible: true })
+            if (view.Gated && !view.Suspended && !view.Surface.PageTransitioning && _application.Windows.TryGetSnapshot(_window, out UiWindowSnapshot? snapshot) && snapshot is { IsVisible: true })
             {
                 view.Surface.SetSignalUpdatesEnabled(true);
                 view.Surface.SetAnimationUpdatesEnabled(visible);
@@ -160,6 +166,7 @@ public sealed partial class UiApplicationViewSlot
     {
         private readonly UiApplication _application;
         private readonly UiWindowId _window;
+        private Task? _closingVisuals;
         private Task? _release;
         private ReleaseStage _releaseStage;
 
@@ -168,11 +175,14 @@ public sealed partial class UiApplicationViewSlot
             _application = application;
             _window = window;
             Surface = new(root, application.Dispatcher, application.AnimationClock);
+            Visuals = application.AttachVisuals(Surface, () => _window);
+            Visuals.Publish();
             Host = UiApplicationAutomationHost.Create(application, () => Surface);
         }
 
         private enum ReleaseStage
         {
+            Visuals,
             MenuGuard,
             Text,
             Automation,
@@ -180,6 +190,10 @@ public sealed partial class UiApplicationViewSlot
             Surface,
             Complete,
         }
+
+        internal UiVisualCoordinator Visuals { get; }
+
+        internal bool Suspended { get; set; }
 
         internal UiSurface Surface { get; }
 
@@ -199,7 +213,7 @@ public sealed partial class UiApplicationViewSlot
 
         internal IUiAutomationHost Automation => Text?.Automation ?? Host;
 
-        internal bool IsStopped => (Text?.IsStopped ?? true) && (Owner?.IsReleased ?? true) && Host.IsStopped;
+        internal bool IsStopped => (_closingVisuals?.IsCompleted ?? true) && (Text?.IsStopped ?? true) && (Owner?.IsReleased ?? true) && Host.IsStopped;
 
         internal IUiAutomationHost GetAutomation(bool inspection) => Text?.CreateAutomation(inspection) ?? Host;
 
@@ -207,15 +221,21 @@ public sealed partial class UiApplicationViewSlot
 
         internal void AttachText(bool staged) => Text = _application.AttachText(Surface, _window, Host, staged);
 
-        internal void BeginStop()
+        internal void BeginStop(bool animate = true)
         {
+            if (!animate)
+            {
+                Visuals.BeginStop();
+            }
+
             Surface.SetSignalUpdatesEnabled(false);
-            Surface.SetAnimationUpdatesEnabled(false);
+            Surface.FreezeValueAnimations();
             Portals?.Dispose();
             Host.BeginStop();
             Text?.BeginStop();
             Owner?.Dispose();
             Surface.Dispatch(new UiFocusLostInput());
+            _closingVisuals ??= Visuals.DisposeAsync().AsTask();
         }
 
         internal ValueTask ReleaseOwnedAsync() => ReleaseAsync(true);
@@ -234,6 +254,17 @@ public sealed partial class UiApplicationViewSlot
 
         private async Task ReleaseCoreAsync(bool binding)
         {
+            if (_releaseStage == ReleaseStage.Visuals)
+            {
+                if (_closingVisuals is not null)
+                {
+                    await _closingVisuals;
+                }
+
+                await Visuals.DrainAsync();
+                _releaseStage = ReleaseStage.MenuGuard;
+            }
+
             if (_releaseStage == ReleaseStage.MenuGuard)
             {
                 MenuGuard?.Dispose();

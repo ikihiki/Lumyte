@@ -48,7 +48,7 @@ public sealed partial class UiPageContext
         _admitting = true;
         try
         {
-            return build() ?? throw new InvalidOperationException("The page returned no root.");
+            return Lumyte.UI.Navigation.UiNavigationHooks.ProvideNavigation(Activation.Navigation, build() ?? throw new InvalidOperationException("The page returned no root."));
         }
         finally
         {

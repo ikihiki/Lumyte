@@ -15,7 +15,7 @@ public sealed partial class UiSurface : IDisposable
     public UiSurface(Widget root)
     {
         ValidateRoot(root);
-        using var plan = new RebuildPlan(null, root);
+        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate);
         _rootElement = plan.Root;
         _applyingRebuild = true;
         try
@@ -74,6 +74,7 @@ public sealed partial class UiSurface : IDisposable
         }
 
         _signalElements.Clear();
+        _sharedElements.Clear();
         _signalDispatcher = null;
         _pendingRebuild = null;
         _treeValidators.Clear();

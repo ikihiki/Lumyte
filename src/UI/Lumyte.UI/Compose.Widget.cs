@@ -11,6 +11,7 @@ public static partial class Compose
         /// <summary>A passive, replaceable configuration for one logical UI instance.</summary>
         [CompositionContentType<WidgetChildren>]
         [ComposeArgumentAdapter(typeof(UiArgument<>))]
+        [ComposeFunctionAdapter(typeof(UiFunctionWidget))]
         public abstract partial class Widget
         {
             private List<WidgetChildren>? _childCollections;
@@ -34,13 +35,18 @@ public static partial class Compose
                 return element;
             }
 
-            internal void Validate(UiWidgetValidationContext context) => ValidateDeclaration(context);
+            internal void Validate(UiWidgetValidationContext context)
+            {
+                Transitions?.Validate();
+                ValidateDeclaration(context);
+            }
 
             internal Widget? Recreate(UiWidgetRebuildContext context)
             {
                 Widget? next = RebuildDeclaration(context);
                 if (next is not null)
                 {
+                    next.ProvidedContexts ??= ProvidedContexts;
                     for (int index = 0; index < Math.Min(ChildCollections.Count, next.ChildCollections.Count); index++)
                     {
                         WidgetChildren before = ChildCollections[index];

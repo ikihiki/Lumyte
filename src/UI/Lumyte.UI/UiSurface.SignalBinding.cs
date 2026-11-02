@@ -1,3 +1,4 @@
+using Lumyte.Signals;
 using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
 namespace Lumyte.UI;
@@ -9,10 +10,10 @@ public sealed partial class UiSurface
     {
         foreach (ElementUpdate update in plan.Updates)
         {
-            if (!ReferenceEquals(update.Previous, update.Next)
-                && (update.Element.Signals is not null || update.Next.SignalArguments is { Count: > 0 } || update.Next.ConstructionReads is { IsEmpty: false }))
+            if ((!ReferenceEquals(update.Previous, update.Next) || update.Content is not null)
+                && (update.Element.Signals is not null || update.Next.SignalArguments is { Count: > 0 } || update.Next.ConstructionReads is { IsEmpty: false } || update.Content?.Reads is { IsEmpty: false }))
             {
-                update.Signals = new(this, update.Element, update.Next);
+                update.Signals = new(this, update.Element, update.Next, update.Content?.Reads ?? (update.Content is null ? update.Element.ContentReads : null));
             }
         }
     }
@@ -24,23 +25,25 @@ public sealed partial class UiSurface
         private readonly Widget _next;
         private readonly UiElement.SignalObserver? _observer;
         private readonly bool _borrowed;
+        private readonly SignalReadSet? _contentReads;
         private bool _committed;
 
-        internal SignalUpdate(UiSurface surface, UiElement element, Widget next)
+        internal SignalUpdate(UiSurface surface, UiElement element, Widget next, SignalReadSet? contentReads)
         {
             _surface = surface;
             _element = element;
             _next = next;
-            if (next.SignalArguments is { Count: > 0 } || next.ConstructionReads is { IsEmpty: false })
+            _contentReads = contentReads;
+            if (next.SignalArguments is { Count: > 0 } || next.ConstructionReads is { IsEmpty: false } || contentReads is { IsEmpty: false })
             {
-                if (element.Signals is { } current && current.CanReuse(next))
+                if (element.Signals is { } current && current.CanReuse(next, contentReads))
                 {
                     _observer = current;
                     _borrowed = true;
                 }
                 else
                 {
-                    _observer = new(surface, element, next);
+                    _observer = new(surface, element, next, contentReads);
                 }
             }
         }
@@ -64,7 +67,7 @@ public sealed partial class UiSurface
                 previous?.Dispose();
             }
 
-            _observer?.Adopt(_next);
+            _observer?.Adopt(_next, _contentReads);
         }
     }
 }

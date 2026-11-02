@@ -29,4 +29,7 @@ public enum UiNavigationPhase
 
     /// <summary>Faulted.</summary>
     Faulted,
+
+    /// <summary>Animating after logical commit and before resource retirement.</summary>
+    Animating,
 }

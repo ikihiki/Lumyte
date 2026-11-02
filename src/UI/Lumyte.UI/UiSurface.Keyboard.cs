@@ -92,7 +92,7 @@ public sealed partial class UiSurface
     }
 
     private bool IsFocusEligible(UiElement target) =>
-        ReferenceEquals(target.Surface, this) && ReferenceEquals(target.InputVersion, _inputVersion) && target.InputFocusable;
+        !target.IsTransitioning && ReferenceEquals(target.Surface, this) && ReferenceEquals(target.InputVersion, _inputVersion) && target.InputFocusable;
 
     private bool ChangeFocus(UiElement? target)
     {

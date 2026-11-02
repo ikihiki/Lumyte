@@ -16,4 +16,5 @@ namespace Lumyte.Diagnostics.UI.Automation.Contracts;
 /// <param name="IsPressed">The IsPressed value.</param>
 /// <param name="HasActivePress">The HasActivePress value.</param>
 /// <param name="Actions">The Actions value.</param>
-public sealed record UiRemoteNode(string Id, string? ParentId, string? TestId, string? Name, string Role, UiRemoteRect Bounds, UiRemoteRect ClippedBounds, bool IsVisible, bool IsEnabled, bool HitTestVisible, bool IsFocusable, bool IsFocused, bool IsPressed, bool HasActivePress, string[] Actions);
+/// <param name="IsTransitioning">Whether an element, ancestor or page visual transition gates normal actions.</param>
+public sealed record UiRemoteNode(string Id, string? ParentId, string? TestId, string? Name, string Role, UiRemoteRect Bounds, UiRemoteRect ClippedBounds, bool IsVisible, bool IsEnabled, bool HitTestVisible, bool IsFocusable, bool IsFocused, bool IsPressed, bool HasActivePress, string[] Actions, bool IsTransitioning = false);
