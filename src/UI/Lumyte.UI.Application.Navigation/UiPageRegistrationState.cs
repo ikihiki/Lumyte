@@ -14,13 +14,14 @@ internal sealed class UiPageRegistrationState
     private readonly ServiceDescriptor _registry;
     private Dictionary<string, UiPageRegistration>? _snapshot;
     private UiPageKey<UiNoArgs>? _initial;
+    private Type[] _serviceTypes = [];
 
     private UiPageRegistrationState(UiApplicationBuilder builder)
     {
         _builder = builder;
         _binding = ServiceDescriptor.Scoped<UiPageContextBinding, UiPageContextBinding>();
         _context = ServiceDescriptor.Scoped<UiPageContext>(services => services.GetRequiredService<UiPageContextBinding>().Context);
-        _registry = ServiceDescriptor.Singleton<UiPageRegistry>(_ => new(_snapshot ?? throw new InvalidOperationException("Build has not frozen page registrations.")));
+        _registry = ServiceDescriptor.Singleton<UiPageRegistry>(_ => new(_snapshot ?? throw new InvalidOperationException("Build has not frozen page registrations."), _serviceTypes));
         builder.Services.Add(_binding);
         builder.Services.Add(_context);
         builder.Services.Add(_registry);
@@ -95,5 +96,6 @@ internal sealed class UiPageRegistrationState
         }
 
         _snapshot = new(_pages, StringComparer.Ordinal);
+        _serviceTypes = services.Select(service => service.ServiceType).Where(type => !type.ContainsGenericParameters).Distinct().ToArray();
     }
 }

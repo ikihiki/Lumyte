@@ -38,6 +38,7 @@ public sealed partial class UiApplicationViewSlot
             private Action? _inputCommit;
             private Widget? _root;
             private object? _inputVersion;
+            private UiSignalRevision _signalRevision;
             private UiFocusBookmark? _bookmark;
             private ulong _graphicsGeneration;
             private Guid _surfaceId;
@@ -61,6 +62,7 @@ public sealed partial class UiApplicationViewSlot
                 slot._application.ValidateEditors(root);
                 _candidate = new(slot._application, slot._window, root);
                 _candidate.Host.Pause();
+                _candidate.Surface.SetSignalUpdatesEnabled(false);
                 _graphicsGeneration = slot._application.GraphicsGeneration;
                 _root = root;
                 _replacement = ((IUiWindowPresentationReplacementManager)slot._application.Windows).BeginReplacement(slot._window, _previous?.Binding, _candidate.Surface);
@@ -68,8 +70,11 @@ public sealed partial class UiApplicationViewSlot
                 _candidate.AttachText(true);
                 _owner = slot._application.Popups.PrepareOwnerReplacement(_previous?.Owner, slot._window, _candidate.Surface, _candidate.Text is { } text ? text.Connection.SuspendAsync : null);
                 _candidate.Owner = _owner.Token;
+                _candidate.AttachPortals();
+                _candidate.Portals!.SetUpdatesEnabled(false);
                 _surfaceId = _candidate.Surface.CaptureAutomationSnapshot().SurfaceId;
                 _inputVersion = _candidate.Surface.InputVersionForWindowing;
+                _signalRevision = _candidate.Surface.CommittedSignalRevision;
                 _inputCommit = slot._application.PrepareInputReplacement(slot, _previous?.Surface, _candidate.Surface);
                 foreach (IUiApplicationViewParticipant participant in slot._application.ViewParticipants)
                 {
@@ -88,6 +93,7 @@ public sealed partial class UiApplicationViewSlot
                 }
 
                 _previous?.Host.Pause();
+                _previous?.Portals?.SetUpdatesEnabled(false);
                 while (_previous?.Host.HasLease == true)
                 {
                     await slot._application.NextTurnAsync().AsTask().WaitAsync(cancellationToken);
@@ -95,6 +101,7 @@ public sealed partial class UiApplicationViewSlot
 
                 if (_previous is { } previous)
                 {
+                    previous.Surface.SetSignalUpdatesEnabled(false);
                     _bookmark = previous.Surface.CaptureFocus();
                     _gated = true;
                     slot._application.Popups.GateOwner(previous.Owner!, true);
@@ -114,7 +121,7 @@ public sealed partial class UiApplicationViewSlot
             {
                 code = "candidate-stale";
                 return !slot._stopping && _phase == ChangePhase.Quiesced && _candidate is not null && ReferenceEquals(slot._current, _previous) && ReferenceEquals(_candidate.Surface.Root, _root) && ReferenceEquals(_candidate.Surface.InputVersionForWindowing, _inputVersion)
-                    && _diagnostics.All(change => change.IsReady) && slot._application.State != UiApplicationState.Recovering && slot._application.GraphicsGeneration == _graphicsGeneration && _replacement!.TryValidateCommit(out code);
+                    && _candidate.Surface.SignalRevision == _signalRevision && _diagnostics.All(change => change.IsReady) && slot._application.State != UiApplicationState.Recovering && slot._application.GraphicsGeneration == _graphicsGeneration && _replacement!.TryValidateCommit(out code);
             }
 
             public void Commit(object metadata)
@@ -224,6 +231,9 @@ public sealed partial class UiApplicationViewSlot
                         slot._application.Popups.GateOwner(previous.Owner!, false);
                     }
 
+                    previous.Surface.UpdateLayout();
+                    previous.Surface.SetSignalUpdatesEnabled(true);
+                    previous.Portals?.SetUpdatesEnabled(true);
                     previous.Host.Resume();
                 }
 

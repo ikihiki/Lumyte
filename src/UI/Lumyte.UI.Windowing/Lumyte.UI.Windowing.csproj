@@ -5,6 +5,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../Lumyte.UI/Lumyte.UI.csproj" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.WindowSystem" />

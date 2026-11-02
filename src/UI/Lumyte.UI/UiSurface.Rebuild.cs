@@ -27,32 +27,39 @@ public sealed partial class UiSurface
     public void UpdateTree()
     {
         ThrowIfDisposed();
-        if (_applyingRebuild || _pendingRebuild is not { } candidate)
+        ThrowSignalFailure();
+        if (_applyingRebuild)
         {
             return;
         }
 
-        _applyingRebuild = true;
-        try
+        if (_pendingRebuild is { } candidate)
         {
-            var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators);
-            plan.Prepare();
-            if (_isDisposed)
+            _applyingRebuild = true;
+            try
             {
-                return;
-            }
+                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators);
+                plan.Prepare();
+                PrepareSignalUpdates(plan);
+                if (_isDisposed)
+                {
+                    return;
+                }
 
-            if (ReferenceEquals(_pendingRebuild, candidate))
+                if (ReferenceEquals(_pendingRebuild, candidate))
+                {
+                    _pendingRebuild = null;
+                }
+
+                Publish(plan);
+            }
+            finally
             {
-                _pendingRebuild = null;
+                _applyingRebuild = false;
             }
+        }
 
-            Publish(plan);
-        }
-        finally
-        {
-            _applyingRebuild = false;
-        }
+        ProcessSignals(true);
     }
 
     internal void RebuildSubtree(UiElement previous, Widget next)
@@ -72,8 +79,9 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators);
             plan.Prepare();
+            PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {
                 Publish(plan);
@@ -143,6 +151,11 @@ public sealed partial class UiSurface
         List<Exception>? failures = null;
         try
         {
+            foreach (ElementUpdate update in plan.Updates)
+            {
+                update.Signals?.Commit();
+            }
+
             if (!_isDisposed)
             {
                 UpdateHostValidation(plan);

@@ -22,7 +22,11 @@ internal static class ExamplePages
         {
             _ = counter;
             state.Navigation = context.Activation.Navigation;
-            return Button(width: 160, height: 48, testId: "next", onClick: () => context.Activation.Navigation.RequestNavigate(details, new("Typed DI page")))[Rectangle(width: 160, height: 48, fill: new Color2D(0.5f, 0.5f, 0.5f, 1))];
+            return Button(width: state.Width, height: 48, testId: "next", onClick: () =>
+            {
+                state.Width.Value = 140;
+                context.Activation.Navigation.RequestNavigate(details, new("Typed DI page"));
+            })[Rectangle(width: state.Width, height: 48, fill: new Color2D(0.5f, 0.5f, 0.5f, 1))];
         });
         builder.UseWindows(_ => [Window("main", "DI pages", content: services => new ObservedWindow(Page(home)(services), state, observe))]);
         return state;
