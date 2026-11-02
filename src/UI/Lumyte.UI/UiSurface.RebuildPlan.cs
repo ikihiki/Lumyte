@@ -8,14 +8,16 @@ public sealed partial class UiSurface
     private sealed class RebuildPlan : IDisposable
     {
         private readonly UiElement[] _validators;
+        private readonly IReadOnlyDictionary<UiSharedElementKey, UiElement>? _shared;
 
-        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null)
+        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null)
         {
             var retained = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             var unchanged = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             UiElement changedRoot = Match(previous, next, retained);
             Root = changedRoot;
             _validators = validators?.ToArray() ?? [];
+            _shared = shared;
             var pending = new System.Collections.Generic.Stack<(UiElement Element, Widget Next)>();
             pending.Push((Root, next));
             while (pending.TryPop(out (UiElement Element, Widget Next) item))
@@ -135,17 +137,19 @@ public sealed partial class UiSurface
             }
         }
 
-        internal RebuildPlan(UiElement root, IEnumerable<UiElement> validators)
+        internal RebuildPlan(UiElement root, IEnumerable<UiElement> validators, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared)
         {
             Root = root;
             _validators = validators.ToArray();
+            _shared = shared;
             Removed = [];
         }
 
-        internal RebuildPlan(UiElement root, IReadOnlyList<RebuildPlan> plans, IEnumerable<UiElement> validators)
+        internal RebuildPlan(UiElement root, IReadOnlyList<RebuildPlan> plans, IEnumerable<UiElement> validators, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null)
         {
             Root = root;
             _validators = validators.ToArray();
+            _shared = shared;
             var combined = new Dictionary<UiElement, ElementUpdate>(ReferenceEqualityComparer.Instance);
             var replacements = new Dictionary<UiElement, UiElement>(ReferenceEqualityComparer.Instance);
             foreach (RebuildPlan plan in plans)
@@ -221,6 +225,17 @@ public sealed partial class UiSurface
 
         internal void Prepare()
         {
+            var changedVisuals = new HashSet<UiElement>(Updates.Select(update => update.Element), ReferenceEqualityComparer.Instance);
+            changedVisuals.UnionWith(Removed);
+            HashSet<UiSharedElementKey> sharedKeys = _shared is null ? [] : _shared.Where(pair => !changedVisuals.Contains(pair.Value)).Select(pair => pair.Key).ToHashSet();
+            foreach (ElementUpdate update in Updates)
+            {
+                if (update.Next.SharedElementKey is { } key && (string.IsNullOrEmpty(key.Value) || !sharedKeys.Add(key)))
+                {
+                    throw new ArgumentException("Shared visual keys must be valid and unique within a surface.");
+                }
+            }
+
             foreach (ElementUpdate update in Updates)
             {
                 foreach (IReadOnlyList<UiElement> slot in update.Slots)

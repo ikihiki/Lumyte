@@ -44,6 +44,8 @@ public sealed partial class UiPopupManager : IDisposable
     /// <summary>Gets a value indicating whether all owned popup content and owner registrations have drained.</summary>
     public bool IsStopped => _stopping && _popups.Count == 0 && _owners.Count == 0;
 
+    internal Func<UiSurface, IAsyncDisposable>? VisualLifetime { get; set; }
+
     /// <summary>Registers an already bound normal window and surface as borrowed input destinations.</summary>
     /// <param name="window">The same manager's bound window.</param>
     /// <param name="surface">The borrowed surface.</param>
@@ -501,7 +503,7 @@ public sealed partial class UiPopupManager : IDisposable
 
         p.Reason = reason;
         p.Handle.State = UiPopupState.Closing;
-        p.Surface?.SetAnimationUpdatesEnabled(false);
+        p.Surface?.FreezeValueAnimations();
         p.GuardCancellation.Cancel();
         foreach (Popup child in _popups.Values.Where(child => child.Parent == p).ToArray())
         {
@@ -599,6 +601,11 @@ public sealed partial class UiPopupManager : IDisposable
 
                 p.Surface = request.PreparedSurface ?? new(content);
                 request.PreparedSurface = null;
+                if (VisualLifetime?.Invoke(p.Surface) is { } visual)
+                {
+                    p.Participants.Add(visual);
+                }
+
                 p.SurfaceId = p.Surface.CaptureAutomationSnapshot().SurfaceId;
             }
             catch (Exception)

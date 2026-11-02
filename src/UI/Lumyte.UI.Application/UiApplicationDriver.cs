@@ -32,9 +32,19 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     internal virtual bool CanAnimate => true;
 
+    internal virtual bool SupportsVisuals => false;
+
     public abstract ValueTask DisposeAsync();
 
     internal virtual Lumyte.UI.Windowing.TextInput.IUiTextInputTargetResolver CreateTextTargets(UiApplication application) => new Lumyte.UI.Windowing.TextInput.UiPlatformTextInputTargetResolver(application.Windows, InputSource!, application.ResolveNative);
+
+    internal virtual ValueTask<UiVisualSnapshot?> CaptureVisualAsync(DrawList2D commands, uint width, uint height, IDisposable reservation, IReadOnlyList<UiVisualSnapshot>? visuals = null)
+    {
+        reservation.Dispose();
+        return ValueTask.FromResult<UiVisualSnapshot?>(null);
+    }
+
+    internal virtual ValueTask<bool> UpdateVisualAsync(UiVisualSnapshot image, DrawList2D commands, IReadOnlyList<UiVisualSnapshot> visuals) => ValueTask.FromResult(false);
 
     internal virtual ValueTask<byte[]> CaptureAsync(UiSurface surface, CancellationToken token) => throw new NotSupportedException("This driver does not provide GPU readback.");
 
@@ -49,6 +59,8 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
     internal abstract ValueTask CloseWindowAsync(UiDriverWindow window);
 
     internal virtual IUiWindowManager CreateWindowManager(TimeProvider clock) => new HostedUiWindowManager(clock);
+
+    internal virtual ValueTask DrainVisualsAsync() => ValueTask.CompletedTask;
 
     internal virtual ValueTask RetireResourcesAsync() => ValueTask.CompletedTask;
 

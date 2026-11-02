@@ -45,10 +45,7 @@ public sealed partial class UiApplication
                 continue;
             }
 
-            var canvas = new Canvas2D();
-            canvas.Begin();
-            entry.Root.Source.Record(canvas);
-            DrawList2D commands = canvas.End();
+            DrawList2D commands = entry.Root.Source.RecordFrame(GraphicsGeneration);
             entry.Drawing = DrawFrameAsync(entry.Root, commands);
             recorded = true;
         }

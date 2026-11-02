@@ -34,7 +34,11 @@ public static partial class Compose
                 return element;
             }
 
-            internal void Validate(UiWidgetValidationContext context) => ValidateDeclaration(context);
+            internal void Validate(UiWidgetValidationContext context)
+            {
+                Transitions?.Validate();
+                ValidateDeclaration(context);
+            }
 
             internal Widget? Recreate(UiWidgetRebuildContext context)
             {

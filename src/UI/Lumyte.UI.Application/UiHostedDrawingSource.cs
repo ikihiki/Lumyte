@@ -13,6 +13,9 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
 
     private readonly HashSet<UiSurface> _paused = [];
 
+    private readonly Dictionary<Presentation, (UiPresenceEntry Entry, ulong Generation)[]> _visualPresentations = [];
+    private readonly Dictionary<Presentation, bool> _ordinaryVisualFrames = [];
+    private readonly Dictionary<Presentation, ulong> _visualRevisions = [];
     private TaskCompletionSource? _frame;
 
     public Guid SourceId { get; } = Guid.NewGuid();
@@ -54,38 +57,11 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
 
     internal void Record(DrawingCanvas2D canvas)
     {
-        if (_frame is not null)
-        {
-            throw new InvalidOperationException("Finish the previous frame before recording another.");
-        }
-
-        _frame = new();
-        _recorded.Clear();
+        BeginFrame();
         try
         {
-            foreach (Presentation presentation in _presentations.Where(p => !p.Closing && p.Active).OrderBy(p => UiWindowStacking.Key(p.View.Role, p.View.Window, p.View.StackingOrder)).ToArray())
-            {
-                UiWindowPresentationView view = _paused.Contains(presentation.Surface) ? presentation.View with { IsVisible = false } : presentation.View;
-                _recorded.Add(presentation, view);
-                if (!view.IsVisible)
-                {
-                    continue;
-                }
-
-                canvas.Save();
-                try
-                {
-                    canvas.Scale(view.Scale);
-                    canvas.ClipRect(view.ClipInPresentation);
-                    canvas.Translate(new(view.BoundsInPresentation.X, view.BoundsInPresentation.Y));
-                    PrepareSurface(presentation.Surface);
-                    presentation.Surface.Record(canvas);
-                }
-                finally
-                {
-                    canvas.Restore();
-                }
-            }
+            FrameItem[] items = PrepareFrame();
+            RecordItems(canvas, items);
         }
         catch
         {
@@ -105,6 +81,12 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
         {
             foreach ((Presentation token, UiWindowPresentationView view) in _recorded)
             {
+                (token.Surface.VisualHost as UiVisualCoordinator)?.Presented(view, _ordinaryVisualFrames.GetValueOrDefault(token), _visualRevisions.GetValueOrDefault(token));
+                if (!token.Surface.PageTransitioning && _visualPresentations.TryGetValue(token, out (UiPresenceEntry Entry, ulong Generation)[]? entries))
+                {
+                    token.Surface.ConfirmVisualPresentation(entries);
+                }
+
                 token.Presented = view;
                 token.PresentedGeometryRevision = view.GeometryRevision;
             }
@@ -112,12 +94,67 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
 
         _frame = null;
         _recorded.Clear();
+        _visualPresentations.Clear();
+        _ordinaryVisualFrames.Clear();
+        _visualRevisions.Clear();
         frame.TrySetResult();
     }
+
+    internal UiVisualSnapshot[] RecordedVisuals() => _recorded.Where(pair => pair.Value.IsVisible).Select(pair => pair.Key.Surface.VisualHost).OfType<UiVisualCoordinator>().SelectMany(coordinator => coordinator.Recorded).Distinct().ToArray();
 
     internal UiWindowPresentationView? Recorded(UiSurface surface) => _recorded.FirstOrDefault(pair => ReferenceEquals(pair.Key.Surface, surface)).Value;
 
     internal UiWindowPresentationView Presented(UiWindowId window) => _presentations.Single(p => p.View.Window == window).Presented ?? throw new InvalidOperationException("No frame has been presented.");
+
+    private void BeginFrame()
+    {
+        if (_frame is not null)
+        {
+            throw new InvalidOperationException("Finish the previous frame before recording another.");
+        }
+
+        _frame = new();
+        _recorded.Clear();
+        _visualPresentations.Clear();
+        _ordinaryVisualFrames.Clear();
+        _visualRevisions.Clear();
+    }
+
+    private void RecordItems(DrawingCanvas2D canvas, FrameItem[] items)
+    {
+        foreach (FrameItem item in items)
+        {
+            Presentation presentation = item.Presentation;
+            UiWindowPresentationView view = item.View;
+            _recorded.Add(presentation, view);
+            if (!view.IsVisible)
+            {
+                continue;
+            }
+
+            canvas.Save();
+            try
+            {
+                canvas.Scale(view.Scale);
+                canvas.ClipRect(view.ClipInPresentation);
+                canvas.Translate(new(view.BoundsInPresentation.X, view.BoundsInPresentation.Y));
+                (presentation.Surface.VisualHost as UiVisualCoordinator)?.BeginRecord();
+                presentation.Surface.Record(canvas);
+                CapturePresentation(presentation);
+            }
+            finally
+            {
+                canvas.Restore();
+            }
+        }
+    }
+
+    private void CapturePresentation(Presentation presentation)
+    {
+        _visualPresentations[presentation] = presentation.Surface.CaptureVisualPresentation();
+        _visualRevisions[presentation] = presentation.Surface.VisualRevision;
+        _ordinaryVisualFrames[presentation] = presentation.Surface.VisualHost is not UiVisualCoordinator { Page: { Committed: true, IsFinal: false } };
+    }
 
     private sealed class Presentation(UiHostedDrawingSource source, UiSurface surface, UiWindowPresentationView view) : IUiWindowPresentation
     {
@@ -130,6 +167,10 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
         internal bool Active { get; set; } = true;
 
         internal UiSurface Surface { get; } = surface;
+
+        internal ulong EligibilityRevision { get; set; } = ulong.MaxValue;
+
+        internal bool CacheEligible { get; set; }
 
         internal UiWindowPresentationView View { get; private set; } = view;
 
@@ -153,6 +194,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
                 await frame.Task;
             }
 
+            source.DiscardCache();
             source._presentations.Remove(this);
             source._paused.Remove(Surface);
         }

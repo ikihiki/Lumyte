@@ -74,6 +74,7 @@ public sealed partial class UiSurface : IDisposable
         }
 
         _signalElements.Clear();
+        _sharedElements.Clear();
         _signalDispatcher = null;
         _pendingRebuild = null;
         _treeValidators.Clear();

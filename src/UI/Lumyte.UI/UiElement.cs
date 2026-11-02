@@ -106,6 +106,7 @@ public partial class UiElement
             return;
         }
 
+        DisconnectPresence(Surface!);
         Animations?.Dispose();
         Animations = null;
         Surface?.ForgetSignalElement(this);

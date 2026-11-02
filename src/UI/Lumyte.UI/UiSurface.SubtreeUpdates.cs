@@ -57,7 +57,7 @@ public sealed partial class UiSurface
                 {
                     if (leaves is null)
                     {
-                        leaves = new(_rootElement, _treeValidators);
+                        leaves = new(_rootElement, _treeValidators, _sharedElements);
                         plans.Add(leaves);
                     }
 
@@ -67,7 +67,7 @@ public sealed partial class UiSurface
                 }
 
                 leaves = null;
-                var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators);
+                var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements);
                 plans.Add(local);
                 covered.UnionWith(local.Updates.Select(update => update.Element));
                 covered.UnionWith(local.Removed);
@@ -78,7 +78,7 @@ public sealed partial class UiSurface
                 return;
             }
 
-            using RebuildPlan? combined = plans.Count > 1 ? new(_rootElement, plans, _treeValidators) : null;
+            using RebuildPlan? combined = plans.Count > 1 ? new(_rootElement, plans, _treeValidators, _sharedElements) : null;
             RebuildPlan plan = combined ?? plans[0];
             _applyingRebuild = true;
             try

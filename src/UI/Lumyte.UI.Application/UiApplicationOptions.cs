@@ -12,6 +12,9 @@ public sealed record UiApplicationOptions
     /// <summary>Gets the borrowed monotonic animation clock, or null to use TimeProvider timestamps.</summary>
     public IMonotonicClock? AnimationClock { get; init; }
 
+    /// <summary>Gets the immutable motion policy and aggregate snapshot limits.</summary>
+    public UiMotionOptions Motion { get; init; } = new();
+
     /// <summary>Gets the opaque background cleared once per presentation.</summary>
     public Color2D Background { get; init; } = new(1, 1, 1, 1);
 
@@ -35,6 +38,8 @@ public sealed record UiApplicationOptions
 
     internal void Validate()
     {
+        ArgumentNullException.ThrowIfNull(Motion);
+        Motion.Validate();
         ArgumentNullException.ThrowIfNull(TimeProvider);
         ArgumentNullException.ThrowIfNull(ImeCandidates);
         UiApplicationBuilder.ValidateSize(ImeCandidates.ClientSize);

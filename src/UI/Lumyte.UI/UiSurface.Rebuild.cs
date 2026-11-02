@@ -38,7 +38,7 @@ public sealed partial class UiSurface
             _applyingRebuild = true;
             try
             {
-                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators);
+                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements);
                 PrepareAnimationUpdates(plan);
                 plan.Prepare();
                 PrepareSignalUpdates(plan);
@@ -61,6 +61,7 @@ public sealed partial class UiSurface
         }
 
         ProcessSignals(true);
+        ReconcileVisuals();
     }
 
     internal void RebuildSubtree(UiElement previous, Widget next)
@@ -80,7 +81,7 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements);
             PrepareAnimationUpdates(plan);
             plan.Prepare();
             PrepareSignalUpdates(plan);
@@ -97,11 +98,36 @@ public sealed partial class UiSurface
 
     private void Publish(RebuildPlan plan)
     {
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if (update.Previous?.SharedElementKey is { } previous)
+            {
+                _sharedElements.Remove(previous);
+            }
+        }
+
+        foreach (UiElement removed in plan.Removed)
+        {
+            if (removed.Widget.SharedElementKey is { } previous)
+            {
+                _sharedElements.Remove(previous);
+            }
+        }
+
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if (update.Next.SharedElementKey is { } key)
+            {
+                _sharedElements.Add(key, update.Element);
+            }
+        }
+
         bool structureChanged = plan.Removed.Length != 0;
         foreach (ElementUpdate update in plan.Updates)
         {
             structureChanged |= update.ChildrenChanged || update.Previous is null;
             update.Element.Publish(this, update.Next, update.Slots);
+            update.Element.ConnectPresence(this, update.Previous);
             update.Element.UsesTreeValidation = update.UsesTreeValidation;
             if (update.UsesTreeValidation)
             {
@@ -134,6 +160,15 @@ public sealed partial class UiSurface
             if ((update.Invalidation & (UiInvalidation.Layout | UiInvalidation.Input)) != 0)
             {
                 InvalidateInput();
+            }
+        }
+
+        InvalidateVisualRevision();
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if (update.Previous is not null && ((update.Invalidation & (UiInvalidation.Layout | UiInvalidation.Visual)) != 0 || update.ChildrenChanged))
+            {
+                update.Element.InvalidateChildVisuals();
             }
         }
 

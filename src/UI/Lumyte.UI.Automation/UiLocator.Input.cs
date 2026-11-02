@@ -17,7 +17,7 @@ public sealed partial class UiLocator
     {
         Rect2D clip = node.ClippedBounds;
         point = options?.Position is { } offset ? new(node.Bounds.X + offset.X, node.Bounds.Y + offset.Y) : new(clip.X + (clip.Width / 2), clip.Y + (clip.Height / 2));
-        return Visible(node) && node.IsEnabled && node.HitTestVisible && !node.HasActivePress
+        return !node.IsTransitioning && Visible(node) && node.IsEnabled && node.HitTestVisible && !node.HasActivePress
             && float.IsFinite(point.X) && float.IsFinite(point.Y) && Contains(node.Bounds, point) && Contains(clip, point);
     }
 
@@ -110,7 +110,7 @@ public sealed partial class UiLocator
                     }
 
                     RequireAction(run, node, UiAutomationActions.Focus);
-                    if (!node.IsFocusable || !run.CanReceiveKeys(surface))
+                    if (node.IsTransitioning || !node.IsFocusable || !run.CanReceiveKeys(surface))
                     {
                         return null;
                     }
@@ -146,7 +146,7 @@ public sealed partial class UiLocator
                     UiAutomationSnapshot snapshot = surface.CaptureAutomationSnapshot();
                     run.Remember(snapshot);
                     UiAutomationNode? node = Single(run, snapshot);
-                    if (node is null || node.Id != focused || !node.IsFocused || !node.IsFocusable || !run.CanReceiveKeys(surface))
+                    if (node is null || node.Id != focused || !node.IsFocused || node.IsTransitioning || !node.IsFocusable || !run.CanReceiveKeys(surface))
                     {
                         return false;
                     }
@@ -164,7 +164,7 @@ public sealed partial class UiLocator
                         UiAutomationSnapshot modified = surface.CaptureAutomationSnapshot();
                         run.Remember(modified);
                         UiAutomationNode? afterModifiers = Single(run, modified);
-                        if (afterModifiers is null || afterModifiers.Id != focused || !afterModifiers.IsFocused || !afterModifiers.IsFocusable || !run.CanReceiveKeys(surface))
+                        if (afterModifiers is null || afterModifiers.Id != focused || !afterModifiers.IsFocused || afterModifiers.IsTransitioning || !afterModifiers.IsFocusable || !run.CanReceiveKeys(surface))
                         {
                             throw run.Failure(UiAutomationFailureKind.TargetChanged, "Focus changed after modifier input; the key will not be sent or retried.");
                         }
