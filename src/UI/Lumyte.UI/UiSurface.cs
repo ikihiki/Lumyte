@@ -20,6 +20,7 @@ public sealed partial class UiSurface : IDisposable
         _applyingRebuild = true;
         try
         {
+            PrepareAnimationUpdates(plan);
             plan.Prepare();
             PrepareSignalUpdates(plan);
             if (!_isDisposed)

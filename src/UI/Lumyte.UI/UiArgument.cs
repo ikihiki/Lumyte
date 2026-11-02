@@ -40,6 +40,10 @@ public readonly struct UiArgument<T> : IComposeArgument<T>
     /// <param name="source">The derived value source.</param>
     public static implicit operator UiArgument<T>(Computed<T> source) => FromSignal(source);
 
+    /// <summary>Converts a passive animation projection while retaining its producer identity.</summary>
+    /// <param name="source">The typed display projection.</param>
+    public static implicit operator UiArgument<T>(UiAnimated<T> source) => FromSignal(source);
+
     /// <summary>Creates an explicitly specified constant.</summary>
     /// <param name="value">The concrete value, including null or default.</param>
     /// <returns>The specified argument.</returns>
@@ -72,6 +76,10 @@ public readonly struct UiArgument<T> : IComposeArgument<T>
         if (Source is { } source)
         {
             widget.AddSignalArgument(memberKey, source, () => !EqualityComparer<T>.Default.Equals(source.Value, initialValue));
+            if (source is IUiAnimationProjection projection)
+            {
+                widget.AddAnimationArgument(memberKey, projection, () => !EqualityComparer<T>.Default.Equals(source.Peek(), initialValue));
+            }
         }
     }
 }

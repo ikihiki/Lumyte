@@ -14,8 +14,12 @@ internal sealed class BrowserDriver(UiBrowserApplicationOptions options) : UiPla
     private JSObject? _canvas;
     private IDisposable? _bridge;
     private bool _imported;
+    private double _animationGeneration;
+    private bool _canAnimate;
 
     internal override bool CurrentThread => true;
+
+    internal override bool CanAnimate => _canAnimate;
 
     public override async ValueTask DisposeAsync()
     {
@@ -24,6 +28,19 @@ internal sealed class BrowserDriver(UiBrowserApplicationOptions options) : UiPla
         await base.DisposeAsync();
         _canvas?.Dispose();
         _canvas = null;
+    }
+
+    internal override void Pump()
+    {
+        base.Pump();
+        if (!_imported)
+        {
+            return;
+        }
+
+        double generation = BrowserApplicationInterop.AnimationGeneration();
+        _canAnimate = generation == _animationGeneration && _canvas is not null && BrowserApplicationInterop.Visible(_canvas);
+        _animationGeneration = generation;
     }
 
     internal override ValueTask NextTurnAsync(TimeSpan interval) => _imported ? new(BrowserApplicationInterop.NextTurnAsync(Math.Min(interval.TotalMilliseconds, 50))) : base.NextTurnAsync(TimeSpan.FromMilliseconds(10));

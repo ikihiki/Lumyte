@@ -339,6 +339,14 @@ public sealed partial class UiPopupManager : IDisposable
 
     internal UiWindowId? FindWindow(UiSurface surface) => _owners.Values.FirstOrDefault(o => ReferenceEquals(o.Surface, surface))?.Window ?? _popups.Values.FirstOrDefault(p => ReferenceEquals(p.Surface, surface))?.Window;
 
+    internal bool CanAnimate(Guid popupId)
+    {
+        return _popups.TryGetValue(popupId, out Popup? popup) && popup.Handle.State == UiPopupState.Open && !popup.Closing && !popup.Owner.Paused && !popup.Owner.Releasing
+            && popup.Window is { } window && _windows.TryGetSnapshot(window, out UiWindowSnapshot? state)
+            && state is { IsVisible: true, ClientSize.X: > 0, ClientSize.Y: > 0 }
+            && _windows.TryGetSnapshot(popup.Owner.Window, out UiWindowSnapshot? owner) && owner is { IsVisible: true };
+    }
+
     internal bool CanReceiveKeys(UiSurface surface)
     {
         UiWindowId? window = FindWindow(surface);
@@ -493,6 +501,7 @@ public sealed partial class UiPopupManager : IDisposable
 
         p.Reason = reason;
         p.Handle.State = UiPopupState.Closing;
+        p.Surface?.SetAnimationUpdatesEnabled(false);
         p.GuardCancellation.Cancel();
         foreach (Popup child in _popups.Values.Where(child => child.Parent == p).ToArray())
         {

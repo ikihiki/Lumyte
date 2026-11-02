@@ -106,6 +106,8 @@ public partial class UiElement
             return;
         }
 
+        Animations?.Dispose();
+        Animations = null;
         Surface?.ForgetSignalElement(this);
         Signals?.Dispose();
         Signals = null;

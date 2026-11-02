@@ -83,6 +83,7 @@ public sealed partial class UiSurface
             _applyingRebuild = true;
             try
             {
+                PrepareAnimationUpdates(plan);
                 plan.Prepare();
                 PrepareSignalUpdates(plan);
                 if (!_isDisposed)
