@@ -5,10 +5,12 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../Lumyte.UI/Lumyte.UI.csproj" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.WindowSystem" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.Automation" />
     <InternalsVisibleTo Include="Lumyte.UI.Windowing.Tests" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application" />
   </ItemGroup>
 </Project>

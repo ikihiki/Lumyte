@@ -111,3 +111,5 @@ Resources連携はLumyte.Resources.Graphics.Drawing2Dを使います。
 既定fragment shaderは命令数に応じて8・16・256要素の作業配列を使い分けます。単純なshape・paint・clipで256要素を各coverageサンプルに初期化する負荷を避け、既存の256命令上限と4×4サンプルのcoverage評価を維持します。8/9・16/17・256命令はGPU画素テストで検証します。
 AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成します。
 元のResourceLeaseを所有者として一つだけ保持し、描画用のproviderや別のpipeline leaseは作りません。
+
+`DrawingCanvas2D.Replay(DrawList2D)`で保持した描画commandを現在のtransform/clipの下へ再生できます。元のDrawListを変更せず、Widget等の上位構築やOnRecordの再実行を要求しません。描画commandが参照するtexture/font等の借用資源は通常どおりGPU完了まで保持してください。

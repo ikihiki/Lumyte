@@ -55,6 +55,17 @@ public interface IUiWindowManager : IDisposable
     /// <returns>The operation result.</returns>
     UiWindowRequestId Place(UiWindowId window, UiWindowPlacement placement);
 
+    /// <summary>Resizes a hosted normal window; native or registered roots return unsupported.</summary>
+    /// <param name="window">The hosted target.</param>
+    /// <param name="clientSize">A positive finite logical size.</param>
+    /// <returns>A request completed after the geometry is presented.</returns>
+    UiWindowRequestId Resize(UiWindowId window, Vector2 clientSize);
+
+    /// <summary>Raises within the current role layer without changing keyboard ownership.</summary>
+    /// <param name="window">The hosted normal target.</param>
+    /// <returns>A request completed after the new ordering is presented.</returns>
+    UiWindowRequestId BringToFront(UiWindowId window);
+
     /// <summary>Executes Show.</summary>
     /// <param name="window">The window value.</param>
     /// <returns>The operation result.</returns>

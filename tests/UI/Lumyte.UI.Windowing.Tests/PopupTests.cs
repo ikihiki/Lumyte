@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Input.Abstractions;
+using Lumyte.Signals;
 using Xunit;
 using static Lumyte.UI.Compose;
 using static Lumyte.UI.Windowing.Tests.TestTasks;
@@ -9,6 +10,53 @@ namespace Lumyte.UI.Windowing.Tests;
 /// <summary>Verifies PopupTests.</summary>
 public sealed class PopupTests
 {
+    /// <summary>Checks declarative signal opening, portal isolation, controlled dismissal and continuing session identity.</summary>
+    /// <param name="presentation">The hosted or native-preferring fallback policy.</param>
+    [Theory]
+    [InlineData(PopupPresentation.Hosted)]
+    [InlineData(PopupPresentation.Automatic)]
+    public void DeclarativePopupsObserveModelsAndKeepContentOnTheirOwnSurface(PopupPresentation presentation)
+    {
+        using var fixture = new Fixture();
+        var open = Signal.Create(false);
+        int dismissals = 0;
+        Definitions.Panel Build()
+        {
+            Lumyte.UI.Windowing.Compose.Definitions.Popup declaration = Lumyte.UI.Windowing.Compose.Popup(key: "menu", anchor: "anchor", isOpen: open, presentation: presentation, onDismiss: _ => dismissals++)[Button(width: 80, height: 40, testId: "portal-item")];
+            return Panel()[Button(key: "anchor", width: 20, height: 20), declaration];
+        }
+
+        fixture.Surface.Rebuild(Build());
+        fixture.Surface.UpdateLayout();
+        using var portals = new UiPopupPortalCoordinator(fixture.Popups, fixture.Owner, fixture.Surface);
+        portals.Advance();
+        Assert.Empty(fixture.Popups.CapturePopups());
+        Assert.DoesNotContain(fixture.Surface.CaptureAutomationSnapshot().Nodes, node => node.TestId == "portal-item");
+        open.Value = true;
+        fixture.Surface.UpdateLayout();
+        portals.Advance();
+        fixture.Pump();
+        UiPopupInfo first = Assert.Single(fixture.Popups.CapturePopups());
+        Assert.Equal(UiPopupState.Open, first.State);
+        Assert.True(fixture.Popups.TryGetSurface(first.Id, out UiSurface? content));
+        Assert.Contains(content!.CaptureAutomationSnapshot().Nodes, node => node.TestId == "portal-item");
+        fixture.Surface.Rebuild(Build());
+        fixture.Surface.UpdateLayout();
+        portals.Advance();
+        fixture.Pump();
+        Assert.Equal(first.Id, Assert.Single(fixture.Popups.CapturePopups()).Id);
+        fixture.Send(new UiKeyInput(Key.Escape, true));
+        fixture.Pump();
+        Assert.Equal(1, dismissals);
+        Assert.True(open.Value);
+        Assert.Equal(UiPopupState.Open, Assert.Single(fixture.Popups.CapturePopups()).State);
+        open.Value = false;
+        fixture.Surface.UpdateLayout();
+        portals.Advance();
+        fixture.Pump();
+        Assert.Empty(fixture.Popups.CapturePopups());
+    }
+
     /// <summary>Checks HostedMenuCreatesIndependentSurfaceAndRestoresFocus.</summary>
     [Fact]
     public void HostedMenuCreatesIndependentSurfaceAndRestoresFocus()

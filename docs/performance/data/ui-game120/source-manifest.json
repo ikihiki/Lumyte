@@ -1,0 +1,118 @@
+[
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Execution/DrawingResourceState2D.cs",
+    "Sha256": "4B4EEA1F233D0FA985B9A263BEFB4EA78BDDC0218FF393FE5C17BEECC2A2E102"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Execution/PreparedDraw2D.cs",
+    "Sha256": "F10EAE0BE2EA1A953F5AB89A10B5E5B8932C4F0DF867A7292AC33DCDBEDBB4F4"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Execution/RenderPreparationContext2D.cs",
+    "Sha256": "AFE1F39923A0B90242303CD194353BEBECE21C139C20C084A22BD2E9CA0F2C96"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj",
+    "Sha256": "23DDBA2F686A166ED24C322F269F5B18FFF6395AFBE411FDB0DAD952AA7922D3"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/README.md",
+    "Sha256": "942550787DDC2AA4583DC47F5D3DF597E132FDA69E8F5C975575FE550E6BE147"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/DefaultFillRectRenderer2D.cs",
+    "Sha256": "C4E585887ABC1ABAE7AB466ACB0678B1D0DA428FB25C1034F54961B0CA67C158"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/PreparedRectangleBatch2D.cs",
+    "Sha256": "67ED45AC03940A8026CD905F6543BBB4C588A6CEA9B36C3E1CC18D4D5C3A36DF"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/SolidRectangleArguments2D.cs",
+    "Sha256": "8E1E474181F3E6AD7BD174CB69B5F6C7225FDC635DB17D479643224DCB85EA31"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/SolidRectangleResources2D.cs",
+    "Sha256": "23B13586B955E53D025583314DC754ACEB00C6A055CC63865B544DC24865C6C4"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Shaders/rectangles-fragment.slang",
+    "Sha256": "5DEEBEE520C4555351752FCEE304C38F9F652B183871B2E6971E732AA32A1B4B"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Shaders/rectangles-vertex.slang",
+    "Sha256": "B5A06369E6E7E20A61542B41F296A7C639E4CDBC482479818059A9930D64B090"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application.Desktop/DesktopDriver.cs",
+    "Sha256": "1CC0A706A22153AE6C0B35E07080CF40F8DDCEBA26679DEDF4057A6C586BB134"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application.Desktop/WindowsFrameWaiter.cs",
+    "Sha256": "5A3E7E2D268D1D8CD4DE8D370BFC3228F557C71E05E964DC4002714FACC2ACF4"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application/README.md",
+    "Sha256": "9EE22C66D5E84D037B10AF84EF47CFCC62ED6883FC6AAB18D47E4ACA50749B18"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application/UiApplication.cs",
+    "Sha256": "0B0D4CF0DD802D4BA9EF105E2A6A2247FFBF54EA3979ADB78FDA828FF12457B1"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application/UiApplication.Frames.cs",
+    "Sha256": "6F82DF8FFF9BDCFD49832C7A563DC500BBA73B0E1F721FD918C9746FD198BC84"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application/UiApplicationDispatcher.cs",
+    "Sha256": "FE1F43DC71FBB0A85A65A80DD19B9B7D40B956A7E547C23D405482BDCED8AFD4"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application/UiApplicationDriver.cs",
+    "Sha256": "EED1C0DC206357C60D276D0657E42E88B3EE586A422A0C3B5FE5D07794AD649C"
+  },
+  {
+    "File": "src/UI/Lumyte.UI.Application/UiPlatformApplicationDriver.cs",
+    "Sha256": "C9729F98ECD39EC665B214E9E7E954F6E19D67C4B21BF2A2456EC19D7E1EB315"
+  },
+  {
+    "File": "tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/PreparedDrawCleanupTests.cs",
+    "Sha256": "18066B93486030DD7DE98BAC4AACB862DDB3C6C189224E20EACBD28CDCDE609D"
+  },
+  {
+    "File": "tests/Graphics/Lumyte.Graphics.Tests/Drawing2DTests.cs",
+    "Sha256": "DB9AB1852C21FF9994E7C32CC8A8AA9F45ED4319698AEAADA544AA34EEB194EC"
+  },
+  {
+    "File": "tests/Graphics/Lumyte.Graphics.Tests/Drawing2DTests.RectangleBatch.cs",
+    "Sha256": "45ED7F7FBC0EEFDAFC8A6CC4C366E05480CBB927F60C94BC7C197712C2A71B17"
+  },
+  {
+    "File": "tests/Graphics/Lumyte.Graphics.Tests/GpuFactAttribute.cs",
+    "Sha256": "3DE22713B7E7DA8949D730AB547ABFF8556397A9037D89BFAA948462C0366AC8"
+  },
+  {
+    "File": "tests/Graphics/Lumyte.Graphics.Tests/RectanglePoolTests.cs",
+    "Sha256": "36D90A0DF8D13CD138F6D485491B0EB6A9D79E6AAAF946ABCCA8D4D92083561A"
+  },
+  {
+    "File": "tests/UI/Lumyte.UI.Application.Tests/FramePacingTests.cs",
+    "Sha256": "9DFAC5148D2FCFF2A4665A0F6253B892DF02AD8F9A625B39A9600E73AE923E11"
+  },
+  {
+    "File": "tools/benchmarks/ui-device/application-instrumentation.patch",
+    "Sha256": "36EC562A4035E250773D89D1E513AF3380DC356A68BAA2B5AFA9ABF8FF570D86"
+  },
+  {
+    "File": "tools/benchmarks/ui-device/ApplicationBenchmark.cs",
+    "Sha256": "D80D888A986D539D7C27B82B199785C277AD5BE2B3F74690DED5724E147DEC9E"
+  },
+  {
+    "File": "tools/benchmarks/ui-device/Lumyte.UI.DeviceBenchmarks.csproj",
+    "Sha256": "23D3250E2CB950FA927E06B81CCF17872A97DE83F509ABA6931A8BA8647777AB"
+  },
+  {
+    "File": "tools/benchmarks/ui-device/Program.cs",
+    "Sha256": "6774E53DB0A7E951A6665379A09F225DFEF1391754CD710412C1AEEC887A857F"
+  }
+]

@@ -15,6 +15,12 @@ public partial class RectangleElement : UiElement<RectangleWidget>
     }
 
     /// <inheritdoc/>
+    protected override bool SupportsTransitionCapture => Widget.GetType() == typeof(RectangleWidget);
+
+    /// <inheritdoc/>
+    protected override bool CanReuseTransitionCapture(Compose.Definitions.Widget other) => other.GetType() == typeof(RectangleWidget) && ((RectangleWidget)other).Fill == Widget.Fill;
+
+    /// <inheritdoc/>
     protected override UiInvalidation CompareConfiguration(RectangleWidget previous, RectangleWidget next) =>
         previous.Fill == next.Fill ? UiInvalidation.None : UiInvalidation.Visual;
 

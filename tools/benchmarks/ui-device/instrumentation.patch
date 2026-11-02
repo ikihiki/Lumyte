@@ -1,0 +1,64 @@
+diff --git a/src/UI/Lumyte.UI.Application/UiHostPresenter.cs b/src/UI/Lumyte.UI.Application/UiHostPresenter.cs
+index 6f8e7f39..cff10f12 100644
+--- a/src/UI/Lumyte.UI.Application/UiHostPresenter.cs
++++ b/src/UI/Lumyte.UI.Application/UiHostPresenter.cs
+@@ -41,6 +41,8 @@ internal sealed partial class UiHostPresenter : IDisposable
+         }
+     }
+ 
++    internal static Action<string, double>? Phase { get; set; }
++
+     public void Dispose()
+     {
+         if (_frames.Count != 0)
+@@ -91,6 +93,14 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+     internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null)
+     {
++        long phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
++        void Mark(string name)
++        {
++            long now = System.Diagnostics.Stopwatch.GetTimestamp();
++            Phase?.Invoke(name, System.Diagnostics.Stopwatch.GetElapsedTime(phaseStart, now).TotalMilliseconds);
++            phaseStart = now;
++        }
++
+         var frame = new Frame(owner);
+         if (visuals is not null)
+         {
+@@ -125,6 +135,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+             IGraphicsTextureView targetView = intermediate.View;
+             PreparedDraw2D prepared = frame.Own(await _renderer.PrepareAsync(list, new() { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background }));
++            Mark("prepare");
+             IArgumentTable table = frame.Own(_device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1 }));
+             uint encode = swapchain.Configuration.Format is TextureFormat.Bgra8Srgb or TextureFormat.Rgba8Srgb ? 0u : 1u;
+             var arguments = new UiPresentArguments(table.WriteTexture(0, targetView), table.WriteSampler(0, _sampler), new(target.Width, target.Height), encode);
+@@ -133,6 +144,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+             IGraphicsSemaphore acquired = frame.Own(_device.CreateSemaphore());
+             IGraphicsSemaphore rendered = frame.Own(_device.CreateSemaphore());
+             SurfaceAcquireResult result = await swapchain.AcquireNextFrameAsync(acquired);
++            Mark("acquire");
+             if (result.Frame is not IGraphicsSurfaceFrame image)
+             {
+                 return result.Status;
+@@ -188,9 +200,11 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+             commands.Barrier(new TextureBarrierDesc { Texture = image.Texture, Range = new(0, 1, 0, 1), BeforeState = imageState, AfterState = TextureState.Present, Before = imageAccess, After = default });
+             commands.Finish();
++            Mark("record");
+             frame.Submission = _device.Queue.Submit(new QueueSubmitDesc() { CommandBuffers = [commands], WaitSemaphores = [new() { Semaphore = acquired, Stages = PipelineStage.AllCommands }], SignalSemaphores = [rendered] });
+             intermediate.State = readback is not null && !captureDisplay ? TextureState.CopySource : TextureState.Sampled;
+             SurfaceStatus status = image.Present([rendered]);
++            Mark("submit-present");
+             if (status == SurfaceStatus.Success && result.Status == SurfaceStatus.Suboptimal)
+             {
+                 status = SurfaceStatus.Suboptimal;
+@@ -198,6 +212,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+             submitted?.Invoke();
+             await frame.DrainAsync();
++            Mark("drain");
+             if (frame.IsRetired)
+             {
+                 throw new InvalidOperationException("The submitted device generation was retired.");

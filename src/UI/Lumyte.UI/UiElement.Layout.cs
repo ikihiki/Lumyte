@@ -55,7 +55,7 @@ public partial class UiElement
     internal UiInvalidation ConfigurationChanges(WidgetDefinition next)
     {
         UiInvalidation result = ReferenceEquals(Widget, next) ? UiInvalidation.None : CompareConfiguration(Widget, next);
-        if (Widget.Width != next.Width || Widget.Height != next.Height || Widget.IsVisible != next.IsVisible)
+        if (Widget.Width != next.Width || Widget.Height != next.Height || Widget.IsVisible != next.IsVisible || Widget.IsPresent != next.IsPresent)
         {
             result |= UiInvalidation.Layout;
         }
@@ -65,7 +65,7 @@ public partial class UiElement
             result |= UiInvalidation.Input;
         }
 
-        if (Widget.ClipToBounds != next.ClipToBounds)
+        if (Widget.ClipToBounds != next.ClipToBounds || Widget.SharedElementKey != next.SharedElementKey)
         {
             result |= UiInvalidation.Input | UiInvalidation.Visual;
         }

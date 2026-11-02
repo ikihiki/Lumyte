@@ -1,0 +1,102 @@
+[
+  {
+    "Variant": "cache-only",
+    "File": "Lumyte.Graphics.Shared.dll",
+    "Sha256": "01F14257DDD6D4DA391DD4B722CFBA794901C01BE1CCCEA9708C6CB8AF117917"
+  },
+  {
+    "Variant": "cache-only",
+    "File": "Lumyte.Graphics.Wgpu.dll",
+    "Sha256": "6BE4C52605D3689A0C7C2ADDCEFB66F4098CE19FC4307ADE3CEA61A370A2FA13"
+  },
+  {
+    "Variant": "cache-only",
+    "File": "Lumyte.Graphics.Drawing2D.dll",
+    "Sha256": "C8E222EAE9E84AB8F8F5CFB23B416A0DB399DEB344A0491123E97A16F35EBB8C"
+  },
+  {
+    "Variant": "cache-only",
+    "File": "Lumyte.UI.Application.dll",
+    "Sha256": "37947502326101093D76E2BE7240B5F663C4DA54828D9049CDD639EB718AD557"
+  },
+  {
+    "Variant": "cache-only",
+    "File": "Lumyte.UI.Application.Tests.dll",
+    "Sha256": "ACCAB2283FC0D6DC38C3E10A5BF02F7672FCD9A4A1354480BCEDD9C67B423DF5"
+  },
+  {
+    "Variant": "small16-ablation",
+    "File": "Lumyte.Graphics.Shared.dll",
+    "Sha256": "983BE2A095154959E0CFFED28F3C4E18E7361AA0174D9FE17074D881E1568A06"
+  },
+  {
+    "Variant": "small16-ablation",
+    "File": "Lumyte.Graphics.Wgpu.dll",
+    "Sha256": "C890A0FF98039FCA4553054DC4B05FE2F75DF1693268976761D262B29AA65C7A"
+  },
+  {
+    "Variant": "small16-ablation",
+    "File": "Lumyte.Graphics.Drawing2D.dll",
+    "Sha256": "3548C91069E691EE5CC0E34AF63BA9D862A48175FFAA462BDF71DA13BB0540FC"
+  },
+  {
+    "Variant": "small16-ablation",
+    "File": "Lumyte.UI.Application.dll",
+    "Sha256": "37947502326101093D76E2BE7240B5F663C4DA54828D9049CDD639EB718AD557"
+  },
+  {
+    "Variant": "small16-ablation",
+    "File": "Lumyte.UI.Application.Tests.dll",
+    "Sha256": "B2722DB167DE31792E501D9E1F6209B31602601C1B3D4A5BC323D4E80C9C7E0E"
+  },
+  {
+    "Variant": "baseline",
+    "File": "Lumyte.Graphics.Shared.dll",
+    "Sha256": "00BD7E79A087E4EB5156FCC955B2E62690105D5DD764915043C03C442034B52F"
+  },
+  {
+    "Variant": "baseline",
+    "File": "Lumyte.Graphics.Wgpu.dll",
+    "Sha256": "15DDC7B21D556096C77BDB9729DE7EC1F4156B944D47F102B7AC0E01D328BFDF"
+  },
+  {
+    "Variant": "baseline",
+    "File": "Lumyte.Graphics.Drawing2D.dll",
+    "Sha256": "C8E222EAE9E84AB8F8F5CFB23B416A0DB399DEB344A0491123E97A16F35EBB8C"
+  },
+  {
+    "Variant": "baseline",
+    "File": "Lumyte.UI.Application.dll",
+    "Sha256": "37947502326101093D76E2BE7240B5F663C4DA54828D9049CDD639EB718AD557"
+  },
+  {
+    "Variant": "baseline",
+    "File": "Lumyte.UI.Application.Tests.dll",
+    "Sha256": "ACCAB2283FC0D6DC38C3E10A5BF02F7672FCD9A4A1354480BCEDD9C67B423DF5"
+  },
+  {
+    "Variant": "optimized",
+    "File": "Lumyte.Graphics.Shared.dll",
+    "Sha256": "01F14257DDD6D4DA391DD4B722CFBA794901C01BE1CCCEA9708C6CB8AF117917"
+  },
+  {
+    "Variant": "optimized",
+    "File": "Lumyte.Graphics.Wgpu.dll",
+    "Sha256": "6BE4C52605D3689A0C7C2ADDCEFB66F4098CE19FC4307ADE3CEA61A370A2FA13"
+  },
+  {
+    "Variant": "optimized",
+    "File": "Lumyte.Graphics.Drawing2D.dll",
+    "Sha256": "6105A51AC4646C96B77037F96A2207735B25B2FAFD30B826F0C678CB5E873F2F"
+  },
+  {
+    "Variant": "optimized",
+    "File": "Lumyte.UI.Application.dll",
+    "Sha256": "37947502326101093D76E2BE7240B5F663C4DA54828D9049CDD639EB718AD557"
+  },
+  {
+    "Variant": "optimized",
+    "File": "Lumyte.UI.Application.Tests.dll",
+    "Sha256": "ACCAB2283FC0D6DC38C3E10A5BF02F7672FCD9A4A1354480BCEDD9C67B423DF5"
+  }
+]

@@ -4,7 +4,7 @@ using Lumyte.Input.Abstractions;
 namespace Lumyte.UI.Windowing;
 
 /// <summary>An independent manager composing transient UI inside borrowed roots without native windows.</summary>
-public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowRequestLifetime
+public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowPresentationReplacementManager, IUiWindowRequestLifetime
 {
     private readonly UiWindowManagerCore _inner;
 
@@ -40,6 +40,9 @@ public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowRequestLi
     public ValueTask<UiWindowBinding> BindPresentationAsync(UiWindowId window, UiSurface surface, CancellationToken cancellationToken = default) => _inner.BindPresentationAsync(window, surface, cancellationToken);
 
     /// <inheritdoc/>
+    public IUiWindowPresentationReplacement BeginReplacement(UiWindowId window, UiWindowBinding? current, UiSurface candidate) => _inner.BeginReplacement(window, current, candidate);
+
+    /// <inheritdoc/>
     public bool IsBound(UiWindowId window, UiSurface surface) => _inner.IsBound(window, surface);
 
     /// <inheritdoc/>
@@ -50,6 +53,12 @@ public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowRequestLi
 
     /// <inheritdoc/>
     public UiWindowRequestId Place(UiWindowId window, UiWindowPlacement placement) => _inner.Place(window, placement);
+
+    /// <inheritdoc/>
+    public UiWindowRequestId Resize(UiWindowId window, Vector2 clientSize) => _inner.Resize(window, clientSize);
+
+    /// <inheritdoc/>
+    public UiWindowRequestId BringToFront(UiWindowId window) => _inner.BringToFront(window);
 
     /// <inheritdoc/>
     public UiWindowRequestId Show(UiWindowId window) => _inner.Show(window);

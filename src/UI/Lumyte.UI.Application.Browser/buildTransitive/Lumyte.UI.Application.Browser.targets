@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup><_LumyteApplicationAssets Condition="'$(MSBuildProjectName)' == 'Lumyte.UI.Application.Browser'">$(MSBuildThisFileDirectory)../wwwroot/</_LumyteApplicationAssets><_LumyteApplicationAssets Condition="'$(MSBuildProjectName)' != 'Lumyte.UI.Application.Browser'">$(MSBuildThisFileDirectory)../assets/</_LumyteApplicationAssets></PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'Lumyte.UI.Application.Browser'">
+    <Content Include="$(_LumyteApplicationAssets)*.js" Link="wwwroot/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

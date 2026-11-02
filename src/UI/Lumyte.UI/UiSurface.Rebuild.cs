@@ -27,32 +27,41 @@ public sealed partial class UiSurface
     public void UpdateTree()
     {
         ThrowIfDisposed();
-        if (_applyingRebuild || _pendingRebuild is not { } candidate)
+        ThrowSignalFailure();
+        if (_applyingRebuild)
         {
             return;
         }
 
-        _applyingRebuild = true;
-        try
+        if (_pendingRebuild is { } candidate)
         {
-            var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators);
-            plan.Prepare();
-            if (_isDisposed)
+            _applyingRebuild = true;
+            try
             {
-                return;
-            }
+                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
+                PrepareAnimationUpdates(plan);
+                plan.Prepare();
+                PrepareSignalUpdates(plan);
+                if (_isDisposed)
+                {
+                    return;
+                }
 
-            if (ReferenceEquals(_pendingRebuild, candidate))
+                if (ReferenceEquals(_pendingRebuild, candidate))
+                {
+                    _pendingRebuild = null;
+                }
+
+                Publish(plan);
+            }
+            finally
             {
-                _pendingRebuild = null;
+                _applyingRebuild = false;
             }
+        }
 
-            Publish(plan);
-        }
-        finally
-        {
-            _applyingRebuild = false;
-        }
+        ProcessSignals(true);
+        ReconcileVisuals();
     }
 
     internal void RebuildSubtree(UiElement previous, Widget next)
@@ -72,8 +81,10 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate);
+            PrepareAnimationUpdates(plan);
             plan.Prepare();
+            PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {
                 Publish(plan);
@@ -87,11 +98,42 @@ public sealed partial class UiSurface
 
     private void Publish(RebuildPlan plan)
     {
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if (update.Previous?.SharedElementKey is { } previous)
+            {
+                _sharedElements.Remove(previous);
+            }
+        }
+
+        foreach (UiElement removed in plan.Removed)
+        {
+            if (removed.Widget.SharedElementKey is { } previous)
+            {
+                _sharedElements.Remove(previous);
+            }
+        }
+
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if (update.Next.SharedElementKey is { } key)
+            {
+                _sharedElements.Add(key, update.Element);
+            }
+        }
+
         bool structureChanged = plan.Removed.Length != 0;
         foreach (ElementUpdate update in plan.Updates)
         {
             structureChanged |= update.ChildrenChanged || update.Previous is null;
             update.Element.Publish(this, update.Next, update.Slots);
+            update.Element.Contexts = update.Contexts;
+            if (update.Content is not null)
+            {
+                update.Element.ContentReads = update.Content.Reads;
+            }
+
+            update.Element.ConnectPresence(this, update.Previous);
             update.Element.UsesTreeValidation = update.UsesTreeValidation;
             if (update.UsesTreeValidation)
             {
@@ -127,6 +169,15 @@ public sealed partial class UiSurface
             }
         }
 
+        InvalidateVisualRevision();
+        foreach (ElementUpdate update in plan.Updates)
+        {
+            if (update.Previous is not null && ((update.Invalidation & (UiInvalidation.Layout | UiInvalidation.Visual)) != 0 || update.ChildrenChanged))
+            {
+                update.Element.InvalidateChildVisuals();
+            }
+        }
+
         _rootElement = plan.Root;
         TreeRevision = checked(TreeRevision + 1);
         if (structureChanged)
@@ -143,6 +194,12 @@ public sealed partial class UiSurface
         List<Exception>? failures = null;
         try
         {
+            foreach (ElementUpdate update in plan.Updates)
+            {
+                update.Animations?.Commit();
+                update.Signals?.Commit();
+            }
+
             if (!_isDisposed)
             {
                 UpdateHostValidation(plan);

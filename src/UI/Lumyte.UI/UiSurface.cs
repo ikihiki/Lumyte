@@ -15,12 +15,14 @@ public sealed partial class UiSurface : IDisposable
     public UiSurface(Widget root)
     {
         ValidateRoot(root);
-        var plan = new RebuildPlan(null, root);
+        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate);
         _rootElement = plan.Root;
         _applyingRebuild = true;
         try
         {
+            PrepareAnimationUpdates(plan);
             plan.Prepare();
+            PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {
                 Publish(plan);
@@ -34,6 +36,7 @@ public sealed partial class UiSurface : IDisposable
         finally
         {
             _applyingRebuild = false;
+            CommitSignalRevision();
         }
     }
 
@@ -63,6 +66,16 @@ public sealed partial class UiSurface : IDisposable
         }
 
         _isDisposed = true;
+        lock (_signalJobs)
+        {
+            _signalJobs.Clear();
+            _pendingSignalObservers.Clear();
+            _signalPosted = false;
+        }
+
+        _signalElements.Clear();
+        _sharedElements.Clear();
+        _signalDispatcher = null;
         _pendingRebuild = null;
         _treeValidators.Clear();
         try

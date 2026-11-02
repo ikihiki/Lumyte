@@ -12,5 +12,5 @@ internal static class UiInputGeometry
         size.X > 0 && size.Y > 0 && point.X >= origin.X && point.Y >= origin.Y
         && point.X < (double)origin.X + size.X && point.Y < (double)origin.Y + size.Y;
 
-    internal static bool AcceptsInput(UiElement node) => node.Widget.IsVisible && node.Widget.IsEnabled && node.Widget.HitTestVisible;
+    internal static bool AcceptsInput(UiElement node) => !node.IsTransitioning && node.LayoutVisible && node.Widget.IsEnabled && node.Widget.HitTestVisible;
 }

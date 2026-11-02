@@ -53,12 +53,17 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
     /// <param name = "targets">The targets.</param>
     /// <param name = "clipboard">The clipboard.</param>
     public UiTextInputConnection(UiSurface surface, IUiWindowManager windows, UiWindowId window, ITextInputService service, IUiTextInputTargetResolver targets, IClipboard? clipboard = null)
+        : this(surface, windows, window, service, targets, clipboard, false)
+    {
+    }
+
+    internal UiTextInputConnection(UiSurface surface, IUiWindowManager windows, UiWindowId window, ITextInputService service, IUiTextInputTargetResolver targets, IClipboard? clipboard, bool staged)
     {
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(targets);
-        if (!windows.IsBound(window, surface))
+        if (!staged && !windows.IsBound(window, surface))
         {
             throw new ArgumentException("The surface must be bound to the supplied window.", nameof(window));
         }
@@ -209,7 +214,8 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         RefreshEditorConfiguration();
-        bool liveWindow = _windows.TryGetSnapshot(_window, out UiWindowSnapshot? focusWindow) && focusWindow is { IsVisible: true, IsActive: true, State: UiWindowState.Open };
+        bool liveWindow = _windows.TryGetSnapshot(_window, out UiWindowSnapshot? focusWindow) && focusWindow is { IsVisible: true, State: UiWindowState.Open }
+            && (focusWindow.IsActive || (_windows.TryGetSnapshot(focusWindow.KeyboardRoot, out UiWindowSnapshot? keyboardRoot) && keyboardRoot is { IsActive: true, State: UiWindowState.Open }));
         TextBox? desired = liveWindow && !_stopping && _suspended == 0 ? _surface.FocusedElement as TextBox : null;
         if (desired is not null && (!ReferenceEquals(desired.InputHandler, this) || desired.Document is null || desired.Widget.LayoutProvider is null || desired.Widget.IsReadOnly || !desired.Widget.IsEnabled || !desired.Widget.IsVisible))
         {

@@ -14,6 +14,12 @@ public partial class StackElement : UiElement<StackWidget>
     }
 
     /// <inheritdoc/>
+    protected override bool SupportsTransitionCapture => Widget.GetType() == typeof(StackWidget);
+
+    /// <inheritdoc/>
+    protected override bool CanReuseTransitionCapture(Compose.Definitions.Widget other) => other.GetType() == typeof(StackWidget) && ((StackWidget)other).Orientation == Widget.Orientation && ((StackWidget)other).Spacing == Widget.Spacing;
+
+    /// <inheritdoc/>
     protected override UiInvalidation CompareConfiguration(StackWidget previous, StackWidget next) => previous.Orientation == next.Orientation && previous.Spacing == next.Spacing ? UiInvalidation.None : UiInvalidation.Layout;
 
     /// <inheritdoc/>

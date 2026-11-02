@@ -30,7 +30,7 @@ public sealed partial class UiLocator
                     UiAutomationSnapshot snapshot = surface.CaptureAutomationSnapshot();
                     run.Remember(snapshot);
                     UiAutomationNode? node = Single(run, snapshot);
-                    if (node is null || node.Id != focused || !node.IsFocused || !Visible(node) || !node.IsEnabled || !run.CanReceiveKeys(surface))
+                    if (node is null || node.Id != focused || !node.IsFocused || node.IsTransitioning || !Visible(node) || !node.IsEnabled || !run.CanReceiveKeys(surface))
                     {
                         throw run.Failure(UiAutomationFailureKind.TargetChanged, "The editing target changed before input; the edit was not sent.");
                     }

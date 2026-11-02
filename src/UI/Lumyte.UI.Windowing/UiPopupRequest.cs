@@ -17,7 +17,8 @@ public sealed class UiPopupRequest
     /// <param name="inputMode">Menu scope or passive tooltip.</param>
     /// <param name="onOpened">One callback after the actual show commit.</param>
     /// <param name="onClosed">One callback after all cleanup, including failed opening.</param>
-    public UiPopupRequest(UiElement anchor, Vector2 clientSize, Func<Widget> createContent, UiWindowPolicy policy = UiWindowPolicy.HostedOnly, UiWindowRole role = UiWindowRole.Popup, UiWindowPlacementSide side = UiWindowPlacementSide.Below, float gap = 0, UiPopupInputMode inputMode = UiPopupInputMode.Menu, Action<UiPopupOpened>? onOpened = null, Action<UiPopupClosed>? onClosed = null)
+    /// <param name="onDismissRequested">Optional controlled dismissal; omitted requests retain automatic closing.</param>
+    public UiPopupRequest(UiElement anchor, Vector2 clientSize, Func<Widget> createContent, UiWindowPolicy policy = UiWindowPolicy.HostedOnly, UiWindowRole role = UiWindowRole.Popup, UiWindowPlacementSide side = UiWindowPlacementSide.Below, float gap = 0, UiPopupInputMode inputMode = UiPopupInputMode.Menu, Action<UiPopupOpened>? onOpened = null, Action<UiPopupClosed>? onClosed = null, Action<PopupDismissRequest>? onDismissRequested = null)
     {
         ArgumentNullException.ThrowIfNull(anchor);
         ArgumentNullException.ThrowIfNull(createContent);
@@ -36,9 +37,18 @@ public sealed class UiPopupRequest
         InputMode = inputMode;
         OnOpened = onOpened;
         OnClosed = onClosed;
+        OnDismissRequested = onDismissRequested;
     }
 
-    internal UiElement Anchor { get; }
+    internal UiSurface? PreparedSurface { get; set; }
+
+    internal UiElement Anchor { get; set; }
+
+    internal Func<UiElement?>? ResolveAnchor { get; set; }
+
+    internal bool AlignEnd { get; set; }
+
+    internal Action<PopupDismissRequest>? OnDismissRequested { get; }
 
     internal Vector2 ClientSize { get; }
 
@@ -48,7 +58,7 @@ public sealed class UiPopupRequest
 
     internal UiWindowRole Role { get; }
 
-    internal UiWindowPlacementSide Side { get; }
+    internal UiWindowPlacementSide Side { get; set; }
 
     internal float Gap { get; }
 
