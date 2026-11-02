@@ -7,7 +7,7 @@ using Lumyte.Windowing.Abstractions;
 namespace Lumyte.UI.Windowing.WindowSystem;
 
 /// <summary>Adapts a borrowed existing native WindowNode with an explicit acquisition source.</summary>
-public sealed class WindowSystemUiWindowSource : IUiWindowSource
+public sealed class WindowSystemUiWindowSource : IUiWindowSource, IUiWindowPresentationStager
 {
     private readonly IWindow _window;
 
@@ -74,6 +74,9 @@ public sealed class WindowSystemUiWindowSource : IUiWindowSource
 
     /// <inheritdoc/>
     public ValueTask<IUiWindowPresentation> PreparePresentationAsync(UiWindowPresentationView view, UiSurface surface, CancellationToken cancellationToken) => _presentations.PrepareAsync(_window, view, surface, cancellationToken);
+
+    /// <inheritdoc/>
+    public IUiStagedWindowPresentation BeginReplacement(IUiWindowPresentation? current, UiWindowPresentationView view, UiSurface candidate) => _presentations is IUiNativePresentationStager stager ? stager.BeginReplacement(_window, current, view, candidate) : throw new NotSupportedException("presentation-replacement-unavailable");
 
     /// <inheritdoc/>
     public bool TryTransformPoint(IUiWindowSource destination, Vector2 position, out Vector2 transformed)

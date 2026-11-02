@@ -23,7 +23,9 @@ Windows Desktopでは高精度waitable timerを使い、利用できない場合
 
 複数Windowは`using static Lumyte.UI.Application.Compose;`の`Window(...)`を`UseWindows`から返します。同じkeyの内容と内部状態を保持し、閉じて再追加した場合は新しいIDを発行します。`isOpen`はモデルで管理し、`onCloseRequested`でモデルを変更して`UiApplicationContext.RequestRebuildWindows()`を呼びます。AutomaticはNativeが利用できれば独立表示、それ以外はHosted、Hostedは同じ提示root内、NativeRequiredは非対応時に失敗します。
 
-構築関数の再評価は`context.View.CurrentSurface.Rebuild(newRoot)`で公開します。変更済みWidgetを使い回す必要はありません。ページ/Signal/アニメーションの自動接続は後続packageで追加します。
+構築関数の再評価は`context.View.CurrentSurface.Rebuild(newRoot)`で公開します。変更済みWidgetを使い回す必要はありません。DIによるページ登録、Signal、アニメーションの自動接続は後続packageで追加します。
+
+Navigationは任意の[Application.Navigation](../Lumyte.UI.Application.Navigation/README.md) packageで提供します。標準Application、各driver、基本DiagnosticsはNavigationを参照しません。
 
 TextBoxはstringとonTextChangedを受け取ります。`UseTextInput`へfont設定済みのIUiTextLayoutProviderを登録すると、hostが対応するWindows TSF/Browser textareaを接続します。OS serviceを各TextBoxへ渡しません。interface型providerのComposition引数は`layoutProvider: new(context.TextLayoutProvider)`と指定します。Linux/Headlessの編集backendは初期対応に含みません。候補表示の方針は`UiApplicationOptions.ImeCandidates`で指定します。
 

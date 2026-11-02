@@ -82,6 +82,13 @@ internal sealed class UiHostPresenter : IDisposable
         return new() { Width = checked((uint)width), Height = checked((uint)height), Format = format, Usage = TextureUsage.RenderAttachment | (caps.SupportedUsage & TextureUsage.CopySource), AlphaMode = SurfaceAlphaMode.Opaque };
     }
 
+    internal async ValueTask PrepareCandidateAsync(DrawList2D commands, uint width, uint height)
+    {
+        using IGraphicsTexture target = CreateIntermediate(width, height);
+        using IGraphicsTextureView view = target.CreateView();
+        using PreparedDraw2D prepared = await _renderer.PrepareAsync(commands, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background });
+    }
+
     internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list, Guid owner, Action<UiFramePixels>? capture = null, Action? submitted = null)
     {
         var frame = new Frame(owner);

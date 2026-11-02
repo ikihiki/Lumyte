@@ -45,9 +45,44 @@ internal sealed class UiHostInputRouter
 
     internal void Attach(WindowNode node, UiSurface surface) => AttachCore(node.PresentationRoot.NativeWindow, node, surface);
 
+    internal Action PrepareReplacement(UiSurface? previous, UiSurface candidate, IWindow window, Action attached)
+    {
+        Target? old = previous is null ? null : _targets.GetValueOrDefault(previous);
+        if (old is null && _targets.Values.Any(target => ReferenceEquals(target.Window, window)))
+        {
+            return static () => { };
+        }
+
+        if (!_map.TryGetInputWindowId(window.Id, out InputWindowId origin))
+        {
+            throw new InvalidOperationException("The input source is unavailable.");
+        }
+
+        var next = new Target(window, old?.Node, candidate, origin);
+        _targets.EnsureCapacity(_targets.Count + 1);
+        return () =>
+        {
+            if (previous is not null)
+            {
+                _targets.Remove(previous);
+            }
+
+            _targets.Add(candidate, next);
+            attached();
+        };
+    }
+
     internal void Detach(UiSurface surface)
     {
         if (_targets.Remove(surface, out Target? target))
+        {
+            CancelTarget(target);
+        }
+    }
+
+    internal void CancelSurface(UiSurface surface)
+    {
+        if (_targets.TryGetValue(surface, out Target? target))
         {
             CancelTarget(target);
         }

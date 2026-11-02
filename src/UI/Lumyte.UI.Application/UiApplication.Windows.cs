@@ -106,7 +106,7 @@ public sealed partial class UiApplication
         UiWindowDeclaration[] declarations = BuildDeclarations();
         UiWindowDeclaration primary = declarations.Single(window => window.Key == _primaryKey);
         _primary = await Driver.CreateWindowAsync(primary.Key, primary.Title, primary.InitialClientSize, null, true, _startupCancellation.Token);
-        _primary.Source.ValidateRoot = ValidateEditors;
+        ConfigureSource(_primary);
         _defaultWindows = Driver.CreateWindowManager(_options.TimeProvider);
         _windows = _managerFactory?.Invoke(new(_defaultWindows, _primary.PresentationSource, _dispatcher, _options.TimeProvider)) ?? _defaultWindows;
         if (_windows is null)
@@ -332,8 +332,10 @@ public sealed partial class UiApplication
 
         var slot = new UiApplicationViewSlot(this, id);
         var context = new UiApplicationWindowContext(this, id, slot, TextLayoutProvider);
+        slot.Context = context;
         var entry = new Entry(declaration, context, slot, native, registration, native ?? owner!.Root);
         _entries.Add(declaration.Key, entry);
+        ConfigureSource(entry.Root);
         entry.Content = declaration.Root is { } root ? new UiRootApplicationContent(root) : declaration.Content!(_services) ?? throw new UiApplicationException("invalid-content");
         entry.Initialization = entry.Content.InitializeAsync(context, _startupCancellation.Token).AsTask();
         await entry.Initialization;
