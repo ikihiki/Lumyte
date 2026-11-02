@@ -35,6 +35,7 @@ public sealed partial class UiSurface
         if (!_rootElement.IsLayoutDirty)
         {
             UpdateInput();
+            CompleteVirtualPresentation();
             return;
         }
 
@@ -45,6 +46,7 @@ public sealed partial class UiSurface
             pass.Compute(_rootElement, UiBoxConstraints.Tight(_viewport));
             InvalidateInput();
             UpdateInput();
+            CompleteVirtualPresentation();
         }
         catch
         {

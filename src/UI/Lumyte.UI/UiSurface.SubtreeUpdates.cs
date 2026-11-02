@@ -53,24 +53,39 @@ public sealed partial class UiSurface
                 next.Construction ??= previous.Construction;
                 next.ConstructionReads ??= previous.ConstructionReads;
                 ValidateRoot(next);
-                if (RebuildPlan.CanBatchLeaf(element, next))
+                ElementUpdate? prepared = null;
+                try
                 {
-                    if (leaves is null)
+                    if (RebuildPlan.CanBatchLeaf(element, next))
                     {
-                        leaves = new(_rootElement, _treeValidators);
-                        plans.Add(leaves);
+                        prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate);
+                        if (prepared.Content is null && prepared.Next.ChildCollections.Count == 0)
+                        {
+                            if (leaves is null)
+                            {
+                                leaves = new(_rootElement, _treeValidators, _sharedElements);
+                                plans.Add(leaves);
+                            }
+
+                            leaves.Updates.Add(prepared);
+                            prepared = null;
+                            covered.Add(element);
+                            continue;
+                        }
                     }
 
-                    leaves.Updates.Add(new(element, element.Widget, next, [], false));
-                    covered.Add(element);
-                    continue;
+                    leaves = null;
+                    var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared);
+                    prepared = null;
+                    plans.Add(local);
+                    covered.UnionWith(local.Updates.Select(update => update.Element));
+                    covered.UnionWith(local.Removed);
                 }
-
-                leaves = null;
-                var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators);
-                plans.Add(local);
-                covered.UnionWith(local.Updates.Select(update => update.Element));
-                covered.UnionWith(local.Removed);
+                finally
+                {
+                    prepared?.Signals?.Dispose();
+                    prepared?.Animations?.Dispose();
+                }
             }
 
             if (plans.Count == 0)
@@ -78,7 +93,7 @@ public sealed partial class UiSurface
                 return;
             }
 
-            using RebuildPlan? combined = plans.Count > 1 ? new(_rootElement, plans, _treeValidators) : null;
+            using RebuildPlan? combined = plans.Count > 1 ? new(_rootElement, plans, _treeValidators, _sharedElements) : null;
             RebuildPlan plan = combined ?? plans[0];
             _applyingRebuild = true;
             try

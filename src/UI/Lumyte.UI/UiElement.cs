@@ -106,11 +106,14 @@ public partial class UiElement
             return;
         }
 
+        DisconnectPresence(Surface!);
         Animations?.Dispose();
         Animations = null;
         Surface?.ForgetSignalElement(this);
         Signals?.Dispose();
         Signals = null;
+        ContentReads = null;
+        Contexts = null;
         Surface?.ForgetHostValidation(this);
         Surface = null;
         Parent = null;

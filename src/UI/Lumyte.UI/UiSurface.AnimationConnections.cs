@@ -9,28 +9,39 @@ public sealed partial class UiSurface
     {
         foreach (ElementUpdate update in plan.Updates)
         {
-            if (ReferenceEquals(update.Previous, update.Next)
-                || (update.Element.Animations is null && update.Next.AnimationArguments is not { Count: > 0 }))
+            PrepareAnimationUpdate(update);
+        }
+    }
+
+    private void PrepareAnimationUpdate(ElementUpdate update)
+    {
+        if (update.Animations is not null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(update.Previous, update.Next)
+            || (update.Element.Animations is null && update.Next.AnimationArguments is not { Count: > 0 }))
+        {
+            return;
+        }
+
+        update.Animations = new(this, update.Element, update.Next);
+        if (update.Next.NeedsAnimationRefresh)
+        {
+            Widget original = update.Next;
+            Widget refreshed = original.Recreate(new(update.Element, original))
+                ?? throw new InvalidOperationException("Animation arguments require a reproducible declaration.");
+            if (refreshed.GetType() != original.GetType() || refreshed.Key != original.Key
+                || refreshed.ChildCollections.Count != original.ChildCollections.Count || !AnimationLease.SameArguments(original.AnimationArguments, refreshed.AnimationArguments))
             {
-                continue;
+                throw new InvalidOperationException("Animation reconstruction must preserve the prepared component and projection identities.");
             }
 
-            update.Animations = new(this, update.Element, update.Next);
-            if (update.Next.NeedsAnimationRefresh)
-            {
-                Widget original = update.Next;
-                Widget refreshed = original.Recreate(new(update.Element, original))
-                    ?? throw new InvalidOperationException("Animation arguments require a reproducible declaration.");
-                if (refreshed.GetType() != original.GetType() || refreshed.Key != original.Key
-                    || refreshed.ChildCollections.Count != original.ChildCollections.Count || !AnimationLease.SameArguments(original.AnimationArguments, refreshed.AnimationArguments))
-                {
-                    throw new InvalidOperationException("Animation reconstruction must preserve the prepared component and projection identities.");
-                }
-
-                refreshed.Construction ??= original.Construction;
-                refreshed.ConstructionReads ??= original.ConstructionReads;
-                update.Next = refreshed;
-            }
+            refreshed.ProvidedContexts ??= original.ProvidedContexts;
+            refreshed.Construction ??= original.Construction;
+            refreshed.ConstructionReads ??= original.ConstructionReads;
+            update.Next = refreshed;
         }
     }
 

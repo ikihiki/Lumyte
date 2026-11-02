@@ -14,6 +14,12 @@ public class PopupElement : UiElement<Compose.Definitions.Popup>
     }
 
     /// <inheritdoc/>
+    protected override bool SupportsTransitionCapture => Widget.GetType() == typeof(Compose.Definitions.Popup);
+
+    /// <inheritdoc/>
+    protected override bool CanReuseTransitionCapture(Lumyte.UI.Compose.Definitions.Widget other) => other.GetType() == typeof(Compose.Definitions.Popup);
+
+    /// <inheritdoc/>
     protected override Vector2 LayoutOverride(UiBoxConstraints constraints) => constraints.Constrain(Vector2.Zero);
 
     /// <inheritdoc/>

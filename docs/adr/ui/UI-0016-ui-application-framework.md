@@ -548,12 +548,22 @@ editor検証は共通のHostValidationElements indexを参照する。全Element
 TextBoxElementはIsReadOnlyとLayoutProviderの差分だけでサービス要件revisionを進める。
 色の局所更新では検証を省略する一方、構造が同じでもeditable化・provider変更は再検証する。
 
-## 公開済みSurfaceのサービス検証
+## 表示済みSurfaceの検証と静止描画
 
-初回mount前の宣言検証は維持し、標準compositorはSurfaceの更新後に
-HostValidationRevisionと既存の対象集合からサービス要件を検証する。
-検証callbackが追加したRebuildは適用して再検証し、100回で収束しない場合は失敗とする。
-未完了frameは既存の例外時清掃で解放し、presentationの退役を妨げない。
+初回mount前の宣言検証を維持し、標準compositorは表示済みSurfaceを更新してから
+HostValidationRevisionと既存の対象集合でサービス要件を検証する。
+検証callbackがSignalまたはRebuildを追加した場合は適用・再検証する。
+後続presentationのcallbackが先行Surfaceを更新した場合も、全presentationの世代が
+安定してから記録またはcache比較へ進む。100回で収束しない検証や例外では
+未完了frameを完了失敗として解放し、presentationの退役を妨げない。
+
+最終CPU DrawListは、厳密な組み込みPanel／Stack／Rectangleのみからなる場合に1件保持する。
+型の適格性判定はStructureRevisionで保持し、animationの登録集合は毎frame別に確認する。
+停止中・非表示のanimationも除外するため、同型・同keyへのstatic→animated→staticの
+切替を見落とさない。presence、page transition、未知のVisualHost、custom描画は対象外とする。
+visual／layout／Signal、presentationのidentity・順序・clip・scale・visibility、graphics世代の
+変化で失効する。借用画像を含む記録を保持せず、各frameの提出・提示確認情報は新たに作る。
+公開Surface.Recordは毎回記録し、custom OnRecordの外部状態依存を妨げない。
 
 ### 提示用中間textureの再利用
 

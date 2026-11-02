@@ -1,0 +1,5538 @@
+[
+  {
+    "File": "ablation-all.jsonl.gz",
+    "Label": "ablation-all",
+    "Frames": 1200,
+    "MeanHz": 120.0002520005292,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.333315833333325,
+      "P50": 8.4091,
+      "P95": 10.3627,
+      "P99": 11.7732,
+      "Max": 15.0075
+    },
+    "MeanAllocatedBytes": 2524174.5,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 6.680515999999996,
+          "P50": 6.7055,
+          "P95": 8.7664,
+          "P99": 10.2123,
+          "Max": 13.62
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.7562135,
+          "P50": 1.5293,
+          "P95": 3.1412,
+          "P99": 5.125,
+          "Max": 8.0333
+        },
+        "AllocatedBytesPerFrame": 17310.78,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.64,
+        "MillisecondsPerFrame": {
+          "Mean": 1.7523070000000003,
+          "P50": 1.5249,
+          "P95": 3.1364,
+          "P99": 5.1186,
+          "Max": 8.0258
+        },
+        "AllocatedBytesPerFrame": 17310.78,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.7532225000000013,
+          "P50": 0.6154,
+          "P95": 1.1662,
+          "P99": 3.1595,
+          "Max": 7.9384
+        },
+        "AllocatedBytesPerFrame": 2093832.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 0.5552616666666671,
+          "P50": 0.5352,
+          "P95": 0.7761,
+          "P99": 0.9715,
+          "Max": 2.9637
+        },
+        "AllocatedBytesPerFrame": 245045.45333333334,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.43375108333333307,
+          "P50": 0.3467,
+          "P95": 0.6317,
+          "P99": 2.4182,
+          "Max": 4.7985
+        },
+        "AllocatedBytesPerFrame": 1522080.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 0.9941666666666666,
+        "MillisecondsPerFrame": {
+          "Mean": 0.28304975000000016,
+          "P50": 0.2848,
+          "P95": 0.5227,
+          "P99": 0.6499,
+          "Max": 0.9296
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 14.115833333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.16076799999999997,
+          "P50": 0.1492,
+          "P95": 0.2402,
+          "P99": 0.2833,
+          "Max": 0.3625
+        },
+        "AllocatedBytesPerFrame": 40000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.12304816666666665,
+          "P50": 0.0946,
+          "P95": 0.1551,
+          "P99": 0.2638,
+          "Max": 7.0887
+        },
+        "AllocatedBytesPerFrame": 284896.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.11640733333333342,
+          "P50": 0.0956,
+          "P95": 0.1492,
+          "P99": 0.1866,
+          "Max": 5.4246
+        },
+        "AllocatedBytesPerFrame": 128000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.10621208333333355,
+          "P50": 0.1015,
+          "P95": 0.1595,
+          "P99": 0.1958,
+          "Max": 0.2251
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09283141666666679,
+          "P50": 0.0829,
+          "P95": 0.1293,
+          "P99": 0.1612,
+          "Max": 2.5297
+        },
+        "AllocatedBytesPerFrame": 224735.3,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.07595016666666667,
+          "P50": 0.0685,
+          "P95": 0.1091,
+          "P99": 0.1232,
+          "Max": 2.0105
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.07157933333333338,
+          "P50": 0.0596,
+          "P95": 0.1223,
+          "P99": 0.1628,
+          "Max": 1.5547
+        },
+        "AllocatedBytesPerFrame": 96584.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.06425400000000006,
+          "P50": 0.0571,
+          "P95": 0.0882,
+          "P99": 0.1251,
+          "Max": 2.2267
+        },
+        "AllocatedBytesPerFrame": 120000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.05800799999999999,
+          "P50": 0.0521,
+          "P95": 0.0746,
+          "P99": 0.1913,
+          "Max": 0.5599
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.045361583333333344,
+          "P50": 0.0434,
+          "P95": 0.0614,
+          "P99": 0.0776,
+          "Max": 0.1905
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 8.2725,
+        "MillisecondsPerFrame": {
+          "Mean": 0.025258833333333362,
+          "P50": 0.0244,
+          "P95": 0.0325,
+          "P99": 0.0431,
+          "Max": 0.1573
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 0.02409791666666667,
+          "P50": 0.0237,
+          "P95": 0.0331,
+          "P99": 0.042,
+          "Max": 0.1717
+        },
+        "AllocatedBytesPerFrame": 148.65333333333334,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.011018666666666687,
+          "P50": 0.0064,
+          "P95": 0.0127,
+          "P99": 0.0297,
+          "Max": 2.4623
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007197833333333336,
+          "P50": 0.0055,
+          "P95": 0.0161,
+          "P99": 0.0233,
+          "Max": 0.0472
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005731583333333276,
+          "P50": 0.0053,
+          "P95": 0.0073,
+          "P99": 0.0088,
+          "Max": 0.4388
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0010407500000000063,
+          "P50": 0.001,
+          "P95": 0.0014,
+          "P99": 0.0017,
+          "Max": 0.0363
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001031583333333335,
+          "P50": 0.0009,
+          "P95": 0.0018,
+          "P99": 0.0034,
+          "Max": 0.0057
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0005589166666666659,
+          "P50": 0.0005,
+          "P95": 0.0011,
+          "P99": 0.0015,
+          "Max": 0.0024
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00011341666666666736,
+          "P50": 0.0001,
+          "P95": 0.0004,
+          "P99": 0.0006,
+          "Max": 0.0015
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 3.641666666666673E-05,
+          "P50": 0,
+          "P95": 0.0001,
+          "P99": 0.0002,
+          "Max": 0.0004
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 60.0,
+      "Gen1": 11.0,
+      "Gen2": 1.0,
+      "PauseMilliseconds": 135.045,
+      "FramesWithPause": 60,
+      "PauseDistribution": {
+        "Mean": 2.2507499999999996,
+        "P50": 1.878,
+        "P95": 4.687,
+        "P99": 6.891,
+        "Max": 6.891
+      },
+      "IntervalsWithPause": {
+        "Mean": 8.955708333333336,
+        "P50": 8.6698,
+        "P95": 11.4507,
+        "P99": 12.9797,
+        "Max": 12.9797
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.300558333333331,
+        "P50": 8.3453,
+        "P95": 10.2106,
+        "P99": 11.7219,
+        "Max": 15.0075
+      }
+    },
+    "Timeline": {
+      "Frames": 1200,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333231693077568,
+        "P50": 8.3928,
+        "P95": 8.6899,
+        "P99": 8.8538,
+        "Max": 11.1962
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 0.4847312499999999,
+        "P50": 0.4652,
+        "P95": 0.6916,
+        "P99": 0.8377,
+        "Max": 2.8975
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 2.3137578333333324,
+        "P50": 2.0532,
+        "P95": 3.7460,
+        "P99": 5.8800,
+        "Max": 8.5463
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 1060,
+        "IntervalMilliseconds": 15.0075,
+        "AllocatedBytes": 2560256,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5504,
+          "gpu.submission-wait": 8.0333,
+          "signal.batch": 0.5075
+        }
+      },
+      {
+        "Frame": 1077,
+        "IntervalMilliseconds": 14.785,
+        "AllocatedBytes": 2560688,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2529,
+          "gpu.submission-wait": 7.8646,
+          "signal.batch": 0.6953
+        }
+      },
+      {
+        "Frame": 1073,
+        "IntervalMilliseconds": 13.9412,
+        "AllocatedBytes": 2551464,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.425,
+          "gpu.submission-wait": 6.2938,
+          "signal.batch": 0.5314
+        }
+      },
+      {
+        "Frame": 872,
+        "IntervalMilliseconds": 12.9797,
+        "AllocatedBytes": 2542480,
+        "GcPauseMilliseconds": 2.108,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3402,
+          "gpu.submission-wait": 5.1143,
+          "signal.batch": 2.681
+        }
+      },
+      {
+        "Frame": 958,
+        "IntervalMilliseconds": 12.9454,
+        "AllocatedBytes": 2549344,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2182,
+          "gpu.submission-wait": 6.5271,
+          "signal.batch": 0.5351
+        }
+      },
+      {
+        "Frame": 973,
+        "IntervalMilliseconds": 12.5877,
+        "AllocatedBytes": 2544856,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3297,
+          "gpu.submission-wait": 6.4543,
+          "signal.batch": 0.4782
+        }
+      },
+      {
+        "Frame": 951,
+        "IntervalMilliseconds": 12.5045,
+        "AllocatedBytes": 2540200,
+        "GcPauseMilliseconds": 2.447,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.0431,
+          "gpu.submission-wait": 3.5777,
+          "signal.batch": 0.8526
+        }
+      },
+      {
+        "Frame": 1056,
+        "IntervalMilliseconds": 12.0679,
+        "AllocatedBytes": 2536312,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3293,
+          "gpu.submission-wait": 4.4757,
+          "signal.batch": 0.5879
+        }
+      },
+      {
+        "Frame": 945,
+        "IntervalMilliseconds": 12.0168,
+        "AllocatedBytes": 2550216,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2666,
+          "gpu.submission-wait": 5.3638,
+          "signal.batch": 0.88
+        }
+      },
+      {
+        "Frame": 639,
+        "IntervalMilliseconds": 11.9999,
+        "AllocatedBytes": 2551440,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3446,
+          "gpu.submission-wait": 4.4045,
+          "signal.batch": 0.5236
+        }
+      },
+      {
+        "Frame": 657,
+        "IntervalMilliseconds": 11.9722,
+        "AllocatedBytes": 2534680,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.332,
+          "gpu.submission-wait": 4.439,
+          "signal.batch": 0.7474
+        }
+      },
+      {
+        "Frame": 977,
+        "IntervalMilliseconds": 11.7965,
+        "AllocatedBytes": 2547960,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4509,
+          "gpu.submission-wait": 5.237,
+          "signal.batch": 0.5612
+        }
+      }
+    ]
+  },
+  {
+    "File": "ablation-native-repeat.jsonl.gz",
+    "Label": "ablation-native-repeat",
+    "Frames": 1200,
+    "MeanHz": 120.00223444160534,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.333178166666668,
+      "P50": 8.358,
+      "P95": 9.9364,
+      "P99": 10.5091,
+      "Max": 11.5116
+    },
+    "MeanAllocatedBytes": 298211.08,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.430833333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 5.107486249999992,
+          "P50": 5.1254,
+          "P95": 6.5095,
+          "P99": 7.0599,
+          "Max": 8.6224
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.430833333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 3.1158715833333357,
+          "P50": 3.0642,
+          "P95": 3.6969,
+          "P99": 4.0457,
+          "Max": 4.7299
+        },
+        "AllocatedBytesPerFrame": 246045.71333333335,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.6370538333333324,
+          "P50": 2.5906,
+          "P95": 3.1438,
+          "P99": 3.4274,
+          "Max": 4.1528
+        },
+        "AllocatedBytesPerFrame": 1306.8466666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.636602666666666,
+          "P50": 2.5902,
+          "P95": 3.1434,
+          "P99": 3.4269,
+          "Max": 4.1524
+        },
+        "AllocatedBytesPerFrame": 1186.8466666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities.native",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.6339365833333335,
+          "P50": 2.588,
+          "P95": 3.1409,
+          "P99": 3.4242,
+          "Max": 4.15
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.6469736666666668,
+          "P50": 1.5804,
+          "P95": 2.7507,
+          "P99": 3.3008,
+          "Max": 4.8441
+        },
+        "AllocatedBytesPerFrame": 15525.346666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.4325,
+        "MillisecondsPerFrame": {
+          "Mean": 1.6438963333333334,
+          "P50": 1.5779,
+          "P95": 2.747,
+          "P99": 3.2967,
+          "Max": 4.8391
+        },
+        "AllocatedBytesPerFrame": 15525.346666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.27643833333333334,
+          "P50": 0.2735,
+          "P95": 0.5165,
+          "P99": 0.6035,
+          "Max": 0.7654
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08887808333333372,
+          "P50": 0.0812,
+          "P95": 0.1103,
+          "P99": 0.1323,
+          "Max": 0.2398
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0851988333333333,
+          "P50": 0.0783,
+          "P95": 0.116,
+          "P99": 0.1544,
+          "Max": 1.316
+        },
+        "AllocatedBytesPerFrame": 224725.1,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.07235241666666666,
+          "P50": 0.0659,
+          "P95": 0.098,
+          "P99": 0.1257,
+          "Max": 1.3057
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04415291666666666,
+          "P50": 0.0408,
+          "P95": 0.0517,
+          "P99": 0.0753,
+          "Max": 0.3684
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.03880583333333333,
+          "P50": 0.0368,
+          "P95": 0.0465,
+          "P99": 0.0628,
+          "Max": 0.1131
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 7.863333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0229899166666666,
+          "P50": 0.0222,
+          "P95": 0.0282,
+          "P99": 0.0347,
+          "Max": 0.1465
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.430833333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.021674083333333316,
+          "P50": 0.0207,
+          "P95": 0.0296,
+          "P99": 0.0347,
+          "Max": 0.2503
+        },
+        "AllocatedBytesPerFrame": 100.42,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007722666666666663,
+          "P50": 0.0069,
+          "P95": 0.014,
+          "P99": 0.0194,
+          "Max": 0.0704
+        },
+        "AllocatedBytesPerFrame": 3552.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007367750000000008,
+          "P50": 0.0064,
+          "P95": 0.0151,
+          "P99": 0.0234,
+          "Max": 0.0422
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005502666666666676,
+          "P50": 0.0047,
+          "P95": 0.0063,
+          "P99": 0.0076,
+          "Max": 0.3499
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0027731666666666425,
+          "P50": 0.0024,
+          "P95": 0.0047,
+          "P99": 0.0073,
+          "Max": 0.0568
+        },
+        "AllocatedBytesPerFrame": 2032.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0027085833333333107,
+          "P50": 0.0025,
+          "P95": 0.0048,
+          "P99": 0.0066,
+          "Max": 0.0119
+        },
+        "AllocatedBytesPerFrame": 680.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 13.670833333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0015521666666666657,
+          "P50": 0.0015,
+          "P95": 0.0021,
+          "P99": 0.0032,
+          "Max": 0.018
+        },
+        "AllocatedBytesPerFrame": 40.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0013909999999999992,
+          "P50": 0.0011,
+          "P95": 0.0024,
+          "P99": 0.005,
+          "Max": 0.0644
+        },
+        "AllocatedBytesPerFrame": 976.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.430833333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009964166666666739,
+          "P50": 0.001,
+          "P95": 0.0013,
+          "P99": 0.0015,
+          "Max": 0.0176
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.000983166666666669,
+          "P50": 0.0009,
+          "P95": 0.0017,
+          "P99": 0.0024,
+          "Max": 0.0109
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0008950833333333406,
+          "P50": 0.0008,
+          "P95": 0.0015,
+          "P99": 0.0036,
+          "Max": 0.0053
+        },
+        "AllocatedBytesPerFrame": 128.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0003076666666666684,
+          "P50": 0.0002,
+          "P95": 0.0007,
+          "P99": 0.0013,
+          "Max": 0.0517
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 6.908333333333373E-05,
+          "P50": 0.0001,
+          "P95": 0.0003,
+          "P99": 0.0004,
+          "Max": 0.0007
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 5.450000000000053E-05,
+          "P50": 0.0001,
+          "P95": 0.0001,
+          "P99": 0.0002,
+          "Max": 0.0003
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 7.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "PauseMilliseconds": 6.105999999999999,
+      "FramesWithPause": 7,
+      "PauseDistribution": {
+        "Mean": 0.8722857142857144,
+        "P50": 0.869,
+        "P95": 1.21,
+        "P99": 1.21,
+        "Max": 1.21
+      },
+      "IntervalsWithPause": {
+        "Mean": 9.021571428571429,
+        "P50": 8.5862,
+        "P95": 10.6737,
+        "P99": 10.6737,
+        "Max": 10.6737
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.329138977367986,
+        "P50": 8.358,
+        "P95": 9.9364,
+        "P99": 10.5091,
+        "Max": 11.5116
+      }
+    },
+    "Timeline": {
+      "Frames": 1200,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333474061718116,
+        "P50": 8.3576,
+        "P95": 8.6828,
+        "P99": 8.8078,
+        "Max": 8.9893
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 3.062441916666662,
+        "P50": 3.0053,
+        "P95": 3.6455,
+        "P99": 3.9989,
+        "Max": 4.6820
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 4.768150666666673,
+        "P50": 4.5733,
+        "P95": 6.0856,
+        "P99": 6.5751,
+        "Max": 8.0563
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 504,
+        "IntervalMilliseconds": 11.5116,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3322,
+          "surface.capabilities.native": 3.1689,
+          "gpu.submission-wait": 3.3036,
+          "signal.batch": 0.006
+        }
+      },
+      {
+        "Frame": 978,
+        "IntervalMilliseconds": 11.4884,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.604,
+          "surface.capabilities.native": 2.6291,
+          "gpu.submission-wait": 4.8441,
+          "signal.batch": 0.006
+        }
+      },
+      {
+        "Frame": 959,
+        "IntervalMilliseconds": 11.3913,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7654,
+          "surface.capabilities.native": 2.1886,
+          "gpu.submission-wait": 3.852,
+          "signal.batch": 0.0069
+        }
+      },
+      {
+        "Frame": 930,
+        "IntervalMilliseconds": 11.2533,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4327,
+          "surface.capabilities.native": 2.7517,
+          "gpu.submission-wait": 3.4975,
+          "signal.batch": 0.0067
+        }
+      },
+      {
+        "Frame": 716,
+        "IntervalMilliseconds": 11.0435,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2268,
+          "surface.capabilities.native": 2.6824,
+          "gpu.submission-wait": 3.3393,
+          "signal.batch": 0.0077
+        }
+      },
+      {
+        "Frame": 659,
+        "IntervalMilliseconds": 11.0128,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3812,
+          "surface.capabilities.native": 3.0859,
+          "gpu.submission-wait": 4.5252,
+          "signal.batch": 0.0067
+        }
+      },
+      {
+        "Frame": 256,
+        "IntervalMilliseconds": 10.9861,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4027,
+          "surface.capabilities.native": 2.8139,
+          "gpu.submission-wait": 3.207,
+          "signal.batch": 0.0072
+        }
+      },
+      {
+        "Frame": 666,
+        "IntervalMilliseconds": 10.682,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4993,
+          "surface.capabilities.native": 3.03,
+          "gpu.submission-wait": 2.9659,
+          "signal.batch": 0.0062
+        }
+      },
+      {
+        "Frame": 588,
+        "IntervalMilliseconds": 10.6737,
+        "AllocatedBytes": 293456,
+        "GcPauseMilliseconds": 0.655,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3236,
+          "surface.capabilities.native": 2.69,
+          "gpu.submission-wait": 2.8995,
+          "signal.batch": 0.0102
+        }
+      },
+      {
+        "Frame": 983,
+        "IntervalMilliseconds": 10.6589,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3027,
+          "surface.capabilities.native": 2.7253,
+          "gpu.submission-wait": 3.2872,
+          "signal.batch": 0.0074
+        }
+      },
+      {
+        "Frame": 274,
+        "IntervalMilliseconds": 10.5452,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4715,
+          "surface.capabilities.native": 3.357,
+          "gpu.submission-wait": 1.6567,
+          "signal.batch": 0.0073
+        }
+      },
+      {
+        "Frame": 1056,
+        "IntervalMilliseconds": 10.5237,
+        "AllocatedBytes": 311168,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1175,
+          "surface.capabilities.native": 4.15,
+          "gpu.submission-wait": 2.4158,
+          "signal.batch": 0.0069
+        }
+      }
+    ]
+  },
+  {
+    "File": "ablation-one.jsonl.gz",
+    "Label": "ablation-one",
+    "Frames": 1200,
+    "MeanHz": 119.85848907487369,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.343172083333327,
+      "P50": 8.3728,
+      "P95": 10.0255,
+      "P99": 11.0117,
+      "Max": 18.0857
+    },
+    "MeanAllocatedBytes": 299883.0466666667,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.7383333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 7.671637833333341,
+          "P50": 7.6819,
+          "P95": 9.3239,
+          "P99": 10.2953,
+          "Max": 11.3791
+        },
+        "AllocatedBytesPerFrame": 0.18666666666666668,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.8357890000000012,
+          "P50": 1.6936,
+          "P95": 2.973,
+          "P99": 3.6375,
+          "Max": 5.6625
+        },
+        "AllocatedBytesPerFrame": 18514.28,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.7383333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 1.8323839166666644,
+          "P50": 1.6905,
+          "P95": 2.9688,
+          "P99": 3.6329,
+          "Max": 5.6571
+        },
+        "AllocatedBytesPerFrame": 18514.28,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.7375,
+        "MillisecondsPerFrame": {
+          "Mean": 0.5228993333333336,
+          "P50": 0.4892,
+          "P95": 0.7373,
+          "P99": 1.0452,
+          "Max": 6.4497
+        },
+        "AllocatedBytesPerFrame": 244848.58666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.283195,
+          "P50": 0.2834,
+          "P95": 0.5126,
+          "P99": 0.6533,
+          "Max": 1.2043
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09421291666666652,
+          "P50": 0.0846,
+          "P95": 0.1309,
+          "P99": 0.1899,
+          "Max": 0.413
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09035549999999991,
+          "P50": 0.0802,
+          "P95": 0.1496,
+          "P99": 0.1992,
+          "Max": 0.8651
+        },
+        "AllocatedBytesPerFrame": 224721.46666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.07784524999999999,
+          "P50": 0.069,
+          "P95": 0.1247,
+          "P99": 0.1648,
+          "Max": 0.8559
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.051773916666666725,
+          "P50": 0.0474,
+          "P95": 0.0685,
+          "P99": 0.1815,
+          "Max": 0.4042
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04700858333333316,
+          "P50": 0.0383,
+          "P95": 0.0588,
+          "P99": 0.1007,
+          "Max": 5.9093
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 8.475833333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 0.023074583333333322,
+          "P50": 0.0223,
+          "P95": 0.0288,
+          "P99": 0.0372,
+          "Max": 0.2287
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.7375,
+        "MillisecondsPerFrame": {
+          "Mean": 0.022324166666666683,
+          "P50": 0.0219,
+          "P95": 0.0304,
+          "P99": 0.0367,
+          "Max": 0.1755
+        },
+        "AllocatedBytesPerFrame": 174.52,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0076720833333333485,
+          "P50": 0.0064,
+          "P95": 0.0147,
+          "P99": 0.0308,
+          "Max": 0.1104
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007505916666666681,
+          "P50": 0.0068,
+          "P95": 0.012,
+          "P99": 0.0188,
+          "Max": 0.0288
+        },
+        "AllocatedBytesPerFrame": 3552.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00570758333333332,
+          "P50": 0.0052,
+          "P95": 0.0067,
+          "P99": 0.0083,
+          "Max": 0.4846
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.002735083333333302,
+          "P50": 0.0025,
+          "P95": 0.0042,
+          "P99": 0.0075,
+          "Max": 0.0117
+        },
+        "AllocatedBytesPerFrame": 2032.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0024933333333333183,
+          "P50": 0.0023,
+          "P95": 0.0042,
+          "P99": 0.0056,
+          "Max": 0.0095
+        },
+        "AllocatedBytesPerFrame": 680.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 14.335,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0015910000000000034,
+          "P50": 0.0015,
+          "P95": 0.0022,
+          "P99": 0.0029,
+          "Max": 0.0045
+        },
+        "AllocatedBytesPerFrame": 40.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001369499999999999,
+          "P50": 0.0012,
+          "P95": 0.0021,
+          "P99": 0.005,
+          "Max": 0.0078
+        },
+        "AllocatedBytesPerFrame": 976.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.7375,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001046083333333341,
+          "P50": 0.001,
+          "P95": 0.0014,
+          "P99": 0.0016,
+          "Max": 0.0021
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0008895000000000024,
+          "P50": 0.0008,
+          "P95": 0.0016,
+          "P99": 0.0024,
+          "Max": 0.0072
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0008853333333333355,
+          "P50": 0.0007,
+          "P95": 0.0015,
+          "P99": 0.0037,
+          "Max": 0.0075
+        },
+        "AllocatedBytesPerFrame": 128.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0004917500000000015,
+          "P50": 0.0004,
+          "P95": 0.001,
+          "P99": 0.0013,
+          "Max": 0.0034
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0003019166666666673,
+          "P50": 0.0002,
+          "P95": 0.0007,
+          "P99": 0.0013,
+          "Max": 0.0058
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 7.725000000000074E-05,
+          "P50": 0.0001,
+          "P95": 0.0002,
+          "P99": 0.0004,
+          "Max": 0.0006
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 6.033333333333403E-05,
+          "P50": 0.0001,
+          "P95": 0.0001,
+          "P99": 0.0002,
+          "Max": 0.0005
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.5916666666666557E-05,
+          "P50": 0,
+          "P95": 0.0001,
+          "P99": 0.0001,
+          "Max": 0.0001
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 7.0,
+      "Gen1": 1.0,
+      "Gen2": 1.0,
+      "PauseMilliseconds": 10.384000000000002,
+      "FramesWithPause": 7,
+      "PauseDistribution": {
+        "Mean": 1.4834285714285715,
+        "P50": 0.774,
+        "P95": 5.86,
+        "P99": 5.86,
+        "Max": 5.86
+      },
+      "IntervalsWithPause": {
+        "Mean": 9.96132857142857,
+        "P50": 9.2623,
+        "P95": 14.2016,
+        "P99": 14.2016,
+        "Max": 14.2016
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.333677451802172,
+        "P50": 8.368,
+        "P95": 10.0216,
+        "P99": 11.0117,
+        "Max": 18.0857
+      }
+    },
+    "Timeline": {
+      "Frames": 1200,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.343001334445368,
+        "P50": 8.3703,
+        "P95": 8.7148,
+        "P99": 8.9852,
+        "Max": 19.4035
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 0.4599505000000002,
+        "P50": 0.4273,
+        "P95": 0.6571,
+        "P99": 0.8893,
+        "Max": 6.3748
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 2.3627083333333343,
+        "P50": 2.2044,
+        "P95": 3.5175,
+        "P99": 4.2350,
+        "Max": 8.2681
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 788,
+        "IntervalMilliseconds": 18.0857,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.0492,
+          "gpu.submission-wait": 1.2846,
+          "signal.batch": 0.0065
+        }
+      },
+      {
+        "Frame": 755,
+        "IntervalMilliseconds": 14.2016,
+        "AllocatedBytes": 293040,
+        "GcPauseMilliseconds": 5.86,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4114,
+          "gpu.submission-wait": 0.0117,
+          "signal.batch": 0.007
+        }
+      },
+      {
+        "Frame": 1141,
+        "IntervalMilliseconds": 12.0258,
+        "AllocatedBytes": 328032,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1928,
+          "gpu.submission-wait": 4.5768,
+          "signal.batch": 0.0072
+        }
+      },
+      {
+        "Frame": 824,
+        "IntervalMilliseconds": 11.7387,
+        "AllocatedBytes": 328032,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2877,
+          "gpu.submission-wait": 5.6625,
+          "signal.batch": 0.0058
+        }
+      },
+      {
+        "Frame": 980,
+        "IntervalMilliseconds": 11.1867,
+        "AllocatedBytes": 319832,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1714,
+          "gpu.submission-wait": 4.0547,
+          "signal.batch": 0.0089
+        }
+      },
+      {
+        "Frame": 1016,
+        "IntervalMilliseconds": 11.1392,
+        "AllocatedBytes": 319832,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3917,
+          "gpu.submission-wait": 3.6375,
+          "signal.batch": 0.0057
+        }
+      },
+      {
+        "Frame": 1160,
+        "IntervalMilliseconds": 11.1308,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4352,
+          "gpu.submission-wait": 3.5835,
+          "signal.batch": 0.0088
+        }
+      },
+      {
+        "Frame": 313,
+        "IntervalMilliseconds": 11.1066,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1759,
+          "gpu.submission-wait": 3.6087,
+          "signal.batch": 0.007
+        }
+      },
+      {
+        "Frame": 1028,
+        "IntervalMilliseconds": 11.0683,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5812,
+          "gpu.submission-wait": 3.6017,
+          "signal.batch": 0.0084
+        }
+      },
+      {
+        "Frame": 1136,
+        "IntervalMilliseconds": 11.061,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3949,
+          "gpu.submission-wait": 3.5937,
+          "signal.batch": 0.0085
+        }
+      },
+      {
+        "Frame": 1004,
+        "IntervalMilliseconds": 11.0434,
+        "AllocatedBytes": 311176,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3147,
+          "gpu.submission-wait": 3.629,
+          "signal.batch": 0.0086
+        }
+      },
+      {
+        "Frame": 1172,
+        "IntervalMilliseconds": 11.0168,
+        "AllocatedBytes": 311176,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.0436,
+          "gpu.submission-wait": 4.1226,
+          "signal.batch": 0.0063
+        }
+      }
+    ]
+  },
+  {
+    "File": "control-all.jsonl.gz",
+    "Label": "control-all",
+    "Frames": 1200,
+    "MeanHz": 119.98964129426682,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.334052750000007,
+      "P50": 8.3666,
+      "P95": 9.9183,
+      "P99": 10.4963,
+      "Max": 11.6937
+    },
+    "MeanAllocatedBytes": 2520368.053333333,
+    "Phases": [],
+    "Gc": null,
+    "Timeline": null,
+    "SlowFrames": [
+      {
+        "Frame": 345,
+        "IntervalMilliseconds": 11.6937,
+        "AllocatedBytes": 2529168,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 691,
+        "IntervalMilliseconds": 10.8771,
+        "AllocatedBytes": 2531488,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 1111,
+        "IntervalMilliseconds": 10.8586,
+        "AllocatedBytes": 2526328,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 248,
+        "IntervalMilliseconds": 10.6576,
+        "AllocatedBytes": 2527912,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 185,
+        "IntervalMilliseconds": 10.6408,
+        "AllocatedBytes": 2524928,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 780,
+        "IntervalMilliseconds": 10.6291,
+        "AllocatedBytes": 2537600,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 588,
+        "IntervalMilliseconds": 10.6147,
+        "AllocatedBytes": 2523040,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 973,
+        "IntervalMilliseconds": 10.599,
+        "AllocatedBytes": 2514424,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 569,
+        "IntervalMilliseconds": 10.5473,
+        "AllocatedBytes": 2526600,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 791,
+        "IntervalMilliseconds": 10.5313,
+        "AllocatedBytes": 2531904,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 854,
+        "IntervalMilliseconds": 10.523,
+        "AllocatedBytes": 2530752,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      },
+      {
+        "Frame": 1139,
+        "IntervalMilliseconds": 10.5156,
+        "AllocatedBytes": 2526856,
+        "GcPauseMilliseconds": null,
+        "PhaseMilliseconds": {}
+      }
+    ]
+  },
+  {
+    "File": "detail-layout.jsonl.gz",
+    "Label": "detail-layout",
+    "Frames": 1200,
+    "MeanHz": 119.98392095475293,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.334450083333326,
+      "P50": 8.2832,
+      "P95": 10.5234,
+      "P99": 11.5664,
+      "Max": 13.5423
+    },
+    "MeanAllocatedBytes": 2629031.3666666667,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.6825,
+        "MillisecondsPerFrame": {
+          "Mean": 4.005701500000001,
+          "P50": 4.0321,
+          "P95": 6.0779,
+          "P99": 7.0069,
+          "Max": 9.1098
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.6825,
+        "MillisecondsPerFrame": {
+          "Mean": 3.074312249999999,
+          "P50": 2.9832,
+          "P95": 3.8436,
+          "P99": 4.3865,
+          "Max": 4.8984
+        },
+        "AllocatedBytesPerFrame": 246237.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.2303116666666676,
+          "P50": 2.0978,
+          "P95": 3.8418,
+          "P99": 5.0257,
+          "Max": 6.4547
+        },
+        "AllocatedBytesPerFrame": 21232.346666666668,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.7858333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 2.2270002499999992,
+          "P50": 2.0946,
+          "P95": 3.838,
+          "P99": 5.0213,
+          "Max": 6.4505
+        },
+        "AllocatedBytesPerFrame": 21232.346666666668,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.8086957500000005,
+          "P50": 0.6748,
+          "P95": 0.8998,
+          "P99": 5.3457,
+          "Max": 7.3873
+        },
+        "AllocatedBytesPerFrame": 2189832.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.444124833333333,
+          "P50": 0.3542,
+          "P95": 0.4644,
+          "P99": 2.7895,
+          "Max": 7.1426
+        },
+        "AllocatedBytesPerFrame": 1618080.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 0.9183333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.2510421666666665,
+          "P50": 0.2439,
+          "P95": 0.5107,
+          "P99": 0.6893,
+          "Max": 1.0054
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 14.216666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.20927041666666701,
+          "P50": 0.1972,
+          "P95": 0.2577,
+          "P99": 0.3568,
+          "Max": 2.3029
+        },
+        "AllocatedBytesPerFrame": 40000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.14314341666666647,
+          "P50": 0.1273,
+          "P95": 0.1671,
+          "P99": 0.2085,
+          "Max": 4.9898
+        },
+        "AllocatedBytesPerFrame": 128000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.11780175000000012,
+          "P50": 0.0912,
+          "P95": 0.1235,
+          "P99": 0.1538,
+          "Max": 5.0877
+        },
+        "AllocatedBytesPerFrame": 284896.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08921024999999996,
+          "P50": 0.0787,
+          "P95": 0.1079,
+          "P99": 0.1306,
+          "Max": 4.9331
+        },
+        "AllocatedBytesPerFrame": 120000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08707491666666656,
+          "P50": 0.0793,
+          "P95": 0.1115,
+          "P99": 0.1341,
+          "Max": 0.2564
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0854950000000001,
+          "P50": 0.0739,
+          "P95": 0.0989,
+          "P99": 0.116,
+          "Max": 1.8413
+        },
+        "AllocatedBytesPerFrame": 224736.4,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.07191474999999994,
+          "P50": 0.0613,
+          "P95": 0.0801,
+          "P99": 0.1016,
+          "Max": 1.8279
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.6825,
+        "MillisecondsPerFrame": {
+          "Mean": 0.06958708333333334,
+          "P50": 0.0665,
+          "P95": 0.0845,
+          "P99": 0.1137,
+          "Max": 0.2865
+        },
+        "AllocatedBytesPerFrame": 6528.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0621148333333333,
+          "P50": 0.0571,
+          "P95": 0.0855,
+          "P99": 0.1124,
+          "Max": 1.8917
+        },
+        "AllocatedBytesPerFrame": 96584.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "input.rebuild",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.036471750000000205,
+          "P50": 0.0364,
+          "P95": 0.044,
+          "P99": 0.0601,
+          "Max": 0.1826
+        },
+        "AllocatedBytesPerFrame": 24.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "layout.compute",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.03166366666666671,
+          "P50": 0.029,
+          "P95": 0.0397,
+          "P99": 0.0513,
+          "Max": 0.248
+        },
+        "AllocatedBytesPerFrame": 6464.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 8.468333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 0.024666749999999977,
+          "P50": 0.0233,
+          "P95": 0.0312,
+          "P99": 0.0452,
+          "Max": 0.1731
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.6825,
+        "MillisecondsPerFrame": {
+          "Mean": 0.02272949999999999,
+          "P50": 0.0221,
+          "P95": 0.032,
+          "P99": 0.0391,
+          "Max": 0.1603
+        },
+        "AllocatedBytesPerFrame": 182.35333333333332,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007889750000000022,
+          "P50": 0.006,
+          "P95": 0.0113,
+          "P99": 0.022,
+          "Max": 1.4817
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0062047500000000045,
+          "P50": 0.005,
+          "P95": 0.0104,
+          "P99": 0.0144,
+          "Max": 0.0228
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005572666666666673,
+          "P50": 0.0048,
+          "P95": 0.0066,
+          "P99": 0.0093,
+          "Max": 0.4776
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0008305833333333366,
+          "P50": 0.0008,
+          "P95": 0.0015,
+          "P99": 0.0023,
+          "Max": 0.0035
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 7.133333333333372E-05,
+          "P50": 0.0001,
+          "P95": 0.0003,
+          "P99": 0.0004,
+          "Max": 0.0006
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 63.0,
+      "Gen1": 19.0,
+      "Gen2": 1.0,
+      "PauseMilliseconds": 176.48399999999998,
+      "FramesWithPause": 63,
+      "PauseDistribution": {
+        "Mean": 2.801333333333333,
+        "P50": 2.106,
+        "P95": 4.989,
+        "P99": 6.43,
+        "Max": 6.43
+      },
+      "IntervalsWithPause": {
+        "Mean": 9.393276190476195,
+        "P50": 9.209,
+        "P95": 11.0896,
+        "P99": 12.2899,
+        "Max": 12.2899
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.27578161829375,
+        "P50": 8.1818,
+        "P95": 10.3448,
+        "P99": 11.4721,
+        "Max": 13.5423
+      }
+    },
+    "Timeline": null,
+    "SlowFrames": [
+      {
+        "Frame": 844,
+        "IntervalMilliseconds": 13.5423,
+        "AllocatedBytes": 2668456,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0294,
+          "owner.timer-lateness": 0.9807,
+          "gpu.submission-wait": 6.4547,
+          "signal.batch": 0.8457
+        }
+      },
+      {
+        "Frame": 872,
+        "IntervalMilliseconds": 12.5813,
+        "AllocatedBytes": 2655064,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.034,
+          "owner.timer-lateness": 0.7436,
+          "gpu.submission-wait": 5.3535,
+          "signal.batch": 0.6353
+        }
+      },
+      {
+        "Frame": 633,
+        "IntervalMilliseconds": 12.5806,
+        "AllocatedBytes": 2642720,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.034,
+          "owner.timer-lateness": 0.4017,
+          "gpu.submission-wait": 5.1046,
+          "signal.batch": 0.7397
+        }
+      },
+      {
+        "Frame": 572,
+        "IntervalMilliseconds": 12.4933,
+        "AllocatedBytes": 2641664,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.047,
+          "owner.timer-lateness": 0.5864,
+          "gpu.submission-wait": 3.9119,
+          "signal.batch": 0.6872
+        }
+      },
+      {
+        "Frame": 1172,
+        "IntervalMilliseconds": 12.2899,
+        "AllocatedBytes": 2635632,
+        "GcPauseMilliseconds": 1.705,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0285,
+          "owner.timer-lateness": 1.0054,
+          "gpu.submission-wait": 3.9347,
+          "signal.batch": 0.7588
+        }
+      },
+      {
+        "Frame": 332,
+        "IntervalMilliseconds": 12.0483,
+        "AllocatedBytes": 2621088,
+        "GcPauseMilliseconds": 6.43,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0284,
+          "owner.timer-lateness": 0.3305,
+          "gpu.submission-wait": 1.0861,
+          "signal.batch": 7.3873
+        }
+      },
+      {
+        "Frame": 671,
+        "IntervalMilliseconds": 12.0408,
+        "AllocatedBytes": 2636584,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0287,
+          "owner.timer-lateness": 0.171,
+          "gpu.submission-wait": 3.6796,
+          "signal.batch": 0.6692
+        }
+      },
+      {
+        "Frame": 1072,
+        "IntervalMilliseconds": 12.017,
+        "AllocatedBytes": 2656192,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0282,
+          "owner.timer-lateness": 0.5253,
+          "gpu.submission-wait": 4.7408,
+          "signal.batch": 0.7367
+        }
+      },
+      {
+        "Frame": 387,
+        "IntervalMilliseconds": 11.6651,
+        "AllocatedBytes": 2635936,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0347,
+          "owner.timer-lateness": 0.3019,
+          "gpu.submission-wait": 2.9026,
+          "signal.batch": 0.7176
+        }
+      },
+      {
+        "Frame": 897,
+        "IntervalMilliseconds": 11.6357,
+        "AllocatedBytes": 2648216,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.031,
+          "owner.timer-lateness": 0.412,
+          "gpu.submission-wait": 4.8232,
+          "signal.batch": 0.668
+        }
+      },
+      {
+        "Frame": 7,
+        "IntervalMilliseconds": 11.6343,
+        "AllocatedBytes": 2630288,
+        "GcPauseMilliseconds": 4.051,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.0304,
+          "owner.timer-lateness": 0.1861,
+          "gpu.submission-wait": 3.013,
+          "signal.batch": 4.8252
+        }
+      },
+      {
+        "Frame": 1089,
+        "IntervalMilliseconds": 11.5888,
+        "AllocatedBytes": 2638448,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "layout.compute": 0.029,
+          "owner.timer-lateness": 0.3573,
+          "gpu.submission-wait": 3.1521,
+          "signal.batch": 0.7471
+        }
+      }
+    ]
+  },
+  {
+    "File": "paired-cached.jsonl.gz",
+    "Label": "paired-cached",
+    "Frames": 600,
+    "MeanHz": 119.98358384605817,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.334473500000005,
+      "P50": 8.3425,
+      "P95": 9.7492,
+      "P99": 10.2648,
+      "Max": 10.7887
+    },
+    "MeanAllocatedBytes": 298140.50666666665,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.5433333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 7.730920833333334,
+          "P50": 7.7284,
+          "P95": 9.1279,
+          "P99": 9.6965,
+          "Max": 10.2859
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.545922666666667,
+          "P50": 1.4996,
+          "P95": 2.6148,
+          "P99": 2.991,
+          "Max": 3.2502
+        },
+        "AllocatedBytesPerFrame": 16614.88,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.5433333333333332,
+        "MillisecondsPerFrame": {
+          "Mean": 1.5428394999999986,
+          "P50": 1.4963,
+          "P95": 2.6117,
+          "P99": 2.9883,
+          "Max": 3.2475
+        },
+        "AllocatedBytesPerFrame": 16614.88,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.543333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.49272016666666624,
+          "P50": 0.4577,
+          "P95": 0.6388,
+          "P99": 0.7676,
+          "Max": 1.4026
+        },
+        "AllocatedBytesPerFrame": 244885.26666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.2746263333333332,
+          "P50": 0.2744,
+          "P95": 0.507,
+          "P99": 0.6276,
+          "Max": 0.8173
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0973145000000002,
+          "P50": 0.0832,
+          "P95": 0.1312,
+          "P99": 0.1599,
+          "Max": 0.1623
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08813566666666661,
+          "P50": 0.0816,
+          "P95": 0.1151,
+          "P99": 0.1417,
+          "Max": 0.8089
+        },
+        "AllocatedBytesPerFrame": 224731.6,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.07485716666666671,
+          "P50": 0.0687,
+          "P95": 0.0968,
+          "P99": 0.1217,
+          "Max": 0.7988
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04558050000000004,
+          "P50": 0.041,
+          "P95": 0.0569,
+          "P99": 0.0861,
+          "Max": 0.2255
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04122866666666673,
+          "P50": 0.0374,
+          "P95": 0.0521,
+          "P99": 0.0655,
+          "Max": 0.0895
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.543333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.021725999999999995,
+          "P50": 0.0213,
+          "P95": 0.0301,
+          "P99": 0.0364,
+          "Max": 0.1657
+        },
+        "AllocatedBytesPerFrame": 126.13333333333334,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 8.086666666666666,
+        "MillisecondsPerFrame": {
+          "Mean": 0.021068333333333335,
+          "P50": 0.0207,
+          "P95": 0.0258,
+          "P99": 0.0324,
+          "Max": 0.1405
+        },
+        "AllocatedBytesPerFrame": 0.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.008260499999999999,
+          "P50": 0.0069,
+          "P95": 0.0184,
+          "P99": 0.0239,
+          "Max": 0.0271
+        },
+        "AllocatedBytesPerFrame": 3552.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007881666666666676,
+          "P50": 0.0062,
+          "P95": 0.02,
+          "P99": 0.0229,
+          "Max": 0.0273
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005570333333333297,
+          "P50": 0.0044,
+          "P95": 0.0059,
+          "P99": 0.0067,
+          "Max": 0.468
+        },
+        "AllocatedBytesPerFrame": 64.16,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0029550000000000084,
+          "P50": 0.0024,
+          "P95": 0.0068,
+          "P99": 0.0086,
+          "Max": 0.0134
+        },
+        "AllocatedBytesPerFrame": 2032.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0028341666666666728,
+          "P50": 0.0024,
+          "P95": 0.0054,
+          "P99": 0.0068,
+          "Max": 0.0083
+        },
+        "AllocatedBytesPerFrame": 680.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 13.911666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001632000000000007,
+          "P50": 0.0015,
+          "P95": 0.0028,
+          "P99": 0.0038,
+          "Max": 0.0058
+        },
+        "AllocatedBytesPerFrame": 40.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001541333333333331,
+          "P50": 0.0011,
+          "P95": 0.0046,
+          "P99": 0.0062,
+          "Max": 0.0105
+        },
+        "AllocatedBytesPerFrame": 976.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001113333333333337,
+          "P50": 0.0008,
+          "P95": 0.0037,
+          "P99": 0.0043,
+          "Max": 0.0058
+        },
+        "AllocatedBytesPerFrame": 128.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0010411666666666662,
+          "P50": 0.0009,
+          "P95": 0.0019,
+          "P99": 0.0024,
+          "Max": 0.0185
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.543333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009399999999999969,
+          "P50": 0.0009,
+          "P95": 0.0013,
+          "P99": 0.0014,
+          "Max": 0.0017
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0005423333333333322,
+          "P50": 0.0004,
+          "P95": 0.0012,
+          "P99": 0.0015,
+          "Max": 0.0021
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00037599999999999895,
+          "P50": 0.0003,
+          "P95": 0.0012,
+          "P99": 0.0014,
+          "Max": 0.0053
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0001046666666666668,
+          "P50": 0.0001,
+          "P95": 0.0003,
+          "P99": 0.0004,
+          "Max": 0.001
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 6.0999999999999755E-05,
+          "P50": 0.0001,
+          "P95": 0.0002,
+          "P99": 0.0003,
+          "Max": 0.0004
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 3.899999999999987E-05,
+          "P50": 0,
+          "P95": 0.0001,
+          "P99": 0.0001,
+          "Max": 0.0004
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 4.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "PauseMilliseconds": 2.942,
+      "FramesWithPause": 4,
+      "PauseDistribution": {
+        "Mean": 0.7354999999999999,
+        "P50": 0.69,
+        "P95": 0.892,
+        "P99": 0.892,
+        "Max": 0.892
+      },
+      "IntervalsWithPause": {
+        "Mean": 9.27565,
+        "P50": 9.0039,
+        "P95": 10.166,
+        "P99": 10.166,
+        "Max": 10.166
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.328156879194635,
+        "P50": 8.3413,
+        "P95": 9.7492,
+        "P99": 10.3877,
+        "Max": 10.7887
+      }
+    },
+    "Timeline": {
+      "Frames": 600,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333198831385637,
+        "P50": 8.3660,
+        "P95": 8.6819,
+        "P99": 8.7865,
+        "Max": 8.9702
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 0.4375908333333334,
+        "P50": 0.4073,
+        "P95": 0.5790,
+        "P99": 0.7112,
+        "Max": 1.1742
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 2.0434421666666664,
+        "P50": 2.0293,
+        "P95": 3.0493,
+        "P99": 3.5313,
+        "Max": 3.7271
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 212,
+        "IntervalMilliseconds": 10.7887,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4646,
+          "gpu.submission-wait": 3.2502,
+          "signal.batch": 0.0066
+        }
+      },
+      {
+        "Frame": 396,
+        "IntervalMilliseconds": 10.6471,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4745,
+          "gpu.submission-wait": 3.1122,
+          "signal.batch": 0.006
+        }
+      },
+      {
+        "Frame": 499,
+        "IntervalMilliseconds": 10.6371,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3679,
+          "gpu.submission-wait": 3.2302,
+          "signal.batch": 0.0057
+        }
+      },
+      {
+        "Frame": 173,
+        "IntervalMilliseconds": 10.6143,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.327,
+          "gpu.submission-wait": 2.4272,
+          "signal.batch": 0.0058
+        }
+      },
+      {
+        "Frame": 468,
+        "IntervalMilliseconds": 10.5124,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4077,
+          "gpu.submission-wait": 2.991,
+          "signal.batch": 0.008
+        }
+      },
+      {
+        "Frame": 559,
+        "IntervalMilliseconds": 10.3877,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7891,
+          "gpu.submission-wait": 2.5212,
+          "signal.batch": 0.0068
+        }
+      },
+      {
+        "Frame": 464,
+        "IntervalMilliseconds": 10.2648,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3348,
+          "gpu.submission-wait": 2.8189,
+          "signal.batch": 0.0068
+        }
+      },
+      {
+        "Frame": 317,
+        "IntervalMilliseconds": 10.2503,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4671,
+          "gpu.submission-wait": 2.563,
+          "signal.batch": 0.008
+        }
+      },
+      {
+        "Frame": 122,
+        "IntervalMilliseconds": 10.1673,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1554,
+          "gpu.submission-wait": 2.5305,
+          "signal.batch": 0.0066
+        }
+      },
+      {
+        "Frame": 421,
+        "IntervalMilliseconds": 10.166,
+        "AllocatedBytes": 313304,
+        "GcPauseMilliseconds": 0.69,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4141,
+          "gpu.submission-wait": 2.3834,
+          "signal.batch": 0.0068
+        }
+      },
+      {
+        "Frame": 245,
+        "IntervalMilliseconds": 10.1562,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3862,
+          "gpu.submission-wait": 2.5638,
+          "signal.batch": 0.008
+        }
+      },
+      {
+        "Frame": 154,
+        "IntervalMilliseconds": 10.098,
+        "AllocatedBytes": 301544,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4679,
+          "gpu.submission-wait": 1.9263,
+          "signal.batch": 0.0057
+        }
+      }
+    ]
+  },
+  {
+    "File": "paired-native.jsonl.gz",
+    "Label": "paired-native",
+    "Frames": 600,
+    "MeanHz": 120.00363130988342,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.333081166666659,
+      "P50": 8.3699,
+      "P95": 9.8563,
+      "P99": 10.8495,
+      "Max": 12.6588
+    },
+    "MeanAllocatedBytes": 297762.6666666667,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.3866666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 5.0170115000000015,
+          "P50": 5.0116,
+          "P95": 6.4678,
+          "P99": 7.1051,
+          "Max": 9.0893
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.383333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 3.205525833333333,
+          "P50": 3.1742,
+          "P95": 3.8234,
+          "P99": 4.3955,
+          "Max": 5.1752
+        },
+        "AllocatedBytesPerFrame": 246061.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.7179208333333347,
+          "P50": 2.6828,
+          "P95": 3.2454,
+          "P99": 3.7607,
+          "Max": 4.029
+        },
+        "AllocatedBytesPerFrame": 1307.52,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.7174660000000013,
+          "P50": 2.6825,
+          "P95": 3.245,
+          "P99": 3.7604,
+          "Max": 4.0283
+        },
+        "AllocatedBytesPerFrame": 1187.52,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities.native",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.714658833333336,
+          "P50": 2.6802,
+          "P95": 3.2424,
+          "P99": 3.7581,
+          "Max": 4.0001
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.4948744999999992,
+          "P50": 1.4192,
+          "P95": 2.5663,
+          "P99": 2.8422,
+          "Max": 3.2705
+        },
+        "AllocatedBytesPerFrame": 15057.866666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.3866666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 1.4916684999999996,
+          "P50": 1.4169,
+          "P95": 2.563,
+          "P99": 2.8385,
+          "Max": 3.2666
+        },
+        "AllocatedBytesPerFrame": 15057.866666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.286505,
+          "P50": 0.2868,
+          "P95": 0.5227,
+          "P99": 0.7072,
+          "Max": 1.0064
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09526283333333334,
+          "P50": 0.0896,
+          "P95": 0.1452,
+          "P99": 0.1939,
+          "Max": 0.981
+        },
+        "AllocatedBytesPerFrame": 224721.6,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09022333333333324,
+          "P50": 0.0798,
+          "P95": 0.1306,
+          "P99": 0.1376,
+          "Max": 0.2836
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08216966666666671,
+          "P50": 0.0763,
+          "P95": 0.1267,
+          "P99": 0.1778,
+          "Max": 0.969
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04970166666666664,
+          "P50": 0.0413,
+          "P95": 0.0566,
+          "P99": 0.31,
+          "Max": 0.4927
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.03971749999999999,
+          "P50": 0.0375,
+          "P95": 0.0479,
+          "P99": 0.056,
+          "Max": 0.0629
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 7.77,
+        "MillisecondsPerFrame": {
+          "Mean": 0.022704499999999975,
+          "P50": 0.0219,
+          "P95": 0.0275,
+          "P99": 0.036,
+          "Max": 0.1107
+        },
+        "AllocatedBytesPerFrame": 0.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.383333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 0.021401666666666656,
+          "P50": 0.0209,
+          "P95": 0.0286,
+          "P99": 0.0338,
+          "Max": 0.163
+        },
+        "AllocatedBytesPerFrame": 102.53333333333333,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007629833333333327,
+          "P50": 0.0072,
+          "P95": 0.0104,
+          "P99": 0.0141,
+          "Max": 0.0647
+        },
+        "AllocatedBytesPerFrame": 3552.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007596999999999984,
+          "P50": 0.0067,
+          "P95": 0.0166,
+          "P99": 0.0233,
+          "Max": 0.0327
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0059376666666666345,
+          "P50": 0.0049,
+          "P95": 0.0065,
+          "P99": 0.0093,
+          "Max": 0.3917
+        },
+        "AllocatedBytesPerFrame": 64.16,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.002874833333333343,
+          "P50": 0.0025,
+          "P95": 0.0043,
+          "P99": 0.0062,
+          "Max": 0.06
+        },
+        "AllocatedBytesPerFrame": 2032.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0028475000000000015,
+          "P50": 0.0025,
+          "P95": 0.005,
+          "P99": 0.006,
+          "Max": 0.0089
+        },
+        "AllocatedBytesPerFrame": 680.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 13.571666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0015386666666666762,
+          "P50": 0.0015,
+          "P95": 0.0021,
+          "P99": 0.0031,
+          "Max": 0.0041
+        },
+        "AllocatedBytesPerFrame": 40.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0012866666666666584,
+          "P50": 0.0012,
+          "P95": 0.0019,
+          "P99": 0.003,
+          "Max": 0.005
+        },
+        "AllocatedBytesPerFrame": 976.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.383333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009488333333333306,
+          "P50": 0.0009,
+          "P95": 0.0013,
+          "P99": 0.0014,
+          "Max": 0.0016
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009100000000000021,
+          "P50": 0.0009,
+          "P95": 0.0013,
+          "P99": 0.0019,
+          "Max": 0.0041
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0008043333333333394,
+          "P50": 0.0008,
+          "P95": 0.0011,
+          "P99": 0.0016,
+          "Max": 0.0031
+        },
+        "AllocatedBytesPerFrame": 128.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00024266666666666604,
+          "P50": 0.0002,
+          "P95": 0.0004,
+          "P99": 0.0008,
+          "Max": 0.0011
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 9.633333333333306E-05,
+          "P50": 0.0001,
+          "P95": 0.0004,
+          "P99": 0.0005,
+          "Max": 0.0008
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 5.016666666666646E-05,
+          "P50": 0,
+          "P95": 0.0001,
+          "P99": 0.0001,
+          "Max": 0.0002
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 4.0,
+      "Gen1": 0.0,
+      "Gen2": 0.0,
+      "PauseMilliseconds": 2.6799999999999997,
+      "FramesWithPause": 4,
+      "PauseDistribution": {
+        "Mean": 0.6699999999999999,
+        "P50": 0.635,
+        "P95": 0.84,
+        "P99": 0.84,
+        "Max": 0.84
+      },
+      "IntervalsWithPause": {
+        "Mean": 9.018325,
+        "P50": 8.5233,
+        "P95": 10.2161,
+        "P99": 10.2161,
+        "Max": 10.2161
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.328482214765094,
+        "P50": 8.3643,
+        "P95": 9.8563,
+        "P99": 11.0103,
+        "Max": 12.6588
+      }
+    },
+    "Timeline": {
+      "Frames": 600,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333501168614363,
+        "P50": 8.3571,
+        "P95": 8.6930,
+        "P99": 8.8662,
+        "Max": 9.0829
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 3.1458301666666664,
+        "P50": 3.1081,
+        "P95": 3.7280,
+        "P99": 4.3379,
+        "Max": 5.1257
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 4.720422166666668,
+        "P50": 4.5878,
+        "P95": 5.9515,
+        "P99": 6.5532,
+        "Max": 8.2419
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 43,
+        "IntervalMilliseconds": 12.6588,
+        "AllocatedBytes": 278832,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7122,
+          "surface.capabilities.native": 2.464,
+          "gpu.submission-wait": 0.0237,
+          "signal.batch": 0.0089
+        }
+      },
+      {
+        "Frame": 10,
+        "IntervalMilliseconds": 12.2214,
+        "AllocatedBytes": 287032,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2486,
+          "surface.capabilities.native": 2.7127,
+          "gpu.submission-wait": 0.0101,
+          "signal.batch": 0.0066
+        }
+      },
+      {
+        "Frame": 513,
+        "IntervalMilliseconds": 11.1422,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3676,
+          "surface.capabilities.native": 3.6266,
+          "gpu.submission-wait": 2.8872,
+          "signal.batch": 0.0647
+        }
+      },
+      {
+        "Frame": 499,
+        "IntervalMilliseconds": 11.0149,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4311,
+          "surface.capabilities.native": 3.0069,
+          "gpu.submission-wait": 3.0073,
+          "signal.batch": 0.0081
+        }
+      },
+      {
+        "Frame": 379,
+        "IntervalMilliseconds": 11.0135,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4673,
+          "surface.capabilities.native": 3.1799,
+          "gpu.submission-wait": 2.9158,
+          "signal.batch": 0.0074
+        }
+      },
+      {
+        "Frame": 371,
+        "IntervalMilliseconds": 11.0103,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.221,
+          "surface.capabilities.native": 3.6376,
+          "gpu.submission-wait": 2.403,
+          "signal.batch": 0.0071
+        }
+      },
+      {
+        "Frame": 354,
+        "IntervalMilliseconds": 10.8495,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3401,
+          "surface.capabilities.native": 2.9429,
+          "gpu.submission-wait": 2.5913,
+          "signal.batch": 0.0057
+        }
+      },
+      {
+        "Frame": 437,
+        "IntervalMilliseconds": 10.8451,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5039,
+          "surface.capabilities.native": 3.0668,
+          "gpu.submission-wait": 3.2705,
+          "signal.batch": 0.0079
+        }
+      },
+      {
+        "Frame": 219,
+        "IntervalMilliseconds": 10.5337,
+        "AllocatedBytes": 287032,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4014,
+          "surface.capabilities.native": 3.26,
+          "gpu.submission-wait": 1.836,
+          "signal.batch": 0.0087
+        }
+      },
+      {
+        "Frame": 64,
+        "IntervalMilliseconds": 10.4793,
+        "AllocatedBytes": 287032,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2222,
+          "surface.capabilities.native": 2.8546,
+          "gpu.submission-wait": 2.5573,
+          "signal.batch": 0.0086
+        }
+      },
+      {
+        "Frame": 339,
+        "IntervalMilliseconds": 10.4378,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3213,
+          "surface.capabilities.native": 2.7784,
+          "gpu.submission-wait": 2.6856,
+          "signal.batch": 0.0139
+        }
+      },
+      {
+        "Frame": 495,
+        "IntervalMilliseconds": 10.262,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4265,
+          "surface.capabilities.native": 2.9379,
+          "gpu.submission-wait": 2.6816,
+          "signal.batch": 0.0099
+        }
+      }
+    ]
+  },
+  {
+    "File": "timeline-all.jsonl.gz",
+    "Label": "timeline-all",
+    "Frames": 1200,
+    "MeanHz": 120.00904388154702,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.332705333333328,
+      "P50": 8.3292,
+      "P95": 10.5075,
+      "P99": 11.8274,
+      "Max": 12.613
+    },
+    "MeanAllocatedBytes": 2526642.493333333,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 4.261832666666663,
+          "P50": 4.296,
+          "P95": 6.3208,
+          "P99": 7.3435,
+          "Max": 9.2045
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 3.0324649166666675,
+          "P50": 2.959,
+          "P95": 3.6398,
+          "P99": 4.3504,
+          "Max": 5.246
+        },
+        "AllocatedBytesPerFrame": 246241.74666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.5548324166666645,
+          "P50": 2.506,
+          "P95": 3.0986,
+          "P99": 3.6121,
+          "Max": 4.6182
+        },
+        "AllocatedBytesPerFrame": 1330.4,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.5543653333333367,
+          "P50": 2.5055,
+          "P95": 3.0983,
+          "P99": 3.6115,
+          "Max": 4.6179
+        },
+        "AllocatedBytesPerFrame": 1210.4,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities.native",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.551087333333335,
+          "P50": 2.5028,
+          "P95": 3.095,
+          "P99": 3.6083,
+          "Max": 4.6155
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.080718666666663,
+          "P50": 1.9455,
+          "P95": 3.6459,
+          "P99": 4.687,
+          "Max": 5.9298
+        },
+        "AllocatedBytesPerFrame": 19429.98,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.6966666666666668,
+        "MillisecondsPerFrame": {
+          "Mean": 2.077384250000002,
+          "P50": 1.9412,
+          "P95": 3.642,
+          "P99": 4.6827,
+          "Max": 5.9254
+        },
+        "AllocatedBytesPerFrame": 19429.98,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.7214749999999998,
+          "P50": 0.6104,
+          "P95": 0.8778,
+          "P99": 3.0275,
+          "Max": 7.2101
+        },
+        "AllocatedBytesPerFrame": 2093832.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.4121451666666664,
+          "P50": 0.3437,
+          "P95": 0.4764,
+          "P99": 2.3333,
+          "Max": 6.9366
+        },
+        "AllocatedBytesPerFrame": 1522080.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 0.9516666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.25762433333333307,
+          "P50": 0.2544,
+          "P95": 0.5134,
+          "P99": 0.6651,
+          "Max": 0.8609
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 14.114166666666666,
+        "MillisecondsPerFrame": {
+          "Mean": 0.14889166666666656,
+          "P50": 0.145,
+          "P95": 0.1837,
+          "P99": 0.2544,
+          "Max": 1.6989
+        },
+        "AllocatedBytesPerFrame": 40000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.11882000000000008,
+          "P50": 0.0937,
+          "P95": 0.1311,
+          "P99": 0.2046,
+          "Max": 4.9706
+        },
+        "AllocatedBytesPerFrame": 284896.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.10583774999999992,
+          "P50": 0.094,
+          "P95": 0.1307,
+          "P99": 0.1669,
+          "Max": 4.7293
+        },
+        "AllocatedBytesPerFrame": 128000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08952641666666676,
+          "P50": 0.0813,
+          "P95": 0.1126,
+          "P99": 0.1407,
+          "Max": 0.3008
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08320674999999991,
+          "P50": 0.0738,
+          "P95": 0.0996,
+          "P99": 0.1221,
+          "Max": 1.8114
+        },
+        "AllocatedBytesPerFrame": 224740.4,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.06782949999999993,
+          "P50": 0.0607,
+          "P95": 0.0798,
+          "P99": 0.1012,
+          "Max": 1.7989
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0670296666666667,
+          "P50": 0.0565,
+          "P95": 0.0816,
+          "P99": 0.1117,
+          "Max": 4.6424
+        },
+        "AllocatedBytesPerFrame": 120000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.06216433333333339,
+          "P50": 0.0563,
+          "P95": 0.0902,
+          "P99": 0.1219,
+          "Max": 1.7494
+        },
+        "AllocatedBytesPerFrame": 96584.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04710133333333334,
+          "P50": 0.0425,
+          "P95": 0.0567,
+          "P99": 0.1689,
+          "Max": 0.6183
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.038608166666666645,
+          "P50": 0.0373,
+          "P95": 0.0476,
+          "P99": 0.059,
+          "Max": 0.1105
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 8.329166666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.02415999999999995,
+          "P50": 0.0233,
+          "P95": 0.0304,
+          "P99": 0.044,
+          "Max": 0.1409
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 0.02342350000000001,
+          "P50": 0.023,
+          "P95": 0.0318,
+          "P99": 0.0414,
+          "Max": 0.1861
+        },
+        "AllocatedBytesPerFrame": 161.66666666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.009653916666666693,
+          "P50": 0.006,
+          "P95": 0.018,
+          "P99": 0.0233,
+          "Max": 1.6432
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00645208333333334,
+          "P50": 0.0054,
+          "P95": 0.011,
+          "P99": 0.0161,
+          "Max": 0.0969
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005617416666666661,
+          "P50": 0.0048,
+          "P95": 0.0067,
+          "P99": 0.0141,
+          "Max": 0.4259
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.6325,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0010393333333333402,
+          "P50": 0.0009,
+          "P95": 0.0013,
+          "P99": 0.0016,
+          "Max": 0.1023
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009595833333333383,
+          "P50": 0.0008,
+          "P95": 0.0019,
+          "P99": 0.0024,
+          "Max": 0.0063
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00010016666666666732,
+          "P50": 0.0001,
+          "P95": 0.0003,
+          "P99": 0.0005,
+          "Max": 0.001
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 60.0,
+      "Gen1": 5.0,
+      "Gen2": 1.0,
+      "PauseMilliseconds": 135.022,
+      "FramesWithPause": 60,
+      "PauseDistribution": {
+        "Mean": 2.250366666666667,
+        "P50": 1.915,
+        "P95": 4.626,
+        "P99": 6.282,
+        "Max": 6.282
+      },
+      "IntervalsWithPause": {
+        "Mean": 8.768445000000002,
+        "P50": 8.5321,
+        "P95": 11.4534,
+        "P99": 11.849,
+        "Max": 11.849
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.309771666666663,
+        "P50": 8.3263,
+        "P95": 10.4397,
+        "P99": 11.5951,
+        "Max": 12.613
+      }
+    },
+    "Timeline": {
+      "Frames": 1200,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333427189324427,
+        "P50": 8.3788,
+        "P95": 8.7081,
+        "P99": 9.2258,
+        "Max": 13.9396
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 2.975873416666664,
+        "P50": 2.9078,
+        "P95": 3.5814,
+        "P99": 4.2166,
+        "Max": 5.1977
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 5.118398749999995,
+        "P50": 5.0505,
+        "P95": 7.0362,
+        "P99": 8.0444,
+        "Max": 8.5754
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 1165,
+        "IntervalMilliseconds": 12.613,
+        "AllocatedBytes": 2543288,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7986,
+          "surface.capabilities.native": 2.193,
+          "gpu.submission-wait": 5.9298,
+          "signal.batch": 0.5031
+        }
+      },
+      {
+        "Frame": 642,
+        "IntervalMilliseconds": 12.5103,
+        "AllocatedBytes": 2542000,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4425,
+          "surface.capabilities.native": 2.5912,
+          "gpu.submission-wait": 5.09,
+          "signal.batch": 0.5463
+        }
+      },
+      {
+        "Frame": 800,
+        "IntervalMilliseconds": 12.5102,
+        "AllocatedBytes": 2539728,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7139,
+          "surface.capabilities.native": 2.5448,
+          "gpu.submission-wait": 5.0517,
+          "signal.batch": 0.5629
+        }
+      },
+      {
+        "Frame": 896,
+        "IntervalMilliseconds": 12.4931,
+        "AllocatedBytes": 2550416,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.6651,
+          "surface.capabilities.native": 2.7566,
+          "gpu.submission-wait": 4.8236,
+          "signal.batch": 0.5456
+        }
+      },
+      {
+        "Frame": 577,
+        "IntervalMilliseconds": 12.4254,
+        "AllocatedBytes": 2541736,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3304,
+          "surface.capabilities.native": 3.5712,
+          "gpu.submission-wait": 4.5435,
+          "signal.batch": 0.7474
+        }
+      },
+      {
+        "Frame": 506,
+        "IntervalMilliseconds": 12.3555,
+        "AllocatedBytes": 2543256,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5037,
+          "surface.capabilities.native": 2.6597,
+          "gpu.submission-wait": 4.791,
+          "signal.batch": 0.5453
+        }
+      },
+      {
+        "Frame": 512,
+        "IntervalMilliseconds": 12.1335,
+        "AllocatedBytes": 2536800,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7042,
+          "surface.capabilities.native": 2.6352,
+          "gpu.submission-wait": 4.9932,
+          "signal.batch": 0.5714
+        }
+      },
+      {
+        "Frame": 913,
+        "IntervalMilliseconds": 12.0548,
+        "AllocatedBytes": 2551464,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4695,
+          "surface.capabilities.native": 3.1402,
+          "gpu.submission-wait": 3.6908,
+          "signal.batch": 0.5063
+        }
+      },
+      {
+        "Frame": 822,
+        "IntervalMilliseconds": 12.0363,
+        "AllocatedBytes": 2556912,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5369,
+          "surface.capabilities.native": 3.0316,
+          "gpu.submission-wait": 4.9796,
+          "signal.batch": 0.656
+        }
+      },
+      {
+        "Frame": 1143,
+        "IntervalMilliseconds": 12.0116,
+        "AllocatedBytes": 2532792,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3007,
+          "surface.capabilities.native": 2.8663,
+          "gpu.submission-wait": 3.7381,
+          "signal.batch": 0.5648
+        }
+      },
+      {
+        "Frame": 471,
+        "IntervalMilliseconds": 11.9916,
+        "AllocatedBytes": 2536256,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1984,
+          "surface.capabilities.native": 2.855,
+          "gpu.submission-wait": 3.6459,
+          "signal.batch": 0.664
+        }
+      },
+      {
+        "Frame": 732,
+        "IntervalMilliseconds": 11.849,
+        "AllocatedBytes": 2516040,
+        "GcPauseMilliseconds": 1.703,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2625,
+          "surface.capabilities.native": 3.0153,
+          "gpu.submission-wait": 4.2436,
+          "signal.batch": 0.6929
+        }
+      }
+    ]
+  },
+  {
+    "File": "timeline-one.jsonl.gz",
+    "Label": "timeline-one",
+    "Frames": 1200,
+    "MeanHz": 119.97884413041449,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.334802750000003,
+      "P50": 8.3251,
+      "P95": 9.7825,
+      "P99": 10.3343,
+      "Max": 14.9068
+    },
+    "MeanAllocatedBytes": 299336.32666666666,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.5,
+        "MillisecondsPerFrame": {
+          "Mean": 5.068527999999992,
+          "P50": 5.071,
+          "P95": 6.4279,
+          "P99": 6.9263,
+          "Max": 7.407
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.5,
+        "MillisecondsPerFrame": {
+          "Mean": 3.157474,
+          "P50": 3.1134,
+          "P95": 3.8633,
+          "P99": 4.219,
+          "Max": 9.8139
+        },
+        "AllocatedBytesPerFrame": 246092.02666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.6654091666666684,
+          "P50": 2.618,
+          "P95": 3.3027,
+          "P99": 3.6109,
+          "Max": 4.2331
+        },
+        "AllocatedBytesPerFrame": 1306.8466666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.664998583333337,
+          "P50": 2.6177,
+          "P95": 3.3023,
+          "P99": 3.6105,
+          "Max": 4.2326
+        },
+        "AllocatedBytesPerFrame": 1186.8466666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities.native",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.66225208333333,
+          "P50": 2.6152,
+          "P95": 3.3001,
+          "P99": 3.6067,
+          "Max": 4.2294
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.8994150000000003,
+          "P50": 1.8743,
+          "P95": 3.0462,
+          "P99": 3.391,
+          "Max": 3.9109
+        },
+        "AllocatedBytesPerFrame": 16306.6,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.5016666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 1.8963614166666658,
+          "P50": 1.8707,
+          "P95": 3.0427,
+          "P99": 3.3865,
+          "Max": 3.9077
+        },
+        "AllocatedBytesPerFrame": 16306.6,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.28275616666666653,
+          "P50": 0.2782,
+          "P95": 0.5167,
+          "P99": 0.6468,
+          "Max": 0.9619
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09326716666666668,
+          "P50": 0.0876,
+          "P95": 0.1159,
+          "P99": 0.1752,
+          "Max": 1.0308
+        },
+        "AllocatedBytesPerFrame": 224721.4,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.09237683333333327,
+          "P50": 0.0827,
+          "P95": 0.1149,
+          "P99": 0.1584,
+          "Max": 0.2718
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0799725000000002,
+          "P50": 0.0754,
+          "P95": 0.1018,
+          "P99": 0.1397,
+          "Max": 1.0197
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04690008333333317,
+          "P50": 0.0424,
+          "P95": 0.0581,
+          "P99": 0.1247,
+          "Max": 0.448
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.040132333333333395,
+          "P50": 0.0366,
+          "P95": 0.0657,
+          "P99": 0.1043,
+          "Max": 0.2592
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 8.001666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.023955666666666677,
+          "P50": 0.0229,
+          "P95": 0.0296,
+          "P99": 0.0436,
+          "Max": 0.1947
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.5,
+        "MillisecondsPerFrame": {
+          "Mean": 0.021767583333333354,
+          "P50": 0.0214,
+          "P95": 0.0291,
+          "P99": 0.034,
+          "Max": 0.186
+        },
+        "AllocatedBytesPerFrame": 116.42666666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.008183083333333348,
+          "P50": 0.0065,
+          "P95": 0.009,
+          "P99": 0.0224,
+          "Max": 0.7407
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.007291833333333357,
+          "P50": 0.0069,
+          "P95": 0.009,
+          "P99": 0.0112,
+          "Max": 0.1013
+        },
+        "AllocatedBytesPerFrame": 3552.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005995000000000043,
+          "P50": 0.0053,
+          "P95": 0.0068,
+          "P99": 0.0091,
+          "Max": 0.3411
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.002762666666666638,
+          "P50": 0.0025,
+          "P95": 0.0045,
+          "P99": 0.0057,
+          "Max": 0.0499
+        },
+        "AllocatedBytesPerFrame": 680.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0027319999999999662,
+          "P50": 0.0025,
+          "P95": 0.0037,
+          "P99": 0.0046,
+          "Max": 0.0975
+        },
+        "AllocatedBytesPerFrame": 2032.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 13.818333333333333,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0015415833333333364,
+          "P50": 0.0015,
+          "P95": 0.0021,
+          "P99": 0.0024,
+          "Max": 0.011
+        },
+        "AllocatedBytesPerFrame": 40.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0012958333333333379,
+          "P50": 0.0011,
+          "P95": 0.0017,
+          "P99": 0.0022,
+          "Max": 0.0941
+        },
+        "AllocatedBytesPerFrame": 976.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.5,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009633333333333403,
+          "P50": 0.0009,
+          "P95": 0.0013,
+          "P99": 0.0014,
+          "Max": 0.009
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009030000000000023,
+          "P50": 0.0008,
+          "P95": 0.0013,
+          "P99": 0.0017,
+          "Max": 0.0353
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0007825000000000067,
+          "P50": 0.0008,
+          "P95": 0.001,
+          "P99": 0.0014,
+          "Max": 0.0023
+        },
+        "AllocatedBytesPerFrame": 128.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0002354166666666681,
+          "P50": 0.0002,
+          "P95": 0.0003,
+          "P99": 0.0006,
+          "Max": 0.0078
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 8.183333333333375E-05,
+          "P50": 0.0001,
+          "P95": 0.0003,
+          "P99": 0.0005,
+          "Max": 0.0012
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 4.8500000000000535E-05,
+          "P50": 0,
+          "P95": 0.0001,
+          "P99": 0.0001,
+          "Max": 0.0001
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 7.0,
+      "Gen1": 1.0,
+      "Gen2": 1.0,
+      "PauseMilliseconds": 10.921,
+      "FramesWithPause": 7,
+      "PauseDistribution": {
+        "Mean": 1.560142857142857,
+        "P50": 0.783,
+        "P95": 6.229,
+        "P99": 6.229,
+        "Max": 6.229
+      },
+      "IntervalsWithPause": {
+        "Mean": 9.833371428571429,
+        "P50": 9.0093,
+        "P95": 14.9068,
+        "P99": 14.9068,
+        "Max": 14.9068
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.326009807208724,
+        "P50": 8.3213,
+        "P95": 9.7825,
+        "P99": 10.3343,
+        "Max": 11.0776
+      }
+    },
+    "Timeline": {
+      "Frames": 1200,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333329024186819,
+        "P50": 8.3960,
+        "P95": 8.6661,
+        "P99": 8.7863,
+        "Max": 12.4598
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 3.1009490833333317,
+        "P50": 3.0554,
+        "P95": 3.8063,
+        "P99": 4.1649,
+        "Max": 9.7612
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 5.0616361666666645,
+        "P50": 5.0543,
+        "P95": 6.0790,
+        "P99": 6.5956,
+        "Max": 12.4434
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 755,
+        "IntervalMilliseconds": 14.9068,
+        "AllocatedBytes": 311872,
+        "GcPauseMilliseconds": 6.229,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.9549,
+          "surface.capabilities.native": 2.9404,
+          "gpu.submission-wait": 2.6247,
+          "signal.batch": 0.0103
+        }
+      },
+      {
+        "Frame": 133,
+        "IntervalMilliseconds": 11.0776,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4939,
+          "surface.capabilities.native": 3.1623,
+          "gpu.submission-wait": 2.4656,
+          "signal.batch": 0.0072
+        }
+      },
+      {
+        "Frame": 1119,
+        "IntervalMilliseconds": 11.0181,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.9619,
+          "surface.capabilities.native": 3.1525,
+          "gpu.submission-wait": 2.9703,
+          "signal.batch": 0.0058
+        }
+      },
+      {
+        "Frame": 1026,
+        "IntervalMilliseconds": 10.8757,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.734,
+          "surface.capabilities.native": 2.9104,
+          "gpu.submission-wait": 3.1809,
+          "signal.batch": 0.0078
+        }
+      },
+      {
+        "Frame": 22,
+        "IntervalMilliseconds": 10.7033,
+        "AllocatedBytes": 295232,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3953,
+          "surface.capabilities.native": 2.6659,
+          "gpu.submission-wait": 2.2593,
+          "signal.batch": 0.0078
+        }
+      },
+      {
+        "Frame": 5,
+        "IntervalMilliseconds": 10.6228,
+        "AllocatedBytes": 295248,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5078,
+          "surface.capabilities.native": 3.3542,
+          "gpu.submission-wait": 1.7899,
+          "signal.batch": 0.0084
+        }
+      },
+      {
+        "Frame": 593,
+        "IntervalMilliseconds": 10.5961,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4648,
+          "surface.capabilities.native": 2.9632,
+          "gpu.submission-wait": 2.6828,
+          "signal.batch": 0.0061
+        }
+      },
+      {
+        "Frame": 263,
+        "IntervalMilliseconds": 10.5508,
+        "AllocatedBytes": 311632,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3125,
+          "surface.capabilities.native": 3.0363,
+          "gpu.submission-wait": 2.4846,
+          "signal.batch": 0.0055
+        }
+      },
+      {
+        "Frame": 77,
+        "IntervalMilliseconds": 10.537,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.0989,
+          "surface.capabilities.native": 3.7409,
+          "gpu.submission-wait": 2.7634,
+          "signal.batch": 0.009
+        }
+      },
+      {
+        "Frame": 659,
+        "IntervalMilliseconds": 10.5179,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2968,
+          "surface.capabilities.native": 2.7575,
+          "gpu.submission-wait": 3.2792,
+          "signal.batch": 0.0067
+        }
+      },
+      {
+        "Frame": 1013,
+        "IntervalMilliseconds": 10.5042,
+        "AllocatedBytes": 303432,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2987,
+          "surface.capabilities.native": 3.0363,
+          "gpu.submission-wait": 2.9642,
+          "signal.batch": 0.0074
+        }
+      },
+      {
+        "Frame": 328,
+        "IntervalMilliseconds": 10.3495,
+        "AllocatedBytes": 295232,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4052,
+          "surface.capabilities.native": 2.8479,
+          "gpu.submission-wait": 2.6568,
+          "signal.batch": 0.0076
+        }
+      }
+    ]
+  },
+  {
+    "File": "timeline-static.jsonl.gz",
+    "Label": "timeline-static",
+    "Frames": 1200,
+    "MeanHz": 119.9990256079119,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.333400999999995,
+      "P50": 8.3102,
+      "P95": 9.8184,
+      "P99": 10.3235,
+      "Max": 16.7645
+    },
+    "MeanAllocatedBytes": 48488.833333333336,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 2.3583333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 5.279717666666665,
+          "P50": 5.2818,
+          "P95": 6.6641,
+          "P99": 7.2205,
+          "Max": 7.9034
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 2.3583333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 2.9681424999999977,
+          "P50": 2.9058,
+          "P95": 3.5206,
+          "P99": 3.7336,
+          "Max": 9.7584
+        },
+        "AllocatedBytesPerFrame": 21902.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.configure-desc",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.5736919166666627,
+          "P50": 2.5289,
+          "P95": 3.055,
+          "P99": 3.2949,
+          "Max": 3.5514
+        },
+        "AllocatedBytesPerFrame": 1304.2066666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.5732740833333336,
+          "P50": 2.5286,
+          "P95": 3.0546,
+          "P99": 3.2945,
+          "Max": 3.551
+        },
+        "AllocatedBytesPerFrame": 1184.2066666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.capabilities.native",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.5706074166666677,
+          "P50": 2.5254,
+          "P95": 3.0524,
+          "P99": 3.2926,
+          "Max": 3.5486
+        },
+        "AllocatedBytesPerFrame": 120.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.6122390833333333,
+          "P50": 1.5001,
+          "P95": 2.6395,
+          "P99": 3.1531,
+          "Max": 4.024
+        },
+        "AllocatedBytesPerFrame": 14743.426666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.3583333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 1.6092205000000006,
+          "P50": 1.4964,
+          "P95": 2.6356,
+          "P99": 3.1499,
+          "Max": 4.0205
+        },
+        "AllocatedBytesPerFrame": 14743.426666666666,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.28082216666666693,
+          "P50": 0.2753,
+          "P95": 0.5125,
+          "P99": 0.5993,
+          "Max": 0.8275
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0861741666666672,
+          "P50": 0.0794,
+          "P95": 0.1051,
+          "P99": 0.1191,
+          "Max": 0.1834
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.present",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.04277175000000014,
+          "P50": 0.0395,
+          "P95": 0.0499,
+          "P99": 0.0713,
+          "Max": 0.491
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submit",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.038676749999999885,
+          "P50": 0.0371,
+          "P95": 0.0454,
+          "P99": 0.0512,
+          "Max": 0.1022
+        },
+        "AllocatedBytesPerFrame": 184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 5.716666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.022444249999999968,
+          "P50": 0.0221,
+          "P95": 0.0274,
+          "P99": 0.032,
+          "Max": 0.1084
+        },
+        "AllocatedBytesPerFrame": 0.04,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 2.3583333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 0.016207666666666693,
+          "P50": 0.015,
+          "P95": 0.0228,
+          "P99": 0.0281,
+          "Max": 0.1695
+        },
+        "AllocatedBytesPerFrame": 83.17333333333333,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005382166666666685,
+          "P50": 0.0047,
+          "P95": 0.0059,
+          "P99": 0.0096,
+          "Max": 0.3711
+        },
+        "AllocatedBytesPerFrame": 64.08,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0021989166666666667,
+          "P50": 0.0019,
+          "P95": 0.0033,
+          "P99": 0.0066,
+          "Max": 0.0127
+        },
+        "AllocatedBytesPerFrame": 608.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0008605833333333342,
+          "P50": 0.0007,
+          "P95": 0.0011,
+          "P99": 0.0034,
+          "Max": 0.0113
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 3.3583333333333334,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0006703333333333309,
+          "P50": 0.0006,
+          "P95": 0.001,
+          "P99": 0.0012,
+          "Max": 0.006
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 6.511666666666667,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00023900000000000017,
+          "P50": 0.0002,
+          "P95": 0.0004,
+          "P99": 0.0006,
+          "Max": 0.0008
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 7.633333333333419E-05,
+          "P50": 0.0001,
+          "P95": 0.0001,
+          "P99": 0.0004,
+          "Max": 0.0015
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 2.291666666666658E-05,
+          "P50": 0,
+          "P95": 0.0001,
+          "P99": 0.0001,
+          "Max": 0.0003
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 1.0,
+      "Gen1": 1.0,
+      "Gen2": 0.0,
+      "PauseMilliseconds": 6.691,
+      "FramesWithPause": 1,
+      "PauseDistribution": {
+        "Mean": 6.691,
+        "P50": 6.691,
+        "P95": 6.691,
+        "P99": 6.691,
+        "Max": 6.691
+      },
+      "IntervalsWithPause": {
+        "Mean": 16.7645,
+        "P50": 16.7645,
+        "P95": 16.7645,
+        "P99": 16.7645,
+        "Max": 16.7645
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.326369224353623,
+        "P50": 8.3102,
+        "P95": 9.8184,
+        "P99": 10.3235,
+        "Max": 11.0057
+      }
+    },
+    "Timeline": {
+      "Frames": 1200,
+      "StopwatchFrequency": 10000000,
+      "RecordingIntervalsMilliseconds": {
+        "Mean": 8.333258882402008,
+        "P50": 8.3615,
+        "P95": 8.6717,
+        "P99": 8.8025,
+        "Max": 12.7489
+      },
+      "RecordingToSubmissionMilliseconds": {
+        "Mean": 2.9157380833333337,
+        "P50": 2.8547,
+        "P95": 3.4599,
+        "P99": 3.6844,
+        "Max": 9.7041
+      },
+      "RecordingToCompletionMilliseconds": {
+        "Mean": 4.584996999999997,
+        "P50": 4.5445,
+        "P95": 5.6523,
+        "P99": 6.1989,
+        "Max": 12.7440
+      }
+    },
+    "SlowFrames": [
+      {
+        "Frame": 710,
+        "IntervalMilliseconds": 16.7645,
+        "AllocatedBytes": 56160,
+        "GcPauseMilliseconds": 6.691,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.8275,
+          "surface.capabilities.native": 2.5412,
+          "gpu.submission-wait": 2.9823
+        }
+      },
+      {
+        "Frame": 1088,
+        "IntervalMilliseconds": 11.0057,
+        "AllocatedBytes": 49200,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4027,
+          "surface.capabilities.native": 2.626,
+          "gpu.submission-wait": 3.5645
+        }
+      },
+      {
+        "Frame": 692,
+        "IntervalMilliseconds": 10.8462,
+        "AllocatedBytes": 65344,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2848,
+          "surface.capabilities.native": 2.927,
+          "gpu.submission-wait": 3.2046
+        }
+      },
+      {
+        "Frame": 494,
+        "IntervalMilliseconds": 10.7591,
+        "AllocatedBytes": 48944,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2607,
+          "surface.capabilities.native": 3.3201,
+          "gpu.submission-wait": 2.0511
+        }
+      },
+      {
+        "Frame": 1160,
+        "IntervalMilliseconds": 10.7378,
+        "AllocatedBytes": 49200,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.808,
+          "surface.capabilities.native": 2.5536,
+          "gpu.submission-wait": 2.9329
+        }
+      },
+      {
+        "Frame": 863,
+        "IntervalMilliseconds": 10.6673,
+        "AllocatedBytes": 49200,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3492,
+          "surface.capabilities.native": 2.9877,
+          "gpu.submission-wait": 2.4554
+        }
+      },
+      {
+        "Frame": 437,
+        "IntervalMilliseconds": 10.651,
+        "AllocatedBytes": 57144,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1864,
+          "surface.capabilities.native": 3.0352,
+          "gpu.submission-wait": 2.5546
+        }
+      },
+      {
+        "Frame": 606,
+        "IntervalMilliseconds": 10.6085,
+        "AllocatedBytes": 57144,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1354,
+          "surface.capabilities.native": 2.5845,
+          "gpu.submission-wait": 3.1531
+        }
+      },
+      {
+        "Frame": 1105,
+        "IntervalMilliseconds": 10.5403,
+        "AllocatedBytes": 57400,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1241,
+          "surface.capabilities.native": 3.0198,
+          "gpu.submission-wait": 2.9069
+        }
+      },
+      {
+        "Frame": 849,
+        "IntervalMilliseconds": 10.4793,
+        "AllocatedBytes": 57400,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.3141,
+          "surface.capabilities.native": 3.0104,
+          "gpu.submission-wait": 2.1354
+        }
+      },
+      {
+        "Frame": 824,
+        "IntervalMilliseconds": 10.4367,
+        "AllocatedBytes": 65600,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.2297,
+          "surface.capabilities.native": 2.2285,
+          "gpu.submission-wait": 3.5303
+        }
+      },
+      {
+        "Frame": 417,
+        "IntervalMilliseconds": 10.3403,
+        "AllocatedBytes": 57144,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5021,
+          "surface.capabilities.native": 2.6698,
+          "gpu.submission-wait": 2.8121
+        }
+      }
+    ]
+  },
+  {
+    "File": "trace-all.jsonl.gz",
+    "Label": "trace-all",
+    "Frames": 1800,
+    "MeanHz": 119.99637530949002,
+    "CompletionIntervalMilliseconds": {
+      "Mean": 8.33358505555555,
+      "P50": 8.3289,
+      "P95": 10.0226,
+      "P99": 10.7162,
+      "Max": 13.0585
+    },
+    "MeanAllocatedBytes": 2522506.44,
+    "Phases": [
+      {
+        "Name": "owner.wait",
+        "CallsPerFrame": 3.3155555555555556,
+        "MillisecondsPerFrame": {
+          "Mean": 3.961611333333331,
+          "P50": 4.0225,
+          "P95": 5.5761,
+          "P99": 6.2938,
+          "Max": 8.7604
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.advance-rendering",
+        "CallsPerFrame": 4.315555555555555,
+        "MillisecondsPerFrame": {
+          "Mean": 3.2572169999999976,
+          "P50": 3.206,
+          "P95": 3.8685,
+          "P99": 4.3639,
+          "Max": 5.9694
+        },
+        "AllocatedBytesPerFrame": 246124.14222222223,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.submission-wait",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 1.6284499999999984,
+          "P50": 1.5465,
+          "P95": 2.7141,
+          "P99": 3.5064,
+          "Max": 5.2175
+        },
+        "AllocatedBytesPerFrame": 15360.782222222222,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.poll-delay",
+        "CallsPerFrame": 1.35,
+        "MillisecondsPerFrame": {
+          "Mean": 1.6253513888888884,
+          "P50": 1.5426,
+          "P95": 2.7103,
+          "P99": 3.4991,
+          "Max": 5.2132
+        },
+        "AllocatedBytesPerFrame": 15360.782222222222,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.batch",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.776998222222223,
+          "P50": 0.6519,
+          "P95": 0.9589,
+          "P99": 3.1934,
+          "Max": 7.2689
+        },
+        "AllocatedBytesPerFrame": 2093832.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.proposals",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.44725188888888884,
+          "P50": 0.3729,
+          "P95": 0.5117,
+          "P99": 2.5304,
+          "Max": 5.2765
+        },
+        "AllocatedBytesPerFrame": 1522080.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.timer-lateness",
+        "CallsPerFrame": 0.9688888888888889,
+        "MillisecondsPerFrame": {
+          "Mean": 0.2937415000000001,
+          "P50": 0.2953,
+          "P95": 0.5383,
+          "P99": 0.6276,
+          "Max": 0.9611
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.effects",
+        "CallsPerFrame": 13.470555555555556,
+        "MillisecondsPerFrame": {
+          "Mean": 0.15486416666666655,
+          "P50": 0.1508,
+          "P95": 0.1897,
+          "P99": 0.2295,
+          "Max": 1.9612
+        },
+        "AllocatedBytesPerFrame": 40000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.validation",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.12400944444444464,
+          "P50": 0.1016,
+          "P95": 0.1445,
+          "P99": 0.1871,
+          "Max": 6.3354
+        },
+        "AllocatedBytesPerFrame": 284896.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.publish",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.12164822222222228,
+          "P50": 0.0986,
+          "P95": 0.1462,
+          "P99": 0.203,
+          "Max": 5.0514
+        },
+        "AllocatedBytesPerFrame": 128000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.record-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.10498633333333322,
+          "P50": 0.0952,
+          "P95": 0.1397,
+          "P99": 0.1698,
+          "Max": 2.2947
+        },
+        "AllocatedBytesPerFrame": 224737.4,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.pack",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08900772222222228,
+          "P50": 0.0795,
+          "P95": 0.1192,
+          "P99": 0.1549,
+          "Max": 0.224
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.traverse",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.08750949999999993,
+          "P50": 0.0792,
+          "P95": 0.1172,
+          "P99": 0.1405,
+          "Max": 2.2803
+        },
+        "AllocatedBytesPerFrame": 184736.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.notify",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0696368888888889,
+          "P50": 0.0658,
+          "P95": 0.0944,
+          "P99": 0.1245,
+          "Max": 0.35
+        },
+        "AllocatedBytesPerFrame": 96584.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.bindings",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.06577488888888884,
+          "P50": 0.0598,
+          "P95": 0.0936,
+          "P99": 0.1291,
+          "Max": 4.8556
+        },
+        "AllocatedBytesPerFrame": 120000.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.callbacks",
+        "CallsPerFrame": 7.665555555555556,
+        "MillisecondsPerFrame": {
+          "Mean": 0.024535277777777816,
+          "P50": 0.0235,
+          "P95": 0.0307,
+          "P99": 0.0561,
+          "Max": 0.1232
+        },
+        "AllocatedBytesPerFrame": 0.02666666666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "owner.dispatch",
+        "CallsPerFrame": 4.315555555555555,
+        "MillisecondsPerFrame": {
+          "Mean": 0.020779555555555555,
+          "P50": 0.0191,
+          "P95": 0.0295,
+          "P99": 0.041,
+          "Max": 0.1419
+        },
+        "AllocatedBytesPerFrame": 81.22666666666667,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "drawing.freeze",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.01142072222222225,
+          "P50": 0.0084,
+          "P95": 0.0198,
+          "P99": 0.03,
+          "Max": 2.0502
+        },
+        "AllocatedBytesPerFrame": 37184.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "gpu.map",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0054841111111111375,
+          "P50": 0.0048,
+          "P95": 0.0067,
+          "P99": 0.0082,
+          "Max": 0.3892
+        },
+        "AllocatedBytesPerFrame": 64.05333333333333,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "signal.animations",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.005199611111111117,
+          "P50": 0.004,
+          "P95": 0.011,
+          "P99": 0.0173,
+          "Max": 0.0233
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "host.prepare-frame",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.001013777777777795,
+          "P50": 0.0009,
+          "P95": 0.002,
+          "P99": 0.0029,
+          "Max": 0.0043
+        },
+        "AllocatedBytesPerFrame": 272.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "surface.update-layout",
+        "CallsPerFrame": 6.315555555555555,
+        "MillisecondsPerFrame": {
+          "Mean": 0.0009340000000000157,
+          "P50": 0.0009,
+          "P95": 0.0012,
+          "P99": 0.0014,
+          "Max": 0.0313
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      },
+      {
+        "Name": "rectangles.rent",
+        "CallsPerFrame": 1.0,
+        "MillisecondsPerFrame": {
+          "Mean": 0.00011555555555555688,
+          "P50": 0.0001,
+          "P95": 0.0004,
+          "P99": 0.0005,
+          "Max": 0.003
+        },
+        "AllocatedBytesPerFrame": 0.0,
+        "CrossThreadSpans": 0.0
+      }
+    ],
+    "Gc": {
+      "Gen0": 90.0,
+      "Gen1": 14.0,
+      "Gen2": 1.0,
+      "PauseMilliseconds": 213.74299999999994,
+      "FramesWithPause": 90,
+      "PauseDistribution": {
+        "Mean": 2.3749222222222217,
+        "P50": 2.006,
+        "P95": 4.789,
+        "P99": 6.149,
+        "Max": 6.149
+      },
+      "IntervalsWithPause": {
+        "Mean": 8.918546666666668,
+        "P50": 8.6783,
+        "P95": 10.8558,
+        "P99": 12.5712,
+        "Max": 12.5712
+      },
+      "IntervalsWithoutPause": {
+        "Mean": 8.30279760233918,
+        "P50": 8.296,
+        "P95": 9.9896,
+        "P99": 10.5775,
+        "Max": 13.0585
+      }
+    },
+    "Timeline": null,
+    "SlowFrames": [
+      {
+        "Frame": 652,
+        "IntervalMilliseconds": 13.0585,
+        "AllocatedBytes": 2553848,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.7042,
+          "gpu.submission-wait": 4.8316,
+          "signal.batch": 0.5969
+        }
+      },
+      {
+        "Frame": 57,
+        "IntervalMilliseconds": 12.5712,
+        "AllocatedBytes": 2539664,
+        "GcPauseMilliseconds": 2.022,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5924,
+          "gpu.submission-wait": 2.6208,
+          "signal.batch": 0.8711
+        }
+      },
+      {
+        "Frame": 712,
+        "IntervalMilliseconds": 12.5088,
+        "AllocatedBytes": 2537552,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.539,
+          "gpu.submission-wait": 5.2175,
+          "signal.batch": 0.5888
+        }
+      },
+      {
+        "Frame": 832,
+        "IntervalMilliseconds": 12.0338,
+        "AllocatedBytes": 2547728,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4777,
+          "gpu.submission-wait": 4.3053,
+          "signal.batch": 0.6092
+        }
+      },
+      {
+        "Frame": 796,
+        "IntervalMilliseconds": 12.0007,
+        "AllocatedBytes": 2559704,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.5928,
+          "gpu.submission-wait": 5.1338,
+          "signal.batch": 0.6179
+        }
+      },
+      {
+        "Frame": 475,
+        "IntervalMilliseconds": 11.9102,
+        "AllocatedBytes": 2522472,
+        "GcPauseMilliseconds": 6.149,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.269,
+          "gpu.submission-wait": 1.5698,
+          "signal.batch": 7.2689
+        }
+      },
+      {
+        "Frame": 1235,
+        "IntervalMilliseconds": 11.504,
+        "AllocatedBytes": 2536040,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1284,
+          "gpu.submission-wait": 3.5918,
+          "signal.batch": 0.6839
+        }
+      },
+      {
+        "Frame": 992,
+        "IntervalMilliseconds": 11.122,
+        "AllocatedBytes": 2502120,
+        "GcPauseMilliseconds": 4.957,
+        "PhaseMilliseconds": {
+          "gpu.submission-wait": 1.4403,
+          "signal.batch": 5.5202
+        }
+      },
+      {
+        "Frame": 1084,
+        "IntervalMilliseconds": 11.0951,
+        "AllocatedBytes": 2535320,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.4014,
+          "gpu.submission-wait": 3.5064,
+          "signal.batch": 0.6842
+        }
+      },
+      {
+        "Frame": 772,
+        "IntervalMilliseconds": 11.0785,
+        "AllocatedBytes": 2554176,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.6956,
+          "gpu.submission-wait": 4.371,
+          "signal.batch": 0.5709
+        }
+      },
+      {
+        "Frame": 1788,
+        "IntervalMilliseconds": 11.0596,
+        "AllocatedBytes": 2513408,
+        "GcPauseMilliseconds": 4.683,
+        "PhaseMilliseconds": {
+          "gpu.submission-wait": 2.3673,
+          "signal.batch": 5.5537
+        }
+      },
+      {
+        "Frame": 1523,
+        "IntervalMilliseconds": 10.9151,
+        "AllocatedBytes": 2524640,
+        "GcPauseMilliseconds": 0,
+        "PhaseMilliseconds": {
+          "owner.timer-lateness": 0.1892,
+          "gpu.submission-wait": 3.2897,
+          "signal.batch": 0.6829
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,35 @@
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs
+index 5d3147ec..35173300 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs
+@@ -10,6 +10,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
+     private readonly A.Surface _native;
+     private readonly A.Adapter _adapter;
+     private bool _disposed;
++    private SurfaceCapabilities? _diagnosticCaps;
+ 
+     internal WgpuSurface(WgpuDevice owner, A.Surface native, A.Adapter adapter)
+     {
+@@ -24,6 +25,13 @@ internal sealed class WgpuSurface : IGraphicsSurface
+     {
+         using UiDeviceProbe.Scope detailProbe = UiDeviceProbe.Measure("surface.capabilities");
+         ValidateAlive();
++
++        // Diagnostic ablation for a fixed-size window; not a production invalidation policy.
++        if (_diagnosticCaps is { } cached)
++        {
++            return cached;
++        }
++
+         A.SurfaceCapabilities caps;
+         using (UiDeviceProbe.Measure("surface.capabilities.native"))
+         {
+@@ -68,7 +76,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
+             alpha.Add(SurfaceAlphaMode.Premultiplied);
+         }
+ 
+-        return new()
++        return _diagnosticCaps = new()
+         {
+             Formats = Array.AsReadOnly(formats),
+             PresentModes = Array.AsReadOnly(Enum.GetValues<PresentMode>().Where(p => caps.PresentModes.Contains(Mode(p))).ToArray()),

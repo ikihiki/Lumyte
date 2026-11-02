@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application;
 
-internal sealed class UiHostPresenter : IDisposable
+internal sealed partial class UiHostPresenter : IDisposable
 {
     private readonly IGraphicDevice _device;
     private readonly Color2D _background;
@@ -89,9 +89,17 @@ internal sealed class UiHostPresenter : IDisposable
         using PreparedDraw2D prepared = await _renderer.PrepareAsync(commands, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background });
     }
 
-    internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list, Guid owner, Action<UiFramePixels>? capture = null, Action? submitted = null)
+    internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null)
     {
         var frame = new Frame(owner);
+        if (visuals is not null)
+        {
+            foreach (UiVisualSnapshot visual in visuals)
+            {
+                frame.Own(visual.Retain());
+            }
+        }
+
         _frames.Add(frame);
         Exception? failure = null;
         try

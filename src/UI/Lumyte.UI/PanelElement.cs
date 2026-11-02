@@ -14,6 +14,12 @@ public partial class PanelElement : UiElement<PanelWidget>
     }
 
     /// <inheritdoc/>
+    protected override bool SupportsTransitionCapture => Widget.GetType() == typeof(PanelWidget);
+
+    /// <inheritdoc/>
+    protected override bool CanReuseTransitionCapture(Compose.Definitions.Widget other) => other.GetType() == typeof(PanelWidget);
+
+    /// <inheritdoc/>
     protected override UiInvalidation CompareConfiguration(PanelWidget previous, PanelWidget next) => UiInvalidation.None;
 
     /// <inheritdoc/>

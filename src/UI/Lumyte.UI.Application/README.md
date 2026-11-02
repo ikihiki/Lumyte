@@ -36,3 +36,7 @@ Diagnosticsは別packageの`UseDiagnostics`で追加します。入力・テキ�
 独自contentは`IUiApplicationContent`で初期化・Advance・停止・Retire・Releaseを実装できます。GPU資源を借用する内容は`IUiApplicationGraphicsContent`で世代更新を確認します。Retire失敗は資源を保持するStopFailedとなり`RetryStopAsync`で再試行できます。最終Release/DI解放の失敗は再実行しません。
 
 詳細と後続PRの範囲は[ADR UI-0016](../../../docs/adr/ui/UI-0016-ui-application-framework.md)を参照してください。
+
+`UiApplicationOptions.Motion`でFull／Reduced／Disabled、同時演出数、snapshotのpixel／byte予算、準備期限と実時間の最大寿命を設定できます。通常の移動・拡大は保持したDrawListを再生します。半透明groupには更新可能なRGBA16Float中間bufferを使い、opacityを一度だけ適用します。内容変更で演出を中断せず、同じ寸法のbufferは再利用します。旧ページのexitや異なる見た目のcrossfadeに限って旧snapshotを保持します。byte予算はtexel payload（幅×高さ×8）で、backend内部のallocation paddingは含みません。layerの中間bufferとGPU退役待ち画像も予算に算入します。移動だけのlayerは画像予算を消費しません。
+
+Hosted Popup／Windowの終了では先に入力・IMEを止め、内容のexit、最終提示、GPU drain、既存のWindow清掃と`onClosed`の順で進みます。停止・device loss・Native Window終了では演出を省略してdrainへ進みます。OS Windowの位置やopacityをアニメーションする機能は含みません。詳細は[UI-0021](../../../docs/adr/ui/UI-0021-connected-and-presence-transitions.md)を参照してください。

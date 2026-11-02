@@ -28,10 +28,10 @@ public sealed partial class UiSurface
     }
 
     /// <summary>Gets a value indicating whether any visible producer needs continuous time progression.</summary>
-    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && HasVisibleAnimation(true);
+    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || _presenceEntries.Any(entry => entry.IsActive));
 
     /// <summary>Gets a value indicating whether visible animations have a one-shot target or control update.</summary>
-    public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && HasVisibleAnimation(false);
+    public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(false) || _presenceEntries.Any(entry => entry.WantsCapture || entry.HasNotification));
 
     /// <summary>Freezes or resumes animation time without stopping independent model values.</summary>
     /// <param name="enabled">Whether the owning host can update and present this surface.</param>
@@ -44,6 +44,11 @@ public sealed partial class UiSurface
         }
 
         _animationUpdatesEnabled = enabled;
+        if (!enabled)
+        {
+            InterruptVisuals();
+        }
+
         foreach (UiAnimationProducer producer in _animationProducers)
         {
             producer.Freeze();
@@ -73,6 +78,11 @@ public sealed partial class UiSurface
         try
         {
             UpdateTree();
+            if (_presenceEntries.Count != 0)
+            {
+                AdvanceVisuals(_animationClock.Now);
+            }
+
             if (_isDisposed || _animationProducers.Count == 0)
             {
                 return;
@@ -199,7 +209,7 @@ public sealed partial class UiSurface
     {
         for (UiElement? current = element; current is not null; current = current.Parent)
         {
-            if (!current.Widget.IsVisible)
+            if (!current.LayoutVisible)
             {
                 return false;
             }
