@@ -20,9 +20,7 @@ public partial class InputPage
     private DiagnosticPageContext Context { get; set; } = default!;
 
     private IEnumerable<(SubsystemDescriptor Subsystem, OperationDescriptor Operation)> InputOperations
-        => (Context.Resource?.Catalog ?? []).Where(item => item.Subsystem.Id == "input" && item.Subsystem.SchemaVersion == 2)
-            .SelectMany(item => item.Operations.Where(operation => operation.Id != "get-snapshot")
-                .Select(operation => (item.Subsystem, operation)));
+        => GetInputOperations(Context.Resource?.Catalog ?? []);
 
     private IEnumerable<(SubsystemDescriptor Subsystem, OperationDescriptor Operation)> MappingOperations
         => (Context.Resource?.Catalog ?? []).Where(item => item.Subsystem.Id == "settings.input-actions")
@@ -46,6 +44,14 @@ public partial class InputPage
 
         _lifetime.Dispose();
     }
+
+    /// <summary>Returns generic published operations for supported Input catalog versions.</summary>
+    /// <param name="catalog">The selected resource catalog.</param>
+    /// <returns>Operations rendered from their published argument schemas.</returns>
+    internal static IEnumerable<(SubsystemDescriptor Subsystem, OperationDescriptor Operation)> GetInputOperations(IEnumerable<DiagnosticSubsystemCatalog> catalog)
+        => catalog.Where(item => item.Subsystem.Id == "input" && item.Subsystem.SchemaVersion is 1 or 2)
+            .SelectMany(item => item.Operations.Where(operation => operation.Id != "get-snapshot")
+                .Select(operation => (item.Subsystem, operation)));
 
     /// <inheritdoc/>
     protected override async Task OnParametersSetAsync()
