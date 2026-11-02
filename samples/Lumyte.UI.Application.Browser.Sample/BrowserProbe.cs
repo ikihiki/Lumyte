@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices.JavaScript;
+using Lumyte.Core.Time;
+using Lumyte.Signals;
 using Lumyte.UI.Automation;
 
 namespace Lumyte.UI.Application.Browser.Sample;
@@ -6,9 +8,38 @@ namespace Lumyte.UI.Application.Browser.Sample;
 /// <summary>Exposes the sample's automation PNG for the browser smoke test.</summary>
 public static partial class BrowserProbe
 {
+    internal static ManualClock Clock { get; } = new();
+
+    internal static Signal<float?> Target { get; } = Signal.Create<float?>(160);
+
+    internal static UiAnimated<float?>? Width { get; set; }
+
+    internal static int Completed { get; set; }
+
     internal static UiApplicationWindowContext? Context { get; set; }
 
     internal static UiApplication? Application { get; set; }
+
+    /// <summary>Gets the current animation value without evaluating time.</summary>
+    /// <returns>The applied logical width.</returns>
+    [JSExport]
+    public static float GetWidth() => Width?.Peek() ?? 0;
+
+    /// <summary>Gets the number of delivered final value notifications.</summary>
+    /// <returns>The count.</returns>
+    [JSExport]
+    public static int GetCompletions() => Completed;
+
+    /// <summary>Requests expansion through the independent model.</summary>
+    /// <returns>The queued owner work.</returns>
+    [JSExport]
+    public static async Task ExpandAsync() => await Application!.Dispatcher.InvokeAsync(() => Target.Value = 240);
+
+    /// <summary>Moves the borrowed test clock without manually advancing the surface.</summary>
+    /// <param name="seconds">The positive elapsed time.</param>
+    /// <returns>The queued owner work.</returns>
+    [JSExport]
+    public static async Task AdvanceAsync(double seconds) => await Application!.Dispatcher.InvokeAsync(() => Clock.Advance(Duration.FromSeconds(seconds)));
 
     /// <summary>Gets the owner state used by the browser smoke test.</summary>
     /// <returns>The lifecycle and target state.</returns>

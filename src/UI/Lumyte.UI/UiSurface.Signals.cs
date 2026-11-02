@@ -194,7 +194,7 @@ public sealed partial class UiSurface
 
     private void ProcessSignals(bool explicitUpdate)
     {
-        if (_isDisposed || _processingSignals || _applyingRebuild || _dispatchDepth != 0 || _recordDepth != 0 || _layoutPass is not null || (!explicitUpdate && !_signalUpdatesEnabled))
+        if (_isDisposed || _processingSignals || _publishingAnimations || _applyingRebuild || _dispatchDepth != 0 || _recordDepth != 0 || _layoutPass is not null || (!explicitUpdate && !_signalUpdatesEnabled))
         {
             return;
         }

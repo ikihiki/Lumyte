@@ -210,6 +210,7 @@ public sealed partial class UiSurface
             foreach (ElementUpdate update in Updates)
             {
                 update.Signals?.Dispose();
+                update.Animations?.Dispose();
             }
         }
 
@@ -282,7 +283,7 @@ public sealed partial class UiSurface
 
         internal Widget? Previous { get; } = previous;
 
-        internal Widget Next { get; } = next;
+        internal Widget Next { get; set; } = next;
 
         internal IReadOnlyList<UiElement>[] Slots { get; } = slots;
 
@@ -291,6 +292,8 @@ public sealed partial class UiSurface
         internal Action? Commit { get; set; }
 
         internal SignalUpdate? Signals { get; set; }
+
+        internal AnimationUpdate? Animations { get; set; }
 
         internal bool UsesTreeValidation { get; set; }
 

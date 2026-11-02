@@ -1,15 +1,20 @@
+using Widget = Lumyte.UI.Compose.Definitions.Widget;
+
 namespace Lumyte.UI;
 
 /// <summary>Records child-slot retention without modifying a declaration or live element.</summary>
 public sealed class UiWidgetRebuildContext
 {
-    private readonly UiElement _owner;
+    private readonly Widget _declaration;
     private readonly Dictionary<WidgetChildren, int> _retained = [];
 
-    internal UiWidgetRebuildContext(UiElement owner)
+    internal UiWidgetRebuildContext(UiElement owner, Widget? declaration = null)
     {
-        _owner = owner;
+        Owner = owner;
+        _declaration = declaration ?? owner.Widget;
     }
+
+    internal UiElement Owner { get; }
 
     internal IReadOnlyDictionary<WidgetChildren, int> Retained => _retained;
 
@@ -20,7 +25,7 @@ public sealed class UiWidgetRebuildContext
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(replacement);
-        if (!ReferenceEquals(previous.Owner, _owner.Widget) || previous.SlotIndex != replacement.SlotIndex
+        if (!ReferenceEquals(previous.Owner, _declaration) || previous.SlotIndex != replacement.SlotIndex
             || replacement.IsInitialized || !_retained.TryAdd(replacement, previous.SlotIndex))
         {
             throw new ArgumentException("Retention requires the owner's same logical, uninitialized slot.");

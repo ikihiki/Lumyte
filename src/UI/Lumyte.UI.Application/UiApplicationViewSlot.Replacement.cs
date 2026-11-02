@@ -63,6 +63,7 @@ public sealed partial class UiApplicationViewSlot
                 _candidate = new(slot._application, slot._window, root);
                 _candidate.Host.Pause();
                 _candidate.Surface.SetSignalUpdatesEnabled(false);
+                _candidate.Surface.SetAnimationUpdatesEnabled(false);
                 _graphicsGeneration = slot._application.GraphicsGeneration;
                 _root = root;
                 _replacement = ((IUiWindowPresentationReplacementManager)slot._application.Windows).BeginReplacement(slot._window, _previous?.Binding, _candidate.Surface);
@@ -102,6 +103,7 @@ public sealed partial class UiApplicationViewSlot
                 if (_previous is { } previous)
                 {
                     previous.Surface.SetSignalUpdatesEnabled(false);
+                    previous.Surface.SetAnimationUpdatesEnabled(false);
                     _bookmark = previous.Surface.CaptureFocus();
                     _gated = true;
                     slot._application.Popups.GateOwner(previous.Owner!, true);
@@ -233,6 +235,7 @@ public sealed partial class UiApplicationViewSlot
 
                     previous.Surface.UpdateLayout();
                     previous.Surface.SetSignalUpdatesEnabled(true);
+                    previous.Surface.SetAnimationUpdatesEnabled(true);
                     previous.Portals?.SetUpdatesEnabled(true);
                     previous.Host.Resume();
                 }

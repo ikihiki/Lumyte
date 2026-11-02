@@ -12,6 +12,8 @@ public static partial class Compose
         public abstract partial class Widget
         {
             private Dictionary<object, UiSignalArgument>? _signalArguments;
+            private Dictionary<object, IUiAnimationProjection>? _animationArguments;
+            private List<Func<bool>>? _animationInitializers;
 
             internal Func<Widget>? Construction { get; set; }
 
@@ -20,6 +22,16 @@ public static partial class Compose
             internal UiDeclarationRecipe? DeclarationRecipe { get; set; }
 
             internal IReadOnlyDictionary<object, UiSignalArgument>? SignalArguments => _signalArguments;
+
+            internal IReadOnlyDictionary<object, IUiAnimationProjection>? AnimationArguments => _animationArguments;
+
+            internal bool NeedsAnimationRefresh => _animationInitializers?.Any(read => read()) == true;
+
+            internal void AddAnimationArgument(object key, IUiAnimationProjection projection, Func<bool> initialize)
+            {
+                (_animationArguments ??= []).Add(key, projection);
+                (_animationInitializers ??= []).Add(initialize);
+            }
 
             internal void AddSignalArgument(object key, object source, Func<bool> reader)
             {
