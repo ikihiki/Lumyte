@@ -1,0 +1,83 @@
+[
+  {
+    "source": "list.jsonl",
+    "archive": "raw/list.jsonl.gz",
+    "bytes": 545,
+    "sha256": "490c0d7205857951532513dd879c435f3f4a390ac24e2711b40a32221da342e8"
+  },
+  {
+    "source": "cpu-smoke.jsonl",
+    "archive": "raw/cpu-smoke.jsonl.gz",
+    "bytes": 7159,
+    "sha256": "19dfe3e29849e6ff22ab92713669345c5c773197c143df1f7ec8b13fb30d0c84"
+  },
+  {
+    "source": "gpu-stages.jsonl",
+    "archive": "raw/gpu-stages.jsonl.gz",
+    "bytes": 28741,
+    "sha256": "0e333b35f48f3d9063c4038e09d617889493ce93ca90ea62462722ad2f990d5c"
+  },
+  {
+    "source": "gpu-depth1.jsonl",
+    "archive": "raw/gpu-depth1.jsonl.gz",
+    "bytes": 14590,
+    "sha256": "cffc41ffb051a398924912a47ec3b4fbb286e0ae35eb658d316b7fde9f9b25a0"
+  },
+  {
+    "source": "gpu-depth3.jsonl",
+    "archive": "raw/gpu-depth3.jsonl.gz",
+    "bytes": 14593,
+    "sha256": "6abe58d568e8a8fdf0bf654391c66f52db8e4219db1e92a58cc6fe542538106d"
+  },
+  {
+    "source": "gpu-default-scale.jsonl",
+    "archive": "raw/gpu-default-scale.jsonl.gz",
+    "bytes": 17863,
+    "sha256": "5fdad5ae671feee4acff0e7f08e8f863d2196294e9260d7bcc0af08ca924d764"
+  },
+  {
+    "source": "build.log",
+    "archive": "raw/build.log.gz",
+    "bytes": 4020,
+    "sha256": "be6acfbd98b2696d79e3fe747b56d6a23af3cc0bc37ed5b1a1c8deecd2e49078",
+    "original_bytes": 4800,
+    "original_sha256": "9075ac506fd43d2d3a90e0c2f7985a00e7e1c3c70917e4fe46a1e347898f9d9c",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "bdn.log",
+    "archive": "raw/bdn.log.gz",
+    "bytes": 62583,
+    "sha256": "916821e793ad7d1d057b3eaf05cbe824c9d0eda4dd1b306558fc52a0ab20e422",
+    "original_bytes": 63273,
+    "original_sha256": "cf65fe4b2940b27f56a5c4d02826baede4ea977067d94eb31ada046e022094ee",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "bdn/results/Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json",
+    "archive": "raw/bdn__results__Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json.gz",
+    "bytes": 125309,
+    "sha256": "bdc57dd7b743602c2f20fa951a028146333d93a6df35d0ba69615355ffbc21af"
+  },
+  {
+    "source": "build-final.log",
+    "archive": "raw/build-final.log.gz",
+    "bytes": 4020,
+    "sha256": "b1db7666c5933eb19d03a1f8fdf9cb9700df8b2101f84d0b9bc0946ad5595fb2",
+    "original_bytes": 4800,
+    "original_sha256": "1c92b9f7875f55cd7bd7ac60e85e4d037d37ca4b1295718ede4ff027f33fe808",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "cli-negative-final.jsonl",
+    "archive": "raw/cli-negative-final.jsonl.gz",
+    "bytes": 693,
+    "sha256": "a365f0f350d4491308c0e10409574ea26deed30aec216aedf772bb8c828d0eca"
+  },
+  {
+    "source": "cpu-smoke-final.jsonl",
+    "archive": "raw/cpu-smoke-final.jsonl.gz",
+    "bytes": 7159,
+    "sha256": "f3713bc374ba1cb91cf217f12b6c73f8faf855eb944d195ad6bc69716002159f"
+  }
+]

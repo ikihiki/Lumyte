@@ -1,0 +1,218 @@
+[
+  {
+    "source": "adapter.txt",
+    "archive": "raw/adapter.txt.gz",
+    "bytes": 2931,
+    "sha256": "2bbbe1a68fcf96274f66376007b2ec00d6b6af1ec64ba2e4399f8881a1473d8b"
+  },
+  {
+    "source": "environment.txt",
+    "archive": "raw/environment.txt.gz",
+    "bytes": 6272,
+    "sha256": "59157aa546aa97cfff652e583611ebc8bae6776260e2e50587d1b48a08a28df9",
+    "original_bytes": 6523,
+    "original_sha256": "e9ce76fda03ae876dce22106cd3e4563eb2daa0aa75392b3731cef4e47da6ac4",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "main-build.log",
+    "archive": "raw/main-build.log.gz",
+    "bytes": 13196,
+    "sha256": "a2f5eeba79e46c651a77548f08cff2af2704e7129c62e298a07a6f19563b474c",
+    "original_bytes": 14666,
+    "original_sha256": "c9ff76211ef405e1e5041af9c8c4774d717601812092c54ca15f5fe00f18518c",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "main-cases.jsonl",
+    "archive": "raw/main-cases.jsonl.gz",
+    "bytes": 545,
+    "sha256": "490c0d7205857951532513dd879c435f3f4a390ac24e2711b40a32221da342e8"
+  },
+  {
+    "source": "main-checks.jsonl",
+    "archive": "raw/main-checks.jsonl.gz",
+    "bytes": 7186,
+    "sha256": "e77814e5480575428234e9bdb40a3fbef952d8c4abdfb8d342d577a889992125"
+  },
+  {
+    "source": "main-provenance.txt",
+    "archive": "raw/main-provenance.txt.gz",
+    "bytes": 4335,
+    "sha256": "66bfefffd2de9d19d3d8097f2514c701adf02554b05c9e00b630fafee3a9a67b"
+  },
+  {
+    "source": "main-run1-cpu/results/Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json",
+    "archive": "raw/main-run1-cpu__results__Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json.gz",
+    "bytes": 210612,
+    "sha256": "2409fa4c1b0c0d820711bef4b5bda3ac70149187934e875ddeb456745bfe631f"
+  },
+  {
+    "source": "main-run1-cpu.log",
+    "archive": "raw/main-run1-cpu.log.gz",
+    "bytes": 81886,
+    "sha256": "4cf7c76f32627b96e78047033224b32bab6db9d34d8ded49fbf874bbd0e78dc2",
+    "original_bytes": 82580,
+    "original_sha256": "a117c2178a519aea86d1a4d31b44d69df3180d37e1166d077051244c82d3e338",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "main-run1-depth1.jsonl",
+    "archive": "raw/main-run1-depth1.jsonl.gz",
+    "bytes": 40127,
+    "sha256": "238f3ae22b7a089c091145a41f47835925355beae27f9309b94256b89cd3d388"
+  },
+  {
+    "source": "main-run1-depth3.jsonl",
+    "archive": "raw/main-run1-depth3.jsonl.gz",
+    "bytes": 40193,
+    "sha256": "61f7d229345283afeb94e9e6f2c168e1cb2e6255ffcce71591cec47c912571f4"
+  },
+  {
+    "source": "main-run1-stages.jsonl",
+    "archive": "raw/main-run1-stages.jsonl.gz",
+    "bytes": 1336955,
+    "sha256": "b0a2501b7e61f03a427fd984c2a4eef5a6eafdcc745565e1aae322f9ac099c71"
+  },
+  {
+    "source": "main-run2-cpu/results/Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json",
+    "archive": "raw/main-run2-cpu__results__Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json.gz",
+    "bytes": 207980,
+    "sha256": "692842f3d648bc8bdc77eca512e7e523de71237db7116a09eb01108bf5b7fab8"
+  },
+  {
+    "source": "main-run2-cpu.log",
+    "archive": "raw/main-run2-cpu.log.gz",
+    "bytes": 81118,
+    "sha256": "91e452a08d39b123c1ba7e3ea1e1d79471c9f64dccb96cde2599c0d5f998195c",
+    "original_bytes": 81812,
+    "original_sha256": "3a304d7ba144793b603fbabab98bfefbb004e0414d950035c56af48de09045d3",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "main-run2-depth1.jsonl",
+    "archive": "raw/main-run2-depth1.jsonl.gz",
+    "bytes": 40107,
+    "sha256": "3e7986245e258c4680d3b440fe7b92a732788c8a5a84e5fcd1e47390131382a9"
+  },
+  {
+    "source": "main-run2-depth3.jsonl",
+    "archive": "raw/main-run2-depth3.jsonl.gz",
+    "bytes": 40199,
+    "sha256": "bfe1f4e1e0f3b0830d3dd2a3aa93a8ebfc33b7b6e7305a7ad8a100d5a68ff20b"
+  },
+  {
+    "source": "main-run2-stages.jsonl",
+    "archive": "raw/main-run2-stages.jsonl.gz",
+    "bytes": 1337075,
+    "sha256": "67e1ec935bcde8f52be9855d4f63503aba6c59ba8dea204e2531575360bf3e67"
+  },
+  {
+    "source": "pr105-build.log",
+    "archive": "raw/pr105-build.log.gz",
+    "bytes": 13215,
+    "sha256": "29e42303d1412c485cdaab99e361f3dfc578b71f56c4c5025cd0f64466f4cb8f",
+    "original_bytes": 14685,
+    "original_sha256": "95b799390d774fe5e84230472d12c59f3b5b66938b62658b39c172143597793c",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "pr105-cases.jsonl",
+    "archive": "raw/pr105-cases.jsonl.gz",
+    "bytes": 545,
+    "sha256": "490c0d7205857951532513dd879c435f3f4a390ac24e2711b40a32221da342e8"
+  },
+  {
+    "source": "pr105-checks.jsonl",
+    "archive": "raw/pr105-checks.jsonl.gz",
+    "bytes": 7186,
+    "sha256": "7742076d51c5f658bf931ef82520ab23373a4495fc0c44a2f355f8a088646182"
+  },
+  {
+    "source": "pr105-provenance.txt",
+    "archive": "raw/pr105-provenance.txt.gz",
+    "bytes": 4335,
+    "sha256": "539a2fb32b84ed69aba679bf03b3fc241f9417419405a808e6298cf91c758908"
+  },
+  {
+    "source": "pr105-run1-cpu/results/Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json",
+    "archive": "raw/pr105-run1-cpu__results__Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json.gz",
+    "bytes": 212025,
+    "sha256": "6982b69b3c3d464c10c3aef5daa79ca71483080a2cf2851e5ad8b3b7a44907ba"
+  },
+  {
+    "source": "pr105-run1-cpu.log",
+    "archive": "raw/pr105-run1-cpu.log.gz",
+    "bytes": 82112,
+    "sha256": "b605517f6c3ae5ccf357e43e8eaeae7b3f3ff35b97c28d1229436ceba29462bb",
+    "original_bytes": 82806,
+    "original_sha256": "f0ef147b750ddbe73aa3ef2a99a8bacb6fd8360826dc9491d478eaba8ef7a3f0",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "pr105-run1-depth1.jsonl",
+    "archive": "raw/pr105-run1-depth1.jsonl.gz",
+    "bytes": 40146,
+    "sha256": "968d757077a7726949e80cb34ba9986a2625ab1e168031103e2defe2835c61b8"
+  },
+  {
+    "source": "pr105-run1-depth3.jsonl",
+    "archive": "raw/pr105-run1-depth3.jsonl.gz",
+    "bytes": 40174,
+    "sha256": "77af0abdb6b2cae23b16e751dd0c06387a8fa01206c693b21e155c73c2b01d34"
+  },
+  {
+    "source": "pr105-run1-stages.jsonl",
+    "archive": "raw/pr105-run1-stages.jsonl.gz",
+    "bytes": 1336821,
+    "sha256": "371280f90e88136cfaa9a70232e447d68f5f9c306629d0ef22850eef2da086aa"
+  },
+  {
+    "source": "pr105-run2-cpu/results/Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json",
+    "archive": "raw/pr105-run2-cpu__results__Lumyte.Graphics.Incremental.Benchmarks.RenderingWorkloadCpuBenchmarks-report-full.json.gz",
+    "bytes": 208723,
+    "sha256": "f2b3948d6191c1470e1307b210f2b0618a15ff60e0c5e20206173bf9a4b6af73"
+  },
+  {
+    "source": "pr105-run2-cpu.log",
+    "archive": "raw/pr105-run2-cpu.log.gz",
+    "bytes": 81488,
+    "sha256": "c2bc04766d4a3652306e4fb6c4a3792655cbdf4c9b57a63dfad173d920cd0d18",
+    "original_bytes": 82182,
+    "original_sha256": "b35374f97d4051fe6b7e15d746caa2c8841c03b0958a8dcd12dd4945d0c792cd",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "pr105-run2-depth1.jsonl",
+    "archive": "raw/pr105-run2-depth1.jsonl.gz",
+    "bytes": 40141,
+    "sha256": "be80fa628fec9d8d05574890d47252c3138b3981c236c804f115400dbeb36df8"
+  },
+  {
+    "source": "pr105-run2-depth3.jsonl",
+    "archive": "raw/pr105-run2-depth3.jsonl.gz",
+    "bytes": 40186,
+    "sha256": "6d739e2820158ab199733285177c799afd6d8bc2ff5995fbb053dccfe7d4e540"
+  },
+  {
+    "source": "pr105-run2-stages.jsonl",
+    "archive": "raw/pr105-run2-stages.jsonl.gz",
+    "bytes": 1336894,
+    "sha256": "a72b314b733c3082c8cb83762eace705ded16d623955d21e5d74aeca9465784d"
+  },
+  {
+    "source": "preflight-failure/environment.txt",
+    "archive": "raw/preflight-failure__environment.txt.gz",
+    "bytes": 6068,
+    "sha256": "0a4009117e89948bc1f721b90c818c4d3d12d1496a5271383ff26ef5a796615b",
+    "original_bytes": 6289,
+    "original_sha256": "506ea44afe0918e4457fc539458d9ff1b98835cc5510f507b63de9f325e77455",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "preflight-failure/runner.log",
+    "archive": "raw/preflight-failure__runner.log.gz",
+    "bytes": 55,
+    "sha256": "0af9723465c21e6529b3ecd896c0f2a252c6168c99def46fcf1570b73db93452"
+  }
+]

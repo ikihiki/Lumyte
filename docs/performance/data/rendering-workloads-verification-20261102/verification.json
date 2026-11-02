@@ -1,0 +1,50 @@
+{
+  "purpose": "execution verification only, not a workload performance ranking",
+  "source_commit": "46d1907",
+  "case_count": 12,
+  "cpu_smoke_frames_per_case": 5,
+  "bdn_quick": {
+    "cases": 12,
+    "measured_iterations_per_case": 3,
+    "count": 32
+  },
+  "hardware": {
+    "adapter": "Radeon8060S/RADV,actual-device checked",
+    "count32_stages": {
+      "cases": 12,
+      "warmup": 1,
+      "samples": 2
+    },
+    "count32_pipeline_each_depth": {
+      "cases": 12,
+      "depths": [
+        1,
+        3
+      ],
+      "warmup": 3,
+      "samples": 4
+    },
+    "count200_stages": {
+      "cases": 12,
+      "warmup": 1,
+      "samples": 1
+    },
+    "depth1_depth3_pixel_hashes_equal": true,
+    "readback_validation": "nonempty+checksum, not independent golden output"
+  },
+  "font": {
+    "path": "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf",
+    "sha256": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954"
+  },
+  "workload_source_sha256": {
+    "tools/benchmarks/drawing2d-incremental/DirectRectangleWorkload.cs": "e339e0d53f472da4c724fd8bab97d474283da71327f5ede0618ff1a86a15059c",
+    "tools/benchmarks/drawing2d-incremental/RenderingWorkloadRunner.cs": "a68280b4517e261a96025b12dda086529a315594c33739a7ef9ede2b7a3f4e2f",
+    "tools/benchmarks/drawing2d-incremental/Content2DWorkloads.cs": "a96aa0647655114a500f6fe17df68421663c22a9e23a664b21d60495b90efc74",
+    "tools/benchmarks/drawing2d-incremental/RenderingWorkloadCpuBenchmarks.cs": "5ceeab5ba74a7dab05c4ca66ff96590a5200662a802a1757b8df7ba83a07bd48",
+    "tools/benchmarks/drawing2d-incremental/GameUiWorkloads.cs": "dce469ae432e994da8e130bb744668d8d38f3bce2f0d7677798c7b86bbf44c67",
+    "tools/benchmarks/drawing2d-incremental/RenderingWorkloadCatalog.cs": "69b683fcec6e7bf4ce906a7c34ee1341f92b398c077ac2eaf58f54727863464d",
+    "tools/benchmarks/drawing2d-incremental/IRenderingWorkload.cs": "ba99d5b27b80de6641c77588951cb2e4274fa2a16c897da1c56d2b2dc92c71c8",
+    "tools/benchmarks/drawing2d-incremental/EditorUiWorkloads.cs": "4231b00bd7a3a2c486f8cce041dc9790bca46048700086b978831be3d0ed813a",
+    "tools/benchmarks/drawing2d-incremental/UiWorkloadText.cs": "42fe5a3ff6bd8dca764e9da0867d252587a1930392ce2fa147bef056064b6662"
+  }
+}

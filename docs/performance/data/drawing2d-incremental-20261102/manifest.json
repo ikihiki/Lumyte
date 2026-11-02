@@ -1,0 +1,131 @@
+[
+  {
+    "source": "main-run1/results/Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json",
+    "archive": "raw/main-run1__results__Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json.gz",
+    "bytes": 526835,
+    "sha256": "d2443026473e0588a3d2c6f6938035846f5848a66926aaf50fb791506dc70b3a"
+  },
+  {
+    "source": "main-run2/results/Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json",
+    "archive": "raw/main-run2__results__Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json.gz",
+    "bytes": 532589,
+    "sha256": "33ff68d579665e53de8509c6e8662890c6294baaa81dc5d761d4adc285101700"
+  },
+  {
+    "source": "main-secondary/results/Lumyte.Graphics.Incremental.Benchmarks.ChunkBenchmarks-report-full.json",
+    "archive": "raw/main-secondary__results__Lumyte.Graphics.Incremental.Benchmarks.ChunkBenchmarks-report-full.json.gz",
+    "bytes": 144334,
+    "sha256": "dcc1dc42e55ab6c87f1ad7500a00ad9d110726ee60a68012d938c4147e2f06f6"
+  },
+  {
+    "source": "main-secondary/results/Lumyte.Graphics.Incremental.Benchmarks.ConstructionBenchmarks-report-full.json",
+    "archive": "raw/main-secondary__results__Lumyte.Graphics.Incremental.Benchmarks.ConstructionBenchmarks-report-full.json.gz",
+    "bytes": 65337,
+    "sha256": "426315ef913b08061cdbf64fa79f715159e04d854eee426b39d071d77b007c97"
+  },
+  {
+    "source": "pr105-run1/results/Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json",
+    "archive": "raw/pr105-run1__results__Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json.gz",
+    "bytes": 529305,
+    "sha256": "86d98ab58255f0d4a34e8512f1b30cd12f3faa615c215f8b2aca0a29e9212b43"
+  },
+  {
+    "source": "pr105-run2/results/Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json",
+    "archive": "raw/pr105-run2__results__Lumyte.Graphics.Incremental.Benchmarks.UpdateBenchmarks-report-full.json.gz",
+    "bytes": 529001,
+    "sha256": "025b5ec28e8a25aeea2884d71dcb002a295bccce2047fec1821d58ca94b4dcde"
+  },
+  {
+    "source": "pr105-secondary/results/Lumyte.Graphics.Incremental.Benchmarks.ChunkBenchmarks-report-full.json",
+    "archive": "raw/pr105-secondary__results__Lumyte.Graphics.Incremental.Benchmarks.ChunkBenchmarks-report-full.json.gz",
+    "bytes": 144532,
+    "sha256": "270f83c58117639a861ba62aacff36994870a941e6587e5da1ca5e0e2ec44d5a"
+  },
+  {
+    "source": "pr105-secondary/results/Lumyte.Graphics.Incremental.Benchmarks.ConstructionBenchmarks-report-full.json",
+    "archive": "raw/pr105-secondary__results__Lumyte.Graphics.Incremental.Benchmarks.ConstructionBenchmarks-report-full.json.gz",
+    "bytes": 64025,
+    "sha256": "cf6dad9193e37fb12d2d8b4b8b1e159bcfdca392337ce1f5ef403cfcf4472f1d"
+  },
+  {
+    "source": "main-smoke.jsonl",
+    "archive": "raw/main-smoke.jsonl.gz",
+    "bytes": 399,
+    "sha256": "99f99d7ebcf6a69082b09cc09b834a10679ca4bb6086fb97c1db799084730147"
+  },
+  {
+    "source": "main-retention.jsonl",
+    "archive": "raw/main-retention.jsonl.gz",
+    "bytes": 13473,
+    "sha256": "3f71a13e7537674a914edf16dc39a064a55d4cad8c87048e6d7785faa257383e"
+  },
+  {
+    "source": "main-software.jsonl",
+    "archive": "raw/main-software.jsonl.gz",
+    "bytes": 90393,
+    "sha256": "17a0458235056b3ad2d5b39eccf235339f43661822f45ae611d4895cdff9f907"
+  },
+  {
+    "source": "main-provenance.txt",
+    "archive": "raw/main-provenance.txt.gz",
+    "bytes": 2395,
+    "sha256": "819b18c46ef758472da8a18fc3669e8df83b6f8be2ddb6d4b1c1b1af857dff96"
+  },
+  {
+    "source": "main-build.log",
+    "archive": "raw/main-build.log.gz",
+    "bytes": 2085,
+    "sha256": "3fb65d090a33203daff7d57c2bf575db773f95fa85a1fff1b64df58d254768f2",
+    "original_bytes": 2445,
+    "original_sha256": "601668ce9b00a40a122d15cc7b551c5e08383277a79604b4cbdd78b9a572b7fc",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "pr105-smoke.jsonl",
+    "archive": "raw/pr105-smoke.jsonl.gz",
+    "bytes": 399,
+    "sha256": "99f99d7ebcf6a69082b09cc09b834a10679ca4bb6086fb97c1db799084730147"
+  },
+  {
+    "source": "pr105-retention.jsonl",
+    "archive": "raw/pr105-retention.jsonl.gz",
+    "bytes": 13509,
+    "sha256": "655860dbea269fbe4491f0e0cf0cd850d6d5c124abefa66b9fd9f3645d5a7976"
+  },
+  {
+    "source": "pr105-software.jsonl",
+    "archive": "raw/pr105-software.jsonl.gz",
+    "bytes": 90639,
+    "sha256": "ab139d916b4a3aec640d3dc8edc6ec087eeaf8be0fa7a5589464975a83b0ad7f"
+  },
+  {
+    "source": "pr105-provenance.txt",
+    "archive": "raw/pr105-provenance.txt.gz",
+    "bytes": 2395,
+    "sha256": "f04bc46215a74126e18004be51d5fdec0606d8cb0e82d388669638f06281c1fc"
+  },
+  {
+    "source": "pr105-build.log",
+    "archive": "raw/pr105-build.log.gz",
+    "bytes": 2097,
+    "sha256": "f94c404bd4949056ea844cbb97475092d9c71362f0354cf26061745d65b2ae11",
+    "original_bytes": 2457,
+    "original_sha256": "4a2e07456b7a5cce852385ca17b7c2e14ffca7fc81fdf687e2eb8aaed6f03031",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "environment.txt",
+    "archive": "raw/environment.txt.gz",
+    "bytes": 5918,
+    "sha256": "fa0ac46bf12d1ba94095610331378f429318a506cacf250b764a00fd462e0acb",
+    "original_bytes": 6136,
+    "original_sha256": "6c9324b1f13d9e7e528c771acc0e72c9f49c9f0d35a86da01f75669aa1306b1f",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "artifacts/architecture-comparison-hardware.log",
+    "archive": "raw/hardware-access.log.gz",
+    "bytes": 447,
+    "sha256": "df69b5eba6ed457a72f4635c722af8155ca3ba0a47093b858cca8a83af15e887"
+  }
+]
