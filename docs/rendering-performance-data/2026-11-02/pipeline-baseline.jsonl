@@ -1,0 +1,16 @@
+{"Round":0,"Warmup":true,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":5.0414,"RepeatedDrawsMilliseconds":0.199,"CompletionMilliseconds":6.2538,"DestructionMilliseconds":1.0597}}
+{"Round":0,"Warmup":true,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.2377,"RepeatedDrawsMilliseconds":0.6496,"CompletionMilliseconds":1.2805,"DestructionMilliseconds":0.0408}}
+{"Round":1,"Warmup":true,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0242,"RepeatedDrawsMilliseconds":0.5803,"CompletionMilliseconds":1.1899,"DestructionMilliseconds":0.0221}}
+{"Round":1,"Warmup":true,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.03,"RepeatedDrawsMilliseconds":0.1536,"CompletionMilliseconds":1.2856,"DestructionMilliseconds":0.004}}
+{"Round":2,"Warmup":false,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0289,"RepeatedDrawsMilliseconds":0.1704,"CompletionMilliseconds":1.3206,"DestructionMilliseconds":0.0037}}
+{"Round":2,"Warmup":false,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0235,"RepeatedDrawsMilliseconds":0.5839,"CompletionMilliseconds":1.2575,"DestructionMilliseconds":0.0172}}
+{"Round":3,"Warmup":false,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0246,"RepeatedDrawsMilliseconds":0.5694,"CompletionMilliseconds":1.376,"DestructionMilliseconds":0.0172}}
+{"Round":3,"Warmup":false,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0252,"RepeatedDrawsMilliseconds":0.1694,"CompletionMilliseconds":1.2934,"DestructionMilliseconds":0.0038}}
+{"Round":4,"Warmup":false,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.039,"RepeatedDrawsMilliseconds":0.1102,"CompletionMilliseconds":1.2917,"DestructionMilliseconds":0.0047}}
+{"Round":4,"Warmup":false,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0306,"RepeatedDrawsMilliseconds":0.6336,"CompletionMilliseconds":1.2626,"DestructionMilliseconds":0.0185}}
+{"Round":5,"Warmup":false,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0272,"RepeatedDrawsMilliseconds":0.6141,"CompletionMilliseconds":1.3531,"DestructionMilliseconds":0.0174}}
+{"Round":5,"Warmup":false,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.029,"RepeatedDrawsMilliseconds":0.1174,"CompletionMilliseconds":1.3963,"DestructionMilliseconds":0.0047}}
+{"Round":6,"Warmup":false,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.033,"RepeatedDrawsMilliseconds":0.1245,"CompletionMilliseconds":1.3059,"DestructionMilliseconds":0.0036}}
+{"Round":6,"Warmup":false,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.027,"RepeatedDrawsMilliseconds":0.6134,"CompletionMilliseconds":1.3439,"DestructionMilliseconds":0.0173}}
+{"Round":7,"Warmup":false,"Cache":false,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0268,"RepeatedDrawsMilliseconds":0.598,"CompletionMilliseconds":1.3228,"DestructionMilliseconds":0.0171}}
+{"Round":7,"Warmup":false,"Cache":true,"Result":{"DrawCount":200,"FirstDrawMilliseconds":0.0285,"RepeatedDrawsMilliseconds":0.1171,"CompletionMilliseconds":1.2714,"DestructionMilliseconds":0.0036}}

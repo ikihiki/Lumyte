@@ -78,7 +78,20 @@ internal sealed partial class Build : FalloutBuild
         .DependsOn(Compile)
         .Executes(async () =>
         {
-            await DotNetAsync("test", Project ?? BuildSolution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
+            string results = Path.Combine(ArtifactRoot, "test-results");
+            Directory.CreateDirectory(results);
+            var environment = new Dictionary<string, string?>();
+            if (OperatingSystem.IsLinux())
+            {
+                // Keep native crashes observable as well as managed failures; do not retry tests.
+                environment["DOTNET_DbgEnableMiniDump"] = "1";
+                environment["DOTNET_DbgMiniDumpType"] = "1";
+                environment["DOTNET_DbgMiniDumpName"] = Path.Combine(results, "testhost-crash-%p-%t.dmp");
+            }
+
+            await DotNetWithEnvironmentAsync(environment, "test", Project ?? BuildSolution, "--configuration", Configuration,
+                "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--blame-crash", "--blame-crash-dump-type", "mini",
+                "--results-directory", results).ConfigureAwait(false);
         });
 
     private Target Clean => definition => definition

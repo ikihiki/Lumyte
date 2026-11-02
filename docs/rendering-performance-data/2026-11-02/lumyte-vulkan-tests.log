@@ -1,0 +1,54 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Lumyte.Composition -> <checkout>/src/Core/Lumyte.Composition/bin/Release/net10.0/Lumyte.Composition.dll
+  Lumyte.Input.Abstractions -> <checkout>/src/Input/Lumyte.Input.Abstractions/bin/Release/net10.0/Lumyte.Input.Abstractions.dll
+  Lumyte.Memory -> <checkout>/src/Core/Lumyte.Memory/bin/Release/net10.0/Lumyte.Memory.dll
+  Lumyte.Graphics.Abstractions -> <checkout>/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Execution -> <checkout>/src/Core/Lumyte.Execution/bin/Release/net10.0/Lumyte.Execution.dll
+  Lumyte.Graphics.Generators -> <checkout>/src/Graphics/Lumyte.Graphics.Generators/bin/Release/netstandard2.0/Lumyte.Graphics.Generators.dll
+  Lumyte.Graphics.Hosting -> <checkout>/src/Graphics/Lumyte.Graphics.Hosting/bin/Release/net10.0/Lumyte.Graphics.Hosting.dll
+  Lumyte.Graphics.RenderGraph -> <checkout>/src/Graphics/Lumyte.Graphics.RenderGraph/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.dll
+  Lumyte.Graphics.Shared -> <checkout>/src/Graphics/Lumyte.Graphics.Shared/bin/Release/net10.0/Lumyte.Graphics.Shared.dll
+  Lumyte.Resources -> <checkout>/src/Core/Lumyte.Resources/bin/Release/net10.0/Lumyte.Resources.dll
+  Lumyte.Memory.DependencyInjection -> <checkout>/src/Core/Lumyte.Memory.DependencyInjection/bin/Release/net10.0/Lumyte.Memory.DependencyInjection.dll
+  Lumyte.Graphics.Shaders -> <checkout>/src/Graphics/Lumyte.Graphics.Shaders/bin/Release/net10.0/Lumyte.Graphics.Shaders.dll
+  Lumyte.Resources.Execution -> <checkout>/src/Core/Lumyte.Resources.Execution/bin/Release/net10.0/Lumyte.Resources.Execution.dll
+  Lumyte.Graphics.Wgpu -> <checkout>/src/Graphics/Lumyte.Graphics.Wgpu/bin/Release/net10.0/Lumyte.Graphics.Wgpu.dll
+  Lumyte.Graphics.Vulkan -> <checkout>/src/Graphics/Lumyte.Graphics.Vulkan/bin/Release/net10.0/Lumyte.Graphics.Vulkan.dll
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Resources.DependencyInjection -> <checkout>/src/Core/Lumyte.Resources.DependencyInjection/bin/Release/net10.0/Lumyte.Resources.DependencyInjection.dll
+  Lumyte.Resources.Graphics -> <checkout>/src/Graphics/Lumyte.Resources.Graphics/bin/Release/net10.0/Lumyte.Resources.Graphics.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.Shared -> <checkout>/samples/Lumyte.Graphics.Shared/bin/Release/net10.0/Lumyte.Graphics.Samples.Shared.dll
+  Lumyte.Graphics.ImageEffects -> <checkout>/src/Graphics/Lumyte.Graphics.ImageEffects/bin/Release/net10.0/Lumyte.Graphics.ImageEffects.dll
+  Lumyte.Graphics.Drawing2D -> <checkout>/src/Graphics/Lumyte.Graphics.Drawing2D/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.dll
+  Lumyte.Composition.Generators -> <checkout>/src/Core/Lumyte.Composition.Generators/bin/Release/netstandard2.0/Lumyte.Composition.Generators.dll
+  Lumyte.Graphics.Drawing2D.RenderGraph -> <checkout>/src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.RenderGraph.dll
+  Lumyte.Resources.Graphics.ImageEffects -> <checkout>/src/Graphics/Lumyte.Resources.Graphics.ImageEffects/bin/Release/net10.0/Lumyte.Resources.Graphics.ImageEffects.dll
+  Lumyte.UI -> <checkout>/src/UI/Lumyte.UI/bin/Release/net10.0/Lumyte.UI.dll
+  Lumyte.Resources.Graphics.Drawing2D -> <checkout>/src/Graphics/Lumyte.Resources.Graphics.Drawing2D/bin/Release/net10.0/Lumyte.Resources.Graphics.Drawing2D.dll
+  Lumyte.Graphics.Tests -> <checkout>/tests/Graphics/Lumyte.Graphics.Tests/bin/Release/net10.0/Lumyte.Graphics.Tests.dll
+Test run for <checkout>/tests/Graphics/Lumyte.Graphics.Tests/bin/Release/net10.0/Lumyte.Graphics.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 1 s - Lumyte.Graphics.Tests.dll (net10.0)

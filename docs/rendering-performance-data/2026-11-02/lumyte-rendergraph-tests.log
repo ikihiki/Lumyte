@@ -1,0 +1,12 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Lumyte.Diagnostics -> <checkout>/src/Diagnostics/Lumyte.Diagnostics/bin/Release/net10.0/Lumyte.Diagnostics.dll
+  Lumyte.Graphics.Abstractions -> <checkout>/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Graphics.RenderGraph -> <checkout>/src/Graphics/Lumyte.Graphics.RenderGraph/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.dll
+  Lumyte.Diagnostics.Generators -> <checkout>/src/Diagnostics/Lumyte.Diagnostics.Generators/bin/Release/netstandard2.0/Lumyte.Diagnostics.Generators.dll
+  Lumyte.Diagnostics.RenderGraph -> <checkout>/src/Diagnostics/Lumyte.Diagnostics.RenderGraph/bin/Release/net10.0/Lumyte.Diagnostics.RenderGraph.dll
+  Lumyte.Graphics.RenderGraph.Tests -> <checkout>/tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.Tests.dll
+Test run for <checkout>/tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    77, Skipped:     0, Total:    77, Duration: 97 ms - Lumyte.Graphics.RenderGraph.Tests.dll (net10.0)

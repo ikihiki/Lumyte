@@ -1,0 +1,17 @@
+ShaderTarget: SpirV
+Features: IndirectDraw, AnisotropicFiltering, DepthBiasClamp
+MaxBufferSize: 4294967292 bytes
+MaxStorageBufferBindingSize: 4294967292 bytes
+MaxTextureDimension2D: 16384 texels
+MaxTextureArrayLayers: 8192 layers
+MaxColorAttachments: 8
+MaxSampledTexturesPerStage: 8388606
+MaxSamplersPerStage: 8388606
+MaxSamplerAnisotropy: 16
+MaxUniformBuffersPerStage: 8388606
+MaxStorageBuffersPerStage: 8388606
+MaxComputeInvocationsPerWorkgroup: 1024
+CopyBufferOffsetAlignment: 1 bytes
+CopyBufferSizeAlignment: 1 bytes
+CopyBytesPerRowAlignment: 1 bytes
+StorageBufferOffsetAlignment: 4 bytes

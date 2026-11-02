@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { observeAdapterRequests } from "./browser-adapter-diagnostics.mjs";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -36,6 +37,9 @@ try {
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
         "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
+        // Keep backend selection unchanged; expose driver initialization failures in CI.
+        "--enable-logging=stderr",
+        "--vmodule=dawn_context_provider=2,webgpu_decoder_impl=2,gpu_init=2,vulkan_instance=2",
         ...(process.platform === "win32" ? ["--use-angle=d3d11"] : [
             "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--use-webgpu-adapter=swiftshader",
             "--use-angle=vulkan", "--disable-vulkan-surface",
@@ -79,6 +83,7 @@ try {
             errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
         } else if (message.method === "Runtime.consoleAPICalled") {
             const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
+            if (text.startsWith("Browser WebGPU adapter:")) { console.log(text); }
             if (message.params.type === "error") { errors.push(text); }
             else { progress.push(text); }
         }
@@ -98,6 +103,10 @@ try {
         });
     }
     await command("Runtime.enable");
+    await command("Page.enable");
+    await command("Page.addScriptToEvaluateOnNewDocument", {
+        source: `(${observeAdapterRequests.toString()})();`,
+    });
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     const deadline = Date.now() + 180000;
     let result;
