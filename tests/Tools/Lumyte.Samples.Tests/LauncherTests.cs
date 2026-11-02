@@ -89,6 +89,51 @@ public sealed class LauncherTests
         Assert.Throws<ArgumentException>(() => SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", sample, "--backend", backend]), console));
     }
 
+    /// <summary>Verifies UI and remote automation adapters preserve their required argument prefixes.</summary>
+    /// <param name="sampleId">The logical sample.</param>
+    /// <param name="backendId">The selected adapter.</param>
+    /// <param name="project">The target project name.</param>
+    /// <param name="argument">The optional required first argument.</param>
+    [Theory]
+    [InlineData("ui", "record-only", "UI", "record-only")]
+    [InlineData("ui", "vulkan", "UI", "vulkan")]
+    [InlineData("ui", "wgpu", "UI", "wgpu")]
+    [InlineData("ui", "native", "UI", "native")]
+    [InlineData("ui-popup", "none", "UI.Popup", "none")]
+    [InlineData("ui-popup", "vulkan", "UI.Popup", "vulkan")]
+    [InlineData("ui-popup", "wgpu", "UI.Popup", "wgpu")]
+    [InlineData("diagnostics-ui-game", "http", "Diagnostics.UI.Automation.Game", "http")]
+    [InlineData("diagnostics-ui-game", "magiconion", "Diagnostics.UI.Automation.Game", "magiconion")]
+    [InlineData("diagnostics-ui-operator", "http", "Diagnostics.UI.Automation.Operator", null)]
+    public void UiAndDiagnosticsAdaptersPreserveArguments(string sampleId, string backendId, string project, string? argument)
+    {
+        using var console = new TestConsole();
+        (_, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", sampleId, "--backend", backendId]), console);
+        Assert.Equal($"samples/Lumyte.{project}.Sample", backend.Project);
+        Assert.Equal(argument is null ? [] : new[] { argument }, backend.Arguments);
+        Assert.False(backend.Browser);
+    }
+
+    /// <summary>Verifies browser serving and Windows text input retain their platform contracts.</summary>
+    [Fact]
+    public void UiBrowserAndTextEditingHaveCorrectHostRequirements()
+    {
+        SampleBackend browser = Assert.Single(SampleCatalog.All.Single(sample => sample.Id == "ui").Backends, backend => backend.Id == "webgpu");
+        Assert.True(browser.Browser);
+        Assert.False(browser.WindowsOnly);
+        Assert.Equal("samples/Lumyte.UI.Browser.Sample", browser.Project);
+        Assert.Empty(browser.Arguments);
+        SampleBackend text = Assert.Single(SampleCatalog.All.Single(sample => sample.Id == "ui-text-editing").Backends);
+        Assert.True(text.WindowsOnly);
+        Assert.Equal("samples/Lumyte.UI.TextEditing.Sample", text.Project);
+        Assert.Empty(text.Arguments);
+        if (!OperatingSystem.IsWindows())
+        {
+            using var console = new TestConsole();
+            Assert.Throws<ArgumentException>(() => SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-text-editing", "--backend", "windows"]), console));
+        }
+    }
+
     /// <summary>Verifies the launcher contract.</summary>
     [Fact]
     public void CatalogCoversEveryExecutableProjectExactlyAsALogicalSample()
