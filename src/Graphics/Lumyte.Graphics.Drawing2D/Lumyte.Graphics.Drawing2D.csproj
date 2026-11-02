@@ -11,6 +11,7 @@
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Benchmarks" />
     <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.TextEditing.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.RenderGraph" />
     <None Update="README.md" Pack="true" PackagePath="/" />

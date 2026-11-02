@@ -10,6 +10,8 @@ public static partial class Compose
     {
         /// <summary>A passive, replaceable configuration for one logical UI instance.</summary>
         [CompositionContentType<WidgetChildren>]
+        [ComposeArgumentAdapter(typeof(UiArgument<>))]
+        [ComposeFunctionAdapter(typeof(UiFunctionWidget))]
         public abstract partial class Widget
         {
             private List<WidgetChildren>? _childCollections;
@@ -33,9 +35,32 @@ public static partial class Compose
                 return element;
             }
 
-            internal void Validate(UiWidgetValidationContext context) => ValidateDeclaration(context);
+            internal void Validate(UiWidgetValidationContext context)
+            {
+                Transitions?.Validate();
+                ValidateDeclaration(context);
+            }
 
-            internal Widget? Recreate(UiWidgetRebuildContext context) => RebuildDeclaration(context);
+            internal Widget? Recreate(UiWidgetRebuildContext context)
+            {
+                Widget? next = RebuildDeclaration(context);
+                if (next is not null)
+                {
+                    next.ProvidedContexts ??= ProvidedContexts;
+                    for (int index = 0; index < Math.Min(ChildCollections.Count, next.ChildCollections.Count); index++)
+                    {
+                        WidgetChildren before = ChildCollections[index];
+                        WidgetChildren after = next.ChildCollections[index];
+                        if (before.IsPortal && after.IsPortal && before.IsInitialized && !after.IsInitialized)
+                        {
+                            after.Initialize(before.Select(child => (UiDeclarationRecipe.Capture(child)
+                                ?? throw new InvalidOperationException("Portal content requires a construction recipe.")).Build()).ToArray());
+                        }
+                    }
+                }
+
+                return next;
+            }
 
             /// <summary>Creates passive instance storage for a new logical identity.</summary>
             /// <returns>A fresh element; compatible updates keep the existing element instead.</returns>
@@ -50,6 +75,15 @@ public static partial class Compose
             /// <param name="context">The read-only proposed configuration topology.</param>
             protected virtual void ValidateDeclaration(UiWidgetValidationContext context)
             {
+            }
+
+            /// <summary>Creates declaration-only content for an independent surface.</summary>
+            /// <returns>A single-assignment portal slot excluded from mounted owner children.</returns>
+            protected WidgetChildren CreatePortalChildren()
+            {
+                var children = new WidgetChildren(this, ChildCollections.Count, int.MaxValue, true);
+                (_childCollections ??= []).Add(children);
+                return children;
             }
 
             /// <summary>Creates a single-assignment declaration slot owned by this widget.</summary>

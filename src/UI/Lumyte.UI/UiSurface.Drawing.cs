@@ -20,7 +20,15 @@ public sealed partial class UiSurface
             if (!_isDisposed && _viewport.X > 0 && _viewport.Y > 0)
             {
                 canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
-                RecordElement(_rootElement, canvas);
+                _recordDepth++;
+                try
+                {
+                    RecordElement(_rootElement, canvas);
+                }
+                finally
+                {
+                    _recordDepth--;
+                }
             }
         }
         finally
@@ -31,7 +39,7 @@ public sealed partial class UiSurface
 
     internal static void RecordElement(UiElement element, DrawingCanvas2D canvas)
     {
-        if (!element.Widget.IsVisible)
+        if (!element.LayoutVisible || (element.Surface?._visualExclusions?.Contains(element) ?? false))
         {
             return;
         }
@@ -45,7 +53,10 @@ public sealed partial class UiSurface
                 canvas.ClipRect(new(0, 0, element.Size.X, element.Size.Y));
             }
 
-            element.InvokeRecord(canvas);
+            if (element.Surface is not { } surface || surface._logicalVisualCapture || surface.VisualHost?.Record(element, canvas) != true)
+            {
+                element.InvokeRecord(canvas);
+            }
         }
         finally
         {

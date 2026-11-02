@@ -6,7 +6,7 @@ using Widget = Lumyte.UI.Compose.Definitions.Widget;
 namespace Lumyte.UI.Windowing;
 
 /// <summary>Owns popup content, menu input scopes and cleanup above an injected window manager.</summary>
-public sealed class UiPopupManager : IDisposable
+public sealed partial class UiPopupManager : IDisposable
 {
     private readonly IUiWindowManager _windows;
 
@@ -44,6 +44,8 @@ public sealed class UiPopupManager : IDisposable
     /// <summary>Gets a value indicating whether all owned popup content and owner registrations have drained.</summary>
     public bool IsStopped => _stopping && _popups.Count == 0 && _owners.Count == 0;
 
+    internal Func<UiSurface, IAsyncDisposable>? VisualLifetime { get; set; }
+
     /// <summary>Registers an already bound normal window and surface as borrowed input destinations.</summary>
     /// <param name="window">The same manager's bound window.</param>
     /// <param name="surface">The borrowed surface.</param>
@@ -72,7 +74,7 @@ public sealed class UiPopupManager : IDisposable
         Admit();
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(prepare);
-        if (!_owners.TryGetValue(owner.Id, out Owner? current) || !ReferenceEquals(current.Token, owner) || current.Releasing)
+        if (!_owners.TryGetValue(owner.Id, out Owner? current) || !ReferenceEquals(current.Token, owner) || current.Releasing || current.Paused)
         {
             throw new ArgumentException("Unknown owner.", nameof(owner));
         }
@@ -171,7 +173,7 @@ public sealed class UiPopupManager : IDisposable
         {
             foreach (Popup p in _popups.Values.Where(p => p.Owner == current && p.Mode == UiPopupInputMode.Menu).ToArray())
             {
-                Close(p, UiPopupCloseReason.OutsidePress);
+                RequestDismiss(p, UiPopupCloseReason.OutsidePress);
             }
         });
     }
@@ -339,10 +341,18 @@ public sealed class UiPopupManager : IDisposable
 
     internal UiWindowId? FindWindow(UiSurface surface) => _owners.Values.FirstOrDefault(o => ReferenceEquals(o.Surface, surface))?.Window ?? _popups.Values.FirstOrDefault(p => ReferenceEquals(p.Surface, surface))?.Window;
 
+    internal bool CanAnimate(Guid popupId)
+    {
+        return _popups.TryGetValue(popupId, out Popup? popup) && popup.Handle.State == UiPopupState.Open && !popup.Closing && !popup.Owner.Paused && !popup.Owner.Releasing
+            && popup.Window is { } window && _windows.TryGetSnapshot(window, out UiWindowSnapshot? state)
+            && state is { IsVisible: true, ClientSize.X: > 0, ClientSize.Y: > 0 }
+            && _windows.TryGetSnapshot(popup.Owner.Window, out UiWindowSnapshot? owner) && owner is { IsVisible: true };
+    }
+
     internal bool CanReceiveKeys(UiSurface surface)
     {
         UiWindowId? window = FindWindow(surface);
-        if (window is null || !_windows.TryGetSnapshot(window.Value, out UiWindowSnapshot? snapshot))
+        if (window is null || !ReferenceEquals(Surface(window.Value), surface) || !_windows.TryGetSnapshot(window.Value, out UiWindowSnapshot? snapshot) || !snapshot!.IsVisible)
         {
             return false;
         }
@@ -373,6 +383,16 @@ public sealed class UiPopupManager : IDisposable
         }
 
         return Dispatch(new UiWindowInputEnvelope(origin, input));
+    }
+
+    internal void UpdateDeclaration(UiPopupHandle handle, Widget content, UiWindowPlacementSide side, bool alignEnd)
+    {
+        if (_popups.TryGetValue(handle.Id, out Popup? popup) && !popup.Closing && popup.Request is { } request)
+        {
+            request.Side = side;
+            request.AlignEnd = alignEnd;
+            popup.Surface?.Rebuild(content);
+        }
     }
 
     private static Task DisposeParticipant(IAsyncDisposable participant)
@@ -483,6 +503,7 @@ public sealed class UiPopupManager : IDisposable
 
         p.Reason = reason;
         p.Handle.State = UiPopupState.Closing;
+        p.Surface?.FreezeValueAnimations();
         p.GuardCancellation.Cancel();
         foreach (Popup child in _popups.Values.Where(child => child.Parent == p).ToArray())
         {
@@ -494,9 +515,15 @@ public sealed class UiPopupManager : IDisposable
     {
         rectangle = default;
         UiPopupRequest r = p.Request!;
-        UiElement anchor = r.Anchor;
+        UiElement? anchor = r.ResolveAnchor is { } resolve ? resolve() : r.Anchor;
+        if (anchor is null)
+        {
+            return false;
+        }
+
+        r.Anchor = anchor;
         UiSurface expected = p.Parent?.Surface ?? p.Owner.Surface;
-        if (!ReferenceEquals(anchor.Surface, expected) || anchor.AutomationId != p.AnchorId || !ReferenceEquals(anchor.InputVersion, expected.InputVersionForWindowing) || !anchor.Widget.IsVisible || !anchor.Widget.IsEnabled || anchor.InputBounds.Right <= anchor.InputBounds.Left || anchor.InputBounds.Bottom <= anchor.InputBounds.Top)
+        if (!ReferenceEquals(anchor.Surface, expected) || (r.ResolveAnchor is null && anchor.AutomationId != p.AnchorId) || !ReferenceEquals(anchor.InputVersion, expected.InputVersionForWindowing) || !anchor.Widget.IsVisible || !anchor.Widget.IsEnabled || anchor.InputBounds.Right <= anchor.InputBounds.Left || anchor.InputBounds.Bottom <= anchor.InputBounds.Top)
         {
             return false;
         }
@@ -565,8 +592,20 @@ public sealed class UiPopupManager : IDisposable
             Widget content;
             try
             {
-                content = p.Request!.CreateContent() ?? throw new InvalidOperationException("Null popup content.");
-                p.Surface = new(content);
+                UiPopupRequest request = p.Request!;
+                content = request.PreparedSurface is null ? UiSurface.CaptureBuild(request.CreateContent) : request.CreateContent();
+                if (request.PreparedSurface is { } prepared && !ReferenceEquals(prepared.Root, content))
+                {
+                    throw new InvalidOperationException("Prepared popup content must match the accepted declaration.");
+                }
+
+                p.Surface = request.PreparedSurface ?? new(content);
+                request.PreparedSurface = null;
+                if (VisualLifetime?.Invoke(p.Surface) is { } visual)
+                {
+                    p.Participants.Add(visual);
+                }
+
                 p.SurfaceId = p.Surface.CaptureAutomationSnapshot().SurfaceId;
             }
             catch (Exception)
@@ -578,7 +617,7 @@ public sealed class UiPopupManager : IDisposable
 
             Anchor(p, out Rect2D at);
             UiWindowId anchor = p.Parent?.Window ?? p.Owner.Window;
-            var placement = new UiWindowPlacement(anchor, at, p.Request.Side, p.Request.Gap);
+            var placement = new UiWindowPlacement(anchor, at, p.Request!.Side, p.Request.Gap) { AlignEnd = p.Request.AlignEnd };
             p.LastPlacement = placement;
             try
             {
@@ -645,7 +684,7 @@ public sealed class UiPopupManager : IDisposable
 
         if (p.Handle.State == UiPopupState.Open && Anchor(p, out Rect2D rect))
         {
-            var placement = new UiWindowPlacement(p.Parent?.Window ?? p.Owner.Window, rect, p.Request!.Side, p.Request.Gap);
+            var placement = new UiWindowPlacement(p.Parent?.Window ?? p.Owner.Window, rect, p.Request!.Side, p.Request.Gap) { AlignEnd = p.Request.AlignEnd };
             if (placement != p.LastPlacement)
             {
                 _windows.Place(window, placement);
@@ -767,6 +806,12 @@ public sealed class UiPopupManager : IDisposable
 
         p.Surface?.Dispose();
         p.Surface = null;
+        if (p.Request?.PreparedSurface is { } unadopted)
+        {
+            unadopted.Dispose();
+            p.Request.PreparedSurface = null;
+        }
+
         if (p.Window is { } window)
         {
             p.CloseRequest ??= _windows.Close(window);
@@ -836,7 +881,7 @@ public sealed class UiPopupManager : IDisposable
 
     private Popup? Deepest(Guid scope) => _popups.Values.Where(p => p.Accepted && p.Mode == UiPopupInputMode.Menu && _windows.TryGetSnapshot(p.Owner.Window, out UiWindowSnapshot? s) && s!.KeyboardScopeId == scope).OrderByDescending(p => p.Depth).ThenByDescending(p => p.Order).FirstOrDefault();
 
-    private UiSurface? Surface(UiWindowId window) => _candidateSurfaces.GetValueOrDefault(window) ?? _owners.Values.FirstOrDefault(o => o.Window == window)?.Surface ?? _popups.Values.FirstOrDefault(p => p.Window == window && !p.Closing)?.Surface;
+    private UiSurface? Surface(UiWindowId window) => _candidateSurfaces.GetValueOrDefault(window) ?? _owners.Values.FirstOrDefault(o => o.Window == window && !o.Paused)?.Surface ?? _popups.Values.FirstOrDefault(p => p.Window == window && !p.Closing)?.Surface;
 
     private void CancelWindow(UiWindowId window, UiSurface surface)
     {
@@ -1042,7 +1087,7 @@ public sealed class UiPopupManager : IDisposable
             }
             else if (navigation.Key == Key.Escape || (navigation.Key == Key.ArrowLeft && menu.Parent is not null))
             {
-                Close(menu, UiPopupCloseReason.Escape);
+                RequestDismiss(menu, UiPopupCloseReason.Escape);
                 _keys[(envelope.Device, navigation.Key)] = null;
             }
         }
@@ -1059,7 +1104,19 @@ public sealed class UiPopupManager : IDisposable
             p = p.Parent;
         }
 
-        Close(p, reason);
+        RequestDismiss(p, reason);
+    }
+
+    private void RequestDismiss(Popup popup, UiPopupCloseReason reason)
+    {
+        if (popup.Request?.OnDismissRequested is { } notify)
+        {
+            _callbacks.Enqueue(() => notify(new(reason == UiPopupCloseReason.Escape ? PopupDismissReason.Escape : PopupDismissReason.OutsidePress)));
+        }
+        else
+        {
+            Close(popup, reason);
+        }
     }
 
     private sealed class InputRegistration(Action release) : IDisposable
@@ -1067,17 +1124,6 @@ public sealed class UiPopupManager : IDisposable
         private Action? _release = release;
 
         public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
-    }
-
-    private sealed class Owner(UiPopupOwner token, UiWindowId window, UiSurface surface)
-    {
-        internal UiPopupOwner Token { get; } = token;
-
-        internal UiWindowId Window { get; } = window;
-
-        internal UiSurface Surface { get; } = surface;
-
-        internal bool Releasing { get; set; }
     }
 
     private sealed class Popup(UiPopupHandle handle, Owner owner, Popup? parent, UiPopupRequest request, UiAutomationId anchorId)

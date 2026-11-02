@@ -4,7 +4,7 @@ using Lumyte.Input.Abstractions;
 namespace Lumyte.UI.Windowing;
 
 /// <summary>Composes borrowed native and hosted managers, with cleanup before a pre-show fallback.</summary>
-public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequestLifetime
+public sealed partial class FallbackUiWindowManager : IUiWindowManager, IUiWindowPresentationReplacementManager, IUiWindowRequestLifetime
 {
     private readonly IUiWindowManager _native;
 
@@ -221,6 +221,41 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
         UiWindowPlacement mapped = MapRequest(request, e.Manager!, e.Manager!.TryGetSnapshot(e.Inner, out UiWindowSnapshot? s) ? s!.Owner!.Value : default).Placement;
         e.Request = request;
         return Track(e, e.Manager.Place(e.Inner, mapped));
+    }
+
+    /// <inheritdoc/>
+    public UiWindowRequestId Resize(UiWindowId window, Vector2 clientSize)
+    {
+        Check();
+        if (!float.IsFinite(clientSize.X) || !float.IsFinite(clientSize.Y) || clientSize.X <= 0 || clientSize.Y <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(clientSize));
+        }
+
+        Entry entry = Get(window);
+        if (entry.Manager is null)
+        {
+            var request = new UiWindowRequestId(Id, checked(++_nextRequest));
+            _requests.Add(request, new(request, window, UiWindowRequestStatus.Failed, "unsupported"));
+            return request;
+        }
+
+        return Track(entry, entry.Manager.Resize(entry.Inner, clientSize));
+    }
+
+    /// <inheritdoc/>
+    public UiWindowRequestId BringToFront(UiWindowId window)
+    {
+        Check();
+        Entry entry = Get(window);
+        if (entry.Manager is null)
+        {
+            var request = new UiWindowRequestId(Id, checked(++_nextRequest));
+            _requests.Add(request, new(request, window, UiWindowRequestStatus.Failed, "unsupported"));
+            return request;
+        }
+
+        return Track(entry, entry.Manager.BringToFront(entry.Inner));
     }
 
     /// <inheritdoc/>
@@ -473,7 +508,7 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
         {
             UiWindowId id = MapId(manager, view.Window);
             Entry entry = Get(id);
-            return view with { Window = id, GeometryRevision = checked(++entry.Geometry) };
+            return view with { Window = id, GeometryRevision = checked(++entry.Geometry), StackingOrder = UiWindowStacking.Key(view.Role, view.Window, view.StackingOrder).Order };
         },
             (window, revision) => Get(window).PresentedGeometry = revision);
     }
@@ -708,7 +743,8 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
 
             if (!e.Closing && !e.FallingBack)
             {
-                e.Bind!.TrySetResult(new(e.Id, () => Retire(e)));
+                e.PublicBinding = new(e.Id, () => Retire(e));
+                e.Bind!.TrySetResult(e.PublicBinding);
             }
         }
 
@@ -927,6 +963,10 @@ public sealed class FallbackUiWindowManager : IUiWindowManager, IUiWindowRequest
         internal UiSurface? Surface { get; set; }
 
         internal UiWindowBinding? Binding { get; set; }
+
+        internal UiWindowBinding? PublicBinding { get; set; }
+
+        internal bool Replacing { get; set; }
 
         internal Task<UiWindowBinding>? Pending { get; set; }
 

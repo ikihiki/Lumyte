@@ -14,6 +14,12 @@ public partial class ButtonElement : UiElement<ButtonWidget>
     }
 
     /// <inheritdoc/>
+    protected override bool SupportsTransitionCapture => Widget.GetType() == typeof(ButtonWidget);
+
+    /// <inheritdoc/>
+    protected override bool CanReuseTransitionCapture(Compose.Definitions.Widget other) => other.GetType() == typeof(ButtonWidget);
+
+    /// <inheritdoc/>
     protected override UiInvalidation CompareConfiguration(ButtonWidget previous, ButtonWidget next) => UiInvalidation.None;
 
     /// <inheritdoc/>

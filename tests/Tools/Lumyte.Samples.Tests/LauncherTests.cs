@@ -98,13 +98,11 @@ public sealed class LauncherTests
     [InlineData("ui", "record-only", "UI", "record-only")]
     [InlineData("ui", "vulkan", "UI", "vulkan")]
     [InlineData("ui", "wgpu", "UI", "wgpu")]
-    [InlineData("ui", "native", "UI", "native")]
     [InlineData("ui-popup", "none", "UI.Popup", "none")]
     [InlineData("ui-popup", "vulkan", "UI.Popup", "vulkan")]
     [InlineData("ui-popup", "wgpu", "UI.Popup", "wgpu")]
-    [InlineData("diagnostics-ui-game", "http", "Diagnostics.UI.Automation.Game", "http")]
-    [InlineData("diagnostics-ui-game", "magiconion", "Diagnostics.UI.Automation.Game", "magiconion")]
-    [InlineData("diagnostics-ui-operator", "http", "Diagnostics.UI.Automation.Operator", null)]
+    [InlineData("diagnostics-ui-game", "managed", "Diagnostics.UI.Automation.Game", null)]
+    [InlineData("diagnostics-ui-operator", "managed", "Diagnostics.UI.Automation.Operator", null)]
     public void UiAndDiagnosticsAdaptersPreserveArguments(string sampleId, string backendId, string project, string? argument)
     {
         using var console = new TestConsole();
@@ -118,7 +116,7 @@ public sealed class LauncherTests
     [Fact]
     public void UiBrowserAndTextEditingHaveCorrectHostRequirements()
     {
-        SampleBackend browser = Assert.Single(SampleCatalog.All.Single(sample => sample.Id == "ui").Backends, backend => backend.Id == "webgpu");
+        SampleBackend browser = Assert.Single(SampleCatalog.All.Single(sample => sample.Id == "ui").Backends, backend => backend.Id == "browser");
         Assert.True(browser.Browser);
         Assert.False(browser.WindowsOnly);
         Assert.Equal("samples/Lumyte.UI.Browser.Sample", browser.Project);

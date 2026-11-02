@@ -39,7 +39,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  node.IsFocused,
  node.IsPressed,
  node.HasActivePress,
- new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray());
+ new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray(),
+ node.IsTransitioning);
 
     private static UiLocator Locate(UiAutomationPage page, UiRemoteLocatorStep[] steps)
     {
@@ -287,7 +288,16 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                 throw new ObjectDisposedException(nameof(IUiAutomationHost), "The registered surface was replaced.");
             }
 
-            return action(surface);
+            Job? previous = _currentOperation.Value;
+            _currentOperation.Value = job;
+            try
+            {
+                return action(surface);
+            }
+            finally
+            {
+                _currentOperation.Value = previous;
+            }
         },
  cancellationToken);
 

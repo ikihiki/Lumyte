@@ -25,12 +25,12 @@ public sealed partial class UiSurface
             Vector2 origin = UiInputGeometry.Origin(element, parentOrigin);
             var bounds = UiInputBounds.From(origin, element.Size);
             UiInputBounds clipped = bounds.Intersect(ancestorClip);
-            visible &= element.Widget.IsVisible;
+            visible &= element.LayoutVisible;
             enabled &= element.Widget.IsEnabled;
             hitTestVisible &= element.Widget.HitTestVisible;
             bool focusable = ReferenceEquals(element.InputVersion, _inputVersion) && element.InputFocusable;
             bool redacted = element.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions));
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning));
             if (redacted)
             {
                 return;

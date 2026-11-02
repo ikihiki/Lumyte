@@ -60,7 +60,7 @@ internal sealed class UiLayoutPass
                 throw new InvalidOperationException("Assign a child's offset once, after laying it out.");
             }
 
-            child.PublishLayout(child.Size, child.Widget.IsVisible ? offset : Vector2.Zero);
+            child.PublishLayout(child.Size, child.LayoutVisible ? offset : Vector2.Zero);
             child.LayoutOffsetSet = true;
         }
         catch (Exception exception)
@@ -77,7 +77,7 @@ internal sealed class UiLayoutPass
             throw new InvalidOperationException("Each child can be laid out only once per pass.");
         }
 
-        if (!node.Widget.IsVisible)
+        if (!node.LayoutVisible)
         {
             StageHidden(node);
             return Vector2.Zero;
@@ -141,13 +141,13 @@ internal sealed class UiLayoutPass
     {
         foreach (UiElement child in collection)
         {
-            if (!child.Widget.IsVisible && child.LayoutPassId != _id)
+            if (!child.LayoutVisible && child.LayoutPassId != _id)
             {
                 StageHidden(child);
             }
 
             if (child.LayoutPassId != _id || !child.LayoutComplete
-                || (child.Widget.IsVisible && !child.LayoutOffsetSet))
+                || (child.LayoutVisible && !child.LayoutOffsetSet))
             {
                 throw new InvalidOperationException("Every visible child must be laid out and positioned.");
             }
