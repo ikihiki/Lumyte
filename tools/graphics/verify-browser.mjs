@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { observeAdapterRequests } from "./browser-adapter-diagnostics.mjs";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -79,6 +80,7 @@ try {
             errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
         } else if (message.method === "Runtime.consoleAPICalled") {
             const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
+            if (text.startsWith("Browser WebGPU adapter:")) { console.log(text); }
             if (message.params.type === "error") { errors.push(text); }
             else { progress.push(text); }
         }
@@ -98,6 +100,10 @@ try {
         });
     }
     await command("Runtime.enable");
+    await command("Page.enable");
+    await command("Page.addScriptToEvaluateOnNewDocument", {
+        source: `(${observeAdapterRequests.toString()})();`,
+    });
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     const deadline = Date.now() + 180000;
     let result;

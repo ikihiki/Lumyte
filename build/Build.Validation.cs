@@ -48,6 +48,7 @@ internal sealed partial class Build
     private Target TestBrowserContracts => definition => definition
         .Executes(async () =>
         {
+            await NodeAsync("--test", "tools/graphics/browser-adapter-diagnostics.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
