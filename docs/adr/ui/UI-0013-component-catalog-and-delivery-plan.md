@@ -10,6 +10,10 @@
 
 同じ状態機械を持つ部品を見た目ごとに別実装すると、keyboard/capture/focus/IME/Diagnosticsの対応が分岐する。一方、全てを巨大な汎用controlで表すと、Compositionによる組み立てと部品ごとの入力契約が曖昧になる。
 
+## 今回の統合範囲
+
+2026-11-02時点では、既存の6種類とUI基盤・アプリケーション・Navigation・Signal・animation・関数コンポーネントまでを統合する。C1〜C9のコンポーネント拡充は後続作業とし、今回の統合条件に含めない。本ADRの候補APIは実装済みAPIを表さず、拡充時に詳細ADR・実装・検証を同じPRで追加する。
+
 ## 全コンポーネント共通の実体
 
 [UI-0002](UI-0002-widget-tree-and-composition.md)のWidget / Element分離を全ての拡充部品へ適用する。
