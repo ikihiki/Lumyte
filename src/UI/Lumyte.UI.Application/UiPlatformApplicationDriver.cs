@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application;
 
-internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNativePresentationFactory
+internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNativePresentationFactory, IUiNativePresentationStager
 {
     private readonly List<Window> _windows = [];
     private readonly Queue<Window> _closing = new();
@@ -98,6 +98,12 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
 
             throw;
         }
+    }
+
+    public IUiStagedWindowPresentation BeginReplacement(IWindow window, IUiWindowPresentation? current, UiWindowPresentationView view, UiSurface candidate)
+    {
+        Window target = _windows.FirstOrDefault(target => ReferenceEquals(target.NativeWindow, window)) ?? throw new NotSupportedException("presentation-replacement-unavailable");
+        return target.Source.BeginReplacement(current, view, candidate);
     }
 
     public override async ValueTask DisposeAsync()
@@ -409,6 +415,19 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         foreach (Guid source in _sources.Where(pair => ReferenceEquals(pair.Value, window.NativeWindow)).Select(pair => pair.Key).ToArray())
         {
             _sources.Remove(source);
+        }
+    }
+
+    internal override async ValueTask PrepareCandidateAsync(UiDriverWindow window, DrawList2D commands, CancellationToken cancellationToken)
+    {
+        await _renderGate.WaitAsync(cancellationToken);
+        try
+        {
+            await _presenter!.PrepareCandidateAsync(commands, (uint)Math.Max(1, window.NativeWindow!.State.PixelSize.Width), (uint)Math.Max(1, window.NativeWindow.State.PixelSize.Height));
+        }
+        finally
+        {
+            _renderGate.Release();
         }
     }
 

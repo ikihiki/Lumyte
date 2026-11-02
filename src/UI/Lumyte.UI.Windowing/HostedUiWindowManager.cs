@@ -4,7 +4,7 @@ using Lumyte.Input.Abstractions;
 namespace Lumyte.UI.Windowing;
 
 /// <summary>An independent manager composing transient UI inside borrowed roots without native windows.</summary>
-public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowRequestLifetime
+public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowPresentationReplacementManager, IUiWindowRequestLifetime
 {
     private readonly UiWindowManagerCore _inner;
 
@@ -38,6 +38,9 @@ public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowRequestLi
 
     /// <inheritdoc/>
     public ValueTask<UiWindowBinding> BindPresentationAsync(UiWindowId window, UiSurface surface, CancellationToken cancellationToken = default) => _inner.BindPresentationAsync(window, surface, cancellationToken);
+
+    /// <inheritdoc/>
+    public IUiWindowPresentationReplacement BeginReplacement(UiWindowId window, UiWindowBinding? current, UiSurface candidate) => _inner.BeginReplacement(window, current, candidate);
 
     /// <inheritdoc/>
     public bool IsBound(UiWindowId window, UiSurface surface) => _inner.IsBound(window, surface);

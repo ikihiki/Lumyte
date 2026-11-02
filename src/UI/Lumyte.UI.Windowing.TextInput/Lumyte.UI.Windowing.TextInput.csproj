@@ -5,6 +5,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.UI.Application" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../Lumyte.UI.Windowing/Lumyte.UI.Windowing.csproj" />
     <ProjectReference Include="../Lumyte.UI.TextEditing/Lumyte.UI.TextEditing.csproj" />
