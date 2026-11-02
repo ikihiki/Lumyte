@@ -31,7 +31,7 @@ Initial isolated snapshot measurements showed 10,000 commands cost 41.764us medi
 
 Twenty warm frames per count; ms median (p95):
 
-| Rects | CPU build | CPU prepare | CPU record+Finish | Submit+completion wall |
+|Rects|CPU build|CPU prepare|CPU record+Finish|Submit+completion wall|
 |---:|---:|---:|---:|---:|
 |100|0.01455 (0.02071)|0.05555 (0.05831)|0.06870 (0.07882)|1.09190 (1.09637)|
 |1000|0.12355 (0.32929)|0.32910 (1.05959)|0.07250 (0.08280)|1.09510 (1.10048)|
