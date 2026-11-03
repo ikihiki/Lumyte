@@ -7,6 +7,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 {
     private readonly DrawingRetentionOptions2D _options;
     private readonly List<Asset> _idle = [];
+    private readonly List<Asset> _retiring = [];
     private readonly object _gate = new();
     private int _frames;
     private bool _disposed;
@@ -37,9 +38,11 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             _disposed = true;
             while (_idle.Count != 0)
             {
-                _idle[^1].Batch.Dispose();
+                _retiring.Add(_idle[^1]);
                 _idle.RemoveAt(_idle.Count - 1);
             }
+
+            DisposeRetiring();
         }
     }
 
@@ -107,11 +110,23 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
             while (_idle.Count > _options.MaxCachedAssets || IdleBytes() > _options.MaxCachedBytes)
             {
-                _idle[0].Batch.Dispose();
+                _retiring.Add(_idle[0]);
                 _idle.RemoveAt(0);
             }
 
+            // Failed disposal stays outside the reusable cache. A retry of retirement
+            // resumes cleanup without publishing a partially destroyed asset.
+            DisposeRetiring();
             _frames--;
+        }
+    }
+
+    private void DisposeRetiring()
+    {
+        while (_retiring.Count != 0)
+        {
+            _retiring[^1].Batch.Dispose();
+            _retiring.RemoveAt(_retiring.Count - 1);
         }
     }
 

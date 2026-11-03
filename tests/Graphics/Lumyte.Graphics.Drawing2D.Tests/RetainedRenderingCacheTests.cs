@@ -57,6 +57,23 @@ public sealed class RetainedRenderingCacheTests
         Assert.False(key.Matches(key with { Transform = Matrix3x2.CreateTranslation(1, 0) }));
     }
 
+    /// <summary>Checks failed eviction cannot reissue a partially disposed asset and can be retried.</summary>
+    [Fact]
+    public void FailedEvictionQuarantinesTheAssetUntilCleanupSucceeds()
+    {
+        using var cache = new RetainedDrawingCache2D(new() { MaxCachedAssets = 0 });
+        var batch = new Batch { FailFirstDispose = true };
+        var asset = new RetainedDrawingCache2D.Asset(Key(), batch);
+        cache.AcquireFrame();
+        Assert.Throws<InvalidOperationException>(() => cache.ReleaseFrame([asset], true));
+        Assert.Null(cache.Take(Key()));
+        Assert.Equal(0, cache.Statistics.CachedAssets);
+        Assert.Equal(1, cache.Statistics.ActiveFrames);
+        cache.ReleaseFrame([asset], true);
+        Assert.Equal(0, cache.Statistics.ActiveFrames);
+        Assert.Equal(2, batch.Disposals);
+    }
+
     private static RetainedDrawingCache2D.Key Key() => new([], Matrix3x2.Identity, [], 64, 64, TextureFormat.Rgba8Srgb, 1);
 
     private sealed class Batch : IRetainedCommandBatch2D
@@ -64,6 +81,8 @@ public sealed class RetainedRenderingCacheTests
         public long EstimatedBytes => 16;
 
         internal int Disposals { get; private set; }
+
+        internal bool FailFirstDispose { get; init; }
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources)
         {
@@ -77,6 +96,13 @@ public sealed class RetainedRenderingCacheTests
         {
         }
 
-        public void Dispose() => Disposals++;
+        public void Dispose()
+        {
+            Disposals++;
+            if (FailFirstDispose && Disposals == 1)
+            {
+                throw new InvalidOperationException("Injected resource disposal failure.");
+            }
+        }
     }
 }
