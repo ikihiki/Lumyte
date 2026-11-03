@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0025: 描画内容を保持し、内容と配置の変更を分けて更新する
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-03
 - 基準コミット: `fbc81051cbf0f4aa5d996237543765e02b8cfa5c`
 
@@ -12,7 +12,7 @@
 
 ## 決定
 
-描画内容を一度登録して保持し、内容の変更と位置・順序の変更を別々に通知できる仕組みを提案する。変更されていない内容と準備済みの GPU 資源を再利用し、利用者が毎フレーム全命令を組み立て直す必要を減らす。既存の Canvas と DrawList の経路は維持し、移行は任意とする。
+配置は可変の木、描画内容は不変のページ配列、GPU への実行順は順序付きの列として保持する。内容、配置の属性、親子関係・順序を分けて更新し、未変更の内容と準備済み GPU 資源を再利用する。利用者は毎フレーム全命令を組み立て直す代わりに変更した対象だけを通知でき、既存の Canvas と DrawList の経路も引き続き選べる。
 
 ### 利用者の変更前・変更後
 
@@ -28,166 +28,201 @@ canvas.Replay(content);
 DrawList2D drawing = canvas.End();
 ```
 
-変更後の提案では、最初に内容と配置を登録し、返された ID を保持する。
+変更後は、一度だけ不変の内容を登録し、配置の ID を保持する。
 
 ```csharp
 using var scene = new DrawingScene2D();
-DrawingNodeId2D node;
-using (var update = scene.BeginUpdate())
+DrawingContent2D retained = DrawingContent2D.FromDrawList(content);
+DrawingNodeId2D node = scene.Insert(scene.Root, 0, retained);
+scene.SetTransform(node, transform);
+
+// 位置だけが変わったときに呼ぶ。内容の再記録は不要。
+scene.SetTransform(node, nextTransform);
+
+// 借用中は scene の更新を止め、Prepare が返った後で借用を解放する。
+PreparedDrawingFrame2D frame;
+using (DrawingSceneReadLease2D read = scene.Borrow())
 {
-    node = update.Insert(scene.Root, 0, content);
-    update.SetTransform(node, transform);
-    using var initial = update.Commit();
+    frame = await renderer.PrepareAsync(read, target, cancellationToken);
 }
 ```
 
-位置だけが変わったときは、その配置だけを更新する。内容が変わった場合は `ReplaceContent` を使う。
+内容が変わった場合は `ReplaceContent`、親子関係・順序が変わった場合は `Move` を使う。変更がないフレームでは更新操作は不要である。借用の取得だけで全描画内容を再記録・連結し直さない。
 
-```csharp
-using (var update = scene.BeginUpdate())
-{
-    update.SetTransform(node, nextTransform);
-    using var changed = update.Commit();
-}
+ここでは内容の作成、デバイス・描画先の初期化、送信前の描画先状態遷移を省略している。GPU に送信した `frame` の寿命は「GPU 完了後の解放」に従い、借用を解放しただけで GPU 資源を再利用しない。
 
-// 変更がないフレームでは更新処理は不要。描画側は確定した版を取得する。
-using DrawingSnapshot2D snapshot = scene.Capture();
-```
+### 木・ページ・実行順の役割
 
-ここでは CPU 側の記録更新だけを示し、元の `content` の作成、デバイスの初期化、GPU への描画を省略している。描画側は取得した版を `Renderer2D.PrepareAsync` に渡し、毎フレーム新しい `PreparedDrawingFrame2D` を受け取る。GPU 使用中の資源を即座に解放できるわけではなく、以下の寿命管理が必要になる。
+木の節は、独立して更新できる描画内容または子のまとまりを配置する単位である。各節の自身の内容を先に描き、次に子を格納順に描く。自身の描画と子を交互に配置したい場合は、それぞれの内容を順序付きの子として置く。透明描画を型や paint の種類で全体並べ替えしない。
 
-### 描画内容と配置
+`DrawingContent2D` は不変の命令をページへ分けて格納し、複数の節で共有できる。ページの置換では未変更のページを共有する。ページは CPU の更新・共有単位であり、木の節や GPU の draw と一対一に対応しない。既存の互換命令の連続範囲を batch として準備し、配列の都合だけで矩形一件またはページ一枚ごとの draw に分解しない。
 
-保持する描画内容を「断片」と呼ぶ。断片は独立して再記録できる不変の命令集合であり、同じ断片を複数箇所へ配置できる。内容の識別子と配置の ID は分け、配置の ID にはシーンと世代を含める。別シーン、削除済み、再利用前の ID は拒否し、配列の添字を永続 ID にしない。
+配置の ID はシーンと世代を含む。別シーン、削除済み、再利用前の ID は拒否し、配列の添字を永続 ID にしない。親への移動では循環を拒否する。更新操作は検証後に反映し、失敗した操作で直前の状態を変更しない。
 
-内容、配置の属性、親子関係・順序、外部資源の変更は別々の版番号で追跡する。一つの変更フラグで全ての保持内容を無効にしない。ただし、大きな断片の一命令だけを変えても、その断片全体の置換になる場合がある。
+内容、配置の属性、親子関係・順序は別々に追跡する。順序だけの変更で内容と変換属性の版を進めず、準備済み内容を再利用する。親の transform や clip は子へ伝播するが、親が捕捉した clip を子の移動で動かさない。clip の捕捉座標と描画内容内の座標を区別する。
 
-親自身の描画と子の参照を交互に記録できる順序を保つ。透明描画を型や塗りの種類で全体並べ替えせず、断片内で捕捉したクリップ座標と外側のクリップを区別する。子の配置を変えても親のクリップは動かさない。断片と GPU 上の格納・描画単位は分け、一つの UI 要素につき一回の描画へ固定しない。
+木の編集で影響を受けた配置だけを更新し、親子関係が変わった場合は実行順を作り直してよい。GPU 命令の記録と可視要素の走査は毎フレーム残り得る。ページ、実行順、GPU 格納領域の管理費用を無視して、frame 全体が変更件数だけに比例するとは保証しない。
 
-### 更新の確定と CPU 側の所有権
+### 最新状態の借用と任意の過去状態
 
-更新は一度に一つだけ開始できる。変更する部分とその祖先を複製し、検証に成功した `Commit` で新しい版を一括公開する。失敗、取消、未確定の `Dispose` では旧版を維持する。変更のない `Commit` は同じルートと内容の版番号を返す。
+通常の編集は最新の可変 scene に対して行う。`Borrow` が返す `DrawingSceneReadLease2D` の生存中は scene の更新を拒否する。複数の読取り借用は併存できる。非同期の `PrepareAsync` が借用を読み終わるまで呼出し側が借用を保持し、返却後は CPU scene を編集できる。
 
-`Capture` は確定済みの版への参照を取得するだけとし、全命令の再記録・連結・ハッシュ計算をしない。取得した版は後の編集や削除で変わらず、ID も取得時の版で解決する。取得、更新確定、破棄の競合によって使用中の版が解放されないよう同期する。
+借用を解放した後の過去の CPU 状態は保証しない。過去の状態を後で描き直す必要がある利用者だけが `CaptureSnapshot` を呼び、配置の独立した版を明示的に保持する。内容とページは不変なので共有でき、通常の更新に常時 copy-on-write や過去状態の維持を課さない。scene の破棄は新規編集・新規借用を止め、既に取得した読取りと明示 snapshot の内容はその所有者の解放まで維持する。
 
-CPU 配列は GC 所有でよい。Canvas が専有するバッファは移譲できるが、外部から受け取る可変データはコピーまたは明示的な所有権移譲が必要になる。読み取り専用の包みだけでは不変性を保証できず、参照中の配列をプールへ返してはならない。
+CPU 配列は GC 所有とし、読取り中の配列をプールへ返さない。入力の `DrawList2D` は既存の不変記録を使用する。借用により得た可変 scene のメモリーを、借用解放後まで保持して読み続けてはならない。
 
-### 再利用する資源とフレームごとの寿命
+### device 資産と frame の所有権
 
 保持する期間を次の三つに分ける。
 
 | 対象 | 保持するものと再利用条件 |
 | --- | --- |
-| `DrawingSnapshot2D` | CPU の記録と外部資源への参照。後の編集から独立した版として保持する |
-| 準備済み描画資源 | 形状・塗りの解析結果と GPU データ。デバイス、実行環境、シェーダー、引数の結び付け、参照先資源の世代が一致するとき再利用する |
-| `PreparedDrawingFrame2D` | 今回の描画先、資源の割当・転送、準備済み資源の使用権。命令を記録するのは一回だけ |
+| `DrawingContent2D` | 不変な CPU 命令と外部資源への参照。scene の編集から独立して共有する |
+| 準備済み描画資産 | 解析結果と GPU buffer・結び付け。device、描画先の形式・寸法・倍率、shader、属性・clip、外部資源の有効性が一致する場合に再利用する |
+| `PreparedDrawingFrame2D` | 今回の描画先と資産の使用権。命令を記録するのは一回だけで、GPU 完了後に返却する |
 
-再利用の判定には形状、塗り、クリップ座標、画面倍率、近似精度などの依存も含める。CPU 配列でもデバイス固有の資源参照を含む場合はデバイス依存であるため、解析結果とデバイス固有の参照を作る処理を分ける。使用済みの `PreparedDraw2D`、コマンドバッファ、前フレームだけで有効な RenderGraph のハンドルは保持して再実行しない。
+GPU frame は準備時に必要な scene の識別・順序・属性と資産を捕捉し、返却された CPU 借用を後から読まない。GPU 使用中の buffer と引数の結び付けを上書きせず、必要な場合は別の資産を準備する。使用済みの `PreparedDraw2D`、コマンドバッファ、前フレームだけで有効な RenderGraph ハンドルを保持して再実行しない。
 
-借用したテクスチャとビューは、CPU から参照しているだけでは `Dispose` を防げない。呼び出し側は、取得済みの版を再度使わなくなり、その全 GPU 使用が終わるまで資源を生存させる。デバイスを失った場合は参照を解決し直すか、新しいビューへ置換する。Resources との接続には既存の公開版と使用権を使い、基本 Drawing2D から ResourceManager への依存は追加しない。
+同時 frame 数と未使用 cache に上限を設ける。未使用の資産は予算内で保持し、除外時に解放する。使用中の資産を cache の都合で即時解放しない。上限に達した準備は明示的に失敗させ、呼出し側が既存 frame の完了・返却を進める。GPU 待機や送信は renderer が代理しない。
 
-GPU が使用中の格納領域は上書きせず、変更分を別領域に置き、最後のフレーム使用まで旧領域を保持する。キャッシュからの除外も使用中資源の即時解放を意味しない。保持量と同時フレーム数に上限を設け、満杯のときは追加処理を制限する。
+借用した texture と view は、CPU 参照だけで破棄を防げない。呼出し側は内容を再利用しなくなり、その全 GPU 使用が終わるまで生存させる。破棄・device 喪失・資源更新を検出した場合は古い結び付けを再使用せず、内容や renderer を有効な資源へ置換する。基本 Drawing2D から ResourceManager への依存は追加しない。
+
+標準の描画処理を選択した命令は既存 fast path を維持する。独自 renderer は既存の登録表を通し、再利用の契約がなければ毎フレーム準備する。独自 renderer を迂回して標準 generic shader へ黙って置き換えない。
 
 ### GPU 完了後の解放
 
-`PreparedDrawingFrame2D` はコマンドと送信結果を借用し、送信・待機・破棄を代理しない。呼び出し側は次の順序を守る。
+`PreparedDrawingFrame2D` はコマンドと送信結果を借用する。初期化済みの `commands`、`device` と前述の `frame` を使用する例を示す。記録中に失敗した場合は、送信を試さずコマンドを破棄して `AbortUnsubmitted` を使う。
 
-1. `Record` を一回呼び、コマンドを送信する。
-2. 実際に送信が返した `IGraphicsSubmission` を `AttachSubmission` へ渡す。
-3. GPU 完了を確認してコマンドを破棄し、`Retire` を呼ぶ。
-4. 送信結果とフレーム所有者を破棄する。
+```csharp
+frame.Record(commands);
+commands.Finish();
+IGraphicsSubmission submitted = device.Queue.Submit([commands]);
+frame.AttachSubmission(submitted);
+await submitted.WaitAsync(cancellationToken);
+commands.Dispose();
+frame.Retire();
+submitted.Dispose();
+frame.Dispose();
+```
 
-`Retire` は送信結果が `Completed`、コマンドが `Disposed`、デバイスが有効であることを確認し、再利用可能な GPU 上の版を公開する。転送命令の記録だけでは公開しない。送信結果とコマンドの正しい対応付けは呼び出し側の責務である。
+`Retire` は送信結果が `Completed`、コマンドが `Disposed`、device が有効であることを確認して、再利用できる GPU 上の版を公開する。転送の記録だけでは公開しない。実際の送信結果とコマンドの対応付けは呼出し側の責務である。
 
-送信を試していない場合に限り、先にコマンドを破棄してから `AbortUnsubmitted` で使用権を返せる。送信の成否が不明な場合や待機を取り消した場合は、解放・再利用を進めない。`Dispose` も未完了の GPU 使用の解放を代行しない。
+送信を試していない場合に限り、コマンドを破棄してから `AbortUnsubmitted` で使用権を返せる。送信の成否が不明な場合、待機の取消、未完了、device 喪失時は解放・再利用を進めない。`Dispose` は未記録の frame を破棄できるが、記録後の GPU 使用の解放や待機を代行しない。
 
-### UI と独自描画への適用
+### UI への接続
 
-UI の要素 ID と確定したレイアウトを配置へ対応付ける。位置だけの変化は配置を更新し、寸法に依存する描画は内容を更新する。`RecordSelf` と `RecordChild` の順序を保ち、別の UI ツリーを追加しない。
+既存 UI の要素 ID と確定した layout を scene の配置へ対応付け、別の UI ツリーを導入しない。位置だけの変更は配置を、寸法や文字に依存する描画は該当内容を更新する。未変更の要素の内容を再記録しない。
 
-独自の `OnRecord` は、再利用条件または明示的な無効化が提供されなければ毎フレーム記録する。独自の描画処理も、再利用への明示的な参加と版番号の契約がなければ毎フレーム準備する。描画処理の選択は標準表の `CreateDefault` または既存表を使う `FromLegacy` で明示し、未対応処理を標準処理へ黙って置き換えない。
+独自の `OnRecord` は、再利用を明示的に選択し無効化を通知しなければ毎フレーム記録する。独自の `RecordOverride` が自身の描画と子の描画を交互に行う順序・状態も保つ。再利用の境界が分からない部分は既存の記録経路を使い、推測で分割・cache しない。
 
-`UiVisualLayer` と画面遷移も同じ接続を使い、画像化したレイヤー、共有要素の除外と後段合成を維持する。時刻・アニメーション・描画提示の結果・遷移完了通知は既存の更新と提示の境界で進め、再記録の有無に依存させない。レイアウト、スケジューラー、描画先の能力確認、GPU 待機の費用は別に残る。
+visual layer と画面遷移は既存の合成経路を保つ。時刻、animation、提示結果、遷移完了通知を、再記録の有無で省略しない。UI の新しい描画接続は明示的に選択でき、既存 `UiSurface.Record` と host の提示契約は維持する。
 
 ### 公開 API 差分
 
-基準コミットに対する追加案を示す。型名と公開範囲も提案であり、以下の API は基準時点には存在しない。既存の `Renderer2D` には取得済みの版を受け取るオーバーロードを追加する。
+基準コードへの追加を示す。既存 Canvas・DrawList・renderer table の利用は削除しない。
 
 ```diff
  namespace Lumyte.Graphics.Drawing2D
  {
-+    // 不変なCPU内容。新たな内容の構築APIはこの判断の対象外。
-+    public sealed class DrawingContent2D;
-+    public sealed class DrawingContentRenderers2D
++    public sealed class DrawingContent2D
 +    {
-+        public static DrawingContentRenderers2D CreateDefault();
-+        public static DrawingContentRenderers2D FromLegacy(DrawingCommandRenderers2D renderers);
++        public static DrawingContent2D FromDrawList(DrawList2D content);
++        public int Count { get; }
++        public int PageCount { get; }
++        public const int PageCapacity = 64;
++        // 一つの既存ページを置換し、他のページを共有する。
++        public DrawingContent2D WithPage(int index, DrawList2D content);
 +    }
-+    // 解放順と失敗時の扱いは「GPU 完了後の解放」に従う。
-+    public sealed class PreparedDrawingFrame2D : IDisposable
-+    {
-+        public void Record(IGraphicsCommandBuffer commands);
-+        public void AttachSubmission(IGraphicsSubmission submission);
-+        public void Retire();
-+        public void AbortUnsubmitted();
-+        public void Dispose();
-+    }
-+    // シーンと世代を持つ。default、失効済み、別シーンの値は拒否する。
 +    public readonly struct DrawingNodeId2D;
 +    public sealed class DrawingScene2D : IDisposable
 +    {
-+        public DrawingScene2D();
 +        public DrawingNodeId2D Root { get; }
-+        public DrawingSceneUpdate2D BeginUpdate(); // 更新は一度に一つ。
-+        public DrawingSnapshot2D Capture(); // 確定した版を取得する。
-+        public void Dispose(); // 新規取得を止め、取得済みの版は維持する。
-+    }
-+    public sealed class DrawingSceneUpdate2D : IDisposable
-+    {
 +        public DrawingNodeId2D AddGroup(DrawingNodeId2D parent, int index);
-+        public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawList2D content);
-+        public void ReplaceContent(DrawingNodeId2D node, DrawList2D content);
 +        public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawingContent2D content);
 +        public void ReplaceContent(DrawingNodeId2D node, DrawingContent2D content);
 +        public void SetTransform(DrawingNodeId2D node, System.Numerics.Matrix3x2 transform);
 +        public void SetClip(DrawingNodeId2D node, Path2D? clip, FillRule2D rule = FillRule2D.NonZero);
 +        public void Move(DrawingNodeId2D node, DrawingNodeId2D parent, int index);
 +        public void Remove(DrawingNodeId2D node);
-+        public DrawingSnapshot2D Commit(); // 検証後に一括公開。失敗時は旧版を維持する。
-+        public void Dispose(); // 未確定の変更を取り消す。
++        // 全借用の解放まで更新を拒否する。過去状態を保持する契約ではない。
++        public DrawingSceneReadLease2D Borrow();
++        // 配置を独立させた過去状態を明示取得する。
++        public DrawingSnapshot2D CaptureSnapshot();
++        public void Dispose();
 +    }
-+    public sealed class DrawingSnapshot2D : IDisposable
++    public sealed class DrawingSceneReadLease2D : IDisposable;
++    public sealed class DrawingSnapshot2D : IDisposable;
++    public sealed record DrawingRetentionOptions2D
 +    {
-+        public ulong Revision { get; }
++        public int MaxFramesInFlight { get; init; } // 既定3。
++        public int MaxCachedAssets { get; init; } // 未使用資産、既定512。
++        public long MaxCachedBytes { get; init; } // 未使用資産の概算、既定64MiB。
++    }
++    // 記録と解放順は「GPU 完了後の解放」に従う。
++    public sealed class PreparedDrawingFrame2D : IDisposable
++    {
++        public void Record(IGraphicsCommandBuffer commands);
++        public void AttachSubmission(IGraphicsSubmission actualSubmit);
++        public void Retire();
++        public void AbortUnsubmitted();
 +        public void Dispose();
 +    }
      public sealed class Renderer2D
      {
-+        // フレームごとに新しい所有者を返す。再利用する資源とは寿命を分ける。
-+        public ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSnapshot2D snapshot,
-+            RenderTarget2D target, DrawingContentRenderers2D renderers,
-+            CancellationToken cancellationToken = default);
++        // 既存の5引数 constructor を維持し、保持予算を指定する呼出しを追加する。
++        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers,
++            DrawingResources2D? resources = null, IDisposable? resourceOwner = null,
++            Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null);
++        public DrawingRetentionStatistics2D RetentionStatistics { get; }
++        public ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSceneReadLease2D source,
++            RenderTarget2D target, CancellationToken cancellationToken = default);
++        public ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSnapshot2D source,
++            RenderTarget2D target, CancellationToken cancellationToken = default);
      }
  }
 ```
 
+UI の明示的な接続には次の API を追加する。scene の編集と破棄は adapter が管理し、取得した借用・snapshot と GPU frame の解放は呼出し側が管理する。
+
+```diff
++namespace Lumyte.UI
++{
++    public sealed class UiDrawingScene2D : IDisposable
++    {
++        public UiDrawingScene2D(UiSurface surface);
++        public DrawingScene2D Scene { get; } // adapter 所有、呼出し側から編集しない。
++        public void Update(); // layout と内容・配置を同期する。
++        public DrawingSceneReadLease2D Borrow(); // Update 後に読取りを借用する。
++        public void Dispose(); // surface は破棄しない。
++    }
++    public partial class UiElement
++    {
++        protected virtual bool CacheRetainedDrawing { get; } // 独自描画は既定 false。
++        protected void InvalidateDrawing();
++        protected virtual void ValidateRetainedDrawing();
++    }
++}
+```
+
 ## 検討した代替案
 
-- 記録バッファの所有権を移すだけにする: コピーを減らせるが、毎フレームの全記録・全準備が残る。
-- 全再記録の後に差分を取る: 比較方法を単純にできるが、比較前の構築費用が残り、UI の変更通知を活用できない。
-- 一つの可変配列を直接書き換える: 格納は単純になるが、取得済みの版と GPU 使用を壊し、挿入や並べ替えで全体移動が生じる。
-- 描画基盤全体を置き換える: 保持構造を一から統一できるが、既存のバックエンド、描画範囲、拡張契約の互換性まで変更対象になる。本提案は既存経路へ追加する。
+- 全てを平坦な可変命令リストにする: 一括構築は単純だが、親の属性や部分木の移動を表す識別と更新境界が不足する。実行列には使い、論理構造には使わない。
+- 全てを命令一件ごとの木にする: 更新対象を細かく表せるが、大量の同種データの格納・走査と batch 化に余分な間接参照を増やす。木の節は独立した配置単位にする。
+- 全ての編集を不変 snapshot として公開する: 過去状態と編集を並行利用しやすいが、過去状態が不要な利用者にも所有権管理・複製の費用を課す。通常は最新状態を借用し、過去状態は明示取得する。
+- 全再記録後に差分を取る: 比較前の構築費用が残り、既存 UI の変更通知を利用できない。内容と配置の更新を直接通知する。
+- 画像に焼き付けて再利用する: 描画自体を減らせるが、解像度・拡大・描画先への依存が増える。今回は命令と準備済み資産を保持する。
+- 描画基盤全体を置き換える: 既存 backend、描画範囲、拡張契約の互換性まで変更が広がる。既存経路へ任意に使える保持経路を追加する。
 
 ## 結果と影響
 
-利用者は、位置だけの変更で描画内容を再記録する処理を省ける。静止・局所更新では準備費用も減らせる可能性がある一方、配置 ID の保持、更新の確定、GPU 完了後の解放が新たな責務になる。内部にも版管理、旧領域の保持、キャッシュ管理の費用と常駐メモリーが増える。
+利用者は内容を一度記録して共有し、配置と順序の変更だけを通知できる。常時の過去 CPU 状態を必要としない用途では可変 scene を選び、必要な用途は snapshot を明示的に取得する。配置 ID の保持、借用中の編集停止、外部資源の生存、GPU 完了後の返却は利用者の責務になる。
 
-親の属性を変えると子の配置を再計算する場合があり、GPU 命令の記録と描画は可視要素数に比例する場合がある。フレーム全体の費用が変更量だけに比例するとは保証せず、一般の図形・文字・UI に対する速度向上もこの提案だけでは確定しない。
+資産の再利用で準備と割当を減らせる一方、cache の常駐量、木と実行順の更新、可視範囲の走査、命令記録と描画の費用が残る。親属性の変更で子の資産を再準備する場合があり、GPU property だけの更新や frame 全体の速度向上を保証しない。
 
-### 検証する条件と対象外
+### 受け入れ条件と対象外
 
-全再記録と画素を比較し、半透明、クリップ、並べ替え、同じ内容の複数配置で結果が一致することを確認する。取得済みの旧版、失効 ID、更新失敗、変更なしの確定も検証する。
+既存経路と半透明・path・clip・画像・文字・並べ替え・同じ内容の複数配置を比較する。挿入・削除・再配置・親 clip の座標、失効 ID、不正更新の原子性、複数借用、明示 snapshot の旧状態、未変更時の内容再利用を検証する。
 
-3 フレームを同時処理する条件で、再利用する格納領域が途中の版を飛ばしても正しい内容になることを確認する。未送信の転送、待機取消、デバイス喪失、資源更新、保持量超過、再利用に参加しない独自描画も対象にする。構築・確定・取得・準備・転送データ作成・転送・命令記録・送信を分けて、時間、割当量、保持量、描画回数、解放待ちを測る。
+複数 frame の同時処理では、使用中の資産を上書きしないこと、途中の更新を飛ばした frame でも内容が正しいことを確認する。未送信・完了前・失敗・取消・資源破棄・保持予算超過・再利用しない独自 renderer も検証する。変更なし・部分変更・全変更を分け、時間、割当量、転送量と常駐量を確認する。
 
-初期の描画は描画先全体を消去して全要素を描いてよい。変更領域だけの描画・提示、一括更新用の構築 API と転送選択、新しい UI 基盤や資源管理系は対象外とする。独自描画の再利用インターフェース、RenderGraph のレイヤー・効果の編集、GPU 格納単位と予算、UI で再利用を有効にする範囲は未決定である。
+変更領域だけの描画・提示、RenderGraph の layer/effect を保持して編集する機構、一括更新用の専用入力形式、新しい UI 基盤や資源管理系はこの判断の対象外とする。

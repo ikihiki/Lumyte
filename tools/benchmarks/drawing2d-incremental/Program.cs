@@ -9,6 +9,12 @@ using BenchmarkDotNet.Toolchains.DotNetCli;
 using Lumyte.Graphics.Incremental.Benchmarks;
 using Perfolizer.Horology;
 
+if (args.Contains("--production-retained-checks", StringComparer.Ordinal) || args.Contains("--production-retained-hardware", StringComparer.Ordinal))
+{
+    await ProductionRetainedProbe.RunAsync(args.Contains("--production-retained-checks", StringComparer.Ordinal));
+    return;
+}
+
 if (args.Any(arg => arg.StartsWith("--workload-", StringComparison.Ordinal)))
 {
     try

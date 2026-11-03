@@ -118,3 +118,35 @@ Function components keep parameters in passive `UiFunctionWidget` declarations. 
 `Use` / `UseSignal` / `UseContext` inside a frame owned by the retained `UiFunctionElement`.
 Its `Content` property exposes the currently mounted result. Nested functions get separate frames;
 calling a definition directly shares its caller's frame. Applications use generated static factories.
+
+## Opt-in retained drawing scene
+
+```csharp
+using var drawing = surface.CreateDrawingScene();
+// Each update uses the existing mounted elements, dirty layout, and slot order.
+using var source = drawing.Borrow(); // Update() + Scene.Borrow()
+// await renderer.PrepareAsync(source, target, ...); keep source alive through preparation.
+// Dispose source before the next Update(); retain/retire prepared frames using GPU completion.
+```
+
+The adapter owns only its DrawingScene2D. Scene may also be borrowed after an explicit Update,
+or frozen with CaptureSnapshot; callers must not edit or dispose the adapter-owned Scene.
+Snapshots and recordings do not extend borrowed texture/resource lifetimes: the caller keeps
+those resources alive through every consuming GPU submission. Disposing the adapter does not
+dispose the surface or external resources.
+
+Default self-then-children elements get stable drawing groups, local immutable content, and
+separate placement/clip metadata. LastRecordingCount exposes local capture work per update;
+it is not a GPU draw count. Unknown custom OnRecord code runs on every update. A deterministic
+custom element may override CacheRetainedDrawing and call InvalidateDrawing when local state
+changes; ValidateRetainedDrawing can check external dependency revisions before layout.
+Size, adopted configuration, and visual revision changes also revoke cached local content.
+Rectangle drawing and empty base self drawing are reusable; built-in TextBox opts in and
+validates its document/layout dependencies. Merely moving an unchanged leaf does not recapture it.
+Custom RecordOverride implementations remain fresh opaque subtree recordings, preserving
+arbitrary RecordSelf/RecordChild interleaving and inherited canvas state.
+
+This is an explicit renderer integration point, not an automatic conversion of the Application
+host. UiSurface.Record and existing Canvas/DrawList callers are unchanged. A visual host, page
+transition, or active visual exclusions force fresh whole-surface recording through the existing
+composition path; visual layers and presentation receipts remain owned by the existing host.

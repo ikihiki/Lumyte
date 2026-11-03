@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
+internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
 {
     private static readonly BarrierScope _fragmentRead = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
     private readonly RenderPreparationContext2D _context;
@@ -39,6 +39,9 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         }
     }
 
+    // Includes staging/device allocations, packed CPU payloads and conservative descriptor overhead.
+    public long EstimatedBytes { get; private set; } = 4096;
+
     /// <inheritdoc/>
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {
@@ -68,15 +71,21 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         }
 
         _recorded = true;
-        var attachmentWrite = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-        commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = attachmentWrite });
-        IRenderEncoder clear = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = _fallbackView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
-        clear.End();
-        commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = attachmentWrite, After = _fragmentRead });
-        foreach (PreparedCommand command in _commands)
+        RecordCore(commands, target, resident: false);
+    }
+
+    public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(target);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _context.ValidateResources();
+        if (_commands.Any(command => command.Program.Textures.Any(texture => ReferenceEquals(texture, target.Texture))))
         {
-            RecordCommand(commands, target, command);
+            throw new ArgumentException("A command cannot sample its active drawing target.", nameof(target));
         }
+
+        RecordCore(commands, target, resident);
     }
 
     /// <inheritdoc/>
@@ -115,6 +124,25 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         {
             batch.Dispose();
             throw;
+        }
+    }
+
+    private void RecordCore(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
+    {
+        if (!resident)
+        {
+            var attachmentWrite = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
+            commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = attachmentWrite });
+            IRenderEncoder clear = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = _fallbackView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
+            clear.End();
+            commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = attachmentWrite, After = _fragmentRead });
+        }
+
+        foreach (PreparedCommand command in _commands)
+        {
+            // SetArgumentTable/Draw resolve the existing registrations and validate sampled
+            // resource lifetimes on every record, including resident draws.
+            RecordCommand(commands, target, command, resident);
         }
     }
 
@@ -164,27 +192,33 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         IGpuRef<DrawingInstruction> instructionRef = table.WriteBuffer(0, instructions.SliceElements(0, instructions.Count));
         ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
         IGraphicsBuffer<Vector4> geometry = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = data.Count, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
-        _commands.Add(new(program, table, instructions, upload, data, geometry, instructionRef, sampler, fallbackRef, root, scissor));
+        IGpuRef<Vector4> dataRef = table.WriteBuffer(1, geometry.SliceElements(0, geometry.Count));
+        EstimatedBytes = checked(EstimatedBytes + (long)(instructions.SizeInBytes + upload.SizeInBytes + data.SizeInBytes + geometry.SizeInBytes)
+            + ((long)program.Instructions.Count * 256) + ((long)program.Data.Count * 32) + 65536);
+        _commands.Add(new(program, table, instructions, upload, data, geometry, instructionRef, dataRef, sampler, fallbackRef, root, scissor));
     }
 
-    private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command)
+    private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command, bool resident)
     {
-        var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
-        var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
-        commands.Barrier(new ShaderDataBufferBarrierDesc<DrawingInstruction> { Buffer = command.Upload.SliceElements(0, command.Upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
-        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Data.SliceElements(0, command.Data.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
-        commands.CopyBuffer(command.Upload.SliceElements(0, command.Upload.Count), command.Instructions.SliceElements(0, command.Instructions.Count));
-        commands.CopyBuffer(command.Data.SliceElements(0, command.Data.Count), command.Geometry.SliceElements(0, command.Geometry.Count));
-        commands.Barrier(new ShaderDataBufferBarrierDesc<DrawingInstruction> { Buffer = command.Instructions.SliceElements(0, command.Instructions.Count), Before = copyWrite, After = _fragmentRead });
-        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Geometry.SliceElements(0, command.Geometry.Count), Before = copyWrite, After = _fragmentRead });
+        if (!resident)
+        {
+            var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
+            var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
+            commands.Barrier(new ShaderDataBufferBarrierDesc<DrawingInstruction> { Buffer = command.Upload.SliceElements(0, command.Upload.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
+            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Data.SliceElements(0, command.Data.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = copyRead });
+            commands.CopyBuffer(command.Upload.SliceElements(0, command.Upload.Count), command.Instructions.SliceElements(0, command.Instructions.Count));
+            commands.CopyBuffer(command.Data.SliceElements(0, command.Data.Count), command.Geometry.SliceElements(0, command.Geometry.Count));
+            commands.Barrier(new ShaderDataBufferBarrierDesc<DrawingInstruction> { Buffer = command.Instructions.SliceElements(0, command.Instructions.Count), Before = copyWrite, After = _fragmentRead });
+            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = command.Geometry.SliceElements(0, command.Geometry.Count), Before = copyWrite, After = _fragmentRead });
+        }
+
         if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
         {
             return;
         }
 
         DrawingTargetInfo2D target = _context.Target;
-        IGpuRef<Vector4> dataRef = command.Table.WriteBuffer(1, command.Geometry.SliceElements(0, command.Geometry.Count));
-        var arguments = new DrawingArguments(command.InstructionRef, dataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
+        var arguments = new DrawingArguments(command.InstructionRef, command.DataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(_pipeline);
         render.SetArgumentTable(command.Table);
@@ -211,5 +245,5 @@ internal sealed class PreparedGpuBatch2D : IPreparedCommandBatch2D
         return resource;
     }
 
-    private sealed record PreparedCommand(DrawingProgram2D Program, IArgumentTable Table, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGraphicsBuffer<Vector4> Geometry, IGpuRef<DrawingInstruction> InstructionRef, IGpuRef<IGraphicsSampler> Sampler, IGpuRef<IGraphicsTextureView> Fallback, uint Root, ScissorRect Scissor);
+    private sealed record PreparedCommand(DrawingProgram2D Program, IArgumentTable Table, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGraphicsBuffer<Vector4> Geometry, IGpuRef<DrawingInstruction> InstructionRef, IGpuRef<Vector4> DataRef, IGpuRef<IGraphicsSampler> Sampler, IGpuRef<IGraphicsTextureView> Fallback, uint Root, ScissorRect Scissor);
 }
