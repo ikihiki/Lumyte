@@ -64,7 +64,6 @@ pipeline probeは1,000/10,000矩形、同じ変更条件、1/3 frame in flight�
 
 各caseの最終readbackをlegacy/retained+flattenで比較します。software側の過去結果とはsample数・tiering・ハードウェアが異なるため、直接の速度比としては扱いません。
 
-
 ## Public retained API / actual UI adapter probe
 
 Use `--public-retained-api` for the review measurement
@@ -91,7 +90,7 @@ other benchmark/build/test work). Replace the ICD path with the verified hardwar
 manifest. The existing HardwareGpuTimer device guard still requires Radeon
 8060S (1002:1586); this is not a generic/software-backend probe.
 
-~~~sh
+```sh
 project=tools/benchmarks/drawing2d-incremental/Lumyte.Graphics.Incremental.Benchmarks.csproj
 dotnet build "$project" -c Release
 export WORKLOAD_REPO_ROOT="$PWD"
@@ -107,7 +106,7 @@ PUBLIC_RETAINED_REVERSE=1 dotnet run --no-build -c Release --project "$project" 
 export PUBLIC_RETAINED_WARMUP=10 PUBLIC_RETAINED_SAMPLES=20
 # CPU-only diagnostic (no device creation/pixel check):
 dotnet run --no-build -c Release --project "$project" -- --public-retained-ui-cpu > public-ui-cpu.jsonl
-~~~
+```
 
 Each case has fresh inputs/renderer, preflight exact byte checks for both visible
 states, warmup, raw frame rows, and final independent Canvas exact byte readback.
@@ -147,3 +146,5 @@ identify layoutKind: do not conflate flat CPU and grid GPU cases. Flat CPU
 uiElementCount is N+1; grid counts include rows. UI scene-node counts remain null.
 The default renderer cache budget remains 512 assets: UI1000 may evict or miss,
 so static does not imply complete GPU cache reuse; inspect emitted counters.
+
+Measured results and provenance: [public retained API review](../../../docs/performance/retained-public-api-review.md).

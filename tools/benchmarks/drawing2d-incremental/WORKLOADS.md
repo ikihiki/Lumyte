@@ -103,7 +103,6 @@ CPU smokeは各fixtureのinvariantと非空記録を確認する。GPU readback�
 
 全て強制frame評価のheadless workloadで、OSのidle wakeup/省電力・event-driven host schedulingそのものは未計測。静止caseの安さを「OS frameを省略できた」と読み替えない。
 
-
 ## Public retained API integration measurement
 
 See [README public API probe instructions](README.md#public-retained-api--actual-ui-adapter-probe).
@@ -114,8 +113,8 @@ The real UiSurface/CreateDrawingScene adapter additionally covers 100/1000/10000
 rectangle leaves for CPU Update and LastRecordingCount; only 100/1000 enter GPU
 Prepare/Record/readback. `--public-retained-ui-cpu` isolates that CPU profile.
 Do not combine these observations with the older layer-adaptation UI fixture or
-private WithPage mutation measurements. No timing evidence exists until these
-source changes have been built and the documented independent runs collected.
+private WithPage mutation measurements. Measured source, raw archives, independent-run statistics and limits are in
+[the public API review report](../../../docs/performance/retained-public-api-review.md).
 
 CPU UI cases are flat Panel siblings (N+1 UI elements), while GPU UI cases use
 Stack grids. Each row emits layoutKind; these are separate workload shapes.

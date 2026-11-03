@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Validate public-only scene/UI samples before summarizing their stage costs."""
 import argparse
+import gzip
+import hashlib
+import tempfile
 import json
 import math
 import statistics
@@ -115,6 +118,19 @@ if __name__ == "__main__":
     parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--warmup", type=int, default=10)
     args = parser.parse_args()
-    summary = analyze(args.input, args.samples, args.warmup)
+    if (args.input / "manifest.json").exists():
+        with tempfile.TemporaryDirectory(prefix="public-retained-replay-") as temporary:
+            base = Path(temporary)
+            for entry in json.loads((args.input / "manifest.json").read_text()):
+                if entry["phase"] != "measure":
+                    continue
+                data = gzip.decompress((args.input / entry["archive"]).read_bytes())
+                assert len(data) == entry["bytes"] and hashlib.sha256(data).hexdigest() == entry["sha256"]
+                name = Path(entry["source"]).name
+                assert name in ["current-1.jsonl", "current-2.jsonl", "baseline-1.jsonl", "baseline-2.jsonl", "environment.txt"]
+                (base / name).write_bytes(data)
+            summary = analyze(base, args.samples, args.warmup)
+    else:
+        summary = analyze(args.input, args.samples, args.warmup)
     args.output.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(dict(status="passed", **summary["validation"])))
