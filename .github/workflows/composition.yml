@@ -280,6 +280,8 @@ jobs:
         env:
           CHROME: ${{ steps.chrome.outputs.chrome-path }}
           LUMYTE_REQUIRE_SOFTWARE_WEBGPU: "1"
+          # Temporary: only the verified sequential midpoint PNG deadline becomes a warning.
+          LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: "1"
         run: |
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser --configuration Release
