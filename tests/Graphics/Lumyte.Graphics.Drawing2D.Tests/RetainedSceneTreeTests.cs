@@ -11,7 +11,7 @@ public sealed class RetainedSceneTreeTests
     public void DeepTransformsAndClipsFollowTheirOwningNode()
     {
         using var scene = new DrawingScene2D();
-        DrawingContent2D content = Content();
+        DrawList2D content = Content();
         DrawingNodeId2D group = scene.AddGroup(scene.Root, 0);
         DrawingNodeId2D nested = scene.AddGroup(group, 0);
         DrawingNodeId2D leaf = scene.Insert(nested, 0, content);
@@ -43,7 +43,7 @@ public sealed class RetainedSceneTreeTests
     public void MoveUsesFinalIndexAndSeparatesTopologyFromProperties()
     {
         using var scene = new DrawingScene2D();
-        DrawingContent2D content = Content();
+        DrawList2D content = Content();
         DrawingNodeId2D first = scene.Insert(scene.Root, 0, content);
         DrawingNodeId2D second = scene.Insert(scene.Root, 1, content);
         DrawingNodeId2D third = scene.Insert(scene.Root, 2, content);
@@ -114,7 +114,7 @@ public sealed class RetainedSceneTreeTests
     public void NoOpsAndContentOnlyEditsPreserveIndependentState()
     {
         using var scene = new DrawingScene2D();
-        DrawingContent2D content = Content();
+        DrawList2D content = Content();
         DrawingNodeId2D first = scene.Insert(scene.Root, 0, content);
         DrawingNodeId2D second = scene.Insert(scene.Root, 1, content);
         IReadOnlyList<DrawingSceneEntry2D> plan;
@@ -162,7 +162,7 @@ public sealed class RetainedSceneTreeTests
 
         var canvas = new Canvas2D();
         canvas.Begin();
-        var empty = DrawingContent2D.FromDrawList(canvas.End());
+        DrawList2D empty = canvas.End();
         scene.Insert(parent, 0, empty);
         using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
         Assert.Same(empty, Assert.Single(((IDrawingSceneSource2D)snapshot).Entries).Content);
@@ -191,11 +191,11 @@ public sealed class RetainedSceneTreeTests
         Assert.Equal(before.Revision, read.Revision);
     }
 
-    private static DrawingContent2D Content()
+    private static DrawList2D Content()
     {
         var canvas = new Canvas2D();
         canvas.Begin();
         canvas.FillRect(new(0, 0, 1, 1), new Color2D(1, 0, 0, 1));
-        return DrawingContent2D.FromDrawList(canvas.End());
+        return canvas.End();
     }
 }

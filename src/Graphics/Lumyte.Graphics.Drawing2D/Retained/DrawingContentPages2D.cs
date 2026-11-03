@@ -1,29 +1,29 @@
 namespace Lumyte.Graphics.Drawing2D;
 
 /// <summary>Immutable commands in canonical pages of at most 64 commands, shared by placements.</summary>
-public sealed class DrawingContent2D
+internal sealed class DrawingContentPages2D
 {
     /// <summary>The maximum number of commands in a canonical CPU page.</summary>
-    public const int PageCapacity = 64;
+    internal const int PageCapacity = 64;
 
-    private DrawingContent2D(DrawList2D[] pages)
+    private DrawingContentPages2D(DrawList2D[] pages)
     {
         Pages = Array.AsReadOnly(pages);
         Count = pages.Sum(page => page.Commands.Count);
     }
 
     /// <summary>Gets the command count, including all pages.</summary>
-    public int Count { get; }
+    internal int Count { get; }
 
     /// <summary>Gets the page count. Empty content has zero pages.</summary>
-    public int PageCount => Pages.Count;
+    internal int PageCount => Pages.Count;
 
     internal IReadOnlyList<DrawList2D> Pages { get; }
 
     /// <summary>Creates immutable content without replaying commands or changing captured state.</summary>
     /// <param name="content">The immutable source recording.</param>
     /// <returns>The paged content.</returns>
-    public static DrawingContent2D FromDrawList(DrawList2D content)
+    internal static DrawingContentPages2D FromDrawList(DrawList2D content)
     {
         ArgumentNullException.ThrowIfNull(content);
         if (content.Commands.Count == 0)
@@ -49,7 +49,7 @@ public sealed class DrawingContent2D
     /// <param name="index">The existing page index.</param>
     /// <param name="content">A full 64-command page, or 1–64 commands for the final page.</param>
     /// <returns>The changed content, or this instance for an identical page reference.</returns>
-    public DrawingContent2D WithPage(int index, DrawList2D content)
+    internal DrawingContentPages2D WithPage(int index, DrawList2D content)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentOutOfRangeException.ThrowIfNegative(index);

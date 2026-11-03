@@ -48,23 +48,16 @@ public sealed class DrawingScene2D : IDisposable
     /// <param name="index">The insertion index.</param>
     /// <param name="content">The shared immutable content.</param>
     /// <returns>The new placement identity.</returns>
-    public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawingContent2D content)
+    public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawList2D content)
     {
         ArgumentNullException.ThrowIfNull(content);
         return Add(parent, index, content);
     }
 
-    /// <summary>Inserts a recording, adapting it to paged content once.</summary>
-    /// <param name="parent">The parent identity.</param>
-    /// <param name="index">The insertion index.</param>
-    /// <param name="content">The immutable recording.</param>
-    /// <returns>The new placement identity.</returns>
-    public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawList2D content) => Insert(parent, index, DrawingContent2D.FromDrawList(content));
-
     /// <summary>Replaces own content without modifying the ordered children.</summary>
     /// <param name="node">The placement identity.</param>
     /// <param name="content">The shared immutable replacement.</param>
-    public void ReplaceContent(DrawingNodeId2D node, DrawingContent2D content)
+    public void ReplaceContent(DrawingNodeId2D node, DrawList2D content)
     {
         ArgumentNullException.ThrowIfNull(content);
         lock (_gate)
@@ -89,11 +82,6 @@ public sealed class DrawingScene2D : IDisposable
             }
         }
     }
-
-    /// <summary>Replaces own content with an adapted recording.</summary>
-    /// <param name="node">The placement identity.</param>
-    /// <param name="content">The immutable replacement recording.</param>
-    public void ReplaceContent(DrawingNodeId2D node, DrawList2D content) => ReplaceContent(node, DrawingContent2D.FromDrawList(content));
 
     /// <summary>Sets the local-to-parent transform atomically after validating the affected world transforms.</summary>
     /// <param name="node">The placement identity.</param>
@@ -351,7 +339,7 @@ public sealed class DrawingScene2D : IDisposable
         }
     }
 
-    private DrawingNodeId2D Add(DrawingNodeId2D parent, int index, DrawingContent2D? content)
+    private DrawingNodeId2D Add(DrawingNodeId2D parent, int index, DrawList2D? content)
     {
         lock (_gate)
         {
@@ -475,13 +463,13 @@ public sealed class DrawingScene2D : IDisposable
         _planDirty = false;
     }
 
-    private sealed class Node(DrawingNodeId2D id, Node? parent, DrawingContent2D? content)
+    private sealed class Node(DrawingNodeId2D id, Node? parent, DrawList2D? content)
     {
         internal DrawingNodeId2D Id { get; } = id;
 
         internal Node? Parent { get; set; } = parent;
 
-        internal DrawingContent2D? Content { get; set; } = content;
+        internal DrawList2D? Content { get; set; } = content;
 
         internal List<Node> Children { get; } = [];
 

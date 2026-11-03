@@ -68,7 +68,7 @@ public sealed class UiDrawingScene2D : IDisposable
                 var canvas = new Canvas2D();
                 canvas.Begin();
                 _surface.Record(canvas);
-                var content = DrawingContent2D.FromDrawList(canvas.End());
+                DrawList2D content = canvas.End();
                 if (_opaque is { } opaque)
                 {
                     _scene.ReplaceContent(opaque, content);
@@ -193,7 +193,7 @@ public sealed class UiDrawingScene2D : IDisposable
             || (element is RectangleElement && placement.Fill != ((Compose.Definitions.Rectangle)element.Widget).Fill))
         {
             DrawList2D recording = _surface.RecordDrawingFragment(element, split);
-            var content = DrawingContent2D.FromDrawList(recording);
+            DrawList2D content = recording;
             if (placement.Content is { } node)
             {
                 _scene.ReplaceContent(node, content);

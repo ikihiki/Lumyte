@@ -39,7 +39,7 @@ internal sealed class ProductionRetainedInputs : IDisposable
                 canvas.Replay(page);
             }
 
-            var content = DrawingContent2D.FromDrawList(canvas.End());
+            DrawList2D content = canvas.End();
             for (int i = 0; i < 2; i++)
             {
                 DrawingNodeId2D id = Scene.Insert(_group, i, content);
@@ -168,7 +168,7 @@ internal sealed class ProductionRetainedInputs : IDisposable
             _placements.Clear();
             foreach (DrawList2D layer in layers)
             {
-                var content = DrawingContent2D.FromDrawList(layer);
+                DrawList2D content = layer;
                 _placements.Add(new(Scene.Insert(_group, _placements.Count, content), content, [layer]));
             }
 
@@ -185,18 +185,18 @@ internal sealed class ProductionRetainedInputs : IDisposable
                 }
 
                 placement.Pages[0] = layers[i];
-                placement.Content = DrawingContent2D.FromDrawList(layers[i]);
+                placement.Content = layers[i];
                 Scene.ReplaceContent(placement.Id, placement.Content);
                 _reference = null;
             }
         }
     }
 
-    private sealed class Placement(DrawingNodeId2D id, DrawingContent2D content, DrawList2D[] pages)
+    private sealed class Placement(DrawingNodeId2D id, DrawList2D content, DrawList2D[] pages)
     {
         internal DrawingNodeId2D Id { get; } = id;
 
-        internal DrawingContent2D Content { get; set; } = content;
+        internal DrawList2D Content { get; set; } = content;
 
         internal DrawList2D[] Pages { get; } = pages;
 

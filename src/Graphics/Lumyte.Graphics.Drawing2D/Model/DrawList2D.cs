@@ -3,23 +3,28 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <summary>A reusable immutable CPU recording with typed command storage and a painter-order tape.</summary>
 public sealed class DrawList2D
 {
-    private readonly int[] _typeOffsets;
-    private readonly FillRectCommand2D[] _fillRect;
-    private readonly FillRoundedRectCommand2D[] _fillRoundedRect;
-    private readonly FillCircleCommand2D[] _fillCircle;
-    private readonly DrawLineCommand2D[] _drawLine;
-    private readonly FillPathCommand2D[] _fillPath;
-    private readonly StrokePathCommand2D[] _strokePath;
-    private readonly DrawImageCommand2D[] _drawImage;
-    private readonly DrawCoverageMaskCommand2D[] _drawCoverageMask;
-    private readonly DrawDistanceFieldCommand2D[] _drawDistanceField;
-    private readonly DrawMeshCommand2D[] _drawMesh;
-    private readonly DrawPaintGraphCommand2D[] _drawPaintGraph;
+    private readonly int[] _typeOffsets = [];
+    private readonly FillRectCommand2D[] _fillRect = [];
+    private readonly FillRoundedRectCommand2D[] _fillRoundedRect = [];
+    private readonly FillCircleCommand2D[] _fillCircle = [];
+    private readonly DrawLineCommand2D[] _drawLine = [];
+    private readonly FillPathCommand2D[] _fillPath = [];
+    private readonly StrokePathCommand2D[] _strokePath = [];
+    private readonly DrawImageCommand2D[] _drawImage = [];
+    private readonly DrawCoverageMaskCommand2D[] _drawCoverageMask = [];
+    private readonly DrawDistanceFieldCommand2D[] _drawDistanceField = [];
+    private readonly DrawMeshCommand2D[] _drawMesh = [];
+    private readonly DrawPaintGraphCommand2D[] _drawPaintGraph = [];
+
+    private readonly IReadOnlyList<DrawingCommand2D>? _commands;
+    private DrawingContentPages2D? _retainedPages;
+    private DrawList2D? _materialized;
 
     internal DrawList2D(IEnumerable<DrawingCommand2D> commands)
     {
         DrawingCommand2D[] ordered = commands.ToArray();
-        Commands = Array.AsReadOnly(ordered);
+        _commands = Array.AsReadOnly(ordered);
+        Count = ordered.Length;
         _typeOffsets = new int[ordered.Length];
         var fillRect = new List<FillRectCommand2D>();
         var fillRoundedRect = new List<FillRoundedRectCommand2D>();
@@ -96,11 +101,49 @@ public sealed class DrawList2D
         _drawPaintGraph = drawPaintGraph.ToArray();
     }
 
-    internal IReadOnlyList<DrawingCommand2D> Commands { get; }
+    private DrawList2D(DrawingContentPages2D pages)
+    {
+        _retainedPages = pages;
+        Count = pages.Count;
+    }
+
+    /// <summary>Gets the number of immutable drawing commands in painter order.</summary>
+    public int Count { get; }
+
+    internal bool HasRetainedPages => Volatile.Read(ref _retainedPages) is not null;
+
+    internal IReadOnlyList<DrawingCommand2D> Commands => _commands ?? Materialize().Commands;
+
+    internal DrawingContentPages2D RetainedPages
+    {
+        get
+        {
+            DrawingContentPages2D? pages = Volatile.Read(ref _retainedPages);
+            if (pages is not null)
+            {
+                return pages;
+            }
+
+            pages = DrawingContentPages2D.FromDrawList(this);
+            return Interlocked.CompareExchange(ref _retainedPages, pages, null) ?? pages;
+        }
+    }
+
+    internal DrawList2D WithPage(int index, DrawList2D replacement)
+    {
+        DrawingContentPages2D original = RetainedPages;
+        DrawingContentPages2D changed = original.WithPage(index, replacement);
+        return ReferenceEquals(original, changed) ? this : new(changed);
+    }
 
     internal ReadOnlyMemory<TCommand> GetCommands<TCommand>(int orderStart, int count)
         where TCommand : DrawingCommand2D
     {
+        if (_commands is null)
+        {
+            return Materialize().GetCommands<TCommand>(orderStart, count);
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegative(orderStart);
         ArgumentOutOfRangeException.ThrowIfNegative(count);
         if (orderStart > Commands.Count - count)
@@ -174,5 +217,17 @@ public sealed class DrawList2D
         }
 
         throw new ArgumentException("The requested type is not a drawing command renderer input.");
+    }
+
+    private DrawList2D Materialize()
+    {
+        DrawList2D? materialized = Volatile.Read(ref _materialized);
+        if (materialized is not null)
+        {
+            return materialized;
+        }
+
+        materialized = new(_retainedPages!.Pages.SelectMany(page => page.Commands));
+        return Interlocked.CompareExchange(ref _materialized, materialized, null) ?? materialized;
     }
 }

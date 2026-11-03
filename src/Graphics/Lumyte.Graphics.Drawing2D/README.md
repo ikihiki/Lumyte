@@ -116,11 +116,17 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 
 ## 内容と配置を保持する
 
-`DrawingContent2D` は不変の命令をページ化し、`DrawingScene2D` は配置の木と描画順を保持します。内容を複数の配置で共有でき、位置の変更では Canvas 全体の再記録は不要です。従来の `PrepareAsync(DrawList2D, ...)` も引き続き使用できます。
+`Canvas2D.End()` が返す不変の `DrawList2D` を、そのまま `DrawingScene2D` に配置します。別の内容型への変換は不要です。同じ記録を複数の配置・scene で共有でき、位置の変更では Canvas 全体の再記録は不要です。`DrawList2D.Count` は記録済み命令数です。従来の `PrepareAsync(DrawList2D, ...)` も引き続き使用できます。
+
+正規化済みの CPU ページは `DrawList2D` 内で遅延生成・cache し、配置や scene をまたいで共有します。ページ列・容量・ページ数は公開しません。ページ／範囲の公開編集 API はなく、内部の `WithPage` はテスト・計測用の実装です。内容を変更するときは Canvas で新しい `DrawList2D` を記録し、`scene.ReplaceContent(item, replacement)` で置換してください。
 
 ```csharp
+var canvas = new Canvas2D();
+canvas.Begin();
+canvas.FillRect(new Rect2D(0, 0, 100, 50), new Color2D(1, 0, 0, 1));
+DrawList2D content = canvas.End();
+
 using var scene = new DrawingScene2D();
-DrawingContent2D content = DrawingContent2D.FromDrawList(recorded);
 DrawingNodeId2D group = scene.AddGroup(scene.Root, 0);
 DrawingNodeId2D item = scene.Insert(group, 0, content);
 scene.SetTransform(group, Matrix3x2.CreateTranslation(20, 10));
@@ -142,7 +148,7 @@ submitted.Dispose();
 frame.Dispose();
 ```
 
-`recorded`、device、renderer、target、commands の初期化と target の ColorAttachment 状態遷移は省略しています。内容が変われば `ReplaceContent`、親子関係・順序が変われば `Move` を使用します。無効な ID、循環、無効な属性は拒否し、失敗した操作で直前の状態を変更しません。
+device、renderer、target、commands の初期化と target の ColorAttachment 状態遷移は省略しています。内容が変われば `ReplaceContent`、親子関係・順序が変われば `Move` を使用します。無効な ID、循環、無効な属性は拒否し、失敗した操作で直前の状態を変更しません。
 
 - 借用中は scene の全編集を拒否します。非同期 Prepare が返るまで借用を解放しないでください。借用解放後の古い CPU メモリーは使用できません。
 - 過去の配置が必要な場合だけ `CaptureSnapshot()` を呼びます。通常の編集に、毎回の過去 snapshot 保持を要求しません。

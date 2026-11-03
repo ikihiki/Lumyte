@@ -12,7 +12,7 @@
 
 ## 決定
 
-配置は可変の木、描画内容は不変のページ配列、GPU への実行順は順序付きの列として保持する。内容、配置の属性、親子関係・順序を分けて更新し、未変更の内容と準備済み GPU 資源を再利用する。利用者は毎フレーム全命令を組み立て直す代わりに変更した対象だけを通知でき、既存の Canvas と DrawList の経路も引き続き選べる。
+配置は可変の木、描画内容は既存の不変な `DrawList2D`、GPU への実行順は順序付きの列として保持する。内容、配置の属性、親子関係・順序を分けて更新し、未変更の内容と準備済み GPU 資源を再利用する。利用者は毎フレーム全命令を組み立て直す代わりに変更した対象だけを通知でき、既存の Canvas と DrawList の経路も引き続き選べる。
 
 ### 利用者の変更前・変更後
 
@@ -28,12 +28,11 @@ canvas.Replay(content);
 DrawList2D drawing = canvas.End();
 ```
 
-変更後は、一度だけ不変の内容を登録し、配置の ID を保持する。
+変更後は、通常の Canvas で記録した `DrawList2D` をそのまま登録し、配置の ID を保持する。別の公開内容型への変換は不要である。
 
 ```csharp
 using var scene = new DrawingScene2D();
-DrawingContent2D retained = DrawingContent2D.FromDrawList(content);
-DrawingNodeId2D node = scene.Insert(scene.Root, 0, retained);
+DrawingNodeId2D node = scene.Insert(scene.Root, 0, content);
 scene.SetTransform(node, transform);
 
 // 位置だけが変わったときに呼ぶ。内容の再記録は不要。
@@ -55,7 +54,9 @@ using (DrawingSceneReadLease2D read = scene.Borrow())
 
 木の節は、独立して更新できる描画内容または子のまとまりを配置する単位である。各節の自身の内容を先に描き、次に子を格納順に描く。自身の描画と子を交互に配置したい場合は、それぞれの内容を順序付きの子として置く。透明描画を型や paint の種類で全体並べ替えしない。
 
-`DrawingContent2D` は不変の命令をページへ分けて格納し、複数の節で共有できる。ページの置換では未変更のページを共有する。ページは CPU の更新・共有単位であり、木の節や GPU の draw と一対一に対応しない。既存の互換命令の連続範囲を batch として準備し、配列の都合だけで矩形一件またはページ一枚ごとの draw に分解しない。
+`DrawList2D` が不変の命令を所有し、同じ記録を複数の配置・scene で共有できる。保持処理に必要な正規化済みページは `DrawList2D` 内で遅延生成して cache し、各配置や scene で変換し直さず共有する。ページは CPU の格納・共有に用いる内部実装であり、新しい公開概念や編集単位ではない。公開する命令数は `Count` だけとし、ページ列・容量・ページ数やページ／範囲の編集 API は公開しない。内部の `WithPage` はテスト・計測用の実装として残せるが、利用者は新たに記録した `DrawList2D` で内容を置換する。
+
+ページは木の節や GPU の draw と一対一に対応しない。既存の互換命令の連続範囲を batch として準備し、配列の都合だけで矩形一件またはページ一枚ごとの draw に分解しない。
 
 配置の ID はシーンと世代を含む。別シーン、削除済み、再利用前の ID は拒否し、配列の添字を永続 ID にしない。親への移動では循環を拒否する。更新操作は検証後に反映し、失敗した操作で直前の状態を変更しない。
 
@@ -77,7 +78,7 @@ CPU 配列は GC 所有とし、読取り中の配列をプールへ返さない
 
 | 対象 | 保持するものと再利用条件 |
 | --- | --- |
-| `DrawingContent2D` | 不変な CPU 命令と外部資源への参照。scene の編集から独立して共有する |
+| `DrawList2D` | 不変な CPU 命令、内部の共有ページと外部資源への参照。scene の編集から独立して共有する |
 | 準備済み描画資産 | 解析結果と GPU buffer・結び付け。device、描画先の形式・寸法・倍率、shader、属性・clip、外部資源の有効性が一致する場合に再利用する |
 | `PreparedDrawingFrame2D` | 今回の描画先と資産の使用権。命令を記録するのは一回だけで、GPU 完了後に返却する |
 
@@ -124,22 +125,21 @@ visual layer と画面遷移は既存の合成経路を保つ。時刻、animati
 ```diff
  namespace Lumyte.Graphics.Drawing2D
  {
-+    public sealed class DrawingContent2D
-+    {
-+        public static DrawingContent2D FromDrawList(DrawList2D content);
-+        public int Count { get; }
-+        public int PageCount { get; }
-+        public const int PageCapacity = 64;
-+        // 一つの既存ページを置換し、他のページを共有する。
-+        public DrawingContent2D WithPage(int index, DrawList2D content);
-+    }
+     public sealed class Canvas2D
+     {
+         public DrawList2D End(); // 戻り値は引き続き不変の記録。
+     }
+     public sealed class DrawList2D
+     {
++        public int Count { get; } // 記録済み命令数。ページの構造は公開しない。
+     }
 +    public readonly struct DrawingNodeId2D;
 +    public sealed class DrawingScene2D : IDisposable
 +    {
 +        public DrawingNodeId2D Root { get; }
 +        public DrawingNodeId2D AddGroup(DrawingNodeId2D parent, int index);
-+        public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawingContent2D content);
-+        public void ReplaceContent(DrawingNodeId2D node, DrawingContent2D content);
++        public DrawingNodeId2D Insert(DrawingNodeId2D parent, int index, DrawList2D content);
++        public void ReplaceContent(DrawingNodeId2D node, DrawList2D content);
 +        public void SetTransform(DrawingNodeId2D node, System.Numerics.Matrix3x2 transform);
 +        public void SetClip(DrawingNodeId2D node, Path2D? clip, FillRule2D rule = FillRule2D.NonZero);
 +        public void Move(DrawingNodeId2D node, DrawingNodeId2D parent, int index);
@@ -206,6 +206,7 @@ UI の明示的な接続には次の API を追加する。scene の編集と破
 
 ## 検討した代替案
 
+- 記録と保持内容を別の公開型にする: 保持用の構造を型で区別できるが、同じ不変内容に変換と二つの概念を要求する。`DrawList2D` に内部ページを保持し、通常記録と scene で共有する。
 - 全てを平坦な可変命令リストにする: 一括構築は単純だが、親の属性や部分木の移動を表す識別と更新境界が不足する。実行列には使い、論理構造には使わない。
 - 全てを命令一件ごとの木にする: 更新対象を細かく表せるが、大量の同種データの格納・走査と batch 化に余分な間接参照を増やす。木の節は独立した配置単位にする。
 - 全ての編集を不変 snapshot として公開する: 過去状態と編集を並行利用しやすいが、過去状態が不要な利用者にも所有権管理・複製の費用を課す。通常は最新状態を借用し、過去状態は明示取得する。
@@ -221,7 +222,7 @@ UI の明示的な接続には次の API を追加する。scene の編集と破
 
 ### 受け入れ条件と対象外
 
-既存経路と半透明・path・clip・画像・文字・並べ替え・同じ内容の複数配置を比較する。挿入・削除・再配置・親 clip の座標、失効 ID、不正更新の原子性、複数借用、明示 snapshot の旧状態、未変更時の内容再利用を検証する。
+既存経路と半透明・path・clip・画像・文字・並べ替え・同じ内容の複数配置を比較する。挿入・削除・再配置・親 clip の座標、失効 ID、不正更新の原子性、複数借用、明示 snapshot の旧状態、未変更時の内容再利用を検証する。同じ `DrawList2D` の複数配置・複数 scene で内部ページを共有し、元の記録と snapshot の内容を変更しないことも確認する。
 
 複数 frame の同時処理では、使用中の資産を上書きしないこと、途中の更新を飛ばした frame でも内容が正しいことを確認する。未送信・完了前・失敗・取消・資源破棄・保持予算超過・再利用しない独自 renderer も検証する。変更なし・部分変更・全変更を分け、時間、割当量、転送量と常駐量を確認する。
 

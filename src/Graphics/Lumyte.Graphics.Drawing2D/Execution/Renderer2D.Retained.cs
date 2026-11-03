@@ -82,10 +82,10 @@ public sealed partial class Renderer2D
             // are never captured by the returned frame or by cached GPU assets.
             foreach (DrawingSceneEntry2D entry in source.Entries)
             {
-                for (int first = 0; first < entry.Content.Pages.Count; first += 16)
+                for (int first = 0; first < entry.Content.RetainedPages.Pages.Count; first += 16)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    DrawList2D[] pages = entry.Content.Pages.Skip(first).Take(16).ToArray();
+                    DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(first).Take(16).ToArray();
                     var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale);
                     RetainedDrawingCache2D.Asset? cached = _retained.Take(key);
                     if (cached is not null)

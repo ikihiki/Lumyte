@@ -130,3 +130,5 @@ cache owner破棄を含めた補正FPS、各process中央値、全1,024件結果
 [raw manifest](data/retained-production-20261103/manifest.json) はaccepted・checks・rejected-disposal-hardeningを区別する。最初の7c0fc08の計測はcleanup例外経路の追加修正前なので採用しない。c217c08の全matrixを順逆2 processで再実行し、旧値を混ぜず集計した。
 
 公開ログはhome/checkout/host/userを伏せ、公開コピーのbytes/SHA256と元SHA256を区別する。全C# source hashが凍結時から変わっていないことを確認する。公開gzipからも同じsummaryを再生成できる。
+
+> NOTE: このレポートと保存済み JSON・gzip・manifest は、API 統合前の凍結コミット `c217c08` の計測記録です。現在の公開 API は `DrawList2D` を直接 scene に渡し、ページ構造を内部に保持します。本文の旧内容型・ページ更新の記述は凍結時点の実装を指し、現在の公開編集 API や統合後の性能測定を示すものではありません。

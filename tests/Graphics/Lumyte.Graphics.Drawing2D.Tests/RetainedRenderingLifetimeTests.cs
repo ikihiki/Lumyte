@@ -84,7 +84,7 @@ public sealed class RetainedRenderingLifetimeTests
             canvas.FillRect(new(i, 0, 1, 1), new Color2D(1, 0, 0, 0.5f));
         }
 
-        var content = DrawingContent2D.FromDrawList(canvas.End());
+        DrawList2D content = canvas.End();
         using var snapshot = new DrawingSnapshot2D(1, [new(default, content, Matrix3x2.Identity, [], 1, 1)]);
         for (int i = 0; i < 2; i++)
         {
@@ -143,7 +143,7 @@ public sealed class RetainedRenderingLifetimeTests
         path.LineTo(new(0, 4));
         path.Close();
         canvas.FillPath(path.Build(), new Color2D(1, 1, 1, 1));
-        using var snapshot = new DrawingSnapshot2D(1, [new(default, DrawingContent2D.FromDrawList(canvas.End()), Matrix3x2.Identity, [], 1, 1)]);
+        using var snapshot = new DrawingSnapshot2D(1, [new(default, canvas.End(), Matrix3x2.Identity, [], 1, 1)]);
         using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(snapshot, new() { View = view });
         renderer.Dispose();
         Assert.Equal(0, owner.Disposals);

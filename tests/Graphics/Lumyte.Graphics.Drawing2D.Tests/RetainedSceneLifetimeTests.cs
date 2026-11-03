@@ -11,7 +11,7 @@ public sealed class RetainedSceneLifetimeTests
     public void EveryBorrowBlocksEveryMutation()
     {
         using var scene = new DrawingScene2D();
-        DrawingContent2D content = Content();
+        DrawList2D content = Content();
         DrawingNodeId2D node = scene.Insert(scene.Root, 0, content);
         DrawingSceneReadLease2D first = scene.Borrow();
         DrawingSceneReadLease2D second = scene.Borrow();
@@ -38,7 +38,7 @@ public sealed class RetainedSceneLifetimeTests
     public void ExplicitSnapshotSurvivesEditsRemovalAndSceneDisposal()
     {
         var scene = new DrawingScene2D();
-        DrawingContent2D content = Content();
+        DrawList2D content = Content();
         DrawingNodeId2D node = scene.Insert(scene.Root, 0, content);
         using DrawingSnapshot2D old = scene.CaptureSnapshot();
         ulong revision = old.Revision;
@@ -76,11 +76,11 @@ public sealed class RetainedSceneLifetimeTests
         Assert.Throws<ObjectDisposedException>(() => ((IDrawingSceneSource2D)read).Entries);
     }
 
-    private static DrawingContent2D Content()
+    private static DrawList2D Content()
     {
         var canvas = new Canvas2D();
         canvas.Begin();
         canvas.FillRect(new(0, 0, 1, 1), new Color2D(1, 0, 0, 1));
-        return DrawingContent2D.FromDrawList(canvas.End());
+        return canvas.End();
     }
 }

@@ -103,12 +103,12 @@ internal static class ProductionRetainedChecks
         private bool _extra;
         private bool _clip = true;
         private DrawList2D _currentBoundary;
-        private DrawingContent2D _content;
+        private DrawList2D _content;
 
         internal MixedScene()
         {
             _currentBoundary = _boundary;
-            _content = DrawingContent2D.FromDrawList(_boundary);
+            _content = _boundary;
             if (_content.Count != 129)
             {
                 throw new InvalidOperationException("Canonical page boundary fixture must have 129 commands.");
@@ -118,7 +118,7 @@ internal static class ProductionRetainedChecks
             _group = Scene.AddGroup(Scene.Root, 1);
             Scene.SetTransform(_group, _groupTransform);
             Scene.SetClip(_group, _parentClip);
-            var shared = DrawingContent2D.FromDrawList(_shared);
+            DrawList2D shared = _shared;
             Child = Scene.Insert(_group, 0, shared);
             Scene.SetTransform(Child, ChildTransform);
             Scene.SetClip(Child, _childClip);
@@ -157,7 +157,7 @@ internal static class ProductionRetainedChecks
                 case 4:
                     Scene.Move(Child, Scene.Root, 3); _reparented = true; break;
                 case 5:
-                    _inserted = Scene.Insert(_group, 0, DrawingContent2D.FromDrawList(_shared)); _extra = true;
+                    _inserted = Scene.Insert(_group, 0, _shared); _extra = true;
                     Scene.SetClip(_group, null); _clip = false; break;
                 case 6:
                     Scene.Remove(_inserted); _extra = false;
