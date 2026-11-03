@@ -69,6 +69,92 @@ public sealed class RetainedSceneTreeTests
         Assert.Throws<ArgumentException>(() => scene.Remove(scene.Root));
     }
 
+    /// <summary>Checks every unchanged sibling move preserves the plan and both scene revisions.</summary>
+    [Fact]
+    public void SameParentNoOpsPreservePlanAndRevisionsForDenseFlatScene()
+    {
+        using var scene = new DrawingScene2D();
+        DrawList2D content = Content();
+        var nodes = new DrawingNodeId2D[10_000];
+        for (int i = 0; i < nodes.Length; i++)
+        {
+            nodes[i] = scene.Insert(scene.Root, i, content);
+        }
+
+        IReadOnlyList<DrawingSceneEntry2D> plan;
+        ulong revision;
+        ulong topology = scene.TopologyRevision;
+        using (DrawingSceneReadLease2D read = scene.Borrow())
+        {
+            plan = ((IDrawingSceneSource2D)read).Entries;
+            revision = read.Revision;
+        }
+
+        for (int i = 0; i < nodes.Length; i++)
+        {
+            scene.Move(nodes[i], scene.Root, i);
+        }
+
+        using DrawingSceneReadLease2D unchanged = scene.Borrow();
+        Assert.Equal(revision, unchanged.Revision);
+        Assert.Equal(topology, scene.TopologyRevision);
+        Assert.Same(plan, ((IDrawingSceneSource2D)unchanged).Entries);
+        Assert.Equal(nodes, plan.Select(entry => entry.Node));
+        Assert.Throws<InvalidOperationException>(() => scene.Move(nodes[^1], scene.Root, nodes.Length - 1));
+    }
+
+    /// <summary>Checks invalid final indices still throw without mutating an otherwise unchanged placement.</summary>
+    /// <param name="index">The invalid final insertion index.</param>
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    [InlineData(int.MaxValue)]
+    public void SameParentMoveValidatesIndexBeforeNoOp(int index)
+    {
+        using var scene = new DrawingScene2D();
+        DrawingNodeId2D node = scene.Insert(scene.Root, 0, Content());
+        using DrawingSnapshot2D before = scene.CaptureSnapshot();
+        ulong topology = scene.TopologyRevision;
+        ArgumentOutOfRangeException error = Assert.Throws<ArgumentOutOfRangeException>(() => scene.Move(node, scene.Root, index));
+        Assert.Equal("index", error.ParamName);
+        using DrawingSceneReadLease2D read = scene.Borrow();
+        Assert.Equal(before.Revision, read.Revision);
+        Assert.Equal(topology, scene.TopologyRevision);
+        Assert.Equal(node, Assert.Single(((IDrawingSceneSource2D)read).Entries).Node);
+    }
+
+    /// <summary>Checks inserts, removals, and moves use current sibling positions rather than stale indices.</summary>
+    [Fact]
+    public void SiblingMutationsKeepFinalIndexOrdering()
+    {
+        using var scene = new DrawingScene2D();
+        DrawList2D content = Content();
+        DrawingNodeId2D first = scene.Insert(scene.Root, 0, content);
+        DrawingNodeId2D second = scene.Insert(scene.Root, 1, content);
+        DrawingNodeId2D third = scene.Insert(scene.Root, 2, content);
+        DrawingNodeId2D inserted = scene.Insert(scene.Root, 1, content);
+        AssertOrder(first, inserted, second, third);
+        scene.Move(second, scene.Root, 2);
+        AssertOrder(first, inserted, second, third);
+        scene.Remove(first);
+        AssertOrder(inserted, second, third);
+        scene.Move(second, scene.Root, 0);
+        AssertOrder(second, inserted, third);
+        scene.Move(second, scene.Root, 2);
+        AssertOrder(inserted, third, second);
+        scene.Move(third, scene.Root, 1);
+        AssertOrder(inserted, third, second);
+        scene.Remove(inserted);
+        scene.Move(second, scene.Root, 0);
+        AssertOrder(second, third);
+
+        void AssertOrder(params DrawingNodeId2D[] expected)
+        {
+            using DrawingSceneReadLease2D read = scene.Borrow();
+            Assert.Equal(expected, ((IDrawingSceneSource2D)read).Entries.Select(entry => entry.Node));
+        }
+    }
+
     /// <summary>Checks slot reuse, subtree removal, default IDs, and foreign identities.</summary>
     [Fact]
     public void StaleAndCrossSceneIdsNeverResolve()

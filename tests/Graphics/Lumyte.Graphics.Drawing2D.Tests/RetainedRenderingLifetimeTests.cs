@@ -157,6 +157,222 @@ public sealed class RetainedRenderingLifetimeTests
         Assert.Equal(1, owner.Disposals);
     }
 
+    /// <summary>Checks failure after earlier chunks returns the frame slot even when their cleanup fails.</summary>
+    /// <param name="cancel">Whether the later preparation is canceled instead of faulted.</param>
+    /// <returns>The asynchronous test completion.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedLaterChunkPreservesFailureAndRetriesAllEarlierAssetsAsync(bool cancel)
+    {
+        using var cancellation = new CancellationTokenSource();
+        Exception preparationFailure = cancel
+            ? new OperationCanceledException(cancellation.Token)
+            : new InvalidOperationException("Injected later chunk preparation failure.");
+        var cleanupFailure = new InvalidOperationException("Injected earlier asset cleanup failure.");
+        var first = new CleanupFaultBatch(cleanupFailure, 1);
+        var second = new CleanupFaultBatch(null, 0);
+        int preparations = 0;
+        var strategies = new DispatchRenderers();
+        var faulting = new DelegateFillPath((_, _, _) =>
+        {
+            preparations++;
+            if (preparations == 3)
+            {
+                if (cancel)
+                {
+                    cancellation.Cancel();
+                }
+
+                throw preparationFailure;
+            }
+
+            return preparations == 1 ? first : second;
+        });
+        using var renderer = new Renderer2D(new DispatchDevice(), strategies.CreateTable(faulting), retentionOptions: new() { MaxFramesInFlight = 1 });
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        using var scene = new DrawingScene2D();
+        for (int i = 0; i < 3; i++)
+        {
+            scene.Insert(scene.Root, i, PathContent(1));
+        }
+
+        using (DrawingSceneReadLease2D source = scene.Borrow())
+        {
+            AggregateException error = await Assert.ThrowsAsync<AggregateException>(async () => await renderer.PrepareAsync(source, new() { View = view }, cancellation.Token));
+            Assert.Contains(preparationFailure, error.Flatten().InnerExceptions);
+            Assert.Contains(cleanupFailure, error.Flatten().InnerExceptions);
+        }
+
+        Assert.Equal(3, preparations);
+        Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+        Assert.Equal(1, first.DisposeAttempts);
+        Assert.Equal(1, second.DisposeAttempts);
+
+        using var emptyScene = new DrawingScene2D();
+        using DrawingSceneReadLease2D retrySource = emptyScene.Borrow();
+        using PreparedDrawingFrame2D retry = await renderer.PrepareAsync(retrySource, new() { View = view });
+        Assert.Equal(2, first.DisposeAttempts);
+        Assert.Equal(1, first.SuccessfulDisposals);
+        Assert.Equal(1, second.DisposeAttempts);
+        Assert.Equal(1, renderer.RetentionStatistics.ActiveFrames);
+        retry.Dispose();
+        Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+    }
+
+    /// <summary>Checks partial runs attempt every batch and retain only failed cleanup for renderer disposal.</summary>
+    /// <returns>The asynchronous test completion.</returns>
+    [Fact]
+    public async Task FailedCommandWithinChunkAttemptsEveryBatchAndRetriesOnlyFailuresAsync()
+    {
+        var preparationFailure = new InvalidOperationException("Injected fourth command preparation failure.");
+        var cleanupFailure = new InvalidOperationException("Injected middle batch cleanup failure.");
+        CleanupFaultBatch[] batches =
+        [
+            new CleanupFaultBatch(null, 0),
+            new CleanupFaultBatch(cleanupFailure, 1),
+            new CleanupFaultBatch(null, 0),
+        ];
+        int preparations = 0;
+        var strategies = new DispatchRenderers();
+        var faulting = new DelegateFillPath((_, _, _) =>
+        {
+            if (preparations == batches.Length)
+            {
+                throw preparationFailure;
+            }
+
+            return batches[preparations++];
+        });
+        using var renderer = new Renderer2D(new DispatchDevice(), strategies.CreateTable(faulting), retentionOptions: new() { MaxFramesInFlight = 1 });
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        using var scene = new DrawingScene2D();
+        scene.Insert(scene.Root, 0, PathContent(4));
+        using DrawingSceneReadLease2D source = scene.Borrow();
+        AggregateException error = await Assert.ThrowsAsync<AggregateException>(async () => await renderer.PrepareAsync(source, new() { View = view }));
+        Assert.Contains(preparationFailure, error.Flatten().InnerExceptions);
+        Assert.Contains(cleanupFailure, error.Flatten().InnerExceptions);
+        Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+        Assert.All(batches, batch => Assert.Equal(1, batch.DisposeAttempts));
+
+        renderer.Dispose();
+        Assert.Equal(1, batches[0].DisposeAttempts);
+        Assert.Equal(2, batches[1].DisposeAttempts);
+        Assert.Equal(1, batches[2].DisposeAttempts);
+        Assert.All(batches, batch => Assert.Equal(1, batch.SuccessfulDisposals));
+        renderer.Dispose();
+        Assert.Equal(2, batches[1].DisposeAttempts);
+    }
+
+    /// <summary>Checks persistent retiring cleanup blocks allocation without leaking or reporting a busy frame.</summary>
+    /// <returns>The asynchronous test completion.</returns>
+    [Fact]
+    public async Task PersistentFailedPreparationCleanupDoesNotOccupyAFrameSlotAsync()
+    {
+        var preparationFailure = new InvalidOperationException("Injected later preparation failure.");
+        var cleanupFailure = new InvalidOperationException("Injected persistent cleanup failure.");
+        var batch = new CleanupFaultBatch(cleanupFailure, int.MaxValue);
+        int preparations = 0;
+        var strategies = new DispatchRenderers();
+        var faulting = new DelegateFillPath((_, _, _) => ++preparations == 1 ? batch : throw preparationFailure);
+        using var renderer = new Renderer2D(new DispatchDevice(), strategies.CreateTable(faulting), retentionOptions: new() { MaxFramesInFlight = 1 });
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        using var scene = new DrawingScene2D();
+        scene.Insert(scene.Root, 0, PathContent(1));
+        scene.Insert(scene.Root, 1, PathContent(1));
+        using (DrawingSceneReadLease2D source = scene.Borrow())
+        {
+            AggregateException error = await Assert.ThrowsAsync<AggregateException>(async () => await renderer.PrepareAsync(source, new() { View = view }));
+            Assert.Contains(preparationFailure, error.Flatten().InnerExceptions);
+            Assert.Contains(cleanupFailure, error.Flatten().InnerExceptions);
+        }
+
+        Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+        using var emptyScene = new DrawingScene2D();
+        using DrawingSceneReadLease2D retrySource = emptyScene.Borrow();
+        Exception? retryError = await Record.ExceptionAsync(async () => await renderer.PrepareAsync(retrySource, new() { View = view }));
+        Assert.NotNull(retryError);
+        if (retryError is AggregateException aggregate)
+        {
+            Assert.Contains(cleanupFailure, aggregate.Flatten().InnerExceptions);
+        }
+        else
+        {
+            Assert.Same(cleanupFailure, retryError);
+        }
+
+        Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+        Assert.Equal(2, batch.DisposeAttempts);
+        Assert.Equal(2, preparations);
+
+        batch.FailuresRemaining = 0;
+        using PreparedDrawingFrame2D retry = await renderer.PrepareAsync(retrySource, new() { View = view });
+        Assert.Equal(3, batch.DisposeAttempts);
+        Assert.Equal(1, batch.SuccessfulDisposals);
+        retry.Dispose();
+        Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+    }
+
+    private static DrawList2D PathContent(int batches)
+    {
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        var path = new PathBuilder2D();
+        path.MoveTo(Vector2.Zero);
+        path.LineTo(new(4, 0));
+        path.LineTo(new(0, 4));
+        path.Close();
+        Path2D shape = path.Build();
+        for (int i = 0; i < batches; i++)
+        {
+            // Each distinct clip stack forces a separate prepared batch in the same small chunk.
+            canvas.Save();
+            canvas.ClipPath(shape);
+            canvas.FillPath(shape, new Color2D(1, 1, 1, 1));
+            canvas.Restore();
+        }
+
+        return canvas.End();
+    }
+
+    private sealed class DelegateFillPath(Func<RenderPreparationContext2D, ReadOnlyMemory<FillPathCommand2D>, CancellationToken, IPreparedCommandBatch2D> prepare) : IFillPathRenderer2D
+    {
+        public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillPathCommand2D> commands, CancellationToken cancellationToken)
+            => ValueTask.FromResult(prepare(context, commands, cancellationToken));
+    }
+
+    private sealed class CleanupFaultBatch(Exception? failure, int failuresRemaining) : IPreparedCommandBatch2D
+    {
+        internal int DisposeAttempts { get; private set; }
+
+        internal int SuccessfulDisposals { get; private set; }
+
+        internal int FailuresRemaining { get; set; } = failuresRemaining;
+
+        public void DeclareResources(IDrawingResourceDeclarations2D resources)
+        {
+        }
+
+        public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
+        {
+        }
+
+        public void Dispose()
+        {
+            DisposeAttempts++;
+            if (FailuresRemaining > 0)
+            {
+                FailuresRemaining--;
+                throw failure!;
+            }
+
+            SuccessfulDisposals++;
+        }
+    }
+
     private sealed class RetainingFillPath : IFillPathRenderer2D
     {
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillPathCommand2D> commands, CancellationToken cancellationToken)

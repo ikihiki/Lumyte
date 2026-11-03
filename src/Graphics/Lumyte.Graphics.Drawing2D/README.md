@@ -153,11 +153,13 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 - 借用中は scene の全編集を拒否します。非同期 Prepare が返るまで借用を解放しないでください。借用解放後の古い CPU メモリーは使用できません。
 - 過去の配置が必要な場合だけ `CaptureSnapshot()` を呼びます。通常の編集に、毎回の過去 snapshot 保持を要求しません。
 - 木の節は自身の内容を先に描き、次に子を順序通り描きます。自身の描画と子を交互に置く場合は、それぞれを内容を持つ子として配置してください。
-- CPU ページと GPU batch は別です。隣接する互換命令を既存の batch 条件でまとめ、標準矩形の fast path を維持します。group transform/clip の変更では影響する資産を再準備する場合があり、GPU の O(1) 属性更新を保証しません。
+- CPU ページと GPU batch は別です。同じ内容ノード内の隣接する互換命令を既存の batch 条件でまとめ、標準矩形の fast path を維持します。ノードをまたいだ batch 統合は行いません。小さなノードへの分割は局所置換を小さくしますが、draw 数が増える場合があります。大きな記録を新しく作って ReplaceContent すると、その内容のページ参照はすべて変わります。group transform/clip の変更では影響する資産を再準備する場合があり、GPU の O(1) 属性更新を保証しません。
 - renderer の同時 frame と未使用 cache は `DrawingRetentionOptions2D` で制限します。`RetentionStatistics` は renderer が発行した compile/reuse と未使用資産の概算量で、driver 全体の draw/upload/VRAM 計測ではありません。
 - 独自 renderer は既存の登録表を通ります。標準 renderer のみが資産再利用へ参加し、独自 renderer の準備呼出しを推測で省略しません。
 - texture/view は借用です。内容の再利用を終え、全 GPU 使用が完了するまで生存させてください。
 
 `Retire` は実際の送信結果が Completed、コマンドが Disposed、device が Ready のときだけ資産を返却します。記録しただけでは転送済みになりません。送信を試していないことが確実な場合は、コマンドを破棄して `AbortUnsubmitted()` を使用します。送信の成否が不明、待機を取り消した、device を失った場合は frame を保持し、GPU が完了したものとして破棄・再利用しないでください。未記録の frame は Dispose で返却できます。
+
+返却済み状態は資産ではなく frame ごとの使用権に保持します。cleanup が失敗して古い Retire を再試行しても、後の frame に貸し出した資産を返却し直しません。GPU 完了または未送信が確定した枠の返却と、失敗した資産 cleanup の再試行を分け、失敗した資産は cache 側が保持します。Prepare が返る前に失敗した場合も枠を失わず、次の Prepare または renderer.Dispose で保留 cleanup を再試行します。cleanup が継続して失敗する場合は新規準備より先にその失敗を通知し、使用中 frame と誤って報告しません。Prepare と cleanup の両方が失敗した場合は、両方の例外を AggregateException に保持します。
 
 この直接描画経路は既存 direct renderer と同様に、RenderGraph の layer/effect 命令を受け付けません。対応しない命令は明示的に失敗し、別 shader へ黙って置き換えません。

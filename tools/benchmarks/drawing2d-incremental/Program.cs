@@ -9,6 +9,12 @@ using BenchmarkDotNet.Toolchains.DotNetCli;
 using Lumyte.Graphics.Incremental.Benchmarks;
 using Perfolizer.Horology;
 
+if (args.Contains("--public-retained-api", StringComparer.Ordinal) || args.Contains("--public-retained-ui-cpu", StringComparer.Ordinal))
+{
+    await PublicRetainedApiProbe.RunAsync(args.Contains("--public-retained-ui-cpu", StringComparer.Ordinal));
+    return;
+}
+
 if (args.Contains("--production-retained-checks", StringComparer.Ordinal) || args.Contains("--production-retained-hardware", StringComparer.Ordinal))
 {
     await ProductionRetainedProbe.RunAsync(args.Contains("--production-retained-checks", StringComparer.Ordinal));

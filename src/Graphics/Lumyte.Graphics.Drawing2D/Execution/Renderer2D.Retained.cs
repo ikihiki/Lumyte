@@ -70,12 +70,11 @@ public sealed partial class Renderer2D
             throw new InvalidOperationException("Concurrent preparation using one Renderer2D is not supported.");
         }
 
-        var assets = new List<RetainedDrawingCache2D.Asset>();
-        bool acquired = false;
+        RetainedDrawingCache2D.FrameLease? frame = null;
         try
         {
-            _retained.AcquireFrame();
-            acquired = true;
+            frame = _retained.AcquireFrame();
+            List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
             var context = new RenderPreparationContext2D(_device, info, _resources);
 
             // Capture only immutable page/property values. The source and its mutable lease
@@ -116,9 +115,9 @@ public sealed partial class Renderer2D
                     }
                     catch
                     {
-                        foreach (IPreparedCommandBatch2D batch in batches)
+                        if (batches.Count != 0)
                         {
-                            batch.Dispose();
+                            _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
                         }
 
                         throw;
@@ -131,13 +130,21 @@ public sealed partial class Renderer2D
             // Re-read the guard before returning: disposed sources cannot publish a frame.
             _ = source.Revision;
             RetainedDrawingCache2D cache = _retained;
-            return new(_device, target, assets, completed => cache.ReleaseFrame(assets, completed));
+            RetainedDrawingCache2D.FrameLease ownedFrame = frame;
+            return new(_device, target, assets, completed => cache.ReleaseFrame(ownedFrame, completed));
         }
-        catch
+        catch (Exception preparationFailure)
         {
-            if (acquired)
+            if (frame is not null)
             {
-                _retained.ReleaseFrame(assets, false);
+                try
+                {
+                    _retained.ReleaseFrame(frame, false);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException("Retained preparation and cleanup both failed; pending resources remain cache-owned.", preparationFailure, cleanupFailure);
+                }
             }
 
             throw;

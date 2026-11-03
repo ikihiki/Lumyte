@@ -152,12 +152,12 @@ public sealed class DrawingScene2D : IDisposable
             Node oldParent = target.Parent!;
             bool sameParent = ReferenceEquals(oldParent, destination);
             ValidateIndex(index, destination.Children.Count - (sameParent ? 1 : 0));
-            int previous = oldParent.Children.IndexOf(target);
-            if (sameParent && previous == index)
+            if (sameParent && ReferenceEquals(destination.Children[index], target))
             {
                 return;
             }
 
+            int previous = oldParent.Children.IndexOf(target);
             Matrix3x2 parentWorld = World(destination);
             ValidateSubtree(target, target.Local * parentWorld, target.Clip, nameof(parent));
             oldParent.Children.RemoveAt(previous);

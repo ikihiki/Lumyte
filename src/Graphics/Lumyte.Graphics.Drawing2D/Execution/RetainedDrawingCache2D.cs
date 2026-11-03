@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
@@ -7,7 +8,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 {
     private readonly DrawingRetentionOptions2D _options;
     private readonly List<Asset> _idle = [];
-    private readonly List<Asset> _retiring = [];
+    private readonly List<IDisposable> _retiring = [];
     private readonly object _gate = new();
     private int _frames;
     private bool _disposed;
@@ -38,7 +39,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             _disposed = true;
             while (_idle.Count != 0)
             {
-                _retiring.Add(_idle[^1]);
+                _retiring.Add(_idle[^1].Batch);
                 _idle.RemoveAt(_idle.Count - 1);
             }
 
@@ -48,17 +49,21 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     internal void CountCompilation() => Interlocked.Increment(ref _compiled);
 
-    internal void AcquireFrame()
+    internal FrameLease AcquireFrame()
     {
         lock (_gate)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            DisposeRetiring();
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_frames >= _options.MaxFramesInFlight)
             {
                 throw new InvalidOperationException("All retained frame slots are busy or quarantined.");
             }
 
+            var frame = new FrameLease(this);
             _frames++;
+            return frame;
         }
     }
 
@@ -72,7 +77,6 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                 {
                     Asset asset = _idle[i];
                     _idle.RemoveAt(i);
-                    asset.Returned = false;
                     _reused++;
                     return asset;
                 }
@@ -82,51 +86,80 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
-    internal void ReleaseFrame(IReadOnlyList<Asset> assets, bool completed)
+    internal void QueueCleanup(IDisposable resource)
     {
         lock (_gate)
         {
-            foreach (Asset asset in assets)
+            _retiring.Add(resource);
+        }
+    }
+
+    internal void ReleaseFrame(FrameLease frame, bool completed)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(frame.Owner, this))
             {
-                if (asset.Returned)
-                {
-                    continue;
-                }
-
-                // Unconfirmed uploads are never published. Previously resident idle assets
-                // remain valid when a new, explicitly unsubmitted frame is abandoned.
-                asset.Resident |= completed;
-                if (!_disposed && asset.Resident && asset.Batch is IRetainedCommandBatch2D && asset.Batch is not RetainedBatchRun2D { Reusable: false })
-                {
-                    _idle.Add(asset);
-                }
-                else
-                {
-                    asset.Batch.Dispose();
-                }
-
-                asset.Returned = true;
+                throw new ArgumentException("The frame belongs to another cache.", nameof(frame));
             }
 
-            while (_idle.Count > _options.MaxCachedAssets || IdleBytes() > _options.MaxCachedBytes)
+            if (!frame.Released)
             {
-                _retiring.Add(_idle[0]);
-                _idle.RemoveAt(0);
+                foreach (Asset asset in frame.Assets)
+                {
+                    // Return state belongs to this frame, not to a reusable asset.
+                    // A retry must not touch an asset borrowed by a later frame.
+                    asset.Resident |= completed;
+                    if (!_disposed && asset.Resident && asset.Batch is IRetainedCommandBatch2D && asset.Batch is not RetainedBatchRun2D { Reusable: false })
+                    {
+                        _idle.Add(asset);
+                    }
+                    else
+                    {
+                        _retiring.Add(asset.Batch);
+                    }
+                }
+
+                while (_idle.Count > _options.MaxCachedAssets || IdleBytes() > _options.MaxCachedBytes)
+                {
+                    _retiring.Add(_idle[0].Batch);
+                    _idle.RemoveAt(0);
+                }
+
+                // At this boundary the caller proved completion or no submission.
+                // The cache owns every failed cleanup independently of the frame slot.
+                frame.Released = true;
+                _frames--;
             }
 
-            // Failed disposal stays outside the reusable cache. A retry of retirement
-            // resumes cleanup without publishing a partially destroyed asset.
             DisposeRetiring();
-            _frames--;
         }
     }
 
     private void DisposeRetiring()
     {
-        while (_retiring.Count != 0)
+        List<Exception>? failures = null;
+        for (int index = _retiring.Count - 1; index >= 0; index--)
         {
-            _retiring[^1].Batch.Dispose();
-            _retiring.RemoveAt(_retiring.Count - 1);
+            try
+            {
+                _retiring[index].Dispose();
+                _retiring.RemoveAt(index);
+            }
+            catch (Exception failure)
+            {
+                (failures ??= []).Add(failure);
+            }
+        }
+
+        if (failures is { Count: 1 })
+        {
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures is { Count: > 1 })
+        {
+            throw new AggregateException("Retained resource cleanup failed; the cache owns pending retries.", failures);
         }
     }
 
@@ -142,6 +175,15 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         return bytes;
     }
 
+    internal sealed class FrameLease(RetainedDrawingCache2D owner)
+    {
+        internal RetainedDrawingCache2D Owner { get; } = owner;
+
+        internal List<Asset> Assets { get; } = [];
+
+        internal bool Released { get; set; }
+    }
+
     internal sealed class Asset(Key key, IPreparedCommandBatch2D batch) : IPreparedCommandBatch2D
     {
         internal Key Key { get; } = key;
@@ -149,8 +191,6 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         internal IPreparedCommandBatch2D Batch { get; } = batch;
 
         internal bool Resident { get; set; }
-
-        internal bool Returned { get; set; }
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources) => Batch.DeclareResources(resources);
 

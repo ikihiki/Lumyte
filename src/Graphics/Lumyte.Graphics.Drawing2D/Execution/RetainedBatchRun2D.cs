@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
@@ -5,6 +6,7 @@ namespace Lumyte.Graphics.Drawing2D;
 internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedBuiltins) : IRetainedCommandBatch2D
 {
     private int _remaining = batches.Count;
+    private List<IPreparedCommandBatch2D>? _failedCleanup;
 
     public long EstimatedBytes => batches.OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes);
 
@@ -43,10 +45,43 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
 
     public void Dispose()
     {
+        List<IPreparedCommandBatch2D>? previousFailures = _failedCleanup;
+        List<Exception>? failures = null;
+        _failedCleanup = null;
+        if (previousFailures is not null)
+        {
+            foreach (IPreparedCommandBatch2D batch in previousFailures)
+            {
+                TryDispose(batch);
+            }
+        }
+
         while (_remaining != 0)
         {
-            batches[_remaining - 1].Dispose();
-            _remaining--;
+            TryDispose(batches[--_remaining]);
+        }
+
+        if (failures is { Count: 1 })
+        {
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures is { Count: > 1 })
+        {
+            throw new AggregateException("Batch cleanup failed; incomplete batches remain owned for retry.", failures);
+        }
+
+        void TryDispose(IPreparedCommandBatch2D batch)
+        {
+            try
+            {
+                batch.Dispose();
+            }
+            catch (Exception failure)
+            {
+                (_failedCleanup ??= []).Add(batch);
+                (failures ??= []).Add(failure);
+            }
         }
     }
 }
