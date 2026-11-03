@@ -185,7 +185,10 @@ float4 evaluate<let capacity : int>(float2 pixel)
     for(uint clearIndex=0;clearIndex<capacity;clearIndex++) values[clearIndex]=0;
     for(uint i=0;i<arguments.Count;i++)
     {
-        DrawingInstruction n=arguments.Instructions.Load(i);
+        // Physical-pointer loads may be scalarized for an inactive SIMD loop-exit lane.
+        // Bound the fetch by the independently supplied buffer range, not the loop bound.
+        // Valid programs still read i; an inactive i == Count cannot read one-past-end.
+        DrawingInstruction n=arguments.Instructions.Load(min(i,arguments.Instructions.Count-1));
         float2 p=float2(dot(n.T0.xyz,float3(pixel,1)),dot(n.T1.xyz,float3(pixel,1)));
         float4 value=0;
         if(n.Kind==0) value=n.A;

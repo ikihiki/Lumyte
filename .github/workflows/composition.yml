@@ -67,6 +67,17 @@ jobs:
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
 
+      - name: Native / cold-cache maximum drawing program
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          export LUMYTE_GRAPHICS_GPU_TESTS=1
+          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          # A unique empty driver cache prevents a previous shader binary from hiding the regression.
+          export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
+
       - name: Run solution tests (Linux)
         shell: bash
         run: |
