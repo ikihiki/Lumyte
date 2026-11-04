@@ -40,3 +40,11 @@ Diagnosticsは別packageの`UseDiagnostics`で追加します。入力・テキ�
 `UiApplicationOptions.Motion`でFull／Reduced／Disabled、同時演出数、snapshotのpixel／byte予算、準備期限と実時間の最大寿命を設定できます。通常の移動・拡大は保持したDrawListを再生します。半透明groupには更新可能なRGBA16Float中間bufferを使い、opacityを一度だけ適用します。内容変更で演出を中断せず、同じ寸法のbufferは再利用します。旧ページのexitや異なる見た目のcrossfadeに限って旧snapshotを保持します。byte予算はtexel payload（幅×高さ×8）で、backend内部のallocation paddingは含みません。layerの中間bufferとGPU退役待ち画像も予算に算入します。移動だけのlayerは画像予算を消費しません。
 
 Hosted Popup／Windowの終了では先に入力・IMEを止め、内容のexit、最終提示、GPU drain、既存のWindow清掃と`onClosed`の順で進みます。停止・device loss・Native Window終了では演出を省略してdrainへ進みます。OS Windowの位置やopacityをアニメーションする機能は含みません。詳細は[UI-0021](../../../docs/adr/ui/UI-0021-connected-and-presence-transitions.md)を参照してください。
+
+## 2D保持描画
+
+Desktop／Browserの通常frameは、Presentationごとの`UiDrawingScene2D`を更新し、変更されていないローカル`DrawList2D`とGPU資産を再利用します。追加の設定は不要です。Hosted／Nativeの補助Windowにも同じ経路を使用します。配置・clip・DPIは内容とは別に合成し、毎frameの提示確認は省略しません。
+
+Presence／ページ遷移などの特殊合成は既存の描画をopaqueな内容として毎frame再記録します。候補の検証とvisual画像のcapture/updateはdirect経路を維持します。独自の`OnRecord`は既定では毎frame実行し、明示的な`CacheRetainedDrawing`の契約だけを再利用します。
+
+非同期処理へ渡すのは内容を共有する不変の配置snapshotで、UI／sceneのborrowはGPU準備前に解放済みです。GPU完了と提示image解放の確認後にcommand memory、保持frame、submissionの順で退役します。送信成否が不明な場合はdevice世代の退役確認まで保持し、device再生成時はCPU記録も作り直します。Headlessとdirect専用の内部driverには従来の記録入口を残します。

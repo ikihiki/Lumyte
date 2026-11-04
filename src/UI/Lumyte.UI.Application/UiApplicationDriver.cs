@@ -12,6 +12,8 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     internal virtual bool SupportsScreenshots => false;
 
+    internal virtual bool SupportsRetainedDrawing => false;
+
     internal virtual bool NativeWindows => false;
 
     internal virtual bool IsPhysicalInputIdle => true;
@@ -53,6 +55,8 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
     internal abstract ValueTask<UiDriverWindow> CreateWindowAsync(string key, string title, Vector2 size, UiDriverWindow? owner, bool primary, CancellationToken cancellationToken);
 
     internal abstract void Pump();
+
+    internal virtual Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene) => throw new NotSupportedException();
 
     internal abstract Task<bool> DrawAsync(UiDriverWindow window, DrawList2D commands);
 

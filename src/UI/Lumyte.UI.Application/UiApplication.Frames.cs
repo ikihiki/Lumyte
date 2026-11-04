@@ -1,5 +1,3 @@
-using Lumyte.Graphics.Drawing2D;
-
 namespace Lumyte.UI.Application;
 
 /// <summary>Owns the UI loop and resources from startup through ordered shutdown.</summary>
@@ -45,8 +43,9 @@ public sealed partial class UiApplication
                 continue;
             }
 
-            DrawList2D commands = entry.Root.Source.RecordFrame(GraphicsGeneration);
-            entry.Drawing = DrawFrameAsync(entry.Root, commands);
+            entry.Drawing = Driver.SupportsRetainedDrawing
+                ? DrawFrameAsync(entry.Root, entry.Root.Source.RecordRetainedFrame(GraphicsGeneration))
+                : DrawFrameAsync(entry.Root, entry.Root.Source.RecordFrame(GraphicsGeneration));
             recorded = true;
         }
 

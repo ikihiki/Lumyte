@@ -168,6 +168,12 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
 
         internal UiSurface Surface { get; } = surface;
 
+        internal UiDrawingScene2D? Drawing { get; set; }
+
+        internal Rect2D? DrawingClip { get; set; }
+
+        internal Path2D? DrawingClipPath { get; set; }
+
         internal ulong EligibilityRevision { get; set; } = ulong.MaxValue;
 
         internal bool CacheEligible { get; set; }
@@ -194,6 +200,8 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
                 await frame.Task;
             }
 
+            Drawing?.Dispose();
+            Drawing = null;
             source.DiscardCache();
             source._presentations.Remove(this);
             source._paused.Remove(Surface);

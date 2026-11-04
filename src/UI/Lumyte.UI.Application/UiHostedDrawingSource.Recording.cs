@@ -105,7 +105,7 @@ internal sealed partial class UiHostedDrawingSource
         _cachedState = null;
     }
 
-    private FrameItem[] PrepareFrame()
+    private FrameItem[] PrepareFrame(bool retained = false)
     {
         // A later validator can mutate an earlier surface, including applying that change immediately.
         for (int attempt = 0; attempt < 100; attempt++)
@@ -118,7 +118,7 @@ internal sealed partial class UiHostedDrawingSource
                 Presentation presentation = presentations[index];
                 if (!_paused.Contains(presentation.Surface) && presentation.View.IsVisible)
                 {
-                    PrepareSurface(presentation.Surface);
+                    PrepareSurface(presentation.Surface, retained);
                 }
 
                 items[index] = CaptureItem(presentation);

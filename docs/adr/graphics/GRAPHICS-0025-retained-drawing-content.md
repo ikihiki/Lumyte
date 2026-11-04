@@ -120,7 +120,13 @@ frame.Dispose();
 
 独自の `OnRecord` は、再利用を明示的に選択し無効化を通知しなければ毎フレーム記録する。独自の `RecordOverride` が自身の描画と子の描画を交互に行う順序・状態も保つ。再利用の境界が分からない部分は既存の記録経路を使い、推測で分割・cache しない。
 
-visual layer と画面遷移は既存の合成経路を保つ。時刻、animation、提示結果、遷移完了通知を、再記録の有無で省略しない。UI の新しい描画接続は明示的に選択でき、既存 `UiSurface.Record` と host の提示契約は維持する。
+visual layer と画面遷移は既存の合成経路を保つ。時刻、animation、提示結果、遷移完了通知を、再記録の有無で省略しない。既存 `UiSurface.Record` と host の提示契約は維持する。
+
+標準 Desktop／Browser Application は、通常 frame と補助 Window に Presentation ごとの `UiDrawingScene2D` を使用する。独自 host からも明示的に adapter を選択できる。通常の非活動 `UiVisualCoordinator` は分割保持を妨げず、Presence／page／未知の visual host／capture は既存の opaque 記録へ戻す。候補の GPU 検証と visual 画像の capture/update は direct のままとする。
+
+全 surface の依存検証と layout が収束してから記録し、内容を共有する不変 snapshot に外側の scale → clip → translation を合成する。adapter 所有の root/topology を外部配置のために編集しない。短命の scene 借用は非同期処理の開始前に返し、snapshot は借用 texture の寿命を延ばさない。graphics 世代が変われば CPU 記録も再構築する。
+
+標準 presenter は実際の submission を保持 frame へ結び付け、GPU と提示 image の完了後に command memory、保持 frame、submission の順で退役する。送信結果が不明な frame は隔離する。device 世代の退役を graphics service で確認した host に限り、内部の専用経路で command memory 解放後に使用権を返せる。この経路は residency を公開せず、通常の取消・device status だけを完了と見なさない。
 
 ### 公開 API 差分
 

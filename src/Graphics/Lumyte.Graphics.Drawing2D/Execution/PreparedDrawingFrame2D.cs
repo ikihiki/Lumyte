@@ -103,6 +103,23 @@ public sealed class PreparedDrawingFrame2D : IDisposable
         Release(false);
     }
 
+    // Only the application presenter may substitute confirmed device-generation retirement.
+    // Commands must be released first, and residency must never be published on this path.
+    internal void ReleaseAfterDeviceRetirement()
+    {
+        if (_released)
+        {
+            return;
+        }
+
+        if (_commands is not null && _commands.State != CommandBufferState.Disposed)
+        {
+            throw new InvalidOperationException("Dispose command memory after confirmed device retirement first.");
+        }
+
+        Release(false);
+    }
+
     private void Release(bool completed)
     {
         _release!(completed);

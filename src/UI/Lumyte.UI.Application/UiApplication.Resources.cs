@@ -32,6 +32,16 @@ public sealed partial class UiApplication
         return presented;
     }
 
+    internal async Task<bool> DrawFrameAsync(UiDriverWindow target, Lumyte.Graphics.Drawing2D.DrawingSnapshot2D scene)
+    {
+        using (scene)
+        {
+            bool presented = false;
+            await _dispatcher.TrackAsync(async () => presented = await Driver.DrawAsync(target, scene));
+            return presented;
+        }
+    }
+
     internal async ValueTask BeginGraphicsRecoveryAsync()
     {
         await _dispatcher.InvokeAsync(() =>
