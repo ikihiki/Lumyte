@@ -187,3 +187,25 @@ No window was created, no Present or actual monitor/VSync measurement was made,
 and benchmark-owned scheduling is not product-host idle/resume proof. The local
 X11 sockets belong to the login greeter, not a requesting-user desktop; they were
 not used or reauthenticated. ADR acceptance remains open for this GUI/host gate.
+
+### Virtual-display functional follow-up
+
+The physical-login blocker was resolved for functional testing by an isolated
+Weston14 headless GL compositor with its own XWayland DISPLAY. Distribution
+packages were extracted into artifacts, without sudo/system installation or
+persistent configuration. The owned compositor uses renderD128/Radeon hardware;
+client native metadata independently identifies Radeon8060S. Greeter displays
+and authentication were not used.
+
+U03 forced drawing at depths1/3 and benchmark-owned stop/resume passed120 frames
+each, including actual Present returns, completion ordering and exact/analytic UI
+checks. The separate standard UseDesktop host probe passed controlled dispatcher
+model-update delivery and ordered Stopped shutdown; idle CPU recording continued,
+matching its current periodic implementation. Private GPU/Present/reservation
+counters remain null. Demand-idle is not claimed as an implemented product feature.
+
+Evidence is under ignored virtual-validated-001/. Reproduce with
+run-virtual-display.sh and validate with check-virtual-results.py. Configured
+nominal60Hz and synthetic XRandR modes are virtual context, not physical VSync,
+monitor refresh, scanout or input-to-photon proof. The virtual processes terminate
+after their client script; no long-lived desktop service is installed.

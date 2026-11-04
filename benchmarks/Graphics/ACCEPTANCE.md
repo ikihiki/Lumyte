@@ -39,14 +39,18 @@ are required for independent cold observations.
 
 Verified: scheduled full-update/return bursts, event-relative groups and independent
 post-event/history images. Ordinary primitive timing now has 312 valid actual query
-pairs across 26 profile/depth combinations. True displayed Present/VSync/host-idle testing is
-externally blocked: the current executing environment has no DISPLAY or
-WAYLAND_DISPLAY and no connected node. A virtual/no-op headless draw is not a
-displayed-frame measurement. A GUI-capable execution target has been requested. The real-window harness is now
-strict-build/CLI/formatter verified; its separate real WebGPU U03 gate passes
-full-image equality and unchanged analytic endpoints after the actual supported
-RGBA-to-BGRA product-shader composite. That no-window gate is not Present, monitor
-refresh or product-host scheduling evidence.
+pairs across 26 profile/depth combinations. Virtual Weston headless GL/XWayland now executes the actual U03 window/surface/
+Present path at depths1/3 with hardware rendering and explicit virtual metadata.
+The compositor output is fixed nominal60Hz; synthetic XRandR modes are recorded.
+These functional observations are not physical monitor/VSync/scanout measurements.
+
+A separate public-API UseDesktop probe observes real product-host CPU recording
+and controlled dispatcher model updates. Recording continues during idle: this
+host is periodic, so zero-work demand-idle is N/A for the current implementation.
+Unavailable reservation/draw/Present counters remain null. The benchmark-owned
+pause/resume case is not substituted for that product behavior. No product API or
+scheduler behavior was changed. Physical-display timing is separate unmeasured
+scope, not a reason to block virtual functional verification.
 
 ## 4. Independent references, logical identities and honest failures
 
@@ -103,3 +107,15 @@ Each new gate must be verified before removing its remaining-work note above.
 No timeout, unstable pilot, missing measurement, native recovery failure or pixel
 mismatch is converted into successful acceptance. Public pushes are verified by
 remote SHA; pushing does not imply merge or ADR adoption.
+
+## Virtual display follow-up
+
+An isolated hardware-rendered Weston headless compositor and its own XWayland
+now execute the real U03 window/Acquire/Submit/Present path at depths1/3, plus
+benchmark-owned stop/resume. The standard product UseDesktop host was separately
+observed through public APIs: idle CPU recording continues and dispatcher model
+updates reach a new recording. The product is periodic, so zero-work demand-idle
+is N/A for this implementation; private frame/GPU/Present counters remain null.
+This resolves the virtual functional-execution path without requiring a physical
+login. Physical monitor refresh, VSync and scanout are separate unmeasured scope,
+not simulated successes. See the presentation VIRTUAL-DISPLAY.md instructions.

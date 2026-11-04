@@ -3,18 +3,18 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Presentation.Benchmarks;
 
-internal sealed record Options(string Command, string Scenario, int Frames, int Warmup, int Depth, int IdleMs, PresentMode Mode, double RefreshHz)
+internal sealed record Options(string Command, string Scenario, int Frames, int Warmup, int Depth, int IdleMs, PresentMode Mode, double RefreshHz, string DisplayKind = "unspecified")
 {
     internal static Options Parse(string[] args)
     {
-        string[] commands = ["--list", "--validate-options", "--check-schedule", "--check-pixels", "--run"];
+        string[] commands = ["--list", "--validate-options", "--check-schedule", "--check-pixels", "--probe-product-host", "--run"];
         if (args.Length == 0 || !commands.Contains(args[0]))
         {
-            throw new ArgumentException("First argument: --list | --validate-options | --check-schedule | --check-pixels | --run.");
+            throw new ArgumentException("First argument: --list | --validate-options | --check-schedule | --check-pixels | --probe-product-host | --run.");
         }
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        string[] allowed = ["--scenario", "--frames", "--warmup", "--depth", "--idle-ms", "--present-mode", "--refresh-hz"];
+        string[] allowed = ["--scenario", "--frames", "--warmup", "--depth", "--idle-ms", "--present-mode", "--refresh-hz", "--display-kind"];
         for (int i = 1; i < args.Length; i += 2)
         {
             if (i + 1 == args.Length || !allowed.Contains(args[i]) || !values.TryAdd(args[i], args[i + 1]))
@@ -31,6 +31,11 @@ internal sealed record Options(string Command, string Scenario, int Frames, int 
         if (args[0] == "--check-pixels" && values.Keys.Any(key => key != "--frames"))
         {
             throw new ArgumentException("--check-pixels accepts only --frames; U03 and headless target are fixed.");
+        }
+
+        if (args[0] == "--probe-product-host" && values.Keys.Any(key => key is not ("--idle-ms" or "--display-kind")))
+        {
+            throw new ArgumentException("--probe-product-host accepts only --idle-ms and --display-kind.");
         }
 
         string Get(string key, string fallback) => values.GetValueOrDefault(key, fallback);
@@ -62,12 +67,19 @@ internal sealed record Options(string Command, string Scenario, int Frames, int 
             throw new ArgumentException("Refresh assumption must be finite in [1,1000] Hz.");
         }
 
+        string displayKind = Get("--display-kind", "unspecified");
+        if (displayKind is not ("unspecified" or "physical" or "virtual"))
+        {
+            throw new ArgumentException("--display-kind must be unspecified, physical or virtual.");
+        }
+
+        int idleMs = Number("--idle-ms", 1000, 1, args[0] == "--probe-product-host" ? 10000 : 60000);
         int depth = Number("--depth", 1, 1, 3);
         if (depth is not (1 or 3))
         {
             throw new ArgumentException("--depth must be exactly 1 or 3.");
         }
 
-        return new(args[0], scenario, Number("--frames", 120, 2, 100000), Number("--warmup", 8, 0, 10000), depth, Number("--idle-ms", 1000, 1, 60000), mode, refresh);
+        return new(args[0], scenario, Number("--frames", 120, 2, 100000), Number("--warmup", 8, 0, 10000), depth, idleMs, mode, refresh, displayKind);
     }
 }

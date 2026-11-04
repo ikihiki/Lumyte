@@ -49,8 +49,13 @@ internal static class Program
 
             if (!OperatingSystem.IsLinux() || IntPtr.Size != 8 || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DISPLAY")))
             {
-                Emit(new { status = "blocked", reason = "Real connected 64-bit Linux X11 DISPLAY required; Wayland-only and Xvfb substitutes are not supported. No device/window was created." });
+                Emit(new { status = "blocked", reason = "Authorized 64-bit Linux X11 DISPLAY required, physical or explicitly classified isolated virtual. Wayland-only is unsupported. No device/window was created." });
                 return 3;
+            }
+
+            if (options.Command == "--probe-product-host")
+            {
+                return ProductHostProbe.Run(options.IdleMs, options.DisplayKind);
             }
 
             return PresentationRunner.Run(options);

@@ -24,6 +24,14 @@ def main():
         ['--validate-options', '--frames'], ['--list', '--frames', '2'],
         ['--check-schedule', '--idle-ms', '10'], ['--check-pixels', '--depth', '3'],
         ['--check-pixels', '--scenario', 'forced-clear'], ['--run', '--run'],
+        ['--validate-options', '--display-kind', 'VIRTUAL'],
+        ['--validate-options', '--display-kind', 'unknown'],
+        ['--check-pixels', '--display-kind', 'virtual'],
+        ['--probe-product-host', '--frames', '120'],
+        ['--probe-product-host', '--depth', '1'],
+        ['--probe-product-host', '--idle-ms', '10001'],
+        ['--probe-product-host', '--present-mode', 'fifo'],
+        ['--validate-options', '--display-kind', 'virtual', '--display-kind', 'physical'],
     ]
     def invoke(args):
         return subprocess.run(['dotnet', str(DLL), *args], cwd=ROOT, env=env,
@@ -34,8 +42,9 @@ def main():
         assert json.loads(result.stdout)['status'] == 'invalid-options', (args, result.stdout)
     result = invoke(['--list'])
     assert result.returncode == 0 and len(result.stdout.splitlines()) == 3
-    result = invoke(['--validate-options', '--scenario', 'benchmark-idle-u03', '--depth', '3', '--present-mode', 'fifo', '--refresh-hz', '60'])
+    result = invoke(['--validate-options', '--scenario', 'benchmark-idle-u03', '--depth', '3', '--present-mode', 'fifo', '--refresh-hz', '60', '--display-kind', 'virtual'])
     assert result.returncode == 0 and json.loads(result.stdout)['status'] == 'options-valid'
+    assert json.loads(result.stdout)['options']['DisplayKind'] == 'virtual'
     result = invoke(['--check-schedule'])
     schedule = json.loads(result.stdout)
     assert result.returncode == 0 and schedule['status'] == 'managed-policy-check-passed'
@@ -46,7 +55,9 @@ def main():
     assert result.returncode == 3 and blocked['status'] == 'blocked'
     assert 'No device/window' in blocked['reason']
     assert not any(value in result.stdout + result.stderr for value in ['WgpuDevice.Create', 'vkCreateInstance', 'ERROR_INCOMPATIBLE_DRIVER'])
-    print(json.dumps(dict(status='passed', invalidInvocations=len(invalid), managedChecks=3,
+    result = invoke(['--probe-product-host', '--idle-ms', '10', '--display-kind', 'virtual'])
+    assert result.returncode == 3 and json.loads(result.stdout)['status'] == 'blocked'
+    print(json.dumps(dict(status='passed', invalidInvocations=len(invalid), managedChecks=3, missingDisplayBlockedCommands=2,
                          missingDisplayBlockedBeforeDevice=True, windowCreated=False, gpuInitialized=False)))
 
 

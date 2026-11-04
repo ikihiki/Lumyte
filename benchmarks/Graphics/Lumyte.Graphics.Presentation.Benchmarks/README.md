@@ -29,12 +29,13 @@ commands (not formal performance campaigns):
 
 Replace the refresh assumption with the externally verified mode; the runner
 itself does not claim measured refresh. The last command is benchmark-owned idle,
-not product-host scheduling proof. Current execution remains blocked without a
-requesting-user desktop; these commands are reproduction instructions, not results.
+not product-host scheduling proof. These direct commands need either an authorized physical desktop or the owned
+virtual compositor described in VIRTUAL-DISPLAY.md. Virtual checks now have their
+own verified results; physical-display timing remains unmeasured.
 
 ## Commands and strict CLI
 
-Exactly one command first: --list, --validate-options, --check-schedule, --check-pixels, or --run. Parse/list/managed schedule modes make no platform/device/native calls. All options validate before native initialization. --list and --check-schedule accept no options; --check-pixels accepts only --frames (U03 and its target are fixed); --validate-options accepts the full option grammar. Unknown/duplicate/missing options, unsupported enum strings, nonfinite/out-of-range numbers and fractional counts fail with exit 2.
+Exactly one command first: --list, --validate-options, --check-schedule, --check-pixels, --probe-product-host, or --run. Parse/list/managed schedule modes make no platform/device/native calls. All options validate before native initialization. --list and --check-schedule accept no options; --check-pixels accepts only --frames (U03 and its target are fixed); --validate-options accepts the full option grammar. Unknown/duplicate/missing options, unsupported enum strings, nonfinite/out-of-range numbers and fractional counts fail with exit 2.
 
 Options:
 
@@ -43,12 +44,16 @@ Options:
 - --depth 1|3 (1; depth 2 is rejected), --idle-ms 1..60000 (1000)
 - --present-mode fifo|mailbox|immediate (fifo)
 - --refresh-hz 1..1000 (60, invariant decimal, **operator assumption only**)
+- --display-kind unspecified|physical|virtual (unspecified; caller classification, not proof)
+
+--probe-product-host accepts only --idle-ms 1..10000 and --display-kind. It observes
+the actual periodic desktop host and model-update delivery, not demand-idle.
 
 Exit 0 means managed check or real host-observation run completed, never product-host/photon-latency proof. Exit 1 means execution failure, 2 invalid CLI, 3 missing real 64-bit Linux X11 environment.
 
 --check-pixels is an explicit real-GPU, no-window/no-surface U03 headless correctness gate: actual native adapter query, actual font/native text, RGBA8-sRGB rendering followed by product-shader BGRA8-sRGB composite output, exact full-image fresh-mount equality and correctly swizzled red/blue analytic oracle. It does not require DISPLAY and makes no presentation/performance claim. Unlike list/parse/schedule commands it intentionally initializes hardware; execute only when authorized.
 
---run checks DISPLAY/OS before window/device creation. Missing DISPLAY fails explicitly, with no Xvfb substitution. A nonempty DISPLAY alone is not authorization or proof: use only the requesting user's connected GUI session, not a greeter display or another user's Xauthority. Wayland-only cannot use current LinuxPlatform; existing user XWayland is acceptable. No desktop configuration, authentication or global display mode is changed.
+--run checks DISPLAY/OS before window/device creation. Missing DISPLAY fails explicitly, with no Xvfb substitution. A nonempty DISPLAY alone is not authorization or proof: use only the requesting user's connected GUI session or an explicitly classified isolated virtual compositor, not a greeter display or another user's Xauthority. Wayland-only cannot use current LinuxPlatform; existing user XWayland is acceptable. No desktop configuration, authentication or global display mode is changed.
 
 ## Actual adapter and provenance
 
@@ -90,7 +95,7 @@ Summed host work includes final drain and excludes validation, event pumping, in
 
 benchmark-idle-u03 uses the same real U03 content, drains at midpoint, stops frame reservations, waits for a managed timer/event, then resumes with the next controlled input ID. It records idle reservation delta, idle endpoints and controlled wake/input timestamp. X11 events are not pumped during this wait: native input is NOT the wake source. This is **benchmark-owned host policy**, not UiApplication/DesktopDriver scheduling proof or GUI responsiveness coverage.
 
-Actual product-host scheduling instrumentation remains a separate integration gap. Public UiApplication can be hosted, but this harness does not exercise its scheduler and does not infer absence of all possible public diagnostics hooks. No fabricated API, production IVT, private draw or scheduler claim is used.
+The separate --probe-product-host mode now exercises actual public UiApplication/UseDesktop CPU recording and dispatcher updates. It observes the current periodic behavior, not demand-idle resumption. Private GPU/Present/reservation counters remain unobserved/null; CPU callbacks are not relabelled GPU draws. No fabricated API, production IVT or private draw hook is used.
 
 ## Verification status
 
@@ -110,10 +115,11 @@ presentation-composite-build.log, presentation-format.log, presentation-cli-fina
 and presentation-headless-composite.jsonl. The first direct-BGRA failure remains
 separately preserved in presentation-headless-pixels.jsonl.
 
-Actual window/Present execution remains blocked: there is no authorized connected
-user desktop. Greeter displays and another user's authentication are not valid
-substitutes. Refresh verification and actual product-host idle/resume proof remain
-open acceptance work. Do not mark the ADR complete from these headless checks.
+The initial physical-login blocker was bypassed legitimately with an owned
+Weston headless GL/XWayland environment, not a greeter or another user's session.
+Virtual UI depth1/depth3, owned stop/resume and real product-host observation now
+pass. Physical refresh/VSync/scanout remain unmeasured; product demand-idle is not
+an implemented behavior. See [virtual display validation](VIRTUAL-DISPLAY.md).
 
 ## Supported intermediate and format correction
 
@@ -121,4 +127,19 @@ The parent preserved a real --check-pixels failure from the first implementation
 
 Shader artifacts load through the public UiApplication assembly (new project reference); the existing Graphics.Generators analyzer generates local argument serialization. There is no new Slang compiler integration, production friendship, private presenter access, substitute shader, tolerance change, or RGBA-only claimed presentation proof. Metadata emits SHA256 for actual loaded vertex/fragment target-code bytes before runtime binding specialization, separately from shared source/container/binary provenance. Actual issued draw totals include the composite, and CompositeDrawCalls records its one-draw contribution.
 
-The corrected compositor has now passed strict compilation and the real headless WebGPU gate. Real GUI Present remains blocked and unclaimed.
+The corrected compositor has now passed strict compilation and the real headless WebGPU gate. Virtual XWayland Present subsequently passed; physical-display timing remains unclaimed.
+
+## Virtual execution and real product host
+
+See [isolated virtual display validation](VIRTUAL-DISPLAY.md) for the maintained
+Weston/XWayland route, package extraction without system installation, the runner
+and validator. Both compositor and UI client use the actual hardware.
+--display-kind virtual records the scope, corroborated by launch/GPU/XRandR logs.
+
+--probe-product-host uses real UseDesktop/UseContent and a public custom panel
+OnRecord observer. It measures idle CPU callback deltas and a dispatcher model
+revision reaching new recording, then awaits ordered normal application shutdown.
+It does not decorate the private GPU presenter: frame request/GPU draw/Present
+counters and exact selected application adapter remain null. The current product
+host is periodic and continues idle recording. No zero-work demand-idle or
+physical-display timing success is inferred.

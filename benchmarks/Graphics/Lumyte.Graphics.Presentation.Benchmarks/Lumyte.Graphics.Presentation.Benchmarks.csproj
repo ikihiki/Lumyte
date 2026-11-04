@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Application/Lumyte.UI.Application.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Desktop/Lumyte.UI.Application.Desktop.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../Lumyte.Graphics.Ui.Benchmarks/Lumyte.Graphics.UiScenarios.csproj" Aliases="UiBenchmarks" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />

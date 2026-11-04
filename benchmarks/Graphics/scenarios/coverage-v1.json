@@ -139,8 +139,8 @@
     },
     {
       "id": "scope/presentation",
-      "status": "blocked-execution",
-      "reason": "Real Linux X11/WebGPU U03 window/Present harness builds; explicit headless RGBA8Srgb-to-BGRA8Srgb product-shader/fresh-mount/analytic pixel gate passes. Actual displayed Present/VSync/refresh and product-host idle/resume are not verified: no authorized user GUI session. Benchmark-owned idle policy is explicitly not product-host proof; do not use login-greeter display/auth."
+      "status": "executable",
+      "reason": "Virtual-functional verified: private Weston headless GL + own XWayland, actual hardware compositor/client, U03 native UI/Acquire/Submit/Present at depths1/3 and benchmark-owned pause/resume. Separate real UseDesktop CPU-recording/model-update probe observes continued periodic idle recording; zero-work product demand-idle is N/A. Physical monitor VSync/refresh/scanout remains unmeasured, never inferred from virtual output."
     }
   ]
 }

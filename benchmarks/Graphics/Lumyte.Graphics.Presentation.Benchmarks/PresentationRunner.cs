@@ -182,6 +182,12 @@ internal static class PresentationRunner
             adapterAccess = "benchmark-only version-sensitive UnsafeAccessor; no production IVT/API change",
             productHostProof = false,
             fullHardwareLatencyClaim = false,
+            displayEnvironment = new
+            {
+                kind = options.DisplayKind,
+                source = "caller classification; verify isolated-compositor launch logs for virtual mode",
+                physicalScanoutVerified = false,
+            },
             measuredMonitorRefreshHz = (double?)null,
             reservationCount = schedule.Reservations,
             measuredCounterBaseline,
