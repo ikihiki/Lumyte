@@ -136,20 +136,6 @@ CreateGraphicsPipelines／CreateComputePipelinesが失敗したときは、返�
 
 既存Linux x64 CIのlavapipeで測定し、raw JSONLをtest-results artifactに保存します。software VulkanのCPU費用を比較するための結果であり、hardware GPUや実シーンのFPSへ一般化しません。median・最小・最大を報告し、速度比は200 draw記録のmedianから計算します。
 
-### CI測定結果
-
-[2026-10-09の測定ログ](https://github.com/ikihiki/Lumyte/actions/runs/37933131170/job/113828542234)。Ubuntu 24.04 x64、Release、Mesa 25.2.8、llvmpipe LLVM 20.1.2。warmup 2回を除いた各6試行。値はmsの中央値（最小–最大）です。
-
-| 測定項目 | cache有効 | cache無効 |
-| --- | ---: | ---: |
-| 初回draw記録 | 0.274 (0.253–0.336) | 0.295 (0.243–0.323) |
-| 200 draw記録 | 0.221 (0.142–0.350) | 21.456 (18.133–28.571) |
-| submitから完了 | 4.704 (4.608–5.848) | 65.970 (63.083–105.730) |
-| program破棄 | 0.020 (0.017–0.069) | 0.078 (0.054–0.100) |
-| 上記の合計（各試行の合計から算出） | 5.251 (5.069–6.471) | 90.184 (82.813–130.980) |
-
-200 draw記録の中央値は無効時に約97倍、測定した区間の合計は約17.2倍でした。同じPSOの再利用が多いこのworkloadではcacheを維持します。submit完了時間の差にはsoftware driverの実行時処理やCPU schedulingも含まれるため、hardware GPUの描画時間差とは解釈しません。必要な拡張を用いたdynamic state化や部分PSO生成との比較は別のworkloadです。
-
 ## Shader dataと構造体引数
 
 [ADR-GRAPHICS-0009](../../../docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)に従い、AutomaticでGPU storage、Uploadでstagingを作ります。map済みstagingのCopyFromが値をpackし、利用者がcommandのCopyBufferとbarrierを明示します。shader dataへのraw byte aliasとShaderWriteは提供しません。

@@ -16,34 +16,9 @@ public class AsyncBenchmarks
     private int _notifications;
     private int _observedResult;
 
-    /// <summary>Checks that all workloads execute the intended transitions before timing them.</summary>
-    public static void Verify()
-    {
-        var benchmarks = new AsyncBenchmarks();
-        benchmarks.Setup();
-        try
-        {
-            if (benchmarks.CreateCompleted() != 42 || benchmarks.ReloadCompleted() != 42)
-            {
-                throw new InvalidOperationException("A completed loader must publish its result.");
-            }
+    internal int Notifications => _notifications;
 
-            int notifications = benchmarks._notifications;
-            if (benchmarks.ReloadCompletedObserved() != 42 || benchmarks._notifications - notifications != 2)
-            {
-                throw new InvalidOperationException("A reload must notify Pending and Succeeded exactly once each.");
-            }
-
-            if (benchmarks.SupersedeAndCancelPending() != 2 || benchmarks._pending.Value.Status != AsyncSignalStatus.Canceled)
-            {
-                throw new InvalidOperationException("Superseded and canceled operations must stay canceled after stale completion.");
-            }
-        }
-        finally
-        {
-            benchmarks.Cleanup();
-        }
-    }
+    internal AsyncSignalStatus PendingStatus => _pending.Value.Status;
 
     /// <summary>Creates reusable adapters and their observer outside the measured operation.</summary>
     [GlobalSetup]

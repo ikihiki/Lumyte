@@ -158,6 +158,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Signals.Benchmarks.Tests/Lumyte.Signals.Benchmarks.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.AotSmoke/Lumyte.Resources.AotSmoke.csproj" />
