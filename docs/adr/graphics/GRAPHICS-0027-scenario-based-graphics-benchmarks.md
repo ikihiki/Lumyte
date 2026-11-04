@@ -14,6 +14,12 @@
 
 描画負荷をシナリオと計測範囲で分類し、同じ入力・画質・機器の下で処理工程、仕事量、遅延分布、保持メモリを比較する。2Dは更新の局所性と描画内容の違いを独立に変え、部品測定で原因を絞り、実際のUIを通す用途別測定で影響を確認する。用途の異なる結果を一つの総合スコアへ集約しない。
 
+### 対象範囲と対象外
+
+本ADRの対象はCPU部品、実GPUによるオフスクリーン描画・用途別フレーム、および独立した仮想コンポジタ上のwindow／swapchain／Present経路とする。物理モニターやデスクトップへの対話ログインを必須にしない。仮想表示では、コンポジタとアプリそれぞれの実GPU、仮想出力の設定、提示方式、描画・完了・退役、ホストの実際のidle挙動と制御された更新配送を識別する。
+
+物理モニターのVSync同期、実リフレッシュレート、scanout、表示開始・光子到達、入力から物理表示までの遅延は対象外とする。これらは受け入れ条件・未完了項目・完了判定のブロッカーに含めない。仮想Presentの結果をこれらの物理特性の証明として扱わないという区間上の注意だけを残す。
+
 ### 利用者の変更前・変更後
 
 利用者は描画実装を比較する開発者である。例えば「一つの図形の色を変えたときの保持描画の費用」を確認する手順を次のように変える。
@@ -45,9 +51,9 @@
 | CPU部品 | Canvas記録・End、Scene編集、文字組み、RenderGraph構築・Compileなどを個別に測る | アルゴリズムと割当の原因を絞る。GPUを含むPrepareとは分ける |
 | 描画フレーム | 準備済みの入力から公開APIで更新・記録・Prepare・Submit・完了まで | 描画方式の比較。UIの再構築・layoutは含めない |
 | 用途別フレーム | 実UiSurface／Signal／layout／文字組みから描画完了まで | 利用側の負荷を含むゲームUI・エディタUIの比較 |
-| 表示を伴う実行 | 実window／swapchain／Present／ホストのフレーム予約 | フレーム間隔、提示方式、idleからの復帰。描画完了までの測定とは別に集計する |
+| 仮想表示への提示 | 独立した仮想コンポジタ上の実window／swapchain／Present／ホストのフレーム予約 | Present呼出し・復帰、提示方式、idle挙動・更新配送。描画完了までの測定とは別に集計する |
 
-CPU部品はBenchmarkDotNet、実GPUはフレーム単位のrunnerを使います。CPU測定の1操作、実GPUの1論理フレーム、表示された1フレームを混同しません。機能の正しさと寿命は単体・GPUテストで確認し、経過時間を単体テストのassertに使いません。
+CPU部品はBenchmarkDotNet、実GPUはフレーム単位のrunnerを使います。CPU測定の1操作、実GPUの1論理フレーム、仮想windowへPresentした1フレームを混同しません。機能の正しさと寿命は単体・GPUテストで確認し、経過時間を単体テストのassertに使いません。
 
 ### 2Dシナリオ
 
@@ -130,7 +136,7 @@ G05は[ModelDrawing](https://github.com/ikihiki/Lumyte/blob/8d2b1a7f30f09cc086da
 
 ### 入力の固定と実験数
 
-基準は1920×1080物理pixel、DPR 1、Rgba8Srgbとします。AA・coverage・blend・filterは現在の製品既定を固定し、manifestへ記録します。Rgba16Floatは同じcaseの別variantです。UIの論理寸法を維持してDPRを変える試験と、DPR固定でviewportを広げる試験は分けます。
+基準は描画targetの1920×1080 pixel、DPR 1、Rgba8Srgbとします。これはtexture／framebufferの寸法であり、物理モニターの画素や接続を要求しません。AA・coverage・blend・filterは現在の製品既定を固定し、manifestへ記録します。Rgba16Floatは同じcaseの別variantです。UIの論理寸法を維持してDPRを変える試験と、DPR固定でviewportを広げる試験は分けます。
 
 全パラメーターの直積は実行しません。最初に標準profileを固定し、その後に一つの要因だけを変える試験と、相互作用を確認する小さな組合せを実行します。
 
@@ -181,13 +187,13 @@ Prepareが内部で行うuploadや待機を、名称だけからCPU専用時間�
 
 API decoratorで数えるdraw数は、Graphics APIへ実際にforwardした呼出し数です。GPU内部のprimitive数やnative driverによる統合数とは区別します。詳細counterの収集は両版で同じ条件とし、基本測定と重いprofile採取を別実行にします。決定的なtraceの事前生成、JSON出力、画像比較、sample保存用の配列確保を計測区間へ入れません。用途別ケースの文字列生成や通知配送など、シナリオ自体の処理はupdate区間へ含めます。
 
-#### 直列・並行・表示
+#### 直列・並行・仮想表示
 
 - 工程診断は1 frame in flightで実行し、各frameの完了を待つ。CPUとGPUのpipelineを止める診断であり、実アプリのthroughputとは区別する。
 - throughputは1／3 frames in flightで、開始前にwarmupをdrainする。固定frame数の実行と最終drain・退役を含む時間からframes/secondを計算する。
 - 各slotはtarget・command・準備済みframe・submission・queryを専有し、GPU完了まで上書きしない。生データは退役順でなくframe IDとinput IDで対応付ける。
 - 重なり得るGPU timestamp区間の合計をGPU占有時間と呼ばない。timestamp非対応・不正・disjointはnull／invalidとして扱い、完了待ち時間で代用しない。
-- 表示試験ではPresent mode、VSync、refresh rate、windowサイズ、可視状態を固定する。60Hzの16.67ms、120Hzの8.33msに対する超過率は実際に選んだ区間名とともに出す。Present復帰だけで光子到達や入力→表示遅延を測れたとは扱わない。
+- 仮想表示試験ではPresent mode、仮想出力の設定周期、windowサイズ、DPR、mapped状態を固定し、仮想環境の構成と実GPUを記録する。60Hzの16.67ms、120Hzの8.33msは論理入力・仮想出力またはframe予算の基準とし、超過率には実際に選んだhost区間名を付ける。Present呼出し・復帰とGPU完了観測を分離し、仮想出力の設定値を実モニターの測定値へ読み替えない。
 
 #### cold・warm・burst・保持メモリ
 
@@ -283,13 +289,13 @@ frame行はrun ID、case、profile、mode、論理frame ID、入力ID、cold／w
 
 測定側には、決定的な入力、独立した描画参照、backendごとの計測能力、資産の完了・退役、反復と結果保存を管理する負担が増える。製品の公開APIと既存ケースの意味は維持し、新しい条件には別のscenario versionを付ける。既存の結果は入力・範囲・runtime条件を揃えた場合だけ比較対象にする。
 
-測定契約は性能改善を保証しない。専用GPU環境での結果、software GPUでの正しさ、表示を伴う遅延はそれぞれの範囲で報告する。CPUの小規模fixture検証は通常CI、software GPUは画素・寿命の確認、実GPUの性能測定は機器を固定した実行とし、通常CIの負荷変動で性能順位を判定しない。
+測定契約は性能改善を保証しない。専用GPU環境での結果、software GPUでの正しさ、仮想表示のhost側観測はそれぞれの範囲で報告する。CPUの小規模fixture検証は通常CI、software GPUは画素・寿命の確認、実GPUの性能測定は機器を固定した実行とし、通常CIの負荷変動で性能順位を判定しない。
 
 ### 受け入れ条件
 
 - 2Dの12シナリオ、用途別UIの7シナリオ、共通Graphicsの6領域について、入力・対応経路・測定区間・期待状態を識別できる。非対応経路はN/Aと理由を残す。
 - 固定4,096命令の粒度比較で画素と描画順が一致し、変更件数、再記録命令数、実draw数、compile／reuse、保持量を比較できる。無変更Canvasは記録を再利用する。
-- CPU・GPU・表示の範囲、初回・定常・burst、1／3 frames in flightを区別し、最終drainと資産退役を含む時間を再計算できる。
+- CPU・GPU・仮想表示の範囲、初回・定常・burst、1／3 frames in flightを区別し、最終drainと資産退役を含む時間を再計算できる。仮想window／swapchain／Presentとホスト挙動を確認でき、物理モニターを必要とする項目を完了条件に含めない。
 - 同じ論理frameを独立した参照と照合でき、遅延やsampleの退役順が違っても入力IDを取り違えない。失敗・非対応・予算超過を正常値へ置換しない。
 - 生データ、manifest、scenario versionからプロセスごとの分布とA/Bの差を再計算できる。結果に含めた機器・counter・画質・cache条件が追跡できる。
 - 通常の単体テストは経過時間の閾値に依存せず、benchmark fixtureの決定性、入力の公平性、計測境界と所有権を検証する。
