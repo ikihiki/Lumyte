@@ -2,9 +2,31 @@
 
 This is an incremental implementation, **not completion of all ADR scenarios**.
 The versioned inventory is [scenarios/coverage-v1.json](scenarios/coverage-v1.json).
-D01/D02 currently have managed fixtures, CPU measurements, and a Vulkan runner.
+D01-D12, U01-U07 and G01-G06 have bounded executable profiles; this does not mean
+every ADR variant or formal measurement campaign is complete. D01/D02 additionally
+have managed fixtures, CPU measurements, and a paired-process Vulkan driver.
 Existing legacy tools remain unchanged; their cases are not automatically relabelled
-as independently verified ADR scenarios. G04 is a separately maintained CPU project.
+as independently verified ADR scenarios. The [ADR proposal](../../docs/adr/graphics/GRAPHICS-0027-scenario-based-graphics-benchmarks.md)
+defines the wider contract; its proposal status is unchanged by these implementations.
+
+## Family entry points
+
+Each family documents its precise profile, independent checks, timing boundaries and
+remaining gaps. Diagnostic runners are not automatically formal comparison campaigns.
+Do not run families, builds or tests concurrently with performance measurements.
+
+- D01/D02, bounded D03/D11: this README and the CPU/GPU projects.
+- D04/D05/D08/D09/D12: [ordinary 2D](Lumyte.Graphics.Ordinary.Benchmarks/README.md).
+- D06/G03: [images and transfers](Lumyte.Graphics.ImageTransfer.Benchmarks/README.md).
+- D07: [native text and distance fields](Lumyte.Graphics.Text.Benchmarks/README.md).
+- D10/G04 Record: [executed layers and effects](Lumyte.Graphics.Effects.Benchmarks/README.md).
+- U01-U07: [real headless UI](Lumyte.Graphics.Ui.Benchmarks/README.md).
+- G01/G02/G05/G06: [graphics primitives](Lumyte.Graphics.Primitives.Benchmarks/README.md).
+- G04 CPU build/compile: [RenderGraph components](Lumyte.Graphics.RenderGraph.Benchmarks/README.md).
+- Independent paired-process campaigns: [driver](../../tools/benchmarks/graphics-scenarios/README.md).
+
+The ordinary CPU fixture test project is registered in `Lumyte.slnx`; native/GPU
+checks remain explicit gates rather than wall-clock assertions in normal unit tests.
 
 ## Build and fixture smoke
 
@@ -121,13 +143,15 @@ Iteration estimate percentiles must not be called individual-frame latency perce
 
 ## Deliberate gaps
 
-Grid/deep trees, shared content, cache sweeps/D12, burst traces, snapshot generation
-retention, target format/resolution variants, per-stage allocation/live/RSS memory,
-font/texture/shader asset hashing, presentation/window scheduling and recovery are
-not implemented here. D04-D10/D12/U01-U07/G01-G03/G05-G06 remain explicit harness gaps,
-not product API non-support. Direct Scene effects are genuinely unsupported and
-need the RenderGraph path. Existing UI fixtures can be extended rather than replaced
-with rectangle stand-ins, but lack this independent correctness contract today.
+The D01/D02 core does not implement grid/deep-tree sweeps, burst traces, retained
+snapshot generations, format/resolution sweeps, per-stage live/RSS/native memory,
+or presentation/window scheduling. Separate family entry points above implement
+bounded image, text, clip, overlap, working-set, effect, UI and primitive profiles;
+their READMEs define exact inputs, correctness gates and remaining gaps. A family
+being executable does not imply a portable backend or formal performance result.
+Direct Scene effects are genuinely unsupported and use the RenderGraph path instead.
+Native device-loss recovery, host idle/resume and a 3D UI preview remain unmeasured.
+See [verification](VERIFICATION.md) for the integration gates and reproduction commands.
 
 ## D03 placement and D11 structural diagnostic subset
 

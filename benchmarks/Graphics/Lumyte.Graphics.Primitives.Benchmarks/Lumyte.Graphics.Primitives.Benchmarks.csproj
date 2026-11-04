@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="Program.cs;Slot.cs;Lumyte.Graphics.Primitives.Benchmarks.csproj" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing/Lumyte.Graphics.Drawing.csproj" />
+    <ProjectReference Include="../../../samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+  </ItemGroup>
+</Project>

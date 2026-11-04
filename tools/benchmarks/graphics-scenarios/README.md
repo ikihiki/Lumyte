@@ -9,6 +9,8 @@ unset DOTNET_TieredCompilation DOTNET_TieredPGO COMPlus_TieredCompilation COMPlu
 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json python3 tools/benchmarks/graphics-scenarios/run-pairs.py --update one --locality dispersed --granularity 64 --depth 1 --output artifacts/graphics-benchmarks/local-one-depth1
 ```
 
+After building the extension projects, `python3 tools/benchmarks/graphics-scenarios/check-extension-cli.py` verifies invalid CLI rejection before GPU initialization, catalog counts and Text BenchmarkDotNet passthrough. It intentionally selects a nonexistent ICD and is not a GPU correctness or performance test.
+
 Use `--depth 3` for the separate three-slot profile. Use `--aa` for independent Canvas/Canvas noise observations, not an optimization comparison. Output directories must not already exist; the driver will not overwrite previous observations.
 
 Each variant first receives a 2,000-frame pilot. Its four most recent 50-frame host/GPU median windows must fit the runner's 1.05 stability criterion. The larger recommended warmup is fixed for both variants. Unstable pilots remain explicitly unstable, rather than silently relaxing thresholds. The measured frame count is fixed before formal processes to at least 2,000 and 120% of the larger pilot-derived ten-second budget. Any formal duration shortfall is retained and invalidates formal qualification; there is no favorable-value stopping rule.

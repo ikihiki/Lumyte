@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RepoRoot Condition="'$(RepoRoot)' == ''">$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', 'Lumyte.slnx'))</RepoRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(RepoRoot)/src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
+    <ProjectReference Include="$(RepoRoot)/src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="$(RepoRoot)/src/UI/Lumyte.UI/Lumyte.UI.csproj" />
+    <ProjectReference Include="$(RepoRoot)/src/UI/Lumyte.UI.TextEditing.Parley/Lumyte.UI.TextEditing.Parley.csproj" />
+    <Compile Include="$(RepoRoot)/tools/benchmarks/drawing2d-incremental/PublicRetainedApiProbeCommands.cs" Link="Shared/IssuedDrawCounter.cs" />
+    <Compile Include="$(RepoRoot)/tools/benchmarks/drawing2d-incremental/HardwareGpuTimer.cs" Link="Shared/HardwareGpuTimer.cs" />
+  </ItemGroup>
+</Project>
