@@ -62,7 +62,7 @@ Button(with: [
 
 ### C1の範囲とカタログとの差分
 
-UI-0013のC1で提案したSizedBoxとSeparatorは独立Widgetとして残す。SizedBoxは既存のWidth/Heightと0〜1 childを使い、空なら制約内の最小有限寸法を返す。子があれば本体制約をそのまま一度渡し、返った寸法を変更せず原点へ配置して自身の本体寸法とする。Separatorは向き・線の厚さ・色を持つ装飾線とし、既定ではfocus、click、独自のAutomation操作を持たない。
+UI-0013のC1で提案したSizedBoxとSeparatorは独立Widgetとして残す。本ADRは修飾列の実行・所有権・共通幾何を判断対象とし、個々の部品の引数・寸法計算・受け入れ条件を網羅する一覧にはしない。
 
 Padding、Border、Align、ConstrainedBoxはWidget継承と独自child slotを持たない操作定義へ変更し、単独でツリーへ置かない。これらのfactory識別子はComposeActionの生成入口として使う。生成上の設定用インスタンスを作れても、それはWidgetではなく表示対象にならない。
 
@@ -84,10 +84,7 @@ ComposeActionは設定値を捕捉し、with適用時に対象Widgetの内部修
 
 親から来た制約を、修飾列の先頭から末尾へ渡す。最内側で既存Width/Heightを親制約内へclampしてtightにし、部品のLayoutOverrideを一度呼ぶ。結果の有限サイズを逆順に戻し、各層の位置と外寸を決める。子の確定サイズを後から変更せず、実際の各子Elementも既存規則どおり一回だけlayoutする。
 
-- Paddingは四辺を差し引く。各軸のmin/maxは0未満にならないようclampし、無限maxは無限のままにする。戻りは本体寸法と余白の和を親制約へclampする。余白が領域を超える場合は先頭側の余白量を位置として保ち、内容は0まで縮めるが、余白値自体は比例縮小しない。clipしなければ外へ出る場合がある。
-- Borderは内側へ線を描き、線幅を四辺のinsetとしてPaddingと同じ制約計算に使う。外寸より線幅が大きいときも描画を外へ広げず、利用可能な枠領域へ収める。角丸、背景fill、影は今回の範囲に含めない。
-- ConstrainedBoxは追加のmin/maxを各軸の親min/maxへclampしてから内側へ渡す。親制約を優先し、矛盾した空の区間を作らない。追加制約自身のmin>maxは登録時に拒否する。
-- Alignはminを0にしたloose制約を内側へ渡す。bounded軸の外寸は親max、unbounded軸の外寸は内側寸法を親制約へclampした値とする。残余寸法に0〜1の配置係数を乗じ、位置だけを変更する。Centerは両軸0.5である。
+各修飾は受け取った制約から内側の制約を決め、返った内側寸法から自分の外寸とoffsetを決める。共通基盤は各層が返す有限寸法と親制約への適合を検証し、修飾の種類ごとに実行ツリーを増やさない。
 
 有限値同士の和や差がoverflowした場合も不正な幾何として失敗させ、InfinityやNaNを公開しない。修飾がないときは基準コードと同じ寸法・配置になる。IsVisible=false等の既存layout除外は修飾全体へ適用する。
 
@@ -113,66 +110,11 @@ ElementのPrepareUpdateで次の修飾列を検証し、公開前の失敗では
 
 ### 公開APIの差分
 
-以下は基準コードへの追加を示す主要宣言であり、実装stubではない。Color2Dは既存のLumyte.Graphics.Drawing2D、Vector2はSystem.Numericsを使用する。privateなComposeActionの定義と、生成される利用者向けのAction入口を区別する。
+以下は共通基盤の追加・保証変更を示す主要宣言であり、実装stubではない。Vector2はSystem.Numerics、Rect2Dは既存のLumyte.Graphics.Drawing2Dを使用する。
 
 ```diff
  namespace Lumyte.UI
  {
-     public static partial class Compose
-     {
-         public static partial class Definitions
-         {
-+            // Widgetではない操作定義。生成factoryは操作の入口を識別する。
-+            [Composable]
-+            public partial class Padding
-+            {
-+                public Padding();
-+                // finite・非負。適用時に不正値はArgumentOutOfRangeException。
-+                [ComposeAction] private static void All(Widget target, float value);
-+                [ComposeAction] private static void Sides(Widget target, float left, float top, float right, float bottom);
-+            }
-+            [Composable]
-+            public partial class Border
-+            {
-+                public Border();
-+                // widthはfinite・非負。0はinsetも描画もなし。色は既存Color2D規則。
-+                [ComposeAction] private static void Stroke(Widget target, Color2D color, float width);
-+            }
-+            [Composable]
-+            public partial class Align
-+            {
-+                public Align();
-+                [ComposeAction] private static void Center(Widget target);
-+                // x/yはfiniteな0〜1。不正値は適用時に拒否する。
-+                [ComposeAction] private static void At(Widget target, float x, float y);
-+            }
-+            [Composable]
-+            public partial class ConstrainedBox
-+            {
-+                public ConstrainedBox();
-+                // UiBoxConstraintsの検証済み値を借用せず値コピーして追加する。
-+                [ComposeAction] private static void Limits(Widget target, UiBoxConstraints constraints);
-+            }
-+            [Composable]
-+            public partial class SizedBox : Widget
-+            {
-+                public SizedBox();
-+                // 0〜1 child、一回初期化。Width/Heightは継承した本体寸法。
-+                [ComposeContent] public WidgetChildren Children { get; }
-+            }
-+            [Composable]
-+            public partial class Separator : Widget
-+            {
-+                public Separator();
-+                // 既定Horizontal。未定義enum値は宣言検証で拒否。
-+                [ComposeParameter] public UiOrientation Orientation { get; set; }
-+                // 既定1。finite・非負。
-+                [ComposeParameter] public float Thickness { get; set; }
-+                // 既定は透明。色を明示して使う。
-+                [ComposeParameter] public Color2D Color { get; set; }
-+            }
-         }
-     }
      public partial class UiElement
      {
 -        // 親ローカル座標の矩形。
@@ -216,8 +158,6 @@ ElementのPrepareUpdateで次の修飾列を検証し、公開前の失敗では
 ```
 
 生成入口の例は `Action<Widget> All(this PaddingFactory factory, float value)` となり、既存の反変性でButton等のwithへ渡せる。操作定義型はUI本体内に置き、CoreのCompositionへGraphics/UI依存、返却型変換、slot転送機構を追加しない。
-
-SeparatorはHorizontalなら高さをThicknessの要求値、幅をbounded軸のmaxまたはunbounded軸のminとして、親制約へclampする。Verticalは軸を交換する。線は本体の中央に置き、実際の本体矩形内へ収める。明示Width/Heightと親tight制約は他のWidgetと同じ優先規則を使う。
 
 ## 検討した代替案
 
