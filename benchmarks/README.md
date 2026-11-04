@@ -10,6 +10,8 @@
 
 ExecutionとVulkanはsampleの起動・device構築を使用するため、測定コードもsampleに配置しています。
 
+グラフィックスのシナリオ別測定と比較条件は[ADR-GRAPHICS-0027（提案）](../docs/adr/graphics/GRAPHICS-0027-scenario-based-graphics-benchmarks.md)にまとめています。
+
 ## 実行
 
 SDKと依存ツールは[開発環境](../docs/development-environment.md)の手順で準備します。リポジトリルートから実行してください。

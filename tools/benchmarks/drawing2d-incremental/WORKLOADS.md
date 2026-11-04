@@ -1,5 +1,7 @@
 # 2D・ゲームUI・エディタUIの独立benchmark suite
 
+シナリオの拡張、公開保持APIとの比較、画素検証と計測境界の共通化は[ADR-GRAPHICS-0027の測定設計案](../../../docs/adr/graphics/GRAPHICS-0027-scenario-based-graphics-benchmarks.md)を参照してください。以下は現在実行できるsuiteの手順です。
+
 既存のBenchmarkDotNet 0.15.8とRadeon timestamp probeを再利用する。矩形保持試作だけを3用途の代表とせず、実際に異なる更新・layout・文字・記録の負荷を個別に選ぶ。
 
 ## 起動
