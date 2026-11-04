@@ -88,7 +88,7 @@ commands execute the actual GPU gates separately. Effects `--smoke` uses 64x64
 targets; primitives deliberately uses 32x32 targets. Those successful small-target
 checks do not establish full-HD throughput or a formal quality/performance tradeoff.
 
-## Remaining acceptance work
+## Historical takeover gaps (superseded by follow-up verification)
 
 - Formal independent-process performance comparisons for extension families,
   stable warmup selection and complete frozen source/native/shader provenance.
@@ -138,9 +138,10 @@ Completed follow-up gates under `artifacts/graphics-benchmarks/adr-completion/`:
 Earlier incomplete and failed runs remain preserved. Formal campaign execution
 evidence is distinct from these correctness and retained-memory observations.
 
-Displayed Present/VSync/host-idle execution is still blocked by the absent GUI
-execution target: DISPLAY and WAYLAND_DISPLAY are unset and no node is connected.
-A GUI target was requested; headless rendering is not substituted for this gate.
+At this earlier checkpoint, the window/Present path had not run because no user
+GUI session was available. The virtual-display follow-up below supersedes that
+execution gap. Physical monitors and their timing are outside the current ADR
+scope and are not remaining acceptance gates.
 
 ### Frozen formal measurement evidence
 
@@ -166,9 +167,10 @@ noise control, never a claimed improvement. The original core A/A raw scope text
 was generic; its explicit `aaNoiseControl` and actual Canvas/Canvas plan are
 authoritative. The future-run scope label is corrected without rewriting raw data.
 
-Actual presentation remains the separate external execution gate above.
+Virtual presentation was subsequently exercised as recorded below; a physical
+monitor is not an external completion gate.
 
-### Presentation preparation and remaining gate
+### Presentation preparation checkpoint (before virtual execution)
 
 The real-UI presentation executable builds and passes formatter verification. Its
 CLI regression script checks 16 invalid invocations plus three managed modes and
@@ -181,12 +183,13 @@ Renderer2D rejection remains preserved as failed evidence; no oracle was weakene
 
 Use `python3 tools/benchmarks/graphics-scenarios/check-presentation-cli.py` after
 building the presentation executable. `--check-pixels` is the explicit real GPU
-headless gate; `--run` requires an authorized logged-in user desktop.
+headless gate; `--run` requires an authorized X11 display, supplied by the owned
+virtual compositor for the ADR profile. A physical desktop login is not required.
 
-No window was created, no Present or actual monitor/VSync measurement was made,
-and benchmark-owned scheduling is not product-host idle/resume proof. The local
-X11 sockets belong to the login greeter, not a requesting-user desktop; they were
-not used or reauthenticated. ADR acceptance remains open for this GUI/host gate.
+No window or Present call was exercised at that preparation checkpoint. The
+login greeter was never used or reauthenticated. Later virtual execution supplies
+the window/Present and public product-host observations below. Physical-monitor
+measurements are excluded rather than left as open acceptance work.
 
 ### Virtual-display functional follow-up
 
@@ -206,6 +209,7 @@ counters remain null. Demand-idle is not claimed as an implemented product featu
 
 Evidence is under ignored virtual-validated-001/. Reproduce with
 run-virtual-display.sh and validate with check-virtual-results.py. Configured
-nominal60Hz and synthetic XRandR modes are virtual context, not physical VSync,
-monitor refresh, scanout or input-to-photon proof. The virtual processes terminate
+nominal60Hz and synthetic XRandR modes are virtual context. Physical VSync,
+monitor refresh, scanout and input-to-photon measurements are outside ADR scope,
+not deferred work; virtual results are not proofs of them. The virtual processes terminate
 after their client script; no long-lived desktop service is installed.

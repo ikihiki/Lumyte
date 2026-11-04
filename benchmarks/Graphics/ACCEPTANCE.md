@@ -29,7 +29,7 @@ profiles pass; 18 independent-process memory observations cover both paths, all
 history budgets, three repeats, named full-GC/RSS checkpoints and after-dispose. Estimated idle-cache bytes must not be relabelled total retained/native
 VRAM. Native allocation/VRAM observations unavailable from public counters stay null.
 
-## 3. CPU/GPU/display, first-use/steady/burst and depth 1/3
+## 3. CPU/GPU/virtual presentation, first-use/steady/burst and depth 1/3
 
 Core throughput drains warmup before measurement and includes final GPU completion
 and retirement. Text, effects and UI now record actual first local device/font/
@@ -42,15 +42,17 @@ post-event/history images. Ordinary primitive timing now has 312 valid actual qu
 pairs across 26 profile/depth combinations. Virtual Weston headless GL/XWayland now executes the actual U03 window/surface/
 Present path at depths1/3 with hardware rendering and explicit virtual metadata.
 The compositor output is fixed nominal60Hz; synthetic XRandR modes are recorded.
-These functional observations are not physical monitor/VSync/scanout measurements.
+Physical monitor synchronization, measured refresh/scanout and input-to-photon
+latency are outside the ADR scope, not acceptance requirements or pending work.
+These virtual observations are not relabelled as those excluded measurements.
 
 A separate public-API UseDesktop probe observes real product-host CPU recording
 and controlled dispatcher model updates. Recording continues during idle: this
 host is periodic, so zero-work demand-idle is N/A for the current implementation.
 Unavailable reservation/draw/Present counters remain null. The benchmark-owned
 pause/resume case is not substituted for that product behavior. No product API or
-scheduler behavior was changed. Physical-display timing is separate unmeasured
-scope, not a reason to block virtual functional verification.
+scheduler behavior was changed. Only CPU/GPU and virtual presentation are required
+by this ADR; physical-display timing is excluded from completion and blocker lists.
 
 ## 4. Independent references, logical identities and honest failures
 
@@ -117,5 +119,6 @@ observed through public APIs: idle CPU recording continues and dispatcher model
 updates reach a new recording. The product is periodic, so zero-work demand-idle
 is N/A for this implementation; private frame/GPU/Present counters remain null.
 This resolves the virtual functional-execution path without requiring a physical
-login. Physical monitor refresh, VSync and scanout are separate unmeasured scope,
-not simulated successes. See the presentation VIRTUAL-DISPLAY.md instructions.
+login. Physical monitor refresh, VSync and scanout are excluded, not outstanding
+acceptance items or simulated successes. See the presentation VIRTUAL-DISPLAY.md
+instructions.

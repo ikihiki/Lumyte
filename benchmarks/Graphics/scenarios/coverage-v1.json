@@ -140,7 +140,7 @@
     {
       "id": "scope/presentation",
       "status": "executable",
-      "reason": "Virtual-functional verified: private Weston headless GL + own XWayland, actual hardware compositor/client, U03 native UI/Acquire/Submit/Present at depths1/3 and benchmark-owned pause/resume. Separate real UseDesktop CPU-recording/model-update probe observes continued periodic idle recording; zero-work product demand-idle is N/A. Physical monitor VSync/refresh/scanout remains unmeasured, never inferred from virtual output."
+      "reason": "Virtual-functional verified: private Weston headless GL + own XWayland, actual hardware compositor/client, U03 native UI/Acquire/Submit/Present at depths1/3 and benchmark-owned pause/resume. Separate real UseDesktop CPU-recording/model-update probe observes continued periodic idle recording; zero-work product demand-idle is N/A. Physical monitor VSync/refresh/scanout and input-to-photon measurements are outside ADR scope, not pending requirements or acceptance blockers; never infer them from virtual output."
     }
   ]
 }

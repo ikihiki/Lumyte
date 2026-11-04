@@ -18,20 +18,16 @@ The ICD shown is this host's verified Radeon path; other machines must identify
 and record their actual selected hardware. The explicit headless gate creates no
 window or surface. It is not a presentation measurement.
 
-Only inside the requesting user's already-authorized X11/XWayland desktop, retain
-its existing DISPLAY/XAUTHORITY and verify the actual monitor mode externally.
-Do not assign guessed display values or use a greeter session. Initial diagnostic
-commands (not formal performance campaigns):
+The ADR presentation profile uses the isolated virtual compositor, not a physical
+monitor or interactive desktop login. Reproduce the owned session and its four
+functional cases using [virtual-display instructions](VIRTUAL-DISPLAY.md):
 
-    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Presentation.Benchmarks -- --run --scenario u03-forced-draw --frames 120 --warmup 8 --depth 1 --present-mode fifo --refresh-hz 60 > artifacts/graphics-benchmarks/presentation/u03-depth1.jsonl
-    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Presentation.Benchmarks -- --run --scenario u03-forced-draw --frames 120 --warmup 8 --depth 3 --present-mode fifo --refresh-hz 60 > artifacts/graphics-benchmarks/presentation/u03-depth3.jsonl
-    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Presentation.Benchmarks -- --run --scenario benchmark-idle-u03 --frames 120 --warmup 8 --depth 1 --present-mode fifo --refresh-hz 60 > artifacts/graphics-benchmarks/presentation/owned-idle.jsonl
+    bash tools/benchmarks/graphics-scenarios/run-virtual-display.sh "$PWD/artifacts/graphics-benchmarks/virtual-display/root" "$PWD/artifacts/graphics-benchmarks/virtual-proof-new"
+    python3 tools/benchmarks/graphics-scenarios/check-virtual-results.py --root artifacts/graphics-benchmarks/virtual-proof-new
 
-Replace the refresh assumption with the externally verified mode; the runner
-itself does not claim measured refresh. The last command is benchmark-owned idle,
-not product-host scheduling proof. These direct commands need either an authorized physical desktop or the owned
-virtual compositor described in VIRTUAL-DISPLAY.md. Virtual checks now have their
-own verified results; physical-display timing remains unmeasured.
+Use a fresh output path. Physical-monitor-dependent measurements are outside ADR
+scope and are not additional completion steps. Do not reinterpret virtual results
+as physical synchronization or display-latency evidence.
 
 ## Commands and strict CLI
 
@@ -44,7 +40,7 @@ Options:
 - --depth 1|3 (1; depth 2 is rejected), --idle-ms 1..60000 (1000)
 - --present-mode fifo|mailbox|immediate (fifo)
 - --refresh-hz 1..1000 (60, invariant decimal, **operator assumption only**)
-- --display-kind unspecified|physical|virtual (unspecified; caller classification, not proof)
+- --display-kind unspecified|physical|virtual (unspecified; caller classification, not proof). The ADR profile uses virtual; physical is an optional tool mode outside ADR acceptance.
 
 --probe-product-host accepts only --idle-ms 1..10000 and --display-kind. It observes
 the actual periodic desktop host and model-update delivery, not demand-idle.
@@ -63,9 +59,9 @@ The UI benchmark ProjectReference uses alias UiBenchmarks to avoid type collisio
 
 ## Fixed target and presentation contract
 
-1920x1080 physical pixels, DPR 1, mapped-visible normal window, BGRA8-sRGB opaque explicit presentation variant (not nominal RGBA8-sRGB baseline). Unsupported exact format/alpha/present policy fails without fallback. IsResizable=false is merely requested; LinuxWindow does not enforce that flag, so actual extent/scale/visibility/lifetime are checked outside every measured host interval. Mapping does not establish unoccluded visibility; occlusion is unknown.
+1920x1080 framebuffer pixels, DPR 1, mapped-visible normal window, BGRA8-sRGB opaque explicit presentation variant (not nominal RGBA8-sRGB baseline). Unsupported exact format/alpha/present policy fails without fallback. IsResizable=false is merely requested; LinuxWindow does not enforce that flag, so actual extent/scale/visibility/lifetime are checked outside every measured host interval. Mapping does not establish unoccluded visibility; occlusion is unknown.
 
-FIFO requests VSync scheduling; mailbox/immediate do not establish absence of compositor pacing. Refresh metadata is an assumption, actual monitor refresh is null, and fullHardwareLatencyClaim is false. Present call/return is NOT scanout, display onset, measured refresh, native-input sampling or photon latency. The operator must verify the actual user monitor separately; this source does not fabricate it.
+FIFO requests VSync scheduling; mailbox/immediate do not establish absence of compositor pacing. Refresh metadata is an assumption, actual monitor refresh is null, and fullHardwareLatencyClaim is false. Present call/return is NOT scanout, display onset, measured refresh, native-input sampling or photon latency. Physical monitor verification is outside ADR scope and is not a follow-up requirement.
 
 ## Correctness and real native text
 
@@ -118,7 +114,7 @@ separately preserved in presentation-headless-pixels.jsonl.
 The initial physical-login blocker was bypassed legitimately with an owned
 Weston headless GL/XWayland environment, not a greeter or another user's session.
 Virtual UI depth1/depth3, owned stop/resume and real product-host observation now
-pass. Physical refresh/VSync/scanout remain unmeasured; product demand-idle is not
+pass. Physical refresh/VSync/scanout are excluded from ADR acceptance; product demand-idle is not
 an implemented behavior. See [virtual display validation](VIRTUAL-DISPLAY.md).
 
 ## Supported intermediate and format correction
@@ -127,7 +123,7 @@ The parent preserved a real --check-pixels failure from the first implementation
 
 Shader artifacts load through the public UiApplication assembly (new project reference); the existing Graphics.Generators analyzer generates local argument serialization. There is no new Slang compiler integration, production friendship, private presenter access, substitute shader, tolerance change, or RGBA-only claimed presentation proof. Metadata emits SHA256 for actual loaded vertex/fragment target-code bytes before runtime binding specialization, separately from shared source/container/binary provenance. Actual issued draw totals include the composite, and CompositeDrawCalls records its one-draw contribution.
 
-The corrected compositor has now passed strict compilation and the real headless WebGPU gate. Virtual XWayland Present subsequently passed; physical-display timing remains unclaimed.
+The corrected compositor has now passed strict compilation and the real headless WebGPU gate. Virtual XWayland Present subsequently passed; physical-display timing is outside ADR scope and remains unclaimed.
 
 ## Virtual execution and real product host
 

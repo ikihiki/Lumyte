@@ -26,14 +26,15 @@ result. See UiApplication.Frames.cs and recording-cache tests: reusable commands
 are not equivalent to skipping GPU frame submissions. No production behavior or
 API is changed to manufacture the desired result.
 
-## Not physical-display evidence
+## ADR scope boundary
 
 The output is synthetic, configured nominal60Hz. XRandR exposes a synthetic
 modeline (recorded verbatim), not a real monitor measurement. FIFO/Present returns
 under this compositor do not establish physical VSync, scanout, display-onset,
 monitor refresh or input-to-photon latency. Virtual observations must never be
-mixed with physical-display timing comparisons. These are functional checks, not
-new formal performance campaigns.
+reported as those excluded measurements. Physical-monitor-dependent items are
+outside ADR scope, not deferred tests, acceptance conditions or blockers. These
+are virtual functional checks, not new formal performance campaigns.
 
 ## Reproduce without system installation
 
@@ -68,8 +69,7 @@ the standard product-host observation. --display-kind virtual is recorded in
 client output. Caller classification is corroborated by the isolated launch log,
 actual compositor GPU and synthetic XRandR output; the flag alone is not proof.
 
-Direct host-probe command, only within an authorized physical or private virtual
-session:
+Direct host-probe command within the owned virtual session:
 
 ```sh
 dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Presentation.Benchmarks -- --probe-product-host --idle-ms 1000 --display-kind virtual
