@@ -64,6 +64,11 @@ internal static class Program
 
     private static async Task<int> RunAsync(string[] args)
     {
+        if (args.Contains("--recovery", StringComparer.Ordinal))
+        {
+            return await RecoveryRunner.RunAsync(args);
+        }
+
         ValidateOptions(args);
         string output = Option(args, "--output", "artifacts/graphics-benchmarks/primitives-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
         int count = int.Parse(Option(args, "--frames", "12"), System.Globalization.CultureInfo.InvariantCulture);
@@ -111,7 +116,7 @@ internal static class Program
             {
                 check = "device-loss-recovery",
                 status = "not-measured",
-                reason = "Recovery APIs exist; controlled native fault injection was not requested or performed on this host. Managed loss flags are not native recovery coverage.",
+                reason = "Ordinary warm-frame run excludes recovery. Use a separate fresh-process --recovery invocation for native WebGPU device destruction and Hosting recovery.",
             });
         }
         catch (Exception ex)
@@ -152,6 +157,7 @@ internal static class Program
             error,
             runId = Path.GetFileName(output),
             sourceCommit = Git("rev-parse HEAD"),
+            provenance = Lumyte.Graphics.Gpu.Benchmarks.Provenance.Capture(),
             dirtyDiffSha256 = Hash(System.Text.Encoding.UTF8.GetBytes(Git("diff --binary HEAD"))),
             inputSha256 = Hash(JsonSerializer.SerializeToUtf8Bytes(Catalog(), Json)),
             seed = 0,
@@ -183,8 +189,9 @@ internal static class Program
             frames = count,
             warmup,
             sourceHashes = sources,
-            gpuSpan = (double?)null,
-            gpuSpanReason = "Not measured: this fixture is not yet timestamp-instrumented. Actual native timestamp period and queue valid bits are recorded in actualDevice; null is not a product capability verdict.",
+            measurementVersion = "primitive-queue-timestamps-v2",
+            gpuSpan = "slot-owned timestamp pair across ordered same-queue commands: initial barriers, upload, clear and draw included; readback excluded; separate-submit queue starvation may be included; not summed busy time",
+            gpuSpanReason = "Actual queue capability is recorded; unsupported timestamps stay null; every supported pair must be finite/nonnegative after all submissions complete and before slot reuse.",
             nativeMemory = (long?)null,
             gpuMemory = (long?)null,
             counters = "actual harness-forwarded Draw/ModelMesh.Draw, command and Submit calls; not GPU primitive counters",
@@ -193,7 +200,7 @@ internal static class Program
             {
                 "G02 many-state variants absent; grouped/alternating two raster states only",
                 "G05 no textures/material diversity, culling, LOD or indirect",
-                "G06 raw mesh assets only; no ResourceManager/file decode, mutable asset update or real device recovery",
+                "G06 ordinary run covers raw mesh replacement only; native recovery is a separate --recovery process; ResourceManager/file decode and in-place mutation remain unmeasured",
                 "cold means fresh native program object, not cold driver disk cache",
                 "bounded trace is not formal 2000-frame/5-process A/B or stability pilot",
             },
@@ -301,7 +308,7 @@ internal static class Program
             queueFamily,
             timestampPeriodNs = p.Limits.TimestampPeriod,
             timestampValidBits,
-            timestampInstrumented = false,
+            timestampInstrumented = timestampValidBits is > 0 and <= 64 && p.Limits.TimestampPeriod > 0,
         };
     }
 
@@ -333,9 +340,11 @@ internal static class Program
         var samples = new List<double>(count);
         var rows = new FrameSample[count];
         double[] completions = new double[count];
+        double?[] gpuSamples = new double?[count];
         foreach (Slot slot in slots)
         {
             slot.CompletionSamples = completions;
+            slot.GpuSamples = gpuSamples;
         }
 
         bool safe = true;
@@ -443,7 +452,8 @@ internal static class Program
                     retirementMs = row.Retirement,
                     outerHostMs = row.Outer,
                     completionLatencyMs = completions[frame],
-                    gpuSpanMs = (double?)null,
+                    gpuSpanMs = gpuSamples[frame],
+                    gpuQueryStatus = gpuSamples[frame].HasValue ? "valid" : "unsupported",
                     draws = row.Draws,
                     commands = row.Commands,
                     submits = row.Submits,
@@ -478,6 +488,7 @@ internal static class Program
             }
 
             samples.Sort();
+            double[] gpuOrdered = gpuSamples.Where(value => value.HasValue).Select(value => value!.Value).Order().ToArray();
             Summaries.Add(new
             {
                 spec.Id,
@@ -486,10 +497,16 @@ internal static class Program
                 count,
                 elapsedIncludingFinalDrainMs = elapsed,
                 framesPerSecond = count * 1000 / elapsed,
-                hostMedianMs = samples[samples.Count / 2],
+                hostMedianMs = samples.Count % 2 == 0 ? (samples[(samples.Count / 2) - 1] + samples[samples.Count / 2]) / 2 : samples[samples.Count / 2],
                 hostP95Ms = samples[(int)Math.Ceiling(samples.Count * .95) - 1],
                 status = "diagnostic-only",
-                gpuSpanMs = (double?)null,
+                gpu = gpuOrdered.Length == 0 ? null : new
+                {
+                    count = gpuOrdered.Length,
+                    medianMs = gpuOrdered.Length % 2 == 0 ? (gpuOrdered[(gpuOrdered.Length / 2) - 1] + gpuOrdered[gpuOrdered.Length / 2]) / 2 : gpuOrdered[gpuOrdered.Length / 2],
+                    p95Ms = gpuOrdered[(int)Math.Ceiling(gpuOrdered.Length * 0.95) - 1],
+                    maximumMs = gpuOrdered[^1],
+                },
             });
         }
         catch

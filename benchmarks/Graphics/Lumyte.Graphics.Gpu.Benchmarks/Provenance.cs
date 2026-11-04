@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace Lumyte.Graphics.Gpu.Benchmarks;
 
@@ -21,7 +24,60 @@ internal static class Provenance
             .Order(StringComparer.Ordinal).ToDictionary(path => Path.GetRelativePath(root, path), Hash);
         var binaries = Files(AppContext.BaseDirectory).Where(path => Path.GetExtension(path) is ".dll" or ".so" or ".spv")
             .Order(StringComparer.Ordinal).ToDictionary(path => Path.GetRelativePath(AppContext.BaseDirectory, path), Hash);
-        return new { sources, shaders, binaries, policy = "SHA256 file contents, captured outside timing; includes untracked harness source; bin/obj excluded from source; runtime output binaries hashed separately" };
+        string commit = Git(root, "rev-parse", "HEAD");
+        string dirty = Git(root, "diff", "--binary", "HEAD");
+        string untracked = Git(root, "ls-files", "--others", "--exclude-standard");
+        return new
+        {
+            sourceCommit = commit,
+            dirtyDiffSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(dirty))),
+            dirtyTracked = dirty.Length != 0,
+            untrackedPaths = untracked.Split('\n', StringSplitOptions.RemoveEmptyEntries),
+            cpu = CpuIdentity(),
+            os = RuntimeInformation.OSDescription,
+            architecture = RuntimeInformation.ProcessArchitecture.ToString(),
+            runtime = RuntimeInformation.FrameworkDescription,
+            sources,
+            shaders,
+            binaries,
+            policy = "SHA256 file contents, captured outside timing; includes untracked harness source; bin/obj excluded from source; runtime output binaries hashed separately; shader source/container hashes are not standalone target-code hashes",
+        };
+    }
+
+    private static string Git(string root, params string[] arguments)
+    {
+        var start = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("Cannot start git for source provenance.");
+        Task<string> error = process.StandardError.ReadToEndAsync();
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException("Source provenance failed: " + error.GetAwaiter().GetResult());
+        }
+
+        return output.TrimEnd();
+    }
+
+    private static string? CpuIdentity()
+    {
+        if (OperatingSystem.IsLinux() && File.Exists("/proc/cpuinfo"))
+        {
+            return File.ReadLines("/proc/cpuinfo").FirstOrDefault(line => line.StartsWith("model name", StringComparison.Ordinal))?.Split(':', 2)[1].Trim();
+        }
+
+        return Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
     }
 
     private static IEnumerable<string> Files(string path) => Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories) : [];

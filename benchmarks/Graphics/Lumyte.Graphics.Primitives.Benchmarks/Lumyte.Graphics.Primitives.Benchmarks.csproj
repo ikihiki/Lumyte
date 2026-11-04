@@ -7,9 +7,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="Program.cs;Slot.cs;Lumyte.Graphics.Primitives.Benchmarks.csproj" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../Lumyte.Graphics.Gpu.Benchmarks/Provenance.cs" Link="Shared/Provenance.cs" />
+    <Compile Include="../Lumyte.Graphics.Text.Benchmarks/HardwareGpuTimer.cs" Link="Shared/HardwareGpuTimer.cs" />
+    <None Include="Program.cs;Slot.cs;RecoveryRunner.cs;RecoveryResources.cs;Lumyte.Graphics.Primitives.Benchmarks.csproj" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Graphics.Benchmarks.Tests" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing/Lumyte.Graphics.Drawing.csproj" />
     <ProjectReference Include="../../../samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />

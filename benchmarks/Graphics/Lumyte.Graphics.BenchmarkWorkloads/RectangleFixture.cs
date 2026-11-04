@@ -11,6 +11,7 @@ public sealed class RectangleFixture : IDisposable
     private readonly int _width;
     private readonly int _height;
     private int _frame;
+    private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="RectangleFixture"/> class.</summary>
     /// <param name="trace">The shared deterministic logical trace.</param>
@@ -18,9 +19,11 @@ public sealed class RectangleFixture : IDisposable
     /// <param name="retained">Whether to use public Scene retention.</param>
     /// <param name="width">The physical target width.</param>
     /// <param name="height">The physical target height.</param>
-    public RectangleFixture(RectangleTrace trace, int granularity, bool retained, int width = 1920, int height = 1080)
+    /// <param name="snapshotHistory">Optional zero, one or three past changed generations.</param>
+    public RectangleFixture(RectangleTrace trace, int granularity, bool retained, int width = 1920, int height = 1080, int snapshotHistory = 0)
     {
         RectangleTrace.ValidateGranularity(granularity);
+        History = new(snapshotHistory);
         Trace = trace;
         Granularity = granularity;
         Retained = retained;
@@ -40,6 +43,9 @@ public sealed class RectangleFixture : IDisposable
             Recording = RecordWhole();
         }
     }
+
+    /// <summary>Gets optional immutable past-generation ownership.</summary>
+    public RectangleSnapshotHistory History { get; }
 
     /// <summary>Gets the shared trace.</summary>
     public RectangleTrace Trace { get; }
@@ -70,15 +76,17 @@ public sealed class RectangleFixture : IDisposable
     /// <param name="frame">The logical frame number.</param>
     public void Apply(int frame)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         RerecordedCommands = 0;
         ChangedNodes = 0;
         ChangedElements = 0;
-        if ((_frame & 1) == (frame & 1) || Trace.ChangedCount == 0)
+        if (Trace.State(_frame) == Trace.State(frame) || Trace.ChangedCount == 0)
         {
             _frame = frame;
             return;
         }
 
+        History.Capture(this, _frame);
         _frame = frame;
         ChangedNodes = _changedNodes.Length;
         ChangedElements = Trace.ChangedCount;
@@ -98,7 +106,15 @@ public sealed class RectangleFixture : IDisposable
     }
 
     /// <inheritdoc/>
-    public void Dispose() => Scene.Dispose();
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+            History.Dispose();
+            Scene.Dispose();
+        }
+    }
 
     private DrawList2D RecordWhole()
     {

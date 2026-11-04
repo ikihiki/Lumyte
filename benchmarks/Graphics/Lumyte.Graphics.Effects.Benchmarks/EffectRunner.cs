@@ -67,7 +67,9 @@ internal static class EffectRunner
             throw new IOException("Output profile/depth already exists; choose a fresh output directory.");
         }
 
+        long deviceStarted = Stopwatch.GetTimestamp();
         using var device = VulkanDevice.Create();
+        double deviceInitializationMs = Stopwatch.GetElapsedTime(deviceStarted).TotalMilliseconds;
         var description = new TextureDesc
         {
             Width = checked((uint)profile.Width),
@@ -91,7 +93,10 @@ internal static class EffectRunner
                 version = 1,
                 status = "configuration; inspect summary/failure for completion",
                 source,
+                provenance = Lumyte.Graphics.Gpu.Benchmarks.Provenance.Capture(),
                 profile,
+                deviceInitializationMs,
+                coldScope = "first local device/graph execution is in before-check stages with diagnostic graph metadata enabled; fresh process required for cold observations, driver disk caches unknown",
                 inputHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(profile)))),
                 shaderHash = (string?)null,
                 depth,
@@ -263,6 +268,19 @@ internal static class EffectRunner
                 analyticMaximumError = maximumError,
                 tolerance = AnalyticReference.AbsoluteTolerance,
                 sample.Statistics,
+                firstExecutionStages = phase == "before" ? new
+                {
+                    sample.GraphBuildPrepareMs,
+                    sample.GraphCompileMs,
+                    sample.GraphRecordMs,
+                    sample.EncodeMs,
+                    sample.SubmitMs,
+                    sample.SubmitToCompletionObservationMs,
+                    sample.RetirementMs,
+                    sample.GpuSpanMs,
+                }
+
+                : null,
                 graphMetadata = metadata,
             };
             await File.AppendAllTextAsync(prefix + "-checks.jsonl", JsonSerializer.Serialize(checkRow) + Environment.NewLine);

@@ -11,7 +11,13 @@ public sealed class RectangleTrace
     public const int Count = 4096;
 
     /// <summary>The trace generation version.</summary>
-    public const string Version = "rectangles-v1";
+    public const string Version = "rectangles-v2";
+
+    /// <summary>Fixed logical frames between full visible burst transitions.</summary>
+    public const int BurstPeriod = 120;
+
+    /// <summary>First burst frame; frame 150 returns to the initial image.</summary>
+    public const int FirstBurstFrame = 30;
 
     private readonly bool[] _selected = new bool[Count];
 
@@ -32,7 +38,7 @@ public sealed class RectangleTrace
             "one" => 1,
             "1%" => 41,
             "10%" => 410,
-            "all" => Count,
+            "all" or "burst" => Count,
             _ => throw new ArgumentException("Unknown update.", nameof(update)),
         };
         Update = update;
@@ -57,7 +63,7 @@ public sealed class RectangleTrace
     /// <summary>Gets the seed.</summary>
     public uint Seed { get; }
 
-    /// <summary>Gets the actual rounded update count per noninitial frame.</summary>
+    /// <summary>Gets the rounded selection size; the fixture reports zero actual changes on static intervals.</summary>
     public int ChangedCount { get; }
 
     /// <summary>Validates the fixed granularity sweep.</summary>
@@ -79,7 +85,26 @@ public sealed class RectangleTrace
     /// <param name="index">The logical element index.</param>
     /// <param name="frame">The logical frame number.</param>
     /// <returns>The deterministic result for the requested input.</returns>
-    public bool IsWhite(int index, int frame) => _selected[index] && (frame & 1) != 0;
+    public bool IsWhite(int index, int frame) => _selected[index] && State(frame);
+
+    /// <summary>Gets the binary visible state at an absolute logical frame, including jumped frames.</summary>
+    /// <param name="frame">Nonnegative logical frame.</param>
+    /// <returns>Whether selected rectangles are white.</returns>
+    public bool State(int frame)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(frame);
+        return Update == "burst" ? frame >= FirstBurstFrame && (((frame - FirstBurstFrame) / BurstPeriod) & 1) == 0 : (frame & 1) != 0;
+    }
+
+    /// <summary>Gets the most recent deterministic burst event frame, or null before the first event.</summary>
+    /// <param name="frame">Logical frame.</param>
+    /// <returns>The event frame.</returns>
+    public int? BurstEventFrame(int frame) => Update == "burst" && frame >= FirstBurstFrame ? FirstBurstFrame + (((frame - FirstBurstFrame) / BurstPeriod) * BurstPeriod) : null;
+
+    /// <summary>Gets the nearest scheduled event for signed pre/post-burst aggregation.</summary>
+    /// <param name="frame">Logical frame.</param>
+    /// <returns>The event anchor, or null for non-burst traces.</returns>
+    public int? BurstAnchor(int frame) => Update == "burst" ? FirstBurstFrame + (Math.Max(0, (frame - FirstBurstFrame + (BurstPeriod / 2)) / BurstPeriod) * BurstPeriod) : null;
 
     /// <summary>Gets a partition-independent ID of the complete ordered input state.</summary>
     /// <param name="frame">The logical frame number.</param>

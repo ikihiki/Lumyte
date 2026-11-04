@@ -58,7 +58,9 @@ internal static class TextGpuRunner
         string prefix = Path.Combine(output, $"{input.Id}-{method}-depth{depth}");
         TextChecks.Require(!File.Exists(prefix + "-manifest.json"), "Choose a fresh output directory; profile/method/depth already exists.");
         using var fixture = new TextFixture(input);
+        long deviceStarted = Stopwatch.GetTimestamp();
         using var device = VulkanDevice.Create();
+        double deviceInitializationMs = Stopwatch.GetElapsedTime(deviceStarted).TotalMilliseconds;
         using TextAssets assets = await TextAssets.CreateAsync(device, fixture, method);
         var slots = new List<TextSlot>();
         var samples = new List<TextFrameSample>(count);
@@ -74,6 +76,7 @@ internal static class TextGpuRunner
                 scenario = "D07-text",
                 version = 1,
                 source,
+                provenance = Lumyte.Graphics.Gpu.Benchmarks.Provenance.Capture(),
                 input,
                 method,
                 depth,
@@ -81,6 +84,14 @@ internal static class TextGpuRunner
                 frames = count,
                 smoke,
                 fonts = fixture.Fonts,
+                firstUse = new
+                {
+                    deviceInitializationMs,
+                    fixture.NativeEngineInitializationMs,
+                    fixture.FontRegistrationAndHashingMs,
+                    fixture.FirstAnchorLayoutMs,
+                    scope = "fresh local engine/device/renderer; per-state shaping/atlas/upload in lifecycle; first actual render stages in before checks; process/native/driver disk caches are not asserted cold",
+                },
                 inputHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(input)))),
                 target = "640x320 Rgba16Float; white opaque clear; DPR1",
                 fontSize = input.Id == "colr" ? 64 : 24,
@@ -199,6 +210,7 @@ internal static class TextGpuRunner
     private static async Task<byte[][]> CheckAsync(VulkanDevice device, TextFixture fixture, TextAssets assets, List<TextSlot> slots, string method, string prefix, string phase, byte[][]? reference)
     {
         byte[][] expected = reference ?? new byte[2][];
+        int visit = 0;
         foreach (int state in new[] { 0, 1, 0 })
         {
             foreach (TextSlot slot in slots)
@@ -209,7 +221,7 @@ internal static class TextGpuRunner
 
             foreach (TextSlot slot in slots)
             {
-                await slot.RetireAsync();
+                TextFrameSample? completed = await slot.RetireAsync();
                 byte[] pixels = await PixelReadback.ReadAsync(device, slot.Texture);
                 object quality = TextPixels.Verify(fixture.Input, fixture.Anchor, pixels);
                 expected[state] ??= pixels;
@@ -225,6 +237,18 @@ internal static class TextGpuRunner
                     state,
                     slot = slot.Index,
                     quality,
+                    firstRenderStages = phase == "before" && visit == 0 ? new
+                    {
+                        completed!.PrepareHostMs,
+                        completed.RecordHostMs,
+                        completed.EncodeHostMs,
+                        completed.SubmitHostMs,
+                        completed.CompletionObservationMs,
+                        completed.RetirementMs,
+                        completed.GpuSpanMs,
+                    }
+
+                    : null,
                     sha256 = Convert.ToHexString(SHA256.HashData(pixels)),
                     status = "passed",
                 };
@@ -241,6 +265,8 @@ internal static class TextGpuRunner
                 byte[] pixels = await PixelReadback.ReadAsync(device, slot.Texture);
                 TextChecks.Require(expected[state].AsSpan().SequenceEqual(pixels), "DrawText differs from independent logical FillPath/paint adapter reference.");
             }
+
+            visit++;
         }
 
         bool changed = !expected[0].AsSpan().SequenceEqual(expected[1]);

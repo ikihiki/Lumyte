@@ -7,6 +7,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Lumyte.Graphics.Gpu.Benchmarks/Provenance.cs" Link="Shared/Provenance.cs" />
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.TextEditing.Parley/Lumyte.UI.TextEditing.Parley.csproj" />

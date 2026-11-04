@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Lumyte.Graphics.Incremental.Benchmarks;
 using Lumyte.Graphics.Vulkan;
@@ -73,7 +74,9 @@ internal static class Program
             int warmup = Number(args, "--warmup", 200);
             int frames = Number(args, "--frames", 2000);
             Require(depth is 1 or 3 && warmup >= 0 && warmup <= 2000 && frames > 0 && frames <= 100000, "Depth must be 1 or 3; warmup must be 0..2000 and frames 1..100000.");
+            long deviceStarted = Stopwatch.GetTimestamp();
             var device = VulkanDevice.Create();
+            double deviceInitializationMs = Stopwatch.GetElapsedTime(deviceStarted).TotalMilliseconds;
             try
             {
                 // Validate the actual physical device before issuing any workload.
@@ -92,6 +95,9 @@ internal static class Program
                     timestampSupported = identity.Supported,
                     requiredHardware = "Radeon 8060S; vendor=0x1002; device=0x1586; non-CPU",
                     source = Environment.GetEnvironmentVariable("DRAWING_BASELINE"),
+                    deviceInitializationMs,
+                    coldScope = "First local font/mount/layout and first actual preflight render stages are recorded separately; use a fresh process per cold observation; driver/native disk caches are not asserted cold",
+                    provenance = Lumyte.Graphics.Gpu.Benchmarks.Provenance.Capture(),
                     runtime = Environment.Version.ToString(),
                     os = Environment.OSVersion.ToString(),
                     icd = Environment.GetEnvironmentVariable("VK_DRIVER_FILES"),

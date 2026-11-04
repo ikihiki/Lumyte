@@ -8,6 +8,7 @@
     <RepoRoot Condition="'$(RepoRoot)' == ''">$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', 'Lumyte.slnx'))</RepoRoot>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Lumyte.Graphics.Gpu.Benchmarks/Provenance.cs" Link="Shared/Provenance.cs" />
     <ProjectReference Include="$(RepoRoot)/src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
     <ProjectReference Include="$(RepoRoot)/src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="$(RepoRoot)/src/UI/Lumyte.UI/Lumyte.UI.csproj" />

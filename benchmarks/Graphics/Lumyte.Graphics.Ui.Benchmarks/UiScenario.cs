@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Signals;
 using Lumyte.UI;
@@ -19,16 +20,24 @@ internal sealed class UiScenario : IDisposable
 
     internal UiScenario(UiProfile profile, int initialFrame = 0)
     {
+        long fonts = Stopwatch.GetTimestamp();
         _text = new(profile.Id == "U04" && profile.VisibleRows == 100 ? 8 : 17);
+        NativeFontInitializationMs = Stopwatch.GetElapsedTime(fonts).TotalMilliseconds;
         Profile = profile;
         Input = UiInput.At(profile, initialFrame);
         _score = Signal.Create(Score(Input));
         _health = Signal.Create<float?>(Health(Input));
+        long mount = Stopwatch.GetTimestamp();
         _surface = new UiSurface(Build());
         _surface.SetSignalUpdatesEnabled(false);
         SetViewport();
         _surface.UpdateLayout();
+        InitialMountAndLayoutMs = Stopwatch.GetElapsedTime(mount).TotalMilliseconds;
     }
+
+    internal double NativeFontInitializationMs { get; }
+
+    internal double InitialMountAndLayoutMs { get; }
 
     internal UiProfile Profile { get; }
 

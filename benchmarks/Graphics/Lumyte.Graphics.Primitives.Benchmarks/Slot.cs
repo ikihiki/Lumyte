@@ -3,6 +3,7 @@ using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing;
 using Lumyte.Graphics.Samples;
+using Lumyte.Graphics.Text.Benchmarks;
 using Lumyte.Graphics.Vulkan;
 
 namespace Lumyte.Graphics.Primitives.Benchmarks;
@@ -12,6 +13,7 @@ internal sealed class Slot : IDisposable
 {
     private readonly VulkanDevice _device;
     private readonly Program.Case _spec;
+    private readonly HardwareGpuTimer _timer;
     private readonly List<IDisposable> _owned = new();
     private readonly List<ModelMesh> _meshes = new();
     private readonly List<IGraphicsCommandBuffer> _commands = new();
@@ -42,6 +44,7 @@ internal sealed class Slot : IDisposable
     {
         _device = device;
         _spec = spec;
+        _timer = new HardwareGpuTimer(device);
         _vertexArtifact = _spec.Model ? DrawingShaders.LoadModelVertex() : ShaderArtifact.LoadEmbedded(typeof(PipelineBenchmark).Assembly, "Lumyte.Shaders.fullscreen-vertex.lshader");
         ShaderArtifact fragmentArtifact = _spec.Model ? DrawingShaders.LoadModelFragment() : ShaderArtifact.LoadEmbedded(typeof(PipelineBenchmark).Assembly, "Lumyte.Shaders.color-fragment.lshader");
         ShaderHash = Program.Hash(_vertexArtifact.GetTarget(_device.Caps.ShaderTarget).Code.ToArray().Concat(fragmentArtifact.GetTarget(_device.Caps.ShaderTarget).Code.ToArray()).ToArray());
@@ -107,6 +110,8 @@ internal sealed class Slot : IDisposable
 
     internal int SubmitCalls { get; private set; }
 
+    internal double?[] GpuSamples { get; set; } = [];
+
     internal string ShaderHash { get; }
 
     /// <summary>Releases this slot only after all accepted submissions have completed.</summary>
@@ -119,6 +124,7 @@ internal sealed class Slot : IDisposable
             mesh.Dispose();
         }
 
+        _timer.Dispose();
         _pipeline.Dispose();
         for (int i = _owned.Count - 1; i >= 0; i--)
         {
@@ -167,6 +173,11 @@ internal sealed class Slot : IDisposable
         for (int part = 0; part < _spec.Commands; part++)
         {
             IGraphicsCommandBuffer c = _device.CreateCommandBuffer(new());
+            if (_timer.Supported && _commands.Count == 0)
+            {
+                _timer.Begin(c);
+            }
+
             _commands.Add(c);
             CommandCalls++;
             if (part == 0)
@@ -208,6 +219,12 @@ internal sealed class Slot : IDisposable
             else
             {
                 Program.Transition(c, _color, TextureState.ColorAttachment, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite), new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
+            }
+
+            if (part > 0)
+            {
+                var colorOrder = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
+                Program.Transition(c, _color, TextureState.ColorAttachment, TextureState.ColorAttachment, colorOrder, colorOrder);
             }
 
             IRenderEncoder render = c.BeginRenderPass(new()
@@ -269,6 +286,11 @@ internal sealed class Slot : IDisposable
             }
 
             render.End();
+            if (_timer.Supported && _commands.Count == _spec.Commands)
+            {
+                _timer.End(c, sameQueueSequence: true);
+            }
+
             c.Finish();
         }
 
@@ -334,9 +356,11 @@ internal sealed class Slot : IDisposable
             _needsUpload = false;
         }
 
+        double? gpu = _timer.Supported ? _timer.ReadMilliseconds() : null;
         if (Frame >= 0)
         {
             CompletionSamples[Frame] = Program.Ms(_submitStart);
+            GpuSamples[Frame] = gpu;
         }
 
         Frame = -1;

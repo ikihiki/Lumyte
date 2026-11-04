@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Lumyte.Graphics.Text.Parley;
@@ -8,18 +9,23 @@ namespace Lumyte.Graphics.Text.Benchmarks;
 
 internal sealed class TextFixture : IDisposable
 {
-    private readonly ParleyTextEngine2D _engine = new();
+    private readonly ParleyTextEngine2D _engine;
     private readonly TextDocumentSnapshot[] _documents;
     private readonly ParleyUiTextLayoutProvider _provider;
     private readonly ParleyTextOptions2D _options;
 
     internal TextFixture(TextCase input)
     {
+        long initialization = Stopwatch.GetTimestamp();
+        _engine = new ParleyTextEngine2D();
+        NativeEngineInitializationMs = Stopwatch.GetElapsedTime(initialization).TotalMilliseconds;
         Input = input;
         try
         {
+            long fonts = Stopwatch.GetTimestamp();
             string latin = Register("DejaVuSans.ttf");
             string? extra = input.AdditionalFont is null ? null : Register(input.AdditionalFont);
+            FontRegistrationAndHashingMs = Stopwatch.GetElapsedTime(fonts).TotalMilliseconds;
             _options = new ParleyTextOptions2D
             {
                 FontFamily = input.Id == "colr" ? extra : latin,
@@ -32,7 +38,9 @@ internal sealed class TextFixture : IDisposable
             };
             _provider = new ParleyUiTextLayoutProvider(_engine, _options);
             _documents = [new TextDocument(input.First).CaptureSnapshot(), new TextDocument(input.Second).CaptureSnapshot()];
+            long anchor = Stopwatch.GetTimestamp();
             Anchor = _engine.CreateLayout("O", new ParleyTextOptions2D { FontFamily = latin, FontSize = 64 });
+            FirstAnchorLayoutMs = Stopwatch.GetElapsedTime(anchor).TotalMilliseconds;
         }
         catch
         {
@@ -40,6 +48,12 @@ internal sealed class TextFixture : IDisposable
             throw;
         }
     }
+
+    internal double NativeEngineInitializationMs { get; }
+
+    internal double FontRegistrationAndHashingMs { get; }
+
+    internal double FirstAnchorLayoutMs { get; }
 
     internal TextCase Input { get; }
 

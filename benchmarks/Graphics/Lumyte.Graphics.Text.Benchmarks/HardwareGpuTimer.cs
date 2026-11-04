@@ -104,10 +104,12 @@ internal sealed unsafe class HardwareGpuTimer : IDisposable
     }
 
     // Call after measured work and outside rendering, before commands.Finish().
-    internal void End(IGraphicsCommandBuffer commands)
+    // sameQueueSequence explicitly permits the last ordered command in a slot-owned
+    // same-device queue sequence; caller awaits every submission before ReadMilliseconds.
+    internal void End(IGraphicsCommandBuffer commands, bool sameQueueSequence = false)
     {
         RequireSupported();
-        if (!ReferenceEquals(_recording, commands) || _ended)
+        if (_recording is null || (!sameQueueSequence && !ReferenceEquals(_recording, commands)) || _ended)
         {
             throw new InvalidOperationException("Timestamp End must match exactly one Begin on the same command buffer.");
         }

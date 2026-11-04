@@ -92,9 +92,52 @@ checks do not establish full-HD throughput or a formal quality/performance trade
 
 - Formal independent-process performance comparisons for extension families,
   stable warmup selection and complete frozen source/native/shader provenance.
-- Full ADR parameter sweeps, native/live/RSS memory and memory pressure behavior.
+- Selected standard/single-factor profile evidence, retained managed-live/RSS and
+  memory-pressure behavior; the ADR does not require a full Cartesian sweep.
 - Host no-draw idle/resume, presentation, native device-loss recovery, 3D UI preview.
 - Mounted TextBox wrapping, OS input, IME and Undo; the paragraph text fixture
   exercises real bounded wrapping but is not a wrapped editor control.
 - Portable hardware/backend validation. Missing observations are not unsupported
   product APIs, and null GPU times are never replaced with host fence waits.
+
+## ADR completion follow-up
+
+The implementation branch was pushed and remote SHA `f3bc4aa` verified before this
+follow-up. New work remains subject to its own source-freeze and campaign gates.
+The [six-condition acceptance ledger](ACCEPTANCE.md) is authoritative; optional
+parameter variants are not a demand to execute the Cartesian product.
+
+Completed follow-up gates under `artifacts/graphics-benchmarks/adr-completion/`:
+
+- Strict Release build and formatting: core GPU/CPU, Text, Effects, Primitives and UI.
+- Managed fixture/lifetime/parser tests: 61 passed, zero skipped/failed.
+- Pre-device CLI regression invocations: 32 rejected as intended; catalogs and BDN
+  passthrough continue to pass. Campaign tests additionally exercise retained real
+  artifact schemas, not only mocks.
+- Burst/return: Canvas/Scene x depths1/3 x snapshot-history0/1/3, 12 profiles and
+  1,812 logical frame/query pairs; all independent exact+analytic checks pass.
+  Frame/input IDs match across all profiles, actual updates occur only at scheduled
+  events, and historical generation counts remain within their declared budgets.
+- Native WebGPU process-local destruction and Hosting recovery: three cycles pass
+  native loss callbacks, lease invalidation, native retirement, old child/owner
+  disposal, new epochs and rebuilt red/green/red model pixels. Successful run has
+  zero quarantined owners. This is drained-work instance destruction, not a host
+  GPU reset or uncontrolled driver fault and not pending-work-loss coverage.
+- Primitive timestamps: 26 profile/depth combinations, 312 valid actual query
+  pairs, including multi-command/multi-submit ordered queue spans. Independent
+  analytic and pipelined-final pixel checks pass. Queue starvation can be part of
+  a multi-submit span; it is not exclusive GPU busy time.
+- Retention memory: 18 independent processes (both paths, history0/1/3, three
+  repeats) preserve baseline/initialized/eight-cycle/after-dispose observations.
+  Full-GC managed live heap and RSS are separate; native/GPU allocation stays null.
+- First-use Text/Effects/UI records contain real device/font/initial-layout and
+  first-render stage intervals, with exact-pixel checks. Driver/global native cache
+  coldness is unknown and is not inferred from creating a fresh local engine.
+
+`correctness-ledger.json` validates these counts/scopes against raw evidence.
+Earlier incomplete and failed runs remain preserved. Formal campaign execution
+evidence is distinct from these correctness and retained-memory observations.
+
+Displayed Present/VSync/host-idle execution is still blocked by the absent GUI
+execution target: DISPLAY and WAYLAND_DISPLAY are unset and no node is connected.
+A GUI target was requested; headless rendering is not substituted for this gate.

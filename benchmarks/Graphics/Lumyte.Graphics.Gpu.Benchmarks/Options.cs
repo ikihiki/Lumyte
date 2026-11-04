@@ -2,12 +2,12 @@ using System.Globalization;
 
 namespace Lumyte.Graphics.Gpu.Benchmarks;
 
-internal sealed record Options(string Phase, string Update, string Locality, int Granularity, bool Retained, int Depth, int Frames, int Warmup, string Output)
+internal sealed record Options(string Phase, string Update, string Locality, int Granularity, bool Retained, int Depth, int Frames, int Warmup, string Output, int SnapshotHistory = 0)
 {
     internal static Options Parse(string[] args)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        string[] allowed = ["phase", "update", "locality", "granularity", "path", "depth", "frames", "warmup", "output"];
+        string[] allowed = ["phase", "update", "locality", "granularity", "path", "depth", "frames", "warmup", "output", "snapshot-history"];
         for (int i = 0; i < args.Length; i += 2)
         {
             if (!args[i].StartsWith("--", StringComparison.Ordinal) || i + 1 >= args.Length || !allowed.Contains(args[i][2..]) || !values.TryAdd(args[i][2..], args[i + 1]))
@@ -40,6 +40,12 @@ internal sealed record Options(string Phase, string Update, string Locality, int
             throw new ArgumentException("Invalid frame/warmup budget for phase.");
         }
 
-        return new(phase, update, locality, granularity, path == "scene", depth, frames, warmup, Get("output", "artifacts/graphics-benchmarks/" + Guid.NewGuid().ToString("N")));
+        int history = Number("snapshot-history", 0);
+        if (history is not (0 or 1 or 3))
+        {
+            throw new ArgumentException("snapshot-history must be 0, 1 or 3.");
+        }
+
+        return new(phase, update, locality, granularity, path == "scene", depth, frames, warmup, Get("output", "artifacts/graphics-benchmarks/" + Guid.NewGuid().ToString("N")), history);
     }
 }

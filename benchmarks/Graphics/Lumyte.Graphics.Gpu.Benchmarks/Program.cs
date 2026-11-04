@@ -45,9 +45,12 @@ try
     device = VulkanDevice.Create();
     double deviceInitializationMs = Stopwatch.GetElapsedTime(initialized).TotalMilliseconds;
     using var identity = new HardwareGpuTimer(device);
+    var trace = new RectangleTrace(options.Update, options.Locality);
+    int[] representativeFrames = options.Update == "burst" ? [0, 29, 30, 149, 150, 151] : [0, 1];
     var manifest = new
     {
         schema = "graphics-benchmarks-v1",
+        coreMeasurementVersion = "core-phases-history-v2",
         runId,
         sourceCommit = commit.Trim(),
         dirtyDiffSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(dirty))),
@@ -58,13 +61,16 @@ try
         options,
         seed = 27,
         caseId = options.Update == "static" ? "D01" : "D02",
-        inputIds = new[] { new RectangleTrace(options.Update, options.Locality).InputId(0), new RectangleTrace(options.Update, options.Locality).InputId(1) },
+        inputIds = representativeFrames.Select(trace.InputId).ToArray(),
+        representativeInputs = representativeFrames.Select(frame => new { frame, inputId = trace.InputId(frame) }).ToArray(),
+        snapshotHistory = new { generations = options.SnapshotHistory, policy = "previous changed generations only; public Scene CaptureSnapshot or equivalent immutable Canvas DrawList; pinned until slot GPU completion" },
+        burst = options.Update == "burst" ? new { firstFrame = RectangleTrace.FirstBurstFrame, periodFrames = RectangleTrace.BurstPeriod, completeStateCycleFrames = BurstPilot.CycleFrames, fullVisibleChangesPerEvent = RectangleTrace.Count, relativeFramePolicy = "nearest event; signed offset; ties select next event", pilotPolicy = "four complete state cycles; compare every exact phase across cycles; max/min <= 1.05; no idle dilution" } : null,
         device = identity.DeviceDescription,
         backend = "Vulkan; Radeon 8060S guard inherited from HardwareGpuTimer",
         timestampSupported = identity.Supported,
         deviceInitializationMs,
         target = new { width = GpuRunner.Width, height = GpuRunner.Height, format = "Rgba8Srgb", dpr = 1, aaBlendFilter = "product defaults" },
-        tree = "flat siblings; all 4096 elements visible; no snapshots retained",
+        tree = $"flat siblings; all 4096 elements visible; {options.SnapshotHistory} previous changed generations retained",
         runtime = RuntimeInformation.FrameworkDescription,
         os = RuntimeInformation.OSDescription,
         architecture = RuntimeInformation.ProcessArchitecture.ToString(),
@@ -74,7 +80,7 @@ try
         coldContract = "fresh process required externally; first measured renderer Prepare; driver disk cache unknown; cold checks run after measurement",
         cache = new { maxCachedAssets = 512, maxCachedBytes = 67108864, maxFramesInFlight = 3 },
         counters = "drawCalls: forwarded real API calls; compile/reuse: public RetentionStatistics deltas around Prepare/Encode; cached bytes: estimated idle assets, not VRAM",
-        boundaries = "recordPublish: Canvas Begin/End and ReplaceContent; prepare: borrow + awaited Prepare; encode: commands/barrier/Record/Finish; submit: queue call; hostFrame: Apply through submit + AttachSubmission; slotWait includes prior slot completion and retirement; completionLatency: submit start to observed fence, not GPU-only; gpuSpan: top/bottom timestamps around Record including clear/draw, excludes initial barrier and Prepare uploads; elapsed includes final drain/retirement and sampling bookkeeping",
+        boundaries = "recordPublish: Canvas Begin/End and ReplaceContent, optional history capture/pinning; prepare: borrow + awaited Prepare; encode: commands/barrier/Record/Finish; submit: queue call; hostFrame: Apply through submit + AttachSubmission; slotWait includes prior slot completion and retirement; completionLatency: submit start to observed fence, not GPU-only; gpuSpan: top/bottom timestamps around Record including clear/draw, excludes initial barrier and Prepare uploads; elapsed includes final drain/retirement and sampling bookkeeping",
         unavailableCounters = new { uploadBytes = (long?)null, evictionCount = (long?)null, nativeVram = (long?)null, shaderHash = (string?)null },
     };
     File.WriteAllText(Path.Combine(options.Output, "manifest.json"), JsonSerializer.Serialize(manifest, json));
@@ -84,13 +90,21 @@ try
     File.WriteAllLines(Path.Combine(options.Output, "checks.jsonl"), runner.Checks.Select(check => JsonSerializer.Serialize(new { runId, check }, json)));
     double[] host = result.Frames.Select(f => f.HostFrameMs).ToArray();
     double[] gpu = result.Frames.Where(f => f.GpuSpanMs.HasValue).Select(f => f.GpuSpanMs!.Value).ToArray();
-    var pilot = Enumerable.Range(0, Math.Max(0, (result.Frames.Length - 200) / 50) + 1).Select(i => 200 + (i * 50))
-        .Where(n => n <= result.Frames.Length && n % 50 == 0)
-        .Select(n => new { frames = n, hostStable = Stable(host.Take(n).ToArray()), gpuStable = gpu.Length == host.Length ? (bool?)Stable(gpu.Take(n).ToArray()) : null }).ToArray();
+    int pilotStart = options.Update == "burst" ? BurstPilot.WindowFrames : 200;
+    int pilotStep = options.Update == "burst" ? BurstPilot.CycleFrames : 50;
+    int[] pilotBoundaries = Enumerable.Range(0, Math.Max(0, (result.Frames.Length - pilotStart) / pilotStep) + 1)
+        .Select(i => pilotStart + (i * pilotStep)).Where(n => n <= result.Frames.Length).ToArray();
+    var pilot = pilotBoundaries.Select(n => new
+    {
+        frames = n,
+        hostStable = options.Update == "burst" ? BurstPilot.Stable(host.Take(n).ToArray()) : Stable(host.Take(n).ToArray()),
+        gpuStable = gpu.Length == host.Length ? (bool?)(options.Update == "burst" ? BurstPilot.Stable(gpu.Take(n).ToArray()) : Stable(gpu.Take(n).ToArray())) : null,
+    }).ToArray();
     int? recommendation = pilot.FirstOrDefault(p => p.hostStable && p.gpuStable != false)?.frames;
     var summary = new
     {
         runId,
+        coreMeasurementVersion = "core-phases-history-v2",
         status = "passed",
         performanceUse = options.Phase == "formal" ? "formal single-process observation; requires independent alternating process pairs" : "execution/pilot/cold evidence; not formal comparison",
         frames = result.Frames.Length,
@@ -98,8 +112,26 @@ try
         elapsedMs = result.ElapsedMs,
         headlessFramesPerSecond = result.Frames.Length * 1000 / result.ElapsedMs,
         host = Distribution(host),
+        wholeRunDistributionScope = options.Update == "burst" ? "all measured frames; not burst latency; use temperature/event-relative groups" : "all measured frames",
+        temperatureDistributions = result.Frames.GroupBy(frame => frame.Temperature).Select(group => new { temperature = group.Key, host = Distribution(group.Select(frame => frame.HostFrameMs).ToArray()), gpu = OptionalGpuDistribution(group) }).ToArray(),
+        burstEventRelativeDistributions = options.Update == "burst" ? result.Frames.GroupBy(frame => new { frame.BurstEventName, frame.BurstRelativeFrame }).Select(group => new { eventName = group.Key.BurstEventName, relativeFrame = group.Key.BurstRelativeFrame, host = Distribution(group.Select(frame => frame.HostFrameMs).ToArray()), gpu = OptionalGpuDistribution(group), changedElements = group.Select(frame => frame.ChangedElements).Distinct().Order().ToArray() }).ToArray() : null,
+        burstEvents = options.Update == "burst" ? result.Frames.Where(frame => frame.BurstRelativeFrame is >= -4 and <= 4)
+            .GroupBy(frame => new { frame.BurstEventFrame, frame.BurstEventName })
+            .Select(group => new
+            {
+                eventFrame = group.Key.BurstEventFrame,
+                eventName = group.Key.BurstEventName,
+                eventObserved = group.Any(frame => frame.BurstRelativeFrame == 0),
+                eventHost = OptionalHostDistribution(group.Where(frame => frame.BurstRelativeFrame == 0)),
+                eventGpu = OptionalGpuDistribution(group.Where(frame => frame.BurstRelativeFrame == 0)),
+                beforeHost = OptionalHostDistribution(group.Where(frame => frame.BurstRelativeFrame < 0)),
+                beforeGpu = OptionalGpuDistribution(group.Where(frame => frame.BurstRelativeFrame < 0)),
+                afterHost = OptionalHostDistribution(group.Where(frame => frame.BurstRelativeFrame > 0)),
+                afterGpu = OptionalGpuDistribution(group.Where(frame => frame.BurstRelativeFrame > 0)),
+                samples = group.Select(frame => new { frame.Frame, frame.InputId, frame.BurstRelativeFrame, frame.ChangedElements, frame.RerecordedCommands, frame.CompiledRuns, frame.ReusedRuns, frame.EstimatedCachedBytes, frame.RetirementEstimatedCachedBytes }).ToArray(),
+            }).ToArray() : null,
         gpu = gpu.Length > 0 ? Distribution(gpu) : null,
-        pilot = options.Phase == "pilot" ? new { recommendedWarmup = recommendation, status = recommendation.HasValue ? "stable" : "unstable", windows = pilot } : null,
+        pilot = options.Phase == "pilot" ? new { recommendedWarmup = recommendation, status = recommendation.HasValue ? "stable" : "unstable", policy = options.Update == "burst" ? "four 240-frame cycles; each exact phase max/min <= 1.05" : "four 50-frame median windows; max/min <= 1.05", windows = pilot } : null,
         minimumTenSecondMeasuredDuration = result.ElapsedMs >= 10000,
         recommendedMeasuredFrames = Math.Max(2000, (int)Math.Ceiling(result.Frames.Length * 10000 / result.ElapsedMs)),
     };
@@ -143,7 +175,19 @@ static string Git(params string[] arguments)
 static object Distribution(double[] values)
 {
     double[] sorted = values.Order().ToArray();
-    return new { count = sorted.Length, medianMs = sorted[sorted.Length / 2], p95Ms = sorted[(int)Math.Ceiling(sorted.Length * 0.95) - 1], maximumMs = sorted[^1], over60Hz = sorted.Count(v => v > 1000.0 / 60), over120Hz = sorted.Count(v => v > 1000.0 / 120) };
+    return new { count = sorted.Length, medianMs = sorted.Length % 2 == 0 ? (sorted[(sorted.Length / 2) - 1] + sorted[sorted.Length / 2]) / 2 : sorted[sorted.Length / 2], p95Ms = sorted[(int)Math.Ceiling(sorted.Length * 0.95) - 1], maximumMs = sorted[^1], over60Hz = sorted.Count(v => v > 1000.0 / 60), over120Hz = sorted.Count(v => v > 1000.0 / 120) };
+}
+
+static object? OptionalHostDistribution(IEnumerable<FrameSample> samples)
+{
+    double[] values = samples.Select(frame => frame.HostFrameMs).ToArray();
+    return values.Length == 0 ? null : Distribution(values);
+}
+
+static object? OptionalGpuDistribution(IEnumerable<FrameSample> samples)
+{
+    double[] values = samples.Where(frame => frame.GpuSpanMs.HasValue).Select(frame => frame.GpuSpanMs!.Value).ToArray();
+    return values.Length == 0 ? null : Distribution(values);
 }
 
 static bool Stable(double[] values)

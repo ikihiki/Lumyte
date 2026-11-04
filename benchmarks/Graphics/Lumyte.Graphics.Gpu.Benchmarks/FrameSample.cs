@@ -8,6 +8,18 @@ internal sealed class FrameSample
 
     public string Phase { get; set; } = string.Empty;
 
+    public string Temperature { get; set; } = string.Empty;
+
+    public int? BurstEventFrame { get; set; }
+
+    public string? BurstEventName { get; set; }
+
+    public int? BurstRelativeFrame { get; set; }
+
+    public int SnapshotHistory { get; set; }
+
+    public int RetainedGenerations { get; set; }
+
     public double RecordPublishMs { get; set; }
 
     public double PrepareMs { get; set; }
@@ -41,6 +53,10 @@ internal sealed class FrameSample
     public long ReusedRuns { get; set; }
 
     public int CachedAssets { get; set; }
+
+    public int RetirementCachedAssets { get; set; }
+
+    public long RetirementEstimatedCachedBytes { get; set; }
 
     public long EstimatedCachedBytes { get; set; }
 }

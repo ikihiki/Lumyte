@@ -25,6 +25,10 @@ internal static class UiGpuRunner
                 scope = "ui-preflight",
                 profile.Key,
                 fixture.FontHash,
+                fixture.NativeFontInitializationMs,
+                fixture.InitialMountAndLayoutMs,
+                firstTextLayoutMs = fixture.TextLayoutTicks * 1000.0 / Stopwatch.Frequency,
+                firstTextLayoutScope = "nested in initial mount/layout; do not add twice",
                 reference = "fresh independently mounted UiSurface from logical input, direct Canvas; no Scene flatten/replay",
                 analytic = "opaque red sentinel outside UI and preview",
             });
@@ -43,7 +47,7 @@ internal static class UiGpuRunner
                 fixture.Update(frame);
                 fixture.Layout();
                 emit(fixture.Verify());
-                await CheckAsync(device, renderer, fixture, emit);
+                await CheckAsync(device, renderer, fixture, emit, firstUse: frame == 0);
             }
 
             // Fresh fixture for timing: preflight must not leave a future logical state in the trace.
@@ -212,7 +216,7 @@ internal static class UiGpuRunner
         }
     }
 
-    private static async Task CheckAsync(VulkanDevice device, Renderer2D renderer, UiScenario fixture, Action<object> emit)
+    private static async Task CheckAsync(VulkanDevice device, Renderer2D renderer, UiScenario fixture, Action<object> emit, bool firstUse = false)
     {
         using var actual = new Slot(device);
         using var expected = new Slot(device);
@@ -220,9 +224,18 @@ internal static class UiGpuRunner
         {
             actual.Resize((uint)fixture.Input.TargetWidth, (uint)fixture.Input.TargetHeight);
             expected.Resize((uint)fixture.Input.TargetWidth, (uint)fixture.Input.TargetHeight);
-            await actual.PrepareAsync(renderer, fixture.Record());
+            long recordStart = Stopwatch.GetTimestamp();
+            IReadOnlyList<DrawList2D> recording = fixture.Record();
+            double recordMs = Ms(recordStart);
+            long prepareStart = Stopwatch.GetTimestamp();
+            await actual.PrepareAsync(renderer, recording);
+            double prepareMs = Ms(prepareStart);
+            long encodeStart = Stopwatch.GetTimestamp();
             actual.Encode();
+            double encodeMs = Ms(encodeStart);
+            long submitStart = Stopwatch.GetTimestamp();
             actual.Submit(fixture.Input.Frame, fixture.Input.InputId);
+            double submitMs = Ms(submitStart);
             await actual.CompleteAsync();
             await expected.PrepareAsync(renderer, fixture.Reference());
             expected.Encode();
@@ -274,6 +287,18 @@ internal static class UiGpuRunner
                 fixture.Input.InputId,
                 sha256 = Convert.ToHexString(SHA256.HashData(a)),
                 analyticSentinel = true,
+                firstRenderStages = firstUse ? new
+                {
+                    recordMs,
+                    prepareMs,
+                    encodeMs,
+                    submitMs,
+                    completionObservationMs = actual.CompletionMs,
+                    retirementMs = actual.RetireMs,
+                    gpuSpanMs = actual.GpuSpanMs,
+                }
+
+                : null,
                 actualGpuSpanMs = actual.GpuSpanMs,
                 referenceGpuSpanMs = expected.GpuSpanMs,
                 status = "passed",

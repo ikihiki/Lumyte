@@ -180,3 +180,91 @@ a fresh renderer, and must not be compared to warmed formal D01/D02. Source inpu
 and sample buffers are prepared before timing; no JSON/readback/reference inside
 measurement. Mutation CPU editing is selectable through SceneMutationBenchmarks in
 the same product-default BDN configuration; CPU operations exclude GPU preparation.
+
+## Core periodic burst, optional history, and retained memory (rectangles-v2)
+
+The trace version is now rectangles-v2; old CLI profiles retain their meaning, but
+v1/v2 input hashes must not be treated as identical scenario versions.
+--update burst changes **all 4096 visible colors** at absolute logical frame 30,
+returns to the initial colors at 150, and repeats transitions every 120 frames.
+Between events the immutable recording is reused: no same-value ReplaceContent,
+no recording, zero changed elements/nodes/commands. Repeated or jumped frames compare
+actual destination color state, not frame parity. A jump across two events ending
+in the same state correctly does no work; the runner normally visits every frame.
+
+Frame rows additionally carry temperature (cold/warm/burst), burstEventName
+(full-update/return), burstEventFrame and signed burstRelativeFrame. Anchors select
+the nearest scheduled event (ties select the next). Group by event-name + relative
+frame for pre/post-event latency and cache recovery; report burst and steady frames
+separately. The existing whole-run distribution is **not burst latency**. Runs shorter
+than 150 frames do not measure both transitions. Warmup follows the same absolute
+schedule and does not reset the burst clock. Burst pilot checks four complete
+240-frame state cycles (960 observations minimum) at 240-frame boundaries. Every
+exact phase must have a finite positive max/min ratio <=1.05 across the four cycles;
+a spike cannot be averaged away by idle frames. This deliberately strict pilot may
+report unstable rather than hiding periodic outliers. Non-burst pilot policy is unchanged.
+
+Manifest/summary extension core-phases-history-v2 preserves the existing schema and
+non-burst fields. The manifest gives representative frame-to-input IDs including both
+burst colors and return state, the selected history budget, and the fixed schedule.
+Summary temperatureDistributions separates burst from warm/cold;
+burstEventRelativeDistributions groups same-named signed phases across cycles;
+burstEvents provides each event occurrence with its event sample and +/-4-frame
+pre/post distributions and input/counter records. Whole-run distributions remain
+available for compatibility and are explicitly labelled not burst latency.
+
+--snapshot-history 0|1|3 defaults to zero. Before an actual content change, Scene
+uses **public DrawingScene2D.CaptureSnapshot()**; Canvas retains its completed
+immutable DrawList. Keep the last requested count of *changed generations*, not
+copies of static frames. Capture and retention bookkeeping is in record/publish.
+Per-slot owners pin histories through GPU completion even after rolling-history
+eviction; uncertain submissions quarantine owners. The normal read lease is held
+through awaited Prepare; prepared resources keep existing completion-safe ownership.
+
+Separate-renderer preflight/postflight execute the actual sequential burst/return
+trace, checking exact independent Canvas RGBA and analytic colors at frames
+29/30/31/149/150/151 plus later history generations. Old history images are checked
+against their original input after later content mutations. Every active slot's
+final measured target is still checked at depths 1/3. Unit coverage includes all
+granularities, no-op/repeated/jumped states, bounded history, Scene disposal,
+eviction, and idempotent completion-owner disposal; no elapsed assertions.
+Public source contracts are Drawing2D/Retained/DrawingScene2D.cs,
+Drawing2D/Retained/DrawingSnapshot2D.cs and Execution/Renderer2D.Retained.cs.
+
+Initialization observations in checks.jsonl separately report fixture recording,
+renderer construction and target/query creation host time, outside frame timing.
+Initial construction remains excluded from the frame interval; first Prepare retains
+first shader/pipeline/resource preparation costs. No driver-cache-cold claim is made.
+Retirement samples also report idle-cache state after completion. Idle-cache byte
+estimates are **not total VRAM** or live GPU allocation.
+
+Run after serialized Release validation and hardware preflight:
+
+    dotnet test tests/Graphics/Lumyte.Graphics.Benchmarks.Tests -c Release
+    dotnet build benchmarks/Graphics/Lumyte.Graphics.Gpu.Benchmarks -c Release
+    dotnet build benchmarks/Graphics/Lumyte.Graphics.Cpu.Benchmarks -c Release
+    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Gpu.Benchmarks -- --phase smoke --update burst --locality contiguous --granularity 64 --path scene --depth 3 --frames 151 --snapshot-history 3 --output artifacts/graphics-benchmarks/burst-scene-history3
+    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Gpu.Benchmarks -- --phase smoke --update burst --locality contiguous --granularity 64 --path canvas --depth 3 --frames 151 --snapshot-history 3 --output artifacts/graphics-benchmarks/burst-canvas-history3
+
+Repeat both paths at depths 1/3 and history 0/1/3. Formal comparisons still require
+fixed warmup/frame budgets and independent alternating process pairs.
+
+ManagedRetentionProbe.cs implements the **separate CPU process mode** below. It
+reports full-GC managed live heap and process RSS as distinct checkpoint values,
+not BenchmarkDotNet allocation/op or frame latency. Native/GPU allocation remains
+null. Version 2 observes baseline, initialized fixture, eight fixed mutate/return
+cycles, and after-dispose. A non-inlined ownership scope ends before the final
+collection; GC.KeepAlive preserves owners through the earlier observations.
+Absolute process memory includes runtime caches, not exact fixture-object bytes.
+
+Default selection sweeps both paths and history 0/1/3 at granularity 64. For fair
+retention comparisons, run each selected profile in an independent fresh process
+and retain repeated observations rather than a single favorable delta. Full blocking
+GC runs only in this dedicated probe. No elapsed/byte thresholds are unit assertions.
+Create the output directory before redirection.
+
+    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Cpu.Benchmarks -- --retained-memory --memory-path canvas --snapshot-history 3 --memory-cycles 8 > artifacts/graphics-benchmarks/managed-retention-canvas-h3.jsonl
+    dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Cpu.Benchmarks -- --retained-memory --memory-path scene --snapshot-history 3 --memory-cycles 8 > artifacts/graphics-benchmarks/managed-retention-scene-h3.jsonl
+
+These additions alone do not complete all ADR scenarios, real-window/Present coverage,
+backend portability, or a formal performance campaign.
