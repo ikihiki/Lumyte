@@ -44,9 +44,12 @@ def main():
     parser.add_argument('--granularity', type=int, default=64, choices=[1,16,64,256,4096])
     parser.add_argument('--depth', type=int, default=1, choices=[1,3])
     parser.add_argument('--pairs', type=int, default=5)
+    parser.add_argument('--min-frames', type=int, default=2000, help='Predeclared fixed minimum shared by both variants')
     parser.add_argument('--aa', action='store_true', help='Canvas/Canvas noise control, not performance improvement')
     parser.add_argument('--pilot-only', action='store_true')
     args = parser.parse_args()
+    if args.min_frames < 2000 or args.min_frames > 1000000:
+        parser.error('Minimum frame budget must be 2000..1000000.')
     if args.pairs < 5:
         parser.error('Formal comparisons require at least five independent pairs.')
     if os.environ.get('VK_DRIVER_FILES') != '/usr/share/vulkan/icd.d/radeon_icd.json':
@@ -64,9 +67,9 @@ def main():
     stable = all(p['pilot']['recommendedWarmup'] is not None for p in pilots.values())
     warmup = max(p['pilot']['recommendedWarmup'] or 2000 for p in pilots.values())
     # Twenty percent headroom is fixed before formal runs; never stop at a favorable observed value.
-    frames = max(2000, math.ceil(max(p['recommendedMeasuredFrames'] for p in pilots.values()) * 1.2))
+    frames = max(args.min_frames, math.ceil(max(p['recommendedMeasuredFrames'] for p in pilots.values()) * 1.2))
     plan = dict(schema='adr0027-paired-v1', paths=paths, profile=fixed, pairs=args.pairs,
-                warmup=warmup, frames=frames, pilotStable=stable, runtimeDefaults=True,
+                warmup=warmup, frames=frames, minimumFrameBudget=args.min_frames, pilotStable=stable, runtimeDefaults=True,
                 comparisonStatus='planned' if stable else 'unstable', aaNoiseControl=args.aa)
     (root / 'plan.json').write_text(json.dumps(plan, indent=2))
     if args.pilot_only:
