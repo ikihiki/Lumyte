@@ -41,8 +41,6 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
 
     internal override bool SupportsVisuals => true;
 
-    internal override bool SupportsRetainedDrawing => true;
-
     internal override bool SupportsScreenshots => true;
 
     internal override IWindowInputSource? InputSource => _map;
@@ -342,11 +340,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         }
     }
 
-    internal override Task<bool> DrawAsync(UiDriverWindow target, DrawList2D commands) => DrawAsync(target, commands, null);
-
-    internal override Task<bool> DrawAsync(UiDriverWindow target, DrawingSnapshot2D scene) => DrawAsync(target, null, scene);
-
-    internal async Task<bool> DrawAsync(UiDriverWindow target, DrawList2D? commands, DrawingSnapshot2D? scene)
+    internal override async Task<bool> DrawAsync(UiDriverWindow target, DrawingSnapshot2D scene)
     {
         var window = (Window)target;
         ulong epoch = _lease?.State.Epoch ?? 0;
@@ -433,7 +427,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             SurfaceStatus status;
             try
             {
-                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted, scene: scene);
+                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted);
             }
             catch (NotSupportedException error) when (crops.Count != 0)
             {
@@ -442,7 +436,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                     capture.Completion.TrySetException(error);
                 }
 
-                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted, scene: scene);
+                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted);
             }
 
             await flight.ResumeAsync();
@@ -533,7 +527,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         }
     }
 
-    internal override async ValueTask PrepareCandidateAsync(UiDriverWindow window, DrawList2D commands, CancellationToken cancellationToken)
+    internal override async ValueTask PrepareCandidateAsync(UiDriverWindow window, DrawingSnapshot2D commands, CancellationToken cancellationToken)
     {
         await _renderGate.WaitAsync(cancellationToken);
         try

@@ -6,18 +6,15 @@ using static Lumyte.UI.Compose;
 
 namespace Lumyte.UI.Application.Tests;
 
-/// <summary>Checks the application submits cached recordings on successive real owner turns.</summary>
+/// <summary>Checks the application submits retained snapshots on successive real owner turns.</summary>
 public sealed class RecordingHostTests
 {
-    /// <summary>Checks cache hits still traverse the real application driver submission boundary.</summary>
-    /// <param name="retained">Whether the driver consumes retained scenes.</param>
+    /// <summary>Checks reused fragments still traverse the real application driver submission boundary.</summary>
     /// <returns>The verification.</returns>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task StandardHostSubmitsEveryCachedFrameAsync(bool retained)
+    [Fact]
+    public async Task StandardHostSubmitsEveryRetainedFrameAsync()
     {
-        var driver = new Driver(retained);
+        var driver = new Driver();
         UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1) });
         builder.UseDriver(() => driver);
         builder.UseRoot(_ => Rectangle(fill: new Color2D(1, 0, 0, 1)));
@@ -37,11 +34,9 @@ public sealed class RecordingHostTests
         Assert.True(driver.Reuses >= 3);
     }
 
-    private sealed class Driver(bool retained) : UiApplicationDriver
+    private sealed class Driver : UiApplicationDriver
     {
         private DrawList2D? _previous;
-
-        internal override bool SupportsRetainedDrawing => retained;
 
         internal TaskCompletionSource Reused { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -61,15 +56,8 @@ public sealed class RecordingHostTests
 
         internal override Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene)
         {
-            Assert.True(retained);
             IReadOnlyList<DrawingSceneEntry2D> entries = ((IDrawingSceneSource2D)scene).Entries;
             return entries.Count == 0 ? Task.FromResult(true) : Count(entries.Single().Content);
-        }
-
-        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawList2D commands)
-        {
-            Assert.False(retained);
-            return Count(commands);
         }
 
         internal override ValueTask CloseWindowAsync(UiDriverWindow window) => window.DisposeAsync();

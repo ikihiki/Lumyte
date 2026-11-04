@@ -82,14 +82,14 @@ internal sealed partial class UiHostPresenter : IDisposable
         return new() { Width = checked((uint)width), Height = checked((uint)height), Format = format, Usage = TextureUsage.RenderAttachment | (caps.SupportedUsage & TextureUsage.CopySource), AlphaMode = SurfaceAlphaMode.Opaque };
     }
 
-    internal async ValueTask PrepareCandidateAsync(DrawList2D commands, uint width, uint height)
+    internal async ValueTask PrepareCandidateAsync(DrawingSnapshot2D commands, uint width, uint height)
     {
         using IGraphicsTexture target = CreateIntermediate(width, height);
         using IGraphicsTextureView view = target.CreateView();
-        using PreparedDraw2D prepared = await _renderer.PrepareAsync(commands, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background });
+        using PreparedDrawingFrame2D prepared = await _renderer.PrepareAsync(commands, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background });
     }
 
-    internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D? list, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null, DrawingSnapshot2D? scene = null)
+    internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawingSnapshot2D scene, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null)
     {
         var frame = new Frame(owner);
         if (visuals is not null)
@@ -125,15 +125,7 @@ internal sealed partial class UiHostPresenter : IDisposable
 
             IGraphicsTextureView targetView = intermediate.View;
             var drawingTarget = new RenderTarget2D { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background };
-            PreparedDraw2D? prepared = null;
-            if (scene is not null)
-            {
-                frame.Retained = await _renderer.PrepareAsync(scene, drawingTarget);
-            }
-            else
-            {
-                prepared = frame.Own(await _renderer.PrepareAsync(list!, drawingTarget));
-            }
+            frame.Retained = await _renderer.PrepareAsync(scene, drawingTarget);
 
             IArgumentTable table = frame.Own(_device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1 }));
             uint encode = swapchain.Configuration.Format is TextureFormat.Bgra8Srgb or TextureFormat.Rgba8Srgb ? 0u : 1u;
@@ -159,15 +151,8 @@ internal sealed partial class UiHostPresenter : IDisposable
             var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
             var sample = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
             commands.Barrier(intermediate.ColorAttachmentBarrier);
-            if (frame.Retained is { } retained)
-            {
-                frame.RetainedRecorded = true;
-                retained.Record(commands);
-            }
-            else
-            {
-                prepared!.Record(commands);
-            }
+            frame.RetainedRecorded = true;
+            frame.Retained.Record(commands);
 
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = color, After = sample });
             commands.Barrier(new TextureBarrierDesc { Texture = image.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });

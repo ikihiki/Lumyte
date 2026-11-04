@@ -43,9 +43,7 @@ public sealed partial class UiApplication
                 continue;
             }
 
-            entry.Drawing = Driver.SupportsRetainedDrawing
-                ? DrawFrameAsync(entry.Root, entry.Root.Source.RecordRetainedFrame(GraphicsGeneration))
-                : DrawFrameAsync(entry.Root, entry.Root.Source.RecordFrame(GraphicsGeneration));
+            entry.Drawing = DrawFrameAsync(entry.Root, entry.Root.Source.RecordRetainedFrame(GraphicsGeneration));
             recorded = true;
         }
 

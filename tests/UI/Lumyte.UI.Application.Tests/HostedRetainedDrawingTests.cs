@@ -1,4 +1,6 @@
 using System.Numerics;
+using Lumyte.Animation;
+using Lumyte.Core.Time;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Signals;
 using Lumyte.UI.Application.Headless;
@@ -168,6 +170,51 @@ public sealed class HostedRetainedDrawingTests
         await using IUiWindowPresentation two = await source.PreparePresentationAsync(View(source) with { Window = new(source.SourceId, 2) }, second, default);
         using DrawingSnapshot2D frame = Frame(source);
         Assert.Equal(new Color2D(0, 1, 0, 1), Color(Entries(frame)[0]));
+    }
+
+    /// <summary>Checks animation registrations can be added and removed without a structural rebuild.</summary>
+    /// <param name="visible">Whether the element is visible.</param>
+    /// <returns>The verification.</returns>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnimationAttachmentsRemainLiveAsync(bool visible)
+    {
+        using UiSurface surface = Surface(Rectangle(width: 10, isVisible: visible));
+        UiHostedDrawingSource source = Source();
+        await using IUiWindowPresentation presentation = await source.PreparePresentationAsync(View(source), surface, default);
+        using DrawingSnapshot2D first = Frame(source);
+        UiElement element = surface.RootElement;
+        ulong structure = surface.StructureRevision;
+        var target = Signal.Create<float?>(10);
+        UiAnimated<float?> animation = Animate(target, Duration.Zero, UiAnimationInterpolators.Nullable(AnimationInterpolators.Float));
+        surface.Rebuild(Rectangle(width: animation, isVisible: visible));
+        using DrawingSnapshot2D animated = Frame(source);
+        using DrawingSnapshot2D repeated = Frame(source);
+        Assert.Same(element, surface.RootElement);
+        Assert.Equal(structure, surface.StructureRevision);
+        surface.Rebuild(Rectangle(width: 10, isVisible: visible));
+        using DrawingSnapshot2D restored = Frame(source);
+        using DrawingSnapshot2D unchanged = Frame(source);
+        Assert.True(Entries(restored).Select(e => e.Content).SequenceEqual(Entries(unchanged).Select(e => e.Content)));
+        Assert.Equal(Entries(first).Length, Entries(restored).Length);
+        Assert.Same(element, surface.RootElement);
+    }
+
+    /// <summary>Checks absent presence content still renews frame receipts without a direct frame route.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task AbsentPresenceRenewsReceiptsAsync()
+    {
+        using UiSurface surface = Surface(Rectangle(isPresent: false));
+        UiHostedDrawingSource source = Source();
+        UiWindowPresentationView view = View(source);
+        await using IUiWindowPresentation presentation = await source.PreparePresentationAsync(view, surface, default);
+        using DrawingSnapshot2D first = Frame(source);
+        using DrawingSnapshot2D second = Frame(source);
+        Assert.Empty(Entries(first).SelectMany(e => e.Content.Commands));
+        Assert.Empty(Entries(second).SelectMany(e => e.Content.Commands));
+        Assert.Equal(view, source.Presented(view.Window));
     }
 
     private static DrawingSceneEntry2D[] Entries(DrawingSnapshot2D snapshot) => ((IDrawingSceneSource2D)snapshot).Entries.ToArray();

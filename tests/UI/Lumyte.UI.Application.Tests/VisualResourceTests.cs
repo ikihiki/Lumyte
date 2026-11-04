@@ -240,7 +240,7 @@ public sealed class VisualResourceTests
         {
         }
 
-        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawList2D commands) => Task.FromResult(true);
+        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene) => Task.FromResult(true);
 
         internal override ValueTask CloseWindowAsync(UiDriverWindow window) => window.DisposeAsync();
     }

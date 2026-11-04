@@ -25,7 +25,7 @@ internal sealed partial class UiHostedDrawingSource
                 _retainedGeneration = graphicsGeneration;
             }
 
-            FrameItem[] items = PrepareFrame(retained: true);
+            FrameItem[] items = PrepareFrame();
             var entries = new List<DrawingSceneEntry2D>();
             foreach (FrameItem item in items)
             {

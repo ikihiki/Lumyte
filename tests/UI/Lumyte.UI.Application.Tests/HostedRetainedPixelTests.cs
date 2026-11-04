@@ -12,6 +12,33 @@ namespace Lumyte.UI.Application.Tests;
 /// <summary>Checks retained hosted placements against independently recorded direct GPU pixels.</summary>
 public sealed class HostedRetainedPixelTests
 {
+    /// <summary>Checks staged preparation and visual-image updates use retained GPU owners.</summary>
+    /// <returns>The asynchronous GPU verification.</returns>
+    [GpuFact]
+    public async Task WgpuCandidateAndVisualLayersUseRetainedFramesAsync()
+    {
+        using var device = WgpuDevice.Create();
+        using var presenter = new UiHostPresenter(device, default);
+        using var surface = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 1)));
+        surface.SetViewport(new(16, 16));
+        using UiDrawingScene2D retained = surface.CreateDrawingScene();
+        retained.Update();
+        using DrawingSnapshot2D candidate = retained.Scene.CaptureSnapshot();
+        await presenter.PrepareCandidateAsync(candidate, 16, 16);
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        surface.Record(canvas);
+        DrawList2D fragment = canvas.End();
+        using var reservation = new Reservation();
+        using UiVisualSnapshot? image = await presenter.CaptureVisualAsync(fragment, 16, 16, reservation);
+        Assert.NotNull(image);
+        Assert.False(reservation.Released);
+        await presenter.UpdateVisualAsync(image, fragment, []);
+        await presenter.DrainVisualsAsync();
+        image.Dispose();
+        Assert.True(reservation.Released);
+    }
+
     /// <summary>Checks reuse, translucent overlap, clip, DPI, placement, visibility and generation rebuild.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
     [GpuFact]
@@ -106,5 +133,12 @@ public sealed class HostedRetainedPixelTests
             readback.Unmap();
             return bytes;
         }
+    }
+
+    private sealed class Reservation : IDisposable
+    {
+        internal bool Released { get; private set; }
+
+        public void Dispose() => Released = true;
     }
 }

@@ -25,13 +25,6 @@ public sealed partial class UiApplication
         SynchronizeFocus();
     }
 
-    internal async Task<bool> DrawFrameAsync(UiDriverWindow target, Lumyte.Graphics.Drawing2D.DrawList2D commands)
-    {
-        bool presented = false;
-        await _dispatcher.TrackAsync(async () => presented = await Driver.DrawAsync(target, commands));
-        return presented;
-    }
-
     internal async Task<bool> DrawFrameAsync(UiDriverWindow target, Lumyte.Graphics.Drawing2D.DrawingSnapshot2D scene)
     {
         using (scene)

@@ -1,9 +1,13 @@
 # Standard UI retained host verification
 
 The standard Desktop/Browser Application now captures each Presentation through
-its persistent UiDrawingScene2D. Direct Canvas callers, staged candidate
-validation and visual-image capture/update keep their existing entry points.
-Headless/direct-only internal drivers retain the direct compatibility path.
+its persistent UiDrawingScene2D. Direct Canvas callers keep their explicit recording API. All application drivers,
+including Headless, consume retained snapshots only. Staged candidate validation
+uses retained capture; visual-image capture/update prepares its immutable layer
+fragment through a retained scene and follows the same explicit frame retirement.
+The obsolete whole-frame DrawList cache and direct-driver fallback are removed.
+DrawList2D remains the immutable fragment payload used by DrawingScene2D, not a
+second application frame implementation.
 
 ## Reproduce
 
@@ -69,3 +73,19 @@ STRIX_HALO, Mesa 26.0.8. No performance comparison was performed.
 Local generated evidence is kept under ignored artifacts/ui-retained/. Browser
 runtime, physical display timing and performance improvements are not established
 by these checks.
+
+## Retained-only host verification on 2026-11-05
+
+After removing the legacy List-frame route on main baseline 5095b7f:
+
+- Application: 93 passed, zero skipped, with LUMYTE_GRAPHICS_GPU_TESTS=1 and
+  VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json. This includes both the
+  five-state exact retained/direct pixel comparison and real GPU candidate
+  preparation plus visual-image capture/update/retirement.
+- Navigation: 45 passed; Application.Navigation: 27 passed. Total: 165 passed.
+- Browser and Desktop packages compile in Release with zero warnings/errors.
+- The old whole-frame cache tests were migrated to retained validation; fragment
+  reuse, animated/hidden content, fresh receipts and asynchronous candidate
+  snapshot lifetime are covered without retaining the obsolete host path.
+- No benchmark implementation, tools, dedicated benchmark tests or solution
+  registration changes are included. Browser runtime was not revalidated.

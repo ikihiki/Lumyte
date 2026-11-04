@@ -3,14 +3,11 @@ namespace Lumyte.UI.Application;
 /// <summary>Applies pending declarations before checking mounted component requirements.</summary>
 internal sealed partial class UiHostedDrawingSource
 {
-    private void PrepareSurface(UiSurface surface, bool retained = false)
+    private void PrepareSurface(UiSurface surface)
     {
         for (int attempt = 0; attempt < 100; attempt++)
         {
-            if (retained)
-            {
-                surface.ValidateRetainedDrawingDependencies();
-            }
+            surface.ValidateRetainedDrawingDependencies();
 
             surface.UpdateLayout();
             if (ValidateSurface is { } validate)
