@@ -42,7 +42,11 @@ post-event/history images. Ordinary primitive timing now has 312 valid actual qu
 pairs across 26 profile/depth combinations. True displayed Present/VSync/host-idle testing is
 externally blocked: the current executing environment has no DISPLAY or
 WAYLAND_DISPLAY and no connected node. A virtual/no-op headless draw is not a
-displayed-frame measurement. A GUI-capable execution target has been requested.
+displayed-frame measurement. A GUI-capable execution target has been requested. The real-window harness is now
+strict-build/CLI/formatter verified; its separate real WebGPU U03 gate passes
+full-image equality and unchanged analytic endpoints after the actual supported
+RGBA-to-BGRA product-shader composite. That no-window gate is not Present, monitor
+refresh or product-host scheduling evidence.
 
 ## 4. Independent references, logical identities and honest failures
 
@@ -66,9 +70,14 @@ paths, CPU/OS/runtime, source/shader-source and output managed/native binary has
 Fonts and other assets are identified by their family-specific manifests.
 Shader-source/container hashes are not standalone GPU target-code hashes.
 
-Remaining gates: extension paired-process orchestration, stable predeclared common
-warmup/frame budgets, per-process distributions and duration qualification, A/A
-noise controls, validated deterministic archive and formal execution evidence.
+Verified on frozen source `0572187`: eight campaigns and 80 qualified independent
+formal processes cover core Canvas/Scene at depths1/3, matching Canvas/Canvas
+controls, and Text/Effects/UI/asset-lifecycle selfsame controls. Every qualified
+observation passes the declared minimum duration and frame budget. The original
+depth3 duration-shortfall campaign is retained as unqualified; its replacement
+uses a newly predeclared common budget for all five pairs. Archive membership,
+raw-file SHA256 and compressed/uncompressed-member byte counts were verified.
+Generated measurements and reports remain under ignored artifacts, not in Git.
 Do not pool frame samples across independent processes or label BDN iteration
 percentiles individual-frame latency.
 
@@ -78,11 +87,13 @@ Existing managed fixture tests, paired-driver tests and pre-device CLI rejection
 checks pass without elapsed-time assertions. Real GPU checks separately validate
 pixels, slot ownership, completion/query matching and disposal boundaries.
 
-Verified: 61 managed fixture/parser/lifetime tests, 27 campaign/statistical/evidence
+Verified: 61 managed fixture/parser/lifetime tests, 30 campaign/statistical/evidence
 tests, 17 existing native Hosting regression tests and 32 pre-device CLI rejection
-invocations pass. New actual hardware gates
-are listed above; final source-freeze formatting and formal campaigns remain tracked
-separately. No unit test uses an elapsed-time or allocation-byte pass threshold.
+invocations pass. The presentation executable additionally rejects 16 malformed
+invocations and verifies managed scheduling/retirement ownership plus the explicit
+missing-DISPLAY-before-device path. New actual hardware gates
+are listed above; source-freeze formatting and formal campaigns have passed
+their separately recorded gates. No unit test uses an elapsed-time or allocation-byte pass threshold.
 
 ## Evidence policy
 

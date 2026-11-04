@@ -24,6 +24,9 @@ Do not run families, builds or tests concurrently with performance measurements.
 - G01/G02/G05/G06: [graphics primitives](Lumyte.Graphics.Primitives.Benchmarks/README.md).
 - G04 CPU build/compile: [RenderGraph components](Lumyte.Graphics.RenderGraph.Benchmarks/README.md).
 - Independent paired-process campaigns: [driver](../../tools/benchmarks/graphics-scenarios/README.md).
+- Real-window/Present preparation and explicit no-window UI pixel gate:
+  [presentation](Lumyte.Graphics.Presentation.Benchmarks/README.md).
+- Six-condition completion and remaining GUI/host gate: [acceptance](ACCEPTANCE.md).
 
 The ordinary CPU fixture test project is registered in `Lumyte.slnx`; native/GPU
 checks remain explicit gates rather than wall-clock assertions in normal unit tests.

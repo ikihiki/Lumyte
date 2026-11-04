@@ -107,3 +107,16 @@ include absolute host/GPU median deltas and five-pair median/min/max, sample sta
 deviation and median absolute deviation; these dispersion measures use process pairs,
 never pooled frames. Core reports similarly summarize pair ratios and absolute stage
 metric deltas across independent processes.
+
+## Reproducible campaign inventory
+
+After qualification and evidence archive creation, run `summarize-campaigns.py`
+with an artifact root and ignored JSON output path. It retains rejected campaigns
+in the inventory, distinguishes A/A noise from A/B implementation comparison,
+checks minimum duration/frame/warmup qualification, and verifies archive membership
+and SHA256. Compressed archive bytes, per-member uncompressed bytes and per-process
+dispersion remain auditable. Generated numerical reports do not belong in Git.
+
+```sh
+python3 tools/benchmarks/graphics-scenarios/summarize-campaigns.py --root artifacts/graphics-benchmarks/adr-completion --output artifacts/graphics-benchmarks/adr-completion/campaign-inventory.json
+```

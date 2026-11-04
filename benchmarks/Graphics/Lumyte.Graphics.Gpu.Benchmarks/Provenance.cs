@@ -15,12 +15,12 @@ internal static class Provenance
             root = Directory.GetParent(root)?.FullName ?? throw new InvalidOperationException("Run within the repository checkout for source provenance.");
         }
 
-        string[] sourceRoots = ["benchmarks/Graphics", "tests/Graphics/Lumyte.Graphics.Benchmarks.Tests", "tools/benchmarks/drawing2d-incremental", "tools/benchmarks/graphics-scenarios"];
+        string[] sourceRoots = ["benchmarks/Graphics", "tests/Graphics/Lumyte.Graphics.Benchmarks.Tests", "tools/benchmarks/drawing2d-incremental", "tools/benchmarks/graphics-scenarios", "tools/shaders"];
         var sources = sourceRoots.SelectMany(path => Files(Path.Combine(root, path)))
             .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
-            .Where(path => Path.GetExtension(path) is ".cs" or ".csproj" or ".props" or ".targets" or ".json" or ".py" or ".sh")
+            .Where(path => Path.GetExtension(path) is ".cs" or ".csproj" or ".props" or ".targets" or ".json" or ".py" or ".sh" or ".slang")
             .Order(StringComparer.Ordinal).ToDictionary(path => Path.GetRelativePath(root, path), Hash);
-        var shaders = Files(Path.Combine(root, "src/Graphics")).Where(path => path.EndsWith(".slang", StringComparison.Ordinal) && !path.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
+        var shaders = Files(Path.Combine(root, "src/Graphics")).Concat(Files(Path.Combine(root, "src/UI"))).Where(path => path.EndsWith(".slang", StringComparison.Ordinal) && !path.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
             .Order(StringComparer.Ordinal).ToDictionary(path => Path.GetRelativePath(root, path), Hash);
         var binaries = Files(AppContext.BaseDirectory).Where(path => Path.GetExtension(path) is ".dll" or ".so" or ".spv")
             .Order(StringComparer.Ordinal).ToDictionary(path => Path.GetRelativePath(AppContext.BaseDirectory, path), Hash);

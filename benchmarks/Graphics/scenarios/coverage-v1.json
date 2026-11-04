@@ -10,7 +10,7 @@
     {
       "id": "D02",
       "status": "executable",
-      "reason": "0/1/41/410/4096 updates; contiguous/dispersed; 1/16/64/256/4096 commands per node; color toggle each logical frame."
+      "reason": "0/1/41/410/4096 visible updates; contiguous/dispersed; 1/16/64/256/4096 commands per node. rectangles-v2 additionally schedules full-update/return bursts with event-relative summaries, static reuse and optional0/1/3 historical generations; separate managed-live/RSS probe."
     },
     {
       "id": "D03",
@@ -100,7 +100,7 @@
     {
       "id": "G01",
       "status": "executable",
-      "reason": "24 actual draws with1command/1submit,4commands/1submit or4commands/4submits; analytic full-target reference at depths1/3. Render-pass count varies explicitly."
+      "reason": "24 actual draws with1command/1submit,4commands/1submit or4commands/4submits; explicit attachment ordering and analytic pixels at depths1/3. Slot-owned native timestamp spans cover ordered queue commands, including possible separate-submit queue starvation, not exclusive GPU busy time."
     },
     {
       "id": "G02",
@@ -125,7 +125,7 @@
     {
       "id": "G06",
       "status": "executable",
-      "reason": "Real red-green-red mesh asset replacement and completion-safe retirement; no in-place ResourceManager update, native peak-memory or device-loss recovery claim."
+      "reason": "Ordinary real red-green-red mesh replacement and completion-safe retirement. Separate explicit --recovery process observes native WebGPU instance-destroy callback, Hosting lease/epoch invalidation, native retirement, old-child/owner disposal, RecoverAsync and analytic rebuilt pixels. Drained-work only; no pending-loss, host/driver reset, ResourceManager decode or native VRAM claim."
     },
     {
       "id": "D10/direct-scene",
@@ -136,6 +136,11 @@
       "id": "backend/non-8060S",
       "status": "partial",
       "reason": "Core, ordinary2D, image/transfer and UI linked timer guard requires Radeon8060S. Text/effects/primitives use created Vulkan device capability checks; this inventory is not a portable backend validation claim."
+    },
+    {
+      "id": "scope/presentation",
+      "status": "blocked-execution",
+      "reason": "Real Linux X11/WebGPU U03 window/Present harness builds; explicit headless RGBA8Srgb-to-BGRA8Srgb product-shader/fresh-mount/analytic pixel gate passes. Actual displayed Present/VSync/refresh and product-host idle/resume are not verified: no authorized user GUI session. Benchmark-owned idle policy is explicitly not product-host proof; do not use login-greeter display/auth."
     }
   ]
 }

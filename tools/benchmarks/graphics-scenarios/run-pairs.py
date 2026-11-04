@@ -167,7 +167,7 @@ def main():
                   medianThroughputRatioBoverA=statistics.median(r['throughputRatioBoverA'] for r in observations),
                   minimumDurationMet=duration_ok,
                   status='measured' if stable and duration_ok else 'unstable-or-duration-shortfall',
-                  scope='headless public Canvas versus Scene; not displayed FPS; process ratios not pooled frame samples')
+                  scope=('headless public Canvas/Canvas A/A noise control' if args.aa else 'headless public Canvas versus Scene') + '; not displayed FPS; process ratios not pooled frame samples')
     (root / 'comparison.json').write_text(json.dumps(result, indent=2))
     if not duration_ok:
         raise RuntimeError('Formal duration shortfall; evidence and ratios retained, not qualified')

@@ -141,3 +141,49 @@ evidence is distinct from these correctness and retained-memory observations.
 Displayed Present/VSync/host-idle execution is still blocked by the absent GUI
 execution target: DISPLAY and WAYLAND_DISPLAY are unset and no node is connected.
 A GUI target was requested; headless rendering is not substituted for this gate.
+
+### Frozen formal measurement evidence
+
+Source/binary mutation was excluded while running the `0572187` campaigns. Eight
+campaigns / 80 independent formal processes qualified, with five alternating pairs
+per campaign and explicitly fixed common warmup/frame counts. This includes core
+Canvas/Scene and matching Canvas/Canvas noise controls at depths1/3, plus selected
+Text, Effects, UI and asset-lifecycle selfsame controls. The initial core depth3
+campaign failed minimum duration and remains preserved; the replacement is a new
+complete campaign with a predeclared larger common frame floor, not a favorable
+subset retry. No process frames are pooled as independent process observations.
+
+Generated values, raw data, stage distributions, absolute pair deltas/dispersion
+and the report remain under ignored `adr-completion/`. Recompute inventory with:
+
+```sh
+python3 tools/benchmarks/graphics-scenarios/summarize-campaigns.py --root artifacts/graphics-benchmarks/adr-completion --output artifacts/graphics-benchmarks/adr-completion/campaign-inventory.json
+```
+
+The inventory verifies qualified duration/frame budgets and every evidence archive
+member/hash, and records compressed bytes and uncompressed member bytes. A/A is a
+noise control, never a claimed improvement. The original core A/A raw scope text
+was generic; its explicit `aaNoiseControl` and actual Canvas/Canvas plan are
+authoritative. The future-run scope label is corrected without rewriting raw data.
+
+Actual presentation remains the separate external execution gate above.
+
+### Presentation preparation and remaining gate
+
+The real-UI presentation executable builds and passes formatter verification. Its
+CLI regression script checks 16 invalid invocations plus three managed modes and
+the explicit missing-DISPLAY guard before device/window creation. The real WebGPU
+headless U03 gate passes initial/final native-text/UI states, using a supported
+RGBA8-sRGB intermediate and the actual product present shaders into BGRA8-sRGB.
+Live/fresh-mount full-image equality, analytic red/blue endpoints, selected adapter,
+font and actual shader target-code hashes are recorded. The initial direct-BGRA
+Renderer2D rejection remains preserved as failed evidence; no oracle was weakened.
+
+Use `python3 tools/benchmarks/graphics-scenarios/check-presentation-cli.py` after
+building the presentation executable. `--check-pixels` is the explicit real GPU
+headless gate; `--run` requires an authorized logged-in user desktop.
+
+No window was created, no Present or actual monitor/VSync measurement was made,
+and benchmark-owned scheduling is not product-host idle/resume proof. The local
+X11 sockets belong to the login greeter, not a requesting-user desktop; they were
+not used or reauthenticated. ADR acceptance remains open for this GUI/host gate.
