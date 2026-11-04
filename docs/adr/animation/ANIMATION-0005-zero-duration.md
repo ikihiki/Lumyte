@@ -93,5 +93,3 @@ playback.Update(output, events); // true。true と Shown をこの更新で一�
 ## 実装・検証記録
 
 2026-10-11、レビューで確認した Reverse の瞬時 Release 欠落、Repeat と Reverse の優先順位、遷移先マーカーの UpdateOffset を修正した。多重 Reverse、最大 Tick、親内の配置、Hold／Release の登録順、Pause と Once／Loop の遷移を回帰テストへ追加し、Animation 145 件と Mathematics 33 件の Release テストが成功した。後者には有限の大きな外挿を通じた定数保持も含む。対象の C# 整形、Markdown 53 ファイル、差分の空白検査も成功した。
-
-比較元 `2cc91d4` と修正後の独立 DLL を交互に 2 プロセスずつ実行した。.NET 10.0.12 / Linux x64、Release、tiered compilation 無効、200 ms のウォームアップ後に約 50 ms のバッチを各 7 サンプル測定し、プロセスごとの中央値を平均した。全 8 ケースで Managed 割り当ては 0 B/op だった。Hold は 100.63 → 101.60 ns、Release は 177.44 → 185.19 ns、Release＋Reverse は 175.58 → 190.24 ns、Release＋Repeat(8) は 215.37 → 229.85 ns、Release＋Repeat(8)＋Reverse は 243.08 → 231.64 ns だった。境界情報の保持と内部座標拡張には処理時間のコストがあり、一律の高速化とは扱わない。単一環境のマイクロベンチマークであり、実際のフレーム時間を示さない。

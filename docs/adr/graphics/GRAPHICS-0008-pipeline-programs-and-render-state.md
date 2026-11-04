@@ -283,7 +283,7 @@ cacheの要否が自明でない経路は、以下の条件で毎回生成と比
 - 同じdevice・driver・shader・attachment・描画数で、同一stateの連続、少数stateの交互使用、多数の異なるstateを評価する。初回とwarm状態を分け、driver内部cacheの影響も区別する。
 - key構築・検索を含むCPUのdraw記録時間、native生成／link回数と時間、allocation数、保持memory、GPU描画時間を計測する。平均だけでなくp95／p99とcache miss時の費用を確認する。
 - native objectの保持・解放と描画結果の検証を同じ条件で含める。cache側だけ寿命を短縮したり、生成側だけGPU同期を追加したりしない。
-- CPU時間とmemoryの実測から採用方式を決め、対象GPU／driver、workload、比較条件と結果を各backend READMEへ記録する。計測前に特定の方式が高速と断定しない。
+- CPU時間とmemoryの実測から採用方式を決め、workloadと比較条件を各backend READMEへ記載し、対象GPU／driverと測定結果はGit管理外のartifactsへ保存する。計測前に特定の方式が高速と断定しない。
 
 完全なnative PSOを必要とする生成単位はcacheを実装する。dynamic stateの設定はnative objectを生成しない。軽量なstate object等を追加する際は、上記の比較結果を各backend READMEへ記録する。
 

@@ -13,6 +13,7 @@ dotnet run --project build -c Release -- --target Test
 必要なcompiler・SDKの準備は開発環境のセットアップを参照してください。
 
 - [サンプル一覧と共通ランチャー](samples/README.md)
+- [テストの分類と実行手順](tests/README.md)／[ベンチマーク一覧](benchmarks/README.md)
 - [開発環境のセットアップ](docs/development-environment.md)
 - [共通ビルド手順](build/README.md)／[ビルド工程の設計](docs/adr/0004-build-orchestration.md)
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)

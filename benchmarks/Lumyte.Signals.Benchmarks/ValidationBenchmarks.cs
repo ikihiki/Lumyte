@@ -15,22 +15,6 @@ public class ValidationBenchmarks
     [Params(2, 4, 8)]
     public int Layers { get; set; }
 
-    /// <summary>Checks freshness after both kinds of mutation.</summary>
-    public static void Verify()
-    {
-        foreach (int layers in new[] { 2, 4, 8 })
-        {
-            var instance = new ValidationBenchmarks { Layers = layers };
-            instance.Setup();
-            int factor = 1 << (layers - 1);
-            if (instance.ReadAfterUnrelatedWrite() != factor || instance.UpdateAndRead() != factor * 2
-                || instance.ReadAfterUnrelatedWrite() != factor * 2 || instance.UpdateAndRead() != factor * 3)
-            {
-                throw new InvalidOperationException("A validation stamp must preserve the latest shared graph value.");
-            }
-        }
-    }
-
     /// <summary>Builds and primes a passive shared graph.</summary>
     [GlobalSetup]
     public void Setup()

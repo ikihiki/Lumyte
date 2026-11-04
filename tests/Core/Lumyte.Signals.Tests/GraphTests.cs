@@ -5,6 +5,33 @@ namespace Lumyte.Signals.Tests;
 /// <summary>Checks independent graph evaluation and observer lifetime without a host or pump.</summary>
 public sealed class GraphTests
 {
+    /// <summary>Checks a batch coalesces sixteen writes into one notification.</summary>
+    [Fact]
+    public void BatchCoalescesNotifications()
+    {
+        var source = Signal.Create(0);
+        int calls = 0;
+        using SignalEffect effect = Signal.Effect(() =>
+        {
+            _ = source.Value;
+            calls++;
+        });
+        for (int index = 1; index <= 16; index++)
+        {
+            source.Value = index;
+        }
+
+        Assert.Equal(17, calls);
+        Signal.Batch(() =>
+        {
+            for (int index = 17; index <= 32; index++)
+            {
+                source.Value = index;
+            }
+        });
+        Assert.Equal(18, calls);
+    }
+
     /// <summary>Checks automatic delivery, batch coalescing and fresh diamond values.</summary>
     [Fact]
     public void DiamondBatchAndUntrackedReadsRemainConsistent()

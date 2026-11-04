@@ -45,7 +45,7 @@ internal sealed partial class Build
         {
             await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
             await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore", "--", "--smoke").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/Core/Lumyte.Signals.Benchmarks.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
         });
 
     private Target BenchmarkSignals => definition => definition
