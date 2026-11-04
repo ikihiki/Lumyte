@@ -174,6 +174,7 @@ public sealed class UiDrawingScene2D : IDisposable
 
         placement.Parent = parent;
         Vector2 offset = new(element.Bounds.X, element.Bounds.Y);
+        offset = UiLayoutMath.Add(offset, element.Parent?.ContentOffset ?? Vector2.Zero);
         if (placement.Offset != offset)
         {
             _scene.SetTransform(placement.Group, Matrix3x2.CreateTranslation(offset));
@@ -189,6 +190,7 @@ public sealed class UiDrawingScene2D : IDisposable
 
         if (!placement.Recorded || !split || !element.CanCacheRetainedDrawing
             || placement.VisualRevision != element.VisualRevision || placement.Size != element.Size
+            || placement.ModifierGeometryRevision != element.ModifierGeometryRevision
             || !ReferenceEquals(placement.Configuration, element.Widget)
             || (element is RectangleElement && placement.Fill != ((Compose.Definitions.Rectangle)element.Widget).Fill))
         {
@@ -210,6 +212,7 @@ public sealed class UiDrawingScene2D : IDisposable
             }
 
             placement.VisualRevision = element.VisualRevision;
+            placement.ModifierGeometryRevision = element.ModifierGeometryRevision;
             placement.Size = element.Size;
             placement.Recorded = true;
             recordings++;
@@ -292,6 +295,8 @@ public sealed class UiDrawingScene2D : IDisposable
         internal Color2D Fill { get; set; }
 
         internal ulong VisualRevision { get; set; }
+
+        internal ulong ModifierGeometryRevision { get; set; }
 
         internal Vector2 Size { get; set; }
 

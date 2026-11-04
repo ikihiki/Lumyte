@@ -28,6 +28,10 @@ internal static class UiLayoutMath
         return (float)value;
     }
 
+    internal static Vector2 Add(Vector2 first, Vector2 second) => new(
+        FiniteFloat((double)first.X + second.X),
+        FiniteFloat((double)first.Y + second.Y));
+
     internal static Vector2 FillBounded(UiBoxConstraints constraints, double width, double height) => new(
         constraints.HasBoundedWidth ? constraints.MaxWidth : FiniteFloat(Math.Max(constraints.MinWidth, width)),
         constraints.HasBoundedHeight ? constraints.MaxHeight : FiniteFloat(Math.Max(constraints.MinHeight, height)));

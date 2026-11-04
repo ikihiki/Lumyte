@@ -29,6 +29,38 @@ public sealed class InputTests
         Assert.False(node.HasActivePress);
     }
 
+    /// <summary>Checks asymmetric decoration never redirects automation into padding.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task DecoratedClickAgreesWithNormalPointerAsync()
+    {
+        int clicks = 0;
+        await using var fixture = new Fixture(Panel()[Button(testId: "decorated", width: 20, height: 10, onClick: () => clicks++, with: [Padding.Sides(60, 5, 0, 0), Border.Stroke(new(1, 0, 0, 1), 2)])]);
+        UiAutomationNode node = (await fixture.Page.SnapshotAsync()).Nodes.Single(n => n.TestId == "decorated");
+        Assert.Equal(new Vector2(62, 7), new(node.ContentBounds.X, node.ContentBounds.Y));
+        Assert.Null(fixture.Surface.ProbePointer(new(20, 8)).ActivationTarget);
+        Assert.Equal(node.Id, fixture.Surface.ProbePointer(new(65, 9)).ActivationTarget);
+        fixture.Surface.Dispatch(new UiPointerInput(90, UiPointerPhase.Down, new(20, 8)));
+        fixture.Surface.Dispatch(new UiPointerInput(90, UiPointerPhase.Up, new(20, 8)));
+        Assert.Equal(0, clicks);
+        await fixture.Page.GetByTestId("decorated").ClickAsync();
+        Assert.Equal(1, clicks);
+        Assert.All(fixture.Host.Sent.OfType<UiPointerInput>(), input => Assert.True(input.Position.X >= 62));
+    }
+
+    /// <summary>Checks zero body area cannot be activated through outer decoration.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ZeroBodyCannotBeClickedThroughPaddingAsync()
+    {
+        int clicks = 0;
+        await using var fixture = new Fixture(Panel()[Button(testId: "zero", width: 0, height: 0, onClick: () => clicks++, with: [Padding.All(20)])]);
+        UiAutomationException error = await Assert.ThrowsAsync<UiAutomationException>(() => fixture.Page.GetByTestId("zero").ClickAsync(new() { Timeout = TimeSpan.FromMilliseconds(40) }));
+        Assert.Equal(UiAutomationFailureKind.Timeout, error.Kind);
+        Assert.Equal(0, clicks);
+        Assert.Empty(fixture.Host.Sent);
+    }
+
     /// <summary>Checks action capabilities are not inferred from a role.</summary>
     /// <returns>The asynchronous check.</returns>
     [Fact]

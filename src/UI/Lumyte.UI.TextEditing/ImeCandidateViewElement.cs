@@ -137,7 +137,7 @@ public class ImeCandidateViewElement : UiElement<Compose.Definitions.ImeCandidat
     /// <param name = "canvas">The canvas.</param>
     protected override void OnRecord(DrawingCanvas2D canvas)
     {
-        canvas.FillRect(new(0, 0, Size.X, Size.Y), Widget.Style.Background);
+        canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), Widget.Style.Background);
         foreach (Row row in _rows)
         {
             bool selected = row.Kind == ImeCandidateActionKind.Select && _candidates?.SelectedIndex == row.Index;

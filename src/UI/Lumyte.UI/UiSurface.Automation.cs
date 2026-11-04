@@ -23,6 +23,7 @@ public sealed partial class UiSurface
         void Visit(UiElement element, UiAutomationId? parent, Vector2 parentOrigin, UiInputBounds ancestorClip, bool visible, bool enabled, bool hitTestVisible)
         {
             Vector2 origin = UiInputGeometry.Origin(element, parentOrigin);
+            Vector2 bodyOrigin = UiLayoutMath.Add(origin, element.ContentOffset);
             var bounds = UiInputBounds.From(origin, element.Size);
             UiInputBounds clipped = bounds.Intersect(ancestorClip);
             visible &= element.LayoutVisible;
@@ -30,7 +31,7 @@ public sealed partial class UiSurface
             hitTestVisible &= element.Widget.HitTestVisible;
             bool focusable = ReferenceEquals(element.InputVersion, _inputVersion) && element.InputFocusable;
             bool redacted = element.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning));
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds)));
             if (redacted)
             {
                 return;
@@ -45,7 +46,7 @@ public sealed partial class UiSurface
                     throw new InvalidOperationException("Semantic children must be distinct connected direct children.");
                 }
 
-                Visit(child, element.AutomationId, origin, element.Widget.ClipToBounds ? clipped : ancestorClip, visible, enabled, hitTestVisible);
+                Visit(child, element.AutomationId, bodyOrigin, element.Widget.ClipToBounds ? clipped : ancestorClip, visible, enabled, hitTestVisible);
             }
         }
     }

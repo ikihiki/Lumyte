@@ -150,3 +150,46 @@ This is an explicit renderer integration point, not an automatic conversion of t
 host. UiSurface.Record and existing Canvas/DrawList callers are unchanged. A visual host, page
 transition, or active visual exclusions force fresh whole-surface recording through the existing
 composition path; visual layers and presentation receipts remain owned by the existing host.
+
+## Ordered box modifiers
+
+C1 modifiers use the existing typed factory and `with` actions; no wrapper
+Widget or Element is introduced. The first modifier is outermost:
+
+```csharp
+using Lumyte.UI;
+using Lumyte.Graphics.Drawing2D;
+using static Lumyte.UI.Compose;
+
+var save = Button(width: 120, height: 32, with: [
+    Align.Center(),
+    Padding.All(12),
+    Border.Stroke(new Color2D(1, 1, 1, 1), 1),
+    ConstrainedBox.Limits(new UiBoxConstraints(0, 240, 0, 80))
+])[Rectangle(width: 16, height: 16)];
+```
+
+Repeated actions append independent immutable layers. Rebuild a fresh declaration
+for changes; do not mutate a mounted declaration. Geometry belongs to each Element.
+Border color changes invalidate drawing only; other modifier changes invalidate
+layout, input and drawing. Insets must be finite and nonnegative, and alignment
+coefficients must be finite values in the inclusive range 0–1.
+
+`SizedBox` accepts zero or one child and uses inherited Width/Height as body
+dimensions. `Separator` is a noninteractive horizontal (default) or vertical
+line with explicit Color and nonnegative Thickness (default 1).
+
+### Custom Element geometry
+
+Parents still use child `Size` and set child offsets in their own body coordinates.
+An Element's `Size`/`Bounds` describe its outer box; `ContentSize` describes the
+body and `ContentBounds` gives its rectangle relative to the outer origin.
+LayoutOverride receives body constraints exactly once. RecordOverride, OnRecord,
+OnInput and OnProbePointerDown already receive body-local coordinates: do not
+translate by ContentBounds again. Migrate self-drawing from
+`canvas.FillRect(new(0, 0, Size.X, Size.Y), color)` to
+`canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), color)`, and use
+ContentSize for custom inside checks. Without modifiers both sizes remain equal.
+ClipToBounds clips the outer box; modifiers add no implicit clip. Padding and
+border do not enlarge the body's click target. Automation Bounds remains outer;
+ContentBounds and ActionableBounds expose body geometry for point selection.

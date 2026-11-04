@@ -62,6 +62,8 @@ public partial class UiElement
     internal bool HasEquivalentVisualContent(UiElement other)
     {
         if (Widget.GetType() != other.Widget.GetType() || Widget.ClipToBounds != other.Widget.ClipToBounds
+            || ModifierChanges(other.Widget) != UiInvalidation.None || ContentBounds != other.ContentBounds
+            || !_modifierBounds.AsSpan().SequenceEqual(other._modifierBounds)
             || !CanReuseTransitionCapture(other.Widget) || Children.Count != other.Children.Count)
         {
             return false;

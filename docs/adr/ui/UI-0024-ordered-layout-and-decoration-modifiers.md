@@ -62,7 +62,7 @@ Button(with: [
 
 ### C1の範囲とカタログとの差分
 
-UI-0013のC1で提案したSizedBoxとSeparatorは独立Widgetとして残す。SizedBoxは既存のWidth/Heightと0〜1 childを使い、空なら制約内の最小有限寸法を返す。子があれば本体制約をそのまま一度渡し、返った寸法を変更せず原点へ配置して自身の本体寸法とする。Separatorは向き・線の厚さ・色を持つ装飾線とし、既定ではfocus、click、独自のAutomation操作を持たない。
+UI-0013のC1で提案したSizedBoxとSeparatorは独立Widgetとして残す。SizedBoxは既存のWidth/Heightと0〜1 childを使い、空なら制約内の最小有限寸法を返す。子があれば本体制約をそのまま一度渡し、返った寸法を変更せず原点へ配置して自身の本体寸法とする。ただしlayout除外された子は既存規則で0寸法になるため、SizedBox自身は本体制約のminへclampする（子の寸法は変えない）。Separatorは向き・線の厚さ・色を持つ装飾線とし、既定ではfocus、click、独自のAutomation操作を持たない。
 
 Padding、Border、Align、ConstrainedBoxはWidget継承と独自child slotを持たない操作定義へ変更し、単独でツリーへ置かない。これらのfactory識別子はComposeActionの生成入口として使う。生成上の設定用インスタンスを作れても、それはWidgetではなく表示対象にならない。
 
@@ -103,7 +103,7 @@ Element.SizeとBoundsは親が扱う外側の寸法・位置のままとする�
 
 Padding、Border、Alignの本体外領域は元のButton等のクリック領域に含めず、その領域で新しい入力targetを作らない。OnInputとOnProbePointerDownには同じ本体ローカル座標を渡し、capture済みpointerは本体外でも従来どおり配送する。修飾により本体位置が変わっても、型とkeyが維持されれば押下やfocusを理由なく取り消さない。
 
-既存Automation nodeのBoundsは外側配置を示し、修飾層のnodeは追加しない。Clickは本体の操作可能領域と既存probeの一致から点を選び、余白中心のクリックで成功扱いにしない。本体が0面積、clip外、他要素に遮蔽されていれば通常の操作不能結果とする。IME caret、選択範囲、Popup anchorは本体座標からSurfaceへの共通変換を使い、余白offsetを二重適用しない。
+既存Automation nodeのBoundsは外側配置を示し、修飾層のnodeは追加しない。snapshotのContentBoundsはSurface座標の本体矩形、ActionableBoundsは本体と実効入力clipの交差を値として保持する（Element.ContentBoundsは外側原点からの相対矩形のまま）。Clickは本体の操作可能領域と既存probeの一致から点を選び、余白中心のクリックで成功扱いにしない。本体が0面積、clip外、他要素に遮蔽されていれば通常の操作不能結果とする。IME caret、選択範囲、Popup anchorは本体座標からSurfaceへの共通変換を使い、余白offsetを二重適用しない。
 
 ### 更新・失敗と無効化
 
@@ -202,6 +202,13 @@ ElementのPrepareUpdateで次の修飾列を検証し、公開前の失敗では
 -        // ローカル位置でDown配送を予測する。
 +        // 本体ローカル位置で、通常OnInputと同じDown配送を予測する。
          protected virtual UiInputResult OnProbePointerDown(Vector2 localPosition);
+     }
+     public sealed class UiAutomationNode
+     {
++        // Surface論理座標の本体矩形。Boundsは外側矩形のまま。
++        public Rect2D ContentBounds { get; }
++        // 本体と実効入力clipの交差。通常probeで操作対象の一致を別途確認する。
++        public Rect2D ActionableBounds { get; }
      }
      public readonly struct UiInputContext
      {

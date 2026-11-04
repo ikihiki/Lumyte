@@ -445,15 +445,15 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
             return;
         }
 
-        Vector2 origin = new(window.BoundsInPresentation.X - _editor.HorizontalOffset, window.BoundsInPresentation.Y);
+        Vector2 origin = new(window.BoundsInPresentation.X - _editor.HorizontalOffset + _editor.ContentBounds.X, window.BoundsInPresentation.Y + _editor.ContentBounds.Y);
         for (Lumyte.UI.UiElement? node = _editor; node is not null; node = node.Parent)
         {
-            origin += new Vector2(node.Bounds.X, node.Bounds.Y);
+            origin += new Vector2(node.Bounds.X, node.Bounds.Y) + (node.Parent is { } parent ? new Vector2(parent.ContentBounds.X, parent.ContentBounds.Y) : Vector2.Zero);
         }
 
         TextDocumentSnapshot snapshot = document.CaptureSnapshot();
         WindowRect clip = new(window.ClipInPresentation.X, window.ClipInPresentation.Y, window.ClipInPresentation.Width, window.ClipInPresentation.Height);
-        Vector2 nodeOrigin = origin + new Vector2(_editor.HorizontalOffset, 0);
+        Vector2 nodeOrigin = origin + new Vector2(_editor.HorizontalOffset - _editor.ContentBounds.X, -_editor.ContentBounds.Y);
         for (Lumyte.UI.UiElement? node = _editor; node is not null; node = node.Parent)
         {
             if (node.Widget.ClipToBounds)
@@ -465,7 +465,7 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
                 clip = new(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
             }
 
-            nodeOrigin -= new Vector2(node.Bounds.X, node.Bounds.Y);
+            nodeOrigin -= new Vector2(node.Bounds.X, node.Bounds.Y) + (node.Parent is { } parent ? new Vector2(parent.ContentBounds.X, parent.ContentBounds.Y) : Vector2.Zero);
         }
 
         (Guid Session, UiTextLayout Layout, ulong Document, Vector2 Origin, WindowRect Clip, Vector2 Scale) key = (_session.Status.SessionId, layout, snapshot.Revision, origin, clip, window.Scale);

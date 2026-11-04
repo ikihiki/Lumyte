@@ -55,7 +55,7 @@ public sealed partial class UiSurface
 
             if (element.Surface is not { } surface || surface._logicalVisualCapture || surface.VisualHost?.Record(element, canvas) != true)
             {
-                element.InvokeRecord(canvas);
+                element.RecordModified(canvas);
             }
         }
         finally

@@ -16,6 +16,41 @@ namespace Lumyte.UI.TextEditing.Tests;
 /// <summary>Defines connection tests.</summary>
 public sealed class ConnectionTests
 {
+    /// <summary>Checks IME caret uses the decorated body exactly once.</summary>
+    [Fact]
+    public void DecoratedEditorPublishesBodyCaretOffset()
+    {
+        using var plain = new Fixture();
+        using var decorated = new Fixture(decorated: true);
+        plain.Source.Scale = new(1.5f, 2);
+        decorated.Source.Scale = new(1.5f, 2);
+        plain.Surface.TryFocus(plain.Editor);
+        decorated.Surface.TryFocus(decorated.Editor);
+        plain.Pump();
+        decorated.Pump();
+        Assert.Equal(plain.Connection.Geometry!.Caret.X + 13, decorated.Connection.Geometry!.Caret.X);
+        Assert.Equal(plain.Connection.Geometry.Caret.Y + 7, decorated.Connection.Geometry.Caret.Y);
+    }
+
+    /// <summary>Checks border color does not edit text or republish identical IME geometry.</summary>
+    [Fact]
+    public void BorderColorChangeKeepsDocumentAndImeGeometry()
+    {
+        using var fixture = new Fixture(decorated: true);
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextInputGeometry geometry = fixture.Connection.Geometry!;
+        ulong revision = fixture.Document.CaptureSnapshot().Revision;
+        var next = new Compose.Definitions.TextBox { LayoutProvider = fixture.Provider, Text = string.Empty, TestId = "editor" };
+        Lumyte.UI.Compose.Padding.Sides(13, 7, 2, 3)(next);
+        Lumyte.UI.Compose.Border.Stroke(new(0, 1, 0, 1), 0)(next);
+        fixture.Surface.Rebuild(next);
+        fixture.Pump();
+        Assert.Equal(revision, fixture.Document.CaptureSnapshot().Revision);
+        Assert.Same(geometry, fixture.Connection.Geometry);
+        Assert.Equal(0, fixture.Changes);
+    }
+
     /// <summary>Checks unchanged geometry is not republished, while document and clipping changes invalidate it.</summary>
     [Fact]
     public void GeometryPublicationTracksOnlyGeometryChanges()
@@ -457,7 +492,8 @@ public sealed class ConnectionTests
 
         /// <summary>Initializes a new instance of the <see cref = "Fixture"/> class.</summary>
         /// <param name="multipleEditors">Whether to create sibling editors in one surface.</param>
-        public Fixture(bool multipleEditors = false)
+        /// <param name="decorated">Whether to apply nested body offsets.</param>
+        public Fixture(bool multipleEditors = false, bool decorated = false)
         {
             using Stream font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts/DejaVuSans.ttf"));
             string family = _engine.AddFont(font);
@@ -474,6 +510,12 @@ public sealed class ConnectionTests
                 },
             };
             var other = new Compose.Definitions.TextBox { Text = string.Empty, LayoutProvider = Provider, TestId = "other" };
+            if (decorated)
+            {
+                Lumyte.UI.Compose.Padding.Sides(13, 7, 2, 3)(editor);
+                Lumyte.UI.Compose.Border.Stroke(new(1, 0, 0, 1), 0)(editor);
+            }
+
             Surface = new(multipleEditors ? Lumyte.UI.Compose.Stack()[editor, other] : editor);
             Editor = (TextBoxElement)(multipleEditors ? Surface.RootElement.Children[0] : Surface.RootElement);
             _registration = Windows.Register(Source);

@@ -170,7 +170,7 @@ public sealed partial class UiSurface
         {
             if (!(_visualExclusions?.Contains(widget) ?? false))
             {
-                widget.InvokeRecord(canvas);
+                widget.RecordModified(canvas);
             }
         }
         finally
@@ -196,7 +196,7 @@ public sealed partial class UiSurface
         {
             if (!exclusions.Contains(_rootElement))
             {
-                _rootElement.InvokeRecord(canvas);
+                _rootElement.RecordModified(canvas);
             }
         }
         finally
@@ -242,7 +242,7 @@ public sealed partial class UiSurface
         Vector2 point = Vector2.Zero;
         for (UiElement? node = widget; node is not null; node = node.Parent)
         {
-            point += new Vector2(node.Bounds.X, node.Bounds.Y);
+            point = UiLayoutMath.Add(UiLayoutMath.Add(point, new(node.Bounds.X, node.Bounds.Y)), node.Parent?.ContentOffset ?? Vector2.Zero);
         }
 
         return point;

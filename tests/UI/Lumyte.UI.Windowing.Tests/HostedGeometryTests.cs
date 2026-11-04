@@ -8,6 +8,22 @@ namespace Lumyte.UI.Windowing.Tests;
 /// <summary>Checks normal-window mutations commit with the displayed geometry.</summary>
 public sealed class HostedGeometryTests
 {
+    /// <summary>Checks popup anchors use the body, not decoration extents.</summary>
+    [Fact]
+    public void DecoratedAnchorPlacesPopupBelowBody()
+    {
+        using var fixture = new Fixture();
+        fixture.Surface.Rebuild(Panel()[Button(width: 20, height: 20, testId: "anchor", with: [Padding.Sides(13, 7, 2, 3)])]);
+        fixture.Surface.UpdateLayout();
+        fixture.Pump();
+        UiPopupHandle popup = fixture.Open();
+        fixture.Pump();
+        UiWindowSnapshot state = fixture.Windows.CaptureWindows().Single(s => s.Role == UiWindowRole.Popup);
+        Assert.Equal(13, state.BoundsInPresentation.X);
+        Assert.Equal(27, state.BoundsInPresentation.Y);
+        Assert.Equal(UiPopupState.Open, popup.State);
+    }
+
     /// <summary>Checks resize and stacking do not change hit testing before presentation.</summary>
     [Fact]
     public void ResizeAndStackingCommitOnlyAfterPresentation()

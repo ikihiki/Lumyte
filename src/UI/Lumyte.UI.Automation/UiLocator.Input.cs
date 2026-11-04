@@ -9,13 +9,13 @@ public sealed partial class UiLocator
 {
     private static bool Visible(UiAutomationNode node) => node.IsVisible && node.Bounds.Width > 0 && node.Bounds.Height > 0;
 
-    private static bool SameGeometry(UiAutomationNode first, UiAutomationNode second) => first.Id == second.Id && first.Bounds == second.Bounds && first.ClippedBounds == second.ClippedBounds;
+    private static bool SameGeometry(UiAutomationNode first, UiAutomationNode second) => first.Id == second.Id && first.Bounds == second.Bounds && first.ClippedBounds == second.ClippedBounds && first.ContentBounds == second.ContentBounds && first.ActionableBounds == second.ActionableBounds;
 
     private static bool Contains(Rect2D rectangle, Vector2 position) => rectangle.Width > 0 && rectangle.Height > 0 && position.X >= rectangle.X && position.Y >= rectangle.Y && position.X < (double)rectangle.X + rectangle.Width && position.Y < (double)rectangle.Y + rectangle.Height;
 
     private static bool Actionable(UiAutomationNode node, UiClickOptions? options, out Vector2 point)
     {
-        Rect2D clip = node.ClippedBounds;
+        Rect2D clip = node.ActionableBounds;
         point = options?.Position is { } offset ? new(node.Bounds.X + offset.X, node.Bounds.Y + offset.Y) : new(clip.X + (clip.Width / 2), clip.Y + (clip.Height / 2));
         return !node.IsTransitioning && Visible(node) && node.IsEnabled && node.HitTestVisible && !node.HasActivePress
             && float.IsFinite(point.X) && float.IsFinite(point.Y) && Contains(node.Bounds, point) && Contains(clip, point);

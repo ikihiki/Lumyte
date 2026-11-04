@@ -5,7 +5,7 @@ namespace Lumyte.UI;
 /// <summary>An immutable, detached copy of one element's semantics and logical geometry.</summary>
 public sealed class UiAutomationNode
 {
-    internal UiAutomationNode(UiAutomationId id, UiAutomationId? parentId, string? testId, string? name, UiRole role, Rect2D bounds, Rect2D clippedBounds, bool visible, bool enabled, bool hitTestVisible, bool focusable, bool focused, bool pressed, bool activePress, UiAutomationActions actions, bool transitioning = false)
+    internal UiAutomationNode(UiAutomationId id, UiAutomationId? parentId, string? testId, string? name, UiRole role, Rect2D bounds, Rect2D clippedBounds, bool visible, bool enabled, bool hitTestVisible, bool focusable, bool focused, bool pressed, bool activePress, UiAutomationActions actions, bool transitioning = false, Rect2D contentBounds = default, Rect2D actionableBounds = default)
     {
         Id = id;
         ParentId = parentId;
@@ -13,6 +13,8 @@ public sealed class UiAutomationNode
         Name = name;
         Role = role;
         Bounds = bounds;
+        ContentBounds = contentBounds;
+        ActionableBounds = actionableBounds;
         ClippedBounds = clippedBounds;
         IsVisible = visible;
         IsEnabled = enabled;
@@ -42,6 +44,12 @@ public sealed class UiAutomationNode
 
     /// <summary>Gets unclipped bounds in surface logical coordinates.</summary>
     public Rect2D Bounds { get; }
+
+    /// <summary>Gets the body bounds in surface logical coordinates.</summary>
+    public Rect2D ContentBounds { get; }
+
+    /// <summary>Gets the body intersected with effective input clips.</summary>
+    public Rect2D ActionableBounds { get; }
 
     /// <summary>Gets bounds intersected with ancestor clips and viewport.</summary>
     public Rect2D ClippedBounds { get; }

@@ -84,7 +84,7 @@ internal sealed class UiLayoutPass
         }
 
         BeginNode(node);
-        UiBoxConstraints effective = constraints.Tighten(node.Widget.Width, node.Widget.Height);
+        UiBoxConstraints effective = node.Widget.BoxModifiers.Length == 0 ? constraints.Tighten(node.Widget.Width, node.Widget.Height) : constraints;
         if (node.CanReuseLayout(effective))
         {
             node.PublishLayout(node.Size, Vector2.Zero);
@@ -96,7 +96,7 @@ internal sealed class UiLayoutPass
         _current = node;
         try
         {
-            Vector2 size = node.InvokeLayout(effective);
+            Vector2 size = node.LayoutModified(effective);
             if (!float.IsFinite(size.X) || !float.IsFinite(size.Y)
                 || size.X < effective.MinWidth || size.X > effective.MaxWidth
                 || size.Y < effective.MinHeight || size.Y > effective.MaxHeight)
@@ -133,6 +133,7 @@ internal sealed class UiLayoutPass
             node.InvalidateLayoutCache();
             node.LayoutComplete = true;
             node.LayoutOffsetSet = !ReferenceEquals(node, root);
+            node.ResetContentGeometry();
             node.PublishLayout(Vector2.Zero, Vector2.Zero);
         }
     }

@@ -27,17 +27,18 @@ public partial class UiElement
 
         Vector2 origin = UiInputGeometry.Origin(this, parentOrigin);
         var bounds = UiInputBounds.From(origin, Size);
+        Vector2 bodyOrigin = UiLayoutMath.Add(origin, ContentOffset);
         UiInputBounds clip = Widget.ClipToBounds ? ancestorClip.Intersect(bounds) : ancestorClip;
         InputVersion = version;
         InputFocusable = CanReceiveFocus;
-        InputBounds = bounds.Intersect(clip);
-        InputOrigin = origin;
+        InputBounds = UiInputBounds.From(bodyOrigin, ContentSize).Intersect(clip);
+        InputOrigin = bodyOrigin;
         _inputSubtreeBounds = InputBounds;
         _inputChildren = ResolveInputChildren();
         for (int index = 0; index < _inputChildren.Count; index++)
         {
             UiElement child = _inputChildren[index];
-            child.UpdateInput(origin, clip, version);
+            child.UpdateInput(bodyOrigin, clip, version);
             if (ReferenceEquals(child.InputVersion, version))
             {
                 _inputSubtreeBounds = _inputSubtreeBounds.Union(child._inputSubtreeBounds);

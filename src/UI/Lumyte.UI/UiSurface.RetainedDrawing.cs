@@ -22,14 +22,7 @@ public sealed partial class UiSurface
         _recordDepth++;
         try
         {
-            if (selfOnly)
-            {
-                element.InvokeRecordSelf(canvas);
-            }
-            else
-            {
-                element.InvokeRecord(canvas);
-            }
+            element.RecordModified(canvas, selfOnly);
         }
         finally
         {
