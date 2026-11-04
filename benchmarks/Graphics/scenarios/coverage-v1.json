@@ -1,0 +1,141 @@
+{
+  "version": "adr0027-coverage-v1",
+  "note": "Executable means runnable implementation, not measured/validated on every profile; no full ADR completion claim.",
+  "cases": [
+    {
+      "id": "D01",
+      "status": "executable",
+      "reason": "4096 visible opaque rectangles; Canvas static DrawList reuse vs public Scene; flat tree only."
+    },
+    {
+      "id": "D02",
+      "status": "executable",
+      "reason": "0/1/41/410/4096 updates; contiguous/dispersed; 1/16/64/256/4096 commands per node; color toggle each logical frame."
+    },
+    {
+      "id": "D03",
+      "status": "executable",
+      "reason": "Bounded diagnostic:256 placements, parent/individual translation, shared/distinct DrawList; independent exact+analytic checks; CPU BDN and GPU depth1/3. Rotation/1%/tree sweeps and pilot/formal mutation mode remain gaps."
+    },
+    {
+      "id": "D04",
+      "status": "not-yet-implemented",
+      "reason": "Existing camera-pan fixture is not yet integrated with invariant visible-coverage zoom/pan variants."
+    },
+    {
+      "id": "D05",
+      "status": "not-yet-implemented",
+      "reason": "Existing geometry-stream fixture needs fixed-bounds paths and segment/contour sweep."
+    },
+    {
+      "id": "D06",
+      "status": "not-yet-implemented",
+      "reason": "Image2D/DrawImage APIs exist; atlas, texture ordering, resident and upload fixtures absent."
+    },
+    {
+      "id": "D07",
+      "status": "not-yet-implemented",
+      "reason": "Text APIs include vector/MSDF/MTSDF; deterministic font hashes, glyph/layout assertions and independent reference absent."
+    },
+    {
+      "id": "D08",
+      "status": "not-yet-implemented",
+      "reason": "Clip/paint APIs exist; depths7/8/9, path clip and shader-boundary fixtures absent."
+    },
+    {
+      "id": "D09",
+      "status": "not-yet-implemented",
+      "reason": "Blend APIs exist; fixed-command overlap1/4/16 and painter-order analytic reference absent."
+    },
+    {
+      "id": "D10",
+      "status": "not-yet-implemented",
+      "reason": "Use RenderGraphCanvas2D for effects; fixture absent. Direct Scene layer/effects route is unsupported, not approximated with rectangles."
+    },
+    {
+      "id": "D11",
+      "status": "executable",
+      "reason": "Bounded diagnostic 4-phase3/4-element insert/remove/reorder/reparent roundtrip with independent source order and analytic colors; CPU BDN and GPU depth1/3. Large scale/burst and formal mutation mode remain gaps."
+    },
+    {
+      "id": "D12",
+      "status": "not-yet-implemented",
+      "reason": "Public cache budgets exist; working-set/revisit trace and live-vs-idle memory sampling absent."
+    },
+    {
+      "id": "U01",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "U02",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "U03",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "U04",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "U05",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "U06",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "U07",
+      "status": "not-yet-implemented",
+      "reason": "Existing game/editor UI fixtures are legacy diagnostics, not this ADR trace or independently validated UI benchmark."
+    },
+    {
+      "id": "G01",
+      "status": "not-yet-implemented",
+      "reason": "Submission grouping with constant draw count not implemented; ordinary frame submission is not G01 coverage."
+    },
+    {
+      "id": "G02",
+      "status": "not-yet-implemented",
+      "reason": "Existing pipeline-benchmark remains separate; fresh/warm and state-switch fixtures not integrated."
+    },
+    {
+      "id": "G03",
+      "status": "not-yet-implemented",
+      "reason": "Transfer APIs exist; fixed-byte contiguous/dispersed upload/readback fixtures absent."
+    },
+    {
+      "id": "G04",
+      "status": "executable",
+      "reason": "CPU graph-build/compile/dispose: 11 chain/fanout/multioutput profiles with exact invariant checks; standard chain32 formally measured. Record/GPU execution remains a separate extension, not covered by this CPU component."
+    },
+    {
+      "id": "G05",
+      "status": "not-yet-implemented",
+      "reason": "ModelDrawing APIs exist; fixed vertex/draw sweeps and reference images absent."
+    },
+    {
+      "id": "G06",
+      "status": "not-yet-implemented",
+      "reason": "Resource APIs exist; lifecycle, peak-memory/device-recovery validation absent."
+    },
+    {
+      "id": "D10/direct-scene",
+      "status": "unsupported",
+      "reason": "Direct Renderer2D Scene path rejects layer/effects; use RenderGraph path instead."
+    },
+    {
+      "id": "backend/non-8060S",
+      "status": "unsupported",
+      "reason": "This GPU adapter links hardware guard for Radeon8060S; not portable GPU coverage."
+    }
+  ]
+}
