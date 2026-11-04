@@ -1,0 +1,3699 @@
+{
+  "benchmark_source_commit": "9e402e9",
+  "main_commit": "fbc8105",
+  "pr105_commit": "ffe075c",
+  "primary_executions": 120,
+  "secondary_executions": 24,
+  "primary_statistic": "pooled 2 independent launches x 8 iteration estimates, nanoseconds; not individual frame latency",
+  "hardware_gpu": "blocked: renderD128 permission denied",
+  "updates": [
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "all",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 26145.727274148187,
+        "p95": 26500.842270194986,
+        "min": 25705.969440607736,
+        "max": 26825.36951601671
+      },
+      "allocated_bytes": 85232.0,
+      "replicate_medians_ns": [
+        25820.82294544199,
+        26269.038649025068
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "all",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 263283.99206349207,
+        "p95": 267698.83794642857,
+        "min": 261055.08333333334,
+        "max": 268820.15892857144
+      },
+      "allocated_bytes": 801640.0,
+      "replicate_medians_ns": [
+        263269.734375,
+        263654.85
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "all",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 356755.06712962966,
+        "p95": 361906.6579861111,
+        "min": 349085.7604166667,
+        "max": 362983.8888888889
+      },
+      "allocated_bytes": 966936.0,
+      "replicate_medians_ns": [
+        353521.41087962966,
+        358003.50694444444
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "clustered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 23015.43982554988,
+        "p95": 23360.38589485112,
+        "min": 22877.709496359224,
+        "max": 23413.574131513647
+      },
+      "allocated_bytes": 85232.0,
+      "replicate_medians_ns": [
+        22902.0588592233,
+        23223.590105459058
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "clustered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 2759.8933161247805,
+        "p95": 2828.935815758641,
+        "min": 2718.926946870451,
+        "max": 2859.702896162859
+      },
+      "allocated_bytes": 8822.0,
+      "replicate_medians_ns": [
+        2736.226401018923,
+        2771.094601274165
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "clustered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 63662.42067307692,
+        "p95": 64021.9928687384,
+        "min": 63280.17049319728,
+        "max": 64329.863520408166
+      },
+      "allocated_bytes": 174117.5,
+      "replicate_medians_ns": [
+        63655.58715986395,
+        63662.42067307692
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "scattered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 23366.986838968754,
+        "p95": 23696.389533977555,
+        "min": 22983.178615196077,
+        "max": 23748.23807668329
+      },
+      "allocated_bytes": 85232.0,
+      "replicate_medians_ns": [
+        23065.98973651961,
+        23619.179940773065
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "scattered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 3811.934159702586,
+        "p95": 3845.177206409346,
+        "min": 3790.6370926680243,
+        "max": 3846.6433299389
+      },
+      "allocated_bytes": 14165.0,
+      "replicate_medians_ns": [
+        3823.2930117107944,
+        3807.360776833265
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "scattered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 69166.36587328256,
+        "p95": 69471.72366431452,
+        "min": 68494.80645161291,
+        "max": 69475.78780241935
+      },
+      "allocated_bytes": 179461.5,
+      "replicate_medians_ns": [
+        69120.37777777779,
+        69187.5
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "single",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 24672.118235683432,
+        "p95": 26187.52102037293,
+        "min": 22975.535845588234,
+        "max": 26205.374309392264
+      },
+      "allocated_bytes": 85232.0,
+      "replicate_medians_ns": [
+        26115.756733425413,
+        23104.00980392157
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "single",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 455.1234839715287,
+        "p95": 458.23441248933926,
+        "min": 452.20747041420117,
+        "max": 461.1215996614992
+      },
+      "allocated_bytes": 1608.0,
+      "replicate_medians_ns": [
+        454.6888899161736,
+        455.2845798175039
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "single",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 61259.86105708413,
+        "p95": 61806.39868951613,
+        "min": 60532.2189516129,
+        "max": 61906.131451612906
+      },
+      "allocated_bytes": 166904.0,
+      "replicate_medians_ns": [
+        61427.07661290323,
+        61172.48713235294
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "static",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 4.373044388510976,
+        "p95": 4.507537883182017,
+        "min": 4.018733709475846,
+        "max": 4.507767476939713
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        4.453094885694108,
+        4.161595451144474
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "static",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 6.075916373817806,
+        "p95": 6.334365276015281,
+        "min": 5.856551641308598,
+        "max": 6.381565050940735
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        5.861223287613804,
+        6.310410216543328
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "static",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 8.648154974817983,
+        "p95": 9.016228868478278,
+        "min": 8.48901096137532,
+        "max": 9.071798771380227
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        8.663766862662651,
+        8.626582257258683
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "all",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 389128.9225,
+        "p95": 392159.14875,
+        "min": 385692.94,
+        "max": 392905.0725
+      },
+      "allocated_bytes": 943117.0,
+      "replicate_medians_ns": [
+        391413.02625,
+        387108.845
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "all",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 6871986.8125,
+        "p95": 7173967.296875,
+        "min": 6765863.125,
+        "max": 7485770.65625
+      },
+      "allocated_bytes": 8015516.0,
+      "replicate_medians_ns": [
+        6889207.484375,
+        6863085.6875
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "all",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 9301766.53125,
+        "p95": 9735179.265625,
+        "min": 9061996.6875,
+        "max": 10550936.5
+      },
+      "allocated_bytes": 9758453.0,
+      "replicate_medians_ns": [
+        9412898.875,
+        9225548.09375
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "clustered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 375396.725,
+        "p95": 378701.891875,
+        "min": 373310.23,
+        "max": 382122.4
+      },
+      "allocated_bytes": 943117.0,
+      "replicate_medians_ns": [
+        374954.295,
+        375770.5125
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "clustered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 24656.126326259946,
+        "p95": 24992.566922949736,
+        "min": 24422.991379310344,
+        "max": 25097.299437830687
+      },
+      "allocated_bytes": 81120.0,
+      "replicate_medians_ns": [
+        24834.21304563492,
+        24594.780172413793
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "clustered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 1512927.0,
+        "p95": 1547927.1830357143,
+        "min": 1491405.7589285714,
+        "max": 1549275.6964285714
+      },
+      "allocated_bytes": 1824296.0,
+      "replicate_medians_ns": [
+        1516251.285714286,
+        1508796.745535714
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "scattered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 383150.46375,
+        "p95": 403618.6268028846,
+        "min": 373629.5673076923,
+        "max": 404503.51682692306
+      },
+      "allocated_bytes": 943116.0,
+      "replicate_medians_ns": [
+        383969.43374999997,
+        376926.87379807694
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "scattered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 62627.327924679485,
+        "p95": 64203.77674278846,
+        "min": 61407.963541666664,
+        "max": 64235.590144230766
+      },
+      "allocated_bytes": 141390.0,
+      "replicate_medians_ns": [
+        64038.35256410256,
+        61669.5
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "scattered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 1734661.140625,
+        "p95": 1761111.3229166665,
+        "min": 1549842.6666666667,
+        "max": 1761681.5729166667
+      },
+      "allocated_bytes": 1884569.5,
+      "replicate_medians_ns": [
+        1739936.7135416667,
+        1731027.8229166665
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "single",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 380248.0375,
+        "p95": 381900.66312499996,
+        "min": 375502.19,
+        "max": 381995.6825
+      },
+      "allocated_bytes": 943117.0,
+      "replicate_medians_ns": [
+        379666.46499999997,
+        380381.305
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "single",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 835.1491792240508,
+        "p95": 852.1380559078189,
+        "min": 814.4355681229493,
+        "max": 853.5610897323771
+      },
+      "allocated_bytes": 1763.0,
+      "replicate_medians_ns": [
+        818.1286479019168,
+        840.0765671462306
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "single",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 1455174.6354166667,
+        "p95": 1488027.6067708333,
+        "min": 1417104.3660714286,
+        "max": 1499820.9583333333
+      },
+      "allocated_bytes": 1744939.5,
+      "replicate_medians_ns": [
+        1450482.9464285714,
+        1462443.4114583335
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "static",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 4.241588953296253,
+        "p95": 4.5207510444109325,
+        "min": 3.8782879454004107,
+        "max": 4.593487640839168
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        3.977025760481005,
+        4.472790267190658
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "static",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 6.2518862141067615,
+        "p95": 6.398176349939952,
+        "min": 6.137809880352665,
+        "max": 6.506270363624713
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        6.1852937352741115,
+        6.284484766627001
+      ]
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "static",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 8.674445303546026,
+        "p95": 8.904018946321877,
+        "min": 8.599864295546302,
+        "max": 8.914115552828433
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        8.663003906272497,
+        8.82069211033129
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "all",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 23331.279671618773,
+        "p95": 23595.28677462948,
+        "min": 23239.50449810606,
+        "max": 23729.893547381547
+      },
+      "allocated_bytes": 68312.0,
+      "replicate_medians_ns": [
+        23322.407886533663,
+        23342.221669823233
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "all",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 136119.77762681158,
+        "p95": 137581.9467844203,
+        "min": 135051.5697463768,
+        "max": 137626.3170289855
+      },
+      "allocated_bytes": 393640.0,
+      "replicate_medians_ns": [
+        136855.01902173914,
+        135401.38813405798
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "all",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 211785.72222222222,
+        "p95": 217457.41875,
+        "min": 207703.97222222222,
+        "max": 220260.33125
+      },
+      "allocated_bytes": 542016.0,
+      "replicate_medians_ns": [
+        210725.36180555553,
+        214795.60347222222
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "clustered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 22417.207562649164,
+        "p95": 23778.194757109006,
+        "min": 22226.81575829384,
+        "max": 24039.016587677725
+      },
+      "allocated_bytes": 68312.0,
+      "replicate_medians_ns": [
+        22394.54902251185,
+        22417.207562649164
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "clustered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 1705.1083079666005,
+        "p95": 1899.6808882109722,
+        "min": 1521.0429476696647,
+        "max": 1903.9162590762405
+      },
+      "allocated_bytes": 4742.0,
+      "replicate_medians_ns": [
+        1890.7362217628074,
+        1528.4321289860998
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "clustered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 61300.285416666666,
+        "p95": 61609.775729166664,
+        "min": 60896.22416666667,
+        "max": 61671.900416666664
+      },
+      "allocated_bytes": 153117.5,
+      "replicate_medians_ns": [
+        61354.25604166667,
+        61275.01395833334
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "scattered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 22534.617183312457,
+        "p95": 22631.49939805176,
+        "min": 22366.81619385343,
+        "max": 22643.74537589499
+      },
+      "allocated_bytes": 68312.0,
+      "replicate_medians_ns": [
+        22537.233890214797,
+        22534.026447990545
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "scattered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 2585.4325297866444,
+        "p95": 2605.0310123409845,
+        "min": 2564.7382238847326,
+        "max": 2615.32719164823
+      },
+      "allocated_bytes": 10085.0,
+      "replicate_medians_ns": [
+        2589.534401842616,
+        2581.483821902655
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "scattered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 64190.2777534965,
+        "p95": 64982.93870192308,
+        "min": 63349.357142857145,
+        "max": 65295.731643356645
+      },
+      "allocated_bytes": 158462.0,
+      "replicate_medians_ns": [
+        64325.49737762238,
+        63917.97852891157
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "single",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 23112.696520055957,
+        "p95": 23646.027755967338,
+        "min": 22457.36214539007,
+        "max": 23704.336369346733
+      },
+      "allocated_bytes": 68312.0,
+      "replicate_medians_ns": [
+        23584.26185615578,
+        22587.91903073286
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "single",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 345.08525225452775,
+        "p95": 349.3031024313351,
+        "min": 341.4039746374144,
+        "max": 349.63775071097143
+      },
+      "allocated_bytes": 1200.0,
+      "replicate_medians_ns": [
+        343.047591658691,
+        346.33961747867085
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "single",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 60538.83407258065,
+        "p95": 61121.45932653536,
+        "min": 60112.063301282054,
+        "max": 61145.43225806452
+      },
+      "allocated_bytes": 149576.5,
+      "replicate_medians_ns": [
+        60588.3577724359,
+        60501.60685483871
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "static",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 4.2856435483477995,
+        "p95": 4.6007031634111435,
+        "min": 4.046944843570498,
+        "max": 4.605171763436623
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        4.051348097089785,
+        4.5273160976053175
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "static",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 6.224851881690876,
+        "p95": 6.307794615869476,
+        "min": 6.191662546305857,
+        "max": 6.346649182922891
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        6.216283139269338,
+        6.224851881690876
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "static",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 8.956457289526405,
+        "p95": 9.128654887584817,
+        "min": 8.64105393645758,
+        "max": 9.14817088042882
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        9.097654036458188,
+        8.786506631634047
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "all",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 267056.38162202376,
+        "p95": 273130.23046875,
+        "min": 259328.5017857143,
+        "max": 273458.0416666667
+      },
+      "allocated_bytes": 680312.5,
+      "replicate_medians_ns": [
+        271137.3255208334,
+        262357.3794642857
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "all",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 2582576.1484375,
+        "p95": 2621659.37890625,
+        "min": 2444149.046875,
+        "max": 2624244.921875
+      },
+      "allocated_bytes": 3935176.0,
+      "replicate_medians_ns": [
+        2582880.9609375,
+        2575094.328125
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "all",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 4618665.270833333,
+        "p95": 4647070.494791666,
+        "min": 4494226.75,
+        "max": 4659067.979166667
+      },
+      "allocated_bytes": 5415624.0,
+      "replicate_medians_ns": [
+        4626166.395833333,
+        4577959.40625
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "clustered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 253013.3519736842,
+        "p95": 260172.11101973685,
+        "min": 249238.22972972973,
+        "max": 262406.6052631579
+      },
+      "allocated_bytes": 680312.0,
+      "replicate_medians_ns": [
+        249581.77449324325,
+        256268.45394736843
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "clustered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 13471.046047925607,
+        "p95": 13582.115266281457,
+        "min": 13372.345319225251,
+        "max": 13642.298511477762
+      },
+      "allocated_bytes": 40312.0,
+      "replicate_medians_ns": [
+        13431.91987984218,
+        13487.123614091559
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "clustered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 842902.0234375,
+        "p95": 907750.90234375,
+        "min": 831559.09375,
+        "max": 943823.40625
+      },
+      "allocated_bytes": 1520668.5,
+      "replicate_medians_ns": [
+        839092.2526041667,
+        856062.9427083333
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "scattered",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 256379.40456081083,
+        "p95": 260786.66102430556,
+        "min": 254714.6858108108,
+        "max": 261317.43576388888
+      },
+      "allocated_bytes": 680312.0,
+      "replicate_medians_ns": [
+        258267.17795138888,
+        256237.83699324325
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "scattered",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 40729.05005411255,
+        "p95": 41435.050474551375,
+        "min": 40459.71590909091,
+        "max": 41882.82365145228
+      },
+      "allocated_bytes": 100590.0,
+      "replicate_medians_ns": [
+        40740.23755186722,
+        40729.05005411255
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "scattered",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 1016256.35,
+        "p95": 1028276.8171875,
+        "min": 1000134.5,
+        "max": 1030035.54375
+      },
+      "allocated_bytes": 1580967.0,
+      "replicate_medians_ns": [
+        1015014.925,
+        1020401.825
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "single",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 255838.88888888888,
+        "p95": 260783.7559742647,
+        "min": 249711.13970588235,
+        "max": 262423.8051470588
+      },
+      "allocated_bytes": 680313.0,
+      "replicate_medians_ns": [
+        259391.3802083333,
+        250592.56893382352
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "single",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 591.3944185160619,
+        "p95": 604.4183827546436,
+        "min": 571.5468145340354,
+        "max": 605.7507322143985
+      },
+      "allocated_bytes": 1356.0,
+      "replicate_medians_ns": [
+        595.31868208996,
+        588.7131395514814
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "single",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 835612.0625,
+        "p95": 941985.1328125,
+        "min": 825483.1770833334,
+        "max": 993713.640625
+      },
+      "allocated_bytes": 1481726.0,
+      "replicate_medians_ns": [
+        836841.4869791667,
+        835612.0625
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "static",
+      "method": "LegacyFrame",
+      "ns": {
+        "n": 16,
+        "median": 4.1194762636868925,
+        "p95": 4.533001977937587,
+        "min": 3.8696519481469407,
+        "max": 4.55888806867566
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        4.41728976413578,
+        3.9150228521476196
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "static",
+      "method": "RetainedCommit",
+      "ns": {
+        "n": 16,
+        "median": 6.2279959514603895,
+        "p95": 6.258320610515067,
+        "min": 5.945611538543966,
+        "max": 6.260013170077242
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        6.235335670870232,
+        6.198546216326268
+      ]
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "static",
+      "method": "RetainedWithFlatten",
+      "ns": {
+        "n": 16,
+        "median": 8.627500387196523,
+        "p95": 8.71646700472057,
+        "min": 8.486898915816326,
+        "max": 8.724902221689259
+      },
+      "allocated_bytes": 0.0,
+      "replicate_medians_ns": [
+        8.556825920585625,
+        8.674758948502653
+      ]
+    }
+  ],
+  "secondary": [
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=1&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 61177.86665372671,
+        "p95": 61868.42166149068,
+        "min": 60571.845108695656,
+        "max": 61930.2950310559
+      },
+      "allocated_bytes": 141390
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=1&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 830.900198283355,
+        "p95": 846.9742000760539,
+        "min": 820.2238537592351,
+        "max": 847.2227346805737
+      },
+      "allocated_bytes": 1764
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=16&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 74466.95064484127,
+        "p95": 74899.1927827381,
+        "min": 73739.5257936508,
+        "max": 74944.57837301587
+      },
+      "allocated_bytes": 210865
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=16&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 893.3775406987813,
+        "p95": 895.8250538485338,
+        "min": 889.0431918792841,
+        "max": 896.2367490955826
+      },
+      "allocated_bytes": 2841
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=64&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 210603.4429347826,
+        "p95": 211455.1996603261,
+        "min": 209800.17798913043,
+        "max": 211493.08288043478
+      },
+      "allocated_bytes": 613830
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=64&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 2010.8574783236995,
+        "p95": 2016.9331915007494,
+        "min": 2005.6942303575252,
+        "max": 2017.0159896167845
+      },
+      "allocated_bytes": 6811
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=256&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 297818.80113636365,
+        "p95": 300213.63560606056,
+        "min": 285146.2215909091,
+        "max": 300785.5833333333
+      },
+      "allocated_bytes": 870686
+    },
+    {
+      "variant": "main",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=256&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 6458.489733367627,
+        "p95": 6478.693334190672,
+        "min": 6431.73268175583,
+        "max": 6487.834833676269
+      },
+      "allocated_bytes": 22796
+    },
+    {
+      "variant": "main",
+      "type": "ConstructionBenchmarks",
+      "method": "LegacyInitial",
+      "parameters": "Count=1000",
+      "ns": {
+        "n": 8,
+        "median": 22970.649466463416,
+        "p95": 23089.005579268294,
+        "min": 22895.783079268294,
+        "max": 23094.636737804878
+      },
+      "allocated_bytes": 103216
+    },
+    {
+      "variant": "main",
+      "type": "ConstructionBenchmarks",
+      "method": "RetainedInitial",
+      "parameters": "Count=1000",
+      "ns": {
+        "n": 8,
+        "median": 226142.49771341463,
+        "p95": 227920.48597560974,
+        "min": 225383.69512195123,
+        "max": 228201.90091463414
+      },
+      "allocated_bytes": 812112
+    },
+    {
+      "variant": "main",
+      "type": "ConstructionBenchmarks",
+      "method": "LegacyInitial",
+      "parameters": "Count=10000",
+      "ns": {
+        "n": 8,
+        "median": 260788.44577205883,
+        "p95": 263318.32968749997,
+        "min": 260358.18198529413,
+        "max": 264448.1213235294
+      },
+      "allocated_bytes": 1215984
+    },
+    {
+      "variant": "main",
+      "type": "ConstructionBenchmarks",
+      "method": "RetainedInitial",
+      "parameters": "Count=10000",
+      "ns": {
+        "n": 8,
+        "median": 2754843.740384615,
+        "p95": 2787709.480769231,
+        "min": 2714681.576923077,
+        "max": 2801372.673076923
+      },
+      "allocated_bytes": 8115648
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=1&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 40314.81733786611,
+        "p95": 40849.741501046024,
+        "min": 39751.83891213389,
+        "max": 40919.057792887026
+      },
+      "allocated_bytes": 100589
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=1&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 592.1733323991032,
+        "p95": 594.5598394458681,
+        "min": 585.549935938501,
+        "max": 594.5624599615631
+      },
+      "allocated_bytes": 1356
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=16&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 53359.378511235955,
+        "p95": 53898.08997542135,
+        "min": 52951.91169241573,
+        "max": 53913.7189255618
+      },
+      "allocated_bytes": 146064
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=16&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 716.0359022196709,
+        "p95": 732.8775344431688,
+        "min": 708.7816494450823,
+        "max": 734.2635572139303
+      },
+      "allocated_bytes": 2192
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=64&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 176069.76851851854,
+        "p95": 177043.1329861111,
+        "min": 174867.01909722222,
+        "max": 177406.32118055556
+      },
+      "allocated_bytes": 467504
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=64&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 1768.1736964989677,
+        "p95": 1775.862431363807,
+        "min": 1764.7996527125963,
+        "max": 1777.3880350103248
+      },
+      "allocated_bytes": 5352
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=256&Pattern=scattered",
+      "ns": {
+        "n": 8,
+        "median": 271140.48214285716,
+        "p95": 274009.49848214287,
+        "min": 264342.0017857143,
+        "max": 274186.65535714285
+      },
+      "allocated_bytes": 691800
+    },
+    {
+      "variant": "pr105",
+      "type": "ChunkBenchmarks",
+      "method": "RetainedCommit",
+      "parameters": "ChunkSize=256&Pattern=single",
+      "ns": {
+        "n": 8,
+        "median": 6049.367614001285,
+        "p95": 6095.620259312781,
+        "min": 6030.625321130379,
+        "max": 6097.365285806037
+      },
+      "allocated_bytes": 18209
+    },
+    {
+      "variant": "pr105",
+      "type": "ConstructionBenchmarks",
+      "method": "LegacyInitial",
+      "parameters": "Count=1000",
+      "ns": {
+        "n": 8,
+        "median": 22319.811458333334,
+        "p95": 22421.668504464284,
+        "min": 22284.717113095237,
+        "max": 22460.90699404762
+      },
+      "allocated_bytes": 86296
+    },
+    {
+      "variant": "pr105",
+      "type": "ConstructionBenchmarks",
+      "method": "RetainedInitial",
+      "parameters": "Count=1000",
+      "ns": {
+        "n": 8,
+        "median": 116249.55945121951,
+        "p95": 119446.36471036586,
+        "min": 115577.51676829268,
+        "max": 119648.5830792683
+      },
+      "allocated_bytes": 404112
+    },
+    {
+      "variant": "pr105",
+      "type": "ConstructionBenchmarks",
+      "method": "LegacyInitial",
+      "parameters": "Count=10000",
+      "ns": {
+        "n": 8,
+        "median": 256035.1258445946,
+        "p95": 257689.21173986487,
+        "min": 253559.44763513515,
+        "max": 258117.66554054053
+      },
+      "allocated_bytes": 953179
+    },
+    {
+      "variant": "pr105",
+      "type": "ConstructionBenchmarks",
+      "method": "RetainedInitial",
+      "parameters": "Count=10000",
+      "ns": {
+        "n": 8,
+        "median": 1350338.5495495496,
+        "p95": 1370488.4112612612,
+        "min": 1314875.3963963964,
+        "max": 1374572.6936936937
+      },
+      "allocated_bytes": 4035648
+    }
+  ],
+  "retention": [
+    {
+      "variant": "main",
+      "pattern": "all",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 14325344,
+        "p95": 14325344.0,
+        "min": 14325344,
+        "max": 14325344
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 10121216,
+        "p95": 10121216.0,
+        "min": 10121216,
+        "max": 10121216
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "all",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2182304,
+        "p95": 2182304.0,
+        "min": 2182304,
+        "max": 2182304
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 1215928,
+        "p95": 1215928.0,
+        "min": 1215928,
+        "max": 1215928
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "all",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 10713608,
+        "p95": 10713608.0,
+        "min": 10713608,
+        "max": 10713608
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 8115648,
+        "p95": 8115648.0,
+        "min": 8115648,
+        "max": 8115648
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "all",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 5796704,
+        "p95": 5796704.0,
+        "min": 5796704,
+        "max": 5796704
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2662144,
+        "p95": 2662144.0,
+        "min": 2662144,
+        "max": 2662144
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "all",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2185448,
+        "p95": 2185448.0,
+        "min": 2185448,
+        "max": 2185448
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 972608,
+        "p95": 972608.0,
+        "min": 972608,
+        "max": 972608
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "scattered",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 7280800,
+        "p95": 7280800.0,
+        "min": 7280800,
+        "max": 7280800
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 10121216,
+        "p95": 10121216.0,
+        "min": 10121216,
+        "max": 10121216
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "scattered",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2182304,
+        "p95": 2182304.0,
+        "min": 2182304,
+        "max": 2182304
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 1215928,
+        "p95": 1215928.0,
+        "min": 1215928,
+        "max": 1215928
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "scattered",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 3669064,
+        "p95": 3669085.6,
+        "min": 3669064,
+        "max": 3669088
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 8115648,
+        "p95": 8115648.0,
+        "min": 8115648,
+        "max": 8115648
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "scattered",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 5267920,
+        "p95": 5267920.0,
+        "min": 5267920,
+        "max": 5267920
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2662144,
+        "p95": 2662144.0,
+        "min": 2662144,
+        "max": 2662144
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "scattered",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 1656664,
+        "p95": 1656664.0,
+        "min": 1656664,
+        "max": 1656664
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 972608,
+        "p95": 972608.0,
+        "min": 972608,
+        "max": 972608
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "single",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 7089968,
+        "p95": 7089968.0,
+        "min": 7089968,
+        "max": 7089968
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 10121216,
+        "p95": 10121216.0,
+        "min": 10121216,
+        "max": 10121216
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "single",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2182304,
+        "p95": 2182304.0,
+        "min": 2182304,
+        "max": 2182304
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 1215928,
+        "p95": 1215928.0,
+        "min": 1215928,
+        "max": 1215928
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "single",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 3478232,
+        "p95": 3478232.0,
+        "min": 3478232,
+        "max": 3478232
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 8115648,
+        "p95": 8115648.0,
+        "min": 8115648,
+        "max": 8115648
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "single",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 4356224,
+        "p95": 4356224.0,
+        "min": 4356224,
+        "max": 4356224
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2662144,
+        "p95": 2662144.0,
+        "min": 2662144,
+        "max": 2662144
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "single",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 744968,
+        "p95": 744968.0,
+        "min": 744968,
+        "max": 744968
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 972608,
+        "p95": 972608.0,
+        "min": 972608,
+        "max": 972608
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "static",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 4766928,
+        "p95": 4766971.2,
+        "min": 4766928,
+        "max": 4766976
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 10121216,
+        "p95": 10121345.6,
+        "min": 10121216,
+        "max": 10121360
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "static",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 821776,
+        "p95": 821776.0,
+        "min": 821776,
+        "max": 821776
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 1215928,
+        "p95": 1215928.0,
+        "min": 1215928,
+        "max": 1215928
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "static",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 3475624,
+        "p95": 3475624.0,
+        "min": 3475624,
+        "max": 3475624
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 8115648,
+        "p95": 8115648.0,
+        "min": 8115648,
+        "max": 8115648
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "static",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2025008,
+        "p95": 2025008.0,
+        "min": 2025008,
+        "max": 2025008
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2662144,
+        "p95": 2662144.0,
+        "min": 2662144,
+        "max": 2662144
+      }
+    },
+    {
+      "variant": "main",
+      "pattern": "static",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 734184,
+        "p95": 734184.0,
+        "min": 734184,
+        "max": 734184
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 972608,
+        "p95": 972608.0,
+        "min": 972608,
+        "max": 972608
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "all",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 14325344,
+        "p95": 14325344.0,
+        "min": 14325344,
+        "max": 14325344
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 5778440,
+        "p95": 5778440.0,
+        "min": 5778440,
+        "max": 5778440
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "all",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2182304,
+        "p95": 2182304.0,
+        "min": 2182304,
+        "max": 2182304
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 953152,
+        "p95": 953152.0,
+        "min": 953152,
+        "max": 953152
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "all",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 10713608,
+        "p95": 10713608.0,
+        "min": 10713608,
+        "max": 10713608
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 4035648,
+        "p95": 4035648.0,
+        "min": 4035648,
+        "max": 4035648
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "all",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 5796704,
+        "p95": 5796704.0,
+        "min": 5796704,
+        "max": 5796704
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2170336,
+        "p95": 2170336.0,
+        "min": 2170336,
+        "max": 2170336
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "all",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2185448,
+        "p95": 2185448.0,
+        "min": 2185448,
+        "max": 2185448
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 743576,
+        "p95": 743576.0,
+        "min": 743576,
+        "max": 743576
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "scattered",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 7280800,
+        "p95": 7280800.0,
+        "min": 7280800,
+        "max": 7280800
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 5778440,
+        "p95": 5778440.0,
+        "min": 5778440,
+        "max": 5778440
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "scattered",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2182304,
+        "p95": 2182304.0,
+        "min": 2182304,
+        "max": 2182304
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 953152,
+        "p95": 953152.0,
+        "min": 953152,
+        "max": 953152
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "scattered",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 3669064,
+        "p95": 3669085.6,
+        "min": 3669064,
+        "max": 3669088
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 4035648,
+        "p95": 4035648.0,
+        "min": 4035648,
+        "max": 4035648
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "scattered",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 5267920,
+        "p95": 5267920.0,
+        "min": 5267920,
+        "max": 5267920
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2170336,
+        "p95": 2170336.0,
+        "min": 2170336,
+        "max": 2170336
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "scattered",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 1656664,
+        "p95": 1656664.0,
+        "min": 1656664,
+        "max": 1656664
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 743576,
+        "p95": 743576.0,
+        "min": 743576,
+        "max": 743576
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "single",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 7089968,
+        "p95": 7089968.0,
+        "min": 7089968,
+        "max": 7089968
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 5778440,
+        "p95": 5778440.0,
+        "min": 5778440,
+        "max": 5778440
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "single",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2182304,
+        "p95": 2182304.0,
+        "min": 2182304,
+        "max": 2182304
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 953152,
+        "p95": 953152.0,
+        "min": 953152,
+        "max": 953152
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "single",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 3478232,
+        "p95": 3478232.0,
+        "min": 3478232,
+        "max": 3478232
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 4035648,
+        "p95": 4035648.0,
+        "min": 4035648,
+        "max": 4035648
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "single",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 4356224,
+        "p95": 4356224.0,
+        "min": 4356224,
+        "max": 4356224
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2170336,
+        "p95": 2170336.0,
+        "min": 2170336,
+        "max": 2170336
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "single",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 744968,
+        "p95": 744968.0,
+        "min": 744968,
+        "max": 744968
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 743576,
+        "p95": 743576.0,
+        "min": 743576,
+        "max": 743576
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "static",
+      "chunk": 1,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 4766928,
+        "p95": 4766971.2,
+        "min": 4766928,
+        "max": 4766976
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 5778440,
+        "p95": 5778569.6,
+        "min": 5778440,
+        "max": 5778584
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "static",
+      "chunk": 1,
+      "mode": "legacy",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 821776,
+        "p95": 821776.0,
+        "min": 821776,
+        "max": 821776
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 953152,
+        "p95": 953152.0,
+        "min": 953152,
+        "max": 953152
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "static",
+      "chunk": 1,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 3475624,
+        "p95": 3475624.0,
+        "min": 3475624,
+        "max": 3475624
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 4035648,
+        "p95": 4035648.0,
+        "min": 4035648,
+        "max": 4035648
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "static",
+      "chunk": 64,
+      "mode": "flatten",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 2025008,
+        "p95": 2025008.0,
+        "min": 2025008,
+        "max": 2025008
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 2170336,
+        "p95": 2170336.0,
+        "min": 2170336,
+        "max": 2170336
+      }
+    },
+    {
+      "variant": "pr105",
+      "pattern": "static",
+      "chunk": 64,
+      "mode": "retained",
+      "live_heap_bytes": {
+        "n": 3,
+        "median": 729144,
+        "p95": 729144.0,
+        "min": 729144,
+        "max": 729144
+      },
+      "initial_allocated_bytes": {
+        "n": 3,
+        "median": 743576,
+        "p95": 743576.0,
+        "min": 743576,
+        "max": 743576
+      }
+    }
+  ],
+  "software_integration": [
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "all",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.02525,
+          "p95": 0.0277,
+          "min": 0.024,
+          "max": 0.0277
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.0585,
+          "p95": 0.06229,
+          "min": 0.058,
+          "max": 0.0628
+        },
+        "record": {
+          "n": 18,
+          "median": 0.0119,
+          "p95": 0.034945,
+          "min": 0.011,
+          "max": 0.0352
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.001,
+          "p95": 0.0020449999999999995,
+          "min": 0.0008,
+          "max": 0.0023
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1297,
+          "p95": 2.1375200000000003,
+          "min": 2.0999,
+          "max": 2.1399
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0063,
+          "p95": 0.011489999999999997,
+          "min": 0.0058,
+          "max": 0.0137
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 90216.0,
+        "p95": 98416.0,
+        "min": 89504,
+        "max": 98416
+      }
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "all",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.306,
+          "p95": 0.7660149999999972,
+          "min": 0.2826,
+          "max": 2.4457
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.0589,
+          "p95": 0.06857500000000001,
+          "min": 0.0581,
+          "max": 0.069
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01675,
+          "p95": 0.043939999999999986,
+          "min": 0.0134,
+          "max": 0.0521
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0015500000000000002,
+          "p95": 0.002434999999999999,
+          "min": 0.0011,
+          "max": 0.0032
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1283,
+          "p95": 2.140135,
+          "min": 2.0858,
+          "max": 2.1426
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0076,
+          "p95": 0.012079999999999999,
+          "min": 0.0063,
+          "max": 0.0131
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 975816.0,
+        "p95": 984667.6,
+        "min": 966792,
+        "max": 988360
+      }
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "single",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.026099999999999998,
+          "p95": 0.041049999999999996,
+          "min": 0.0242,
+          "max": 0.0419
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.059,
+          "p95": 0.07094999999999999,
+          "min": 0.0585,
+          "max": 0.0735
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01395,
+          "p95": 0.029285,
+          "min": 0.0119,
+          "max": 0.0309
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0010500000000000002,
+          "p95": 0.0018149999999999998,
+          "min": 0.0008,
+          "max": 0.0019
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1277999999999997,
+          "p95": 2.13649,
+          "min": 2.1204,
+          "max": 2.1421
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.007,
+          "p95": 0.011399999999999992,
+          "min": 0.0062,
+          "max": 0.0165
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 92264.0,
+        "p95": 98416.0,
+        "min": 88392,
+        "max": 98416
+      }
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "single",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.06459999999999999,
+          "p95": 0.06985,
+          "min": 0.0624,
+          "max": 0.0707
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.06085,
+          "p95": 0.0711,
+          "min": 0.0588,
+          "max": 0.0762
+        },
+        "record": {
+          "n": 18,
+          "median": 0.016,
+          "p95": 0.035739999999999994,
+          "min": 0.0123,
+          "max": 0.0388
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.00145,
+          "p95": 0.002404999999999999,
+          "min": 0.0009,
+          "max": 0.003
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.12935,
+          "p95": 2.141465,
+          "min": 2.0831,
+          "max": 2.1424
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0077,
+          "p95": 0.012704999999999996,
+          "min": 0.0063,
+          "max": 0.015
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 172216.0,
+        "p95": 180416.0,
+        "min": 171440,
+        "max": 180416
+      }
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "static",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0,
+          "p95": 0.0002,
+          "min": 0,
+          "max": 0.0002
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.060149999999999995,
+          "p95": 0.07599999999999998,
+          "min": 0.0587,
+          "max": 0.0794
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01725,
+          "p95": 0.04235,
+          "min": 0.012,
+          "max": 0.0449
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0012,
+          "p95": 0.0029299999999999994,
+          "min": 0.0008,
+          "max": 0.0031
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1265,
+          "p95": 2.147685,
+          "min": 2.1214,
+          "max": 2.1493
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0083,
+          "p95": 0.013324999999999993,
+          "min": 0.0067,
+          "max": 0.018
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 8200.0,
+        "p95": 9385.59999999999,
+        "min": 7944,
+        "max": 16104
+      }
+    },
+    {
+      "variant": "main",
+      "count": 1000,
+      "pattern": "static",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0,
+          "p95": 0.0003,
+          "min": 0,
+          "max": 0.0003
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.059,
+          "p95": 0.06359,
+          "min": 0.0587,
+          "max": 0.0641
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01295,
+          "p95": 0.039874999999999994,
+          "min": 0.0117,
+          "max": 0.042
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.001,
+          "p95": 0.002315,
+          "min": 0.0008,
+          "max": 0.0024
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.128,
+          "p95": 2.13735,
+          "min": 2.1146,
+          "max": 2.1467
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0067,
+          "p95": 0.01413,
+          "min": 0.0059,
+          "max": 0.0143
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 8200.0,
+        "p95": 8200.0,
+        "min": 7616,
+        "max": 8200
+      }
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "all",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.27705,
+          "p95": 0.3247699999999999,
+          "min": 0.2375,
+          "max": 0.3773
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.72255,
+          "p95": 0.8507649999999994,
+          "min": 0.6231,
+          "max": 1.1577
+        },
+        "record": {
+          "n": 18,
+          "median": 0.12585000000000002,
+          "p95": 1.054044999999992,
+          "min": 0.1097,
+          "max": 5.9486
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0024,
+          "p95": 0.003015,
+          "min": 0.002,
+          "max": 0.0031
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 12.033100000000001,
+          "p95": 12.8314,
+          "min": 11.6798,
+          "max": 12.845
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.15955,
+          "p95": 0.20197999999999997,
+          "min": 0.1246,
+          "max": 0.2268
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 1019908.0,
+        "p95": 1021304.8,
+        "min": 1011712,
+        "max": 1028064
+      }
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "all",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 14.5465,
+          "p95": 21.20631,
+          "min": 3.3747,
+          "max": 23.5535
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.78805,
+          "p95": 0.8904399999999999,
+          "min": 0.6509,
+          "max": 0.9564
+        },
+        "record": {
+          "n": 18,
+          "median": 0.23485,
+          "p95": 0.4254649999999997,
+          "min": 0.1209,
+          "max": 0.6185
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0069,
+          "p95": 0.010769999999999991,
+          "min": 0.0016,
+          "max": 0.0157
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 13.13805,
+          "p95": 14.408574999999999,
+          "min": 11.7773,
+          "max": 14.5025
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.1866,
+          "p95": 0.2784299999999999,
+          "min": 0.1343,
+          "max": 0.3279
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 9835352.0,
+        "p95": 9845568.4,
+        "min": 9828560,
+        "max": 9846024
+      }
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "single",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.2973,
+          "p95": 0.7316749999999979,
+          "min": 0.2374,
+          "max": 1.9731
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.75325,
+          "p95": 0.8527849999999996,
+          "min": 0.6387,
+          "max": 1.0805
+        },
+        "record": {
+          "n": 18,
+          "median": 0.12605,
+          "p95": 0.140875,
+          "min": 0.1106,
+          "max": 0.1498
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0025,
+          "p95": 0.003015,
+          "min": 0.0017,
+          "max": 0.0031
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 11.75805,
+          "p95": 12.657409999999999,
+          "min": 10.9366,
+          "max": 12.8405
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.16075,
+          "p95": 0.17507499999999998,
+          "min": 0.1138,
+          "max": 0.1772
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 1019936.0,
+        "p95": 1046979.5999999999,
+        "min": 1011552,
+        "max": 1151040
+      }
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "single",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.8572500000000001,
+          "p95": 2.2445199999999876,
+          "min": 0.5921,
+          "max": 9.5229
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.78495,
+          "p95": 2.107584999999988,
+          "min": 0.6331,
+          "max": 9.2577
+        },
+        "record": {
+          "n": 18,
+          "median": 0.14255,
+          "p95": 0.21124499999999996,
+          "min": 0.1104,
+          "max": 0.2319
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.00285,
+          "p95": 0.006134999999999999,
+          "min": 0.0018,
+          "max": 0.0069
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 11.81635,
+          "p95": 12.987944999999998,
+          "min": 11.0049,
+          "max": 13.8705
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.17735,
+          "p95": 0.21772499999999995,
+          "min": 0.1233,
+          "max": 0.2513
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 1820624.0,
+        "p95": 1829934.0,
+        "min": 1814384,
+        "max": 1837312
+      }
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "static",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0001,
+          "p95": 0.0003,
+          "min": 0.0001,
+          "max": 0.0003
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.7182,
+          "p95": 0.791205,
+          "min": 0.6264,
+          "max": 0.7986
+        },
+        "record": {
+          "n": 18,
+          "median": 0.12075,
+          "p95": 0.14121499999999995,
+          "min": 0.102,
+          "max": 0.1668
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0024000000000000002,
+          "p95": 0.0031149999999999997,
+          "min": 0.0013,
+          "max": 0.0032
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 12.74915,
+          "p95": 14.134294999999998,
+          "min": 11.728,
+          "max": 15.0432
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.148,
+          "p95": 0.17972,
+          "min": 0.1139,
+          "max": 0.1889
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 73800.0,
+        "p95": 81986.4,
+        "min": 72336,
+        "max": 82000
+      }
+    },
+    {
+      "variant": "main",
+      "count": 10000,
+      "pattern": "static",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0003,
+          "p95": 0.0003,
+          "min": 0.0001,
+          "max": 0.0003
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.6637,
+          "p95": 0.74616,
+          "min": 0.6266,
+          "max": 0.7499
+        },
+        "record": {
+          "n": 18,
+          "median": 0.11315,
+          "p95": 0.13683499999999998,
+          "min": 0.0966,
+          "max": 0.1376
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0022,
+          "p95": 0.002589999999999999,
+          "min": 0.0016,
+          "max": 0.0031
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 11.962399999999999,
+          "p95": 12.823335,
+          "min": 11.6908,
+          "max": 12.8479
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.1333,
+          "p95": 0.17011499999999993,
+          "min": 0.1085,
+          "max": 0.2076
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 73800.0,
+        "p95": 81959.2,
+        "min": 67280,
+        "max": 82000
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "all",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0223,
+          "p95": 0.023939999999999996,
+          "min": 0.0216,
+          "max": 0.0253
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.0571,
+          "p95": 0.06803000000000001,
+          "min": 0.0567,
+          "max": 0.0682
+        },
+        "record": {
+          "n": 18,
+          "median": 0.0118,
+          "p95": 0.02063,
+          "min": 0.011,
+          "max": 0.0208
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0012,
+          "p95": 0.0018149999999999998,
+          "min": 0.0009,
+          "max": 0.0019
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1288,
+          "p95": 2.142945,
+          "min": 2.086,
+          "max": 2.1432
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0068,
+          "p95": 0.010729999999999993,
+          "min": 0.0063,
+          "max": 0.0143
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 73800.0,
+        "p95": 82000.0,
+        "min": 73800,
+        "max": 82000
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "all",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.18505,
+          "p95": 0.27004,
+          "min": 0.1745,
+          "max": 0.2782
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.057499999999999996,
+          "p95": 0.06743,
+          "min": 0.0568,
+          "max": 0.0676
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01415,
+          "p95": 0.03069499999999999,
+          "min": 0.0122,
+          "max": 0.0369
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0013,
+          "p95": 0.0022599999999999994,
+          "min": 0.0008,
+          "max": 0.0026
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1283,
+          "p95": 2.140415,
+          "min": 2.0948,
+          "max": 2.1405
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.007549999999999999,
+          "p95": 0.013729999999999994,
+          "min": 0.0066,
+          "max": 0.0173
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 549400.0,
+        "p95": 555552.0,
+        "min": 545856,
+        "max": 555552
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "single",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0319,
+          "p95": 0.03648,
+          "min": 0.0286,
+          "max": 0.0375
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.0578,
+          "p95": 0.068025,
+          "min": 0.057,
+          "max": 0.0693
+        },
+        "record": {
+          "n": 18,
+          "median": 0.0137,
+          "p95": 0.03376999999999999,
+          "min": 0.012,
+          "max": 0.0387
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0012,
+          "p95": 0.0023,
+          "min": 0.001,
+          "max": 0.0023
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1287,
+          "p95": 2.13767,
+          "min": 2.0851,
+          "max": 2.1528
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.00715,
+          "p95": 0.011849999999999996,
+          "min": 0.0063,
+          "max": 0.0144
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 73800.0,
+        "p95": 81744.0,
+        "min": 73032,
+        "max": 81744
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "single",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0619,
+          "p95": 0.065005,
+          "min": 0.0603,
+          "max": 0.0656
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.05805,
+          "p95": 0.06867,
+          "min": 0.0571,
+          "max": 0.0719
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01295,
+          "p95": 0.019319999999999976,
+          "min": 0.012,
+          "max": 0.0336
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0013,
+          "p95": 0.001989999999999999,
+          "min": 0.001,
+          "max": 0.0025
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.13165,
+          "p95": 2.143595,
+          "min": 2.1014,
+          "max": 2.1498
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.0069,
+          "p95": 0.009714999999999998,
+          "min": 0.0054,
+          "max": 0.0115
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 155800.0,
+        "p95": 164000.0,
+        "min": 154120,
+        "max": 164000
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "static",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0,
+          "p95": 0.0002,
+          "min": 0,
+          "max": 0.0002
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.0687,
+          "p95": 0.07343000000000001,
+          "min": 0.0574,
+          "max": 0.0736
+        },
+        "record": {
+          "n": 18,
+          "median": 0.0146,
+          "p95": 0.04320499999999999,
+          "min": 0.0122,
+          "max": 0.0489
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0015500000000000002,
+          "p95": 0.0030299999999999997,
+          "min": 0.0013,
+          "max": 0.0032
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1285999999999996,
+          "p95": 2.145165,
+          "min": 2.0922,
+          "max": 2.158
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.00915,
+          "p95": 0.01483,
+          "min": 0.0064,
+          "max": 0.015
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 8200.0,
+        "p95": 8256.4,
+        "min": 7392,
+        "max": 8576
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 1000,
+      "pattern": "static",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0,
+          "p95": 0.0003,
+          "min": 0,
+          "max": 0.0003
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.06814999999999999,
+          "p95": 0.073605,
+          "min": 0.0574,
+          "max": 0.0776
+        },
+        "record": {
+          "n": 18,
+          "median": 0.01395,
+          "p95": 0.038815,
+          "min": 0.0128,
+          "max": 0.0389
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0019,
+          "p95": 0.0029,
+          "min": 0.001,
+          "max": 0.0029
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 2.1372999999999998,
+          "p95": 2.143745,
+          "min": 2.0898,
+          "max": 2.1474
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.01005,
+          "p95": 0.015029999999999996,
+          "min": 0.0072,
+          "max": 0.0169
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 8200.0,
+        "p95": 8200.0,
+        "min": 7432,
+        "max": 8200
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "all",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.25455,
+          "p95": 0.9040249999999945,
+          "min": 0.2231,
+          "max": 4.188
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.7132499999999999,
+          "p95": 0.808275,
+          "min": 0.6085,
+          "max": 0.8172
+        },
+        "record": {
+          "n": 18,
+          "median": 0.12175,
+          "p95": 0.151805,
+          "min": 0.105,
+          "max": 0.1524
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.00245,
+          "p95": 0.0030449999999999995,
+          "min": 0.0011,
+          "max": 0.0033
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 12.27635,
+          "p95": 12.87971,
+          "min": 11.3585,
+          "max": 12.9506
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.1548,
+          "p95": 0.19083,
+          "min": 0.1046,
+          "max": 0.1944
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 757636.0,
+        "p95": 760392.0,
+        "min": 749472,
+        "max": 761480
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "all",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 2.45695,
+          "p95": 15.607524999999997,
+          "min": 1.8135,
+          "max": 16.7903
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.7319500000000001,
+          "p95": 1.1563249999999998,
+          "min": 0.6197,
+          "max": 1.2273
+        },
+        "record": {
+          "n": 18,
+          "median": 0.1487,
+          "p95": 0.591859999999997,
+          "min": 0.1072,
+          "max": 2.35
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0033,
+          "p95": 0.009449999999999998,
+          "min": 0.0018,
+          "max": 0.0103
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 12.3065,
+          "p95": 13.705879999999999,
+          "min": 11.6541,
+          "max": 14.2713
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.1718,
+          "p95": 0.2884049999999999,
+          "min": 0.1162,
+          "max": 0.3434
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 5493552.0,
+        "p95": 5502916.8,
+        "min": 5483416,
+        "max": 5514232
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "single",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.2756,
+          "p95": 0.6289049999999974,
+          "min": 0.2184,
+          "max": 2.2326
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.6830499999999999,
+          "p95": 0.9590299999999995,
+          "min": 0.6212,
+          "max": 1.2856
+        },
+        "record": {
+          "n": 18,
+          "median": 0.1295,
+          "p95": 0.17666999999999994,
+          "min": 0.1152,
+          "max": 0.2241
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0026,
+          "p95": 0.003989999999999996,
+          "min": 0.0019,
+          "max": 0.0062
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 12.0259,
+          "p95": 12.812935,
+          "min": 11.6789,
+          "max": 12.9004
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.13935,
+          "p95": 0.19723999999999992,
+          "min": 0.1052,
+          "max": 0.2462
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 757660.0,
+        "p95": 765916.4,
+        "min": 749472,
+        "max": 766168
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "single",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.7956,
+          "p95": 2.2890699999999877,
+          "min": 0.58,
+          "max": 9.6431
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.7495499999999999,
+          "p95": 0.9208899999999991,
+          "min": 0.6244,
+          "max": 1.4314
+        },
+        "record": {
+          "n": 18,
+          "median": 0.13785,
+          "p95": 0.216965,
+          "min": 0.1073,
+          "max": 0.2298
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0031000000000000003,
+          "p95": 0.004614999999999997,
+          "min": 0.0022,
+          "max": 0.0064
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 12.0304,
+          "p95": 12.995445,
+          "min": 11.7049,
+          "max": 13.0127
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.1577,
+          "p95": 0.21033999999999994,
+          "min": 0.1189,
+          "max": 0.2406
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 1556392.0,
+        "p95": 1562502.0,
+        "min": 1552320,
+        "max": 1569472
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "static",
+      "mode": "legacy",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0002,
+          "p95": 0.0003,
+          "min": 0.0001,
+          "max": 0.0003
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.72465,
+          "p95": 0.9468249999999999,
+          "min": 0.6276,
+          "max": 0.9889
+        },
+        "record": {
+          "n": 18,
+          "median": 0.12735000000000002,
+          "p95": 0.18684499999999998,
+          "min": 0.1144,
+          "max": 0.2024
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0025,
+          "p95": 0.004,
+          "min": 0.0013,
+          "max": 0.004
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 11.77065,
+          "p95": 14.095879999999998,
+          "min": 11.6891,
+          "max": 15.3906
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.15615,
+          "p95": 0.18581499999999998,
+          "min": 0.1258,
+          "max": 0.1927
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 73800.0,
+        "p95": 81993.2,
+        "min": 73688,
+        "max": 82000
+      }
+    },
+    {
+      "variant": "pr105",
+      "count": 10000,
+      "pattern": "static",
+      "mode": "retained+flatten",
+      "stages_ms": {
+        "update": {
+          "n": 18,
+          "median": 0.0002,
+          "p95": 0.000404999999999999,
+          "min": 0.0001,
+          "max": 0.001
+        },
+        "prepare": {
+          "n": 18,
+          "median": 0.73185,
+          "p95": 0.8434749999999994,
+          "min": 0.6472,
+          "max": 1.2009
+        },
+        "record": {
+          "n": 18,
+          "median": 0.12375,
+          "p95": 0.29751999999999995,
+          "min": 0.1073,
+          "max": 0.3118
+        },
+        "submit": {
+          "n": 18,
+          "median": 0.0024,
+          "p95": 0.003349999999999999,
+          "min": 0.0015,
+          "max": 0.0042
+        },
+        "submitCompletion": {
+          "n": 18,
+          "median": 11.7609,
+          "p95": 11.969444999999999,
+          "min": 11.688,
+          "max": 12.7891
+        },
+        "dispose": {
+          "n": 18,
+          "median": 0.14525,
+          "p95": 0.17217,
+          "min": 0.1058,
+          "max": 0.1805
+        }
+      },
+      "allocated_process_wide_bytes": {
+        "n": 18,
+        "median": 73800.0,
+        "p95": 81966.0,
+        "min": 72576,
+        "max": 82000
+      }
+    }
+  ],
+  "pixel_checks": [
+    {
+      "variant": "main",
+      "check": "software-gpu-pixels",
+      "count": 1000,
+      "pattern": "static",
+      "sha256": "A2F715D91AF0FEA93E08BB9A8CDCB32A9EBFDFCCFE4E68359FB2B4D3C6DEEA8B",
+      "status": "passed"
+    },
+    {
+      "variant": "main",
+      "check": "software-gpu-pixels",
+      "count": 1000,
+      "pattern": "single",
+      "sha256": "0565FD52C06C49475AA0E611E0C139610BA6F022AFF2C980AE59341375776920",
+      "status": "passed"
+    },
+    {
+      "variant": "main",
+      "check": "software-gpu-pixels",
+      "count": 1000,
+      "pattern": "all",
+      "sha256": "A2F715D91AF0FEA93E08BB9A8CDCB32A9EBFDFCCFE4E68359FB2B4D3C6DEEA8B",
+      "status": "passed"
+    },
+    {
+      "variant": "main",
+      "check": "software-gpu-pixels",
+      "count": 10000,
+      "pattern": "static",
+      "sha256": "53ACBA40EA91B8165E199169846E0A72D2D881DFB7821B03AB1F60DE8172EAA5",
+      "status": "passed"
+    },
+    {
+      "variant": "main",
+      "check": "software-gpu-pixels",
+      "count": 10000,
+      "pattern": "single",
+      "sha256": "C72E4F8A25FE7E38E432A6976F74EE8983DBD236B7C3C1A05171647A128E6ED7",
+      "status": "passed"
+    },
+    {
+      "variant": "main",
+      "check": "software-gpu-pixels",
+      "count": 10000,
+      "pattern": "all",
+      "sha256": "53ACBA40EA91B8165E199169846E0A72D2D881DFB7821B03AB1F60DE8172EAA5",
+      "status": "passed"
+    },
+    {
+      "variant": "pr105",
+      "check": "software-gpu-pixels",
+      "count": 1000,
+      "pattern": "static",
+      "sha256": "A2F715D91AF0FEA93E08BB9A8CDCB32A9EBFDFCCFE4E68359FB2B4D3C6DEEA8B",
+      "status": "passed"
+    },
+    {
+      "variant": "pr105",
+      "check": "software-gpu-pixels",
+      "count": 1000,
+      "pattern": "single",
+      "sha256": "0565FD52C06C49475AA0E611E0C139610BA6F022AFF2C980AE59341375776920",
+      "status": "passed"
+    },
+    {
+      "variant": "pr105",
+      "check": "software-gpu-pixels",
+      "count": 1000,
+      "pattern": "all",
+      "sha256": "A2F715D91AF0FEA93E08BB9A8CDCB32A9EBFDFCCFE4E68359FB2B4D3C6DEEA8B",
+      "status": "passed"
+    },
+    {
+      "variant": "pr105",
+      "check": "software-gpu-pixels",
+      "count": 10000,
+      "pattern": "static",
+      "sha256": "53ACBA40EA91B8165E199169846E0A72D2D881DFB7821B03AB1F60DE8172EAA5",
+      "status": "passed"
+    },
+    {
+      "variant": "pr105",
+      "check": "software-gpu-pixels",
+      "count": 10000,
+      "pattern": "single",
+      "sha256": "C72E4F8A25FE7E38E432A6976F74EE8983DBD236B7C3C1A05171647A128E6ED7",
+      "status": "passed"
+    },
+    {
+      "variant": "pr105",
+      "check": "software-gpu-pixels",
+      "count": 10000,
+      "pattern": "all",
+      "sha256": "53ACBA40EA91B8165E199169846E0A72D2D881DFB7821B03AB1F60DE8172EAA5",
+      "status": "passed"
+    }
+  ]
+}

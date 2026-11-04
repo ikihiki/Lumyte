@@ -61,6 +61,9 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     protected override bool RequiresHostValidation => true;
 
     /// <inheritdoc/>
+    protected override bool CacheRetainedDrawing => GetType() == typeof(TextBoxElement);
+
+    /// <inheritdoc/>
     protected override UiAutomationActions AutomationActions => UiAutomationActions.Focus | UiAutomationActions.Edit;
 
     /// <summary>Navigate.</summary>
@@ -134,6 +137,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     internal void DocumentChanged()
     {
         _layoutRevision = ulong.MaxValue;
+        InvalidateDrawing();
         InvalidateLayout();
     }
 
@@ -148,7 +152,10 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
 
         TextDocumentSnapshot snapshot = Document.CaptureSnapshot();
         UiTextCaret caret = HitCaret(position);
-        Document.TrySetSelection(snapshot.Revision, new(extend ? snapshot.Selection.Anchor : caret.Position, caret.Position, extend ? snapshot.Selection.AnchorAffinity : caret.Affinity, caret.Affinity), TextEditOrigin.Keyboard);
+        if (Document.TrySetSelection(snapshot.Revision, new(extend ? snapshot.Selection.Anchor : caret.Position, caret.Position, extend ? snapshot.Selection.AnchorAffinity : caret.Affinity, caret.Affinity), TextEditOrigin.Keyboard))
+        {
+            DocumentChanged();
+        }
     }
 
     /// <inheritdoc/>
@@ -157,6 +164,16 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         var before = (Compose.Definitions.TextBox)previous;
         var after = (Compose.Definitions.TextBox)next;
         return before.IsReadOnly != after.IsReadOnly || !ReferenceEquals(before.LayoutProvider, after.LayoutProvider);
+    }
+
+    /// <inheritdoc/>
+    protected override void ValidateRetainedDrawing()
+    {
+        if (_layoutRevision != Document.CaptureSnapshot().Revision || !ReferenceEquals(Widget.LayoutProvider, _layoutProvider)
+            || _textPending || _lastDeclaredText != Widget.Text)
+        {
+            InvalidateLayout();
+        }
     }
 
     /// <inheritdoc/>
@@ -170,7 +187,14 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         SynchronizeText();
         if (Document is null || Widget.LayoutProvider is null)
         {
-            _layout = null;
+            if (_layout is not null)
+            {
+                _layout = null;
+                InvalidateDrawing();
+            }
+
+            _layoutProvider = Widget.LayoutProvider;
+            _layoutRevision = Document?.CaptureSnapshot().Revision ?? 0;
             return constraints.Constrain(Vector2.Zero);
         }
 
@@ -189,8 +213,10 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
             _layoutProvider = Widget.LayoutProvider;
             _layoutRevision = snapshot.Revision;
             _layoutWidth = width;
+            InvalidateDrawing();
         }
 
+        float previousOffset = _offset;
         Vector2 size = constraints.Constrain(_layout.Size);
         Rect2D caret = _layout.GetCaretBounds(new(snapshot.Selection.Active, snapshot.Selection.ActiveAffinity));
         float right = caret.X + caret.Width;
@@ -202,6 +228,11 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         else if (caret.X < _offset)
         {
             _offset = caret.X;
+        }
+
+        if (_offset != previousOffset)
+        {
+            InvalidateDrawing();
         }
 
         return size;
@@ -219,7 +250,11 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     {
         if (context.Input is UiFocusChangedInput focus)
         {
-            _focused = focus.IsFocused;
+            if (_focused != focus.IsFocused)
+            {
+                _focused = focus.IsFocused;
+                InvalidateDrawing();
+            }
         }
 
         if (InputHandler is { } handler)

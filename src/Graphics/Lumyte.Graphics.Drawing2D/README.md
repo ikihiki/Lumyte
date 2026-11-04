@@ -113,3 +113,53 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 元のResourceLeaseを所有者として一つだけ保持し、描画用のproviderや別のpipeline leaseは作りません。
 
 `DrawingCanvas2D.Replay(DrawList2D)`で保持した描画commandを現在のtransform/clipの下へ再生できます。元のDrawListを変更せず、Widget等の上位構築やOnRecordの再実行を要求しません。描画commandが参照するtexture/font等の借用資源は通常どおりGPU完了まで保持してください。
+
+## 内容と配置を保持する
+
+`Canvas2D.End()` が返す不変の `DrawList2D` を、そのまま `DrawingScene2D` に配置します。別の内容型への変換は不要です。同じ記録を複数の配置・scene で共有でき、位置の変更では Canvas 全体の再記録は不要です。`DrawList2D.Count` は記録済み命令数です。従来の `PrepareAsync(DrawList2D, ...)` も引き続き使用できます。
+
+正規化済みの CPU ページは `DrawList2D` 内で遅延生成・cache し、配置や scene をまたいで共有します。ページ列・容量・ページ数は公開しません。ページ／範囲の公開編集 API はなく、内部の `WithPage` はテスト・計測用の実装です。内容を変更するときは Canvas で新しい `DrawList2D` を記録し、`scene.ReplaceContent(item, replacement)` で置換してください。
+
+```csharp
+var canvas = new Canvas2D();
+canvas.Begin();
+canvas.FillRect(new Rect2D(0, 0, 100, 50), new Color2D(1, 0, 0, 1));
+DrawList2D content = canvas.End();
+
+using var scene = new DrawingScene2D();
+DrawingNodeId2D group = scene.AddGroup(scene.Root, 0);
+DrawingNodeId2D item = scene.Insert(group, 0, content);
+scene.SetTransform(group, Matrix3x2.CreateTranslation(20, 10));
+
+PreparedDrawingFrame2D frame;
+using (DrawingSceneReadLease2D read = scene.Borrow())
+{
+    frame = await renderer.PrepareAsync(read, target, cancellationToken);
+}
+// read の解放後は scene を編集可能。frame の GPU 資源は独立して保護される。
+frame.Record(commands);
+commands.Finish();
+IGraphicsSubmission submitted = device.Queue.Submit([commands]);
+frame.AttachSubmission(submitted);
+await submitted.WaitAsync(cancellationToken);
+commands.Dispose();
+frame.Retire();
+submitted.Dispose();
+frame.Dispose();
+```
+
+device、renderer、target、commands の初期化と target の ColorAttachment 状態遷移は省略しています。内容が変われば `ReplaceContent`、親子関係・順序が変われば `Move` を使用します。無効な ID、循環、無効な属性は拒否し、失敗した操作で直前の状態を変更しません。
+
+- 借用中は scene の全編集を拒否します。非同期 Prepare が返るまで借用を解放しないでください。借用解放後の古い CPU メモリーは使用できません。
+- 過去の配置が必要な場合だけ `CaptureSnapshot()` を呼びます。通常の編集に、毎回の過去 snapshot 保持を要求しません。
+- 木の節は自身の内容を先に描き、次に子を順序通り描きます。自身の描画と子を交互に置く場合は、それぞれを内容を持つ子として配置してください。
+- CPU ページと GPU batch は別です。同じ内容ノード内の隣接する互換命令を既存の batch 条件でまとめ、標準矩形の fast path を維持します。ノードをまたいだ batch 統合は行いません。小さなノードへの分割は局所置換を小さくしますが、draw 数が増える場合があります。大きな記録を新しく作って ReplaceContent すると、その内容のページ参照はすべて変わります。group transform/clip の変更では影響する資産を再準備する場合があり、GPU の O(1) 属性更新を保証しません。
+- renderer の同時 frame と未使用 cache は `DrawingRetentionOptions2D` で制限します。`RetentionStatistics` は renderer が発行した compile/reuse と未使用資産の概算量で、driver 全体の draw/upload/VRAM 計測ではありません。
+- 独自 renderer は既存の登録表を通ります。標準 renderer のみが資産再利用へ参加し、独自 renderer の準備呼出しを推測で省略しません。
+- texture/view は借用です。内容の再利用を終え、全 GPU 使用が完了するまで生存させてください。
+
+`Retire` は実際の送信結果が Completed、コマンドが Disposed、device が Ready のときだけ資産を返却します。記録しただけでは転送済みになりません。送信を試していないことが確実な場合は、コマンドを破棄して `AbortUnsubmitted()` を使用します。送信の成否が不明、待機を取り消した、device を失った場合は frame を保持し、GPU が完了したものとして破棄・再利用しないでください。未記録の frame は Dispose で返却できます。
+
+返却済み状態は資産ではなく frame ごとの使用権に保持します。cleanup が失敗して古い Retire を再試行しても、後の frame に貸し出した資産を返却し直しません。GPU 完了または未送信が確定した枠の返却と、失敗した資産 cleanup の再試行を分け、失敗した資産は cache 側が保持します。Prepare が返る前に失敗した場合も枠を失わず、次の Prepare または renderer.Dispose で保留 cleanup を再試行します。cleanup が継続して失敗する場合は新規準備より先にその失敗を通知し、使用中 frame と誤って報告しません。Prepare と cleanup の両方が失敗した場合は、両方の例外を AggregateException に保持します。
+
+この直接描画経路は既存 direct renderer と同様に、RenderGraph の layer/effect 命令を受け付けません。対応しない命令は明示的に失敗し、別 shader へ黙って置き換えません。

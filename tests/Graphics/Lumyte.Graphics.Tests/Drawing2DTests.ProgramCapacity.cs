@@ -31,7 +31,9 @@ public sealed partial class Drawing2DTests
     {
         // Shape + initial transparent layer + two nodes per layer + final
         // multiply = 2 * layers + 3. Opacity adds one node per wrapper.
-        foreach ((int layers, int opacity) in new[] { (2, 1), (3, 0), (6, 1), (6, 2), (126, 1) })
+        // Exercise the exact 256-entry allocation first; 256 * 144 bytes is page-aligned.
+        // A one-past-end physical load must not depend on a warm driver shader cache.
+        foreach ((int layers, int opacity) in new[] { (126, 1), (126, 0), (2, 1), (3, 0), (6, 1), (6, 2) })
         {
             var paint = PaintGraph2D.Layers(Enumerable.Range(0, layers).Select(_ => PaintGraph2D.Solid(new Color2D(1, 0, 0, 1))).ToArray());
             for (int i = 0; i < opacity; i++)

@@ -4,10 +4,19 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
+internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 {
     private const int MaximumRectangles = 1024;
-    private readonly List<IPreparedCommandBatch2D> _batches = [];
+    private readonly List<IRetainedCommandBatch2D> _batches = [];
+    private readonly RenderPreparationContext2D _context;
+    private bool _disposed;
+
+    private PreparedRectangleBatch2D(RenderPreparationContext2D context)
+    {
+        _context = context;
+    }
+
+    public long EstimatedBytes => checked(256 + _batches.Sum(batch => batch.EstimatedBytes));
 
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {
@@ -31,8 +40,27 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
         }
     }
 
+    public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(target);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _context.ValidateResources();
+        for (int i = 0; i < _batches.Count; i++)
+        {
+            if (i != 0)
+            {
+                var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
+                commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
+            }
+
+            _batches[i].RecordRetained(commands, target, resident);
+        }
+    }
+
     public void Dispose()
     {
+        _disposed = true;
         while (_batches.Count != 0)
         {
             _batches[^1].Dispose();
@@ -49,7 +77,7 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
             return await PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken).ConfigureAwait(false);
         }
 
-        var result = new PreparedRectangleBatch2D();
+        var result = new PreparedRectangleBatch2D(context);
         try
         {
             int start = 0;
@@ -63,9 +91,9 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
                 }
 
                 ReadOnlyMemory<FillRectCommand2D> run = commands.Slice(start, end - start);
-                result._batches.Add(fast
+                result._batches.Add((IRetainedCommandBatch2D)(fast
                     ? await SolidBatch.PrepareAsync(context, resources, run, cancellationToken).ConfigureAwait(false)
-                    : await PreparedGpuBatch2D.PrepareAsync(context, run, cancellationToken).ConfigureAwait(false));
+                    : await PreparedGpuBatch2D.PrepareAsync(context, run, cancellationToken).ConfigureAwait(false)));
                 start = end;
             }
 
@@ -129,7 +157,7 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
         return true;
     }
 
-    private sealed class SolidBatch : IPreparedCommandBatch2D
+    private sealed class SolidBatch : IRetainedCommandBatch2D
     {
         private readonly RenderPreparationContext2D _context;
         private readonly SolidRectangleResources2D _resources;
@@ -147,6 +175,8 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
             _retained = context.RetainResources();
         }
 
+        public long EstimatedBytes => checked(4096 + (long)(_entry?.Bytes ?? 0));
+
         public void DeclareResources(IDrawingResourceDeclarations2D resources)
         {
             ArgumentNullException.ThrowIfNull(resources);
@@ -163,37 +193,16 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
 
             _context.ValidateResources();
             _recorded = true;
-            SolidRectangleResources2D.Entry entry = _entry!;
-            BufferSlice<Vector4> upload = entry.Upload.SliceElements(0, (ulong)_vectors);
-            BufferSlice<Vector4> data = entry.Data.SliceElements(0, (ulong)_vectors);
-            var shaderRead = new BarrierScope(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
-            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = upload, Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = data, Before = entry.Used ? shaderRead : default, After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
-            commands.CopyBuffer(upload, data);
-            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = data, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = shaderRead });
-            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = upload, Before = new(PipelineStage.Copy, ResourceAccess.CopyRead), After = new(PipelineStage.Host, ResourceAccess.HostWrite) });
-            entry.Used = true;
-            IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = target, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
-            try
-            {
-                render.SetPipeline(_resources.Pipeline);
-                render.SetArgumentTable(entry.Table);
-                render.SetRenderState(new()
-                {
-                    Rasterization = new() { Cull = CullMode.None },
-                    ColorTargets = [new() { BlendEnable = true, Color = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha }, Alpha = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha } }],
-                });
-                render.SetViewport(new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height, 0, 1));
-                render.SetScissor(new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height));
-                render.SetBlendConstant(new(0, 0, 0, 0));
-                render.SetStencilReference(0);
-                render.SetArguments(in _arguments);
-                render.Draw(6, (uint)_instances);
-            }
-            finally
-            {
-                render.End();
-            }
+            RecordCore(commands, target, resident: false);
+        }
+
+        public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
+        {
+            ArgumentNullException.ThrowIfNull(commands);
+            ArgumentNullException.ThrowIfNull(target);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _context.ValidateResources();
+            RecordCore(commands, target, resident);
         }
 
         public void Dispose()
@@ -339,6 +348,45 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
 
             minimum = Vector2.Max(minimum, low - Vector2.One);
             maximum = Vector2.Min(maximum, high + Vector2.One);
+        }
+
+        private void RecordCore(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
+        {
+            SolidRectangleResources2D.Entry entry = _entry!;
+            if (!resident)
+            {
+                BufferSlice<Vector4> upload = entry.Upload.SliceElements(0, (ulong)_vectors);
+                BufferSlice<Vector4> data = entry.Data.SliceElements(0, (ulong)_vectors);
+                var shaderRead = new BarrierScope(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
+                commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = upload, Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+                commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = data, Before = entry.Used ? shaderRead : default, After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
+                commands.CopyBuffer(upload, data);
+                commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = data, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = shaderRead });
+                commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = upload, Before = new(PipelineStage.Copy, ResourceAccess.CopyRead), After = new(PipelineStage.Host, ResourceAccess.HostWrite) });
+                entry.Used = true;
+            }
+
+            IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = target, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
+            try
+            {
+                render.SetPipeline(_resources.Pipeline);
+                render.SetArgumentTable(entry.Table);
+                render.SetRenderState(new()
+                {
+                    Rasterization = new() { Cull = CullMode.None },
+                    ColorTargets = [new() { BlendEnable = true, Color = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha }, Alpha = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha } }],
+                });
+                render.SetViewport(new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height, 0, 1));
+                render.SetScissor(new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height));
+                render.SetBlendConstant(new(0, 0, 0, 0));
+                render.SetStencilReference(0);
+                render.SetArguments(in _arguments);
+                render.Draw(6, (uint)_instances);
+            }
+            finally
+            {
+                render.End();
+            }
         }
     }
 }
