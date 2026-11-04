@@ -1,3 +1,4 @@
+import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -41,11 +42,7 @@ try {
     await readFile(resolve(root, "DISTANCE-FIELD-THIRD-PARTY-NOTICES.md"));
     browser = spawn(executable, [
         "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-        "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader",
-        ...(process.platform === "win32" ? ["--use-angle=d3d11"] : [
-            "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--use-webgpu-adapter=swiftshader",
-            "--use-angle=vulkan", "--disable-vulkan-surface",
-        ]),
+        ...browserGpuArguments(),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"], detached: browserProcessGroup });
     let diagnostics = "";
@@ -95,7 +92,7 @@ try {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
-            }, 10000);
+            }, method === "Page.navigate" ? 60000 : 10000);
             pending.set(id, {
                 resolve: value => { clearTimeout(timeout); resolve(value); },
                 reject: error => { clearTimeout(timeout); reject(error); },
@@ -106,6 +103,10 @@ try {
     await command("Runtime.enable");
     if (process.env.LUMYTE_SCREENSHOT) {
         await command("Emulation.setDeviceMetricsOverride", { width: 1100, height: 1800, deviceScaleFactor: 1, mobile: false });
+    }
+    if (requiresSoftwareWebGpu()) {
+        await command("Page.enable");
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
     }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     const deadline = Date.now() + 180000;
@@ -136,6 +137,10 @@ try {
             clip: { x: 0, y: 0, width: size.width, height: size.height, scale: 1 },
         });
         await writeFile(process.env.LUMYTE_SCREENSHOT, Buffer.from(screenshot.data, "base64"));
+    }
+    if (requiresSoftwareWebGpu()) {
+        const audit = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true });
+        verifySoftwareWebGpu(audit.result.value);
     }
     console.log(`Browser .NET/Parley/WebGPU text verification passed\n${result.report}`);
 } finally {

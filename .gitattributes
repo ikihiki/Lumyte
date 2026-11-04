@@ -1,3 +1,6 @@
 # Keep checkout line endings aligned with .editorconfig and .clang-format,
 # including on Windows hosts where core.autocrlf is enabled.
 * text=auto eol=lf
+
+# Unified diffs represent empty context lines with a single space.
+tools/benchmarks/ui-device/*.patch whitespace=-blank-at-eol

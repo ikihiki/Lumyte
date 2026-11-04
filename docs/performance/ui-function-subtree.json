@@ -1,0 +1,363 @@
+{
+  "date": "2026-10-31",
+  "baselineCommit": "3b6c54dde342f291df1fd1474db855f648e5abef",
+  "candidatePr": 97,
+  "candidateSourceSha256": {
+    "src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs": "c90dbbb324e22a041d65764bb6bfa60ee6bc34c1a941a1f1b44312c8fc41148d",
+    "src/UI/Lumyte.UI.TextEditing/Compose.TextBox.cs": "1c7d4e1d0d8272150d54d5a31bcd4e6044eb8bb10167414ada201ce4947599f3",
+    "src/UI/Lumyte.UI/Compose.Button.cs": "7f71306b606e5d7c158c9f3eb377b55378b51ec6597449c7f5d33add089d63cc",
+    "src/UI/Lumyte.UI/Compose.Panel.cs": "2c2cbaa9c61ca47d3d3c8bef625a28454d5bc0aef3606f62bccd4fe695a1cdda",
+    "src/UI/Lumyte.UI/Compose.Rectangle.cs": "5fa8f3aa38f897ac0c4c198e90aa66c62f752077352e96bc30164a4ee0388b57",
+    "src/UI/Lumyte.UI/Compose.Stack.cs": "4f679eea18ba7f4b30c634b668564f2c57f655ae0f9152f70c86e531f4feea12",
+    "src/UI/Lumyte.UI/Compose.Widget.Transitions.cs": "911c2029d57daba75fc592b7615f313f9c2a80b3398251501539069674d748d2",
+    "src/UI/Lumyte.UI/Compose.Widget.cs": "c3b7b55929717c615932936ef53979f1b3b4b6fcb2ebac2a372b6fa563111008",
+    "src/UI/Lumyte.UI/UiFunctionWidget.cs": "4ef223d3fedba32cfd52a223712a692b14c076db24af39dff9a11de99ffd4141",
+    "src/UI/Lumyte.UI/UiSurface.Animations.cs": "dd14943786ddd2406069c9c2862f98186ffec32a3d22ec6ea330d2882ecfa451",
+    "src/UI/Lumyte.UI/UiSurface.FunctionUpdates.cs": "d87355710a193c14ad418de937a8347ab97cac7f866cdc18bdad6db52a5cbf96",
+    "src/UI/Lumyte.UI/UiSurface.Rebuild.cs": "0c6625ad43c0d93c80afeabdbba0d371dac116cc12e28608c606cd06c6a4d694",
+    "src/UI/Lumyte.UI/UiSurface.RebuildInputTransfer.cs": "39fb1b36ef31ea6a1184c5c4feb9b0f914d46e028e672013728bd337782a70a6",
+    "src/UI/Lumyte.UI/UiSurface.SignalBinding.cs": "8ffdc4e784b8b994bf03146e082f183d38fa4894364510baee37e1a161c4b5b5",
+    "src/UI/Lumyte.UI/UiSurface.Signals.cs": "0525c00b8f1527f0f0c0e49e7ce30495a3ffe0e3db5e21a01c6fb5620859116b",
+    "src/UI/Lumyte.UI/WidgetChildren.cs": "b5a51fa629c2ae67cc3c9ce7689939a924467e615694454bb908952d006d7938",
+    "tools/benchmarks/ui-functions/Program.cs": "c760e04ddb819bf67ee09370773940fb158bf7290e513020056c86daf57ec4ad"
+  },
+  "environment": {
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "architecture": "x86_64",
+    "sdk": "10.0.401",
+    "runtime": "Microsoft.AspNetCore.App 10.0.12 [/workspace/.dotnet/shared/Microsoft.AspNetCore.App]\nMicrosoft.NETCore.App 10.0.12 [/workspace/.dotnet/shared/Microsoft.NETCore.App]",
+    "configuration": "Release",
+    "tieredCompilation": false,
+    "serverGc": false
+  },
+  "workload": {
+    "component": "FunctionTestUi.Counter",
+    "buttonSize": [
+      40,
+      20
+    ],
+    "viewport": [
+      800,
+      600
+    ],
+    "layout": "overlapping siblings in Panel",
+    "changedSourcesPerUpdate": 1,
+    "warmup": 5,
+    "batchCount": 5,
+    "iterationsPerBatch": 100,
+    "includes": "Signal assignment, declaration update, UpdateLayout/input geometry",
+    "excludes": "setup, assertions, console output, drawing/GPU"
+  },
+  "before": [
+    {
+      "Name": "one-function-of-100",
+      "RetainedUnrelatedDeclarations": false,
+      "Batches": [
+        {
+          "Nanoseconds": 698574.63,
+          "Bytes": 571775.68
+        },
+        {
+          "Nanoseconds": 408835.91,
+          "Bytes": 571776
+        },
+        {
+          "Nanoseconds": 377130.79,
+          "Bytes": 571776
+        },
+        {
+          "Nanoseconds": 377217.32,
+          "Bytes": 571776
+        },
+        {
+          "Nanoseconds": 373612.47,
+          "Bytes": 571776
+        }
+      ],
+      "MedianNanoseconds": 377217.32,
+      "MedianBytes": 571776
+    },
+    {
+      "Name": "one-function-of-1000",
+      "RetainedUnrelatedDeclarations": false,
+      "Batches": [
+        {
+          "Nanoseconds": 5620586.72,
+          "Bytes": 6034156.48
+        },
+        {
+          "Nanoseconds": 5681975.48,
+          "Bytes": 6034104
+        },
+        {
+          "Nanoseconds": 5693850.92,
+          "Bytes": 6034105.92
+        },
+        {
+          "Nanoseconds": 5476507.39,
+          "Bytes": 6034136
+        },
+        {
+          "Nanoseconds": 5570053.24,
+          "Bytes": 6034136
+        }
+      ],
+      "MedianNanoseconds": 5620586.72,
+      "MedianBytes": 6034136
+    }
+  ],
+  "after": [
+    {
+      "Name": "one-function-of-100",
+      "RetainedUnrelatedDeclarations": true,
+      "Batches": [
+        {
+          "Nanoseconds": 43134.54,
+          "Bytes": 11535.68
+        },
+        {
+          "Nanoseconds": 41786.35,
+          "Bytes": 11536
+        },
+        {
+          "Nanoseconds": 41225.54,
+          "Bytes": 11536
+        },
+        {
+          "Nanoseconds": 41090.22,
+          "Bytes": 11536
+        },
+        {
+          "Nanoseconds": 41020.53,
+          "Bytes": 11536
+        }
+      ],
+      "MedianNanoseconds": 41225.54,
+      "MedianBytes": 11536
+    },
+    {
+      "Name": "one-function-of-1000",
+      "RetainedUnrelatedDeclarations": true,
+      "Batches": [
+        {
+          "Nanoseconds": 348786.98,
+          "Bytes": 18704
+        },
+        {
+          "Nanoseconds": 351316.83,
+          "Bytes": 18704
+        },
+        {
+          "Nanoseconds": 345995.5,
+          "Bytes": 18705.92
+        },
+        {
+          "Nanoseconds": 356493.38,
+          "Bytes": 18736
+        },
+        {
+          "Nanoseconds": 352686.67,
+          "Bytes": 18736
+        }
+      ],
+      "MedianNanoseconds": 351316.83,
+      "MedianBytes": 18705.92
+    }
+  ],
+  "candidateCommit": "ed0afdc2485ed2b2b9ffd55a658857b149ff18ba",
+  "elementSeparation": {
+    "date": "2026-10-31",
+    "sourceCommit": "bc01a8b324baa74e3cb35adf121d97ba2ce95e7d",
+    "sourceSha256": {
+      "src/UI/Lumyte.UI/ButtonElement.Automation.cs": "4d8d39ddf8672b2d3aba276a40b9fb27445d1d61b69dfae0cbca0394170fc181",
+      "src/UI/Lumyte.UI/ButtonElement.Drawing.cs": "defcb94455094ff0568dc0103f938213a2a19bcf55e75dd3a1e5fb9f8098f438",
+      "src/UI/Lumyte.UI/ButtonElement.Input.cs": "cc65cd09dee2e8aacc2160ad651c088e7464a299b191086cbf8a244da4d099d3",
+      "src/UI/Lumyte.UI/ButtonElement.Keyboard.cs": "4c17736baa075ad02587c361d5ea8a97a6ec3f6bdc46f87abaceb55aa1d7c150",
+      "src/UI/Lumyte.UI/ButtonElement.cs": "c8a26c4e3d14c7197de2425866a73a23ae91526ab122ed9860e10ae6adfd2b3b",
+      "src/UI/Lumyte.UI/Compose.Animation.cs": "0b63d8ea8b43978867b663feb6675e2203d5bbd8392c46b40d28e0726fea0b69",
+      "src/UI/Lumyte.UI/Compose.Button.Input.cs": "88d10fc1307f9e4584af3165fcc7f9b4ba89fc15bffff5d9902253444a0899a5",
+      "src/UI/Lumyte.UI/Compose.Button.cs": "5cd6f3d000a07c810b3a855d32babed5f7ace34e32496ac27c8ac95ddea88d79",
+      "src/UI/Lumyte.UI/Compose.Functions.cs": "44b4acbc6c725f1a690c628464cfdbccf6325221ceea38020f8a5e9cddaba946",
+      "src/UI/Lumyte.UI/Compose.Panel.cs": "6e1cb520ccaccdc8e05f750926c66b8674abfc78b1c2d3023eb5005cee9d5d7a",
+      "src/UI/Lumyte.UI/Compose.Rectangle.cs": "a3c5bf80989002f09893598b47de8413de66fe026a2f483c50fce28834165e5d",
+      "src/UI/Lumyte.UI/Compose.Stack.cs": "b36e642d3bcb7d19469833099266e7422fb47c6223676302ce5ebdc94b991c14",
+      "src/UI/Lumyte.UI/Compose.Transitions.cs": "5ae6d16873df2de0fe0e0d09ffbff8db749081c5524922a196ea5e849327a286",
+      "src/UI/Lumyte.UI/Compose.Use.cs": "256294466377323f6dc25cca4daedfd4d16068a1222649fafc317ff4c9e1a9f4",
+      "src/UI/Lumyte.UI/Compose.Widget.Automation.cs": "67520d239329f7c13a675298fd0e2dcbd06de941ab8252ae7cddc1a9ab981e1a",
+      "src/UI/Lumyte.UI/Compose.Widget.Drawing.cs": "d573878ae492480f2354d56352875946fabfaf7dc643b16de5afab4feec57cb8",
+      "src/UI/Lumyte.UI/Compose.Widget.Focus.cs": "19bdde6e5fa80c720e10840b1501581e562689c8dc9d52a06bee5802c5f8a2a9",
+      "src/UI/Lumyte.UI/Compose.Widget.Input.cs": "675e465a7c5e71219a11972903a6216d1702170876c296310916a8cd83f4eac8",
+      "src/UI/Lumyte.UI/Compose.Widget.Layout.cs": "d9a8732d9a435c8c7d5602db52e64824020140913d3cfcd99e3e55a91b2db753",
+      "src/UI/Lumyte.UI/Compose.Widget.Rebuild.cs": "905bbdb9c2586bb3adc0ab854c1439d9fecbbf80bf945be602bdcb370f64ea90",
+      "src/UI/Lumyte.UI/Compose.Widget.Signals.cs": "28da7714060060f40d0ffdb8e663ee8d8da6b32059cd2a3510ba39d39c34e2b2",
+      "src/UI/Lumyte.UI/Compose.Widget.Transitions.cs": "2b8a5d86dc8609262f8d9126f99acda0c52b608987ddb849ac09413158cb013a",
+      "src/UI/Lumyte.UI/Compose.Widget.Use.cs": "3df5051a6ea26f3b143479854c9ae9305ee3b01ef315fb2d254f060cb897733a",
+      "src/UI/Lumyte.UI/Compose.Widget.cs": "2f13da1c672c3f2bfc43dc65ea8ef244e80ccb94702714a5ca9f72de262eace6",
+      "src/UI/Lumyte.UI/IUiAnimationProjection.cs": "5861de66f6851bb727eca932bb40c491ddc70d9064909c941ad892115d80f2fb",
+      "src/UI/Lumyte.UI/IUiDispatcher.cs": "a190a9141d8ca09f2730395bc74220bc2c2aaba54d659020ac5aff0362dda961",
+      "src/UI/Lumyte.UI/IUiVisualHost.cs": "0808bc92ab2a5470eb6f0f7626fdc35ceaddf2aeec8f60885b88174d9ffc1487",
+      "src/UI/Lumyte.UI/PanelElement.cs": "4392856aca505954d2d2481eaa20eb6a4a325d044e5bfd13ab97a0e0864e29b0",
+      "src/UI/Lumyte.UI/RectangleElement.cs": "b831e4e3bdf0dd4557697d78816ca1203decccd9c1937b5a59f1c23404d6167a",
+      "src/UI/Lumyte.UI/StackElement.cs": "77addacd66e2cdd989714195708c882b69bfc7dbc661384e3733aacd1c78dda3",
+      "src/UI/Lumyte.UI/UiAnimated.cs": "615620f1908e75eacd2c6cfa639a04ee2a471d1307b498febf5f22b90f882529",
+      "src/UI/Lumyte.UI/UiAnimationClip.cs": "e961db423c1407a538f027940a4e6d21ab84915603264a3db60e973326aebb62",
+      "src/UI/Lumyte.UI/UiAnimationEvaluation.cs": "a47ba98acf6f9bc61897b856ad39573d40eecba490c086303ea0a49cd1a33833",
+      "src/UI/Lumyte.UI/UiAnimationInterpolators.cs": "0d6dc337c8aa2c3475305530b3e458e20a09fa25409192b6e26eef66fdac7ded",
+      "src/UI/Lumyte.UI/UiAnimationProducer.cs": "7608d60de08515ed54c9b26f477f0e70d747448b0f2a95da4ba9cc2172d835d6",
+      "src/UI/Lumyte.UI/UiArgument.cs": "3236d047a55947215732203204fa73dc1e37c6f81c8a1a766c29c358bb0ee9e2",
+      "src/UI/Lumyte.UI/UiAutomationActions.cs": "802734d5d1780f6c1fab68311f5eb18c42730a204d77520e4689bf3a2a30cfcd",
+      "src/UI/Lumyte.UI/UiAutomationExposure.cs": "a7018706b0ab7090cb590bdb1ac0023be33a528e6f4e4742c67e03d4cb6de75e",
+      "src/UI/Lumyte.UI/UiAutomationId.cs": "c19837e8ad8efc0aa862c48550d492827e2aeb3c207db4aa8e127ec04a98877f",
+      "src/UI/Lumyte.UI/UiAutomationNode.cs": "9fea9c079607bb4f6f3d912809b04fb7aa4cc75d2b4c9dad5872a75cc4761879",
+      "src/UI/Lumyte.UI/UiAutomationSnapshot.cs": "aa62752ea3629d3c2cb68e35e76bbd2c9610603963bacc7b6c3bb246a5b49c06",
+      "src/UI/Lumyte.UI/UiBoxConstraints.cs": "55a8d00b7dc2935f16642d02a6aaf29561d6e8e733f4d1817c83a9b7c9c74904",
+      "src/UI/Lumyte.UI/UiContextKey.cs": "b52f3abf8a61fef19beec8ea5a30e2835293287355adf048fc3799444606c1c4",
+      "src/UI/Lumyte.UI/UiDeclarationRecipe.cs": "612119bbb3f9e9b953ebd7767d99023fb9dc70df2da57656295c9e0d5fae09bf",
+      "src/UI/Lumyte.UI/UiElement.Animations.cs": "bc8fe9188ae00935068d87b8fcee61e2801ae357efe18ca60ec9dfe8d0a5c665",
+      "src/UI/Lumyte.UI/UiElement.Automation.cs": "f2a9f147fb828c733b98becd8d35163c97b166e6ece0d2b56f2e623ff8162474",
+      "src/UI/Lumyte.UI/UiElement.Content.cs": "1ef4a5b151ef6bcd25a36ad562fb1e5d8b3e6b4504016f7d3c7618d76159c73a",
+      "src/UI/Lumyte.UI/UiElement.Drawing.cs": "6ede46ae67903296ce5a1a91414a28fdad1809017d6607030e770c8da34429aa",
+      "src/UI/Lumyte.UI/UiElement.Focus.cs": "dd00dc02d60f0a0cf1ee74b3fc366fc7617428d9459d98b3874b24eae1cbbcfe",
+      "src/UI/Lumyte.UI/UiElement.Generic.cs": "e5f17f8e4504eb458b93968915136a65a5aec50d2f93614e1f9a6c78ff20e3af",
+      "src/UI/Lumyte.UI/UiElement.Input.cs": "15a5d73cb1a7fde0c3867b98d55443dc7832f7c4d176e618f2fa5318237cbaad",
+      "src/UI/Lumyte.UI/UiElement.Layout.cs": "b5a34f37aa3c6d1f118f9c61d6f0459e8377e7931e96d4059bbe7822d39ed352",
+      "src/UI/Lumyte.UI/UiElement.Signals.cs": "c68cf5474c2650bfbef577c9fb7d49c693e0d3ddb7faf29e5843c0446ce0af5e",
+      "src/UI/Lumyte.UI/UiElement.Transitions.cs": "a1208a12c195055921f573229ac6aebd11427c673e7e662452778c7f02c67e02",
+      "src/UI/Lumyte.UI/UiElement.cs": "c4fd1591382cf4fb073e429bfeb3dea5c3fb2932b5b8700d1bc6dc4fad0bbe34",
+      "src/UI/Lumyte.UI/UiElementBuildContext.cs": "426ac9528787528b0741ff2c0d7c318a9cc9454cbd6f925ca6d793a745c3d513",
+      "src/UI/Lumyte.UI/UiElementChildren.cs": "0cb488226eae67310c55bc8034213cd642932a27d77d7408e134c28e3b369c32",
+      "src/UI/Lumyte.UI/UiElementContent.cs": "4584f00db427a7a85615deb0c1ac96be0b3f5aed5002ace1a530e774a28fd428",
+      "src/UI/Lumyte.UI/UiElementTransitions.cs": "b5341525daf6033936a7e6dc68229ba5d8d524e43d2ac64d3abc4ed189b30cf9",
+      "src/UI/Lumyte.UI/UiElementUpdateContext.cs": "508352f776f8711135df7e3b58dbdbdf549b8f0195411a2fe9db5aba3df5f113",
+      "src/UI/Lumyte.UI/UiFocusBookmark.cs": "4d553a5255733174c770c8c19ccd31281a105cf90c772fda4d43bfff8f5743db",
+      "src/UI/Lumyte.UI/UiFocusChangedInput.cs": "460e43779215e3cf5385556daf061860cc2544b7b2155956dda701a1139fe142",
+      "src/UI/Lumyte.UI/UiFocusLostInput.cs": "868e44f67dffcd9613db6cd3cab2f94c68ed9441ba7ce83b6b471e0b42e4b9bd",
+      "src/UI/Lumyte.UI/UiFocusNavigation.cs": "20ba16b2af71b3ee726d849c1d27bc6ec032c8af06d0e3e16bed9ac6c27fb737",
+      "src/UI/Lumyte.UI/UiFunctionBuild.cs": "f2163800580b63f9b33e8d3a4f7dbd51f4921e38cc319d7c714194384e3eef85",
+      "src/UI/Lumyte.UI/UiFunctionElement.cs": "0b375b6c998e5df181a147b547b33adf43d16e6b9fb8a1d88c5b6aec4bce007c",
+      "src/UI/Lumyte.UI/UiFunctionStateKey.cs": "348b6f5fe92fd7dd57d974b5dcba228493dd550e04230ec62c8b74e8334f9097",
+      "src/UI/Lumyte.UI/UiFunctionWidget.cs": "45147dc5019ac365a6bf6ee0565604d487b4d806b5c7ed0cec9185d09b277610",
+      "src/UI/Lumyte.UI/UiInput.cs": "e30eeded013fe0d4fd6342761938c732fff0aa7934ba9087fa047d2a6e841b39",
+      "src/UI/Lumyte.UI/UiInputBounds.cs": "6fb390b0a52f1ce0ba7305931d66fc8d990acdd752cc72977a90d04abf4736b2",
+      "src/UI/Lumyte.UI/UiInputContext.cs": "b4e3416a010b18e3f0c3fa19f69ab7c7a7d62b29016d7c034a676a21b2957aab",
+      "src/UI/Lumyte.UI/UiInputGeometry.cs": "963b5266e1bd575155ae01b88c3ef442755fd5c89632acc2512c7481ed36d341",
+      "src/UI/Lumyte.UI/UiInputResult.cs": "9843c27ca63d38a0719f03683101582bd46a0fee9206095a84794a5f1bf36f1b",
+      "src/UI/Lumyte.UI/UiInvalidation.cs": "119f15c76008e40544bc98f2793a8a65271d2853340a187789af307e179cd8ac",
+      "src/UI/Lumyte.UI/UiKeyCancelInput.cs": "a16140fe206bd5f23521bb8dca3576f67a9f3ac1e08a662fbf28dbc2bb1179b7",
+      "src/UI/Lumyte.UI/UiKeyInput.cs": "1e750db4d6b14d04fb78b02f67ac244d7d7c004cadc317f7957eb0f110469f12",
+      "src/UI/Lumyte.UI/UiLayoutMath.cs": "6aaf726f3e527a52859b594a1d05a2a084cb34c88ab09b91dc294dc6346149e9",
+      "src/UI/Lumyte.UI/UiLayoutPass.cs": "3f62537c58df176316cb4857bd1c1264b51b243c48f9f961c82a5ba0ef7f2e73",
+      "src/UI/Lumyte.UI/UiModifiers.cs": "9fef57f5c266daffcc715ed9ef1662027b851a42a72a0a62ee64f2f87ad8b606",
+      "src/UI/Lumyte.UI/UiMotionOptions.cs": "15429fc2411978c7bf27b5b8d58a4c0a8945026e6896b0011dc1df448d60e77b",
+      "src/UI/Lumyte.UI/UiMotionPolicy.cs": "d38ae4a5e1130f1ac9d4980274c444e175b3b95ead9794c4ca073295ed7eda7d",
+      "src/UI/Lumyte.UI/UiOrientation.cs": "9b1db2aa515ec8f510885e2b2943efbf72df939f89742986c1f1c87d6655492d",
+      "src/UI/Lumyte.UI/UiPointerCaptureState.cs": "e6885fb0642cce1292d2aff91c264077fa38f4303cffca5765ea53064d6df2ca",
+      "src/UI/Lumyte.UI/UiPointerInput.cs": "34f5a10a6c4e5781aead29937a2ecf9e5bb9a4df839615586f485bdc7331ba22",
+      "src/UI/Lumyte.UI/UiPointerPhase.cs": "c62abf9376089cb2b32cafccfe21d7ab6db0c5dab2516b496a7f262728beddfb",
+      "src/UI/Lumyte.UI/UiPointerProbe.cs": "13c6611b2b9d1e1a303a08ff03e4b60a3eb6b04e11558561bf69e864d44f30c4",
+      "src/UI/Lumyte.UI/UiPresenceEntry.cs": "8b5d53233cce7a781a661465fbe9cd1c17183a9f59609364bc86fc843ef99663",
+      "src/UI/Lumyte.UI/UiPresenceState.cs": "eb20993106dc9af415202c893cff802fab9349b9ee0160d17ac2099d0a8c3995",
+      "src/UI/Lumyte.UI/UiProposedTree.cs": "204f65502e23666354274449490fa6b347a6b73a5994ce3e63dfedf7600fd7e1",
+      "src/UI/Lumyte.UI/UiRole.cs": "d6465ccd78a60ae204bc6c6d2de9c466d41a227419d37cb31010a3a34927b570",
+      "src/UI/Lumyte.UI/UiSharedElementKey.cs": "66b9abceb95178605375b6c2458b3c13a0b31f8cf9b892e66985fc5b0dc09c64",
+      "src/UI/Lumyte.UI/UiSignalArgument.cs": "1aa1d6f1c6ddb9b89babdc13c1ad842aaa280de5c50217f0ad31b6e8271b6684",
+      "src/UI/Lumyte.UI/UiSignalRevision.cs": "33f52e5432ce49e99e419f427898a2b032f10dde4c1e0951e4a6b1928585c08b",
+      "src/UI/Lumyte.UI/UiStateUpdateException.cs": "b3d56809389c88f94a2dbeaf41db7ce72c654d8d147feac8c46257503204cc44",
+      "src/UI/Lumyte.UI/UiSurface.AnimationConnections.cs": "a9ce412b0e28b00ae8540bfde265b28a1362e218d328625ad13a841876d659aa",
+      "src/UI/Lumyte.UI/UiSurface.Animations.cs": "8b78e73cb24ec6bac629bcce6c9cbe865f1dae71c1cefa866d4e0899a3f3d7f9",
+      "src/UI/Lumyte.UI/UiSurface.Automation.cs": "7b4a14479ca469e6fbdc20c6cb07b1a631639bd7eb85b1971bb02b35098da6b8",
+      "src/UI/Lumyte.UI/UiSurface.Drawing.cs": "06fc7ad5fb025773e9881b017432a3c8c80f350e2cfa6235c9d1598df5fba2d2",
+      "src/UI/Lumyte.UI/UiSurface.Focus.cs": "94f34ff122319f209e359ac2154094e609dd821471249a5d695ea293fcda6380",
+      "src/UI/Lumyte.UI/UiSurface.Input.cs": "9942ddce42b8fad52166899b9dc95da1628841bf513df32dde506bfab70a082c",
+      "src/UI/Lumyte.UI/UiSurface.InputPublication.cs": "399da6e7864fde960236ec38103e927b0700528b24b3e7365f79236dde343e34",
+      "src/UI/Lumyte.UI/UiSurface.Keyboard.cs": "fcc9515de583b4ed964dd13d103270a92ce79b311e414e6418ed1dac74cdebf2",
+      "src/UI/Lumyte.UI/UiSurface.Layout.cs": "4fab84a352fcdacbcb584a9bd1b8470b7026002500517d642cd8d49a7489d2c3",
+      "src/UI/Lumyte.UI/UiSurface.ProgrammaticFocus.cs": "0772208eec543ced20614318d031fa94e85e66af32dd896df1790705a7e44919",
+      "src/UI/Lumyte.UI/UiSurface.Rebuild.cs": "77fecffdcbe5b455ef137cf02b1fa20fc3f32751d7100d3f5e047d826a0b43c4",
+      "src/UI/Lumyte.UI/UiSurface.RebuildPlan.cs": "ba28dd2e4743785099080eea6fd870e990a389652a669ff2bca081fe43cb8fc5",
+      "src/UI/Lumyte.UI/UiSurface.SignalBinding.cs": "8529fad202ff9f4b78b9e8e8001493b8c6d1abe4297dd289914ace943c05f1eb",
+      "src/UI/Lumyte.UI/UiSurface.SignalDispatch.cs": "45802a5c795a769ce5de378f26b50f38124fc5b55036d4d6ebcc393bede78aeb",
+      "src/UI/Lumyte.UI/UiSurface.Signals.cs": "d48d4fbe9cd812d9c265479c827dbc648c9a0dc0b54dc698c6e391cfaf0d5b77",
+      "src/UI/Lumyte.UI/UiSurface.SubtreeUpdates.cs": "fec55d45685a127ef4a61d55ea958639a26c153d52c3559b5149b65d62ccd8d3",
+      "src/UI/Lumyte.UI/UiSurface.TextInput.cs": "e3e92a0c228a95316c9d87a426b0ad998722da3e37fcf1efa632cbc278edd98f",
+      "src/UI/Lumyte.UI/UiSurface.Transitions.cs": "ccac5751c85101bc8b28ad4bd2d44c0fb724cbccef2716852c694e11b148eef9",
+      "src/UI/Lumyte.UI/UiSurface.cs": "44c75f557527c799bc0b1a0ad3ccd68e19d89cbc7167a65dd4e1534fc30b3828",
+      "src/UI/Lumyte.UI/UiTargetAnimation.cs": "3eeb54eca92bdfe9e82ed25560d8cf0dcb3ea89ec2b858ae99ccc2d131abc3e3",
+      "src/UI/Lumyte.UI/UiUseEnvironment.cs": "c77a0244f0a33147a6c99829fa520da1264f57e1e91b1331d496e0f6a8d6c0ad",
+      "src/UI/Lumyte.UI/UiVisualPose.cs": "4cb3321ff44e404138ca51a072bcef6f4ea6df4304e2d9ee85b5d5d19b22915d",
+      "src/UI/Lumyte.UI/UiVisualTransition.cs": "f32b3c8272cf430f31ac9805f896babdc7125e872c6014631f115aee682763ce",
+      "src/UI/Lumyte.UI/UiWidgetRebuildContext.cs": "86d27b4b044c3a5b5d5c4fedd89539c4c993a33f8e9068e65ba3d6db4dd7fd61",
+      "src/UI/Lumyte.UI/UiWidgetValidationContext.cs": "fb3396bb322047dca7a1f51c313c93cfacc883ff67923b37a46f45a509fd98a9",
+      "src/UI/Lumyte.UI/WidgetChildren.cs": "21687dd979b22616d54b8308ea51bf6ae84e670a14db5572b3c7392d32170be0"
+    },
+    "cpu": "Intel Xeon Platinum 8573C",
+    "runtime": ".NET 10, Linux x64",
+    "environment": {
+      "DOTNET_TieredCompilation": "0",
+      "DOTNET_gcServer": "0"
+    },
+    "warmup": 5,
+    "batches": 5,
+    "iterationsPerBatch": 100,
+    "gpuIncluded": false,
+    "results": [
+      {
+        "Name": "one-function-of-100",
+        "RetainedUnrelatedDeclarations": true,
+        "Batches": [
+          {
+            "Nanoseconds": 11946.26,
+            "Bytes": 9079.68
+          },
+          {
+            "Nanoseconds": 9478.81,
+            "Bytes": 9080
+          },
+          {
+            "Nanoseconds": 8167.55,
+            "Bytes": 9080
+          },
+          {
+            "Nanoseconds": 7539,
+            "Bytes": 9080
+          },
+          {
+            "Nanoseconds": 8487.06,
+            "Bytes": 9080
+          }
+        ],
+        "MedianNanoseconds": 8487.06,
+        "MedianBytes": 9080
+      },
+      {
+        "Name": "one-function-of-1000",
+        "RetainedUnrelatedDeclarations": true,
+        "Batches": [
+          {
+            "Nanoseconds": 10009.21,
+            "Bytes": 9048
+          },
+          {
+            "Nanoseconds": 15872.96,
+            "Bytes": 9048
+          },
+          {
+            "Nanoseconds": 9122.58,
+            "Bytes": 9049.92
+          },
+          {
+            "Nanoseconds": 7568.11,
+            "Bytes": 9080
+          },
+          {
+            "Nanoseconds": 7899.77,
+            "Bytes": 9080
+          }
+        ],
+        "MedianNanoseconds": 9122.58,
+        "MedianBytes": 9049.92
+      }
+    ],
+    "revisionKind": "Local measurement checkout; published code is identified by sourceSha256"
+  }
+}

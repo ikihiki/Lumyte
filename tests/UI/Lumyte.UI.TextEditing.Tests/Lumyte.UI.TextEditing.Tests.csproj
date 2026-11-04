@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.TextEditing.Automation/Lumyte.UI.TextEditing.Automation.csproj" />
+    <Compile Include="../Lumyte.UI.Windowing.Tests/TestSource.cs" Link="Fixtures/TestSource.cs" />
+    <Compile Include="../../../samples/Lumyte.UI.Shared/UiSampleAutomationHost.cs" Link="Fixtures/UiSampleAutomationHost.cs" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.TextEditing.Parley/Lumyte.UI.TextEditing.Parley.csproj" />
+    <None Include="../../Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf" Link="Fonts/DejaVuSans.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.TextEditing/Lumyte.UI.TextEditing.csproj" />
+    <ProjectReference Include="../../../src/Platform/Lumyte.Platform.TextInput.Abstractions/Lumyte.Platform.TextInput.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

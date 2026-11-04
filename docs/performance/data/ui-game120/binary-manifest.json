@@ -1,0 +1,86 @@
+[
+  {
+    "Role": "baseline",
+    "File": "Lumyte.UI.Application.Tests.dll",
+    "Bytes": 49664,
+    "Sha256": "16368B6A1B7FE48B8F43EBA40157213CE562D7CE429C04DAA02B26CA37A0A36A"
+  },
+  {
+    "Role": "baseline",
+    "File": "Lumyte.UI.Application.dll",
+    "Bytes": 484352,
+    "Sha256": "AEFCC8E235C37DDE857B17286D97ABB812A0AFDA143E8785F66011402F9BF8A1"
+  },
+  {
+    "Role": "baseline",
+    "File": "Lumyte.UI.Application.Desktop.dll",
+    "Bytes": 13312,
+    "Sha256": "70B166C9450E129CF8DB046E0E27B1544C40EDBCBFDED965B5B9B0F2D93013D8"
+  },
+  {
+    "Role": "baseline",
+    "File": "Lumyte.UI.dll",
+    "Bytes": 192000,
+    "Sha256": "6420AF27402FE0CA27FE537D3767163A421657727046706EA2CA8B320FBD1028"
+  },
+  {
+    "Role": "baseline",
+    "File": "Lumyte.Graphics.Drawing2D.dll",
+    "Bytes": 1054720,
+    "Sha256": "C3B4AE74368EE64F5CB1BDDCC453BF9A6FB812647085E2F96F22BDA1852D1706"
+  },
+  {
+    "Role": "baseline",
+    "File": "Lumyte.Graphics.Shared.dll",
+    "Bytes": 43520,
+    "Sha256": "BC8D637116427BFD6F17BD7583A03378797B2D20CEB345ED163D61814C76B861"
+  },
+  {
+    "Role": "baseline",
+    "File": "Lumyte.Graphics.Wgpu.dll",
+    "Bytes": 141312,
+    "Sha256": "0B9CE4E62E381E9445C62A02DF1E7CD943627E2A2EBF0C412B7976157A263A5C"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.UI.Application.Tests.dll",
+    "Bytes": 49664,
+    "Sha256": "16368B6A1B7FE48B8F43EBA40157213CE562D7CE429C04DAA02B26CA37A0A36A"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.UI.Application.dll",
+    "Bytes": 485376,
+    "Sha256": "F85F0340F6D426925C8139BCFD5FE62C6413823146F165C04BE7C636E387A9DC"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.UI.Application.Desktop.dll",
+    "Bytes": 14848,
+    "Sha256": "7E74129CFDB2230D1588C54A88A0FE24BC43633757B897167D6AD8E6F4221D1D"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.UI.dll",
+    "Bytes": 192000,
+    "Sha256": "1F92FE2EEC4EDC9C341AEF593C248D42AE168EC53CF8C05389654AFC47337752"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.Graphics.Drawing2D.dll",
+    "Bytes": 1347072,
+    "Sha256": "D661D800EB6A52D5E813F6095C388207EFA7B532DC56D9C31D58F2CE3F203A6E"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.Graphics.Shared.dll",
+    "Bytes": 43520,
+    "Sha256": "D216FE942E681EBC7751CAFE46F568CBE320BBA5E1AB88FF1A1225CE11A3BADC"
+  },
+  {
+    "Role": "final",
+    "File": "Lumyte.Graphics.Wgpu.dll",
+    "Bytes": 141312,
+    "Sha256": "ED788552DE12243CB0FD93AAC1DFC24F32E3733B81553FC315198B113FA82863"
+  }
+]

@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-31",
+  "baseline": "291b3fe85aed39438fac266d0dbcf168a5ba2e93",
+  "candidateSourceTree": "f87e99e6677c4dd407fe085ade51808066f3391b",
+  "sdk": "10.0.401",
+  "mode": "Release, DOTNET_TieredCompilation=0, DOTNET_gcServer=0",
+  "iterationsPerBatch": 100,
+  "batchCount": 5,
+  "warmup": 5,
+  "before": [
+    {
+      "Name": "validate-editors-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 30,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 30,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 27,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 27,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 26,
+          "Bytes": 0
+        }
+      ],
+      "MedianNanoseconds": 27,
+      "MedianBytes": 0
+    },
+    {
+      "Name": "signal-rebuild-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 2168138,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 1370056,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 1391733,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 1320006,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 1325513,
+          "Bytes": 2164408
+        }
+      ],
+      "MedianNanoseconds": 1370056,
+      "MedianBytes": 2164408
+    }
+  ],
+  "after": [
+    {
+      "Name": "validate-editors-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 30,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 29,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 28,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 28,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 28,
+          "Bytes": 0
+        }
+      ],
+      "MedianNanoseconds": 28,
+      "MedianBytes": 0
+    },
+    {
+      "Name": "signal-rebuild-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 1925493,
+          "Bytes": 2164176
+        },
+        {
+          "Nanoseconds": 1379375,
+          "Bytes": 2164176
+        },
+        {
+          "Nanoseconds": 1297049,
+          "Bytes": 2164176
+        },
+        {
+          "Nanoseconds": 1342474,
+          "Bytes": 2164176
+        },
+        {
+          "Nanoseconds": 1331031,
+          "Bytes": 2164176
+        }
+      ],
+      "MedianNanoseconds": 1342474,
+      "MedianBytes": 2164176
+    }
+  ]
+}

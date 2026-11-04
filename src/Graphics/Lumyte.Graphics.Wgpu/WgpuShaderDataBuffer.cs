@@ -17,7 +17,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
 
         T empty = default;
         ShaderValueSnapshot codec = IShaderArguments.Capture(in empty);
-        Layout = ShaderDataLayout.Data(artifact.GetTarget(owner.Caps.ShaderTarget), codec.ShaderTypeName);
+        Layout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, codec.ShaderTypeName);
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));

@@ -1,0 +1,734 @@
+{
+  "label": "generic-events-b4595fd",
+  "measuredAtUtc": "2026-10-29T05:50:11.7888109+00:00",
+  "serverGc": false,
+  "tieredCompilation": "0",
+  "stopwatchFrequency": 1000000000,
+  "framework": ".NET 10.0.12",
+  "os": "Debian GNU/Linux 13 (trixie)",
+  "processors": 4,
+  "results": [
+    {
+      "shape": "small",
+      "scenario": "captured-move-reuse-event",
+      "widgets": 97,
+      "dispatches": 1,
+      "iterations": 5000000,
+      "nsMedian": 21.0879706,
+      "nsMin": 18.5990644,
+      "nsMax": 36.6601008,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        20.7456002,
+        19.0830992,
+        29.868459,
+        36.6601008,
+        21.975652,
+        21.0879706,
+        18.5990644
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "small",
+      "scenario": "uncaptured-move-in-viewport",
+      "widgets": 97,
+      "dispatches": 1,
+      "iterations": 87432,
+      "nsMedian": 1348.695180254369,
+      "nsMin": 1226.5243503522738,
+      "nsMax": 2364.6575624485313,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        1348.695180254369,
+        1247.038281178516,
+        1226.5243503522738,
+        1343.5872335071826,
+        1480.4392899624852,
+        2247.6740323908866,
+        2364.6575624485313
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "typical",
+      "scenario": "captured-move-reuse-event",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 4571428,
+      "nsMedian": 20.084212198026524,
+      "nsMin": 17.940696430087055,
+      "nsMax": 22.675148115643516,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        22.675148115643516,
+        21.684369304296162,
+        17.940696430087055,
+        19.157574832196854,
+        22.172834615354326,
+        20.084212198026524,
+        18.889928923741117
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "typical",
+      "scenario": "captured-move-create-event",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 5000000,
+      "nsMedian": 23.8858936,
+      "nsMin": 21.8272298,
+      "nsMax": 37.1283054,
+      "bytesPerOperation": 40,
+      "nsSamples": [
+        37.1283054,
+        26.3336548,
+        21.8272298,
+        24.0441316,
+        21.9249492,
+        23.8858936,
+        23.5870136
+      ],
+      "bytesSamples": [
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40
+      ],
+      "gen0Collections": [
+        1,
+        1,
+        2,
+        1,
+        2,
+        1,
+        2
+      ]
+    },
+    {
+      "shape": "typical",
+      "scenario": "down-up-reuse-event",
+      "widgets": 769,
+      "dispatches": 2,
+      "iterations": 10376,
+      "nsMedian": 5021.589870855822,
+      "nsMin": 4627.044140323825,
+      "nsMax": 5363.038164996145,
+      "bytesPerOperation": 16,
+      "nsSamples": [
+        4627.044140323825,
+        4935.431717424826,
+        4804.54785080956,
+        5363.038164996145,
+        5280.825751734773,
+        5021.589870855822,
+        5044.556717424826
+      ],
+      "bytesSamples": [
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "typical",
+      "scenario": "layout-and-input-refresh",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 262,
+      "nsMedian": 335557.5763358779,
+      "nsMin": 255618.00763358778,
+      "nsMax": 536743.7213740458,
+      "bytesPerOperation": 138440,
+      "nsSamples": [
+        536743.7213740458,
+        393653.56870229007,
+        396644.59160305344,
+        335557.5763358779,
+        255618.00763358778,
+        255668.48473282444,
+        301413.2404580153
+      ],
+      "bytesSamples": [
+        138440,
+        138440,
+        138440,
+        138440,
+        138440,
+        138440,
+        138440
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "typical",
+      "scenario": "input-only-refresh",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 2636,
+      "nsMedian": 43866.57018209408,
+      "nsMin": 40201.158194233685,
+      "nsMax": 46790.39643399089,
+      "bytesPerOperation": 64,
+      "nsSamples": [
+        42569.47230652504,
+        44219.80614567526,
+        42638.12253414264,
+        43866.57018209408,
+        46790.39643399089,
+        40201.158194233685,
+        46633.778452200306
+      ],
+      "bytesSamples": [
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "typical",
+      "scenario": "uncaptured-move-in-viewport",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 10502,
+      "nsMedian": 10918.534564844791,
+      "nsMin": 10084.676918682157,
+      "nsMax": 15874.286231194059,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        10640.15368501238,
+        12605.42725195201,
+        15874.286231194059,
+        10084.676918682157,
+        11088.762997524282,
+        10918.534564844791,
+        10588.847267187202
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "wide",
+      "scenario": "captured-move-reuse-event",
+      "widgets": 6145,
+      "dispatches": 1,
+      "iterations": 4000000,
+      "nsMedian": 17.05014925,
+      "nsMin": 16.62418525,
+      "nsMax": 19.98293225,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        18.20988725,
+        17.43233575,
+        16.79664,
+        19.98293225,
+        16.62418525,
+        17.05014925,
+        16.979225
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "wide",
+      "scenario": "uncaptured-move-in-viewport",
+      "widgets": 6145,
+      "dispatches": 1,
+      "iterations": 986,
+      "nsMedian": 115026.0476673428,
+      "nsMin": 108947.21501014198,
+      "nsMax": 120136.29411764706,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        108947.21501014198,
+        120136.29411764706,
+        117632.42697768763,
+        115026.0476673428,
+        110511.4705882353,
+        109132.77687626774,
+        119912.28194726167
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "large",
+      "scenario": "captured-move-reuse-event",
+      "widgets": 10241,
+      "dispatches": 1,
+      "iterations": 5000000,
+      "nsMedian": 16.6093864,
+      "nsMin": 16.1224298,
+      "nsMax": 19.2216648,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        16.5955428,
+        16.6093864,
+        16.438715,
+        16.1224298,
+        16.972496,
+        18.0232104,
+        19.2216648
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "large",
+      "scenario": "layout-and-input-refresh",
+      "widgets": 10241,
+      "dispatches": 1,
+      "iterations": 18,
+      "nsMedian": 4488904.388888889,
+      "nsMin": 4153687.722222222,
+      "nsMax": 6092645.5,
+      "bytesPerOperation": 2121888,
+      "nsSamples": [
+        6092645.5,
+        5007139.5,
+        4772240.444444444,
+        4488904.388888889,
+        4304215.666666667,
+        4153687.722222222,
+        4263005.888888889
+      ],
+      "bytesSamples": [
+        2121888,
+        2121888,
+        2121888,
+        2121888,
+        2121888,
+        2121888,
+        2121888
+      ],
+      "gen0Collections": [
+        3,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "shape": "large",
+      "scenario": "input-only-refresh",
+      "widgets": 10241,
+      "dispatches": 1,
+      "iterations": 190,
+      "nsMedian": 495427.2105263158,
+      "nsMin": 488016.5842105263,
+      "nsMax": 542548.1947368421,
+      "bytesPerOperation": 64,
+      "nsSamples": [
+        491775.0210526316,
+        488016.5842105263,
+        500561.95789473684,
+        495427.2105263158,
+        542548.1947368421,
+        493944.4894736842,
+        498190.74736842106
+      ],
+      "bytesSamples": [
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "large",
+      "scenario": "uncaptured-move-in-viewport",
+      "widgets": 10241,
+      "dispatches": 1,
+      "iterations": 528,
+      "nsMedian": 192439.69886363635,
+      "nsMin": 189887.60984848486,
+      "nsMax": 212023.44128787878,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        192439.69886363635,
+        197753.9696969697,
+        202957.68181818182,
+        189887.60984848486,
+        190069.73674242425,
+        191105.52462121213,
+        212023.44128787878
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "large",
+      "scenario": "down-up-reuse-event",
+      "widgets": 10241,
+      "dispatches": 2,
+      "iterations": 516,
+      "nsMedian": 98246.75193798449,
+      "nsMin": 95185.18313953489,
+      "nsMax": 108900.4234496124,
+      "bytesPerOperation": 16,
+      "nsSamples": [
+        100226.83817829458,
+        98246.75193798449,
+        95185.18313953489,
+        96672.29554263566,
+        108900.4234496124,
+        99781.20058139534,
+        96225.36434108527
+      ],
+      "bytesSamples": [
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "deep",
+      "scenario": "captured-move-reuse-event",
+      "widgets": 67,
+      "dispatches": 1,
+      "iterations": 4571428,
+      "nsMedian": 16.599749137468642,
+      "nsMin": 16.198187962273494,
+      "nsMax": 18.79104953638119,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        16.599749137468642,
+        16.198187962273494,
+        16.89109048638631,
+        18.79104953638119,
+        16.52009569001196,
+        16.842939230367403,
+        16.272160690270088
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "deep",
+      "scenario": "uncaptured-move-in-viewport",
+      "widgets": 67,
+      "dispatches": 1,
+      "iterations": 91168,
+      "nsMedian": 1153.846525096525,
+      "nsMin": 1134.7456234643735,
+      "nsMax": 1306.3853764478765,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        1147.194169006669,
+        1181.953327922078,
+        1193.4833055458055,
+        1153.846525096525,
+        1134.7456234643735,
+        1139.8945902070902,
+        1306.3853764478765
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "eight-pointers",
+      "scenario": "captured-move-reuse-event",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 4000000,
+      "nsMedian": 16.6563405,
+      "nsMin": 16.447286,
+      "nsMax": 18.09233325,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        16.81779,
+        16.50898975,
+        17.03910925,
+        16.49063625,
+        16.447286,
+        16.6563405,
+        18.09233325
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "shape": "eight-pointers",
+      "scenario": "uncaptured-move-in-viewport",
+      "widgets": 769,
+      "dispatches": 1,
+      "iterations": 11244,
+      "nsMedian": 9607.904037709,
+      "nsMin": 9308.570615439345,
+      "nsMax": 10978.59542867307,
+      "bytesPerOperation": 0,
+      "nsSamples": [
+        9810.564300960512,
+        9487.059587335469,
+        9395.516542155816,
+        10978.59542867307,
+        10623.156438989683,
+        9607.904037709,
+        9308.570615439345
+      ],
+      "bytesSamples": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gen0Collections": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

@@ -9,6 +9,7 @@ internal sealed class DrawingResourceState2D : IDisposable
     private readonly Action? _validate;
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
+    private SolidRectangleResources2D? _rectangles;
     private int _users = 1;
     private bool _returned;
     private bool _closing;
@@ -68,6 +69,24 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
+    internal SolidRectangleResources2D? Rectangles()
+    {
+        lock (_gate)
+        {
+            EnsureResources();
+            Validate();
+            GraphicsPipelineDesc pipeline = _resources!.Pipeline.Desc;
+            if (!ReferenceEquals(pipeline.VertexShader.Artifact, DrawingShaders2D.Vertex)
+                || !ReferenceEquals(pipeline.FragmentShader?.Artifact, DrawingShaders2D.Fragment)
+                || pipeline.TopologyClass != PrimitiveTopologyClass.Triangle || pipeline.AlphaToCoverageEnable)
+            {
+                return null;
+            }
+
+            return _rectangles ??= new(_resources.Device);
+        }
+    }
+
     internal void Validate()
     {
         lock (_gate)
@@ -119,6 +138,8 @@ internal sealed class DrawingResourceState2D : IDisposable
         if (_users == 1)
         {
             _closing = true;
+            _rectangles?.Dispose();
+            _rectangles = null;
             _owner?.Dispose();
             _owner = null;
         }

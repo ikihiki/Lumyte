@@ -1,0 +1,3594 @@
+{
+  "metadata": [
+    {
+      "variant": "baseline",
+      "repeat": 1,
+      "metadata": {
+        "scope": "public-retained-api-metadata",
+        "sourceRevision": "1c4470d10d83ced90c78b06ff2ec0e7b53be38aa",
+        "sourceDirty": "benchmark-instrumentation-only",
+        "repository": "[BASELINE]",
+        "process": 852440,
+        "runtime": "10.0.12",
+        "os": "Unix 7.0.0.42",
+        "logicalProcessors": 32,
+        "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+        "configuration": "Release required by reproduction command; not runtime-detected",
+        "tieredCompilation": "0",
+        "tieredPGO": "0",
+        "serverGC": false,
+        "icd": "/usr/share/vulkan/icd.d/radeon_icd.json",
+        "warmup": 10,
+        "samples": 20,
+        "reverse": false,
+        "cpuOnly": true,
+        "window": "per-frame Stopwatch elapsed CPU wall milliseconds; async prepare may include waits, not thread CPU cycles",
+        "drawCalls": "actual successful IRenderEncoder Draw/DrawIndexed/DrawIndirect/DrawIndexedIndirect calls forwarded to Vulkan; not GPU work/primitive counters",
+        "boundaries": "inputMs: signal set or Canvas new affected-node recording + ReplaceContent; updateMs: actual UiDrawingScene2D.Update only; referenceMs: independent full Canvas generation only in legacy mode; prepareMs: borrow + awaited PrepareAsync + lease release; recordFinishMs: Frame.Record through command Finish, including timer end; encodeMs: command creation + barrier + timer begin + Record/Finish; submitMs: queue Submit + excluded AttachSubmission tail; submitCompletionMs: submit start through fence wait; retireMs: commands Dispose then frame Retire/Dispose after completed fence",
+        "correctness": "independent full Canvas exact byte readback before measurements for both states and after each series; excluded from all windows",
+        "size": "256x256 RGBA8 sRGB, identical logical coordinates and command order for every partition; UI grid varies with count but is identical across modes",
+        "ui10000": "CPU update profile only; no GPU Prepare/Record or GPU pixel correctness claim",
+        "uiDirtyFragments": "one leaf changes; visual invalidation also re-records empty ancestors: flat panel 2 fragments, grid stacks 3; LastRecordingCount reports actual calls",
+        "retentionBudget": "default renderer cache budget: 512 assets; UI1000 may evict/miss, no guarantee of all-static reuse",
+        "cache": "public renderer counters; compiledRuns is NOT a draw call count; CachedBytes is an estimate",
+        "maxCachedAssets": 512,
+        "maxCachedBytes": 67108864,
+        "maxFramesInFlight": 3
+      }
+    },
+    {
+      "variant": "current",
+      "repeat": 1,
+      "metadata": {
+        "scope": "public-retained-api-metadata",
+        "sourceRevision": "916b6ded8bed166098d7c17de194203820f41852",
+        "sourceDirty": "0",
+        "repository": "[CHECKOUT]",
+        "process": 852717,
+        "runtime": "10.0.12",
+        "os": "Unix 7.0.0.42",
+        "logicalProcessors": 32,
+        "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+        "configuration": "Release required by reproduction command; not runtime-detected",
+        "tieredCompilation": "0",
+        "tieredPGO": "0",
+        "serverGC": false,
+        "icd": "/usr/share/vulkan/icd.d/radeon_icd.json",
+        "warmup": 10,
+        "samples": 20,
+        "reverse": false,
+        "cpuOnly": false,
+        "window": "per-frame Stopwatch elapsed CPU wall milliseconds; async prepare may include waits, not thread CPU cycles",
+        "drawCalls": "actual successful IRenderEncoder Draw/DrawIndexed/DrawIndirect/DrawIndexedIndirect calls forwarded to Vulkan; not GPU work/primitive counters",
+        "boundaries": "inputMs: signal set or Canvas new affected-node recording + ReplaceContent; updateMs: actual UiDrawingScene2D.Update only; referenceMs: independent full Canvas generation only in legacy mode; prepareMs: borrow + awaited PrepareAsync + lease release; recordFinishMs: Frame.Record through command Finish, including timer end; encodeMs: command creation + barrier + timer begin + Record/Finish; submitMs: queue Submit + excluded AttachSubmission tail; submitCompletionMs: submit start through fence wait; retireMs: commands Dispose then frame Retire/Dispose after completed fence",
+        "correctness": "independent full Canvas exact byte readback before measurements for both states and after each series; excluded from all windows",
+        "size": "256x256 RGBA8 sRGB, identical logical coordinates and command order for every partition; UI grid varies with count but is identical across modes",
+        "ui10000": "CPU update profile only; no GPU Prepare/Record or GPU pixel correctness claim",
+        "uiDirtyFragments": "one leaf changes; visual invalidation also re-records empty ancestors: flat panel 2 fragments, grid stacks 3; LastRecordingCount reports actual calls",
+        "retentionBudget": "default renderer cache budget: 512 assets; UI1000 may evict/miss, no guarantee of all-static reuse",
+        "cache": "public renderer counters; compiledRuns is NOT a draw call count; CachedBytes is an estimate",
+        "maxCachedAssets": 512,
+        "maxCachedBytes": 67108864,
+        "maxFramesInFlight": 3
+      }
+    },
+    {
+      "variant": "baseline",
+      "repeat": 2,
+      "metadata": {
+        "scope": "public-retained-api-metadata",
+        "sourceRevision": "1c4470d10d83ced90c78b06ff2ec0e7b53be38aa",
+        "sourceDirty": "benchmark-instrumentation-only",
+        "repository": "[BASELINE]",
+        "process": 853537,
+        "runtime": "10.0.12",
+        "os": "Unix 7.0.0.42",
+        "logicalProcessors": 32,
+        "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+        "configuration": "Release required by reproduction command; not runtime-detected",
+        "tieredCompilation": "0",
+        "tieredPGO": "0",
+        "serverGC": false,
+        "icd": "/usr/share/vulkan/icd.d/radeon_icd.json",
+        "warmup": 10,
+        "samples": 20,
+        "reverse": true,
+        "cpuOnly": true,
+        "window": "per-frame Stopwatch elapsed CPU wall milliseconds; async prepare may include waits, not thread CPU cycles",
+        "drawCalls": "actual successful IRenderEncoder Draw/DrawIndexed/DrawIndirect/DrawIndexedIndirect calls forwarded to Vulkan; not GPU work/primitive counters",
+        "boundaries": "inputMs: signal set or Canvas new affected-node recording + ReplaceContent; updateMs: actual UiDrawingScene2D.Update only; referenceMs: independent full Canvas generation only in legacy mode; prepareMs: borrow + awaited PrepareAsync + lease release; recordFinishMs: Frame.Record through command Finish, including timer end; encodeMs: command creation + barrier + timer begin + Record/Finish; submitMs: queue Submit + excluded AttachSubmission tail; submitCompletionMs: submit start through fence wait; retireMs: commands Dispose then frame Retire/Dispose after completed fence",
+        "correctness": "independent full Canvas exact byte readback before measurements for both states and after each series; excluded from all windows",
+        "size": "256x256 RGBA8 sRGB, identical logical coordinates and command order for every partition; UI grid varies with count but is identical across modes",
+        "ui10000": "CPU update profile only; no GPU Prepare/Record or GPU pixel correctness claim",
+        "uiDirtyFragments": "one leaf changes; visual invalidation also re-records empty ancestors: flat panel 2 fragments, grid stacks 3; LastRecordingCount reports actual calls",
+        "retentionBudget": "default renderer cache budget: 512 assets; UI1000 may evict/miss, no guarantee of all-static reuse",
+        "cache": "public renderer counters; compiledRuns is NOT a draw call count; CachedBytes is an estimate",
+        "maxCachedAssets": 512,
+        "maxCachedBytes": 67108864,
+        "maxFramesInFlight": 3
+      }
+    },
+    {
+      "variant": "current",
+      "repeat": 2,
+      "metadata": {
+        "scope": "public-retained-api-metadata",
+        "sourceRevision": "916b6ded8bed166098d7c17de194203820f41852",
+        "sourceDirty": "0",
+        "repository": "[CHECKOUT]",
+        "process": 853024,
+        "runtime": "10.0.12",
+        "os": "Unix 7.0.0.42",
+        "logicalProcessors": 32,
+        "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+        "configuration": "Release required by reproduction command; not runtime-detected",
+        "tieredCompilation": "0",
+        "tieredPGO": "0",
+        "serverGC": false,
+        "icd": "/usr/share/vulkan/icd.d/radeon_icd.json",
+        "warmup": 10,
+        "samples": 20,
+        "reverse": true,
+        "cpuOnly": false,
+        "window": "per-frame Stopwatch elapsed CPU wall milliseconds; async prepare may include waits, not thread CPU cycles",
+        "drawCalls": "actual successful IRenderEncoder Draw/DrawIndexed/DrawIndirect/DrawIndexedIndirect calls forwarded to Vulkan; not GPU work/primitive counters",
+        "boundaries": "inputMs: signal set or Canvas new affected-node recording + ReplaceContent; updateMs: actual UiDrawingScene2D.Update only; referenceMs: independent full Canvas generation only in legacy mode; prepareMs: borrow + awaited PrepareAsync + lease release; recordFinishMs: Frame.Record through command Finish, including timer end; encodeMs: command creation + barrier + timer begin + Record/Finish; submitMs: queue Submit + excluded AttachSubmission tail; submitCompletionMs: submit start through fence wait; retireMs: commands Dispose then frame Retire/Dispose after completed fence",
+        "correctness": "independent full Canvas exact byte readback before measurements for both states and after each series; excluded from all windows",
+        "size": "256x256 RGBA8 sRGB, identical logical coordinates and command order for every partition; UI grid varies with count but is identical across modes",
+        "ui10000": "CPU update profile only; no GPU Prepare/Record or GPU pixel correctness claim",
+        "uiDirtyFragments": "one leaf changes; visual invalidation also re-records empty ancestors: flat panel 2 fragments, grid stacks 3; LastRecordingCount reports actual calls",
+        "retentionBudget": "default renderer cache budget: 512 assets; UI1000 may evict/miss, no guarantee of all-static reuse",
+        "cache": "public renderer counters; compiledRuns is NOT a draw call count; CachedBytes is an estimate",
+        "maxCachedAssets": 512,
+        "maxCachedBytes": 67108864,
+        "maxFramesInFlight": 3
+      }
+    }
+  ],
+  "samplesPerCase": 40,
+  "cpu": [
+    {
+      "key": [
+        "baseline",
+        100,
+        "one-leaf-fill-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0001,
+          "p95": 0.000534999999999998,
+          "min": 0.0001,
+          "max": 0.0012
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.035199999999999995,
+          "p95": 0.048089999999999945,
+          "min": 0.0258,
+          "max": 0.0851
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0002,
+          0.0001
+        ],
+        "updateMs": [
+          0.044149999999999995,
+          0.027549999999999998
+        ],
+        "lastRecordingCount": [
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "baseline",
+        100,
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0242,
+          "p95": 0.0261,
+          "min": 0.0223,
+          "max": 0.0277
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0254,
+          0.02265
+        ],
+        "lastRecordingCount": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "baseline",
+        1000,
+        "one-leaf-fill-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0002,
+          "p95": 0.001214999999999999,
+          "min": 0.0001,
+          "max": 0.0021
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.8081499999999999,
+          "p95": 1.0380249999999998,
+          "min": 0.7945,
+          "max": 1.2974
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0002,
+          0.0002
+        ],
+        "updateMs": [
+          0.8649,
+          0.79915
+        ],
+        "lastRecordingCount": [
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "baseline",
+        1000,
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.7973,
+          "p95": 0.8145849999999999,
+          "min": 0.7819,
+          "max": 1.1295
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.80705,
+          0.79105
+        ],
+        "lastRecordingCount": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "baseline",
+        10000,
+        "one-leaf-fill-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.00115,
+          "p95": 0.0051199999999999996,
+          "min": 0.0002,
+          "max": 0.0061
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 65.81375,
+          "p95": 68.50574499999999,
+          "min": 63.4158,
+          "max": 82.5954
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.00155,
+          0.0006
+        ],
+        "updateMs": [
+          64.67484999999999,
+          66.1565
+        ],
+        "lastRecordingCount": [
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "baseline",
+        10000,
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 62.95,
+          "p95": 64.34676499999999,
+          "min": 62.4741,
+          "max": 68.3312
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          62.7685,
+          63.18445
+        ],
+        "lastRecordingCount": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "current",
+        100,
+        "one-leaf-fill-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0001,
+          "p95": 0.0001,
+          "min": 0.0001,
+          "max": 0.0007
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0174,
+          "p95": 0.019674999999999995,
+          "min": 0.0165,
+          "max": 0.0252
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0001,
+          0.0001
+        ],
+        "updateMs": [
+          0.0182,
+          0.0167
+        ],
+        "lastRecordingCount": [
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "current",
+        100,
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.014450000000000001,
+          "p95": 0.016229999999999998,
+          "min": 0.0137,
+          "max": 0.0173
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.01485,
+          0.0143
+        ],
+        "lastRecordingCount": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "current",
+        1000,
+        "one-leaf-fill-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0002,
+          "p95": 0.0002,
+          "min": 0.0001,
+          "max": 0.0002
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.1406,
+          "p95": 0.149645,
+          "min": 0.1303,
+          "max": 0.1516
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0002,
+          0.0002
+        ],
+        "updateMs": [
+          0.14484999999999998,
+          0.13265
+        ],
+        "lastRecordingCount": [
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "current",
+        1000,
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.1382,
+          "p95": 0.15526499999999957,
+          "min": 0.127,
+          "max": 5.1309
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.14015,
+          0.12969999999999998
+        ],
+        "lastRecordingCount": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "current",
+        10000,
+        "one-leaf-fill-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0003,
+          "p95": 0.001949999999999997,
+          "min": 0.0002,
+          "max": 0.0044
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 1.4419499999999998,
+          "p95": 2.878554999999999,
+          "min": 1.3665,
+          "max": 10.9662
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.00025,
+          0.00035
+        ],
+        "updateMs": [
+          1.3951,
+          1.5437
+        ],
+        "lastRecordingCount": [
+          2.0,
+          2.0
+        ]
+      }
+    },
+    {
+      "key": [
+        "current",
+        10000,
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 1.47735,
+          "p95": 2.80975,
+          "min": 1.3674,
+          "max": 6.8021
+        },
+        "lastRecordingCount": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          1.4798,
+          1.4737
+        ],
+        "lastRecordingCount": [
+          0.0,
+          0.0
+        ]
+      }
+    }
+  ],
+  "gpu": [
+    {
+      "key": [
+        "actual-ui-adapter",
+        100,
+        null,
+        "independent-canvas",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0007,
+          "p95": 0.0014149999999999992,
+          "min": 0.0005,
+          "max": 0.002
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0287,
+          "p95": 0.04072,
+          "min": 0.0254,
+          "max": 0.0444
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0116,
+          "p95": 0.013609999999999999,
+          "min": 0.011,
+          "max": 0.0178
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0223,
+          "p95": 0.028694999999999995,
+          "min": 0.0201,
+          "max": 0.0346
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.03485,
+          "p95": 0.05945999999999997,
+          "min": 0.0308,
+          "max": 0.111
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.0502,
+          "p95": 0.08466499999999993,
+          "min": 0.0448,
+          "max": 0.138
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0752,
+          "p95": 1.090915,
+          "min": 1.0716,
+          "max": 1.0976
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.0267,
+          "p95": 0.04302999999999999,
+          "min": 0.0205,
+          "max": 0.05
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.021300471158981323,
+          "p95": 0.02505760976886749,
+          "min": 0.020599138618469237,
+          "max": 0.028333834636688232
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0007,
+          0.0007
+        ],
+        "updateMs": [
+          0.0296,
+          0.027999999999999997
+        ],
+        "referenceMs": [
+          0.012,
+          0.0115
+        ],
+        "prepareMs": [
+          0.02175,
+          0.022600000000000002
+        ],
+        "recordFinishMs": [
+          0.03775,
+          0.0343
+        ],
+        "encodeMs": [
+          0.0542,
+          0.04965
+        ],
+        "submitCompletionMs": [
+          1.0781,
+          1.0746
+        ],
+        "retireMs": [
+          0.0281,
+          0.02465
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.02079951934432983,
+          0.02304378347396851
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        100,
+        null,
+        "independent-canvas",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0188,
+          "p95": 0.019729999999999998,
+          "min": 0.0179,
+          "max": 0.0215
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.01165,
+          "p95": 0.012709999999999999,
+          "min": 0.011,
+          "max": 0.013
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0193,
+          "p95": 0.022034999999999996,
+          "min": 0.0189,
+          "max": 0.0236
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0271,
+          "p95": 0.03075499999999999,
+          "min": 0.0246,
+          "max": 0.0433
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.0403,
+          "p95": 0.045099999999999994,
+          "min": 0.0363,
+          "max": 0.0581
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0717,
+          "p95": 1.08108,
+          "min": 1.0566,
+          "max": 1.0851
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.0235,
+          "p95": 0.030074999999999994,
+          "min": 0.0207,
+          "max": 0.0334
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.02103997621536255,
+          "p95": 0.021442741474342344,
+          "min": 0.020639214763641358,
+          "max": 0.021641118392944338
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.019,
+          0.0186
+        ],
+        "referenceMs": [
+          0.01205,
+          0.0115
+        ],
+        "prepareMs": [
+          0.01965,
+          0.01915
+        ],
+        "recordFinishMs": [
+          0.02825,
+          0.0264
+        ],
+        "encodeMs": [
+          0.0412,
+          0.03955
+        ],
+        "submitCompletionMs": [
+          1.0715,
+          1.07295
+        ],
+        "retireMs": [
+          0.02395,
+          0.022449999999999998
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.02091974777984619,
+          0.021140166578292846
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        100,
+        null,
+        "public-retained",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0010500000000000002,
+          "p95": 0.0015,
+          "min": 0.0007,
+          "max": 0.0041
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.036250000000000004,
+          "p95": 0.04378,
+          "min": 0.0321,
+          "max": 0.1199
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.06375,
+          "p95": 0.08092499999999998,
+          "min": 0.0574,
+          "max": 0.2108
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 1.71555,
+          "p95": 2.317125,
+          "min": 1.5447,
+          "max": 2.3899
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 1.7665,
+          "p95": 2.3341950000000002,
+          "min": 1.5624,
+          "max": 2.4102
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 2.1647499999999997,
+          "p95": 2.18784,
+          "min": 1.1068,
+          "max": 2.1929
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.7283999999999999,
+          "p95": 0.9234649999999993,
+          "min": 0.6229,
+          "max": 1.351
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 100.0,
+          "p95": 100.0,
+          "min": 100,
+          "max": 100
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 99.0,
+          "p95": 99.0,
+          "min": 99,
+          "max": 99
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.5301673244819641,
+          "p95": 0.5309768626144409,
+          "min": 0.5182647093658447,
+          "max": 0.5318905987243653
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0012499999999999998,
+          0.001
+        ],
+        "updateMs": [
+          0.0409,
+          0.0357
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.07250000000000001,
+          0.06255
+        ],
+        "recordFinishMs": [
+          1.76965,
+          1.6547
+        ],
+        "encodeMs": [
+          1.79115,
+          1.6722000000000001
+        ],
+        "submitCompletionMs": [
+          2.16185,
+          2.1679000000000004
+        ],
+        "retireMs": [
+          0.7466999999999999,
+          0.7283999999999999
+        ],
+        "actualIssuedDrawCalls": [
+          100.0,
+          100.0
+        ],
+        "compiledRuns": [
+          1.0,
+          1.0
+        ],
+        "reusedRuns": [
+          99.0,
+          99.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.5302875529174804,
+          0.530127248336792
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        100,
+        null,
+        "public-retained",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.024399999999999998,
+          "p95": 0.027024999999999983,
+          "min": 0.0217,
+          "max": 0.0361
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.03435,
+          "p95": 0.03854,
+          "min": 0.0334,
+          "max": 0.0509
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 1.7377500000000001,
+          "p95": 2.5625199999999997,
+          "min": 1.4911,
+          "max": 6.6308
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 1.7719999999999998,
+          "p95": 2.58228,
+          "min": 1.5111,
+          "max": 6.6794
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 2.16495,
+          "p95": 2.18939,
+          "min": 1.1136,
+          "max": 2.2019
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.7021,
+          "p95": 0.9193649999999999,
+          "min": 0.608,
+          "max": 1.5132
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 100.0,
+          "p95": 100.0,
+          "min": 100,
+          "max": 100
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 100.0,
+          "p95": 100.0,
+          "min": 100,
+          "max": 100
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.528424012166977,
+          "p95": 0.5292095046123505,
+          "min": 0.5274822227554321,
+          "max": 0.5294058777236939
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0235,
+          0.0252
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.03435,
+          0.03435
+        ],
+        "recordFinishMs": [
+          1.61925,
+          1.8030499999999998
+        ],
+        "encodeMs": [
+          1.63855,
+          1.86735
+        ],
+        "submitCompletionMs": [
+          2.16495,
+          2.1505
+        ],
+        "retireMs": [
+          0.6603,
+          0.7410000000000001
+        ],
+        "actualIssuedDrawCalls": [
+          100.0,
+          100.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          100.0,
+          100.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.5285041644573212,
+          0.5283839360218048
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        1000,
+        null,
+        "independent-canvas",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0007,
+          "p95": 0.0015299999999999984,
+          "min": 0.0004,
+          "max": 0.0029
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.15475,
+          "p95": 0.23775999999999992,
+          "min": 0.1486,
+          "max": 0.4182
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.08654999999999999,
+          "p95": 0.0942699999999999,
+          "min": 0.0845,
+          "max": 0.2335
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.15925,
+          "p95": 0.45274,
+          "min": 0.1564,
+          "max": 0.4645
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0319,
+          "p95": 0.06159999999999992,
+          "min": 0.0288,
+          "max": 0.0891
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.04815,
+          "p95": 0.08855999999999987,
+          "min": 0.043,
+          "max": 0.1302
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0758,
+          "p95": 1.0933599999999999,
+          "min": 1.0368,
+          "max": 1.1069
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.038349999999999995,
+          "p95": 0.047909999999999994,
+          "min": 0.0345,
+          "max": 0.0926
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.024847210006713867,
+          "p95": 0.025249975265693666,
+          "min": 0.02424606782913208,
+          "max": 0.026690712684631347
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0006,
+          0.0008
+        ],
+        "updateMs": [
+          0.15034999999999998,
+          0.15785
+        ],
+        "referenceMs": [
+          0.08665,
+          0.0862
+        ],
+        "prepareMs": [
+          0.1587,
+          0.15955
+        ],
+        "recordFinishMs": [
+          0.0309,
+          0.03445
+        ],
+        "encodeMs": [
+          0.0464,
+          0.051449999999999996
+        ],
+        "submitCompletionMs": [
+          1.0766499999999999,
+          1.0755499999999998
+        ],
+        "retireMs": [
+          0.03665,
+          0.039
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.02468690542602539,
+          0.024967438442230226
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        1000,
+        null,
+        "independent-canvas",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.14365,
+          "p95": 0.15414499999999998,
+          "min": 0.1401,
+          "max": 0.4412
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.086,
+          "p95": 0.09119999999999999,
+          "min": 0.0832,
+          "max": 0.1316
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.1575,
+          "p95": 0.17374499999999998,
+          "min": 0.1552,
+          "max": 0.1821
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0278,
+          "p95": 0.056584999999999996,
+          "min": 0.0261,
+          "max": 0.0592
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.04225,
+          "p95": 0.07724500000000001,
+          "min": 0.0404,
+          "max": 0.0844
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0762,
+          "p95": 1.08817,
+          "min": 1.049,
+          "max": 1.1187
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.03775,
+          "p95": 0.05690999999999999,
+          "min": 0.0339,
+          "max": 0.6593
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.02468690542602539,
+          "p95": 0.02504959453983307,
+          "min": 0.02420599168395996,
+          "max": 0.025127743022918703
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.14115,
+          0.1457
+        ],
+        "referenceMs": [
+          0.086,
+          0.08595
+        ],
+        "prepareMs": [
+          0.15685,
+          0.15845
+        ],
+        "recordFinishMs": [
+          0.027299999999999998,
+          0.029900000000000003
+        ],
+        "encodeMs": [
+          0.04145,
+          0.0448
+        ],
+        "submitCompletionMs": [
+          1.0819,
+          1.0744500000000001
+        ],
+        "retireMs": [
+          0.03665,
+          0.04025
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.024787095788955688,
+          0.02466686735343933
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        1000,
+        null,
+        "public-retained",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.00465,
+          "p95": 0.006619999999999999,
+          "min": 0.0038,
+          "max": 0.0077
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.40295,
+          "p95": 0.5782849999999997,
+          "min": 0.3428,
+          "max": 0.712
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 9.92375,
+          "p95": 11.316694999999998,
+          "min": 9.0049,
+          "max": 12.2614
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 26.965049999999998,
+          "p95": 30.768015,
+          "min": 24.6893,
+          "max": 31.1171
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 26.99845,
+          "p95": 30.82319,
+          "min": 24.7211,
+          "max": 31.1695
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 5.9201999999999995,
+          "p95": 6.228475,
+          "min": 5.7669,
+          "max": 6.4346
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 22.16135,
+          "p95": 22.77792,
+          "min": 19.2319,
+          "max": 24.2694
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1000.0,
+          "p95": 1000.0,
+          "min": 1000,
+          "max": 1000
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 489.0,
+          "p95": 489.0,
+          "min": 489,
+          "max": 489
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 511.0,
+          "p95": 511.0,
+          "min": 511,
+          "max": 511
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 5.199298731977462,
+          "p95": 5.2169442586967465,
+          "min": 5.179280697463989,
+          "max": 5.224366360782623
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0048,
+          0.0045
+        ],
+        "updateMs": [
+          0.41425,
+          0.38380000000000003
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          9.79655,
+          10.0642
+        ],
+        "recordFinishMs": [
+          27.054299999999998,
+          26.41185
+        ],
+        "encodeMs": [
+          27.08335,
+          26.43775
+        ],
+        "submitCompletionMs": [
+          5.8602,
+          5.9254
+        ],
+        "retireMs": [
+          22.29885,
+          22.1006
+        ],
+        "actualIssuedDrawCalls": [
+          1000.0,
+          1000.0
+        ],
+        "compiledRuns": [
+          489.0,
+          489.0
+        ],
+        "reusedRuns": [
+          511.0,
+          511.0
+        ],
+        "gpuRecordedSpanMs": [
+          5.205169887245178,
+          5.196613630250931
+        ]
+      }
+    },
+    {
+      "key": [
+        "actual-ui-adapter",
+        1000,
+        null,
+        "public-retained",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 4.999999999999716e-06,
+          "min": 0,
+          "max": 0.0002
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.31074999999999997,
+          "p95": 0.42285999999999996,
+          "min": 0.2713,
+          "max": 0.5859
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 9.6993,
+          "p95": 11.909309999999996,
+          "min": 8.5841,
+          "max": 14.4059
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 26.744349999999997,
+          "p95": 32.988794999999996,
+          "min": 24.5767,
+          "max": 36.3738
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 26.9558,
+          "p95": 33.05597999999999,
+          "min": 25.0235,
+          "max": 36.4438
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 5.96095,
+          "p95": 6.215609999999999,
+          "min": 5.7573,
+          "max": 6.39
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 22.3405,
+          "p95": 22.827755,
+          "min": 20.0325,
+          "max": 32.6553
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1000.0,
+          "p95": 1000.0,
+          "min": 1000,
+          "max": 1000
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 488.0,
+          "p95": 488.0,
+          "min": 488,
+          "max": 488
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 512.0,
+          "p95": 512.0,
+          "min": 512,
+          "max": 512
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 5.197755800388336,
+          "p95": 5.217653606466293,
+          "min": 5.180963895561218,
+          "max": 5.23186059992981
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.32189999999999996,
+          0.3055
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          9.6771,
+          9.8474
+        ],
+        "recordFinishMs": [
+          26.723,
+          27.06
+        ],
+        "encodeMs": [
+          26.9419,
+          27.2083
+        ],
+        "submitCompletionMs": [
+          5.8627,
+          5.9907
+        ],
+        "retireMs": [
+          22.3405,
+          22.34265
+        ],
+        "actualIssuedDrawCalls": [
+          1000.0,
+          1000.0
+        ],
+        "compiledRuns": [
+          488.0,
+          488.0
+        ],
+        "reusedRuns": [
+          512.0,
+          512.0
+        ],
+        "gpuRecordedSpanMs": [
+          5.196613630250931,
+          5.199479074630737
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        1,
+        "independent-canvas",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0493,
+          "p95": 0.13991,
+          "min": 0.047,
+          "max": 0.1462
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0477,
+          "p95": 0.13429000000000002,
+          "min": 0.0455,
+          "max": 0.136
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0713,
+          "p95": 0.203015,
+          "min": 0.0692,
+          "max": 0.2304
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0325,
+          "p95": 0.08565999999999996,
+          "min": 0.0227,
+          "max": 0.1686
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.0479,
+          "p95": 0.138705,
+          "min": 0.0354,
+          "max": 0.2409
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.07345,
+          "p95": 1.1216549999999998,
+          "min": 1.0483,
+          "max": 1.1436
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.02955,
+          "p95": 0.06036499999999999,
+          "min": 0.0203,
+          "max": 0.1057
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.019356778118133546,
+          "p95": 0.019961927910232543,
+          "min": 0.018314798343658446,
+          "max": 0.02003807258605957
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0494,
+          0.04865
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0475,
+          0.0478
+        ],
+        "prepareMs": [
+          0.0714,
+          0.0713
+        ],
+        "recordFinishMs": [
+          0.0348,
+          0.0316
+        ],
+        "encodeMs": [
+          0.0519,
+          0.04655
+        ],
+        "submitCompletionMs": [
+          1.07345,
+          1.0737
+        ],
+        "retireMs": [
+          0.02955,
+          0.027999999999999997
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.018875864376068117,
+          0.019717463424682617
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        1,
+        "independent-canvas",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.05,
+          "p95": 0.054935,
+          "min": 0.0475,
+          "max": 0.0746
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.07185,
+          "p95": 0.08025499999999999,
+          "min": 0.0697,
+          "max": 0.0853
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.029249999999999998,
+          "p95": 0.05734499999999999,
+          "min": 0.0248,
+          "max": 0.0625
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.045649999999999996,
+          "p95": 0.08296999999999997,
+          "min": 0.0378,
+          "max": 0.0938
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0719,
+          "p95": 1.085105,
+          "min": 1.068,
+          "max": 1.0856
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.02665,
+          "p95": 0.03868499999999999,
+          "min": 0.0217,
+          "max": 0.0442
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.02043883403778076,
+          "p95": 0.02087766782741546,
+          "min": 0.018835788230895996,
+          "max": 0.023925458667755126
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.04915,
+          0.0518
+        ],
+        "prepareMs": [
+          0.07045,
+          0.0755
+        ],
+        "recordFinishMs": [
+          0.02835,
+          0.030199999999999998
+        ],
+        "encodeMs": [
+          0.044,
+          0.04625
+        ],
+        "submitCompletionMs": [
+          1.0719500000000002,
+          1.0719
+        ],
+        "retireMs": [
+          0.027700000000000002,
+          0.025750000000000002
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.02049894825553894,
+          0.020398757892608643
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        1,
+        "public-retained",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.05015,
+          "p95": 0.079285,
+          "min": 0.0459,
+          "max": 0.0837
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.16294999999999998,
+          "p95": 0.19983499999999996,
+          "min": 0.1447,
+          "max": 2.2496
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.035949999999999996,
+          "p95": 0.061404999999999994,
+          "min": 0.0295,
+          "max": 0.0646
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.0531,
+          "p95": 0.08834999999999998,
+          "min": 0.046,
+          "max": 0.0955
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0755,
+          "p95": 1.091515,
+          "min": 1.0372,
+          "max": 1.1036
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.035449999999999995,
+          "p95": 0.052499999999999984,
+          "min": 0.0297,
+          "max": 0.0613
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.020258491384506225,
+          "p95": 0.02084159929676056,
+          "min": 0.01959723498916626,
+          "max": 0.06336038551712037
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.04875,
+          0.05285
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.14955000000000002,
+          0.17259999999999998
+        ],
+        "recordFinishMs": [
+          0.03395,
+          0.056400000000000006
+        ],
+        "encodeMs": [
+          0.05095,
+          0.0774
+        ],
+        "submitCompletionMs": [
+          1.074,
+          1.0826
+        ],
+        "retireMs": [
+          0.03535,
+          0.04045
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          1.0,
+          1.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.0203186056022644,
+          0.020218415239334105
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        1,
+        "public-retained",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0.0002
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.00135,
+          "p95": 0.005624999999999999,
+          "min": 0.0008,
+          "max": 0.0138
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.02255,
+          "p95": 0.08065999999999994,
+          "min": 0.019,
+          "max": 0.1621
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.035,
+          "p95": 0.13365999999999997,
+          "min": 0.0297,
+          "max": 0.2493
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.07035,
+          "p95": 1.11671,
+          "min": 1.0589,
+          "max": 1.125
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.02435,
+          "p95": 0.06664,
+          "min": 0.0186,
+          "max": 0.1209
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.018054303400039672,
+          "p95": 0.018445045815467832,
+          "min": 0.017513275440216063,
+          "max": 0.01867548365020752
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.0014,
+          0.00115
+        ],
+        "recordFinishMs": [
+          0.0249,
+          0.022150000000000003
+        ],
+        "encodeMs": [
+          0.039400000000000004,
+          0.0339
+        ],
+        "submitCompletionMs": [
+          1.07145,
+          1.0683
+        ],
+        "retireMs": [
+          0.026250000000000002,
+          0.0221
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          1.0,
+          1.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.018094379545211793,
+          0.018054303400039672
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        16,
+        "independent-canvas",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0046,
+          "p95": 0.006305,
+          "min": 0.0042,
+          "max": 0.0067
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.04875,
+          "p95": 0.07005999999999994,
+          "min": 0.0461,
+          "max": 0.4119
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0694,
+          "p95": 0.075855,
+          "min": 0.0687,
+          "max": 0.0805
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0266,
+          "p95": 0.04164999999999997,
+          "min": 0.0231,
+          "max": 0.2827
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.0422,
+          "p95": 0.08460499999999924,
+          "min": 0.035,
+          "max": 0.5412
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.07155,
+          "p95": 1.0854549999999998,
+          "min": 1.0227,
+          "max": 1.0972
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.025750000000000002,
+          "p95": 0.03205999999999999,
+          "min": 0.0187,
+          "max": 0.0365
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.019917844150543214,
+          "p95": 0.020524997749900818,
+          "min": 0.019236549682617187,
+          "max": 0.020639214763641358
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.00455,
+          0.00465
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0487,
+          0.0488
+        ],
+        "prepareMs": [
+          0.06935,
+          0.0694
+        ],
+        "recordFinishMs": [
+          0.0275,
+          0.0253
+        ],
+        "encodeMs": [
+          0.04325,
+          0.0391
+        ],
+        "submitCompletionMs": [
+          1.0725,
+          1.0700500000000002
+        ],
+        "retireMs": [
+          0.02745,
+          0.0212
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.019877768005371093,
+          0.01999799644088745
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        16,
+        "independent-canvas",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0494,
+          "p95": 0.05526999999999998,
+          "min": 0.0476,
+          "max": 0.0854
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0711,
+          "p95": 0.097135,
+          "min": 0.0688,
+          "max": 0.1186
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0327,
+          "p95": 0.06881999999999999,
+          "min": 0.0248,
+          "max": 0.075
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.048600000000000004,
+          "p95": 0.11315999999999997,
+          "min": 0.0382,
+          "max": 0.5698
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.079,
+          "p95": 1.091005,
+          "min": 1.0697,
+          "max": 1.0967
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.02785,
+          "p95": 0.0462,
+          "min": 0.0221,
+          "max": 0.0487
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.020198377166748046,
+          "p95": 0.020839595489501952,
+          "min": 0.01959723498916626,
+          "max": 0.020879671634674073
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.048850000000000005,
+          0.04975
+        ],
+        "prepareMs": [
+          0.07055,
+          0.0737
+        ],
+        "recordFinishMs": [
+          0.027950000000000003,
+          0.0374
+        ],
+        "encodeMs": [
+          0.044950000000000004,
+          0.05425
+        ],
+        "submitCompletionMs": [
+          1.0783,
+          1.07985
+        ],
+        "retireMs": [
+          0.027049999999999998,
+          0.02835
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.019977958368301393,
+          0.02043883403778076
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        16,
+        "public-retained",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0055,
+          "p95": 0.0073,
+          "min": 0.0045,
+          "max": 0.0073
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.036199999999999996,
+          "p95": 0.06142499999999995,
+          "min": 0.0313,
+          "max": 0.5763
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.3059,
+          "p95": 0.4467349999999999,
+          "min": 0.2577,
+          "max": 0.7644
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.32235,
+          "p95": 0.4656949999999999,
+          "min": 0.2707,
+          "max": 0.7807
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.082,
+          "p95": 1.10065,
+          "min": 1.0764,
+          "max": 1.1029
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.16725,
+          "p95": 0.21009499999999992,
+          "min": 0.125,
+          "max": 0.3751
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 16.0,
+          "p95": 16.0,
+          "min": 16,
+          "max": 16
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 15.0,
+          "p95": 15.0,
+          "min": 15,
+          "max": 15
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.07303877457618713,
+          "p95": 0.07666967332878113,
+          "min": 0.07017333019638061,
+          "max": 0.07678589414978028
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0051,
+          0.00645
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.0352,
+          0.03995
+        ],
+        "recordFinishMs": [
+          0.30745,
+          0.29945
+        ],
+        "encodeMs": [
+          0.32235,
+          0.32094999999999996
+        ],
+        "submitCompletionMs": [
+          1.0815000000000001,
+          1.08545
+        ],
+        "retireMs": [
+          0.1746,
+          0.152
+        ],
+        "actualIssuedDrawCalls": [
+          16.0,
+          16.0
+        ],
+        "compiledRuns": [
+          1.0,
+          1.0
+        ],
+        "reusedRuns": [
+          15.0,
+          15.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.0704739012851715,
+          0.07616471389961244
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        16,
+        "public-retained",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0.0001
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.00545,
+          "p95": 0.00921,
+          "min": 0.0044,
+          "max": 0.0095
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.2946,
+          "p95": 0.368805,
+          "min": 0.2369,
+          "max": 0.7773
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.3109,
+          "p95": 0.39737,
+          "min": 0.2508,
+          "max": 0.7919
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.08215,
+          "p95": 1.0975949999999999,
+          "min": 1.0406,
+          "max": 1.1052
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.1556,
+          "p95": 0.21695499999999993,
+          "min": 0.108,
+          "max": 0.3375
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 16.0,
+          "p95": 16.0,
+          "min": 16,
+          "max": 16
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 16.0,
+          "p95": 16.0,
+          "min": 16,
+          "max": 16
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.07005310176086425,
+          "p95": 0.08237250878677368,
+          "min": 0.06648632484054566,
+          "max": 0.08516180849075318
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.0053,
+          0.0076
+        ],
+        "recordFinishMs": [
+          0.2946,
+          0.28785
+        ],
+        "encodeMs": [
+          0.3109,
+          0.31925000000000003
+        ],
+        "submitCompletionMs": [
+          1.07975,
+          1.0871
+        ],
+        "retireMs": [
+          0.16899999999999998,
+          0.14334999999999998
+        ],
+        "actualIssuedDrawCalls": [
+          16.0,
+          16.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          16.0,
+          16.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.07860935875511169,
+          0.06832982751846314
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        256,
+        "independent-canvas",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0014,
+          "p95": 0.0037,
+          "min": 0.0011,
+          "max": 0.0037
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0477,
+          "p95": 0.05230499999999999,
+          "min": 0.0452,
+          "max": 0.7123
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0703,
+          "p95": 0.08172499999999994,
+          "min": 0.0696,
+          "max": 0.1257
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.0278,
+          "p95": 0.06069999999999999,
+          "min": 0.0255,
+          "max": 0.3154
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.04075,
+          "p95": 0.08898,
+          "min": 0.0385,
+          "max": 0.3843
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0728,
+          "p95": 1.0916899999999998,
+          "min": 1.0416,
+          "max": 1.096
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.027450000000000002,
+          "p95": 0.040345,
+          "min": 0.0237,
+          "max": 0.0492
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.019857729932785034,
+          "p95": 0.020681294716072083,
+          "min": 0.018435026779174805,
+          "max": 0.020719367053985596
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0013,
+          0.0016
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.04755,
+          0.04775
+        ],
+        "prepareMs": [
+          0.0702,
+          0.07135
+        ],
+        "recordFinishMs": [
+          0.02735,
+          0.032350000000000004
+        ],
+        "encodeMs": [
+          0.04025,
+          0.04715
+        ],
+        "submitCompletionMs": [
+          1.0728,
+          1.0756000000000001
+        ],
+        "retireMs": [
+          0.027549999999999998,
+          0.02665
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.020298567529678346,
+          0.018935978593826293
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        256,
+        "independent-canvas",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.049049999999999996,
+          "p95": 0.05504999999999997,
+          "min": 0.0465,
+          "max": 1.9932
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.0703,
+          "p95": 0.08028999999999996,
+          "min": 0.0695,
+          "max": 0.1135
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 0.03015,
+          "p95": 0.07177999999999932,
+          "min": 0.0261,
+          "max": 0.5694
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 0.045399999999999996,
+          "p95": 0.10199999999999916,
+          "min": 0.0393,
+          "max": 0.5848
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 1.0735,
+          "p95": 1.0859800000000002,
+          "min": 1.0698,
+          "max": 1.1002
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 0.0293,
+          "p95": 0.039029999999999995,
+          "min": 0.0223,
+          "max": 0.04
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.020298567529678346,
+          "p95": 0.020719367053985596,
+          "min": 0.0196773872795105,
+          "max": 0.06332030937194824
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0489,
+          0.04915
+        ],
+        "prepareMs": [
+          0.0702,
+          0.07314999999999999
+        ],
+        "recordFinishMs": [
+          0.03,
+          0.032100000000000004
+        ],
+        "encodeMs": [
+          0.0453,
+          0.047850000000000004
+        ],
+        "submitCompletionMs": [
+          1.0730499999999998,
+          1.0787
+        ],
+        "retireMs": [
+          0.0309,
+          0.0253
+        ],
+        "actualIssuedDrawCalls": [
+          1.0,
+          1.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          0.0,
+          0.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.020258491384506225,
+          0.020338643674850464
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        256,
+        "public-retained",
+        "one-command-change"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0035,
+          "p95": 0.0045049999999999995,
+          "min": 0.0025,
+          "max": 0.0072
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.22205,
+          "p95": 0.2909849999999999,
+          "min": 0.2084,
+          "max": 0.6467
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 4.5489999999999995,
+          "p95": 5.14694,
+          "min": 4.2824,
+          "max": 5.7357
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 4.5667,
+          "p95": 5.1691650000000005,
+          "min": 4.3009,
+          "max": 5.7536
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 3.2802499999999997,
+          "p95": 3.3287,
+          "min": 2.2167,
+          "max": 3.3491
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 1.8340999999999998,
+          "p95": 2.260769999999999,
+          "min": 1.6039,
+          "max": 2.4841
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 256.0,
+          "p95": 256.0,
+          "min": 256,
+          "max": 256
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 255.0,
+          "p95": 255.0,
+          "min": 255,
+          "max": 255
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.9680392866325378,
+          "p95": 0.9701713375556945,
+          "min": 0.9350966953010559,
+          "max": 0.970804540649414
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0035,
+          0.0037
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.22744999999999999,
+          0.21915
+        ],
+        "recordFinishMs": [
+          4.519550000000001,
+          4.5634
+        ],
+        "encodeMs": [
+          4.54265,
+          4.5824
+        ],
+        "submitCompletionMs": [
+          3.2779,
+          3.28855
+        ],
+        "retireMs": [
+          1.89845,
+          1.7963
+        ],
+        "actualIssuedDrawCalls": [
+          256.0,
+          256.0
+        ],
+        "compiledRuns": [
+          1.0,
+          1.0
+        ],
+        "reusedRuns": [
+          255.0,
+          255.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.9676585632534027,
+          0.9683999719390869
+        ]
+      }
+    },
+    {
+      "key": [
+        "constant-command-partitions",
+        1024,
+        256,
+        "public-retained",
+        "static"
+      ],
+      "metrics": {
+        "inputMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 4.999999999999716e-06,
+          "min": 0,
+          "max": 0.0001
+        },
+        "updateMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "referenceMs": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "prepareMs": {
+          "n": 40,
+          "median": 0.18009999999999998,
+          "p95": 0.22388999999999978,
+          "min": 0.1691,
+          "max": 0.3357
+        },
+        "recordFinishMs": {
+          "n": 40,
+          "median": 4.774699999999999,
+          "p95": 5.81436,
+          "min": 4.1651,
+          "max": 9.5431
+        },
+        "encodeMs": {
+          "n": 40,
+          "median": 4.80985,
+          "p95": 5.85589,
+          "min": 4.1917,
+          "max": 9.6146
+        },
+        "submitCompletionMs": {
+          "n": 40,
+          "median": 3.2767999999999997,
+          "p95": 3.3040000000000003,
+          "min": 1.1887,
+          "max": 3.3252
+        },
+        "retireMs": {
+          "n": 40,
+          "median": 1.9329,
+          "p95": 3.6503899999999994,
+          "min": 1.6958,
+          "max": 6.4628
+        },
+        "actualIssuedDrawCalls": {
+          "n": 40,
+          "median": 256.0,
+          "p95": 256.0,
+          "min": 256,
+          "max": 256
+        },
+        "compiledRuns": {
+          "n": 40,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "reusedRuns": {
+          "n": 40,
+          "median": 256.0,
+          "p95": 256.0,
+          "min": 256,
+          "max": 256
+        },
+        "gpuRecordedSpanMs": {
+          "n": 40,
+          "median": 0.9662558981723786,
+          "p95": 0.9686744935335159,
+          "min": 0.9301272532997131,
+          "max": 0.9713255305366516
+        }
+      },
+      "runMedians": {
+        "inputMs": [
+          0.0,
+          0.0
+        ],
+        "updateMs": [
+          0.0,
+          0.0
+        ],
+        "referenceMs": [
+          0.0,
+          0.0
+        ],
+        "prepareMs": [
+          0.17945,
+          0.1816
+        ],
+        "recordFinishMs": [
+          4.49125,
+          4.8388
+        ],
+        "encodeMs": [
+          4.5158000000000005,
+          4.8723
+        ],
+        "submitCompletionMs": [
+          3.27775,
+          3.2702
+        ],
+        "retireMs": [
+          1.92445,
+          1.9329
+        ],
+        "actualIssuedDrawCalls": [
+          256.0,
+          256.0
+        ],
+        "compiledRuns": [
+          0.0,
+          0.0
+        ],
+        "reusedRuns": [
+          256.0,
+          256.0
+        ],
+        "gpuRecordedSpanMs": [
+          0.9658551367206574,
+          0.9671576114387512
+        ]
+      }
+    }
+  ],
+  "validation": {
+    "cpuFrames": 480,
+    "gpuFrames": 800,
+    "exactPixelComparisons": 120
+  },
+  "caveats": [
+    "CPU UI is a flat Panel; GPU UI is a Stack grid, not the same layout workload.",
+    "Actual issued draw calls are forwarded public encoder calls, not GPU primitive/occupancy counters.",
+    "UI1000 uses the default 512-asset budget; its eviction misses are included.",
+    "One changed leaf also re-records empty ancestors: flat 2, grid 3.",
+    "Legacy cases perform the same retained input/update for preparation isolation; do not sum into a full application comparison.",
+    "Per-frame p95 pools two independent processes; no claim of an independent-run p95 or displayed FPS."
+  ]
+}

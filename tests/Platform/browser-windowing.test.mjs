@@ -13,6 +13,9 @@ class Canvas {
         this.listeners = new Map();
         this.gpu = {};
     }
+    setPointerCapture(id) { if (this.failCapture) throw new Error("capture failed"); this.captured = id; }
+    hasPointerCapture(id) { return this.captured === id; }
+    releasePointerCapture(id) { if (this.captured === id) { this.captured = null; this.dispatch("lostpointercapture", { pointerId: id }); } }
     get clientWidth() { return Number.parseFloat(this.style.width) || 300; }
     get clientHeight() { return Number.parseFloat(this.style.height) || 150; }
     getContext(name) { return name === "webgpu" ? this.gpu : null; }
@@ -32,9 +35,13 @@ class Canvas {
 }
 
 globalThis.HTMLCanvasElement = Canvas;
-globalThis.document = { activeElement: null, hasFocus: () => true };
+globalThis.document = new Canvas();
+document.activeElement = null;
+document.hasFocus = () => true;
+document.hidden = false;
 globalThis.window = new Canvas();
 window.devicePixelRatio = 2;
+globalThis.MutationObserver = class { observe() {} disconnect() {} };
 globalThis.ResizeObserver = class {
     constructor(callback) { this.callback = callback; }
     observe() {}
@@ -75,7 +82,7 @@ test("nonactivating displays preserve focus and DOM input is drained once in rec
     assert.equal(api.activate(handle), false);
     assert.equal(document.activeElement, originalFocus);
     canvas.dispatch("keydown", { code: "KeyA", repeat: false });
-    canvas.dispatch("mousemove", { clientX: 30, clientY: 25 });
+    canvas.dispatch("pointermove", { pointerType: "mouse", pointerId: 1, buttons: 0, clientX: 30, clientY: 25 });
     canvas.dispatch("wheel", { deltaX: 60, deltaY: 120, deltaMode: 0 });
     const events = JSON.parse(api.drainInput(handle));
     assert.deepEqual(events.map(e => e.type), [0, 1, 3]);
@@ -109,8 +116,8 @@ test("preserve-focus canvases cannot take focus and outside mouse releases are r
     const handle = api.attach(canvas, "popup", 100, 50, true);
     api.show(handle, true);
     let prevented = false;
-    canvas.dispatch("mousedown", { button: 0, preventDefault: () => { prevented = true; } });
-    window.dispatch("mouseup", { button: 0 });
+    canvas.dispatch("pointerdown", { pointerType: "mouse", pointerId: 1, buttons: 1, clientX: 15, clientY: 25, preventDefault: () => { prevented = true; } });
+    canvas.dispatch("pointerup", { pointerType: "mouse", pointerId: 1, buttons: 0, clientX: -10, clientY: -20 });
     assert.equal(prevented, true);
     assert.equal(canvas.tabIndex, -1);
     assert.equal(document.activeElement, prior);
@@ -121,4 +128,70 @@ test("preserve-focus canvases cannot take focus and outside mouse releases are r
     document.hasFocus = () => true;
     api.detach(handle);
     assert.equal(canvas.getAttribute("tabindex"), "0");
+});
+
+test("mouse capture uses event-time outside positions and ends before normal lost-capture notification", () => {
+    const canvas = new Canvas();
+    const handle = api.attach(canvas, "capture", 100, 50, true);
+    const send = (type, buttons, x, y) => canvas.dispatch(type, { pointerType: "mouse", pointerId: 7, buttons, clientX: x, clientY: y, preventDefault() {} });
+    send("pointerdown", 1, 15, 25);
+    assert.equal(canvas.hasPointerCapture(7), true);
+    send("pointerup", 0, -20, -30);
+    const events = JSON.parse(api.drainInput(handle));
+    assert.deepEqual(events.map(e => e.type), [1, 2, 1, 2]);
+    assert.equal(events[0].capture, events[1].capture);
+    assert.equal(events[2].capture, events[3].capture);
+    assert.equal(events[2].x, -30);
+    assert.equal(events[2].y, -50);
+    assert.equal(events[3].down, false);
+    assert.equal(canvas.hasPointerCapture(7), false);
+    api.detach(handle);
+});
+
+test("capture loss cancels every held button once and suppresses the series until neutral", () => {
+    const canvas = new Canvas();
+    const handle = api.attach(canvas, "loss", 100, 50, true);
+    const send = (type, buttons) => canvas.dispatch(type, { pointerType: "mouse", pointerId: 1, buttons, clientX: 15, clientY: 25, preventDefault() {} });
+    send("pointerdown", 1);
+    send("pointermove", 3);
+    api.drainInput(handle);
+    canvas.releasePointerCapture(1);
+    canvas.dispatch("lostpointercapture", { pointerId: 1 });
+    send("pointerup", 2);
+    send("pointerup", 0);
+    assert.deepEqual(JSON.parse(api.drainInput(handle)).map(e => [e.type, e.x]), [[5, 0], [5, 2]]);
+    send("pointerdown", 1);
+    assert.equal(JSON.parse(api.drainInput(handle)).filter(e => e.type === 2 && e.down).length, 1);
+    api.detach(handle);
+});
+
+test("failed capture never publishes Down and hidden pages cancel without a normal Up", () => {
+    const canvas = new Canvas();
+    const handle = api.attach(canvas, "failure", 100, 50, true);
+    canvas.failCapture = true;
+    const event = { pointerType: "mouse", pointerId: 1, buttons: 1, clientX: 15, clientY: 25, preventDefault() {} };
+    canvas.dispatch("pointerdown", event);
+    assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
+    canvas.dispatch("pointerup", { ...event, buttons: 0 });
+    canvas.failCapture = false;
+    canvas.dispatch("pointerdown", event);
+    api.drainInput(handle);
+    document.hidden = true;
+    document.dispatch("visibilitychange");
+    document.hidden = false;
+    assert.deepEqual(JSON.parse(api.drainInput(handle)).map(e => e.type), [5]);
+    api.detach(handle);
+});
+
+test("DOM acquisition overflow is bounded and reported without normalizing lost input into Up", () => {
+    const canvas = new Canvas();
+    const handle = api.attach(canvas, "bounded", 100, 50, true);
+    for (let i = 0; i < 16400; i++) canvas.dispatch("keydown", { code: "KeyA", repeat: true });
+    const events = JSON.parse(api.drainInput(handle));
+    assert.equal(events.length, 16385); // bounded prefix plus one fault marker
+    assert.equal(events.at(-1).type, 6);
+    assert.deepEqual(JSON.parse(api.drainInput(handle)), [{ type: 6 }]);
+    api.setInputEnabled(handle, false);
+    assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
+    api.detach(handle);
 });

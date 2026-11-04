@@ -1,0 +1,21 @@
+diff --git a/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs b/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs
+index f6a83ad1..fd2bb3e7 100644
+--- a/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs
++++ b/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs
+@@ -20,6 +20,8 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
+ 
+     public Guid SourceId { get; } = Guid.NewGuid();
+ 
++    internal static Action<UiHostedDrawingSource, bool>? FrameCompleted { get; set; }
++
+     internal Action<Lumyte.UI.Compose.Definitions.Widget>? ValidateRoot { get; set; }
+ 
+     internal Action<UiSurface>? ValidateSurface { get; set; }
+@@ -98,6 +100,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
+         _ordinaryVisualFrames.Clear();
+         _visualRevisions.Clear();
+         frame.TrySetResult();
++        FrameCompleted?.Invoke(this, presented);
+     }
+ 
+     internal UiVisualSnapshot[] RecordedVisuals() => _recorded.Where(pair => pair.Value.IsVisible).Select(pair => pair.Key.Surface.VisualHost).OfType<UiVisualCoordinator>().SelectMany(coordinator => coordinator.Recorded).Distinct().ToArray();

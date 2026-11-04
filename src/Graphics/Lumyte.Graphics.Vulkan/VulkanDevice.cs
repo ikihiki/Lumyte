@@ -531,7 +531,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             ShaderTarget = ShaderTarget.SpirV,
             Features = features,
             MaxBufferSize = maxBufferSize,
-            MaxStorageBufferBindingSize = limits.MaxStorageBufferRange,
+            MaxStorageBufferBindingSize = Math.Min(limits.MaxStorageBufferRange, maxBufferSize),
             MaxTextureDimension2D = limits.MaxImageDimension2D,
             MaxTextureArrayLayers = limits.MaxImageArrayLayers,
             MaxColorAttachments = limits.MaxColorAttachments,

@@ -784,6 +784,8 @@ mod tests {
     use super::*;
     fn snapshot() -> LpLayout {
         LpLayout {
+            carets: Vec::new(),
+            ranges: Vec::new(),
             glyphs: vec![],
             paths: vec![],
             paints: vec![],

@@ -8,13 +8,26 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <param name="resources">Optional borrowed drawing resources; omission uses lazy embedded defaults.</param>
 /// <param name="resourceOwner">An optional owner transferred on successful construction and returned after renderer and prepared work finish.</param>
 /// <param name="validateResources">An optional runtime validation invoked before preparation and recording.</param>
-public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null) : IDisposable
+/// <param name="retentionOptions">Optional bounds for retained frames and idle compiled assets.</param>
+public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null) : IDisposable
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
     private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources);
+    private readonly RetainedDrawingCache2D _retained = new(retentionOptions ?? new());
     private bool _disposed;
     private int _preparing;
+
+    /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class.Preserves the original five-parameter constructor binary signature.</summary>
+    /// <param name="device">The borrowed rendering device.</param>
+    /// <param name="renderers">The borrowed fixed command renderer table.</param>
+    /// <param name="resources">Optional borrowed drawing resources.</param>
+    /// <param name="resourceOwner">An optional transferred resource owner.</param>
+    /// <param name="validateResources">An optional runtime resource validator.</param>
+    public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources, IDisposable? resourceOwner, Action? validateResources)
+        : this(device, renderers, resources, resourceOwner, validateResources, null)
+    {
+    }
 
     /// <summary>Prepares one-shot batches; creates no RenderGraph and never submits work.</summary>
     /// <param name="list">The pure drawing snapshot.</param>
@@ -85,6 +98,7 @@ public sealed class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D 
     public void Dispose()
     {
         _disposed = true;
+        _retained.Dispose();
         _resources.Dispose();
     }
 

@@ -34,7 +34,7 @@ public static class InputInspectionServiceCollectionExtensions
         where TPoint : class
     {
         services.AddInputInspection();
-        services.AddDiagnosticSubsystem<InputDiagnostics, TPoint>(descriptor ?? new("input", "Input", 1));
+        services.AddDiagnosticSubsystem<InputDiagnostics, TPoint>(descriptor ?? new("input", "Input", 2));
         return services;
     }
 

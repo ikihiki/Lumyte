@@ -109,6 +109,24 @@ public abstract class DrawingCanvas2D
         _state = _state with { Clip = _state.Clip.Add(new ClipElement2D(path, _state.Transform, rule)) };
     }
 
+    /// <summary>Replays retained commands under the current transform and clip without changing the recording state.</summary>
+    /// <param name="drawing">The immutable retained drawing; borrowed resources must remain alive through GPU use.</param>
+    public void Replay(DrawList2D drawing)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(drawing);
+        foreach (DrawingCommand2D command in drawing.Commands)
+        {
+            ClipStack2D clip = _state.Clip;
+            foreach (ClipElement2D element in command.State.Clip.Elements)
+            {
+                clip = clip.Add(element with { Transform = element.Transform * _state.Transform });
+            }
+
+            _commands.Add(command with { State = new(command.State.Transform * _state.Transform, clip) });
+        }
+    }
+
     /// <summary>Records FillRect using a solid color.</summary>
     /// <param name="rect">The finite logical rectangle with nonnegative dimensions.</param>
     /// <param name="color">The finite straight-alpha sRGB color.</param>

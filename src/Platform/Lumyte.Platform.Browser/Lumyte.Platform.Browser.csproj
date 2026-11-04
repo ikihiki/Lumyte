@@ -11,5 +11,6 @@
     <Compile Include="../Shared/PhysicalKeys.cs" Link="Internal/PhysicalKeys.cs" />
     <Compile Include="../Shared/BufferedInputSource.cs" Link="Internal/BufferedInputSource.cs" />
     <None Update="README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="Lumyte.Platform.Browser.TextInput" />
   </ItemGroup>
 </Project>

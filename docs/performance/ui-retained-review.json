@@ -1,0 +1,835 @@
+{
+  "date": "2026-10-31",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "sdk": "10.0.401",
+  "runtime": "10.0.12",
+  "tieredCompilation": false,
+  "serverGc": false,
+  "beforeCommit": "16d1cc59c0c88ee746b922aac78dc5b1c7550dfa",
+  "beforeLocalEquivalent": "bbed6281ebf50e0e72ff46710cf9e3a4bf1d9aa8",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "cpuMax": "400000 100000",
+  "memoryMax": "17179869184",
+  "before": [
+    {
+      "Name": "ime-idle-100",
+      "Batches": [
+        {
+          "Nanoseconds": 147460,
+          "Bytes": 103104
+        },
+        {
+          "Nanoseconds": 126020,
+          "Bytes": 103104
+        },
+        {
+          "Nanoseconds": 117380,
+          "Bytes": 103104
+        },
+        {
+          "Nanoseconds": 121960,
+          "Bytes": 103104
+        },
+        {
+          "Nanoseconds": 111940,
+          "Bytes": 103104
+        }
+      ],
+      "MedianNanoseconds": 121960,
+      "MedianBytes": 103104
+    },
+    {
+      "Name": "range-generation-100",
+      "Batches": [
+        {
+          "Nanoseconds": 100460,
+          "Bytes": 58400
+        },
+        {
+          "Nanoseconds": 109740,
+          "Bytes": 58400
+        },
+        {
+          "Nanoseconds": 109800,
+          "Bytes": 58400
+        },
+        {
+          "Nanoseconds": 87400,
+          "Bytes": 58400
+        },
+        {
+          "Nanoseconds": 106420,
+          "Bytes": 58400
+        }
+      ],
+      "MedianNanoseconds": 106420,
+      "MedianBytes": 58400
+    },
+    {
+      "Name": "ime-idle-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 6956940,
+          "Bytes": 1010312
+        },
+        {
+          "Nanoseconds": 6630940,
+          "Bytes": 1010312
+        },
+        {
+          "Nanoseconds": 6654700,
+          "Bytes": 1010312
+        },
+        {
+          "Nanoseconds": 6622980,
+          "Bytes": 1010312
+        },
+        {
+          "Nanoseconds": 6554840,
+          "Bytes": 1010312
+        }
+      ],
+      "MedianNanoseconds": 6630940,
+      "MedianBytes": 1010312
+    },
+    {
+      "Name": "range-generation-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 6448460,
+          "Bytes": 584000
+        },
+        {
+          "Nanoseconds": 6451480,
+          "Bytes": 584000
+        },
+        {
+          "Nanoseconds": 6431700,
+          "Bytes": 584000
+        },
+        {
+          "Nanoseconds": 6416840,
+          "Bytes": 584000
+        },
+        {
+          "Nanoseconds": 6499560,
+          "Bytes": 584000
+        }
+      ],
+      "MedianNanoseconds": 6448460,
+      "MedianBytes": 584000
+    },
+    {
+      "Name": "ime-idle-5000",
+      "Batches": [
+        {
+          "Nanoseconds": 158704840,
+          "Bytes": 5093072
+        },
+        {
+          "Nanoseconds": 156402220,
+          "Bytes": 5093072
+        },
+        {
+          "Nanoseconds": 157481880,
+          "Bytes": 5093072
+        },
+        {
+          "Nanoseconds": 157632080,
+          "Bytes": 5093072
+        },
+        {
+          "Nanoseconds": 158218060,
+          "Bytes": 5093072
+        }
+      ],
+      "MedianNanoseconds": 157632080,
+      "MedianBytes": 5093072
+    },
+    {
+      "Name": "range-generation-5000",
+      "Batches": [
+        {
+          "Nanoseconds": 153808400,
+          "Bytes": 2920000
+        },
+        {
+          "Nanoseconds": 154990760,
+          "Bytes": 2920000
+        },
+        {
+          "Nanoseconds": 157380280,
+          "Bytes": 2920000
+        },
+        {
+          "Nanoseconds": 155287540,
+          "Bytes": 2920000
+        },
+        {
+          "Nanoseconds": 156752340,
+          "Bytes": 2920000
+        }
+      ],
+      "MedianNanoseconds": 155287540,
+      "MedianBytes": 2920000
+    },
+    {
+      "Name": "ime-idle-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 624488420,
+          "Bytes": 10184168
+        },
+        {
+          "Nanoseconds": 621549140,
+          "Bytes": 10184168
+        },
+        {
+          "Nanoseconds": 623157940,
+          "Bytes": 10184168
+        },
+        {
+          "Nanoseconds": 624496220,
+          "Bytes": 10184168
+        },
+        {
+          "Nanoseconds": 623572240,
+          "Bytes": 10184168
+        }
+      ],
+      "MedianNanoseconds": 623572240,
+      "MedianBytes": 10184168
+    },
+    {
+      "Name": "range-generation-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 623062000,
+          "Bytes": 5840000
+        },
+        {
+          "Nanoseconds": 626100320,
+          "Bytes": 5840000
+        },
+        {
+          "Nanoseconds": 624254300,
+          "Bytes": 5840000
+        },
+        {
+          "Nanoseconds": 628883300,
+          "Bytes": 5840000
+        },
+        {
+          "Nanoseconds": 631775480,
+          "Bytes": 5840000
+        }
+      ],
+      "MedianNanoseconds": 626100320,
+      "MedianBytes": 5840000
+    },
+    {
+      "Name": "window-idle-history-0",
+      "Batches": [
+        {
+          "Nanoseconds": 3874,
+          "Bytes": 2520
+        },
+        {
+          "Nanoseconds": 1810,
+          "Bytes": 2520
+        },
+        {
+          "Nanoseconds": 2118,
+          "Bytes": 2520
+        },
+        {
+          "Nanoseconds": 1554,
+          "Bytes": 2520
+        },
+        {
+          "Nanoseconds": 2319,
+          "Bytes": 2520
+        }
+      ],
+      "MedianNanoseconds": 2118,
+      "MedianBytes": 2520
+    },
+    {
+      "Name": "window-idle-history-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 88175,
+          "Bytes": 82520
+        },
+        {
+          "Nanoseconds": 54790,
+          "Bytes": 82520
+        },
+        {
+          "Nanoseconds": 54317,
+          "Bytes": 82520
+        },
+        {
+          "Nanoseconds": 53621,
+          "Bytes": 82520
+        },
+        {
+          "Nanoseconds": 53445,
+          "Bytes": 82520
+        }
+      ],
+      "MedianNanoseconds": 54317,
+      "MedianBytes": 82520
+    },
+    {
+      "Name": "window-idle-history-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 766216,
+          "Bytes": 802520
+        },
+        {
+          "Nanoseconds": 589879,
+          "Bytes": 802520
+        },
+        {
+          "Nanoseconds": 593638,
+          "Bytes": 802520
+        },
+        {
+          "Nanoseconds": 561710,
+          "Bytes": 802520
+        },
+        {
+          "Nanoseconds": 546115,
+          "Bytes": 802520
+        }
+      ],
+      "MedianNanoseconds": 589879,
+      "MedianBytes": 802520
+    },
+    {
+      "Name": "validate-editors-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 547591,
+          "Bytes": 525362.16
+        },
+        {
+          "Nanoseconds": 513248,
+          "Bytes": 525212.24
+        },
+        {
+          "Nanoseconds": 456182,
+          "Bytes": 525171.04
+        },
+        {
+          "Nanoseconds": 455258,
+          "Bytes": 525201.92
+        },
+        {
+          "Nanoseconds": 466569,
+          "Bytes": 525143.84
+        }
+      ],
+      "MedianNanoseconds": 466569,
+      "MedianBytes": 525201.92
+    },
+    {
+      "Name": "signal-rebuild-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 1660330,
+          "Bytes": 2633992
+        },
+        {
+          "Nanoseconds": 1536310,
+          "Bytes": 2633992
+        },
+        {
+          "Nanoseconds": 1551380,
+          "Bytes": 2633992
+        },
+        {
+          "Nanoseconds": 1541620,
+          "Bytes": 2633992
+        },
+        {
+          "Nanoseconds": 1523590,
+          "Bytes": 2633992
+        }
+      ],
+      "MedianNanoseconds": 1541620,
+      "MedianBytes": 2633992
+    }
+  ],
+  "after": [
+    {
+      "Name": "ime-idle-100",
+      "Batches": [
+        {
+          "Nanoseconds": 1420,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 3000,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 460,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 640,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 380,
+          "Bytes": 944
+        }
+      ],
+      "MedianNanoseconds": 640,
+      "MedianBytes": 944
+    },
+    {
+      "Name": "range-generation-100",
+      "Batches": [
+        {
+          "Nanoseconds": 6700,
+          "Bytes": 24000
+        },
+        {
+          "Nanoseconds": 17640,
+          "Bytes": 24000
+        },
+        {
+          "Nanoseconds": 7020,
+          "Bytes": 24000
+        },
+        {
+          "Nanoseconds": 5860,
+          "Bytes": 24000
+        },
+        {
+          "Nanoseconds": 5860,
+          "Bytes": 24000
+        }
+      ],
+      "MedianNanoseconds": 6700,
+      "MedianBytes": 24000
+    },
+    {
+      "Name": "ime-idle-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 1480,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 980,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 580,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1000,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 700,
+          "Bytes": 944
+        }
+      ],
+      "MedianNanoseconds": 980,
+      "MedianBytes": 944
+    },
+    {
+      "Name": "range-generation-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 138160,
+          "Bytes": 240000
+        },
+        {
+          "Nanoseconds": 77620,
+          "Bytes": 240000
+        },
+        {
+          "Nanoseconds": 78780,
+          "Bytes": 240000
+        },
+        {
+          "Nanoseconds": 84620,
+          "Bytes": 240000
+        },
+        {
+          "Nanoseconds": 77800,
+          "Bytes": 240000
+        }
+      ],
+      "MedianNanoseconds": 78780,
+      "MedianBytes": 240000
+    },
+    {
+      "Name": "ime-idle-5000",
+      "Batches": [
+        {
+          "Nanoseconds": 1680,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1560,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1480,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1280,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1340,
+          "Bytes": 944
+        }
+      ],
+      "MedianNanoseconds": 1480,
+      "MedianBytes": 944
+    },
+    {
+      "Name": "range-generation-5000",
+      "Batches": [
+        {
+          "Nanoseconds": 478200,
+          "Bytes": 1200000
+        },
+        {
+          "Nanoseconds": 475960,
+          "Bytes": 1200000
+        },
+        {
+          "Nanoseconds": 698500,
+          "Bytes": 1200000
+        },
+        {
+          "Nanoseconds": 451280,
+          "Bytes": 1200000
+        },
+        {
+          "Nanoseconds": 465980,
+          "Bytes": 1200000
+        }
+      ],
+      "MedianNanoseconds": 475960,
+      "MedianBytes": 1200000
+    },
+    {
+      "Name": "ime-idle-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 1960,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1640,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1680,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1540,
+          "Bytes": 944
+        },
+        {
+          "Nanoseconds": 1540,
+          "Bytes": 944
+        }
+      ],
+      "MedianNanoseconds": 1640,
+      "MedianBytes": 944
+    },
+    {
+      "Name": "range-generation-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 972600,
+          "Bytes": 2400000
+        },
+        {
+          "Nanoseconds": 982480,
+          "Bytes": 2400000
+        },
+        {
+          "Nanoseconds": 967860,
+          "Bytes": 2400000
+        },
+        {
+          "Nanoseconds": 985480,
+          "Bytes": 2400000
+        },
+        {
+          "Nanoseconds": 945740,
+          "Bytes": 2400000
+        }
+      ],
+      "MedianNanoseconds": 972600,
+      "MedianBytes": 2400000
+    },
+    {
+      "Name": "window-idle-history-0",
+      "Batches": [
+        {
+          "Nanoseconds": 2232,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1255,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1269,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1208,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1210,
+          "Bytes": 2440
+        }
+      ],
+      "MedianNanoseconds": 1255,
+      "MedianBytes": 2440
+    },
+    {
+      "Name": "window-idle-history-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 1345,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1264,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1231,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1218,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1209,
+          "Bytes": 2440
+        }
+      ],
+      "MedianNanoseconds": 1231,
+      "MedianBytes": 2440
+    },
+    {
+      "Name": "window-idle-history-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 1665,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1350,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1346,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1303,
+          "Bytes": 2440
+        },
+        {
+          "Nanoseconds": 1302,
+          "Bytes": 2440
+        }
+      ],
+      "MedianNanoseconds": 1346,
+      "MedianBytes": 2440
+    },
+    {
+      "Name": "validate-editors-10000",
+      "Batches": [
+        {
+          "Nanoseconds": 29,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 28,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 27,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 29,
+          "Bytes": 0
+        },
+        {
+          "Nanoseconds": 30,
+          "Bytes": 0
+        }
+      ],
+      "MedianNanoseconds": 29,
+      "MedianBytes": 0
+    },
+    {
+      "Name": "signal-rebuild-1000",
+      "Batches": [
+        {
+          "Nanoseconds": 2116090,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 1890220,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 1544170,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 2301630,
+          "Bytes": 2164408
+        },
+        {
+          "Nanoseconds": 2483620,
+          "Bytes": 2164408
+        }
+      ],
+      "MedianNanoseconds": 2116090,
+      "MedianBytes": 2164408
+    }
+  ],
+  "signalRepeat": {
+    "iterationsPerBatch": 100,
+    "reason": "The 10-iteration full run showed timing variance; repeat the same case with a longer measurement window. Both runs are retained.",
+    "before": [
+      {
+        "Name": "validate-editors-10000",
+        "Batches": [
+          {
+            "Nanoseconds": 622433,
+            "Bytes": 525213.84
+          },
+          {
+            "Nanoseconds": 526081,
+            "Bytes": 525207.44
+          },
+          {
+            "Nanoseconds": 475640,
+            "Bytes": 525215.92
+          },
+          {
+            "Nanoseconds": 486052,
+            "Bytes": 525070.8
+          },
+          {
+            "Nanoseconds": 474515,
+            "Bytes": 525216.56
+          }
+        ],
+        "MedianNanoseconds": 486052,
+        "MedianBytes": 525213.84
+      },
+      {
+        "Name": "signal-rebuild-1000",
+        "Batches": [
+          {
+            "Nanoseconds": 2306061,
+            "Bytes": 2633992
+          },
+          {
+            "Nanoseconds": 1802130,
+            "Bytes": 2633992
+          },
+          {
+            "Nanoseconds": 1737999,
+            "Bytes": 2633992
+          },
+          {
+            "Nanoseconds": 1704190,
+            "Bytes": 2633992
+          },
+          {
+            "Nanoseconds": 1707432,
+            "Bytes": 2633992
+          }
+        ],
+        "MedianNanoseconds": 1737999,
+        "MedianBytes": 2633992
+      }
+    ],
+    "after": [
+      {
+        "Name": "validate-editors-10000",
+        "Batches": [
+          {
+            "Nanoseconds": 35,
+            "Bytes": 0
+          },
+          {
+            "Nanoseconds": 37,
+            "Bytes": 0
+          },
+          {
+            "Nanoseconds": 32,
+            "Bytes": 0
+          },
+          {
+            "Nanoseconds": 32,
+            "Bytes": 0
+          },
+          {
+            "Nanoseconds": 34,
+            "Bytes": 0
+          }
+        ],
+        "MedianNanoseconds": 34,
+        "MedianBytes": 0
+      },
+      {
+        "Name": "signal-rebuild-1000",
+        "Batches": [
+          {
+            "Nanoseconds": 2146299,
+            "Bytes": 2164408
+          },
+          {
+            "Nanoseconds": 1487947,
+            "Bytes": 2164408
+          },
+          {
+            "Nanoseconds": 1468103,
+            "Bytes": 2164408
+          },
+          {
+            "Nanoseconds": 1501936,
+            "Bytes": 2164408
+          },
+          {
+            "Nanoseconds": 1414301,
+            "Bytes": 2164408
+          }
+        ],
+        "MedianNanoseconds": 1487947,
+        "MedianBytes": 2164408
+      }
+    ]
+  }
+}

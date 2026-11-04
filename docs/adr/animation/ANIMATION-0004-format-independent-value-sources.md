@@ -454,6 +454,10 @@ float value = HermiteInterpolation.Interpolate(0f, 10f, 2f, 0f, 3, 0.5f);
 
 生成済み Composition API と Hermite を NuGet パッケージだけを参照する別プロジェクトから使用できた。サンプルは子ソースの Build を省いたベジェ・時間写像・ブレンドの組合せで、中間値 25.0 を確認した。
 
+main `f3f4f67` と独立した Release DLL を比較し、各版 2 プロセス・各ケース 7 サンプルで測定した。線形の 2／128／1024 キーはそれぞれ約 11.03／18.74／24.46 ns から 11.39／18.94／24.08 ns で、同程度の範囲だった。追加の時間ベジェ、空間ベジェ、Hermite、時間写像、ブレンドを含む 10 ケースの全測定区間で Managed 割り当ては 0 B/op、GC は 0 回だった。
+
+測定は Debian 13、AMD EPYC 9V74 の仮想環境、Runtime 10.0.12、単一 CPU 固定、tiered compilation／ReadyToRun 無効で行った。200ms のウォームアップ後に約 100ms の反復バッチを較正し、時刻生成・Sample・デリゲート呼出しと加算を測定した。構築時の時間・保持メモリ、通常の tiered PGO、Windows／Browser の性能は未測定。限定的な値評価の測定であり、描画や実際のフレーム時間を示すものではない。
+
 ## 参考資料
 
 - [ADR-ANIMATION-0001: アニメーションシステム](ANIMATION-0001-animation-system.md)
@@ -461,8 +465,10 @@ float value = HermiteInterpolation.Interpolate(0f, 10f, 2f, 0f, 3, 0.5f);
 - [glTF 2.0: Animation](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#animations)
 - [CSS Easing Functions: Cubic Bézier](https://www.w3.org/TR/css-easing-1/#cubic-bezier-easing-functions)
 
-2026-10-10、汎用計算をLumyte.Mathematicsへ分離し、単体Releaseテスト5件とAnimationの89件が成功した。MathematicsのQuaternion正規化は成分をスケールし、doubleの最大値・最小非ゼロ値も扱う。
+2026-10-10、汎用計算をLumyte.Mathematicsへ分離し、単体Releaseテスト5件とAnimationの89件が成功した。MathematicsのQuaternion正規化は成分をスケールし、doubleの最大値・最小非ゼロ値も扱う。分離後に上記10ケースを再測定し、割り当て0 B/op・GC 0回を維持した。Quaternion Hermiteはこの正規化強化により約54.24 nsから70.88 nsとなった。
 
 2026-10-10のレビュー修正後、ReleaseテストはAnimation 113件・Mathematics 20件の計133件が成功した。正確な整数補間は独立したBigInteger有理数計算約9,800組と照合した。共有グラフの並行・再入評価と例外後の清掃、異なる局所時刻、低速イベント時刻・最大Tick／Loop・Reverseの回帰テストを追加した。Debugビルド、整形、NuGetパッケージ経由の共有グラフと整数補間も確認した。
 
-2026-10-11、有限の大きな外挿でスカラー・ベクトル・Quaternion の定数保持を修正し、Mathematics 33 件・Animation 145 件の Release テストが成功した。可変長コンポーネント曲線の Composition 定義とネスト例も補完したが、同曲線の実装は後続変更のままとする。
+`0866c35`との交互2プロセス・各7サンプルの比較では、27定義の共有グラフのBuild割り当ては約51 MiBから8.75 KiBへ、評価は約13.06 msから3.19 µsへ減った。Duration補間は約61.25 nsから20.23 nsとなった。Loopマーカー評価は約176.94 nsから188.20 nsへ増加した。内部座標のInt128化を含む結果として記録する。全14評価ケースで割り当て0 B/op・GC 0回を確認した。測定環境は上記と同じで、構築と評価を別計測した。
+
+2026-10-11、有限の大きな外挿でスカラー・ベクトル・Quaternion の定数保持を修正し、Mathematics 33 件・Animation 145 件の Release テストが成功した。可変長コンポーネント曲線の Composition 定義とネスト例も補完したが、同曲線の実装は後続変更のままとする。[ADR-ANIMATION-0005 の測定条件](ANIMATION-0005-zero-duration.md#実装検証記録)で `2cc91d4` と比較すると、通常範囲の scalar Linear は 3.63 → 3.66 ns、Quaternion Slerp は 28.19 → 30.82 ns で、両方とも 0 B/op だった。Vector3 は 31.60 → 5.07 ns だったが、比較元のプロセス中央値が 38.33／24.86 ns とばらついたため、改善率の根拠としては扱わない。

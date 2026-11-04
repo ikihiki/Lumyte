@@ -38,6 +38,14 @@ public interface IInputInspection
     /// <returns>The effective batch. Returning <paramref name="data"/> avoids an allocation.</returns>
     IReadOnlyList<InputData> Process(InputSystem system, InputDeviceId device, IReadOnlyList<InputData> data, TimeSpan now) => data;
 
+    /// <summary>Transforms an ordered batch after physical ownership is resolved.</summary>
+    /// <param name="system">The system.</param>
+    /// <param name="streamId">The acquisition stream.</param>
+    /// <param name="events">The immutable scoped events.</param>
+    /// <param name="now">The batch time.</param>
+    /// <returns>The effective events with unchanged metadata.</returns>
+    IReadOnlyList<InputScopedEvent> ProcessEvents(InputSystem system, Guid streamId, IReadOnlyList<InputScopedEvent> events, TimeSpan now) => events;
+
     /// <summary>Receives the immutable current state after a device has been processed.</summary>
     /// <param name="system">The input system.</param>
     /// <param name="device">The scoped device identifier.</param>

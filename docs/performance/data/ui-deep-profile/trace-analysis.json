@@ -1,0 +1,3220 @@
+{
+  "Trace": "all.nettrace",
+  "EventsLost": 0,
+  "StartMilliseconds": 3579.5819,
+  "EndMilliseconds": 18578.7754,
+  "OwnerThread": 37164,
+  "MarkerCount": 1801,
+  "SampleCount": 56106,
+  "StacklessSamples": 0,
+  "SampleKinds": {
+    "Type=External": 52341,
+    "Type=Managed": 3765
+  },
+  "EstimatedAllocationBytes": 4542383600,
+  "AllocationTickCount": 42289,
+  "AllocatedTypes": [
+    {
+      "Key": "\u003C\u003Ec__DisplayClass32_0",
+      "Bytes": 494497896,
+      "Count": 4656
+    },
+    {
+      "Key": "Entry[Lumyte.UI.UiElement][]",
+      "Bytes": 356705840,
+      "Count": 3057
+    },
+    {
+      "Key": "Entry[System.Object,Lumyte.UI.UiSignalArgument][]",
+      "Bytes": 302766008,
+      "Count": 2841
+    },
+    {
+      "Key": "Rectangle",
+      "Bytes": 289988504,
+      "Count": 2729
+    },
+    {
+      "Key": "Enumerator[System.Object,Lumyte.UI.UiSignalArgument]",
+      "Bytes": 280576568,
+      "Count": 2632
+    },
+    {
+      "Key": "System.Int32[]",
+      "Bytes": 265506784,
+      "Count": 2504
+    },
+    {
+      "Key": "System.Func\u00601[System.Boolean]",
+      "Bytes": 242820488,
+      "Count": 2279
+    },
+    {
+      "Key": "Entry[Lumyte.UI.UiElement,System.ValueTuple\u00602[Lumyte.UI.Compose\u002BDefinitions\u002BWidget,System.Collections.Generic.IReadOnlyList\u00601[Lumyte.UI.UiElement][]]][]",
+      "Bytes": 225156944,
+      "Count": 1994
+    },
+    {
+      "Key": "ElementUpdate",
+      "Bytes": 175359392,
+      "Count": 1651
+    },
+    {
+      "Key": "System.Collections.Generic.Dictionary\u00602[Lumyte.UI.WidgetChildren,System.Int32]",
+      "Bytes": 166846984,
+      "Count": 1566
+    },
+    {
+      "Key": "System.Func\u00601[System.Object]",
+      "Bytes": 165495824,
+      "Count": 1554
+    },
+    {
+      "Key": "SignalUpdate",
+      "Bytes": 162774336,
+      "Count": 1527
+    },
+    {
+      "Key": "\u003C\u003Ec__DisplayClass19_0\u00601[Lumyte.Graphics.Drawing2D.Color2D,Lumyte.UI.Compose\u002BDefinitions\u002BRectangle]",
+      "Bytes": 160191728,
+      "Count": 1503
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.FillRectCommand2D",
+      "Bytes": 123031792,
+      "Count": 1154
+    },
+    {
+      "Key": "System.Action",
+      "Bytes": 119841792,
+      "Count": 1124
+    },
+    {
+      "Key": "Lumyte.UI.UiWidgetRebuildContext",
+      "Bytes": 91511072,
+      "Count": 859
+    },
+    {
+      "Key": "Lumyte.UI.UiWidgetValidationContext",
+      "Bytes": 91334768,
+      "Count": 887
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.DrawingState2D",
+      "Bytes": 87529368,
+      "Count": 821
+    },
+    {
+      "Key": "\u003C\u003Ec__DisplayClass19_0\u00601[System.Nullable\u00601[System.Single],Lumyte.UI.Compose\u002BDefinitions\u002BRectangle]",
+      "Bytes": 78087648,
+      "Count": 734
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.FillRectCommand2D[]",
+      "Bytes": 73902424,
+      "Count": 693
+    },
+    {
+      "Key": "System.Collections.Generic.Dictionary\u00602[System.Object,Lumyte.UI.UiSignalArgument]",
+      "Bytes": 63876384,
+      "Count": 597
+    },
+    {
+      "Key": "System.Action\u00601[Lumyte.UI.UiSurface\u002BElementUpdate]",
+      "Bytes": 63263464,
+      "Count": 594
+    },
+    {
+      "Key": "\u003C\u003Ec__DisplayClass26_0",
+      "Bytes": 53715480,
+      "Count": 504
+    },
+    {
+      "Key": "ElementUpdate[]",
+      "Bytes": 53376944,
+      "Count": 501
+    },
+    {
+      "Key": "Widget[]",
+      "Bytes": 49424032,
+      "Count": 464
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.UiWindowSnapshot",
+      "Bytes": 48502864,
+      "Count": 455
+    },
+    {
+      "Key": "Lumyte.UI.UiSignalArgument",
+      "Bytes": 44025568,
+      "Count": 417
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.DrawingCommand2D[]",
+      "Bytes": 28980120,
+      "Count": 272
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.SolidPaintNode2D",
+      "Bytes": 28360984,
+      "Count": 266
+    },
+    {
+      "Key": "System.Collections.Generic.Stack\u00601[Lumyte.UI.Compose\u002BDefinitions\u002BWidget]",
+      "Bytes": 26936672,
+      "Count": 253
+    },
+    {
+      "Key": "ValueCollection[System.Object,Lumyte.UI.UiSignalArgument]",
+      "Bytes": 25068672,
+      "Count": 235
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PaintGraph2D",
+      "Bytes": 23327056,
+      "Count": 219
+    },
+    {
+      "Key": "Lumyte.UI.UiElementBuildContext",
+      "Bytes": 12756400,
+      "Count": 120
+    },
+    {
+      "Key": "\u003C\u003Ec__DisplayClass12_0\u00601[System.Boolean]",
+      "Bytes": 10128520,
+      "Count": 95
+    },
+    {
+      "Key": "Lumyte.Input.DeviceState",
+      "Bytes": 3938600,
+      "Count": 37
+    },
+    {
+      "Key": "System.Collections.Generic.Dictionary\u00602[Lumyte.Input.Abstractions.PenPointerId,System.Nullable\u00601[Lumyte.Input.Abstractions.InputWindowId]]",
+      "Bytes": 2555552,
+      "Count": 24
+    },
+    {
+      "Key": "System.SZGenericArrayEnumerator\u00601[Lumyte.UI.UiElement]",
+      "Bytes": 2134912,
+      "Count": 20
+    },
+    {
+      "Key": "Phase",
+      "Bytes": 1812472,
+      "Count": 17
+    },
+    {
+      "Key": "System.Collections.Generic.Dictionary\u00602[Lumyte.Input.Abstractions.PenPointerId,Lumyte.Input.Abstractions.PenData]",
+      "Bytes": 1812232,
+      "Count": 17
+    },
+    {
+      "Key": "Lumyte.Windowing.WindowNodeSnapshot",
+      "Bytes": 1812200,
+      "Count": 17
+    }
+  ],
+  "AllocationCallers": [
+    {
+      "Key": "Lumyte.UI.Compose\u002BDefinitions\u002BRectangle.__LumyteCreate(value class Lumyte.UI.UiArgument\u00601\u003Cvalue class Lumyte.Graphics.Drawing2D.Color2D\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cclass System.String\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class System.Nullable\u00601\u003Cfloat32\u003E\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.Composition.Optional\u00601\u003Cclass System.String\u003E,class System.Action,class System.Action,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class Lumyte.UI.UiRole\u003E,value class Lumyte.Composition.Optional\u00601\u003Cvalue class System.Nullable\u00601\u003Cvalue class Lumyte.UI.UiSharedElementKey\u003E\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cclass System.String\u003E,value class Lumyte.Composition.Optional\u00601\u003Cclass Lumyte.UI.UiElementTransitions\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class System.Nullable\u00601\u003Cfloat32\u003E\u003E,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass System.Action\u00601\u003Cclass Rectangle\u003E\u003E)",
+      "Bytes": 1864353544,
+      "Count": 17517
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ApplySignalElements()",
+      "Bytes": 684352064,
+      "Count": 6143
+    },
+    {
+      "Key": "Lumyte.UI.UiProposedTree..ctor(class Lumyte.UI.UiElement,class System.Collections.Generic.IEnumerable\u00601\u003Cvalue class System.ValueTuple\u00603\u003Cclass Lumyte.UI.UiElement,class Widget,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass Lumyte.UI.UiElement\u003E[]\u003E\u003E)",
+      "Bytes": 290800696,
+      "Count": 2626
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.PrepareSignalUpdates(class RebuildPlan)",
+      "Bytes": 256690768,
+      "Count": 2408
+    },
+    {
+      "Key": "Lumyte.UI.UiElement\u002BSignalObserver.Read()",
+      "Bytes": 207253816,
+      "Count": 1944
+    },
+    {
+      "Key": "Lumyte.UI.UiElement.RecordOverride(class Lumyte.Graphics.Drawing2D.DrawingCanvas2D)",
+      "Bytes": 203279504,
+      "Count": 1907
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002BRebuildPlan.PrepareLeaf(class Lumyte.UI.UiElement,class Widget,class System.Action\u00601\u003Cclass ElementUpdate\u003E)",
+      "Bytes": 188115792,
+      "Count": 1771
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002BRebuildPlan.Prepare()",
+      "Bytes": 186546096,
+      "Count": 1772
+    },
+    {
+      "Key": "Lumyte.Signals.SignalEffect.Schedule(class Lumyte.Signals.ISignalScheduler,unsigned int64)",
+      "Bytes": 171312568,
+      "Count": 1607
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.Publish(class RebuildPlan)",
+      "Bytes": 113213808,
+      "Count": 1062
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.DrawList2D..ctor(class System.Collections.Generic.IEnumerable\u00601\u003Cclass Lumyte.Graphics.Drawing2D.DrawingCommand2D\u003E)",
+      "Bytes": 93170752,
+      "Count": 874
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.RecordElement(class Lumyte.UI.UiElement,class Lumyte.Graphics.Drawing2D.DrawingCanvas2D)",
+      "Bytes": 87529368,
+      "Count": 821
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ValidateRoot(class Widget)",
+      "Bytes": 76360704,
+      "Count": 717
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.UiWindowManagerCore.Snapshot(class Node)",
+      "Bytes": 43386048,
+      "Count": 407
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplicationDispatcher.InvokeAsync(class System.Action,value class System.Threading.CancellationToken)",
+      "Bytes": 11621144,
+      "Count": 109
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.CollectOrdered(class Registry,class Lumyte.Input.Abstractions.IOrderedInputSource,class System.Collections.Generic.List\u00601\u003Cvalue class Lumyte.Input.InputRecord\u003E,class System.Collections.Generic.List\u00601\u003Cclass System.Exception\u003E)",
+      "Bytes": 10661104,
+      "Count": 100
+    },
+    {
+      "Key": "Lumyte.Input.DeviceState..ctor(value class Lumyte.Input.Abstractions.InputDeviceKind)",
+      "Bytes": 8840600,
+      "Count": 83
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.FallbackUiWindowManager.Snapshot(class Entry)",
+      "Bytes": 6076216,
+      "Count": 57
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002BSignalUpdate..ctor(class Lumyte.UI.UiSurface,class Lumyte.UI.UiElement,class Widget,class Lumyte.Signals.SignalReadSet)",
+      "Bytes": 4474992,
+      "Count": 42
+    },
+    {
+      "Key": "ApplicationBenchmark\u002B\u003C\u003Ec__DisplayClass0_0.\u003CRunAsync\u003Eb__6(class Lumyte.UI.Application.UiHostedDrawingSource,bool)",
+      "Bytes": 4371256,
+      "Count": 41
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.UiWindowManagerCore.Advance()",
+      "Bytes": 3201976,
+      "Count": 30
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem\u002BOrderedState.Clone()",
+      "Bytes": 2771600,
+      "Count": 26
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.Aggregate(class Entry,class System.Collections.Generic.Dictionary\u00602\u003Cvalue class System.Guid,class Lumyte.Input.DeviceState\u003E,class System.Collections.Generic.List\u00601\u003Cvalue class Lumyte.Input.InputRecord\u003E)",
+      "Bytes": 2552784,
+      "Count": 24
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.Update()",
+      "Bytes": 1929184,
+      "Count": 18
+    },
+    {
+      "Key": "Lumyte.Input.Internal.InputSeriesOwners.Clone()",
+      "Bytes": 1919888,
+      "Count": 18
+    },
+    {
+      "Key": "Lumyte.Windowing.WindowSystem.Snapshot(class Node)",
+      "Bytes": 1812200,
+      "Count": 17
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.UiPopupManager.Advance()",
+      "Bytes": 1385832,
+      "Count": 13
+    },
+    {
+      "Key": "Lumyte.Input.DeviceState.Clone(bool)",
+      "Bytes": 1385816,
+      "Count": 13
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.PipelineValidation.State(class Lumyte.Graphics.Abstractions.GraphicsRenderStateDesc,class Lumyte.Graphics.Abstractions.DeviceCaps)",
+      "Bytes": 1279392,
+      "Count": 12
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.Turn()",
+      "Bytes": 1066000,
+      "Count": 10
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.WindowSystem.WindowSystemUiWindowSource.CaptureState()",
+      "Bytes": 855320,
+      "Count": 8
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiPlatformApplicationDriver.CompleteFrames()",
+      "Bytes": 853648,
+      "Count": 8
+    },
+    {
+      "Key": "System.Collections.Generic.Dictionary\u00602[Lumyte.Input.Abstractions.InputDeviceId,System.__Canon].Initialize(int32)",
+      "Bytes": 746200,
+      "Count": 7
+    },
+    {
+      "Key": "System.Linq.Enumerable\u002BGroupByIterator\u00602[Lumyte.Input.InputRecord,Lumyte.Input.Abstractions.InputDeviceId].MoveNext()",
+      "Bytes": 742552,
+      "Count": 7
+    },
+    {
+      "Key": "Lumyte.UI.Windowing.UiWindowManagerCore.UpdateGeometry(class Node)",
+      "Bytes": 642208,
+      "Count": 6
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.PruneCore()",
+      "Bytes": 639664,
+      "Count": 6
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuRenderEncoder.PrepareDraw(bool)",
+      "Bytes": 533080,
+      "Count": 5
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.CompleteFrames()",
+      "Bytes": 533000,
+      "Count": 5
+    },
+    {
+      "Key": "Lumyte.Windowing.WindowSystem.RefreshTarget()",
+      "Bytes": 427880,
+      "Count": 4
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002B\u003CObserveDispatchAsync\u003Ed__168.MoveNext()",
+      "Bytes": 426768,
+      "Count": 4
+    }
+  ],
+  "NearestLumyteSampleFrames": [
+    {
+      "Key": "Lumyte.UI.Application.Desktop.DesktopDriver.WaitForWork(class Lumyte.UI.Application.UiApplicationDispatcher,value class System.TimeSpan)",
+      "Value": 796
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.Publish(class RebuildPlan)",
+      "Value": 92
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002BSolidBatch.Fill(class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,value class System.ReadOnlySpan\u00601\u003Cclass Lumyte.Graphics.Drawing2D.FillRectCommand2D\u003E,value class System.Span\u00601\u003Cvalue class System.Numerics.Vector4\u003E)",
+      "Value": 75
+    },
+    {
+      "Key": "Lumyte.UI.Compose\u002BDefinitions\u002BRectangle.__LumyteCreate(value class Lumyte.UI.UiArgument\u00601\u003Cvalue class Lumyte.Graphics.Drawing2D.Color2D\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cclass System.String\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class System.Nullable\u00601\u003Cfloat32\u003E\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.Composition.Optional\u00601\u003Cclass System.String\u003E,class System.Action,class System.Action,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class Lumyte.UI.UiRole\u003E,value class Lumyte.Composition.Optional\u00601\u003Cvalue class System.Nullable\u00601\u003Cvalue class Lumyte.UI.UiSharedElementKey\u003E\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cclass System.String\u003E,value class Lumyte.Composition.Optional\u00601\u003Cclass Lumyte.UI.UiElementTransitions\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class System.Nullable\u00601\u003Cfloat32\u003E\u003E,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass System.Action\u00601\u003Cclass Rectangle\u003E\u003E)",
+      "Value": 55
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.CompleteFrames()",
+      "Value": 53
+    },
+    {
+      "Key": "Lumyte.UI.UiElement\u002BSignalObserver.Read()",
+      "Value": 48
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.PrepareSignalUpdates(class RebuildPlan)",
+      "Value": 43
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiPlatformApplicationDriver.Pump()",
+      "Value": 43
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D.Eligible(class Lumyte.Graphics.Drawing2D.FillRectCommand2D,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D)",
+      "Value": 37
+    },
+    {
+      "Key": "Lumyte.Graphics.Abstractions.UiDeviceProbe.TimerReturned(int64,value class System.TimeSpan)",
+      "Value": 35
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuShaderBinding..ctor(class Lumyte.Graphics.Wgpu.WgpuDevice,class Lumyte.Graphics.Shared.ShaderBindingData,value class Ahjo.Wgpu.Native.WGPUBindGroupLayoutImpl*)",
+      "Value": 35
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ValidateRoot(class Widget)",
+      "Value": 32
+    },
+    {
+      "Key": "Lumyte.Platform.Windows.WindowsPlatform.PumpEvents()",
+      "Value": 29
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002BSolidBatch\u002B\u003CPrepareAsync\u003Ed__13.MoveNext()",
+      "Value": 24
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ProcessSignals(bool)",
+      "Value": 20
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.CollectOrdered(class Registry,class Lumyte.Input.Abstractions.IOrderedInputSource,class System.Collections.Generic.List\u00601\u003Cvalue class Lumyte.Input.InputRecord\u003E,class System.Collections.Generic.List\u00601\u003Cclass System.Exception\u003E)",
+      "Value": 19
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSwapchain.AcquireNextFrameAsync(class Lumyte.Graphics.Abstractions.IGraphicsSemaphore,value class System.Threading.CancellationToken)",
+      "Value": 18
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuCommandBuffer.FinishNative()",
+      "Value": 17
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuQueue.Submit(class Lumyte.Graphics.Abstractions.QueueSubmitDesc)",
+      "Value": 16
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSwapchain.Present()",
+      "Value": 15
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuRenderEncoder.SetViewport(value class Lumyte.Graphics.Abstractions.Viewport)",
+      "Value": 14
+    },
+    {
+      "Key": "Lumyte.Signals.SignalContext.Flush()",
+      "Value": 13
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.PruneCore()",
+      "Value": 12
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuBuffer\u00601[System.Numerics.Vector4].Lumyte.Graphics.Abstractions.IGraphicsBuffer\u003CT\u003E.CopyBytesFrom(value class System.ReadOnlySpan\u00601\u003Cunsigned int8\u003E,unsigned int64,unsigned int64)",
+      "Value": 11
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSurface.GetCapabilities()",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002B\u003CPrepareAsync\u003Ed__5.MoveNext()",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSubmission\u002B\u003CWaitAsync\u003Ed__8.MoveNext()",
+      "Value": 7
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002BRebuildPlan.Prepare()",
+      "Value": 7
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuCommandBuffer.BeginRenderNative(class Lumyte.Graphics.Abstractions.RenderColorAttachmentDesc[],class Lumyte.Graphics.Abstractions.RenderDepthStencilAttachmentDesc)",
+      "Value": 7
+    },
+    {
+      "Key": "Lumyte.Signals.SignalEffect.Schedule(class Lumyte.Signals.ISignalScheduler,unsigned int64)",
+      "Value": 7
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002BSignalUpdate..ctor(class Lumyte.UI.UiSurface,class Lumyte.UI.UiElement,class Widget,class Lumyte.Signals.SignalReadSet)",
+      "Value": 6
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuRenderEncoder.PrepareDraw(bool)",
+      "Value": 5
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplicationDispatcher\u002B\u003C\u003Ec__DisplayClass12_0\u00601[System.Boolean].\u003CInvokeAsync\u003Eg__Run|1()",
+      "Value": 5
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.FrameWait()",
+      "Value": 5
+    },
+    {
+      "Key": "Lumyte.Signals.SignalEffect.Run(unsigned int64,bool)",
+      "Value": 5
+    },
+    {
+      "Key": "Lumyte.UI.UiProposedTree..ctor(class Lumyte.UI.UiElement,class System.Collections.Generic.IEnumerable\u00601\u003Cvalue class System.ValueTuple\u00603\u003Cclass Lumyte.UI.UiElement,class Widget,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass Lumyte.UI.UiElement\u003E[]\u003E\u003E)",
+      "Value": 4
+    },
+    {
+      "Key": "Lumyte.Graphics.Abstractions.UiDeviceProbe\u002BScope.Dispose()",
+      "Value": 4
+    },
+    {
+      "Key": "Lumyte.UI.UiElement.RecordOverride(class Lumyte.Graphics.Drawing2D.DrawingCanvas2D)",
+      "Value": 4
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.AdvanceRendering()",
+      "Value": 4
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostPresenter\u002B\u003CDrawAsync\u003Ed__17.MoveNext()",
+      "Value": 4
+    }
+  ],
+  "InclusiveLumyteSampleFrames": [
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.RunThreadLoop()",
+      "Value": 1678
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.Turn()",
+      "Value": 842
+    },
+    {
+      "Key": "Lumyte.UI.Application.Desktop.DesktopDriver.WaitForWork(class Lumyte.UI.Application.UiApplicationDispatcher,value class System.TimeSpan)",
+      "Value": 831
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.AdvanceRendering()",
+      "Value": 337
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication\u002B\u003C\u003Ec__DisplayClass132_0\u002B\u003C\u003CDrawFrameAsync\u003Eb__0\u003Ed.MoveNext()",
+      "Value": 325
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplicationDispatcher\u002B\u003CTrackAsync\u003Ed__23.MoveNext()",
+      "Value": 325
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication\u002B\u003CDrawFrameAsync\u003Ed__132.MoveNext()",
+      "Value": 325
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiPlatformApplicationDriver\u002B\u003CDrawAsync\u003Ed__51.MoveNext()",
+      "Value": 324
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplicationViewSlot.Advance(bool)",
+      "Value": 318
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ProcessSignals(bool)",
+      "Value": 317
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostPresenter\u002B\u003CDrawAsync\u003Ed__17.MoveNext()",
+      "Value": 314
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostPresenter.DrawAsync(class Lumyte.Graphics.Abstractions.IGraphicsSwapchain,class Lumyte.Graphics.Drawing2D.DrawList2D,value class System.Guid,class System.Action\u00601\u003Cclass Lumyte.UI.Application.UiFramePixels\u003E,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass Lumyte.UI.Application.UiVisualSnapshot\u003E,class System.Action)",
+      "Value": 313
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ApplySignalElements()",
+      "Value": 282
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002B\u003CPrepareAsync\u003Ed__5.MoveNext()",
+      "Value": 160
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.DefaultFillRectRenderer2D.Lumyte.Graphics.Drawing2D.IFillRectRenderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory\u00601\u003Cclass Lumyte.Graphics.Drawing2D.FillRectCommand2D\u003E,value class System.Threading.CancellationToken)",
+      "Value": 160
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.Renderer2D\u002B\u003CPrepareAsync\u003Ed__6.MoveNext()",
+      "Value": 160
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.Publish(class RebuildPlan)",
+      "Value": 130
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002BSolidBatch\u002B\u003CPrepareAsync\u003Ed__13.MoveNext()",
+      "Value": 112
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002BSolidBatch.Fill(class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,value class System.ReadOnlySpan\u00601\u003Cclass Lumyte.Graphics.Drawing2D.FillRectCommand2D\u003E,value class System.Span\u00601\u003Cvalue class System.Numerics.Vector4\u003E)",
+      "Value": 76
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiApplication.CompleteFrames()",
+      "Value": 74
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiPlatformApplicationDriver.Pump()",
+      "Value": 72
+    },
+    {
+      "Key": "Lumyte.UI.Compose\u002BDefinitions\u002BRectangle.__LumyteCreate(value class Lumyte.UI.UiArgument\u00601\u003Cvalue class Lumyte.Graphics.Drawing2D.Color2D\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cclass System.String\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class System.Nullable\u00601\u003Cfloat32\u003E\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cbool\u003E,value class Lumyte.Composition.Optional\u00601\u003Cclass System.String\u003E,class System.Action,class System.Action,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class Lumyte.UI.UiRole\u003E,value class Lumyte.Composition.Optional\u00601\u003Cvalue class System.Nullable\u00601\u003Cvalue class Lumyte.UI.UiSharedElementKey\u003E\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cclass System.String\u003E,value class Lumyte.Composition.Optional\u00601\u003Cclass Lumyte.UI.UiElementTransitions\u003E,value class Lumyte.UI.UiArgument\u00601\u003Cvalue class System.Nullable\u00601\u003Cfloat32\u003E\u003E,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass System.Action\u00601\u003Cclass Rectangle\u003E\u003E)",
+      "Value": 55
+    },
+    {
+      "Key": "Lumyte.UI.Compose\u002BDefinitions\u002BRectangle\u002B\u003C\u003Ec__DisplayClass32_0.\u003C__LumyteCreate\u003Eb__0()",
+      "Value": 55
+    },
+    {
+      "Key": "Lumyte.UI.Compose\u002BDefinitions\u002BWidget.Recreate(class Lumyte.UI.UiWidgetRebuildContext)",
+      "Value": 55
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.PrepareSignalUpdates(class RebuildPlan)",
+      "Value": 49
+    },
+    {
+      "Key": "Lumyte.UI.UiElement\u002BSignalObserver.Read()",
+      "Value": 48
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedDraw2D.Record(class Lumyte.Graphics.Abstractions.IGraphicsCommandBuffer)",
+      "Value": 45
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuRenderEncoder.PrepareDraw(bool)",
+      "Value": 42
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D\u002BSolidBatch.Record(class Lumyte.Graphics.Abstractions.IGraphicsCommandBuffer,class Lumyte.Graphics.Abstractions.IGraphicsTextureView)",
+      "Value": 38
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D.Record(class Lumyte.Graphics.Abstractions.IGraphicsCommandBuffer,class Lumyte.Graphics.Abstractions.IGraphicsTextureView)",
+      "Value": 38
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D.Eligible(class Lumyte.Graphics.Drawing2D.FillRectCommand2D,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D)",
+      "Value": 37
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuShaderBinding..ctor(class Lumyte.Graphics.Wgpu.WgpuDevice,class Lumyte.Graphics.Shared.ShaderBindingData,value class Ahjo.Wgpu.Native.WGPUBindGroupLayoutImpl*)",
+      "Value": 36
+    },
+    {
+      "Key": "Lumyte.Graphics.Abstractions.UiDeviceProbe.TimerReturned(int64,value class System.TimeSpan)",
+      "Value": 35
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface.ValidateRoot(class Widget)",
+      "Value": 32
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.Update()",
+      "Value": 31
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiPlatformApplicationDriver.PumpInput()",
+      "Value": 31
+    },
+    {
+      "Key": "Lumyte.Platform.Windows.WindowsPlatform.PumpEvents()",
+      "Value": 29
+    },
+    {
+      "Key": "System.Runtime.CompilerServices.AsyncTaskMethodBuilder\u00601[Lumyte.Graphics.Abstractions.SurfaceStatus].Start(!!0\u0026)",
+      "Value": 22
+    },
+    {
+      "Key": "Lumyte.Signals.SignalContext.Flush()",
+      "Value": 20
+    },
+    {
+      "Key": "ApplicationBenchmark\u002B\u003C\u003Ec__DisplayClass0_0.\u003CRunAsync\u003Eb__6(class Lumyte.UI.Application.UiHostedDrawingSource,bool)",
+      "Value": 20
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostedDrawingSource.CompleteFrame(bool)",
+      "Value": 20
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.CollectOrdered(class Registry,class Lumyte.Input.Abstractions.IOrderedInputSource,class System.Collections.Generic.List\u00601\u003Cvalue class Lumyte.Input.InputRecord\u003E,class System.Collections.Generic.List\u00601\u003Cclass System.Exception\u003E)",
+      "Value": 19
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem\u002B\u003C\u003Ec__DisplayClass26_3.\u003CUpdate\u003Eb__1()",
+      "Value": 19
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.Capture(class System.Action,class System.Collections.Generic.List\u00601\u003Cclass System.Exception\u003E)",
+      "Value": 19
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSwapchain.AcquireNextFrameAsync(class Lumyte.Graphics.Abstractions.IGraphicsSemaphore,value class System.Threading.CancellationToken)",
+      "Value": 18
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuCommandBuffer.FinishNative()",
+      "Value": 17
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuQueue.Submit(class Lumyte.Graphics.Abstractions.QueueSubmitDesc)",
+      "Value": 16
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSwapchain.Present()",
+      "Value": 15
+    },
+    {
+      "Key": "Lumyte.Signals.SignalEffect.Run(unsigned int64,bool)",
+      "Value": 15
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuRenderEncoder.SetViewport(value class Lumyte.Graphics.Abstractions.Viewport)",
+      "Value": 14
+    },
+    {
+      "Key": "Lumyte.Input.InputSystem.PruneCore()",
+      "Value": 12
+    },
+    {
+      "Key": "Lumyte.UI.UiSurface\u002BRebuildPlan.Prepare()",
+      "Value": 11
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSubmission\u002B\u003CWaitAsync\u003Ed__8.MoveNext()",
+      "Value": 11
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuBuffer\u00601[System.Numerics.Vector4].Lumyte.Graphics.Abstractions.IGraphicsBuffer\u003CT\u003E.CopyBytesFrom(value class System.ReadOnlySpan\u00601\u003Cunsigned int8\u003E,unsigned int64,unsigned int64)",
+      "Value": 11
+    },
+    {
+      "Key": "Lumyte.Graphics.Drawing2D.PreparedRectangleBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory\u00601\u003Cclass Lumyte.Graphics.Drawing2D.FillRectCommand2D\u003E,value class System.Threading.CancellationToken)",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSurface.GetCapabilities()",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostPresenter.Configuration(class Lumyte.Graphics.Abstractions.IGraphicsSurface,int32,int32)",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostPresenter\u002BFrame\u002B\u003CDrainAsync\u003Ed__31.MoveNext()",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.Signals.SignalEffect.Initialize()",
+      "Value": 10
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiHostPresenter\u002BFrame.DrainAsync()",
+      "Value": 9
+    }
+  ],
+  "ExternalOwnerSampleFrames": [
+    {
+      "Key": "Lumyte.UI.Application.Desktop.DesktopDriver.WaitForWork(class Lumyte.UI.Application.UiApplicationDispatcher,value class System.TimeSpan)",
+      "Value": 4030
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSurface.GetCapabilities()",
+      "Value": 2224
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSwapchain.Present()",
+      "Value": 31
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuQueue.Submit(class Lumyte.Graphics.Abstractions.QueueSubmitDesc)",
+      "Value": 31
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuCommandBuffer.FinishNative()",
+      "Value": 16
+    },
+    {
+      "Key": "Lumyte.UI.Application.UiPlatformApplicationDriver.Pump()",
+      "Value": 6
+    },
+    {
+      "Key": "Lumyte.Graphics.Wgpu.WgpuSwapchain.AcquireNextFrameAsync(class Lumyte.Graphics.Abstractions.IGraphicsSemaphore,value class System.Threading.CancellationToken)",
+      "Value": 5
+    },
+    {
+      "Key": "Lumyte.UI.UiProposedTree..ctor(class Lumyte.UI.UiElement,class System.Collections.Generic.IEnumerable\u00601\u003Cvalue class System.ValueTuple\u00603\u003Cclass Lumyte.UI.UiElement,class Widget,class System.Collections.Generic.IReadOnlyList\u00601\u003Cclass Lumyte.UI.UiElement\u003E[]\u003E\u003E)",
+      "Value": 1
+    }
+  ],
+  "GcSuspensions": [
+    {
+      "Start": 3727.6977,
+      "End": 3729.6567,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 3894.9367,
+      "End": 3896.5046,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 4056.0494,
+      "End": 4058.078,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 4220.8034,
+      "End": 4223.1048,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 4385.9784,
+      "End": 4388.1121,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 4553.5916,
+      "End": 4555.7995,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 4720.1999,
+      "End": 4722.4816,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 4886.4365,
+      "End": 4888.561,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 5052.3331,
+      "End": 5054.1988,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 5220.0132,
+      "End": 5222.021,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 5385.5146,
+      "End": 5387.2967,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 5551.5759,
+      "End": 5553.3875,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 5714.53,
+      "End": 5716.1794,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 5879.062,
+      "End": 5883.8582,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 6044.0732,
+      "End": 6049.0853,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 6211.4934,
+      "End": 6216.0802,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 6378.1415,
+      "End": 6380.4088,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 6545.2522,
+      "End": 6547.3126,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 6712.0533,
+      "End": 6714.0864,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 6877.8259,
+      "End": 6879.6852,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 7044.2355,
+      "End": 7046.2636,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 7208.7772,
+      "End": 7210.7771,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 7370.4014,
+      "End": 7374.9183,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 7536.906,
+      "End": 7543.0624,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 7702.5631,
+      "End": 7705.1181,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 7869.0551,
+      "End": 7871.0698,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 8038.0165,
+      "End": 8040.0086,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 8203.1472,
+      "End": 8205.0814,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 8369.1687,
+      "End": 8370.986,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 8535.8435,
+      "End": 8537.3611,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 8697.7001,
+      "End": 8699.1922,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 8861.3887,
+      "End": 8863.9808,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 9028.5681,
+      "End": 9030.8047,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 9194.8305,
+      "End": 9197.13,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 9363.1688,
+      "End": 9365.5112,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 9528.9695,
+      "End": 9530.984,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 9694.6666,
+      "End": 9696.6689,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 9860.3748,
+      "End": 9862.203,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 10031.0312,
+      "End": 10032.9844,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 10189.4945,
+      "End": 10191.1159,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 10352.4812,
+      "End": 10357.2633,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 10522.8644,
+      "End": 10527.3911,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 10685.7223,
+      "End": 10690.2176,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 10852.8314,
+      "End": 10854.741,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 11018.8922,
+      "End": 11020.9349,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 11186.5955,
+      "End": 11188.2648,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 11354.1622,
+      "End": 11356.2356,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 11519.0832,
+      "End": 11521.5979,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 11680.8382,
+      "End": 11683.0319,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 11845.1194,
+      "End": 11850.0826,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 12011.048,
+      "End": 12013.0877,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 12177.2322,
+      "End": 12179.2293,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 12343.991,
+      "End": 12345.8774,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 12512.1974,
+      "End": 12513.8538,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 12678.3356,
+      "End": 12680.1775,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 12844.719,
+      "End": 12845.9978,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 13010.7503,
+      "End": 13012.0334,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 13172.6838,
+      "End": 13173.907,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 13337.3528,
+      "End": 13339.6711,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 13503.4113,
+      "End": 13505.1154,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 13669.4463,
+      "End": 13671.8635,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 13836.6398,
+      "End": 13838.1885,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14001.8707,
+      "End": 14003.7778,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14169.1716,
+      "End": 14170.5494,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14337.825,
+      "End": 14340.1809,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14502.3242,
+      "End": 14503.9,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14664.2029,
+      "End": 14665.454,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14828.6251,
+      "End": 14833.1332,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 14995.3691,
+      "End": 14997.7534,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 15161.4705,
+      "End": 15163.5871,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 15327.0915,
+      "End": 15329.0166,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 15494.3214,
+      "End": 15496.0579,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 15661.427,
+      "End": 15663.0698,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 15828.9403,
+      "End": 15830.4705,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 15995.2564,
+      "End": 15996.8685,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 16156.1575,
+      "End": 16157.547,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 16319.9492,
+      "End": 16322.3265,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 16486.9702,
+      "End": 16489.1097,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 16653.5097,
+      "End": 16655.8266,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 16819.5691,
+      "End": 16821.8475,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 16986.5299,
+      "End": 16988.5351,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 17153.1903,
+      "End": 17155.0959,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 17319.1441,
+      "End": 17321.0497,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 17486.3808,
+      "End": 17487.9513,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 17647.9375,
+      "End": 17649.657,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 17810.7076,
+      "End": 17815.5155,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 17978.8785,
+      "End": 17983.4372,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 18144.0923,
+      "End": 18148.8119,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 18310.9255,
+      "End": 18313.3827,
+      "Reason": "SuspendForGC"
+    },
+    {
+      "Start": 18478.6219,
+      "End": 18483.3133,
+      "Reason": "SuspendForGC"
+    }
+  ],
+  "Collections": [
+    {
+      "Time": 3727.7227,
+      "Payload": {
+        "Count": "15",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 3894.9684,
+      "Payload": {
+        "Count": "16",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 4056.1612,
+      "Payload": {
+        "Count": "17",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 4220.8297,
+      "Payload": {
+        "Count": "18",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 4386.0009,
+      "Payload": {
+        "Count": "19",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 4553.6214,
+      "Payload": {
+        "Count": "20",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 4720.2178,
+      "Payload": {
+        "Count": "21",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 4886.4649,
+      "Payload": {
+        "Count": "22",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 5052.3522,
+      "Payload": {
+        "Count": "23",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 5220.0361,
+      "Payload": {
+        "Count": "24",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 5385.537,
+      "Payload": {
+        "Count": "25",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 5551.5999,
+      "Payload": {
+        "Count": "26",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 5714.5515,
+      "Payload": {
+        "Count": "27",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 5879.0815,
+      "Payload": {
+        "Count": "28",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 6044.093,
+      "Payload": {
+        "Count": "29",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 6211.5123,
+      "Payload": {
+        "Count": "30",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 6378.1703,
+      "Payload": {
+        "Count": "31",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 6545.2721,
+      "Payload": {
+        "Count": "32",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 6712.0744,
+      "Payload": {
+        "Count": "33",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 6877.8489,
+      "Payload": {
+        "Count": "34",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 7044.2626,
+      "Payload": {
+        "Count": "35",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 7208.8099,
+      "Payload": {
+        "Count": "36",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 7370.4221,
+      "Payload": {
+        "Count": "37",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 7536.9268,
+      "Payload": {
+        "Count": "38",
+        "Reason": "AllocSmall",
+        "Depth": "2",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 7702.5761,
+      "Payload": {
+        "Count": "39",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 7869.0674,
+      "Payload": {
+        "Count": "40",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 8038.03,
+      "Payload": {
+        "Count": "41",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 8203.1612,
+      "Payload": {
+        "Count": "42",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 8369.1846,
+      "Payload": {
+        "Count": "43",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 8535.8563,
+      "Payload": {
+        "Count": "44",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 8697.7167,
+      "Payload": {
+        "Count": "45",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 8861.4024,
+      "Payload": {
+        "Count": "46",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 9028.58,
+      "Payload": {
+        "Count": "47",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 9194.8419,
+      "Payload": {
+        "Count": "48",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 9363.182,
+      "Payload": {
+        "Count": "49",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 9528.9821,
+      "Payload": {
+        "Count": "50",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 9694.6799,
+      "Payload": {
+        "Count": "51",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 9860.3868,
+      "Payload": {
+        "Count": "52",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 10031.0489,
+      "Payload": {
+        "Count": "53",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 10189.5091,
+      "Payload": {
+        "Count": "54",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 10352.4941,
+      "Payload": {
+        "Count": "55",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 10522.8853,
+      "Payload": {
+        "Count": "56",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 10685.7431,
+      "Payload": {
+        "Count": "57",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 10852.8545,
+      "Payload": {
+        "Count": "58",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 11018.9124,
+      "Payload": {
+        "Count": "59",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 11186.624,
+      "Payload": {
+        "Count": "60",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 11354.1852,
+      "Payload": {
+        "Count": "61",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 11519.1079,
+      "Payload": {
+        "Count": "62",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 11680.8604,
+      "Payload": {
+        "Count": "63",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 11845.1401,
+      "Payload": {
+        "Count": "64",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 12011.0665,
+      "Payload": {
+        "Count": "65",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 12177.2579,
+      "Payload": {
+        "Count": "66",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 12344.0099,
+      "Payload": {
+        "Count": "67",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 12512.2173,
+      "Payload": {
+        "Count": "68",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 12678.3606,
+      "Payload": {
+        "Count": "69",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 12844.7375,
+      "Payload": {
+        "Count": "70",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 13010.7697,
+      "Payload": {
+        "Count": "71",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 13172.7114,
+      "Payload": {
+        "Count": "72",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 13337.3771,
+      "Payload": {
+        "Count": "73",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 13503.4345,
+      "Payload": {
+        "Count": "74",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 13669.4702,
+      "Payload": {
+        "Count": "75",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 13836.6584,
+      "Payload": {
+        "Count": "76",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14001.8978,
+      "Payload": {
+        "Count": "77",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14169.1931,
+      "Payload": {
+        "Count": "78",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14337.8537,
+      "Payload": {
+        "Count": "79",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14502.3452,
+      "Payload": {
+        "Count": "80",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14664.2297,
+      "Payload": {
+        "Count": "81",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14828.6473,
+      "Payload": {
+        "Count": "82",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 14995.3814,
+      "Payload": {
+        "Count": "83",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 15161.4841,
+      "Payload": {
+        "Count": "84",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 15327.1045,
+      "Payload": {
+        "Count": "85",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 15494.3331,
+      "Payload": {
+        "Count": "86",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 15661.4388,
+      "Payload": {
+        "Count": "87",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 15828.9522,
+      "Payload": {
+        "Count": "88",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 15995.2706,
+      "Payload": {
+        "Count": "89",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 16156.1693,
+      "Payload": {
+        "Count": "90",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 16319.963,
+      "Payload": {
+        "Count": "91",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 16486.9822,
+      "Payload": {
+        "Count": "92",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 16653.5225,
+      "Payload": {
+        "Count": "93",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 16819.5847,
+      "Payload": {
+        "Count": "94",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 16986.5456,
+      "Payload": {
+        "Count": "95",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 17153.2044,
+      "Payload": {
+        "Count": "96",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 17319.1581,
+      "Payload": {
+        "Count": "97",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 17486.3938,
+      "Payload": {
+        "Count": "98",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 17647.9524,
+      "Payload": {
+        "Count": "99",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 17810.7204,
+      "Payload": {
+        "Count": "100",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 17978.8904,
+      "Payload": {
+        "Count": "101",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 18144.1062,
+      "Payload": {
+        "Count": "102",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 18310.9465,
+      "Payload": {
+        "Count": "103",
+        "Reason": "AllocSmall",
+        "Depth": "0",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    },
+    {
+      "Time": 18478.6387,
+      "Payload": {
+        "Count": "104",
+        "Reason": "AllocSmall",
+        "Depth": "1",
+        "Type": "NonConcurrentGC",
+        "ClrInstanceID": "8",
+        "ClientSequenceNumber": "0"
+      }
+    }
+  ],
+  "OtherSuspensions": {
+    "Count": 8022,
+    "Milliseconds": 205.13840000019127
+  },
+  "SlowFrames": [
+    {
+      "Frame": 652,
+      "Start": 9009.8688,
+      "End": 9022.9294,
+      "IntervalMilliseconds": 13.060600000000704,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 57,
+      "Start": 4051.9725,
+      "End": 4064.5481,
+      "IntervalMilliseconds": 12.575600000000122,
+      "GcPauseMilliseconds": 2.0286000000000968
+    },
+    {
+      "Frame": 712,
+      "Start": 9510.0188,
+      "End": 9522.5241,
+      "IntervalMilliseconds": 12.505300000000716,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 832,
+      "Start": 10510.0927,
+      "End": 10522.1265,
+      "IntervalMilliseconds": 12.033800000001065,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 796,
+      "Start": 10210.5608,
+      "End": 10222.562,
+      "IntervalMilliseconds": 12.001200000000608,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 475,
+      "Start": 7535.8022,
+      "End": 7547.7049,
+      "IntervalMilliseconds": 11.90269999999964,
+      "GcPauseMilliseconds": 6.156399999999849
+    },
+    {
+      "Frame": 1235,
+      "Start": 13868.4935,
+      "End": 13879.9996,
+      "IntervalMilliseconds": 11.506099999998696,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 992,
+      "Start": 11844.4223,
+      "End": 11855.5451,
+      "IntervalMilliseconds": 11.122799999999188,
+      "GcPauseMilliseconds": 4.963200000000143
+    },
+    {
+      "Frame": 1084,
+      "Start": 12609.964,
+      "End": 12621.0574,
+      "IntervalMilliseconds": 11.093399999999747,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 772,
+      "Start": 10011.5555,
+      "End": 10022.636,
+      "IntervalMilliseconds": 11.080500000000029,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 1788,
+      "Start": 18477.9163,
+      "End": 18488.974,
+      "IntervalMilliseconds": 11.057699999997567,
+      "GcPauseMilliseconds": 4.691400000003341
+    },
+    {
+      "Frame": 1523,
+      "Start": 16268.2083,
+      "End": 16279.121,
+      "IntervalMilliseconds": 10.91269999999895,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 866,
+      "Start": 10793.9737,
+      "End": 10804.8767,
+      "IntervalMilliseconds": 10.903000000000247,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 435,
+      "Start": 7203.3628,
+      "End": 7214.2203,
+      "IntervalMilliseconds": 10.857500000000073,
+      "GcPauseMilliseconds": 1.9998999999997977
+    },
+    {
+      "Frame": 1799,
+      "Start": 18567.9509,
+      "End": 18578.7754,
+      "IntervalMilliseconds": 10.824499999998807,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 1748,
+      "Start": 18143.5089,
+      "End": 18154.2895,
+      "IntervalMilliseconds": 10.78059999999823,
+      "GcPauseMilliseconds": 4.719600000000355
+    },
+    {
+      "Frame": 72,
+      "Start": 4176.5787,
+      "End": 4187.3344,
+      "IntervalMilliseconds": 10.755699999999706,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 784,
+      "Start": 10110.1138,
+      "End": 10120.8431,
+      "IntervalMilliseconds": 10.729300000000876,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 902,
+      "Start": 11094.5088,
+      "End": 11105.2301,
+      "IntervalMilliseconds": 10.721300000001065,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 1005,
+      "Start": 11952.4684,
+      "End": 11963.1808,
+      "IntervalMilliseconds": 10.712400000000343,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 316,
+      "Start": 6210.8851,
+      "End": 6221.5739,
+      "IntervalMilliseconds": 10.688799999999901,
+      "GcPauseMilliseconds": 4.586800000000039
+    },
+    {
+      "Frame": 861,
+      "Start": 10752.2746,
+      "End": 10762.9392,
+      "IntervalMilliseconds": 10.664600000000064,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 1696,
+      "Start": 17710.226,
+      "End": 17720.8817,
+      "IntervalMilliseconds": 10.65570000000298,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 760,
+      "Start": 9910.4504,
+      "End": 9921.0985,
+      "IntervalMilliseconds": 10.64810000000034,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 972,
+      "Start": 11676.3057,
+      "End": 11686.9238,
+      "IntervalMilliseconds": 10.618099999999686,
+      "GcPauseMilliseconds": 2.193699999999808
+    },
+    {
+      "Frame": 501,
+      "Start": 7751.7015,
+      "End": 7762.2774,
+      "IntervalMilliseconds": 10.57589999999982,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 493,
+      "Start": 7684.9161,
+      "End": 7695.4847,
+      "IntervalMilliseconds": 10.568599999999606,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 1791,
+      "Start": 18501.6471,
+      "End": 18512.2028,
+      "IntervalMilliseconds": 10.555700000000797,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 61,
+      "Start": 4085.6303,
+      "End": 4096.1768,
+      "IntervalMilliseconds": 10.546500000000378,
+      "GcPauseMilliseconds": 0
+    },
+    {
+      "Frame": 699,
+      "Start": 9401.658,
+      "End": 9412.1988,
+      "IntervalMilliseconds": 10.540800000000672,
+      "GcPauseMilliseconds": 0
+    }
+  ],
+  "GcAssociatedFrames": [
+    {
+      "Frame": 18,
+      "Start": 3727.2683,
+      "End": 3736.4305,
+      "IntervalMilliseconds": 9.162199999999757,
+      "GcPauseMilliseconds": 1.9589999999998327
+    },
+    {
+      "Frame": 38,
+      "Start": 3894.6634,
+      "End": 3902.1383,
+      "IntervalMilliseconds": 7.4749000000001615,
+      "GcPauseMilliseconds": 1.5679000000000087
+    },
+    {
+      "Frame": 57,
+      "Start": 4051.9725,
+      "End": 4064.5481,
+      "IntervalMilliseconds": 12.575600000000122,
+      "GcPauseMilliseconds": 2.0286000000000968
+    },
+    {
+      "Frame": 77,
+      "Start": 4219.7094,
+      "End": 4227.2092,
+      "IntervalMilliseconds": 7.499800000000505,
+      "GcPauseMilliseconds": 2.301400000000285
+    },
+    {
+      "Frame": 97,
+      "Start": 4385.0916,
+      "End": 4394.6761,
+      "IntervalMilliseconds": 9.584499999999935,
+      "GcPauseMilliseconds": 2.1337000000003172
+    },
+    {
+      "Frame": 117,
+      "Start": 4552.7796,
+      "End": 4560.4799,
+      "IntervalMilliseconds": 7.700300000000425,
+      "GcPauseMilliseconds": 2.207900000000336
+    },
+    {
+      "Frame": 137,
+      "Start": 4719.6091,
+      "End": 4728.2889,
+      "IntervalMilliseconds": 8.679799999999886,
+      "GcPauseMilliseconds": 2.2817000000004555
+    },
+    {
+      "Frame": 157,
+      "Start": 4885.7846,
+      "End": 4894.8425,
+      "IntervalMilliseconds": 9.05789999999979,
+      "GcPauseMilliseconds": 2.124499999999898
+    },
+    {
+      "Frame": 177,
+      "Start": 5051.9417,
+      "End": 5060.5803,
+      "IntervalMilliseconds": 8.638599999999315,
+      "GcPauseMilliseconds": 1.8657000000002881
+    },
+    {
+      "Frame": 197,
+      "Start": 5219.6587,
+      "End": 5227.2369,
+      "IntervalMilliseconds": 7.578199999999924,
+      "GcPauseMilliseconds": 2.0077999999994063
+    },
+    {
+      "Frame": 217,
+      "Start": 5385.2376,
+      "End": 5393.7578,
+      "IntervalMilliseconds": 8.520199999999932,
+      "GcPauseMilliseconds": 1.7820999999994456
+    },
+    {
+      "Frame": 237,
+      "Start": 5551.4663,
+      "End": 5560.5322,
+      "IntervalMilliseconds": 9.065899999999601,
+      "GcPauseMilliseconds": 1.8115999999999985
+    },
+    {
+      "Frame": 256,
+      "Start": 5711.4948,
+      "End": 5720.9383,
+      "IntervalMilliseconds": 9.443499999999403,
+      "GcPauseMilliseconds": 1.6494000000002416
+    },
+    {
+      "Frame": 276,
+      "Start": 5878.4446,
+      "End": 5888.5889,
+      "IntervalMilliseconds": 10.14429999999993,
+      "GcPauseMilliseconds": 4.7961999999997715
+    },
+    {
+      "Frame": 296,
+      "Start": 6043.3784,
+      "End": 6053.6838,
+      "IntervalMilliseconds": 10.30540000000019,
+      "GcPauseMilliseconds": 5.0120999999999185
+    },
+    {
+      "Frame": 316,
+      "Start": 6210.8851,
+      "End": 6221.5739,
+      "IntervalMilliseconds": 10.688799999999901,
+      "GcPauseMilliseconds": 4.586800000000039
+    },
+    {
+      "Frame": 336,
+      "Start": 6377.5872,
+      "End": 6385.8492,
+      "IntervalMilliseconds": 8.261999999999716,
+      "GcPauseMilliseconds": 2.267300000000432
+    },
+    {
+      "Frame": 356,
+      "Start": 6544.8723,
+      "End": 6551.9254,
+      "IntervalMilliseconds": 7.053100000000086,
+      "GcPauseMilliseconds": 2.0604000000002998
+    },
+    {
+      "Frame": 376,
+      "Start": 6711.6694,
+      "End": 6719.9971,
+      "IntervalMilliseconds": 8.327699999999822,
+      "GcPauseMilliseconds": 2.033100000000559
+    },
+    {
+      "Frame": 396,
+      "Start": 6877.4796,
+      "End": 6886.2789,
+      "IntervalMilliseconds": 8.799300000000585,
+      "GcPauseMilliseconds": 1.8593000000000757
+    },
+    {
+      "Frame": 416,
+      "Start": 7043.9354,
+      "End": 7053.079,
+      "IntervalMilliseconds": 9.143599999999424,
+      "GcPauseMilliseconds": 2.0281000000004497
+    },
+    {
+      "Frame": 435,
+      "Start": 7203.3628,
+      "End": 7214.2203,
+      "IntervalMilliseconds": 10.857500000000073,
+      "GcPauseMilliseconds": 1.9998999999997977
+    },
+    {
+      "Frame": 455,
+      "Start": 7369.5777,
+      "End": 7378.6027,
+      "IntervalMilliseconds": 9.025000000000546,
+      "GcPauseMilliseconds": 4.516900000000533
+    },
+    {
+      "Frame": 475,
+      "Start": 7535.8022,
+      "End": 7547.7049,
+      "IntervalMilliseconds": 11.90269999999964,
+      "GcPauseMilliseconds": 6.156399999999849
+    },
+    {
+      "Frame": 495,
+      "Start": 7702.0024,
+      "End": 7710.6242,
+      "IntervalMilliseconds": 8.621799999999894,
+      "GcPauseMilliseconds": 2.5549999999993815
+    },
+    {
+      "Frame": 515,
+      "Start": 7868.4825,
+      "End": 7877.6633,
+      "IntervalMilliseconds": 9.18080000000009,
+      "GcPauseMilliseconds": 2.01470000000063
+    },
+    {
+      "Frame": 535,
+      "Start": 8037.5427,
+      "End": 8044.6938,
+      "IntervalMilliseconds": 7.151100000000042,
+      "GcPauseMilliseconds": 1.9921000000003914
+    },
+    {
+      "Frame": 555,
+      "Start": 8202.7454,
+      "End": 8211.765,
+      "IntervalMilliseconds": 9.019599999999627,
+      "GcPauseMilliseconds": 1.9341999999996915
+    },
+    {
+      "Frame": 575,
+      "Start": 8368.8564,
+      "End": 8378.7831,
+      "IntervalMilliseconds": 9.926699999999983,
+      "GcPauseMilliseconds": 1.817300000000614
+    },
+    {
+      "Frame": 595,
+      "Start": 8535.6163,
+      "End": 8544.6744,
+      "IntervalMilliseconds": 9.058100000000195,
+      "GcPauseMilliseconds": 1.51759999999922
+    },
+    {
+      "Frame": 614,
+      "Start": 8694.138,
+      "End": 8702.8137,
+      "IntervalMilliseconds": 8.675699999999779,
+      "GcPauseMilliseconds": 1.492099999999482
+    },
+    {
+      "Frame": 634,
+      "Start": 8860.5199,
+      "End": 8869.0594,
+      "IntervalMilliseconds": 8.539500000000771,
+      "GcPauseMilliseconds": 2.5920999999998457
+    },
+    {
+      "Frame": 654,
+      "Start": 9027.9199,
+      "End": 9036.1385,
+      "IntervalMilliseconds": 8.218599999998332,
+      "GcPauseMilliseconds": 2.2366000000001804
+    },
+    {
+      "Frame": 674,
+      "Start": 9194.3294,
+      "End": 9201.8147,
+      "IntervalMilliseconds": 7.485300000000279,
+      "GcPauseMilliseconds": 2.2994999999991705
+    },
+    {
+      "Frame": 694,
+      "Start": 9362.487,
+      "End": 9370.609,
+      "IntervalMilliseconds": 8.122000000001208,
+      "GcPauseMilliseconds": 2.342400000001362
+    },
+    {
+      "Frame": 714,
+      "Start": 9528.5548,
+      "End": 9536.1708,
+      "IntervalMilliseconds": 7.6159999999999854,
+      "GcPauseMilliseconds": 2.014500000001135
+    },
+    {
+      "Frame": 734,
+      "Start": 9694.2468,
+      "End": 9703.2459,
+      "IntervalMilliseconds": 8.999099999999089,
+      "GcPauseMilliseconds": 2.0023000000001048
+    },
+    {
+      "Frame": 754,
+      "Start": 9860.0452,
+      "End": 9868.5796,
+      "IntervalMilliseconds": 8.53439999999864,
+      "GcPauseMilliseconds": 1.8281999999999243
+    },
+    {
+      "Frame": 774,
+      "Start": 10030.7708,
+      "End": 10038.2518,
+      "IntervalMilliseconds": 7.480999999999767,
+      "GcPauseMilliseconds": 1.9531999999999243
+    },
+    {
+      "Frame": 793,
+      "Start": 10185.9163,
+      "End": 10194.9167,
+      "IntervalMilliseconds": 9.00039999999899,
+      "GcPauseMilliseconds": 1.6213999999999942
+    },
+    {
+      "Frame": 813,
+      "Start": 10351.6639,
+      "End": 10361.7431,
+      "IntervalMilliseconds": 10.079200000000128,
+      "GcPauseMilliseconds": 4.782100000000355
+    },
+    {
+      "Frame": 833,
+      "Start": 10522.1265,
+      "End": 10532.5847,
+      "IntervalMilliseconds": 10.458199999999124,
+      "GcPauseMilliseconds": 4.526700000000346
+    },
+    {
+      "Frame": 853,
+      "Start": 10685.1181,
+      "End": 10695.3101,
+      "IntervalMilliseconds": 10.192000000000917,
+      "GcPauseMilliseconds": 4.495300000000498
+    },
+    {
+      "Frame": 873,
+      "Start": 10852.3121,
+      "End": 10861.721,
+      "IntervalMilliseconds": 9.408900000000358,
+      "GcPauseMilliseconds": 1.9096000000008644
+    },
+    {
+      "Frame": 893,
+      "Start": 11018.4385,
+      "End": 11027.7959,
+      "IntervalMilliseconds": 9.357399999998961,
+      "GcPauseMilliseconds": 2.042699999999968
+    },
+    {
+      "Frame": 913,
+      "Start": 11186.2225,
+      "End": 11194.2956,
+      "IntervalMilliseconds": 8.073099999999613,
+      "GcPauseMilliseconds": 1.6693000000013853
+    },
+    {
+      "Frame": 933,
+      "Start": 11353.8503,
+      "End": 11361.4716,
+      "IntervalMilliseconds": 7.621300000000701,
+      "GcPauseMilliseconds": 2.0733999999993102
+    },
+    {
+      "Frame": 953,
+      "Start": 11518.8461,
+      "End": 11528.879,
+      "IntervalMilliseconds": 10.032900000000154,
+      "GcPauseMilliseconds": 2.5147000000015396
+    },
+    {
+      "Frame": 972,
+      "Start": 11676.3057,
+      "End": 11686.9238,
+      "IntervalMilliseconds": 10.618099999999686,
+      "GcPauseMilliseconds": 2.193699999999808
+    },
+    {
+      "Frame": 992,
+      "Start": 11844.4223,
+      "End": 11855.5451,
+      "IntervalMilliseconds": 11.122799999999188,
+      "GcPauseMilliseconds": 4.963200000000143
+    },
+    {
+      "Frame": 1012,
+      "Start": 12010.3067,
+      "End": 12018.9209,
+      "IntervalMilliseconds": 8.614199999999983,
+      "GcPauseMilliseconds": 2.039699999999357
+    },
+    {
+      "Frame": 1032,
+      "Start": 12176.5676,
+      "End": 12185.2582,
+      "IntervalMilliseconds": 8.690599999999904,
+      "GcPauseMilliseconds": 1.9971000000005006
+    },
+    {
+      "Frame": 1052,
+      "Start": 12343.4822,
+      "End": 12352.1054,
+      "IntervalMilliseconds": 8.623199999999997,
+      "GcPauseMilliseconds": 1.886399999999412
+    },
+    {
+      "Frame": 1072,
+      "Start": 12511.8135,
+      "End": 12519.9885,
+      "IntervalMilliseconds": 8.174999999999272,
+      "GcPauseMilliseconds": 1.6564000000016676
+    },
+    {
+      "Frame": 1092,
+      "Start": 12677.9108,
+      "End": 12686.4631,
+      "IntervalMilliseconds": 8.552300000001196,
+      "GcPauseMilliseconds": 1.8418999999994412
+    },
+    {
+      "Frame": 1112,
+      "Start": 12844.4409,
+      "End": 12852.0513,
+      "IntervalMilliseconds": 7.610399999999572,
+      "GcPauseMilliseconds": 1.2788000000000466
+    },
+    {
+      "Frame": 1132,
+      "Start": 13010.5415,
+      "End": 13018.738,
+      "IntervalMilliseconds": 8.196500000000015,
+      "GcPauseMilliseconds": 1.2831000000005588
+    },
+    {
+      "Frame": 1151,
+      "Start": 13168.7657,
+      "End": 13179.0722,
+      "IntervalMilliseconds": 10.306500000000597,
+      "GcPauseMilliseconds": 1.223199999998542
+    },
+    {
+      "Frame": 1171,
+      "Start": 13336.4372,
+      "End": 13345.4573,
+      "IntervalMilliseconds": 9.02009999999973,
+      "GcPauseMilliseconds": 2.318299999998999
+    },
+    {
+      "Frame": 1191,
+      "Start": 13502.68,
+      "End": 13511.2321,
+      "IntervalMilliseconds": 8.552099999998973,
+      "GcPauseMilliseconds": 1.7041000000008353
+    },
+    {
+      "Frame": 1211,
+      "Start": 13668.8663,
+      "End": 13677.4487,
+      "IntervalMilliseconds": 8.582400000001144,
+      "GcPauseMilliseconds": 2.417199999999866
+    },
+    {
+      "Frame": 1231,
+      "Start": 13836.2203,
+      "End": 13845.4595,
+      "IntervalMilliseconds": 9.239199999999983,
+      "GcPauseMilliseconds": 1.5486999999993714
+    },
+    {
+      "Frame": 1251,
+      "Start": 14001.4403,
+      "End": 14010.1593,
+      "IntervalMilliseconds": 8.718999999999141,
+      "GcPauseMilliseconds": 1.907100000000355
+    },
+    {
+      "Frame": 1271,
+      "Start": 14168.7966,
+      "End": 14177.3808,
+      "IntervalMilliseconds": 8.584200000001147,
+      "GcPauseMilliseconds": 1.3778000000002066
+    },
+    {
+      "Frame": 1291,
+      "Start": 14337.3879,
+      "End": 14344.9408,
+      "IntervalMilliseconds": 7.552900000000591,
+      "GcPauseMilliseconds": 2.3558999999986554
+    },
+    {
+      "Frame": 1311,
+      "Start": 14502.1108,
+      "End": 14511.7197,
+      "IntervalMilliseconds": 9.608899999999267,
+      "GcPauseMilliseconds": 1.5758000000005268
+    },
+    {
+      "Frame": 1330,
+      "Start": 14662.1647,
+      "End": 14669.7612,
+      "IntervalMilliseconds": 7.59650000000147,
+      "GcPauseMilliseconds": 1.2510999999994965
+    },
+    {
+      "Frame": 1350,
+      "Start": 14827.6788,
+      "End": 14837.2121,
+      "IntervalMilliseconds": 9.533300000000963,
+      "GcPauseMilliseconds": 4.508100000000923
+    },
+    {
+      "Frame": 1370,
+      "Start": 14994.6511,
+      "End": 15002.8566,
+      "IntervalMilliseconds": 8.205500000000029,
+      "GcPauseMilliseconds": 2.384299999999712
+    },
+    {
+      "Frame": 1390,
+      "Start": 15160.8429,
+      "End": 15170.8698,
+      "IntervalMilliseconds": 10.02690000000075,
+      "GcPauseMilliseconds": 2.116600000001199
+    },
+    {
+      "Frame": 1410,
+      "Start": 15326.607,
+      "End": 15336.6166,
+      "IntervalMilliseconds": 10.00959999999941,
+      "GcPauseMilliseconds": 1.9251000000003842
+    },
+    {
+      "Frame": 1430,
+      "Start": 15493.907,
+      "End": 15501.8465,
+      "IntervalMilliseconds": 7.9395000000004075,
+      "GcPauseMilliseconds": 1.7364999999990687
+    },
+    {
+      "Frame": 1450,
+      "Start": 15661.0201,
+      "End": 15669.056,
+      "IntervalMilliseconds": 8.035900000000765,
+      "GcPauseMilliseconds": 1.6427999999996246
+    },
+    {
+      "Frame": 1470,
+      "Start": 15828.6663,
+      "End": 15836.1761,
+      "IntervalMilliseconds": 7.509799999999814,
+      "GcPauseMilliseconds": 1.5301999999992404
+    },
+    {
+      "Frame": 1490,
+      "Start": 15994.9731,
+      "End": 16001.9895,
+      "IntervalMilliseconds": 7.016400000000431,
+      "GcPauseMilliseconds": 1.6121000000002823
+    },
+    {
+      "Frame": 1509,
+      "Start": 16152.5783,
+      "End": 16162.1546,
+      "IntervalMilliseconds": 9.576300000000629,
+      "GcPauseMilliseconds": 1.389500000001135
+    },
+    {
+      "Frame": 1529,
+      "Start": 16319.0726,
+      "End": 16326.6091,
+      "IntervalMilliseconds": 7.53650000000016,
+      "GcPauseMilliseconds": 2.3773000000001048
+    },
+    {
+      "Frame": 1549,
+      "Start": 16486.3083,
+      "End": 16494.2139,
+      "IntervalMilliseconds": 7.9055999999982305,
+      "GcPauseMilliseconds": 2.139500000001135
+    },
+    {
+      "Frame": 1569,
+      "Start": 16652.9177,
+      "End": 16662.3731,
+      "IntervalMilliseconds": 9.455399999998917,
+      "GcPauseMilliseconds": 2.316900000001624
+    },
+    {
+      "Frame": 1589,
+      "Start": 16819.0488,
+      "End": 16827.1092,
+      "IntervalMilliseconds": 8.06039999999848,
+      "GcPauseMilliseconds": 2.2783999999992375
+    },
+    {
+      "Frame": 1609,
+      "Start": 16985.9729,
+      "End": 16994.5139,
+      "IntervalMilliseconds": 8.541000000001077,
+      "GcPauseMilliseconds": 2.005199999999604
+    },
+    {
+      "Frame": 1629,
+      "Start": 17152.7879,
+      "End": 17161.1169,
+      "IntervalMilliseconds": 8.329000000001543,
+      "GcPauseMilliseconds": 1.9056000000018685
+    },
+    {
+      "Frame": 1649,
+      "Start": 17318.828,
+      "End": 17327.9069,
+      "IntervalMilliseconds": 9.07890000000043,
+      "GcPauseMilliseconds": 1.9055999999982305
+    },
+    {
+      "Frame": 1669,
+      "Start": 17486.1811,
+      "End": 17493.4608,
+      "IntervalMilliseconds": 7.2796999999991385,
+      "GcPauseMilliseconds": 1.5705000000016298
+    },
+    {
+      "Frame": 1688,
+      "Start": 17643.5726,
+      "End": 17653.4566,
+      "IntervalMilliseconds": 9.884000000001834,
+      "GcPauseMilliseconds": 1.7194999999992433
+    },
+    {
+      "Frame": 1708,
+      "Start": 17809.8989,
+      "End": 17820.3421,
+      "IntervalMilliseconds": 10.443200000001525,
+      "GcPauseMilliseconds": 4.8078999999997905
+    },
+    {
+      "Frame": 1728,
+      "Start": 17978.0998,
+      "End": 17987.5924,
+      "IntervalMilliseconds": 9.492600000001403,
+      "GcPauseMilliseconds": 4.558700000001409
+    },
+    {
+      "Frame": 1748,
+      "Start": 18143.5089,
+      "End": 18154.2895,
+      "IntervalMilliseconds": 10.78059999999823,
+      "GcPauseMilliseconds": 4.719600000000355
+    },
+    {
+      "Frame": 1768,
+      "Start": 18310.278,
+      "End": 18318.9442,
+      "IntervalMilliseconds": 8.6662000000033,
+      "GcPauseMilliseconds": 2.4571999999971013
+    },
+    {
+      "Frame": 1788,
+      "Start": 18477.9163,
+      "End": 18488.974,
+      "IntervalMilliseconds": 11.057699999997567,
+      "GcPauseMilliseconds": 4.691400000003341
+    }
+  ],
+  "Inventory": {
+    "Microsoft-Windows-DotNETRuntime/Runtime/Start": 1,
+    "Microsoft-Windows-DotNETRuntime/GC/SetGCHandle": 1919,
+    "Microsoft-Windows-DotNETRuntime/GC/CreateSegment": 79,
+    "Microsoft-Windows-DotNETRuntime/GC/SuspendEEStart": 10129,
+    "Microsoft-Windows-DotNETRuntime/GC/SuspendEEStop": 10129,
+    "Microsoft-Windows-DotNETRuntime/GC/RestartEEStart": 10129,
+    "Microsoft-Windows-DotNETRuntime/GC/RestartEEStop": 10129,
+    "Microsoft-DotNETCore-SampleProfiler/Thread/Sample": 66121,
+    "Microsoft-Windows-DotNETRuntime/GC/AllocationTick": 48058,
+    "Microsoft-Windows-DotNETRuntime/GC": 9,
+    "Microsoft-Windows-DotNETRuntime/GC/FinalizersStart": 13,
+    "Microsoft-Windows-DotNETRuntime/GC/FinalizersStop": 13,
+    "Microsoft-Windows-DotNETRuntime/GC/DestoryGCHandle": 29,
+    "Microsoft-Windows-DotNETRuntime/GC/Triggered": 105,
+    "Microsoft-Windows-DotNETRuntime/GC/Start": 105,
+    "Microsoft-Windows-DotNETRuntime/GC/CommittedUsage": 208,
+    "Microsoft-Windows-DotNETRuntime/GC/MarkWithType": 722,
+    "Microsoft-Windows-DotNETRuntime/GC/PinObjectAtGCTime": 21,
+    "Microsoft-Windows-DotNETRuntime/GC/GlobalHeapHistory": 105,
+    "Microsoft-Windows-DotNETRuntime/GC/PerHeapHistory": 105,
+    "Microsoft-Windows-DotNETRuntime/GC/Stop": 105,
+    "Microsoft-Windows-DotNETRuntime/GC/HeapStats": 105,
+    "Microsoft-Windows-DotNETRuntime/GC/FinalizeObject": 67,
+    "Microsoft-Windows-DotNETRuntime/GC/CreateConcurrentThread": 1,
+    "Microsoft-Windows-DotNETRuntime/GC/FitBucketInfo": 14,
+    "Microsoft-Windows-DotNETRuntime/GC/FreeSegment": 60,
+    "Lumyte-UI-Device-Benchmark/Frame": 1801,
+    "Microsoft-DotNETCore-EventPipe/ProcessInfo": 1,
+    "Microsoft-Windows-DotNETRuntimeRundown/Runtime/Start": 1,
+    "Microsoft-Windows-DotNETRuntimeRundown/Method/DCStopInit": 1,
+    "Microsoft-Windows-DotNETRuntimeRundown/Method/DCStopVerbose": 15869,
+    "Microsoft-Windows-DotNETRuntimeRundown/Method/ILToNativeMapDCStop": 12296,
+    "Microsoft-Windows-DotNETRuntimeRundown/Loader/ModuleDCStop": 63,
+    "Microsoft-Windows-DotNETRuntimeRundown/Loader/DomainModuleDCStop": 63,
+    "Microsoft-Windows-DotNETRuntimeRundown/Loader/AssemblyDCStop": 63,
+    "Microsoft-Windows-DotNETRuntimeRundown/Loader/AppDomainDCStop": 1,
+    "Microsoft-Windows-DotNETRuntimeRundown/GC/SettingsRundown": 1,
+    "Microsoft-Windows-DotNETRuntimeRundown/Method/DCStopComplete": 1
+  },
+  "PayloadExamples": {
+    "Microsoft-Windows-DotNETRuntime/GC/SuspendEEStart": {
+      "Reason": "SuspendOther",
+      "Count": "-1",
+      "ClrInstanceID": "8"
+    },
+    "Microsoft-Windows-DotNETRuntime/GC/SuspendEEStop": {
+      "ClrInstanceID": "8"
+    },
+    "Microsoft-Windows-DotNETRuntime/GC/RestartEEStart": {
+      "ClrInstanceID": "8"
+    },
+    "Microsoft-Windows-DotNETRuntime/GC/RestartEEStop": {
+      "ClrInstanceID": "8"
+    },
+    "Microsoft-DotNETCore-SampleProfiler/Thread/Sample": {
+      "Type": "Managed"
+    },
+    "Microsoft-Windows-DotNETRuntime/GC/AllocationTick": {
+      "AllocationAmount": "103776",
+      "AllocationKind": "Small",
+      "ClrInstanceID": "8",
+      "AllocationAmount64": "103776",
+      "TypeID": "140709443904496",
+      "TypeName": "System.Reflection.RuntimeMethodInfo",
+      "HeapIndex": "0",
+      "Address": "2408621110800",
+      "ObjectSize": "104"
+    }
+  }
+}

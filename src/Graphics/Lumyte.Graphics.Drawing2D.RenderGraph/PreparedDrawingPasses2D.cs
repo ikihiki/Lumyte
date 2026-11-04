@@ -12,10 +12,10 @@ public sealed class PreparedDrawingPasses2D : IDisposable
     {
     }
 
-    /// <summary>Releases owned resources in reverse order; repeated calls have no effect.</summary>
+    /// <summary>Releases owned resources in reverse order; failed entries remain owned for a later retry.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (_disposed && _resources.Count == 0)
         {
             return;
         }
@@ -27,6 +27,7 @@ public sealed class PreparedDrawingPasses2D : IDisposable
             try
             {
                 _resources[i].Dispose();
+                _resources.RemoveAt(i);
             }
             catch (Exception exception)
             {
@@ -34,7 +35,6 @@ public sealed class PreparedDrawingPasses2D : IDisposable
             }
         }
 
-        _resources.Clear();
         if (failures is not null)
         {
             throw new AggregateException("Failed to release drawing preparation resources.", failures);

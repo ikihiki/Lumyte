@@ -109,6 +109,16 @@ namespace Lumyte.Graphics.Text.Parley.Interop
         [DllImport(__DllName, EntryPoint = "lp_layout_free", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern void lp_layout_free(LpLayout* layout);
 
+        /// <summary>
+        ///  Returns borrowed editing geometry from the same shaped paragraph.
+        ///
+        ///  # Safety
+        ///  The layout must be live. The output must be aligned and writable. Copy arrays
+        ///  before freeing the layout; byte indices are UTF-8 scalar boundaries.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "lp_layout_editing_view", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern uint lp_layout_editing_view(LpLayout* layout, LpEditingView* output);
+
 
     }
 
@@ -137,6 +147,7 @@ namespace Lumyte.Graphics.Text.Parley.Interop
         public uint direction;
         public uint palette_index;
         public uint decorations;
+        public uint editing;
         public uint* fallback_font_ids;
         public nuint fallback_font_count;
         public LpFeature* features;
@@ -249,6 +260,41 @@ namespace Lumyte.Graphics.Text.Parley.Interop
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe partial struct LpEngine
     {
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe partial struct LpCaret
+    {
+        public uint index;
+        public uint affinity;
+        public uint previous_index;
+        public uint previous_affinity;
+        public uint next_index;
+        public uint next_affinity;
+        public float x;
+        public float y;
+        public float width;
+        public float height;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe partial struct LpSelectionRect
+    {
+        public uint start;
+        public uint end;
+        public float x;
+        public float y;
+        public float width;
+        public float height;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe partial struct LpEditingView
+    {
+        public LpCaret* carets;
+        public nuint caret_count;
+        public LpSelectionRect* ranges;
+        public nuint range_count;
     }
 
     [StructLayout(LayoutKind.Sequential)]

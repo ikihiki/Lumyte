@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><AllowUnsafeBlocks>true</AllowUnsafeBlocks><PackageReadmeFile>README.md</PackageReadmeFile></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.UI.Application/Lumyte.UI.Application.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
+    <ProjectReference Include="../../Platform/Lumyte.Platform.Browser/Lumyte.Platform.Browser.csproj" />
+    <ProjectReference Include="../../Platform/Lumyte.Platform.Browser.TextInput/Lumyte.Platform.Browser.TextInput.csproj" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+    <None Include="buildTransitive/*.targets" Pack="true" PackagePath="buildTransitive/" />
+    <Content Include="wwwroot/lumyte-ui-application.js" Link="wwwroot/lumyte-ui-application.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="assets/" />
+    <Content Include="../../Platform/Lumyte.Platform.Browser/wwwroot/lumyte-windowing.js" Link="wwwroot/lumyte-windowing.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="assets/" />
+    <Content Include="../../Graphics/Lumyte.Graphics.Browser/wwwroot/lumyte-graphics.js" Link="wwwroot/lumyte-graphics.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="assets/" />
+    <Content Include="../../Platform/Lumyte.Platform.Browser.TextInput/wwwroot/lumyte-text-input.js" Link="wwwroot/lumyte-text-input.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="assets/" />
+  </ItemGroup>
+  <Import Project="buildTransitive/Lumyte.UI.Application.Browser.targets" />
+</Project>

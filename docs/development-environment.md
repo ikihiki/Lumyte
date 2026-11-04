@@ -228,6 +228,16 @@ CHROME=/usr/bin/google-chrome mise run test-wasm
 
 `test-wasm`はFalloutの`TestWasm`を呼び、Browserサンプルのtrimmed publishと実ブラウザー上の.NET／WebGPU検証を順に実行します。Parleyの文字組み・COLR v1・MSDF/MTSDFと、全28composite・gradient境界条件も同じBrowser検証で確認します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
 
-既存 CI の Linux x64 ジョブで同じタスクを実行し、出力ログをテスト結果 artifact に保存します。ブラウザーは runner にある Google Chrome と SwiftShader を使用します。Linux arm64／Windows のジョブは通常のソリューションビルド・テストを実行し、Wasm workload は導入しません。Linux x64 の native GPU テストも、共通環境が準備した lavapipe を使用します。
+既存 CI の Linux x64 ジョブで同じタスクを実行し、出力ログをテスト結果 artifact に保存します。Browser CIはChrome for Testing 156.0.8078.47を固定し、同梱のSwiftShader libraryとICD manifestの存在を検査してから起動します。runnerの可変なsystem Chromeには依存しません。ANGLEとDawnの両方でSwiftShaderを明示選択する共通起動設定を使います。
+
+CIの `LUMYTE_REQUIRE_SOFTWARE_WEBGPU=1` は、アプリが実際に取得した `GPUAdapter.info` のvendor・architecture・fallback属性を検証します。ANGLEのSystemInfo表示だけで認識成功とは扱いません。未取得・hardware・別backendは失敗であり、skipや自動retryで通しません。`BrowserDevice.CreateAsync` 自体のadapter要求や引数は変更しません。software rendererのcold起動を待てるよう、document navigationのCDP期限は60秒にしています。
+
+ローカルでも同じ固定版を用意し、次のようにsoftware rendererを検証できます。
+
+```bash
+CHROME=/path/to/chrome-linux64/chrome LUMYTE_REQUIRE_SOFTWARE_WEBGPU=1 mise run test-wasm
+```
+
+Linux arm64／WindowsのCIジョブは通常のソリューションビルド・テストを実行し、Wasm workloadは導入しません。Windows verifierの既存backend選択は保持します。Linux x64のnative GPUテストは、Browserとは別に共通環境が準備したlavapipeを使用します。
 
 SDK または workload を更新するときは、mise の SDK バージョン・チェックサム、`global.json`、workload-set の互換性を確認し、`vars.dotnet_workload_version` を更新します。CI で workload の導入、Wasm publish、実 WebGPU の実行が成功することを確認してください。

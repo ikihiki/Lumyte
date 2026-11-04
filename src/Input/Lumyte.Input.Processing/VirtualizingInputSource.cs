@@ -9,7 +9,7 @@ namespace Lumyte.Input.Processing;
 /// <param name = "getTime">The getTime value.</param>
 public sealed class VirtualizingInputSource(IInputSource inner, Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> factory, Func<TimeSpan> getTime) : IInputSource, IInputDeviceRegistry
 {
-    private readonly IInputSource _inner = inner;
+    private readonly IInputSource _inner = inner is IOrderedInputSource ? throw new ArgumentException("Use an ordered processing source to preserve window metadata.", nameof(inner)) : inner;
     private readonly Func<TimeSpan> _getTime = getTime;
     private readonly Dictionary<InputDeviceId, Pair> _pairs = new();
     private Func<InputDeviceDescriptor, IVirtualDeviceGenerator?> _factory = factory;

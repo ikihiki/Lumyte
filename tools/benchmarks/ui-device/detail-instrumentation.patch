@@ -1,0 +1,620 @@
+diff --git a/src/Graphics/Lumyte.Graphics.Abstractions/UiDeviceProbe.cs b/src/Graphics/Lumyte.Graphics.Abstractions/UiDeviceProbe.cs
+new file mode 100644
+index 00000000..09f9eff3
+--- /dev/null
++++ b/src/Graphics/Lumyte.Graphics.Abstractions/UiDeviceProbe.cs
+@@ -0,0 +1,46 @@
++using System.Diagnostics;
++
++namespace Lumyte.Graphics.Abstractions;
++
++/// <summary>Temporary benchmark instrumentation; distributed only as an optional patch.</summary>
++public static class UiDeviceProbe
++{
++    /// <summary>Gets or sets the synchronous span collector.</summary>
++    public static Action<string, long, long, long, int>? Completed { get; set; }
++
++    /// <summary>Begins a diagnostic span.</summary>
++    /// <param name="name">The stable phase name.</param>
++    /// <returns>A nonallocating scope.</returns>
++    public static Scope Measure(string name) => new(name);
++
++    /// <summary>Records how late a timer returned relative to its requested deadline.</summary>
++    /// <param name="started">The timestamp immediately before arming the timer.</param>
++    /// <param name="timeout">The requested relative delay.</param>
++    public static void TimerReturned(long started, TimeSpan timeout)
++        => Completed?.Invoke("owner.timer-lateness", started + (long)(timeout.TotalSeconds * Stopwatch.Frequency), Stopwatch.GetTimestamp(), 0, Environment.CurrentManagedThreadId);
++
++    /// <summary>Measures inclusive wall time and same-thread allocations.</summary>
++    public readonly struct Scope : IDisposable
++    {
++        private readonly string _name;
++        private readonly long _started;
++        private readonly long _bytes;
++        private readonly int _thread;
++
++        internal Scope(string name)
++        {
++            _name = name;
++            _thread = Environment.CurrentManagedThreadId;
++            _bytes = GC.GetAllocatedBytesForCurrentThread();
++            _started = Stopwatch.GetTimestamp();
++        }
++
++        /// <summary>Reports the completed span; -1 allocation means the thread changed.</summary>
++        public void Dispose()
++        {
++            long ended = Stopwatch.GetTimestamp();
++            long bytes = _thread == Environment.CurrentManagedThreadId ? GC.GetAllocatedBytesForCurrentThread() - _bytes : -1;
++            Completed?.Invoke(_name, _started, ended, bytes, _thread);
++        }
++    }
++}
+diff --git a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/PreparedRectangleBatch2D.cs b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/PreparedRectangleBatch2D.cs
+index 1781e86f..3b39973f 100644
+--- a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/PreparedRectangleBatch2D.cs
++++ b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/PreparedRectangleBatch2D.cs
+@@ -269,6 +269,7 @@ internal sealed class PreparedRectangleBatch2D : IPreparedCommandBatch2D
+ 
+         private static int Fill(DrawingTargetInfo2D target, ReadOnlySpan<FillRectCommand2D> commands, Span<Vector4> values)
+         {
++            using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("rectangles.pack");
+             int cursor = commands.Length * 6;
+             ClipStack2D? previous = null;
+             int clips = cursor;
+diff --git a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/SolidRectangleResources2D.cs b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/SolidRectangleResources2D.cs
+index e911813a..541c5968 100644
+--- a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/SolidRectangleResources2D.cs
++++ b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/SolidRectangleResources2D.cs
+@@ -53,6 +53,7 @@ internal sealed class SolidRectangleResources2D : IDisposable
+ 
+     internal Entry Rent(int vectors)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("rectangles.rent");
+         lock (_gate)
+         {
+             ObjectDisposedException.ThrowIf(_disposed, this);
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuBuffer.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuBuffer.cs
+index c850906f..05e65409 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuBuffer.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuBuffer.cs
+@@ -192,6 +192,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
+ 
+     private async Task MapCoreAsync(CancellationToken cancellationToken)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("gpu.map");
+         A.BufferMapRequest request = default;
+         Func<bool>? isComplete = null;
+         try
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs
+index 694fc6d9..73ca2473 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuDevice.cs
+@@ -323,6 +323,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
+     /// <summary>Pumps native callbacks and delivers the device loss callback without waiting.</summary>
+     public void ProcessEvents()
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("gpu.callbacks");
+         ObjectDisposedException.ThrowIf(_disposed, this);
+         _device.ProcessEvents();
+     }
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuQueue.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuQueue.cs
+index 28aecae4..1c4fe5c6 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuQueue.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuQueue.cs
+@@ -9,6 +9,7 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
+ 
+     public IGraphicsSubmission Submit(QueueSubmitDesc desc)
+     {
++        using UiDeviceProbe.Scope detailProbe = UiDeviceProbe.Measure("gpu.submit");
+         ArgumentNullException.ThrowIfNull(desc);
+         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
+         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSubmission.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSubmission.cs
+index 7342506a..7c5e66db 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSubmission.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSubmission.cs
+@@ -42,11 +42,15 @@ internal sealed class WgpuSubmission : IGraphicsSubmission
+ 
+     public async ValueTask WaitAsync(CancellationToken cancellationToken = default)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("gpu.submission-wait");
+         ObjectDisposedException.ThrowIf(_status == SubmissionStatus.Disposed, this);
+         cancellationToken.ThrowIfCancellationRequested();
+         while (Status == SubmissionStatus.Pending)
+         {
+-            await Task.Delay(1, cancellationToken);
++            using (Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("gpu.poll-delay"))
++            {
++                await Task.Delay(1, cancellationToken);
++            }
+         }
+ 
+         if (_status == SubmissionStatus.Failed)
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs
+index 73a87e19..5d3147ec 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSurface.cs
+@@ -22,8 +22,14 @@ internal sealed class WgpuSurface : IGraphicsSurface
+ 
+     public SurfaceCapabilities GetCapabilities()
+     {
++        using UiDeviceProbe.Scope detailProbe = UiDeviceProbe.Measure("surface.capabilities");
+         ValidateAlive();
+-        A.SurfaceCapabilities caps = _native.GetCapabilities(_adapter);
++        A.SurfaceCapabilities caps;
++        using (UiDeviceProbe.Measure("surface.capabilities.native"))
++        {
++            caps = _native.GetCapabilities(_adapter);
++        }
++
+         TextureFormat[] formats = Enum.GetValues<TextureFormat>().Where(f => f is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8) && caps.Formats.Contains(WgpuTexture.NativeFormat(f))).OrderBy(f => Array.IndexOf(caps.Formats, WgpuTexture.NativeFormat(f))).ToArray();
+         if (formats.Length == 0)
+         {
+diff --git a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSwapchain.cs b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSwapchain.cs
+index 3a9d708e..a26effa7 100644
+--- a/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSwapchain.cs
++++ b/src/Graphics/Lumyte.Graphics.Wgpu/WgpuSwapchain.cs
+@@ -63,6 +63,7 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
+ 
+     internal unsafe SurfaceStatus Present()
+     {
++        using UiDeviceProbe.Scope detailProbe = UiDeviceProbe.Measure("surface.present");
+         WGPUStatus status = WGPU.wgpuSurfacePresent(_surface.Native.Handle);
+         if (status != WGPUStatus.Success)
+         {
+diff --git a/src/UI/Lumyte.UI.Application.Desktop/WindowsFrameWaiter.cs b/src/UI/Lumyte.UI.Application.Desktop/WindowsFrameWaiter.cs
+index 2abbcffa..16c850d3 100644
+--- a/src/UI/Lumyte.UI.Application.Desktop/WindowsFrameWaiter.cs
++++ b/src/UI/Lumyte.UI.Application.Desktop/WindowsFrameWaiter.cs
+@@ -31,6 +31,8 @@ internal sealed class WindowsFrameWaiter : IDisposable
+ 
+     private void WaitCore(WaitHandle wakeup, TimeSpan timeout)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("owner.wait");
++        long timerStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+         long due = -Math.Max(1, timeout.Ticks);
+         if (_timer.SafeWaitHandle.IsInvalid || !SetWaitableTimerEx(_timer.SafeWaitHandle, ref due, 0, 0, 0, 0, 0))
+         {
+@@ -39,7 +41,10 @@ internal sealed class WindowsFrameWaiter : IDisposable
+         }
+ 
+         _handles[0] = wakeup;
+-        WaitHandle.WaitAny(_handles);
++        if (WaitHandle.WaitAny(_handles) == 1)
++        {
++            Lumyte.Graphics.Abstractions.UiDeviceProbe.TimerReturned(timerStarted, timeout);
++        }
+     }
+ 
+     private sealed class TimerHandle : WaitHandle
+diff --git a/src/UI/Lumyte.UI.Application/UiApplication.Frames.cs b/src/UI/Lumyte.UI.Application/UiApplication.Frames.cs
+index a86343cf..345366d9 100644
+--- a/src/UI/Lumyte.UI.Application/UiApplication.Frames.cs
++++ b/src/UI/Lumyte.UI.Application/UiApplication.Frames.cs
+@@ -29,6 +29,7 @@ public sealed partial class UiApplication
+ 
+     private void AdvanceRendering()
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("host.advance-rendering");
+         long now = TimeProvider.GetTimestamp();
+         if (State == UiApplicationState.Recovering || (_recordedFrame && TimeProvider.GetElapsedTime(_lastFrame, now) < _options.FrameInterval))
+         {
+diff --git a/src/UI/Lumyte.UI.Application/UiApplicationDispatcher.cs b/src/UI/Lumyte.UI.Application/UiApplicationDispatcher.cs
+index 97dbd6dd..3f2ea051 100644
+--- a/src/UI/Lumyte.UI.Application/UiApplicationDispatcher.cs
++++ b/src/UI/Lumyte.UI.Application/UiApplicationDispatcher.cs
+@@ -166,6 +166,7 @@ internal sealed class UiApplicationDispatcher(UiApplicationOptions options) : Sy
+ 
+     internal void Pump()
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("owner.dispatch");
+         long started = options.TimeProvider.GetTimestamp();
+         SynchronizationContext? previous = Current;
+         SetSynchronizationContext(this);
+diff --git a/src/UI/Lumyte.UI.Application/UiHostPresenter.cs b/src/UI/Lumyte.UI.Application/UiHostPresenter.cs
+index 6f8e7f39..03346158 100644
+--- a/src/UI/Lumyte.UI.Application/UiHostPresenter.cs
++++ b/src/UI/Lumyte.UI.Application/UiHostPresenter.cs
+@@ -41,6 +41,8 @@ internal sealed partial class UiHostPresenter : IDisposable
+         }
+     }
+ 
++    internal static Action<string, double>? Phase { get; set; }
++
+     public void Dispose()
+     {
+         if (_frames.Count != 0)
+@@ -58,6 +60,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+     internal static SwapchainDesc Configuration(IGraphicsSurface surface, int width, int height)
+     {
++        using UiDeviceProbe.Scope detailProbe = UiDeviceProbe.Measure("surface.configure-desc");
+         SurfaceCapabilities caps = surface.GetCapabilities();
+         TextureFormat? selected = null;
+         foreach (TextureFormat candidate in caps.Formats)
+@@ -91,6 +94,14 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+     internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null)
+     {
++        long phaseStart = System.Diagnostics.Stopwatch.GetTimestamp();
++        void Mark(string name)
++        {
++            long now = System.Diagnostics.Stopwatch.GetTimestamp();
++            Phase?.Invoke(name, System.Diagnostics.Stopwatch.GetElapsedTime(phaseStart, now).TotalMilliseconds);
++            phaseStart = now;
++        }
++
+         var frame = new Frame(owner);
+         if (visuals is not null)
+         {
+@@ -125,6 +136,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+             IGraphicsTextureView targetView = intermediate.View;
+             PreparedDraw2D prepared = frame.Own(await _renderer.PrepareAsync(list, new() { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background }));
++            Mark("prepare");
+             IArgumentTable table = frame.Own(_device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1 }));
+             uint encode = swapchain.Configuration.Format is TextureFormat.Bgra8Srgb or TextureFormat.Rgba8Srgb ? 0u : 1u;
+             var arguments = new UiPresentArguments(table.WriteTexture(0, targetView), table.WriteSampler(0, _sampler), new(target.Width, target.Height), encode);
+@@ -133,6 +145,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+             IGraphicsSemaphore acquired = frame.Own(_device.CreateSemaphore());
+             IGraphicsSemaphore rendered = frame.Own(_device.CreateSemaphore());
+             SurfaceAcquireResult result = await swapchain.AcquireNextFrameAsync(acquired);
++            Mark("acquire");
+             if (result.Frame is not IGraphicsSurfaceFrame image)
+             {
+                 return result.Status;
+@@ -188,9 +201,11 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+             commands.Barrier(new TextureBarrierDesc { Texture = image.Texture, Range = new(0, 1, 0, 1), BeforeState = imageState, AfterState = TextureState.Present, Before = imageAccess, After = default });
+             commands.Finish();
++            Mark("record");
+             frame.Submission = _device.Queue.Submit(new QueueSubmitDesc() { CommandBuffers = [commands], WaitSemaphores = [new() { Semaphore = acquired, Stages = PipelineStage.AllCommands }], SignalSemaphores = [rendered] });
+             intermediate.State = readback is not null && !captureDisplay ? TextureState.CopySource : TextureState.Sampled;
+             SurfaceStatus status = image.Present([rendered]);
++            Mark("submit-present");
+             if (status == SurfaceStatus.Success && result.Status == SurfaceStatus.Suboptimal)
+             {
+                 status = SurfaceStatus.Suboptimal;
+@@ -198,6 +213,7 @@ internal sealed partial class UiHostPresenter : IDisposable
+ 
+             submitted?.Invoke();
+             await frame.DrainAsync();
++            Mark("drain");
+             if (frame.IsRetired)
+             {
+                 throw new InvalidOperationException("The submitted device generation was retired.");
+diff --git a/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.Recording.cs b/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.Recording.cs
+index 3b067e31..88e46599 100644
+--- a/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.Recording.cs
++++ b/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.Recording.cs
+@@ -13,6 +13,7 @@ internal sealed partial class UiHostedDrawingSource
+ 
+     internal DrawList2D RecordFrame(ulong graphicsGeneration)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("host.record-frame");
+         BeginFrame();
+         try
+         {
+@@ -39,7 +40,12 @@ internal sealed partial class UiHostedDrawingSource
+             var canvas = new Canvas2D();
+             canvas.Begin();
+             RecordItems(canvas, items);
+-            DrawList2D result = canvas.End();
++            DrawList2D result;
++            using (Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("drawing.freeze"))
++            {
++                result = canvas.End();
++            }
++
+             if (reusable)
+             {
+                 _cachedCommands = result;
+@@ -107,6 +113,8 @@ internal sealed partial class UiHostedDrawingSource
+ 
+     private FrameItem[] PrepareFrame()
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("host.prepare-frame");
++
+         // A later validator can mutate an earlier surface, including applying that change immediately.
+         for (int attempt = 0; attempt < 100; attempt++)
+         {
+diff --git a/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs b/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs
+index f6a83ad1..fd2bb3e7 100644
+--- a/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs
++++ b/src/UI/Lumyte.UI.Application/UiHostedDrawingSource.cs
+@@ -20,6 +20,8 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
+ 
+     public Guid SourceId { get; } = Guid.NewGuid();
+ 
++    internal static Action<UiHostedDrawingSource, bool>? FrameCompleted { get; set; }
++
+     internal Action<Lumyte.UI.Compose.Definitions.Widget>? ValidateRoot { get; set; }
+ 
+     internal Action<UiSurface>? ValidateSurface { get; set; }
+@@ -98,6 +100,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
+         _ordinaryVisualFrames.Clear();
+         _visualRevisions.Clear();
+         frame.TrySetResult();
++        FrameCompleted?.Invoke(this, presented);
+     }
+ 
+     internal UiVisualSnapshot[] RecordedVisuals() => _recorded.Where(pair => pair.Value.IsVisible).Select(pair => pair.Key.Surface.VisualHost).OfType<UiVisualCoordinator>().SelectMany(coordinator => coordinator.Recorded).Distinct().ToArray();
+diff --git a/src/UI/Lumyte.UI/UiSurface.AnimationConnections.cs b/src/UI/Lumyte.UI/UiSurface.AnimationConnections.cs
+index 072ba911..a2b3da00 100644
+--- a/src/UI/Lumyte.UI/UiSurface.AnimationConnections.cs
++++ b/src/UI/Lumyte.UI/UiSurface.AnimationConnections.cs
+@@ -7,6 +7,7 @@ public sealed partial class UiSurface
+ {
+     private void PrepareAnimationUpdates(RebuildPlan plan)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.animations");
+         foreach (ElementUpdate update in plan.Updates)
+         {
+             PrepareAnimationUpdate(update);
+diff --git a/src/UI/Lumyte.UI/UiSurface.Drawing.cs b/src/UI/Lumyte.UI/UiSurface.Drawing.cs
+index 6011db4e..3f9776c7 100644
+--- a/src/UI/Lumyte.UI/UiSurface.Drawing.cs
++++ b/src/UI/Lumyte.UI/UiSurface.Drawing.cs
+@@ -23,7 +23,10 @@ public sealed partial class UiSurface
+                 _recordDepth++;
+                 try
+                 {
+-                    RecordElement(_rootElement, canvas);
++                    using (Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("drawing.traverse"))
++                    {
++                        RecordElement(_rootElement, canvas);
++                    }
+                 }
+                 finally
+                 {
+diff --git a/src/UI/Lumyte.UI/UiSurface.Input.cs b/src/UI/Lumyte.UI/UiSurface.Input.cs
+index dc26682a..aa16b8d2 100644
+--- a/src/UI/Lumyte.UI/UiSurface.Input.cs
++++ b/src/UI/Lumyte.UI/UiSurface.Input.cs
+@@ -180,6 +180,7 @@ public sealed partial class UiSurface
+             return;
+         }
+ 
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("input.rebuild");
+         _inputVersion = new object();
+         _rootElement.UpdateInput(Vector2.Zero, UiInputBounds.From(Vector2.Zero, _viewport), _inputVersion);
+         RebuildFocusCandidates();
+diff --git a/src/UI/Lumyte.UI/UiSurface.Layout.cs b/src/UI/Lumyte.UI/UiSurface.Layout.cs
+index 18129b4e..52025b4f 100644
+--- a/src/UI/Lumyte.UI/UiSurface.Layout.cs
++++ b/src/UI/Lumyte.UI/UiSurface.Layout.cs
+@@ -26,6 +26,7 @@ public sealed partial class UiSurface
+     /// <summary>Applies pending declarations, then computes dirty geometry without rollback.</summary>
+     public void UpdateLayout()
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("surface.update-layout");
+         UpdateTree();
+         if (_isDisposed)
+         {
+@@ -43,7 +44,11 @@ public sealed partial class UiSurface
+         _layoutPass = pass;
+         try
+         {
+-            pass.Compute(_rootElement, UiBoxConstraints.Tight(_viewport));
++            using (Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("layout.compute"))
++            {
++                pass.Compute(_rootElement, UiBoxConstraints.Tight(_viewport));
++            }
++
+             InvalidateInput();
+             UpdateInput();
+             CompleteVirtualPresentation();
+diff --git a/src/UI/Lumyte.UI/UiSurface.Rebuild.cs b/src/UI/Lumyte.UI/UiSurface.Rebuild.cs
+index 3bd9c1ef..fc670368 100644
+--- a/src/UI/Lumyte.UI/UiSurface.Rebuild.cs
++++ b/src/UI/Lumyte.UI/UiSurface.Rebuild.cs
+@@ -98,6 +98,7 @@ public sealed partial class UiSurface
+ 
+     private void Publish(RebuildPlan plan)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.publish");
+         foreach (ElementUpdate update in plan.Updates)
+         {
+             if (update.Previous?.SharedElementKey is { } previous)
+diff --git a/src/UI/Lumyte.UI/UiSurface.RebuildPlan.cs b/src/UI/Lumyte.UI/UiSurface.RebuildPlan.cs
+index 1dab73d2..e0bfd8ec 100644
+--- a/src/UI/Lumyte.UI/UiSurface.RebuildPlan.cs
++++ b/src/UI/Lumyte.UI/UiSurface.RebuildPlan.cs
+@@ -275,6 +275,7 @@ public sealed partial class UiSurface
+ 
+         internal void Prepare()
+         {
++            using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.validation");
+             var changedVisuals = new HashSet<UiElement>(Updates.Select(update => update.Element), ReferenceEqualityComparer.Instance);
+             changedVisuals.UnionWith(Removed);
+             HashSet<UiSharedElementKey> sharedKeys = _shared is null ? [] : _shared.Where(pair => !changedVisuals.Contains(pair.Value)).Select(pair => pair.Key).ToHashSet();
+diff --git a/src/UI/Lumyte.UI/UiSurface.SignalBinding.cs b/src/UI/Lumyte.UI/UiSurface.SignalBinding.cs
+index 61c8ef8a..2eee9023 100644
+--- a/src/UI/Lumyte.UI/UiSurface.SignalBinding.cs
++++ b/src/UI/Lumyte.UI/UiSurface.SignalBinding.cs
+@@ -8,6 +8,7 @@ public sealed partial class UiSurface
+ {
+     private void PrepareSignalUpdates(RebuildPlan plan)
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.bindings");
+         foreach (ElementUpdate update in plan.Updates)
+         {
+             if ((!ReferenceEquals(update.Previous, update.Next) || update.Content is not null)
+diff --git a/src/UI/Lumyte.UI/UiSurface.Signals.cs b/src/UI/Lumyte.UI/UiSurface.Signals.cs
+index 727de0d9..70316ecd 100644
+--- a/src/UI/Lumyte.UI/UiSurface.Signals.cs
++++ b/src/UI/Lumyte.UI/UiSurface.Signals.cs
+@@ -205,26 +205,29 @@ public sealed partial class UiSurface
+         {
+             for (int iteration = 0; iteration < 100; iteration++)
+             {
+-                while (true)
++                using (Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.effects"))
+                 {
+-                    SignalJob work;
+-                    lock (_signalJobs)
++                    while (true)
+                     {
+-                        _signalPosted = false;
+-                        if (!_signalJobs.TryDequeue(out work))
++                        SignalJob work;
++                        lock (_signalJobs)
+                         {
+-                            break;
++                            _signalPosted = false;
++                            if (!_signalJobs.TryDequeue(out work))
++                            {
++                                break;
++                            }
+                         }
+-                    }
+ 
+-                    RecordSignalRevision(work.Observer.Revision);
+-                    lock (_signalJobs)
+-                    {
+-                        _pendingSignalObservers.Remove(work.Observer);
+-                    }
++                        RecordSignalRevision(work.Observer.Revision);
++                        lock (_signalJobs)
++                        {
++                            _pendingSignalObservers.Remove(work.Observer);
++                        }
+ 
+-                    work.Work();
+-                    ThrowSignalFailure();
++                        work.Work();
++                        ThrowSignalFailure();
++                    }
+                 }
+ 
+                 if (_isDisposed || _pendingRebuild is not null || _signalElements.Count == 0)
+diff --git a/src/UI/Lumyte.UI/UiSurface.SubtreeUpdates.cs b/src/UI/Lumyte.UI/UiSurface.SubtreeUpdates.cs
+index fe64beee..29dc61cd 100644
+--- a/src/UI/Lumyte.UI/UiSurface.SubtreeUpdates.cs
++++ b/src/UI/Lumyte.UI/UiSurface.SubtreeUpdates.cs
+@@ -18,6 +18,7 @@ public sealed partial class UiSurface
+ 
+     private void ApplySignalElements()
+     {
++        using Lumyte.Graphics.Abstractions.UiDeviceProbe.Scope detailProbe = Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.batch");
+         var dirty = new HashSet<UiElement>(_signalElements, ReferenceEqualityComparer.Instance);
+         _signalElements.Clear();
+         var plans = new List<RebuildPlan>();
+@@ -25,65 +26,68 @@ public sealed partial class UiSurface
+         RebuildPlan? leaves = null;
+         try
+         {
+-            foreach (UiElement element in dirty.OrderBy(SignalDepth))
++            using (Lumyte.Graphics.Abstractions.UiDeviceProbe.Measure("signal.proposals"))
+             {
+-                if (!ReferenceEquals(element.Surface, this) || covered.Contains(element))
++                foreach (UiElement element in dirty.OrderBy(SignalDepth))
+                 {
+-                    continue;
+-                }
+-
+-                Widget previous = element.Widget;
+-                Widget? next = element.Signals?.ConstructionChanged == true && previous.Construction is { } construction
+-                    ? CaptureBuild(construction) : previous.Recreate(new(element));
+-                if (next is null)
+-                {
+-                    Func<Widget>? build = _rootElement.Widget.Construction;
+-                    if (build is null)
++                    if (!ReferenceEquals(element.Surface, this) || covered.Contains(element))
+                     {
+-                        UiDeclarationRecipe recipe = UiDeclarationRecipe.Capture(_rootElement)
+-                            ?? throw new InvalidOperationException("Reactive handwritten components require a rebuild hook or enclosing construction function.");
+-                        build = recipe.Build;
++                        continue;
+                     }
+ 
+-                    Rebuild(CaptureBuild(build));
+-                    UpdateTree();
+-                    return;
+-                }
++                    Widget previous = element.Widget;
++                    Widget? next = element.Signals?.ConstructionChanged == true && previous.Construction is { } construction
++                        ? CaptureBuild(construction) : previous.Recreate(new(element));
++                    if (next is null)
++                    {
++                        Func<Widget>? build = _rootElement.Widget.Construction;
++                        if (build is null)
++                        {
++                            UiDeclarationRecipe recipe = UiDeclarationRecipe.Capture(_rootElement)
++                                ?? throw new InvalidOperationException("Reactive handwritten components require a rebuild hook or enclosing construction function.");
++                            build = recipe.Build;
++                        }
+ 
+-                next.Construction ??= previous.Construction;
+-                next.ConstructionReads ??= previous.ConstructionReads;
+-                ValidateRoot(next);
+-                ElementUpdate? prepared = null;
+-                try
+-                {
+-                    if (RebuildPlan.CanBatchLeaf(element, next))
++                        Rebuild(CaptureBuild(build));
++                        UpdateTree();
++                        return;
++                    }
++
++                    next.Construction ??= previous.Construction;
++                    next.ConstructionReads ??= previous.ConstructionReads;
++                    ValidateRoot(next);
++                    ElementUpdate? prepared = null;
++                    try
+                     {
+-                        prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate);
+-                        if (prepared.Content is null && prepared.Next.ChildCollections.Count == 0)
++                        if (RebuildPlan.CanBatchLeaf(element, next))
+                         {
+-                            if (leaves is null)
++                            prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate);
++                            if (prepared.Content is null && prepared.Next.ChildCollections.Count == 0)
+                             {
+-                                leaves = new(_rootElement, _treeValidators, _sharedElements);
+-                                plans.Add(leaves);
+-                            }
++                                if (leaves is null)
++                                {
++                                    leaves = new(_rootElement, _treeValidators, _sharedElements);
++                                    plans.Add(leaves);
++                                }
+ 
+-                            leaves.Updates.Add(prepared);
+-                            prepared = null;
+-                            covered.Add(element);
+-                            continue;
++                                leaves.Updates.Add(prepared);
++                                prepared = null;
++                                covered.Add(element);
++                                continue;
++                            }
+                         }
+-                    }
+ 
+-                    leaves = null;
+-                    var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared);
+-                    prepared = null;
+-                    plans.Add(local);
+-                    covered.UnionWith(local.Updates.Select(update => update.Element));
+-                    covered.UnionWith(local.Removed);
+-                }
+-                finally
+-                {
+-                    prepared?.Signals?.Dispose();
+-                    prepared?.Animations?.Dispose();
++                        leaves = null;
++                        var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared);
++                        prepared = null;
++                        plans.Add(local);
++                        covered.UnionWith(local.Updates.Select(update => update.Element));
++                        covered.UnionWith(local.Removed);
++                    }
++                    finally
++                    {
++                        prepared?.Signals?.Dispose();
++                        prepared?.Animations?.Dispose();
++                    }
+                 }
+             }

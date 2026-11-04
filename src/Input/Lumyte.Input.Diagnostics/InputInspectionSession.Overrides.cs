@@ -204,6 +204,12 @@ public sealed partial class InputInspectionSession
             return Reject("target-stale", "The target does not belong to the current profile generation.");
         }
 
+        TargetEntry entry = _targets[target];
+        if (entry.InputSystem is not null && entry.WindowId is null && _windowFocus.Keys.Any(scope => ReferenceEquals(scope.System, entry.InputSystem) && scope.Device == entry.Device))
+        {
+            return Reject("window-required", "Select an explicit window-scoped input target.");
+        }
+
         if (_reservations.ContainsKey(target))
         {
             return Reject("target-busy", "The target is already controlled.");
@@ -483,6 +489,11 @@ public sealed partial class InputInspectionSession
             throw new ArgumentException("Targets must be current, unique, and bounded.", nameof(targets));
         }
 
+        if (targets.Any(target => _targets[target].InputSystem is InputSystem system && _targets[target].WindowId is null && _windowFocus.Keys.Any(scope => ReferenceEquals(scope.System, system) && scope.Device == _targets[target].Device)))
+        {
+            throw new ArgumentException("window-required", nameof(targets));
+        }
+
         if (targets.Any(_reservations.ContainsKey))
         {
             throw new InvalidOperationException("target-busy");
@@ -619,6 +630,8 @@ public sealed partial class InputInspectionSession
 
     private sealed record TargetEntry(ActionSystem? ActionSystem, InputSystem? InputSystem, InputDeviceId Device, InputControl Control, DeviceTargetKind DeviceKind, ulong Pointer, string? ContextId, string? ActionId, ActionValueKind Kind)
     {
+        public Lumyte.Input.Abstractions.InputWindowId? WindowId { get; init; }
+
         public static TargetEntry ForAction(ActionSystem system, string contextId, string actionId, ActionValueKind kind) => new(system, null, default, default, DeviceTargetKind.None, 0, contextId, actionId, kind);
 
         public static TargetEntry ForDevice(InputSystem system, InputDeviceId device, InputControl control, ActionValueKind kind) => new(null, system, device, control, DeviceTargetKind.Control, 0, null, null, kind);

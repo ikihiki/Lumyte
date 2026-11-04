@@ -26,3 +26,11 @@ foreach (InputDeviceInfo device in input.DeviceInfos)
 InputSystem は作成スレッドから利用します。注入 Source は構成側が所有し、InputSystem を先に Dispose した後で Source を破棄します。登録 Device は InputSystem が破棄します。
 
 設計・終了順・エラー契約は [ADR-INPUT-0001](../../../docs/adr/input/INPUT-0001-input-system.md) を参照してください。Windows / Linux / Browser の入力取得バックエンドはこのパッケージに含みません。
+
+## Window付きの入力
+
+ordered sourceはdevice登録順によらず取得列の順で取り込み、batch全体の検証・状態と履歴の確定・ackの後にRecordedを通知します。通知例外で同じbatchを再送しません。recordのWindowIdは取得origin、StateWindowIdは開始時の状態owner、Captureは取得原因です。加工や履歴再読で現在のactive Windowへ置換しません。
+
+`GetState(device, windowId)`で対象scopeだけを参照します。既存GetState(device)は全scopeの集約です。押下はOR、位置は座標Windowと対で扱います。Windowのfocus喪失はそのscopeだけを中立化し、物理系列は終端まで別Windowへ移しません。明示StopSourceは終端停止し、ReadRecords.HasAcquisitionGapでretentionの欠落と区別できます。
+
+標準Platform sourceはorderedです。加工する場合はOrderedCorrectingInputSource／OrderedVirtualizingInputSourceを使用し、source自体と生成元Window mapをホストの寿命中保持します。

@@ -126,7 +126,7 @@ public sealed partial class InputInspectionSession
 
     private bool EvaluateDeviceTarget(InputOverrideTarget target, InputSystem system, InputDeviceId device, TimeSpan now, ref List<InputData>? effective, IReadOnlyList<InputData> data, bool removeWhenRestored)
     {
-        if (!_targets.TryGetValue(target, out TargetEntry? entry) || !ReferenceEquals(entry.InputSystem, system) || entry.Device != device)
+        if (!_targets.TryGetValue(target, out TargetEntry? entry) || !ReferenceEquals(entry.InputSystem, system) || entry.Device != device || entry.WindowId is not null)
         {
             return false;
         }

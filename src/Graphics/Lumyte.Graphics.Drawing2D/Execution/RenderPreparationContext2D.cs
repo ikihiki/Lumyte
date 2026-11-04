@@ -29,4 +29,6 @@ public sealed class RenderPreparationContext2D
 
     /// <summary>Rejects resources whose runtime generation is no longer usable.</summary>
     public void ValidateResources() => _resources.Validate();
+
+    internal SolidRectangleResources2D? RectangleResources() => _resources.Rectangles();
 }

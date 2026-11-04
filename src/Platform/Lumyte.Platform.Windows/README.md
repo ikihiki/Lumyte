@@ -28,3 +28,5 @@ Clipboard は Unicode テキストを読み書きし、内容を含まない変�
 Graphics と入力管理を先に終了してから Window を解放し、最後に Platform を解放します。通常の入力管理では InputSystem を先に終了し、その後に Source を Dispose します。
 
 [単一 Window サンプル](../../../samples/Lumyte.Platform.Windows.Sample/README.md)と[設計](../../../docs/adr/platform/PLATFORM-0001-platform-and-window-contracts.md)を参照してください。
+
+標準のCreateInputSourceは`IWindowInputSource`／`IOrderedInputSource`を実装します。InputSystemへsource全体を注入し、device.DrainEventsへ落としてWindow情報を失わないようにします。TryGetInputWindowIdは生存中のWindowIdを一回の入力接続IDへ解決します。mouse captureは取得中に開始し、buttonイベントと同時点の位置を同じ原因IDで記録します。capture喪失はMouseButtonCanceledData、Windowの終了はWindowInputClosedDataとして記録します。

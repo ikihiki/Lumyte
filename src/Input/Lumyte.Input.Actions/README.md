@@ -70,3 +70,5 @@ Inheritance is resolved when building runtime indices, with independent hysteres
 recognition and action state per context. `ToSettings` retains `ParentId` and local
 actions; inherited copies are not persisted. Rebinding a declaring parent's binding
 updates its descendants; declare a child binding to customize only that child.
+
+Window付き入力には`new ActionSystem(profile, bufferOptions, inspection, windowId)`でscopeを指定します。全InputRecordを順序どおりAdvanceへ渡し、取得originによる事前filterは行いません。StateWindowIdで認識対象を選ぶため、別originのUpでも元のownerを終了できます。button取消は正常なRelease認識を起こしません。既存constructorはWindowless scopeを扱います。

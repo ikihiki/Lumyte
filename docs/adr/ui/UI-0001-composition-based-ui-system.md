@@ -1,0 +1,202 @@
+# ADR-UI-0001: Compositionで構築する保持型UIシステム
+
+- 状態: 提案
+- 日付: 2026-10-26
+- 更新: 2026-10-31
+
+Compositionの所有content・delegate引数・値adapter・関数factoryの生成拡張はPR #98でmainへ統合済みである。UIスタックはその契約を利用し、汎用の契約・Generator・テストを各UI PRへ重複して含めない。詳細は[Composition ADR](../composition/COMPOSITION-0005-function-factories.md)を参照する。
+
+Signals本体（同期グラフ・非同期変換・性能改善）はPR #99でmainへ統合済みである。UI側の購読・値引数・ページ寿命の接続だけを実装PR 15で扱う。UIスタックは統合後のmainを基点とし、#71のbaseはmainを維持する。
+
+## 背景
+
+既存のComposition、Input、Windowing、Drawing2Dの上に、ゲーム内画面とツールのためのUIを構築する。構築構文、親子関係、レイアウト、入力、GPU実行をそれぞれの責務へ分け、実装を段階的にレビューできる必要がある。
+
+本ADRは全体の依存方向を扱う。各実装PRの契約・API・受け入れ条件はUI-0002〜0012およびUI-0014〜0023で定義する。追加する部品の一覧・優先度・後続PR分割は[UI-0013](UI-0013-component-catalog-and-delivery-plan.md)で定義する。採用状態と実装完了は各ADRで区別し、再設計の採用だけでコードや環境検証が完了したとは扱わない。
+
+## 決定
+
+### WidgetとElementの分離
+
+[UI-0002](UI-0002-widget-tree-and-composition.md)に基づき、再生成するWidget宣言と
+状態・寿命を持つElement実体を分離する。layout / input / recordの入口もElementへ置く。
+C#の構築関数によるWidget生成は許容し、状態のコピーやWidget版の実行時ツリーは維持しない。
+この境界は#77から導入し、各機能PRでElementへ接続する。責務ごとに既存のPRへ組み込み、末尾の追加PRだけで変更しない。
+評価用試作の性能値は履歴として残し、最終設計の実装移行後に改めて測定する。
+
+### 構築と依存方向
+
+`src/UI/Lumyte.UI`に.NET 10のmanagedライブラリを置く。assembly・名前空間・NuGet名は`Lumyte.UI`とし、実行時の直接依存はComposition、Input.Abstractions、Graphics.Drawing2D、Signals、Animation、Coreとする（Signalsは実装PR 15、Animation/Core.Timeは実装PR 16で追加）。GeneratorはAnalyzer参照する。UI本体からPlatform、Windowing管理、InputSystem、RenderGraph、Resources、DI、Diagnosticsへ直接依存しない。任意の統合層がWindow managerを注入して利用し、UiSurfaceやWidgetに具象Windowの生成・管理を組み込まない。
+
+[COMPOSITION-0001](../composition/COMPOSITION-0001-declarative-composition.md)の生成ファクトリ、with、子インデクサー、名前付きスロットを使う。UIは表示中の要素と状態を保持し、構築関数の再実行で得たWidget宣言を既存の表示要素と照合する。依存する状態の変更時に再構築を行い、追加・削除・並べ替えを反映する。再構築は要求されたときに行い、毎frameの描画命令生成とは独立させる。CompositionへUI保存領域や寿命管理を追加しない。通常内容・背景はWidgetChildrenへそれぞれ一回だけ初期化する。readonlyストレージへの生成規則は[COMPOSITION-0004](../composition/COMPOSITION-0004-owned-content-collections.md)、所有権と動的UIへの影響は[UI-0002](UI-0002-widget-tree-and-composition.md)を正本とする。
+
+イベントコールバックは`Button(onClick: () => Save())`のように生成ファクトリの名前付きパラメーターで渡す。UI側はnullableなdelegateプロパティとして保持し、省略・nullはハンドラーなし、代入は置換とする。public eventとComposeActionによる追加購読はUIのイベント設定APIとして提供しない。直接delegate型を生成するためのComposition契約の追加は実装PR 4の担当範囲とする。
+
+```text
+Compositionの生成ファクトリ → Widget宣言 → Elementツリー → layout・入力・描画記録
+アプリのWindow/Input統合 ────────────→ UiSurface
+UiSurface → DrawingCanvas2D → 既存renderer → GPU実行・提示
+```
+
+初期対象はPanel、Stack、Rectangle、単一内容と背景スロットを持つButton、clip、pointer、キー操作である。一般Text/Image、拡張layout、scroll、値入力・選択部品の対象はUI-0013で計画し、各導入PRで詳細設計する。シグナルのUI引数への適用と自動購読は[UI-0019](UI-0019-signals-and-reactive-state.md)で定義する。テーマのruntimeとOSアクセシビリティbridgeは別途設計する。編集・IMEは実装PR 11の任意TextBoxで追加し、IME候補の独自描画には同PRのImeCandidateViewを使う。[Parley文字組みと共通Text](../graphics/GRAPHICS-0024-text-rendering.md)は将来のTextコントロールの接続先とし、UI本体へ文字組みエンジンを組み込まない。
+
+### 実装PRと対応ADR
+
+実装PRの番号は実装順の識別であり、GitHubの採番ではない。全体方針のPRと、各範囲のADRを置く18段階の実装PRに分ける。draftは設計だけを含み、対応する実装・テスト・READMEを追加してから実装PRとしてreadyにする。各draftは直前のブランチをbaseとし、先行ADRの契約を参照できるようにする。具体的なPRへのリンクは全体PRの説明で管理する。
+
+| 実装PR | 対応ADR | 追加する機能 | 実装の前提 |
+| --- | --- | --- | --- |
+| 1 | UI-0002 | Widget宣言・Element実体、所有権、再構築、状態とsurfaceの寿命 | UI-0001 |
+| 2 | UI-0003 | 一方向layout、min/max制約、寸法、Stack、無効化 | PR 1 |
+| 3 | UI-0004 | 矩形、描画記録、clip、直接描画サンプル | PR 2 |
+| 4 | UI-0005・COMPOSITION-0002 | hit test、capture、callbackパラメーターと生成対応 | PR 3 |
+| 5 | UI-0006 | focus、Tab、キー押下、入力競合 | PR 4 |
+| 6 | UI-0007・INPUT-0007 | 取得元Window付きInput、source順序、Window/Input接続、Hosted、DPI | PR 3・5 |
+| 7 | UI-0008 | 親RenderGraph、Resources、device世代の接続 | PR 3・6 |
+| 8 | UI-0009 | Locator、自動待機、通常入力による操作、状態検証 | PR 5・6。積み上げ先はPR 7 |
+| 9 | UI-0010 | Diagnostics経由の操作、Job、操作権lease、結果取得 | PR 8 |
+| 10 | UI-0011・UI-0014 | Window manager注入、独立Hosted fallback、Popup・入力scope・診断操作権 | PR 6〜9 |
+| 11 | UI-0012・UI-0015 | TextBox・編集文書、TSF/Browser IME、任意の候補描画・候補操作、Fill | PR 6〜10・GRAPHICS-0024 |
+| 12 | UI-0016 | UI専用アプリ、builder、標準driver、frame・入力・描画・終了の統合 | PR 6〜11 |
+| 13 | UI-0017 | navigation、型付き引数、履歴、離脱guard、表示切替とページ退役 | PR 12 |
+| 14 | UI-0018 | DIページ、MapPage/MapGroup、関数handler、初期route、AOT | PR 12・13 |
+| 15 | UI-0019 | 独立Signalsとの接続、通常Composeの値引数拡張、UI本体の自動購読 | PR 1〜14 |
+| 16 | UI-0020 | Animationの値/Timeline接続、フレーム更新と表示producerの寿命 | PR 12〜15・ANIMATION-0001〜0005 |
+| 17 | UI-0021 | 表示・退出・page/connected演出、入力gateとGPU資源寿命 | PR 16 |
+| 18 | UI-0023 | 静的関数によるWidget、引数factory、ローカルSignalの状態保持 | PR 15〜17 |
+
+PR 16の実装時に、値評価とフレーム更新をPR 16、隔離capture・入力gate・GPU退役を伴う視覚遷移をPR 17へ分割した。PR 1〜15の番号と依存順は維持し、各PRで対応ADRを実装に合わせて確定する。UI-0021はPR 17で採用し、PR 16にはその公開APIを追加しない。
+
+コンポーネント拡充はUI-0013でP0/P1/P2とC1〜C9の後続PR案に整理する。既存の実装PR番号は維持する。
+
+描画とhit testは同じBounds・座標・clip規則を使うため、PR 3で幾何走査を確定し、PR 4はそれを前提にする。全公開APIを先にstubで追加せず、動作が完成するPRで段階的に公開する。
+
+再構築と内部状態保持は最初の実装PRから提供する。型・key・子slotによるElement照合と状態保持をUI-0002で実装し、後続のlayout・入力・Automation・TextBoxはその基盤へ接続する。Signalによる自動再実行は別途追加する。
+
+### 共通の契約
+
+以下は全体の要約であり、詳細は対応ADRを正本とする。後続ADRは共通契約を参照し、その範囲で追加・変更する条件を記載する。
+
+実行時のElementツリーは参照同一性を保つ単一親・単一surface・非循環の構造とする。所有権、同時操作の責任、処理順序、破棄はUI-0002で定義する。UI本体はWindowとGPU資源を所有せず、ホストと任意の統合層がその寿命を管理する。UiSurface・Element・Widgetは作成threadへ固定せず、利用者が明示的に行う並行操作の同期は利用者が管理する。通常hostは処理順序とthread依存serviceへの内部配送を管理し、ページ側へthread検査や手動dispatcherを要求しない。
+
+レイアウトはFlutter型の「制約を子へ渡す→子がサイズを返す→親が位置を決める」方式とする。一回の子layout、制約、公開Size/Bounds、拡張境界はUI-0003で定義する。描画とhit testは共通の幾何を使う。
+
+UI座標とviewportは論理pixelで扱う。DPI変換はホストのCanvasへ集約し、PixelScale、Hosted原点・clip、入力座標の契約はUI-0007で定義する。取得時に確定したInputWindowIdをINPUT-0007で保持し、後から決まるUI上の配送先Windowと分ける。
+
+任意のLumyte.UI.Automationは、snapshotに基づく検索・待機と通常入力による操作を提供する。C#の同一プロセスAPI、host、失敗・取消はUI-0009で定義する。
+
+別プロセスからの操作は既存Diagnosticsへ接続する任意adapterで提供する。Job、操作権、連番、結果取得はUI-0010で定義し、UI本体・UI.Automationから通信を参照しない。
+
+任意のLumyte.UI.WindowingはIUiWindowManagerを受け取り、通常画面の登録とPopupを扱う。[UI-0014](UI-0014-injectable-window-manager.md)で注入契約、独立HostedUiWindowManager、Nativeとのfallback合成を定義する。Popupの内容・入力scope・寿命・Automation/Diagnostics連携はUI-0011で定義し、WindowSystemへの接続は専用adapterに限定する。
+
+任意のUI.TextEditingとPlatform adapterがIMEと編集を提供する。共通文書、Windows TSF、Browser textarea、focus・入力順と候補位置は[UI-0012](UI-0012-ime-and-text-editing.md)で定義する。候補一覧の独自描画と候補専用操作は[UI-0015](UI-0015-custom-ime-candidate-presentation.md)で定義し、Browserや未対応IMEではSystem表示へ戻す。
+
+任意のLumyte.UI.Applicationは[UI-0016](UI-0016-ui-application-framework.md)で定義する。UIだけを表示するアプリのbuilder、標準Desktop/Browser/headless driver、Window/Input/IMEと全画面描画のloopを提供し、利用者がGPU実行を記述せずに起動・終了できるようにする。DIとホスト機能はこの統合層へ置く。
+
+ページ遷移は[UI-0017](UI-0017-navigation-and-page-lifetime.md)で定義する。非公開で準備してから表示・入力先・履歴を切り替え、失敗・取消では現画面を保つ。履歴はdestinationと引数を保持し、Back/Forwardでも新しいページを生成する。
+
+Minimal API風のページ登録は[UI-0018](UI-0018-minimal-page-registration.md)で定義する。Build前のMapPage/MapGroup、constructor DIと型付き関数handlerを使い、activationごとに独立したDI scopeを作る。ページはCompositionでWidgetを構築し、ページ自身をComposableにしない。
+
+シグナル本体はUIから独立した[SIGNALS-0001](../signals/SIGNALS-0001-independent-signal-runtime.md)で定義し、Signal.Create/Computed/Effectによる直接作成と自動更新を提供する。[UI-0019](UI-0019-signals-and-reactive-state.md)ではUI本体がSignalsへ依存し、通常のusing static Lumyte.UI.ComposeからSignalを値引数へ受け取る。Elementのmount・unmount・surface破棄に合わせて購読を自動管理し、構築scopeやruntimeの受渡しを利用者へ要求しない。[COMPOSITION-0003](../composition/COMPOSITION-0003-argument-adapters.md)はgenericな引数adapterだけを追加し、CompositionはUI/Signalsへ依存しない。
+
+[UI-0020](UI-0020-animation-and-frame-lifetime.md)ではUI本体がAnimationを利用し、通常ComposeのAnimate関数で目標値の補間とTimelineをUI引数へ接続する。UIがframe更新・購読・非表示休止・navigation退役を管理し、AnimationとSignalsは互いにもUIにも依存しない。複数WindowはモデルSignalを共有し、表示producerはsurfaceごとに分ける。[UI-0021](UI-0021-connected-and-presence-transitions.md)で表示/退出と共有keyによる視覚遷移を追加し、論理commit、演出完了、GPU退役を分離する。演出能力の不足では最終画面へfallbackする。
+
+初期詳細ADRのAPI diffはmain `18ae09656616ced27876c758490ddb1a954b4706`を比較元とし、そのPRで追加する部分を示す。同revisionにLumyte.UIは存在しない。Window/Diagnostics/IME接続の比較元revisionは各ADRに記載する。先行PRのAPIは相対リンクで参照する。配置と検証項目は実装時の目標とする。
+
+## 検討した代替案
+
+- 全機能を一つのADR・実装PRへまとめると、親子関係からGPU接続までレビュー範囲が広がるため、主要な判断ごとに分割する。
+- 即時モードUIはCompositionの毎回新規生成に加えて状態照合が必要になるため、初期は保持型とする。
+- UI本体がWindow、入力pump、GPU実行を所有すると既存ホストの寿命管理と重複するため、接続は任意の統合層に置き、Window managerは利用側から注入する。
+
+## 結果と影響
+
+構築から実入力・GPU描画、UI専用アプリまで段階的に検証できる。APIの仕様元を各ADRへ集約する一方、下位の契約を変える場合は依存するADRも整合させる必要がある。
+
+## 検証方針
+
+各実装PRでその範囲のCPUテスト、必要なGPU・実環境検証、利用例を追加する。依存方向、実際のComposition Generatorによる構築、失敗後の状態、寿命を確認する。文書だけの段階では命名、APIの整合性、相対リンクとMarkdownを確認する。
+
+## スタック全体の性能レビューへの対応
+
+2026-10-31、PR #71の全体レビュー（旧スタックcommit `07c49200`）を受け、以下を担当PRのADR・実装・回帰テストへ反映する。旧測定値と今回の変更前後比較は環境が異なるため、直接比較しない。
+
+| 対象 | 更新境界と所有責任 | 担当PR |
+| --- | --- | --- |
+| ツリー走査・再構築 | 子初期化で祖先のStructureRevisionと走査cacheを失効。RebuildPlanが照合結果と旧新の走査対象を保持する | #77 |
+| Window操作履歴 | 進行中の対応表だけをAdvanceで処理。結果はWindow解放まで保持し、任意のIUiWindowRequestLifetimeで終端結果を早期解放できる | #86 |
+| 描画と入力の前後関係 | Fallbackは内側managerの提示済みHitTestを使い、公開Window IDへ変換する | #86 |
+| IME座標 | session・文書・layout・原点・clip・scaleの変更時だけ公開。Parleyの区間索引で範囲検索を行う | #87 |
+| 静止した標準host | rootと構造revisionが同じ間はEditorを再検証しない。chromeのgeometry要求は一turnへ集約し、自身の結果を解放する | #89 |
+| GPU待機 | AcquireからPresentまでをsubmitゲート内で行い、GPU完了・readback・退役をゲート外で待つ。MaximumFramesInFlightで未完了frameを制限する | #89 |
+| Signal更新 | 変更のない構造のrecipeを再利用し、走査・照合の重複確保を削減する。接続済み宣言のsetterは更新しない | #93 |
+
+論理commit、最終提示、GPU退役、DI解放の区別を維持する。再構築全体の粒度を変更する部分木境界は別の設計判断であり、今回の走査cache・recipe再利用だけで部分木更新を実装したとは扱わない。無変更時、長い文書、長いWindow寿命、および一部だけ変わる画面を継続的な性能検証対象とする。
+
+## 状態と解放の所有境界
+
+同じ意味の状態を複数のboolや別々のfieldで保持しない。更新の判断は次の所有者へ集約する。
+
+| 対象 | 所有者と不変条件 | 担当PR |
+| --- | --- | --- |
+| 予約した宣言 | 再構築候補がrootを所有する。Signal導入後は候補の購読も所有し、公開時にだけsurfaceへ移す。適用中に予約された次の候補は次回境界まで残す | #77・#93 |
+| 照合と再利用 | RebuildPlanが旧新ツリーと照合結果を持ち、状態準備・identity保持・幾何再利用を実行する。公開後の入力継続と取消通知は入力引継ぎへ分離する | #77・#80・#81・#84・#93 |
+| Windowの前後順 | 共通のlayerと提示順を描画とhit testに使う。FallbackでIDを変換しても内側の提示順を維持する | #86・#89 |
+| Popupの終了 | 公開状態のClosing/Closed/Failedから終了判定を導く。取消callbackの前にClosingを公開する | #86 |
+| ページ交換 | 交換tokenは準備・静止・commit・解放/破棄の段階を持つ。Viewが自分の清掃進捗を所有し、成功済み手順を再実行しない | #90 |
+
+論理commitは新しい入力と宣言の公開、最終提示は演出の終了、GPU退役は旧資源を参照する処理の完了、DI解放はページの所有scopeの返却を意味する。これらは一つの完了flagへまとめない。Viewの清掃再試行と、Navigationが所有するページRetire・DI scope解放も別の進捗として扱う。
+
+全Widget共通の部分木更新基盤を#77へ置き、#93でSignalによる自動更新を接続する。関数Widgetを導入する#97では、[UI-0023](UI-0023-function-widgets-and-local-signals.md)に基づき関数の読取依存とUse状態を同じ基盤へ接続する。通常Widgetの引数と関数の直接読取を更新境界とし、無関係な宣言を保持する。Popup・共有key・独自validatorは投影されたツリーで検証する。明示RebuildとSurface構築関数の直接読取は全体を再構築する。layoutと入力geometryの再計算範囲は、宣言の構築範囲と分離する。
+
+### 部分木更新の導入順
+
+- #77（UI-0002）: 全Widgetの再生成、Elementのruntime slot・PrepareUpdate・投影検証。通常Rebuildも同じ基盤を使う。
+- #93（UI-0019）: Element所有のSignal購読とdirty集合、保持子を含む部分公開、Popup検証、Hostedのrevision整合性。
+- #94/#96: 既存の共通更新へアニメーション・presence・共有要素を接続する。
+- #97（UI-0023）: 関数body、Use、contextとNavigationの接続。共通部分木基盤をここまで延期しない。
+
+## 性能方針と検証
+
+最適化対象をWidget生成の禁止ではなく、不要な仕事と重複保持に置く。
+
+- 実行時ツリーをElementに一本化し、Widget版のmountedツリー、子viewの付替え、
+  幾何コピー、全体の旧新Widget逆引きによる入力参照修復を廃止する。
+- dirty集合と変更slotを更新単位とする。無変更時に全observerを走査しない。
+  全体を参照するvalidatorや実際のlayout・描画の走査費用とは分けて測る。
+- 明示全体Rebuildは全宣言を作る。key辞書は必要なslotだけに作り、
+  変更しないslot配列と入力用のElement参照は再利用する。
+- Elementはmount中に再利用する。Widget / Element本体の汎用poolは導入しない。
+  一時配列・辞書等だけはprofile後に返却時点と参照clearを定義して検討する。
+- 型付きElementと通常フィールドを基本とし、状態の汎用bagや全ノードへの重いserviceを
+  必須にしない。leafは空slot・購読・Use tableを確保しない。
+
+受入検証は独自状態の維持、type / key / slot / reorder、部分更新、子交換hook、
+準備失敗、取消とunmountの順、文書・IME、source交換、購読解放、Useの入れ子とthread分離、
+callback例外、最終提示とGPU退役、NativeAOTを含む。
+宣言が祖先の子設定から残る場合でも、除去したElement・購読・文書が外部Signalから
+保持されないことをWeakReferenceで確認する。
+
+既存harnessの100 / 1000子、全体 / 局所 / 一括 / 関数更新、capture、保持heapを再測定する。
+構築、照合、prepare、公開、layout、input、record、破棄の時間を分け、
+無変更時の走査回数とobserverの継続数も記録する。C#の宣言生成費用を隠さず、
+割当量と保持heap、CPU時間を別々に扱う。分離後の性能は同じ移行後revisionで測定して記録する。
+
+2026-10-31の追加レビューでは、keyをSignal引数から除外し、配列mapはCompute内の再構築へ統一する。
+宣言共有とElement所有の区別、slot縮小、描画cacheの失効、サービス検証indexは各担当ADRへ反映する。
+init-only Keyを持つ関数adapterの生成器対応は、独立したComposition PR #104を前提とする。
+
+## 性能最適化の配置
+
+PR #78は成功済み有効制約とdirty状態でlayout部分木を再利用し、custom Elementは
+内部状態がlayoutに影響したときInvalidateLayoutを呼ぶ。#93は互換leafの更新planを集約し、
+PR #94はanimationの仕事確認後にElementを一巡する。#96は共有要素の既存key索引を利用する。
+
+標準hostのSurface検証と中間textureの有界再利用は#89へ置く。#96では描画内容と提示確認を
+分離し、組み込みPanel/Stack/Rectangleだけの静止frameのCPU描画命令を再利用する。
+custom描画、animation登録、presence、page遷移は通常の記録を継続する。
+構造・サービス要件・描画・Signal・graphics世代の既存revisionと登録集合を使い、
+型やcallbackの意味を推測してcache対象を一般化しない。
+
+CPU時間・managed allocationとElement常駐サイズ、資源作成回数を別々に測定する。
+CPU計測値からGPU処理時間や実際の表示FPSを推定しない。

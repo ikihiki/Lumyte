@@ -25,3 +25,5 @@ CanvasContext は借用で、Surface が使用する間は Native の保持ト�
 Clipboard は secure context の navigator.clipboard を使用し、非同期読み書きを提供します。現在の権限は Features とは別で、権限拒否は呼び出しの失敗として伝えます。変更通知は未対応です。
 
 C# API は対応する JS context で呼びます。PumpEvents は DOM の観測・入力キューを一度だけ取得し、Input Source はその後にデータを排出します。マウスは canvas の論理座標、ホイールは deltaMode に応じた正規化値です。
+
+標準のCreateInputSourceは`IWindowInputSource`／`IOrderedInputSource`を実装します。InputSystemへsource全体を注入し、device.DrainEventsへ落としてWindow情報を失わないようにします。TryGetInputWindowIdは生存中のWindowIdを一回の入力接続IDへ解決します。mouse captureは取得中に開始し、buttonイベントと同時点の位置を同じ原因IDで記録します。capture喪失はMouseButtonCanceledData、Windowの終了はWindowInputClosedDataとして記録します。

@@ -9,3 +9,5 @@ DPI は 1 として扱い、IsResizable による Window manager のリサイズ
 キー対応の既定は evdev ベースの XKB keycode です。異なる keymap は LinuxPlatform の keyMapping 引数で指定します。Raw Input、ゲームパッド、タッチ、ペンは未対応です。
 
 作成スレッドで PumpEvents を呼び、任意の InputSystem / WindowSystem をその後に更新します。Input Source や Window は OS キューを再取得しません。Window と Source を解放してから Platform を解放します。
+
+標準のCreateInputSourceは`IWindowInputSource`／`IOrderedInputSource`を実装します。InputSystemへsource全体を注入し、device.DrainEventsへ落としてWindow情報を失わないようにします。TryGetInputWindowIdは生存中のWindowIdを一回の入力接続IDへ解決します。mouse captureは取得中に開始し、buttonイベントと同時点の位置を同じ原因IDで記録します。capture喪失はMouseButtonCanceledData、Windowの終了はWindowInputClosedDataとして記録します。

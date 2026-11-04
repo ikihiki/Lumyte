@@ -323,6 +323,8 @@ pub fn create(
     layout.break_all_lines((options.max_width > 0.0).then_some(options.max_width));
     layout.align(alignment, AlignmentOptions::default());
     let mut output = LpLayout {
+        carets: Vec::new(),
+        ranges: Vec::new(),
         glyphs: Vec::new(),
         paths: Vec::new(),
         paints: Vec::new(),
@@ -332,6 +334,47 @@ pub fn create(
         height: layout.height(),
         line_count: layout.len() as u32,
     };
+    if options.editing != 0 {
+        // Use Parley's cursor and selection API, rather than dividing glyph advances.
+        // The managed editor filters these scalar boundaries to extended graphemes.
+        use parley::editing::{Cursor, Selection};
+        use parley::layout::Affinity;
+        let byte_boundaries: Vec<usize> = text.char_indices().map(|(index, _)| index)
+            .chain(std::iter::once(text.len())).collect();
+        let mut caret_ids = BTreeSet::new();
+        for index in byte_boundaries.iter().copied() {
+            for affinity in [Affinity::Downstream, Affinity::Upstream] {
+                let caret = Cursor::from_byte_index(&layout, index, affinity);
+                if !caret_ids.insert((caret.index(), u32::from(caret.affinity() == Affinity::Upstream))) {
+                    continue;
+                }
+                let rect = caret.geometry(&layout, 1.0);
+                let previous = caret.previous_visual(&layout);
+                let next = caret.next_visual(&layout);
+                output.carets.push(LpCaret {
+                    index: caret.index() as u32,
+                    affinity: u32::from(caret.affinity() == Affinity::Upstream),
+                    previous_index: previous.index() as u32,
+                    previous_affinity: u32::from(previous.affinity() == Affinity::Upstream),
+                    next_index: next.index() as u32,
+                    next_affinity: u32::from(next.affinity() == Affinity::Upstream),
+                    x: rect.x0 as f32, y: rect.y0 as f32,
+                    width: (rect.x1 - rect.x0) as f32, height: (rect.y1 - rect.y0) as f32,
+                });
+            }
+        }
+        for pair in byte_boundaries.windows(2) {
+            let start = Cursor::from_byte_index(&layout, pair[0], Affinity::Downstream);
+            let end = Cursor::from_byte_index(&layout, pair[1], Affinity::Upstream);
+            for (rect, _) in Selection::new(start, end).geometry(&layout) {
+                output.ranges.push(LpSelectionRect {
+                    start: pair[0] as u32, end: pair[1] as u32,
+                    x: rect.x0 as f32, y: rect.y0 as f32,
+                    width: (rect.x1 - rect.x0) as f32, height: (rect.y1 - rect.y0) as f32,
+                });
+            }
+        }
+    }
     if !output.width.is_finite() || !output.height.is_finite() {
         return Err("The resulting paragraph dimensions are not finite.".into());
     }
@@ -538,6 +581,7 @@ mod tests {
             direction: 0,
             palette_index: 0,
             decorations: 0,
+            editing: 0,
             fallback_font_ids: std::ptr::null(),
             fallback_font_count: 0,
             features: std::ptr::null(),
@@ -547,6 +591,22 @@ mod tests {
             locale: std::ptr::null(),
             locale_len: 0,
         }
+    }
+
+    #[test]
+    fn editing_geometry_is_explicit_and_uses_valid_utf8_boundaries() {
+        let mut engine = engine();
+        let text = "office אבג e\u{301}";
+        let plain = create(&mut engine, text, &options(), &[]).unwrap();
+        assert!(plain.carets.is_empty());
+        assert!(plain.ranges.is_empty());
+        let mut settings = options();
+        settings.editing = 1;
+        let editing = create(&mut engine, text, &settings, &[]).unwrap();
+        assert!(!editing.carets.is_empty());
+        assert!(!editing.ranges.is_empty());
+        assert!(editing.carets.iter().all(|caret| text.is_char_boundary(caret.index as usize)
+            && caret.x.is_finite() && caret.y.is_finite()));
     }
 
     #[test]

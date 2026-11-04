@@ -1,5 +1,9 @@
 using Xunit;
 
+// Native-device exercises share the physical GPU. Run fixtures sequentially;
+// cache concurrency tests still synchronize their own parallel worker tasks.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Lumyte.Graphics.Tests;
 
 /// <summary>Runs a real-device test only when the GPU test environment is explicitly enabled.</summary>

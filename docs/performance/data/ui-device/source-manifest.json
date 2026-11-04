@@ -1,0 +1,26 @@
+[
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.cs",
+    "Sha256": "AB0B485B0EDC2710E5A656D1E3DCD534F040099E53C786F03B1E894497399A03"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.Cache.cs",
+    "Sha256": "65B1DB8254509F481B14C5F6AE6494E9C390B8142075038ADFEDB1D2CDA282D8"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Drawing2D/Shaders/drawing-fragment.slang",
+    "Sha256": "790536787592DB102046416F544605DB42C4EC03F21BF961E2F80974BA937C6A"
+  },
+  {
+    "File": "src/Graphics/Lumyte.Graphics.Wgpu/WgpuShaderDataBuffer.cs",
+    "Sha256": "437F5C085D8CC94120B230B1165B96654E85F7E0C72D10FFFC09E7708DA76408"
+  },
+  {
+    "File": "tools/benchmarks/ui-device/Program.cs",
+    "Sha256": "44FB5E27EC741994090A8F766EE2FA97C5858FA90E88E93FDC357D3DEE96C4A5"
+  },
+  {
+    "File": "tools/benchmarks/ui-device/instrumentation.patch",
+    "Sha256": "083C1214723BD5312FFB04E97B75BDA858850D554C9CB35A7B335E0DE67BF41B"
+  }
+]

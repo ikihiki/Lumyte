@@ -10,7 +10,7 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Tests -c 
 
 環境変数を指定しない場合は GPU テストを skip します。有効にした場合、device を生成できないことを成功として扱いません。Browser の実行は [.NET WebAssembly サンプル](../../../samples/Lumyte.Graphics.Browser.Sample/README.md) で確認します。
 
-[既存 CI](../../../.github/workflows/composition.yml) の Linux x64 ジョブで、セットアップ済みの lavapipe を使って native device の GPU テストを有効にします。同じジョブで `mise run test-wasm` による browser WebGPU の検証も実行します。
+[既存 CI](../../../.github/workflows/composition.yml) の Linux x64 ジョブで、セットアップ済みの lavapipe を使って native device の GPU テストを有効にします。Browser WebGPU は別の Browser ジョブで検証します。
 
 BufferTests は layout の要素単位 alignment と overflow を検証し、GPU テストでは共通の BufferExercise を Wgpu／Vulkan device に適用します。Browser CI のサンプルも同じ処理を実行します。buffer に GPU コピー命令や自動 staging がないことを前提に、CPU access の方向・mapping・範囲と寿命を検証します。
 
@@ -39,3 +39,19 @@ Browser CIは二つの外部contextで共通MultiSurfaceExerciseを実行し、�
 resourceの寿命・登録参照の有効性・shader ABI・texture状態・wait／signalの整合性は利用者側の契約です。draw／Submit時にこれらの不正使用をAPIが検出することはテストせず、明示的な同期・転送とGPU結果の正しさを既存CIで検証します。
 
 RenderGraphTests は共通 RenderGraphExercise を使い、一時 buffer／texture、plan-owned view、culling と自動 barrier による GPU readback を Wgpu／Vulkan で確認します。Browser sample と verifier も同じ exercise の成功 report を必須にします。GPU 不要の依存・寿命・診断検証は `Lumyte.Graphics.RenderGraph.Tests` に配置します。
+
+## Cold-cache命令数境界の回帰
+
+Linux x64 CIでは通常のsuiteより前に `VulkanProgramCapacitiesAsync` を新しい空のMesa shader cacheで実行します。過去のdriver生成コードを使うと、最大256命令のnative readbackで起きる問題が隠れるためです。通常suiteのdriver cacheを削除・無効化せず、専用の一時directoryを使います。
+
+```sh
+source tools/setup/activate.sh
+export LUMYTE_GRAPHICS_GPU_TESTS=1
+export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+export MESA_SHADER_CACHE_DIR="$(mktemp -d)"
+dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter FullyQualifiedName~VulkanProgramCapacitiesAsync
+```
+
+回帰caseは256命令を最初に描画し、255命令と8/9・16/17境界も独立した期待画素で確認します。nativeのphysical-pointer命令取得では、SIMDの非activeなループ終了レーンがone-past-endを読むことがあるため、indexを独立したbuffer Countの範囲へ制限します。正しい描画プログラムの有効iterationではindexは変わりません。buffer Count=0・不正な依存index等、任意の不正GPU入力を検証する変更ではありません。
+
+修正前は空cache・4CPUのlavapipeでtesthost SIGSEGVを再現し、native dumpで命令bufferのCount=256に対するindex=256の読取りを確認しました。最大RSSは約400MiBで、OOMとは区別しています。cacheが温まった107件のsuite成功だけでは、この回帰を検証したことにはなりません。crash dumpはプロセス内メモリーを含むため公開しません。

@@ -1,0 +1,154 @@
+{
+  "ProductTree": "c506d0e00526c583fc32ae1256c94411e96e40df",
+  "Date": "2026-11-02 JST",
+  "StopwatchFrequency": 10000000,
+  "DotnetTrace": "10.0.750501",
+  "TraceEvent": "4.0.0",
+  "NetTrace": {
+    "Path": "artifacts/ui-detail/all.nettrace",
+    "Bytes": 14400690,
+    "Sha256": "AB71854771B177D87CADEEE558A710F6F5B1938F821D947B2CA1D0FFC6FE3798"
+  },
+  "TraceScopes": "trace-all uses initial coarse scopes; timeline-* adds capabilities/native and exact stage timestamps, same product behavior",
+  "Binaries": [
+    {
+      "Role": "control",
+      "File": "Lumyte.UI.Application.Tests.dll",
+      "Sha256": "23365DF60BE2DD6B1E5E2AF58324B8651FC02ED2D1390A0295E43109CEC66CC3"
+    },
+    {
+      "Role": "control",
+      "File": "Lumyte.Graphics.Abstractions.dll",
+      "Sha256": "D397E025256B92B9228FC18ACF9DA86B1F1DC711954A873BD9D8B64272A87BA6"
+    },
+    {
+      "Role": "control",
+      "File": "Lumyte.Graphics.Wgpu.dll",
+      "Sha256": "ED788552DE12243CB0FD93AAC1DFC24F32E3733B81553FC315198B113FA82863"
+    },
+    {
+      "Role": "control",
+      "File": "Lumyte.Graphics.Drawing2D.dll",
+      "Sha256": "D661D800EB6A52D5E813F6095C388207EFA7B532DC56D9C31D58F2CE3F203A6E"
+    },
+    {
+      "Role": "control",
+      "File": "Lumyte.UI.dll",
+      "Sha256": "1F92FE2EEC4EDC9C341AEF593C248D42AE168EC53CF8C05389654AFC47337752"
+    },
+    {
+      "Role": "control",
+      "File": "Lumyte.UI.Application.dll",
+      "Sha256": "F85F0340F6D426925C8139BCFD5FE62C6413823146F165C04BE7C636E387A9DC"
+    },
+    {
+      "Role": "control",
+      "File": "Lumyte.UI.Application.Desktop.dll",
+      "Sha256": "7E74129CFDB2230D1588C54A88A0FE24BC43633757B897167D6AD8E6F4221D1D"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.UI.Application.Tests.dll",
+      "Sha256": "B8BA4B5243573C00626BFC13F1511D70E328AA45B807038D06BA8EDD54208E17"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.Graphics.Abstractions.dll",
+      "Sha256": "9ACE3FDEE18E7A1C38C3A505856FCA9FBAAAC3E77C2CE546EAEA494A6351C50D"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.Graphics.Wgpu.dll",
+      "Sha256": "2280C67F552960E00C630E0F7488BB87532F411FA31C823A9C367F300AC34875"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.Graphics.Drawing2D.dll",
+      "Sha256": "BBC7F7E362D99AB65CC8096B7157A2E7C0DCB75F3F8ED30E755A5D5C1DFC8D5B"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.UI.dll",
+      "Sha256": "3327744C5E1381DD132ECB767BF025DC9DF0163BEFBFD072216BB8B8CDFFAB70"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.UI.Application.dll",
+      "Sha256": "C069AD066B2D729F9109D8BDD9401BB0BB8462B79CDDF3988ABFDC1B5F2B50AE"
+    },
+    {
+      "Role": "instrumented",
+      "File": "Lumyte.UI.Application.Desktop.dll",
+      "Sha256": "65DF4F1004F5F69B2A83285620331B6D44F8C0F959AC5FA7A276A6706FC773CE"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.UI.Application.Tests.dll",
+      "Sha256": "0C601518FFF86EFADE5136B713F39B72207277228CFB50F778F678C2F0BA3C50"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.Graphics.Abstractions.dll",
+      "Sha256": "9ACE3FDEE18E7A1C38C3A505856FCA9FBAAAC3E77C2CE546EAEA494A6351C50D"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.Graphics.Wgpu.dll",
+      "Sha256": "008A5EB4C8E7999898E783719A374A12613898A0670B716F1FCC6CAA86D43774"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.Graphics.Drawing2D.dll",
+      "Sha256": "BBC7F7E362D99AB65CC8096B7157A2E7C0DCB75F3F8ED30E755A5D5C1DFC8D5B"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.UI.dll",
+      "Sha256": "3327744C5E1381DD132ECB767BF025DC9DF0163BEFBFD072216BB8B8CDFFAB70"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.UI.Application.dll",
+      "Sha256": "C069AD066B2D729F9109D8BDD9401BB0BB8462B79CDDF3988ABFDC1B5F2B50AE"
+    },
+    {
+      "Role": "ablation",
+      "File": "Lumyte.UI.Application.Desktop.dll",
+      "Sha256": "2542A7F888CA3A926B2F6C30ECCC9BFDA84CCFAF618BBD274C9F711547251036"
+    }
+  ],
+  "Sources": [
+    {
+      "File": "tools/benchmarks/ui-device/detail-instrumentation.patch",
+      "Utf8LfSha256": "E96DF7E87B1EB9D4CBC00BBB1CDF9B2759806DF6B3C4549C445639B9FB377BDD"
+    },
+    {
+      "File": "tools/benchmarks/ui-device/capabilities-ablation.patch",
+      "Utf8LfSha256": "01B9F4F6304A7DF7D08A317A7171C0782D2F12ED00B6436FDAF0100109FEF990"
+    },
+    {
+      "File": "tools/benchmarks/ui-device/DetailedDiagnostics.cs",
+      "Utf8LfSha256": "FEF44AA8BDD58F49DC1130EAF2E0099CA81FEB8746635B24649BA11B2EDC8B7E"
+    },
+    {
+      "File": "tools/benchmarks/ui-device/ApplicationBenchmark.cs",
+      "Utf8LfSha256": "A1B84253B9C81B5245BC57E561C8D4B0400BA556D3FA97B6073D59780611AC0A"
+    },
+    {
+      "File": "tools/benchmarks/ui-device/Program.cs",
+      "Utf8LfSha256": "B009E4727E20AF55CC145E9AB396FB5453AF654C3F61781059F6863151068CA3"
+    },
+    {
+      "File": "tools/benchmarks/ui-device/summarize-detail.ps1",
+      "Utf8LfSha256": "27335984E1C326FF4C760D595CB1D5F066694006DEA1290B2C8D38AF124C4D88"
+    },
+    {
+      "File": "tools/benchmarks/ui-device-trace/Program.cs",
+      "Utf8LfSha256": "221266C5EF3476D3A59EB92ACB7A271B140E4F0F5525FC8D6BF707B678E8351C"
+    },
+    {
+      "File": "tools/benchmarks/ui-device-trace/TraceAnalysis.csproj",
+      "Utf8LfSha256": "B3315CE14E92B819645949AA3E37DC2BD290C09CDCBB9DD3218C123A6472390A"
+    }
+  ]
+}

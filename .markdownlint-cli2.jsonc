@@ -5,6 +5,7 @@
     "MD024": { "siblings_only": true },
     "MD033": { "allowed_elements": [] }
   },
+  "customRules": ["./tools/markdown/adr-rules.cjs"],
   "globs": ["**/*.md"],
   "gitignore": true,
   // AnalyzerReleases files use Roslyn's required release tracking format.

@@ -1,0 +1,83 @@
+[
+  {
+    "source": "adapter.txt",
+    "archive": "raw/adapter.txt.gz",
+    "bytes": 2931,
+    "sha256": "2bbbe1a68fcf96274f66376007b2ec00d6b6af1ec64ba2e4399f8881a1473d8b"
+  },
+  {
+    "source": "environment.txt",
+    "archive": "raw/environment.txt.gz",
+    "bytes": 6025,
+    "sha256": "ba5f975af009471fa9b7d7b4f8bfa43f587f6ca1ada3680c92f279ad2bd0483c",
+    "original_bytes": 6246,
+    "original_sha256": "bdfc921aaed775eedbedbaaf7f74683bc483b1a38e5fff3eb2c4be54c23f7671",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "main-build.log",
+    "archive": "raw/main-build.log.gz",
+    "bytes": 1243,
+    "sha256": "49062469ac59f6c0a870b286e4cf8c5b16c465a87a0b331a20298d9c75690845",
+    "original_bytes": 1423,
+    "original_sha256": "27f72add4140c8f910ecd0159f1737a17c6747c909ee07c88a898ae02eaac25f",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "main-provenance.txt",
+    "archive": "raw/main-provenance.txt.gz",
+    "bytes": 1686,
+    "sha256": "5c8758bae09500422364bda3b84e84a6d8c1b753ea166bae750ed9c0a476cffc"
+  },
+  {
+    "source": "main-run1.jsonl",
+    "archive": "raw/main-run1.jsonl.gz",
+    "bytes": 1475159,
+    "sha256": "97ec6bd37ca2923949534cafed6d54ad3a620edc058cdd465f8f962fc0d90f03"
+  },
+  {
+    "source": "main-run2.jsonl",
+    "archive": "raw/main-run2.jsonl.gz",
+    "bytes": 1474021,
+    "sha256": "ebdef7a07c8f7bf7a3fd8d9ca3ea6280236739e9fbbc3d3d98165f26492fc3f6"
+  },
+  {
+    "source": "main-smoke.jsonl",
+    "archive": "raw/main-smoke.jsonl.gz",
+    "bytes": 399,
+    "sha256": "99f99d7ebcf6a69082b09cc09b834a10679ca4bb6086fb97c1db799084730147"
+  },
+  {
+    "source": "pr105-build.log",
+    "archive": "raw/pr105-build.log.gz",
+    "bytes": 1249,
+    "sha256": "f18d32adbaca512603b5e47cf74870d5ea2de9bfdf236ce273598680ce13f514",
+    "original_bytes": 1429,
+    "original_sha256": "783c19021ac86134a7ed29a0cc117ed4c5b15588940d36f2e6f3e0722cd01b0b",
+    "redaction": "publication-copy: checkout/home/host/user placeholders; numeric measurements unchanged"
+  },
+  {
+    "source": "pr105-provenance.txt",
+    "archive": "raw/pr105-provenance.txt.gz",
+    "bytes": 1686,
+    "sha256": "595a8c038af52e72f5c2e25d74d07877dba6f67495ec6a66a81ae3844f35b505"
+  },
+  {
+    "source": "pr105-run1.jsonl",
+    "archive": "raw/pr105-run1.jsonl.gz",
+    "bytes": 1476476,
+    "sha256": "8b0aab6ceabc71b5451f5f8aac4afe2a8ec1b8d03c844dae58088e22bed76337"
+  },
+  {
+    "source": "pr105-run2.jsonl",
+    "archive": "raw/pr105-run2.jsonl.gz",
+    "bytes": 1476805,
+    "sha256": "6e81576f8f302b3c3573597ffce485f69e1f11e0ac5d79d939aa8d22d4e01e6a"
+  },
+  {
+    "source": "pr105-smoke.jsonl",
+    "archive": "raw/pr105-smoke.jsonl.gz",
+    "bytes": 399,
+    "sha256": "99f99d7ebcf6a69082b09cc09b834a10679ca4bb6086fb97c1db799084730147"
+  }
+]

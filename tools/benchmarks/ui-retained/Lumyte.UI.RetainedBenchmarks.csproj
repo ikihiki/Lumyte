@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../tests/UI/Lumyte.UI.TextEditing.Tests/Lumyte.UI.TextEditing.Tests.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Headless/Lumyte.UI.Application.Headless.csproj" />
+    <Compile Include="../../../tests/UI/Lumyte.UI.Windowing.Tests/TestSource.cs" Link="TestSource.cs" />
+  </ItemGroup>
+</Project>

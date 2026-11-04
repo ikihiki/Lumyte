@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -57,7 +58,7 @@ public static class DiagnosticServiceCollectionExtensions
     /// <param name="services">The services argument.</param>
     /// <param name="descriptor">The descriptor argument.</param>
     /// <returns>The computed result.</returns>
-    public static IServiceCollection AddDiagnosticSubsystem<TContributor, TPoint>(this IServiceCollection services, SubsystemDescriptor descriptor)
+    public static IServiceCollection AddDiagnosticSubsystem<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TContributor, TPoint>(this IServiceCollection services, SubsystemDescriptor descriptor)
         where TContributor : class, IDiagnosticContributor
         where TPoint : class
     {

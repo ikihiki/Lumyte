@@ -100,6 +100,11 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
             throw new InvalidOperationException("Unknown inspected device.");
         }
 
+        foreach ((InputSystem System, InputDeviceId Device, InputWindowId Window) scope in _windowFocus.Keys.Where(scope => ReferenceEquals(scope.System, system) && scope.Device == device).ToArray())
+        {
+            CancelWindowPointers(system, device, scope.Window);
+        }
+
         InvalidateDeviceTargets(system, device, "device-disconnected");
         _revision++;
     }
@@ -108,7 +113,24 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
     public void SystemDisposed(InputSystem system)
     {
         Check();
+        foreach ((InputSystem System, InputDeviceId Device, InputWindowId Window) scope in _windowFocus.Keys.Where(scope => ReferenceEquals(scope.System, system)).ToArray())
+        {
+            CancelWindowPointers(system, scope.Device, scope.Window);
+        }
+
         InvalidateDeviceTargets(system, null, "system-disposed");
+        foreach ((InputSystem System, InputDeviceId Device, InputWindowId Window, InputControl Control) key in _windowTargets.Keys.Where(key => ReferenceEquals(key.System, system)).ToArray())
+        {
+            _windowValues.Remove(_windowTargets[key]);
+            _windowTargets.Remove(key);
+        }
+
+        foreach ((InputSystem System, InputDeviceId Device, InputWindowId Window) key in _windowFocus.Keys.Where(key => ReferenceEquals(key.System, system)).ToArray())
+        {
+            _windowFocus.Remove(key);
+        }
+
+        _retiredWindows.RemoveWhere(key => ReferenceEquals(key.System, system));
         if (_inputs.Remove(system))
         {
             _revision++;
@@ -186,6 +208,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
+            writer.WriteNumber("schemaVersion", 2);
             writer.WriteNumber("revision", _revision);
             writer.WriteStartArray("inputSystems");
             foreach (InputView input in _inputs.Values)
@@ -219,6 +242,11 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         _inputs.Clear();
         _actions.Clear();
         _targets.Clear();
+        _windowPointerTargets.Clear();
+        _windowTargets.Clear();
+        _windowValues.Clear();
+        _windowFocus.Clear();
+        _retiredWindows.Clear();
         _targetLookup.Clear();
         _deviceTargetLookup.Clear();
         _deviceDataTargetLookup.Clear();
@@ -233,61 +261,6 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         _disposed = true;
     }
 
-    private static void WriteInput(Utf8JsonWriter writer, InputView input, Dictionary<(InputSystem System, InputDeviceId Device, InputControl Control), InputOverrideTarget> targets, Dictionary<(InputSystem System, InputDeviceId Device, DeviceTargetKind Kind, ulong Pointer), InputOverrideTarget> dataTargets)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("id", input.Id);
-        writer.WriteStartArray("sources");
-        foreach (string source in input.Sources)
-        {
-            writer.WriteStringValue(source);
-        }
-
-        writer.WriteEndArray();
-        writer.WriteStartArray("devices");
-        foreach ((InputDeviceId id, DeviceView device) in input.Devices)
-        {
-            writer.WriteStartObject();
-            writer.WriteNumber("id", id.Value);
-            writer.WriteString("kind", device.Descriptor.Kind.ToString());
-            writer.WriteString("name", device.Descriptor.Name);
-            writer.WriteString("identity", device.Descriptor.IdentityKind.ToString());
-            writer.WriteNumber("sequence", device.LatestSequence);
-            writer.WriteBoolean("connected", device.State?.IsConnected ?? false);
-            writer.WriteBoolean("focused", device.State?.IsFocused ?? false);
-            writer.WriteStartObject("targets");
-            foreach (((InputSystem targetSystem, InputDeviceId targetDevice, InputControl control), InputOverrideTarget target) in targets)
-            {
-                if (input.System != null && ReferenceEquals(targetSystem, input.System) && targetDevice == id)
-                {
-                    writer.WriteString(ControlName(control), target.Id);
-                }
-            }
-
-            foreach (((InputSystem targetSystem, InputDeviceId targetDevice, DeviceTargetKind kind, ulong pointer), InputOverrideTarget target) in dataTargets)
-            {
-                if (input.System != null && ReferenceEquals(targetSystem, input.System) && targetDevice == id)
-                {
-                    string name = pointer == 0 || kind is DeviceTargetKind.MousePosition or DeviceTargetKind.MouseWheel ? kind.ToString() : $"{kind}.{pointer}";
-                    writer.WriteString(name, target.Id);
-                }
-            }
-
-            writer.WriteEndObject();
-            writer.WriteStartObject("state");
-            if (device.State != null)
-            {
-                WriteState(writer, device.Descriptor.Kind, device.State);
-            }
-
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
-
     private static void WriteState(Utf8JsonWriter writer, InputDeviceKind kind, InputDeviceState state)
     {
         switch (kind)
@@ -297,6 +270,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
                 break;
             case InputDeviceKind.Mouse:
                 WriteVector(writer, "position", state.MousePosition);
+                WriteWindowId(writer, "positionWindowId", state.MousePositionWindowId);
                 WritePressed(writer, "buttons", Enum.GetValues<MouseButton>().Where(state.IsDown).Select(value => value.ToString()));
                 break;
             case InputDeviceKind.Controller:
@@ -323,6 +297,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
                     writer.WriteStartObject();
                     writer.WriteString("id", touch.ContactId.ToString());
                     writer.WriteString("phase", touch.Phase.ToString());
+                    WriteWindowId(writer, "positionWindowId", state.TouchPositionWindows.GetValueOrDefault(touch.ContactId));
                     WriteVector(writer, "position", touch.Position);
                     if (touch.Pressure is float pressure)
                     {
@@ -345,6 +320,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
                     writer.WriteStartObject();
                     writer.WriteString("id", pen.PointerId.ToString());
                     writer.WriteString("phase", pen.Phase.ToString());
+                    WriteWindowId(writer, "positionWindowId", state.PenPositionWindows.GetValueOrDefault(pen.PointerId));
                     WriteVector(writer, "position", pen.Position);
                     if (pen.Pressure is float pressure)
                     {
@@ -369,6 +345,7 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
     private static void WriteActions(Utf8JsonWriter writer, ActionSystem system, ActionView view, Dictionary<(ActionSystem System, string Context, string Action), InputOverrideTarget> targets)
     {
         writer.WriteStartObject();
+        WriteWindowId(writer, "windowId", system.WindowId);
         writer.WriteString("id", view.Id);
         writer.WriteNumber("timeMs", view.Now.TotalMilliseconds);
         writer.WriteStartArray("contexts");
@@ -505,6 +482,90 @@ public sealed partial class InputInspectionSession : IInputInspection, IActionIn
         writer.WriteStartObject(name);
         writer.WriteNumber("x", value.X);
         writer.WriteNumber("y", value.Y);
+        writer.WriteEndObject();
+    }
+
+    private void WriteInput(Utf8JsonWriter writer, InputView input, Dictionary<(InputSystem System, InputDeviceId Device, InputControl Control), InputOverrideTarget> targets, Dictionary<(InputSystem System, InputDeviceId Device, DeviceTargetKind Kind, ulong Pointer), InputOverrideTarget> dataTargets)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("id", input.Id);
+        writer.WriteStartArray("sources");
+        foreach (string source in input.Sources)
+        {
+            writer.WriteStringValue(source);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteStartArray("devices");
+        foreach ((InputDeviceId id, DeviceView device) in input.Devices)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            writer.WriteString("kind", device.Descriptor.Kind.ToString());
+            writer.WriteString("name", device.Descriptor.Name);
+            writer.WriteString("identity", device.Descriptor.IdentityKind.ToString());
+            writer.WriteString("sequence", device.LatestSequence.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            writer.WriteBoolean("connected", device.State?.IsConnected ?? false);
+            writer.WriteBoolean("focused", device.State?.IsFocused ?? false);
+            writer.WriteStartObject("targets");
+            foreach (((InputSystem targetSystem, InputDeviceId targetDevice, InputControl control), InputOverrideTarget target) in targets)
+            {
+                if (input.System != null && ReferenceEquals(targetSystem, input.System) && targetDevice == id && !_windowFocus.Keys.Any(scope => ReferenceEquals(scope.System, targetSystem) && scope.Device == targetDevice))
+                {
+                    writer.WriteString(ControlName(control), target.Id);
+                }
+            }
+
+            foreach (((InputSystem targetSystem, InputDeviceId targetDevice, DeviceTargetKind kind, ulong pointer), InputOverrideTarget target) in dataTargets)
+            {
+                if (input.System != null && ReferenceEquals(targetSystem, input.System) && targetDevice == id && !_windowFocus.Keys.Any(scope => ReferenceEquals(scope.System, targetSystem) && scope.Device == targetDevice))
+                {
+                    string name = pointer == 0 || kind is DeviceTargetKind.MousePosition or DeviceTargetKind.MouseWheel ? kind.ToString() : $"{kind}.{pointer}";
+                    writer.WriteString(name, target.Id);
+                }
+            }
+
+            writer.WriteEndObject();
+            writer.WriteStartObject("state");
+            if (device.State != null)
+            {
+                WriteState(writer, device.Descriptor.Kind, device.State);
+            }
+
+            writer.WriteEndObject();
+            writer.WriteStartArray("history");
+            if (input.System is not null)
+            {
+                ReadOnlySpan<InputRecord> records = input.System.GetRecords(id).Span;
+                foreach (InputRecord record in records[Math.Max(0, records.Length - 32)..])
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("sequence", record.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    writer.WriteString("type", record.Data.GetType().Name);
+                    WriteWindowId(writer, "windowId", record.WindowId);
+                    WriteWindowId(writer, "stateWindowId", record.StateWindowId);
+                    if (record.Capture is InputCaptureStamp capture)
+                    {
+                        writer.WriteStartObject("capture");
+                        writer.WriteString("streamId", capture.StreamId.ToString("D"));
+                        writer.WriteString("sequence", capture.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        writer.WriteNull("capture");
+                    }
+
+                    writer.WriteEndObject();
+                }
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        WriteWindowScopes(writer, input);
         writer.WriteEndObject();
     }
 

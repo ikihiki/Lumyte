@@ -1,0 +1,4176 @@
+{
+  "source_commit": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+  "baselines": {
+    "main": "fbc8105",
+    "pr105": "ffe075c"
+  },
+  "case_count": 12,
+  "count": 200,
+  "cpu_executions": 48,
+  "warm_stage_frames": 5760,
+  "pipeline_measured_frames": 11520,
+  "matching_readback_observations": 144,
+  "active_devices": [
+    {
+      "variant": "main",
+      "repeat": 1,
+      "mode": "stages",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "stages",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "main",
+      "repeat": 1,
+      "mode": "depth1",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "main",
+      "repeat": 1,
+      "mode": "depth3",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 3,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "main",
+      "repeat": 2,
+      "mode": "stages",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "stages",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "main",
+      "repeat": 2,
+      "mode": "depth1",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "main",
+      "repeat": 2,
+      "mode": "depth3",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 3,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "pr105",
+      "repeat": 1,
+      "mode": "stages",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "stages",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "pr105",
+      "repeat": 1,
+      "mode": "depth1",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "pr105",
+      "repeat": 1,
+      "mode": "depth3",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 3,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "pr105",
+      "repeat": 2,
+      "mode": "stages",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "stages",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "pr105",
+      "repeat": 2,
+      "mode": "depth1",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 1,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    },
+    {
+      "variant": "pr105",
+      "repeat": 2,
+      "mode": "depth3",
+      "check": "active-device",
+      "device": "Radeon 8060S Graphics (RADV STRIX_HALO); vendor=0x1002; device=0x1586; type=IntegratedGpu; driver=radv; driverInfo=Mesa 26.0.8-1ubuntu0.3; driverVersion=109051912; queueFamily=0; timestampPeriodNs=10.019036293029785; timestampValidBits=64; gpuTimestamp=supported",
+      "gpuTimestamp": true,
+      "source": "2402407da3005657b24f3ad7bcb3407f46f221fe",
+      "suite": "all",
+      "count": 200,
+      "warmup": 41,
+      "samples": 120,
+      "depth": 3,
+      "scope": "pipeline",
+      "tieredCompilation": "0",
+      "gcServer": "0"
+    }
+  ],
+  "cpu": [
+    {
+      "variant": "main",
+      "workload": "2d-camera-pan",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 7110.310666483456,
+        "p95": 7269.834372601688,
+        "min": 6970.091074159021,
+        "max": 7273.749280506523
+      },
+      "run_medians_ns": [
+        6994.342292622325,
+        7220.21875
+      ],
+      "run_bytes_per_op": [
+        28200,
+        28200
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "2d-geometry-stream",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 21768.218533986175,
+        "p95": 21983.40063364055,
+        "min": 21487.604550691245,
+        "max": 22022.544066820275
+      },
+      "run_medians_ns": [
+        21768.218533986175,
+        21783.22638248848
+      ],
+      "run_bytes_per_op": [
+        104954,
+        104954
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "2d-static",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 156.32489619270723,
+        "p95": 157.3587531214189,
+        "min": 155.1873677967673,
+        "max": 157.3596590811911
+      },
+      "run_medians_ns": [
+        155.92175201412414,
+        156.53429391793662
+      ],
+      "run_bytes_per_op": [
+        0,
+        0
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "2d-transform-all",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 12415.343129960318,
+        "p95": 12853.2310282523,
+        "min": 12349.424523653088,
+        "max": 12864.615801576872
+      },
+      "run_medians_ns": [
+        12366.014331471748,
+        12425.70771329365
+      ],
+      "run_bytes_per_op": [
+        28152,
+        28152
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "editor-dock-resize",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 1986009.65625,
+        "p95": 2001125.303125,
+        "min": 1965807.075,
+        "max": 2005315.1875
+      },
+      "run_medians_ns": [
+        1968997.7,
+        1990099.25625
+      ],
+      "run_bytes_per_op": [
+        1658562,
+        1658562
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "editor-idle",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 110.1824488958942,
+        "p95": 111.73749025604126,
+        "min": 109.7940364377559,
+        "max": 112.17753118066798
+      },
+      "run_medians_ns": [
+        110.68466375846975,
+        110.02024407070851
+      ],
+      "run_bytes_per_op": [
+        184,
+        184
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "editor-line-edit",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 270626.0678571428,
+        "p95": 272325.0263392857,
+        "min": 269085.64464285714,
+        "max": 272400.7535714286
+      },
+      "run_medians_ns": [
+        269507.20625,
+        271637.67767857143
+      ],
+      "run_bytes_per_op": [
+        289365,
+        289365
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "editor-live-preview",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 8811.025649377647,
+        "p95": 8960.257945415879,
+        "min": 8714.919103992572,
+        "max": 8962.152528355387
+      },
+      "run_medians_ns": [
+        8725.100829851439,
+        8908.950968809073
+      ],
+      "run_bytes_per_op": [
+        36985,
+        36985
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "editor-scroll-list",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 182549.5589187598,
+        "p95": 193927.3000637755,
+        "min": 179514.45192307694,
+        "max": 195698.60586734695
+      },
+      "run_medians_ns": [
+        182398.8389423077,
+        185609.53890306124
+      ],
+      "run_bytes_per_op": [
+        259802,
+        260294
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-static-overlay",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 8484.152568570144,
+        "p95": 8555.910112148524,
+        "min": 8459.15804856115,
+        "max": 8650.274111960432
+      },
+      "run_medians_ns": [
+        8484.032487623763,
+        8484.152568570144
+      ],
+      "run_bytes_per_op": [
+        36016,
+        36016
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-values",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 56823.44929157345,
+        "p95": 63418.0016828721,
+        "min": 56442.48098434004,
+        "max": 63925.915482423334
+      },
+      "run_medians_ns": [
+        57217.07255048616,
+        56811.79511558538
+      ],
+      "run_bytes_per_op": [
+        100565,
+        99718
+      ]
+    },
+    {
+      "variant": "main",
+      "workload": "game-menu-animation",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 289558.5615530303,
+        "p95": 292023.2793560606,
+        "min": 287966.07007575757,
+        "max": 292220.4583333333
+      },
+      "run_medians_ns": [
+        288700.4640151515,
+        290764.8399621212
+      ],
+      "run_bytes_per_op": [
+        279629,
+        279629
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-camera-pan",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 6926.92855839416,
+        "p95": 7004.857581018518,
+        "min": 6841.565875912409,
+        "max": 7027.225462962963
+      },
+      "run_medians_ns": [
+        6976.757731481481,
+        6899.940031934307
+      ],
+      "run_bytes_per_op": [
+        23616,
+        23616
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-geometry-stream",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 21424.39957381603,
+        "p95": 21588.965146974886,
+        "min": 21348.754587155963,
+        "max": 21623.94406392694
+      },
+      "run_medians_ns": [
+        21450.091609589042,
+        21416.62872706422
+      ],
+      "run_bytes_per_op": [
+        100369,
+        100369
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-static",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 156.2692742151183,
+        "p95": 157.58666552715357,
+        "min": 155.70707993667048,
+        "max": 158.71012797825682
+      },
+      "run_medians_ns": [
+        156.55371128477807,
+        155.84655014148083
+      ],
+      "run_bytes_per_op": [
+        0,
+        0
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-transform-all",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 12148.082228855386,
+        "p95": 12273.396299448768,
+        "min": 11973.267685659412,
+        "max": 12345.623135538262
+      },
+      "run_medians_ns": [
+        11994.27372759283,
+        12213.823565175097
+      ],
+      "run_bytes_per_op": [
+        23568,
+        23568
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-dock-resize",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 1991245.225,
+        "p95": 2006583.50625,
+        "min": 1985546.625,
+        "max": 2010448.5375
+      },
+      "run_medians_ns": [
+        1989617.20625,
+        1992191.58125
+      ],
+      "run_bytes_per_op": [
+        1641586,
+        1641586
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-idle",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 119.57292798229187,
+        "p95": 127.73327038893748,
+        "min": 112.60330760716197,
+        "max": 127.84540828342642
+      },
+      "run_medians_ns": [
+        127.42854030684342,
+        112.87148241740866
+      ],
+      "run_bytes_per_op": [
+        184,
+        184
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-line-edit",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 271425.7933035714,
+        "p95": 273340.1638392857,
+        "min": 269189.61160714284,
+        "max": 273921.825
+      },
+      "run_medians_ns": [
+        270339.2107142857,
+        272021.8732142857
+      ],
+      "run_bytes_per_op": [
+        272590,
+        272590
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-live-preview",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 8960.19060283688,
+        "p95": 9144.253899186257,
+        "min": 8438.416943705673,
+        "max": 9217.666591320072
+      },
+      "run_medians_ns": [
+        8961.983470840867,
+        8960.19060283688
+      ],
+      "run_bytes_per_op": [
+        32400,
+        32400
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-scroll-list",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 184899.2444852941,
+        "p95": 194083.80545343139,
+        "min": 181483.7855392157,
+        "max": 195425.42034313726
+      },
+      "run_medians_ns": [
+        186692.36703431373,
+        183494.85294117645
+      ],
+      "run_bytes_per_op": [
+        243042,
+        243037
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-static-overlay",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 8155.920602433487,
+        "p95": 8268.097940403155,
+        "min": 8101.422693133047,
+        "max": 8429.456726555652
+      },
+      "run_medians_ns": [
+        8110.531437768241,
+        8200.12620508326
+      ],
+      "run_bytes_per_op": [
+        31432,
+        31432
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-values",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 56158.791411554615,
+        "p95": 56835.1524049217,
+        "min": 55192.1706871345,
+        "max": 57439.85794183445
+      },
+      "run_medians_ns": [
+        55743.2980628655,
+        56523.148769574946
+      ],
+      "run_bytes_per_op": [
+        92544,
+        93456
+      ]
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-menu-animation",
+      "iteration_estimates_ns": {
+        "n": 16,
+        "median": 292996.3371951941,
+        "p95": 298811.05029296875,
+        "min": 288195.6893939394,
+        "max": 301310.1865234375
+      },
+      "run_medians_ns": [
+        289391.1259469697,
+        294525.8046875
+      ],
+      "run_bytes_per_op": [
+        277061,
+        277061
+      ]
+    }
+  ],
+  "stages": [
+    {
+      "variant": "main",
+      "workload": "2d-camera-pan",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0006,
+          "p95": 0.0007,
+          "min": 0.0004,
+          "max": 0.0012
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0001
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.01295,
+          "p95": 0.0219,
+          "min": 0.0105,
+          "max": 0.0365
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 17.9832,
+          "p95": 21.36695,
+          "min": 14.3175,
+          "max": 24.4047
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 5.03725,
+          "p95": 8.803424999999997,
+          "min": 4.3905,
+          "max": 9.4941
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.088,
+          "p95": 0.10954499999999999,
+          "min": 0.0763,
+          "max": 0.1609
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.7049,
+          "p95": 11.78027,
+          "min": 10.5951,
+          "max": 12.0304
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 5.3703,
+          "p95": 6.077579999999999,
+          "min": 4.9114,
+          "max": 9.3506
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 39.565,
+          "p95": 43.86832,
+          "min": 35.4149,
+          "max": 46.7618
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 10.002585035436631,
+          "p95": 10.109758666663168,
+          "min": 9.74623797284317,
+          "max": 10.720689442703247
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 5020016.0,
+          "p95": 5035405.2,
+          "min": 4983976,
+          "max": 5049336
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-geometry-stream",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0178,
+          "p95": 0.021844999999999986,
+          "min": 0.0158,
+          "max": 0.0596
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0001,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0003
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0121,
+          "p95": 0.021605,
+          "min": 0.0096,
+          "max": 0.0399
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 18.1137,
+          "p95": 22.24627,
+          "min": 14.9522,
+          "max": 23.41
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 5.18385,
+          "p95": 8.985734999999998,
+          "min": 4.551,
+          "max": 10.0319
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0935,
+          "p95": 0.122005,
+          "min": 0.077,
+          "max": 0.1464
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.72545,
+          "p95": 11.7873,
+          "min": 10.6494,
+          "max": 11.9318
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 5.47265,
+          "p95": 6.341395,
+          "min": 4.8214,
+          "max": 6.619
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 40.1092,
+          "p95": 44.486925,
+          "min": 37.2563,
+          "max": 45.7924
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 10.05288059762764,
+          "p95": 10.098361010976218,
+          "min": 9.916160828372956,
+          "max": 10.634565806728363
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 5105568.0,
+          "p95": 5116900.0,
+          "min": 5090968,
+          "max": 5126368
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-static",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0005,
+          "p95": 0.0007,
+          "min": 0.0004,
+          "max": 0.0019
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0002
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0001,
+          "p95": 0.0002,
+          "min": 0.0001,
+          "max": 0.0006
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 9.1268,
+          "p95": 9.760684999999999,
+          "min": 3.5761,
+          "max": 10.9285
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 3.02305,
+          "p95": 4.133645,
+          "min": 2.7931,
+          "max": 7.4592
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0541,
+          "p95": 0.066625,
+          "min": 0.0506,
+          "max": 0.111
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 2.1858000000000004,
+          "p95": 2.2477899999999997,
+          "min": 2.1361,
+          "max": 2.4384
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 2.2957,
+          "p95": 2.958509999999998,
+          "min": 2.065,
+          "max": 5.3512
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 16.651699999999998,
+          "p95": 17.951335,
+          "min": 12.3032,
+          "max": 23.7503
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 1.5283639103565216,
+          "p95": 1.531123152951622,
+          "min": 1.5242160293312073,
+          "max": 1.5741909823608398
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 2103420.0,
+          "p95": 2110772.0,
+          "min": 2090848,
+          "max": 2118840
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-transform-all",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0057,
+          "p95": 0.0073,
+          "min": 0.0053,
+          "max": 0.0093
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0006
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0111,
+          "p95": 0.013204999999999998,
+          "min": 0.0099,
+          "max": 0.0186
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 9.0627,
+          "p95": 9.751644999999998,
+          "min": 3.0217,
+          "max": 10.3608
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 3.01585,
+          "p95": 3.953099999999999,
+          "min": 2.7871,
+          "max": 5.109
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0537,
+          "p95": 0.06302999999999999,
+          "min": 0.05,
+          "max": 0.2741
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 2.1863,
+          "p95": 2.246755,
+          "min": 2.1354,
+          "max": 4.3081
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 2.32235,
+          "p95": 2.8850249999999997,
+          "min": 2.0802,
+          "max": 3.2946
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 16.67685,
+          "p95": 18.101909999999997,
+          "min": 12.6397,
+          "max": 19.0836
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 1.5336539615192413,
+          "p95": 1.5375233133356094,
+          "min": 1.5269412072029114,
+          "max": 1.5395251167869568
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 2129416.0,
+          "p95": 2137616.0,
+          "min": 2117712,
+          "max": 2150432
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-dock-resize",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.03,
+          "p95": 0.0427,
+          "min": 0.0218,
+          "max": 0.0898
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 2.3352000000000004,
+          "p95": 15.214905,
+          "min": 2.2414,
+          "max": 19.7658
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 2.2022709999999996,
+          "p95": 14.90737705,
+          "min": 2.119026,
+          "max": 19.611352
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0704,
+          "p95": 0.101605,
+          "min": 0.0567,
+          "max": 12.5645
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 71.07865000000001,
+          "p95": 83.364435,
+          "min": 49.891,
+          "max": 98.0714
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 28.9125,
+          "p95": 44.12569499999999,
+          "min": 24.1529,
+          "max": 68.941
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.47204999999999997,
+          "p95": 0.7273599999999999,
+          "min": 0.4143,
+          "max": 1.0432
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.98665,
+          "p95": 83.52589,
+          "min": 82.2157,
+          "max": 84.3679
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.34875,
+          "p95": 40.194925000000005,
+          "min": 26.887,
+          "max": 42.2618
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 225.74495,
+          "p95": 242.74918499999998,
+          "min": 211.4925,
+          "max": 293.0808
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.84230138614654,
+          "p95": 81.98044786616936,
+          "min": 81.18413085398484,
+          "max": 82.21589121144105
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 40304136.0,
+          "p95": 40318279.2,
+          "min": 40285472,
+          "max": 40324120
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 603.0,
+          "p95": 603.0,
+          "min": 603,
+          "max": 603
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-idle",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0007,
+          "p95": 0.001,
+          "min": 0.0004,
+          "max": 0.0012
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0112,
+          "p95": 0.0143,
+          "min": 0.0095,
+          "max": 0.0177
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0005,
+          "p95": 0.0007,
+          "min": 0.0003,
+          "max": 0.0037
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 75.7342,
+          "p95": 83.570375,
+          "min": 56.5692,
+          "max": 92.9216
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 27.26325,
+          "p95": 44.3251,
+          "min": 23.8362,
+          "max": 48.39
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.46909999999999996,
+          "p95": 0.683,
+          "min": 0.4238,
+          "max": 1.0256
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.99119999999999,
+          "p95": 83.597725,
+          "min": 82.0076,
+          "max": 84.4452
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.575,
+          "p95": 40.26428,
+          "min": 26.817,
+          "max": 41.7463
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 224.92645,
+          "p95": 243.48507,
+          "min": 212.8231,
+          "max": 256.7543
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.86330128621674,
+          "p95": 81.98121732815666,
+          "min": 81.46746920035172,
+          "max": 82.08909028811645
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 38643960.0,
+          "p95": 38657216.8,
+          "min": 38625504,
+          "max": 38667008
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 603.0,
+          "p95": 603.0,
+          "min": 603,
+          "max": 603
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-line-edit",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0304,
+          "p95": 0.04493499999999999,
+          "min": 0.026,
+          "max": 12.1062
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.55615,
+          "p95": 0.680715,
+          "min": 0.5056,
+          "max": 12.4722
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.41002099999999997,
+          "p95": 0.5083604499999999,
+          "min": 0.367645,
+          "max": 12.305887
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0886,
+          "p95": 0.120325,
+          "min": 0.0801,
+          "max": 12.2299
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 76.08785,
+          "p95": 88.94269499999999,
+          "min": 52.272,
+          "max": 105.4886
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 28.73,
+          "p95": 45.844879999999996,
+          "min": 24.6588,
+          "max": 54.3404
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.48875,
+          "p95": 0.6990449999999999,
+          "min": 0.4379,
+          "max": 0.9482
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 84.9454,
+          "p95": 85.57625,
+          "min": 84.1781,
+          "max": 86.3459
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 40.053799999999995,
+          "p95": 42.194354999999995,
+          "min": 30.9781,
+          "max": 44.7888
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 232.3943,
+          "p95": 253.794415,
+          "min": 213.5787,
+          "max": 276.152
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 83.76190866374588,
+          "p95": 83.92442144003333,
+          "min": 83.53471699676514,
+          "max": 84.33255289485169
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 39850964.0,
+          "p95": 39868286.8,
+          "min": 39814920,
+          "max": 39890624
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 619.0,
+          "p95": 619.0,
+          "min": 619,
+          "max": 619
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-live-preview",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0007,
+          "p95": 0.0009,
+          "min": 0.0003,
+          "max": 0.0011
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0107,
+          "p95": 0.014814999999999995,
+          "min": 0.0091,
+          "max": 0.0234
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.04325,
+          "p95": 0.063615,
+          "min": 0.0352,
+          "max": 0.0867
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 75.56774999999999,
+          "p95": 83.80222499999999,
+          "min": 58.463,
+          "max": 97.0437
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 27.3047,
+          "p95": 44.456005,
+          "min": 24.2248,
+          "max": 48.4966
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.471,
+          "p95": 0.69846,
+          "min": 0.4244,
+          "max": 1.0339
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.9649,
+          "p95": 83.62808,
+          "min": 81.5889,
+          "max": 84.7112
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.562650000000005,
+          "p95": 40.474785,
+          "min": 29.807,
+          "max": 43.6818
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 226.15120000000002,
+          "p95": 243.61987499999998,
+          "min": 213.8247,
+          "max": 250.3126
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.86466387515259,
+          "p95": 81.96602446152191,
+          "min": 80.27592525209427,
+          "max": 82.09049295319748
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 38689196.0,
+          "p95": 38705802.4,
+          "min": 38666384,
+          "max": 38715144
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 804.0,
+          "p95": 804.0,
+          "min": 804,
+          "max": 804
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-scroll-list",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.03,
+          "p95": 0.045915,
+          "min": 0.0255,
+          "max": 0.1736
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.45785,
+          "p95": 0.524005,
+          "min": 0.4121,
+          "max": 0.9824
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.300552,
+          "p95": 0.34684,
+          "min": 0.267011,
+          "max": 0.656487
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0885,
+          "p95": 0.11940499999999997,
+          "min": 0.0655,
+          "max": 12.5818
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 74.08695,
+          "p95": 84.31889499999998,
+          "min": 50.8359,
+          "max": 91.1184
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 27.7975,
+          "p95": 44.857305,
+          "min": 24.1044,
+          "max": 56.9168
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.46709999999999996,
+          "p95": 0.7100099999999999,
+          "min": 0.4188,
+          "max": 0.7901
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.3973,
+          "p95": 84.117515,
+          "min": 80.7824,
+          "max": 85.6008
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.27115,
+          "p95": 40.24101,
+          "min": 30.2503,
+          "max": 42.809
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 225.5214,
+          "p95": 242.730235,
+          "min": 211.6025,
+          "max": 255.9108
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.02611061357116,
+          "p95": 82.7958030511179,
+          "min": 80.18423103194046,
+          "max": 83.24272220304108
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 38815440.0,
+          "p95": 38991975.2,
+          "min": 38739448,
+          "max": 39027160
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 603.0,
+          "p95": 603.0,
+          "min": 603,
+          "max": 603
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-static-overlay",
+      "suite": "game-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0001,
+          "p95": 0.0003,
+          "min": 0,
+          "max": 0.0011
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0027,
+          "p95": 0.004709999999999997,
+          "min": 0.0016,
+          "max": 0.0182
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.01475,
+          "p95": 0.020609999999999996,
+          "min": 0.0105,
+          "max": 0.0324
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 3.1018499999999998,
+          "p95": 6.402519999999998,
+          "min": 2.2828,
+          "max": 7.7723
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 2.23035,
+          "p95": 4.727189999999999,
+          "min": 1.5822,
+          "max": 6.9588
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0533,
+          "p95": 0.07155999999999997,
+          "min": 0.0363,
+          "max": 0.1527
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.7085,
+          "p95": 12.763825,
+          "min": 8.5223,
+          "max": 12.8614
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 1.69455,
+          "p95": 2.5134149999999997,
+          "min": 1.2097,
+          "max": 6.8442
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 18.03635,
+          "p95": 20.200864999999997,
+          "min": 15.9926,
+          "max": 25.1217
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 8.158100491962433,
+          "p95": 8.199160506498528,
+          "min": 7.5948302715682985,
+          "max": 8.507484325572968
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 3929660.0,
+          "p95": 3943768.8,
+          "min": 3915816,
+          "max": 3953280
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 269.0,
+          "p95": 269.0,
+          "min": 269,
+          "max": 269
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-values",
+      "suite": "game-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0039,
+          "p95": 0.005404999999999998,
+          "min": 0.0028,
+          "max": 0.019
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.15905,
+          "p95": 0.20303000000000002,
+          "min": 0.1217,
+          "max": 0.3797
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.1177095,
+          "p95": 0.14792699999999998,
+          "min": 0.090634,
+          "max": 0.25453
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0315,
+          "p95": 0.039615,
+          "min": 0.0252,
+          "max": 1.2897
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 3.2094500000000004,
+          "p95": 6.799795,
+          "min": 2.6076,
+          "max": 7.9129
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 2.3760000000000003,
+          "p95": 5.351434999999998,
+          "min": 1.8653,
+          "max": 6.98
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.058550000000000005,
+          "p95": 0.07475999999999998,
+          "min": 0.045,
+          "max": 0.1973
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.6833,
+          "p95": 11.74693,
+          "min": 8.537,
+          "max": 11.8182
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 1.85275,
+          "p95": 2.20748,
+          "min": 1.4548,
+          "max": 3.7202
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 18.32065,
+          "p95": 20.858669999999996,
+          "min": 16.1542,
+          "max": 22.6095
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 8.1056808940773,
+          "p95": 8.228899010023499,
+          "min": 7.379821752719879,
+          "max": 8.712834493434906
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 3985256.0,
+          "p95": 4002562.0,
+          "min": 3963288,
+          "max": 4014848
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 269.0,
+          "p95": 269.0,
+          "min": 269,
+          "max": 269
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-menu-animation",
+      "suite": "game-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0089,
+          "p95": 0.0119,
+          "min": 0.0072,
+          "max": 0.024
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.5217,
+          "p95": 0.6799949999999999,
+          "min": 0.4753,
+          "max": 1.8053
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.484364,
+          "p95": 0.6060905,
+          "min": 0.442807,
+          "max": 1.768642
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0168,
+          "p95": 0.023905,
+          "min": 0.0146,
+          "max": 0.0351
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 3.42615,
+          "p95": 7.202535,
+          "min": 3.0716,
+          "max": 7.9307
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 2.5046999999999997,
+          "p95": 4.193619999999972,
+          "min": 2.2041,
+          "max": 6.6575
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.05905,
+          "p95": 0.07437499999999998,
+          "min": 0.0508,
+          "max": 0.1215
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 11.73385,
+          "p95": 11.8951,
+          "min": 9.5891,
+          "max": 12.8283
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 2.01265,
+          "p95": 2.3906899999999998,
+          "min": 1.6773,
+          "max": 3.5416
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 20.1374,
+          "p95": 22.550739999999998,
+          "min": 18.1464,
+          "max": 24.1174
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 8.792866555343627,
+          "p95": 8.859733603563308,
+          "min": 8.563430624233245,
+          "max": 9.38956028081131
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 4321424.0,
+          "p95": 4333817.2,
+          "min": 4308344,
+          "max": 4344048
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 76.0,
+          "p95": 76.0,
+          "min": 76,
+          "max": 76
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-camera-pan",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0006,
+          "p95": 0.0008,
+          "min": 0.0004,
+          "max": 0.0018
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0002
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0113,
+          "p95": 0.02162499999999999,
+          "min": 0.0092,
+          "max": 0.0526
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 17.88525,
+          "p95": 21.561369999999997,
+          "min": 12.9875,
+          "max": 23.7969
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 5.0131,
+          "p95": 8.555575,
+          "min": 4.4509,
+          "max": 10.4624
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0872,
+          "p95": 0.14120499999999997,
+          "min": 0.0753,
+          "max": 0.2347
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.763950000000001,
+          "p95": 11.1632,
+          "min": 9.9318,
+          "max": 11.855
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 5.2337,
+          "p95": 6.284629999999999,
+          "min": 4.5892,
+          "max": 9.0086
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 39.1888,
+          "p95": 43.91898,
+          "min": 36.9611,
+          "max": 48.2357
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 9.960164435771942,
+          "p95": 10.074243186811637,
+          "min": 9.704959543315887,
+          "max": 10.10628206106949
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 5015856.0,
+          "p95": 5034752.4,
+          "min": 4980096,
+          "max": 5041624
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-geometry-stream",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.018,
+          "p95": 0.02382999999999999,
+          "min": 0.0156,
+          "max": 0.934
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0001,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0001
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0101,
+          "p95": 0.019504999999999998,
+          "min": 0.0085,
+          "max": 0.0397
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 17.9817,
+          "p95": 22.18705,
+          "min": 14.2083,
+          "max": 23.1171
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 5.2444500000000005,
+          "p95": 9.119279999999998,
+          "min": 4.6079,
+          "max": 12.4593
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.09555,
+          "p95": 0.128735,
+          "min": 0.0766,
+          "max": 0.1992
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.73075,
+          "p95": 11.77893,
+          "min": 10.6123,
+          "max": 11.8737
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 5.5302500000000006,
+          "p95": 6.45721,
+          "min": 4.3233,
+          "max": 9.0685
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 39.76605,
+          "p95": 45.21661,
+          "min": 36.1739,
+          "max": 50.1546
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 10.036389263889312,
+          "p95": 10.094010745417785,
+          "min": 9.82602957788086,
+          "max": 10.761847643795013
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 5100440.0,
+          "p95": 5113888.4,
+          "min": 5083776,
+          "max": 5120432
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-static",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0005,
+          "p95": 0.0007,
+          "min": 0.0004,
+          "max": 0.0012
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0001
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0001,
+          "p95": 0.0002,
+          "min": 0.0001,
+          "max": 0.0798
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 9.022649999999999,
+          "p95": 9.624769999999998,
+          "min": 4.8121,
+          "max": 10.3381
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 3.05445,
+          "p95": 4.24712,
+          "min": 2.8309,
+          "max": 5.1972
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0533,
+          "p95": 0.07151499999999997,
+          "min": 0.0489,
+          "max": 0.1932
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 2.2545,
+          "p95": 2.31767,
+          "min": 2.1507,
+          "max": 3.336
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 2.3246,
+          "p95": 3.2386599999999985,
+          "min": 2.0781,
+          "max": 5.4732
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 16.62345,
+          "p95": 18.16406,
+          "min": 14.8899,
+          "max": 21.0979
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 1.527842920469284,
+          "p95": 1.5295862327842713,
+          "min": 1.5238954201698303,
+          "max": 1.5327923243980408
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 2102112.0,
+          "p95": 2109976.0,
+          "min": 2093184,
+          "max": 2118256
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-transform-all",
+      "suite": "2d",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0057,
+          "p95": 0.0072,
+          "min": 0.0053,
+          "max": 0.0107
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0001,
+          "min": 0,
+          "max": 0.0009
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0099,
+          "p95": 0.011519999999999994,
+          "min": 0.0089,
+          "max": 0.0147
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 9.020900000000001,
+          "p95": 9.760855,
+          "min": 3.5665,
+          "max": 10.2722
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 3.10355,
+          "p95": 4.13144,
+          "min": 2.8146,
+          "max": 5.0856
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0543,
+          "p95": 0.067205,
+          "min": 0.049,
+          "max": 0.0926
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 2.18695,
+          "p95": 2.26183,
+          "min": 2.1385,
+          "max": 3.2614
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 2.3287500000000003,
+          "p95": 3.14415,
+          "min": 2.0527,
+          "max": 3.3726
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 16.7069,
+          "p95": 18.122719999999997,
+          "min": 12.8866,
+          "max": 19.6405
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 1.5319507253494262,
+          "p95": 1.5345957509307862,
+          "min": 1.5271816640739442,
+          "max": 1.5372007003669739
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 2126360.0,
+          "p95": 2132516.8,
+          "min": 2108376,
+          "max": 2150576
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 200.0,
+          "p95": 200.0,
+          "min": 200,
+          "max": 200
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-dock-resize",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.03055,
+          "p95": 0.05052999999999999,
+          "min": 0.0257,
+          "max": 0.0664
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 2.3249000000000004,
+          "p95": 15.662609999999997,
+          "min": 2.2337,
+          "max": 19.2136
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 2.1943435,
+          "p95": 15.442754749999999,
+          "min": 2.111503,
+          "max": 18.799986
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.066,
+          "p95": 0.08707499999999987,
+          "min": 0.055,
+          "max": 12.2447
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 71.22735,
+          "p95": 80.23048,
+          "min": 49.9682,
+          "max": 89.8566
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 28.526699999999998,
+          "p95": 45.164145,
+          "min": 24.1454,
+          "max": 53.9097
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.47045,
+          "p95": 0.7082099999999999,
+          "min": 0.4037,
+          "max": 0.8696
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.96225,
+          "p95": 83.6375,
+          "min": 79.4593,
+          "max": 84.365
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.326049999999995,
+          "p95": 39.749635,
+          "min": 28.1198,
+          "max": 40.7622
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 226.6213,
+          "p95": 241.91523,
+          "min": 212.3618,
+          "max": 261.4592
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.81759444264793,
+          "p95": 81.94977959607638,
+          "min": 78.96779979753113,
+          "max": 82.69824769473267
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 40286504.0,
+          "p95": 40301241.6,
+          "min": 40267064,
+          "max": 40315568
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 603.0,
+          "p95": 603.0,
+          "min": 603,
+          "max": 603
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-idle",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0007,
+          "p95": 0.0009,
+          "min": 0.0004,
+          "max": 0.0041
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0109,
+          "p95": 0.0149,
+          "min": 0.007,
+          "max": 0.02
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0005,
+          "p95": 0.0007,
+          "min": 0.0003,
+          "max": 0.0016
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 74.50515,
+          "p95": 83.82721,
+          "min": 57.8509,
+          "max": 100.1254
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 26.8619,
+          "p95": 44.897045,
+          "min": 24.3188,
+          "max": 54.4875
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.4626,
+          "p95": 0.6910399999999999,
+          "min": 0.4182,
+          "max": 0.9633
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.90475,
+          "p95": 83.567435,
+          "min": 80.8909,
+          "max": 84.6412
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.48835,
+          "p95": 40.02092,
+          "min": 26.9297,
+          "max": 40.5674
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 225.59789999999998,
+          "p95": 242.35005499999997,
+          "min": 211.8928,
+          "max": 261.0939
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.84518686859894,
+          "p95": 81.93995092147293,
+          "min": 80.18655544836044,
+          "max": 82.03061919231034
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 38643492.0,
+          "p95": 38661008.8,
+          "min": 38622656,
+          "max": 38672240
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 603.0,
+          "p95": 603.0,
+          "min": 603,
+          "max": 603
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-line-edit",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0304,
+          "p95": 0.04354499999999998,
+          "min": 0.0252,
+          "max": 0.0561
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.55625,
+          "p95": 0.63403,
+          "min": 0.5097,
+          "max": 12.5624
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.411191,
+          "p95": 0.47125204999999987,
+          "min": 0.380045,
+          "max": 12.399477
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.08495,
+          "p95": 0.11646999999999998,
+          "min": 0.0665,
+          "max": 12.5196
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 76.23455000000001,
+          "p95": 84.91435,
+          "min": 52.5332,
+          "max": 92.4351
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 27.9051,
+          "p95": 46.201385,
+          "min": 25.0859,
+          "max": 53.8659
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.48114999999999997,
+          "p95": 0.702035,
+          "min": 0.4357,
+          "max": 0.7676
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 84.93215000000001,
+          "p95": 85.52632,
+          "min": 83.6448,
+          "max": 85.8792
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 40.389300000000006,
+          "p95": 42.238095,
+          "min": 28.589,
+          "max": 43.0546
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 233.9963,
+          "p95": 249.94067499999997,
+          "min": 217.2231,
+          "max": 258.2592
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 83.75112818069458,
+          "p95": 83.92669776507911,
+          "min": 82.19156499132157,
+          "max": 84.0112624390068
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 39832976.0,
+          "p95": 39854457.2,
+          "min": 39807192,
+          "max": 39866872
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 619.0,
+          "p95": 619.0,
+          "min": 619,
+          "max": 619
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-live-preview",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0007,
+          "p95": 0.001,
+          "min": 0.0004,
+          "max": 0.0033
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0109,
+          "p95": 0.015504999999999998,
+          "min": 0.0082,
+          "max": 0.0203
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.04245,
+          "p95": 0.05994999999999998,
+          "min": 0.0309,
+          "max": 0.0934
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 74.83494999999999,
+          "p95": 85.93626499999999,
+          "min": 58.4421,
+          "max": 97.7342
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 27.3677,
+          "p95": 45.243649999999995,
+          "min": 24.3535,
+          "max": 53.3227
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.4635,
+          "p95": 0.700105,
+          "min": 0.413,
+          "max": 1.3878
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.9299,
+          "p95": 83.51683,
+          "min": 79.4509,
+          "max": 84.5636
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.51535,
+          "p95": 40.31514,
+          "min": 29.7602,
+          "max": 41.3982
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 227.3972,
+          "p95": 243.459685,
+          "min": 212.2707,
+          "max": 264.355
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.83723175378228,
+          "p95": 81.98544536147232,
+          "min": 78.38845904292297,
+          "max": 82.23356479146194
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 38684728.0,
+          "p95": 38701605.2,
+          "min": 38666488,
+          "max": 38745792
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 804.0,
+          "p95": 804.0,
+          "min": 804,
+          "max": 804
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-scroll-list",
+      "suite": "editor-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.03115,
+          "p95": 0.052805,
+          "min": 0.0251,
+          "max": 13.9163
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.4589,
+          "p95": 0.56173,
+          "min": 0.4138,
+          "max": 12.4651
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.305567,
+          "p95": 0.37607899999999994,
+          "min": 0.275251,
+          "max": 0.944007
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0875,
+          "p95": 0.11504999999999999,
+          "min": 0.0635,
+          "max": 12.3178
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 74.68465,
+          "p95": 88.52105999999999,
+          "min": 57.5329,
+          "max": 102.1893
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 27.3068,
+          "p95": 47.170165000000004,
+          "min": 24.1181,
+          "max": 53.2318
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.47314999999999996,
+          "p95": 0.7335050000000001,
+          "min": 0.4214,
+          "max": 0.958
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 82.44385,
+          "p95": 84.274335,
+          "min": 79.7595,
+          "max": 84.7133
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 38.5473,
+          "p95": 41.018984999999994,
+          "min": 27.8855,
+          "max": 42.5969
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 227.6222,
+          "p95": 246.66695,
+          "min": 204.1392,
+          "max": 264.9162
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 81.09828775102616,
+          "p95": 82.84572790896607,
+          "min": 78.6517593167038,
+          "max": 83.30043185208893
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 38798012.0,
+          "p95": 38975532.0,
+          "min": 38721848,
+          "max": 39005256
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 603.0,
+          "p95": 603.0,
+          "min": 603,
+          "max": 603
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-static-overlay",
+      "suite": "game-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0001,
+          "p95": 0.0003,
+          "min": 0,
+          "max": 0.0005
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.0022,
+          "p95": 0.0038,
+          "min": 0.0014,
+          "max": 0.0054
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.0,
+          "p95": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0107,
+          "p95": 0.0137,
+          "min": 0.0095,
+          "max": 0.0197
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 2.4716,
+          "p95": 5.175084999999998,
+          "min": 2.1946,
+          "max": 6.5409
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 1.7827,
+          "p95": 4.3483949999999965,
+          "min": 1.5199,
+          "max": 5.5227
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.04265,
+          "p95": 0.05440999999999999,
+          "min": 0.0361,
+          "max": 0.0905
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 11.67225,
+          "p95": 12.754415,
+          "min": 8.5089,
+          "max": 12.7826
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 1.4563000000000001,
+          "p95": 1.8501149999999997,
+          "min": 1.1983,
+          "max": 4.1859
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 17.365850000000002,
+          "p95": 18.500639999999997,
+          "min": 14.6818,
+          "max": 19.7627
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 8.1437732700634,
+          "p95": 8.179571286738396,
+          "min": 7.538723668327331,
+          "max": 8.20927772934723
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 3927308.0,
+          "p95": 3936740.8,
+          "min": 3912792,
+          "max": 3947416
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 269.0,
+          "p95": 269.0,
+          "min": 269,
+          "max": 269
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-values",
+      "suite": "game-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0037,
+          "p95": 0.004804999999999998,
+          "min": 0.0028,
+          "max": 0.0191
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.15089999999999998,
+          "p95": 0.18622,
+          "min": 0.1176,
+          "max": 0.4077
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.11244399999999999,
+          "p95": 0.13717249999999998,
+          "min": 0.088033,
+          "max": 0.273311
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0279,
+          "p95": 0.033909999999999996,
+          "min": 0.0225,
+          "max": 0.1591
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 3.0912499999999996,
+          "p95": 6.361039999999999,
+          "min": 2.4771,
+          "max": 7.3565
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 2.26695,
+          "p95": 3.568064999999964,
+          "min": 1.8161,
+          "max": 6.4552
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0552,
+          "p95": 0.067505,
+          "min": 0.0439,
+          "max": 0.0928
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.67245,
+          "p95": 11.745135000000001,
+          "min": 8.5237,
+          "max": 12.7937
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 1.7989,
+          "p95": 2.3908549999999997,
+          "min": 1.3855,
+          "max": 2.9468
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 18.106,
+          "p95": 20.212255,
+          "min": 15.8496,
+          "max": 21.2417
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 8.087065524644853,
+          "p95": 8.222687207521819,
+          "min": 7.517563463676453,
+          "max": 8.85851128113556
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 3979968.0,
+          "p95": 3994309.6,
+          "min": 3959832,
+          "max": 4002376
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 269.0,
+          "p95": 269.0,
+          "min": 269,
+          "max": 269
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 2.0,
+          "p95": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-menu-animation",
+      "suite": "game-ui",
+      "metrics": {
+        "updateMs": {
+          "n": 240,
+          "median": 0.0092,
+          "p95": 0.012704999999999998,
+          "min": 0.0071,
+          "max": 0.1484
+        },
+        "layoutInclusiveMs": {
+          "n": 240,
+          "median": 0.53415,
+          "p95": 0.6233749999999999,
+          "min": 0.5026,
+          "max": 1.8434
+        },
+        "textLayoutNestedMs": {
+          "n": 240,
+          "median": 0.4957855,
+          "p95": 0.57987995,
+          "min": 0.468637,
+          "max": 1.807663
+        },
+        "recordMs": {
+          "n": 240,
+          "median": 0.0159,
+          "p95": 0.02132499999999999,
+          "min": 0.0141,
+          "max": 1.2568
+        },
+        "prepareMs": {
+          "n": 240,
+          "median": 3.4684,
+          "p95": 7.31676,
+          "min": 3.1985,
+          "max": 8.0262
+        },
+        "encodeMs": {
+          "n": 240,
+          "median": 2.59725,
+          "p95": 6.043074999999996,
+          "min": 2.2981,
+          "max": 6.9348
+        },
+        "submitMs": {
+          "n": 240,
+          "median": 0.0611,
+          "p95": 0.074215,
+          "min": 0.0531,
+          "max": 0.2199
+        },
+        "submitCompletionCpuMs": {
+          "n": 240,
+          "median": 10.73985,
+          "p95": 11.812645,
+          "min": 9.603,
+          "max": 11.9299
+        },
+        "disposeMs": {
+          "n": 240,
+          "median": 2.05735,
+          "p95": 2.5271049999999993,
+          "min": 1.7948,
+          "max": 3.6724
+        },
+        "frameCpuWallMs": {
+          "n": 240,
+          "median": 20.24445,
+          "p95": 22.96838,
+          "min": 18.4629,
+          "max": 24.8491
+        },
+        "gpuRecordedSpanMs": {
+          "n": 240,
+          "median": 8.811101201396943,
+          "p95": 8.866003516475487,
+          "min": 8.165554654964447,
+          "max": 9.42001815114212
+        },
+        "allocatedProcessWide": {
+          "n": 240,
+          "median": 4320888.0,
+          "p95": 4330768.8,
+          "min": 4306032,
+          "max": 4343296
+        },
+        "commandCount": {
+          "n": 240,
+          "median": 76.0,
+          "p95": 76.0,
+          "min": 76,
+          "max": 76
+        },
+        "layerCount": {
+          "n": 240,
+          "median": 1.0,
+          "p95": 1.0,
+          "min": 1,
+          "max": 1
+        }
+      }
+    }
+  ],
+  "pipeline": [
+    {
+      "variant": "main",
+      "workload": "2d-camera-pan",
+      "depth": 1,
+      "run_headless_fps": [
+        24.967392065808053,
+        25.102927756556156
+      ],
+      "run_elapsed_ms": [
+        4806.2689,
+        4780.3189
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 9.980703460172652,
+        "p95": 10.071578123157693,
+        "min": 9.747440257198333,
+        "max": 10.122152214557648
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-camera-pan",
+      "depth": 3,
+      "run_headless_fps": [
+        23.548401472693477,
+        23.355251198572027
+      ],
+      "run_elapsed_ms": [
+        5095.8873,
+        5138.0308
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 10.61993801374054,
+        "p95": 10.763470727674484,
+        "min": 10.069331855220796,
+        "max": 11.24648846736145
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-geometry-stream",
+      "depth": 1,
+      "run_headless_fps": [
+        24.641583041005443,
+        25.291258879365813
+      ],
+      "run_elapsed_ms": [
+        4869.817,
+        4744.7223
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 10.045727005714417,
+        "p95": 10.091558085333252,
+        "min": 9.965294182353974,
+        "max": 11.049554289985657
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-geometry-stream",
+      "depth": 3,
+      "run_headless_fps": [
+        23.229257420068464,
+        23.29276006279262
+      ],
+      "run_elapsed_ms": [
+        5165.8991,
+        5151.8154
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 10.71091086328125,
+        "p95": 10.780172461174963,
+        "min": 10.074461601802826,
+        "max": 11.093357516658783
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-static",
+      "depth": 1,
+      "run_headless_fps": [
+        59.55241890759524,
+        59.53482169395321
+      ],
+      "run_elapsed_ms": [
+        2015.0315,
+        2015.6271
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.527782806251526,
+        "p95": 1.5295882365915299,
+        "min": 1.524175953186035,
+        "max": 1.5304278318328857
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-static",
+      "depth": 3,
+      "run_headless_fps": [
+        51.264638831220914,
+        50.50426615849274
+      ],
+      "run_elapsed_ms": [
+        2340.7948,
+        2376.0369
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.8163510895633697,
+        "p95": 1.8368199807100294,
+        "min": 1.5277427301063538,
+        "max": 2.704418428504944
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-transform-all",
+      "depth": 1,
+      "run_headless_fps": [
+        59.65446641689673,
+        59.356366274484316
+      ],
+      "run_elapsed_ms": [
+        2011.5845,
+        2021.6871
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.531229354736328,
+        "p95": 1.5343552940597533,
+        "min": 1.5250977045249938,
+        "max": 1.536278949028015
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "2d-transform-all",
+      "depth": 3,
+      "run_headless_fps": [
+        51.16089397693454,
+        51.03298414864479
+      ],
+      "run_elapsed_ms": [
+        2345.5415,
+        2351.4204
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.7911431942501068,
+        "p95": 1.8039354997890473,
+        "min": 1.5334736188659668,
+        "max": 2.5233944807624815
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-dock-resize",
+      "depth": 1,
+      "run_headless_fps": [
+        4.39887412869484,
+        4.381690889913642
+      ],
+      "run_elapsed_ms": [
+        27279.7076,
+        27386.6877
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.84258191916275,
+        "p95": 81.96148984569568,
+        "min": 80.41358681076049,
+        "max": 81.99222624523544
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-dock-resize",
+      "depth": 3,
+      "run_headless_fps": [
+        2.37517813440145,
+        2.320940104371013
+      ],
+      "run_elapsed_ms": [
+        50522.5264,
+        51703.1869
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.59705551502418,
+        "p95": 90.92687418696899,
+        "min": 81.92706243318558,
+        "max": 91.33890505071258
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-idle",
+      "depth": 1,
+      "run_headless_fps": [
+        4.361148336439785,
+        4.326942288130784
+      ],
+      "run_elapsed_ms": [
+        27515.6887,
+        27733.2102
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.85203988942337,
+        "p95": 81.95392547329445,
+        "min": 80.35607754243851,
+        "max": 82.00705441894912
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-idle",
+      "depth": 3,
+      "run_headless_fps": [
+        2.5038578032612633,
+        2.3431810692292556
+      ],
+      "run_elapsed_ms": [
+        47926.0443,
+        51212.4315
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.40032171837424,
+        "p95": 90.69580314913559,
+        "min": 81.7759753658867,
+        "max": 91.34395464500427
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-line-edit",
+      "depth": 1,
+      "run_headless_fps": [
+        4.266932498457735,
+        4.211829618435263
+      ],
+      "run_elapsed_ms": [
+        28123.2478,
+        28491.181
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 83.7453371777172,
+        "p95": 83.9102885874384,
+        "min": 80.8527011334114,
+        "max": 83.99322817367936
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-line-edit",
+      "depth": 3,
+      "run_headless_fps": [
+        2.5715835864871646,
+        2.1784439306019654
+      ],
+      "run_elapsed_ms": [
+        46663.8536,
+        55085.191
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 91.58214721383476,
+        "p95": 93.05315013760642,
+        "min": 84.01619180486297,
+        "max": 93.2898919499817
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-live-preview",
+      "depth": 1,
+      "run_headless_fps": [
+        4.36554960146734,
+        4.280245935226995
+      ],
+      "run_elapsed_ms": [
+        27487.9479,
+        28035.7722
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.84971547300339,
+        "p95": 81.96362189661885,
+        "min": 80.20326720089722,
+        "max": 82.02544936958313
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-live-preview",
+      "depth": 3,
+      "run_headless_fps": [
+        2.3226729451871346,
+        2.2610379889541283
+      ],
+      "run_elapsed_ms": [
+        51664.6135,
+        53072.9694
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.58228745552826,
+        "p95": 90.97497357640458,
+        "min": 82.0888899073906,
+        "max": 91.48738716857528
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-scroll-list",
+      "depth": 1,
+      "run_headless_fps": [
+        4.41045202888236,
+        4.3698098402961225
+      ],
+      "run_elapsed_ms": [
+        27208.0955,
+        27461.1492
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.1035176879711,
+        "p95": 82.79853223660412,
+        "min": 80.14671976005936,
+        "max": 83.27089573309708
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "editor-scroll-list",
+      "depth": 3,
+      "run_headless_fps": [
+        2.3240299477210433,
+        2.2722322101344896
+      ],
+      "run_elapsed_ms": [
+        51634.4465,
+        52811.5038
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 88.96832091149139,
+        "p95": 91.20214921292724,
+        "min": 81.88049395249557,
+        "max": 92.1517294270935
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-static-overlay",
+      "depth": 1,
+      "run_headless_fps": [
+        56.76125930529895,
+        55.85881721188906
+      ],
+      "run_elapsed_ms": [
+        2114.118,
+        2148.2732
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.150886785831451,
+        "p95": 8.184095883528329,
+        "min": 7.582847504161835,
+        "max": 8.200100292102814
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-static-overlay",
+      "depth": 3,
+      "run_headless_fps": [
+        51.12453527797432,
+        51.975893926902664
+      ],
+      "run_elapsed_ms": [
+        2347.2096,
+        2308.7626
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.406913239263535,
+        "p95": 8.442472802874756,
+        "min": 8.047730788158416,
+        "max": 9.330728499698639
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-values",
+      "depth": 1,
+      "run_headless_fps": [
+        54.94553295106505,
+        53.88016431833713
+      ],
+      "run_elapsed_ms": [
+        2183.981,
+        2227.1647
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.098847911325453,
+        "p95": 8.21128554422035,
+        "min": 7.4872658979263305,
+        "max": 8.682296470813752
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-hud-values",
+      "depth": 3,
+      "run_headless_fps": [
+        50.41522186793859,
+        51.00161866387234
+      ],
+      "run_elapsed_ms": [
+        2380.2335,
+        2352.8665
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.336679794849395,
+        "p95": 8.46198788176632,
+        "min": 8.062198276565551,
+        "max": 8.924556768379212
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-menu-animation",
+      "depth": 1,
+      "run_headless_fps": [
+        49.51363376473324,
+        49.23957882269726
+      ],
+      "run_elapsed_ms": [
+        2423.5749,
+        2437.0639
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.79773580698204,
+        "p95": 8.848915048174096,
+        "min": 8.695762055591583,
+        "max": 9.202484835147859
+      }
+    },
+    {
+      "variant": "main",
+      "workload": "game-menu-animation",
+      "depth": 3,
+      "run_headless_fps": [
+        45.016492354680295,
+        46.269585963936024
+      ],
+      "run_elapsed_ms": [
+        2665.6897,
+        2593.4963
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 9.031059124174117,
+        "p95": 9.07243974787159,
+        "min": 8.728945103794098,
+        "max": 9.621480932922363
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-camera-pan",
+      "depth": 1,
+      "run_headless_fps": [
+        24.84757410959805,
+        25.147117974728236
+      ],
+      "run_elapsed_ms": [
+        4829.4453,
+        4771.9186
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 9.99134367671585,
+        "p95": 10.083172151955987,
+        "min": 9.732211322032928,
+        "max": 10.652079082168578
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-camera-pan",
+      "depth": 3,
+      "run_headless_fps": [
+        23.108720231563243,
+        23.36394509870089
+      ],
+      "run_elapsed_ms": [
+        5192.8449,
+        5136.1189
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 10.605129878099442,
+        "p95": 10.736299101247788,
+        "min": 10.0348262942276,
+        "max": 10.770343786571503
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-geometry-stream",
+      "depth": 1,
+      "run_headless_fps": [
+        24.946252778674747,
+        24.732687566983074
+      ],
+      "run_elapsed_ms": [
+        4810.3417,
+        4851.8787
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 10.045226053899764,
+        "p95": 10.095583734115792,
+        "min": 9.965935400676727,
+        "max": 10.893898542137146
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-geometry-stream",
+      "depth": 3,
+      "run_headless_fps": [
+        23.168752427168158,
+        23.380132370126432
+      ],
+      "run_elapsed_ms": [
+        5179.3898,
+        5132.5629
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 10.708025380828857,
+        "p95": 10.784638947554397,
+        "min": 9.996954337039947,
+        "max": 11.189981102668762
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-static",
+      "depth": 1,
+      "run_headless_fps": [
+        59.27330044554258,
+        60.38107705350005
+      ],
+      "run_elapsed_ms": [
+        2024.5203,
+        1987.3776
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.527462197090149,
+        "p95": 1.5293117111898422,
+        "min": 1.5236950394439697,
+        "max": 1.5304278318328857
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-static",
+      "depth": 3,
+      "run_headless_fps": [
+        50.57038335384805,
+        51.07623805289549
+      ],
+      "run_elapsed_ms": [
+        2372.9304,
+        2349.4291
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.8135457594013213,
+        "p95": 1.8399198705390931,
+        "min": 1.5116321197471618,
+        "max": 2.6922352803726195
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-transform-all",
+      "depth": 1,
+      "run_headless_fps": [
+        59.26089807915676,
+        58.690954026837716
+      ],
+      "run_elapsed_ms": [
+        2024.944,
+        2044.6081
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.53116924051857,
+        "p95": 1.5343212293363573,
+        "min": 1.5267007503318786,
+        "max": 1.5396854213676452
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "2d-transform-all",
+      "depth": 3,
+      "run_headless_fps": [
+        51.26015180608524,
+        51.324264392842075
+      ],
+      "run_elapsed_ms": [
+        2340.9997,
+        2338.0754
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 1.7898807956771852,
+        "p95": 1.8049754757562637,
+        "min": 1.5237351155891419,
+        "max": 1.9211301711158753
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-dock-resize",
+      "depth": 1,
+      "run_headless_fps": [
+        4.349155384238781,
+        4.3860518638351955
+      ],
+      "run_elapsed_ms": [
+        27591.5642,
+        27359.4576
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.80785593937111,
+        "p95": 81.93335839559211,
+        "min": 81.02703236491013,
+        "max": 82.33459675344086
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-dock-resize",
+      "depth": 3,
+      "run_headless_fps": [
+        2.3196611301387864,
+        2.359613766306047
+      ],
+      "run_elapsed_ms": [
+        51731.6941,
+        50855.7806
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.74732102134705,
+        "p95": 90.92821874163953,
+        "min": 82.1016741977005,
+        "max": 91.25157913038254
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-idle",
+      "depth": 1,
+      "run_headless_fps": [
+        4.393914171096733,
+        4.370820594030359
+      ],
+      "run_elapsed_ms": [
+        27310.5016,
+        27454.7988
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.81450857946967,
+        "p95": 81.93724978928833,
+        "min": 80.1355785917015,
+        "max": 81.99996094125366
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-idle",
+      "depth": 3,
+      "run_headless_fps": [
+        2.298127426213319,
+        2.261250079532405
+      ],
+      "run_elapsed_ms": [
+        52216.4257,
+        53067.9915
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.60272628956605,
+        "p95": 90.9101824725048,
+        "min": 81.57014428428269,
+        "max": 91.4279943214302
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-line-edit",
+      "depth": 1,
+      "run_headless_fps": [
+        4.2446081511990545,
+        4.2328366770867705
+      ],
+      "run_elapsed_ms": [
+        28271.1609,
+        28349.7827
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 83.72888592012404,
+        "p95": 83.90479414793529,
+        "min": 81.86502456045913,
+        "max": 84.04236152766038
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-line-edit",
+      "depth": 3,
+      "run_headless_fps": [
+        2.229189111079206,
+        2.229338472919606
+      ],
+      "run_elapsed_ms": [
+        53831.2337,
+        53827.6271
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 91.73223237750435,
+        "p95": 93.14003321653233,
+        "min": 83.89880877565383,
+        "max": 93.56521506731414
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-live-preview",
+      "depth": 1,
+      "run_headless_fps": [
+        4.3822377518016005,
+        4.353124628238622
+      ],
+      "run_elapsed_ms": [
+        27383.2701,
+        27566.4058
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.85574693285179,
+        "p95": 81.95756639108333,
+        "min": 80.38950104751206,
+        "max": 82.05446449868775
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-live-preview",
+      "depth": 3,
+      "run_headless_fps": [
+        2.2769778340363342,
+        2.2962125124626698
+      ],
+      "run_elapsed_ms": [
+        52701.4353,
+        52259.9713
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.61166326993943,
+        "p95": 91.00190073834571,
+        "min": 81.861497859684,
+        "max": 91.38771779553223
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-scroll-list",
+      "depth": 1,
+      "run_headless_fps": [
+        4.371268375683007,
+        4.360358594873426
+      ],
+      "run_elapsed_ms": [
+        27451.9864,
+        27520.6723
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 81.05767057789421,
+        "p95": 82.82763954084263,
+        "min": 79.2991493658142,
+        "max": 83.1846117925415
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "editor-scroll-list",
+      "depth": 3,
+      "run_headless_fps": [
+        2.3879926618657095,
+        2.2925328898708655
+      ],
+      "run_elapsed_ms": [
+        50251.4107,
+        52343.851
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 89.05716972533799,
+        "p95": 91.18258804646874,
+        "min": 81.21306583079911,
+        "max": 92.11638226705169
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-static-overlay",
+      "depth": 1,
+      "run_headless_fps": [
+        56.01625554391715,
+        58.530538161959655
+      ],
+      "run_elapsed_ms": [
+        2142.2353,
+        2050.2118
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.115339245063781,
+        "p95": 8.165268110526466,
+        "min": 7.4013426426773075,
+        "max": 8.192285443794251
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-static-overlay",
+      "depth": 3,
+      "run_headless_fps": [
+        51.660908986608845,
+        51.060420689359084
+      ],
+      "run_elapsed_ms": [
+        2322.8395,
+        2350.1569
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.405891297561645,
+        "p95": 8.443174135415267,
+        "min": 8.142831480651855,
+        "max": 8.83017744649887
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-values",
+      "depth": 1,
+      "run_headless_fps": [
+        53.05967980340328,
+        57.63236725957085
+      ],
+      "run_elapsed_ms": [
+        2261.6043,
+        2082.1633
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.015709948165894,
+        "p95": 8.201394751591874,
+        "min": 7.812924653594971,
+        "max": 8.984350376976014
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-hud-values",
+      "depth": 3,
+      "run_headless_fps": [
+        50.36369935641487,
+        50.69496673755372
+      ],
+      "run_elapsed_ms": [
+        2382.6685,
+        2367.0989
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.341669274923325,
+        "p95": 8.463404573498153,
+        "min": 7.88381935440445,
+        "max": 9.04482528004074
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-menu-animation",
+      "depth": 1,
+      "run_headless_fps": [
+        49.94246212176389,
+        52.58724651468164
+      ],
+      "run_elapsed_ms": [
+        2402.765,
+        2281.9221
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 8.755695930696486,
+        "p95": 8.832093086238098,
+        "min": 8.521831585544586,
+        "max": 9.380222538986207
+      }
+    },
+    {
+      "variant": "pr105",
+      "workload": "game-menu-animation",
+      "depth": 3,
+      "run_headless_fps": [
+        46.78048332269922,
+        45.699656601355386
+      ],
+      "run_elapsed_ms": [
+        2565.1723,
+        2625.8403
+      ],
+      "gpu_span_ms": {
+        "n": 240,
+        "median": 9.031159314537048,
+        "p95": 9.075818166909599,
+        "min": 8.75980373557663,
+        "max": 9.74227043447113
+      }
+    }
+  ],
+  "pixel_hashes": {
+    "2d-transform-all": "100E153FA266F5CBD10BAB9548C22614B06B5CA01B958205ABDC72D7295B132F",
+    "2d-geometry-stream": "40508F37829563E98A49BDC327F7B838704AC47DDC177C6E9851C4C75445FA43",
+    "2d-camera-pan": "0E7188257C14BEC5C42F4625AF80664C5846B4EFBC0C7B1E03EAE34E7DA72BF3",
+    "2d-static": "08FA5445F06E922DF2B20F6D32278F1DF66096F33741213A23C0AFF36BCFD8D2",
+    "game-hud-static-overlay": "91909C4756BDCA4A74C21C388EF272AD71B04F1A7DE9C1D2C42AE95232E9E632",
+    "game-hud-values": "7AED838B7E47CC22C83AB34E61824AE42746EC7122A4BF8FC779969831D8013C",
+    "game-menu-animation": "FA25FAED19AED67ECD13A1D7EBEF14CE9DDF494B880C88218E89CD73CF70C3ED",
+    "editor-idle": "56CA71721E6F173152F31A3E03957F6263BEEB7B35D0770BD9DE6759B6FAC43E",
+    "editor-line-edit": "3C416B9C1E3F60C5C4B01448FCEB5D71F2A70F1A0C4B2C25DEFAB79FC6650CB3",
+    "editor-scroll-list": "3CE0B9DF6DBB3378501A31F822E07D094CCDC3C4B72122E8E6EB4718981F2490",
+    "editor-dock-resize": "3465C6BFE6C1B6234560388A38DF47E900C31C063F712277BAC13E3E8E5EE40A",
+    "editor-live-preview": "BDF82BAC4AA0699403D5DD51F0EA04524F9FC5E3217FCDE9E68960BB6377CE8F"
+  },
+  "source_hash_count": 26
+}

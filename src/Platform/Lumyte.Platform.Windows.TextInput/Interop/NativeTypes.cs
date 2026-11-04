@@ -1,0 +1,11 @@
+global using Windows.Win32.Foundation;
+global using Windows.Win32.System.Com;
+global using Windows.Win32.System.Variant;
+global using Windows.Win32.UI.TextServices;
+global using TfDisplayAttribute = Windows.Win32.UI.TextServices.TF_DISPLAYATTRIBUTE;
+global using TsfPoint = System.Drawing.Point;
+global using TsfRect = Windows.Win32.Foundation.RECT;
+global using TsRunInfo = Windows.Win32.UI.TextServices.TS_RUNINFO;
+global using TsSelection = Windows.Win32.UI.TextServices.TS_SELECTION_ACP;
+global using TsStatus = Windows.Win32.UI.TextServices.TS_STATUS;
+global using TsTextChange = Windows.Win32.UI.TextServices.TS_TEXTCHANGE;
