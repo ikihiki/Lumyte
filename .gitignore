@@ -1,4 +1,6 @@
 /artifacts/
+**/BenchmarkDotNet.Artifacts/
+**/TestResults/
 **/bin/
 **/obj/
 **/vcpkg_installed/

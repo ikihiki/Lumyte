@@ -30,19 +30,22 @@ Run the related CPU suites through the same runner with --target Test and each
 - tests/UI/Lumyte.UI.Windowing.Tests
 - tests/UI/Lumyte.UI.Application.Navigation.Tests
 
-Build both integration targets with --target Compile:
+Build the Browser integration target with --target Compile:
 
-- benchmarks/Graphics/Lumyte.Graphics.Presentation.Benchmarks
 - src/UI/Lumyte.UI.Application.Browser
 
-For actual Desktop owner/presentation lifecycle checks, use the maintained
-[isolated Weston/XWayland procedure](../benchmarks/Graphics/Lumyte.Graphics.Presentation.Benchmarks/VIRTUAL-DISPLAY.md).
+The historical Desktop owner/presentation lifecycle checks below used the isolated
+Weston/XWayland procedure and presentation benchmark from commit 819e54f.
+That benchmark implementation is not included in this UI-only branch.
 It does not use the physical login/greeter or establish physical scanout/VSync.
 The separate product-host probe observes CPU callbacks, model update delivery and
 ordered shutdown; its private GPU/Present counters remain unobserved. The other
 three cases exercise the benchmark's direct renderer, not retained product UI.
 
-## Verified on 2026-11-05
+## Historical verification on 2026-11-05
+
+These results were recorded before separating the benchmark implementation from
+this PR; they are not a rerun on the current main-based tree.
 
 Baseline: 819e54f. Pinned .NET SDK 10.0.401, Release, repository analyzers enabled.
 The explicitly selected Vulkan manifest exposes Radeon 8060S Graphics / RADV

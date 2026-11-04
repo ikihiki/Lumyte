@@ -158,6 +158,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Signals.Benchmarks.Tests/Lumyte.Signals.Benchmarks.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Resources.AotSmoke/Lumyte.Resources.AotSmoke.csproj" />
@@ -185,7 +186,6 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
-    <Project Path="tests/Graphics/Lumyte.Graphics.Benchmarks.Tests/Lumyte.Graphics.Benchmarks.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Lumyte.Graphics.Text.Parley.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Direct3D12.Tests/Lumyte.Graphics.Direct3D12.Tests.csproj" />

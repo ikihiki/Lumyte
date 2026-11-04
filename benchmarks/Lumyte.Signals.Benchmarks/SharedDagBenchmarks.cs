@@ -13,29 +13,6 @@ public class SharedDagBenchmarks
     [Params(2, 4, 8)]
     public int Layers { get; set; }
 
-    /// <summary>Checks all graph sizes produce the intended cached values.</summary>
-    public static void Verify()
-    {
-        foreach (int layers in new[] { 2, 4, 8 })
-        {
-            var benchmarks = new SharedDagBenchmarks { Layers = layers };
-            benchmarks.Setup();
-            try
-            {
-                int expected = 1 << layers;
-                if (benchmarks.ReadObservedCached() != expected || benchmarks.ReadUnobservedCached() != expected
-                    || benchmarks.ReadObservedCached() != expected || benchmarks.ReadUnobservedCached() != expected)
-                {
-                    throw new InvalidOperationException("Shared dependency paths must preserve the expected cached sum.");
-                }
-            }
-            finally
-            {
-                benchmarks.Cleanup();
-            }
-        }
-    }
-
     /// <summary>Builds separate graphs and initializes their cached values outside measurement.</summary>
     [GlobalSetup]
     public void Setup()

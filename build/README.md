@@ -76,7 +76,7 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `Direct3D12Native` | 選択したAgility SDK・MSVC・CMakeによるDirect3D 12 native DLLのビルド。`--agility-channel Stable/Preview` と復元済み `--agility-sdk-root` を使用 |
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
-| `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・benchmark動作確認／BenchmarkDotNet測定結果の保存 |
+| `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
 | `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
 | `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
 | `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |

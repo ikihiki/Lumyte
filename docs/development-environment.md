@@ -218,7 +218,9 @@ Windows の Mesa 更新は `mise.toml` の `vars.windows_mesa_version`、x64 用
 
 ## WebAssembly workload と CI
 
-.NET workload は独立したツールではなく、mise が管理する SDK にインストールする追加機能です。`mise.toml` の `vars.dotnet_workload_version` に workload-set のバージョン `10.0.401` を固定し、`mise run setup-wasm`がFalloutの`SetupWasm`を呼び、内部で`dotnet workload install wasm-tools --version ...`を実行します。workload の pack・manifest は mise の SDK インストール先に保存され、NuGet の取得には既存の環境内キャッシュを使います。`mise.lock` は SDK の取得を管理し、workload のバージョンは mise の vars と .NET workload-set が管理します。
+.NET workload は独立したツールではなく、mise が管理する SDK にインストールする追加機能です。現在の SDK／workload-set は `10.0.403` に固定します。Falloutの`SetupWasm`は`global.json`のSDK versionを読み、`dotnet workload install wasm-tools --version ...`を実行します。`mise.toml`の`vars.dotnet_workload_version`も同じ値に揃えます。workload の pack・manifest は mise の SDK インストール先に保存され、NuGet の取得には既存の環境内キャッシュを使います。`mise.lock` は各platformのSDK取得URLとchecksumを固定します。
+
+SDK `10.0.403` は runtime／AOT compiler `10.0.14` を含み、[GHSA-p3jp-9v83-76w9](https://github.com/advisories/GHSA-p3jp-9v83-76w9)の修正版を使用します。`NuGetAudit`やwarnings-as-errorsは無効化しません。SDK更新時は`global.json`、`mise.toml`、`mise.lock`のversion・workload-set・四platformの公式SHA-512を同時に更新します。過去の検証・測定記録にある旧SDK番号は、その時点の環境として残します。
 
 ```bash
 source tools/setup/activate.sh

@@ -16,42 +16,9 @@ public class ReuseBenchmarks
     [Params(1, 16, 128)]
     public int Dependencies { get; set; }
 
-    /// <summary>Checks values and verifies that temporary observers are detached.</summary>
-    public static void Verify()
-    {
-        foreach (int dependencies in new[] { 1, 16, 128 })
-        {
-            var benchmark = new ReuseBenchmarks { Dependencies = dependencies };
-            benchmark.Setup();
-            try
-            {
-                int initial = dependencies * (dependencies - 1) / 2;
-                if (benchmark._notifications != 1 || benchmark._sum != initial)
-                {
-                    throw new InvalidOperationException("Observer setup must read every input once.");
-                }
+    internal int Notifications => _notifications;
 
-                if (benchmark.ReevaluateStable() != initial + 1 || benchmark._notifications != 2)
-                {
-                    throw new InvalidOperationException("One update must rerun the stable observer once.");
-                }
-
-                if (benchmark.CreateAndDisposeEffect() != initial + 1 || benchmark._notifications != 3)
-                {
-                    throw new InvalidOperationException("A temporary observer must execute once initially.");
-                }
-
-                if (benchmark.ReevaluateStable() != initial + 2 || benchmark._notifications != 4)
-                {
-                    throw new InvalidOperationException("Disposed temporary observers must not run again.");
-                }
-            }
-            finally
-            {
-                benchmark.Cleanup();
-            }
-        }
-    }
+    internal int Sum => _sum;
 
     /// <summary>Allocates the graph and callback outside the measured operations.</summary>
     [GlobalSetup]

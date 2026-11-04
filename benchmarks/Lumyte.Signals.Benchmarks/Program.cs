@@ -7,13 +7,6 @@ using BenchmarkDotNet.Running;
 using Lumyte.Signals.Benchmarks;
 using Perfolizer.Horology;
 
-if (args.Contains("--smoke", StringComparer.Ordinal))
-{
-    Smoke.Verify();
-    Console.WriteLine("All benchmark workload checks passed.");
-    return;
-}
-
 if (args.Contains("--retention", StringComparer.Ordinal))
 {
     RetentionProbe.Run();

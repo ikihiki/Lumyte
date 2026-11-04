@@ -2,7 +2,7 @@
 lockfile = true
 
 [vars]
-dotnet_workload_version = "10.0.401"
+dotnet_workload_version = "10.0.403"
 vcpkg_commit = "9e593bb18ea69cc5095e012465dcd675a822ed0d"
 windows_mesa_version = "26.2.4"
 windows_mesa_sha256 = "351fc8c8b695878ffb3eaa044b3ead08672a48b1a045e3c3e3975811df0f6695"
@@ -35,14 +35,14 @@ node = "24.21.0"
 
 # Official SDK archive; preserve Microsoft's SHA-512 verification.
 [tools."http:dotnet"]
-version = "10.0.401"
+version = "10.0.403"
 url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/{{ version }}/dotnet-sdk-{{ version }}-linux-{{ arch() }}.tar.gz"
 bin_path = "."
 [tools."http:dotnet".platforms]
-linux-x64 = { checksum = "sha512:51c8b999af9e8dd9998c9edc5944e19a90788862068acd38694e098889054ce8c23d4f0c5cccfa16bf187d044562359e5ee69a9f8ad0bbe913ba90311fbce25b" }
-linux-arm64 = { checksum = "sha512:58ace73ced6b4360754689a686bdfb8a317f4da6cb8bb416dbc7d0ba9f47e43e3c09f5eb1f1a1cfaacbd10df9558da4882bf2a5e195d6ab56a02c1f9f76102ed" }
-windows-x64 = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-win-x64.zip", checksum = "sha512:24b670ad3d923bfcf47df6c3b034152398b42f6dbc388e10d783aee1cfb5e5817d399fc0ae2a12cfa822a55e61d34830ccb15c50ef6efee437ab874bb7c79430" }
-windows-arm64 = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-win-arm64.zip", checksum = "sha512:8272eaab6f06ad658b1976e19d88beed287a601f968b71d5c26b75d10587cf087665c599d2e136a911002f955c97f59aa8692581bbf6b8e7af5f82604c810256" }
+linux-x64 = { checksum = "sha512:b7b3d8461cf98b07d2552ce9199702fa3ad010ac2671a5f8cd5136f7534e50f6855ba7bbb02b11494563f1d04156276a31cda1103b900e5eecd0d9473dc7b9c5" }
+linux-arm64 = { checksum = "sha512:0966aa2b70f4677b8319be9df447a78a0dcd6164836425b55a68fd714f4023feb87b4cac21b9a996b79472ad54487cd0adcd2a9dfd570e2b2a1d26423a2baa9b" }
+windows-x64 = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-x64.zip", checksum = "sha512:7a114c318fa7f1d9822991b534b2814d0e78386ceda816b371f5141acefe741d87ccb606ede06cadac8f9ac5070e32b708a67bbd1619ff5e5a7858a27874ef48" }
+windows-arm64 = { url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-arm64.zip", checksum = "sha512:f78ecd8b48e24fd72ee604687b75f1bbb81505e8343f7d52e4baf9ea32372557eb30e88facaaad195bf2646fcce117fd941e49da0d5bdee1d60d63d836968429" }
 
 [tools."http:cmake"]
 version = "4.4.0"
