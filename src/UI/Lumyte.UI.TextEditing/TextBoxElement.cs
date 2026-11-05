@@ -330,7 +330,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
                     float y = rect.Y + MathF.Max(0, rect.Height - height);
                     if (span.Underline == TextUnderline.Dotted)
                     {
-                        float right = MathF.Min(rect.X + rect.Width, _offset + Size.X);
+                        float right = MathF.Min(rect.X + rect.Width, _offset + ContentSize.X);
                         for (float x = MathF.Max(rect.X, _offset); x < right; x += 4)
                         {
                             canvas.FillRect(new(x, y, MathF.Min(2, right - x), height), new Color2D(0, 0, 0, 1));

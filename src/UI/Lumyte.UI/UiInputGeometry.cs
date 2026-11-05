@@ -4,9 +4,7 @@ namespace Lumyte.UI;
 
 internal static class UiInputGeometry
 {
-    internal static Vector2 Origin(UiElement node, Vector2 parentOrigin) => new(
-        UiLayoutMath.FiniteFloat((double)parentOrigin.X + node.Bounds.X),
-        UiLayoutMath.FiniteFloat((double)parentOrigin.Y + node.Bounds.Y));
+    internal static Vector2 Origin(UiElement node, Vector2 parentOrigin) => UiLayoutMath.Add(parentOrigin, new(node.Bounds.X, node.Bounds.Y));
 
     internal static bool Contains(Vector2 origin, Vector2 size, Vector2 point) =>
         size.X > 0 && size.Y > 0 && point.X >= origin.X && point.Y >= origin.Y

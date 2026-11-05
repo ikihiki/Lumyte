@@ -528,7 +528,7 @@ public sealed partial class UiPopupManager : IDisposable
             return false;
         }
 
-        rectangle = new(anchor.InputOrigin.X, anchor.InputOrigin.Y, anchor.Size.X, anchor.Size.Y);
+        rectangle = new(anchor.InputOrigin.X, anchor.InputOrigin.Y, anchor.ContentSize.X, anchor.ContentSize.Y);
         return true;
     }
 

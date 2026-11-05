@@ -30,9 +30,9 @@ public partial class RectangleElement : UiElement<RectangleWidget>
     /// <inheritdoc/>
     protected override void OnRecord(DrawingCanvas2D canvas)
     {
-        if (Size.X > 0 && Size.Y > 0 && Widget.Fill.A > 0)
+        if (ContentSize.X > 0 && ContentSize.Y > 0 && Widget.Fill.A > 0)
         {
-            canvas.FillRect(new(0, 0, Size.X, Size.Y), Widget.Fill);
+            canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), Widget.Fill);
         }
     }
 }

@@ -28,10 +28,10 @@ public sealed partial class UiSurface
     }
 
     /// <summary>Gets a value indicating whether any visible producer needs continuous time progression.</summary>
-    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || _presenceEntries.Any(entry => entry.IsActive));
+    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || HasPresenceAnimation(true));
 
     /// <summary>Gets a value indicating whether visible animations have a one-shot target or control update.</summary>
-    public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(false) || _presenceEntries.Any(entry => entry.WantsCapture || entry.HasNotification));
+    public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(false) || HasPresenceAnimation(false));
 
     /// <summary>Freezes or resumes animation time without stopping independent model values.</summary>
     /// <param name="enabled">Whether the owning host can update and present this surface.</param>
@@ -223,6 +223,20 @@ public sealed partial class UiSurface
         foreach (UiAnimationProducer producer in _animationProducers)
         {
             if (producer.IsRunning || producer.HasPending)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool HasPresenceAnimation(bool running)
+    {
+        // Keep the concrete HashSet enumerator: LINQ's IEnumerable path boxes it.
+        foreach (UiPresenceEntry entry in _presenceEntries)
+        {
+            if (running ? entry.IsActive : entry.WantsCapture || entry.HasNotification)
             {
                 return true;
             }

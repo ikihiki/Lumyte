@@ -61,7 +61,12 @@ public partial class UiElement
 
     internal bool HasEquivalentVisualContent(UiElement other)
     {
+        // The shared root may move and resize: its retained content is stretched to the flight bounds.
+        // Modifier geometry needs stricter agreement because stretching can change insets and border widths.
         if (Widget.GetType() != other.Widget.GetType() || Widget.ClipToBounds != other.Widget.ClipToBounds
+            || ModifierChanges(other.Widget) != UiInvalidation.None
+            || (_modifierBounds.Length != 0 && (ContentBounds != other.ContentBounds
+                || !_modifierBounds.AsSpan().SequenceEqual(other._modifierBounds)))
             || !CanReuseTransitionCapture(other.Widget) || Children.Count != other.Children.Count)
         {
             return false;

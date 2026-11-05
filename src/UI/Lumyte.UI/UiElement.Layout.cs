@@ -70,7 +70,7 @@ public partial class UiElement
             result |= UiInvalidation.Input | UiInvalidation.Visual;
         }
 
-        return result;
+        return result | ModifierChanges(next);
     }
 
     /// <summary>Invalidates cached layout after component-owned state changes, including every dependent ancestor.</summary>

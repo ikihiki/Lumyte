@@ -198,6 +198,145 @@ public sealed class VisualResourceTests
         await running;
     }
 
+    /// <summary>Checks C1 content reaches the real presence, page and shared capture path.</summary>
+    /// <returns>The asynchronous verification.</returns>
+    [Fact]
+    public async Task C1SubtreesSupportPresencePageAndSharedCaptureAsync()
+    {
+        var driver = new BufferDriver();
+        UiApplicationWindowContext? context = null;
+        await using UiApplication app = UiApplication.CreateBuilder().UseDriver(() => driver).UseRoot(value =>
+        {
+            context = value;
+            return Panel();
+        }).Build();
+        Task running = app.RunAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            while (app.State != UiApplicationState.Running)
+            {
+                Assert.Null(app.Failure);
+                await Task.Delay(1, timeout.Token);
+            }
+
+            await app.Dispatcher.InvokeAsync(
+            () =>
+            {
+                using var surface = new UiSurface(Panel()[SizedBox(width: 8, height: 8, sharedElementKey: new UiSharedElementKey("c1"), transitions: new UiElementTransitions { Enter = FadeIn(Duration.FromSeconds(1)) }, with: [Padding.All(1)])[Separator(color: new Color2D(1, 0, 0, 1), with: [Border.Stroke(new(0, 1, 0, 1), 1)])]]);
+                surface.VisualHost = new MotionHost();
+                surface.SetViewport(new(10, 10));
+                surface.UpdateLayout();
+                UiElement box = surface.RootElement.Children[0];
+                Assert.NotNull(box.Presence);
+                Assert.All(surface.RootElement.EnumerateSubtree(), node => Assert.True(node.TransitionCaptureSupported));
+                var coordinator = new UiVisualCoordinator(app, surface, () => context!.Window);
+                Task<UiVisualSnapshot?> presence = coordinator.CaptureAsync(box, logical: true);
+                Task<UiVisualSnapshot?> page = coordinator.CaptureAsync(surface.RootElement, logical: true);
+                Task<UiVisualSnapshot?> shared = coordinator.CaptureAsync(surface.FindSharedElement(new("c1"))!, logical: true);
+                Assert.Equal(3, driver.Captures);
+                Assert.False(presence.IsCompleted);
+                driver.CompleteCapture();
+                driver.CompleteCapture();
+                driver.CompleteCapture();
+                Assert.NotNull(presence.GetAwaiter().GetResult());
+                Assert.NotNull(page.GetAwaiter().GetResult());
+                Assert.NotNull(shared.GetAwaiter().GetResult());
+                presence.Result!.Dispose();
+                page.Result!.Dispose();
+                shared.Result!.Dispose();
+            },
+            timeout.Token);
+        }
+        finally
+        {
+            await app.StopAsync();
+            await running.WaitAsync(timeout.Token);
+        }
+    }
+
+    /// <summary>Checks C1 capture equivalence includes separator configuration and common modifiers.</summary>
+    /// <param name="change">The changed field.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void C1CaptureReuseRejectsChangedVisualConfiguration(int change)
+    {
+        Definitions.SizedBox Create(bool changed) => SizedBox(width: 20, height: 20, with: [Border.Stroke(changed && change == 3 ? new(0, 1, 0, 1) : new(1, 0, 0, 1), 1)])[Separator(color: changed && change == 0 ? new Color2D(0, 1, 0, 1) : new Color2D(1, 0, 0, 1), thickness: changed && change == 1 ? 2 : 1, orientation: changed && change == 2 ? UiOrientation.Vertical : UiOrientation.Horizontal)];
+        using var before = new UiSurface(Create(false));
+        using var same = new UiSurface(Create(false));
+        using var changed = new UiSurface(Create(true));
+        foreach (UiSurface surface in new[] { before, same, changed })
+        {
+            surface.SetViewport(new(20, 20));
+            surface.UpdateLayout();
+        }
+
+        Assert.True(before.RootElement.HasEquivalentVisualContent(same.RootElement));
+        Assert.False(before.RootElement.HasEquivalentVisualContent(changed.RootElement));
+        ulong revision = before.RootElement.VisualRevision;
+        before.Rebuild(Create(true));
+        before.UpdateLayout();
+        Assert.True(before.RootElement.VisualRevision > revision);
+    }
+
+    /// <summary>Checks isolated capture reuse compares intermediate layers, not only body bounds.</summary>
+    [Fact]
+    public void C1CaptureEquivalenceIncludesLayerOnlyGeometry()
+    {
+        Definitions.SizedBox Create() => SizedBox(width: 10, height: 8, with: [Align.At(0, 0), Border.Stroke(new(1, 0, 0, 1), 2), Align.At(0, 0)]);
+        using var first = new UiSurface(Create());
+        using var second = new UiSurface(Create());
+        first.SetViewport(new(100, 80));
+        second.SetViewport(new(120, 90));
+        first.UpdateLayout();
+        second.UpdateLayout();
+        Assert.Equal(first.RootElement.ContentBounds, second.RootElement.ContentBounds);
+        Assert.False(first.RootElement.HasEquivalentVisualContent(second.RootElement));
+    }
+
+    /// <summary>Checks the differently sized shared rectangles in the Browser same-content scene reuse live content.</summary>
+    [Fact]
+    public void SharedRectangleResizeWithoutModifiersReusesVisualContent()
+    {
+        var key = new UiSharedElementKey("photo");
+        var color = new Color2D(1, 0, 0, 0.5f);
+        using var before = new UiSurface(Panel(width: 180, height: 40)[Rectangle(width: 40, height: 40, fill: new Color2D(0, 1, 0, 1)), Rectangle(width: 40, height: 40, fill: color, sharedElementKey: key)]);
+        using var after = new UiSurface(Stack(orientation: UiOrientation.Horizontal, height: 40)[Rectangle(width: 100, height: 40, fill: new Color2D(1, 1, 1, 1)), Rectangle(width: 80, height: 40, fill: color, sharedElementKey: key)]);
+        foreach (UiSurface surface in new[] { before, after })
+        {
+            surface.SetViewport(new(240, 180));
+            surface.UpdateLayout();
+        }
+
+        UiElement previous = before.FindSharedElement(key)!;
+        UiElement next = after.FindSharedElement(key)!;
+        Assert.NotEqual(previous.Bounds, next.Bounds);
+        Assert.NotEqual(previous.ContentBounds, next.ContentBounds);
+        Assert.True(next.HasEquivalentVisualContent(previous));
+        Assert.True(previous.HasEquivalentVisualContent(next));
+    }
+
+    /// <summary>Checks identical modifier configuration cannot hide changed body or intermediate geometry.</summary>
+    /// <param name="border">Whether the modifier paints a border rather than applying padding.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SharedRectangleResizeWithModifiersRejectsChangedGeometry(bool border)
+    {
+        Action<Definitions.Widget>[] modifiers = border ? [Border.Stroke(new(1, 0, 0, 1), 2)] : [Padding.All(2)];
+        using var before = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 0.5f), with: modifiers));
+        using var after = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 0.5f), with: modifiers));
+        before.SetViewport(new(40, 40));
+        after.SetViewport(new(80, 40));
+        before.UpdateLayout();
+        after.UpdateLayout();
+        Assert.NotEqual(before.RootElement.ContentBounds, after.RootElement.ContentBounds);
+        Assert.False(after.RootElement.HasEquivalentVisualContent(before.RootElement));
+    }
+
     private sealed class MotionHost : IUiVisualHost
     {
         public bool CanPresent => true;
@@ -209,8 +348,7 @@ public sealed class VisualResourceTests
 
     private sealed class BufferDriver : UiApplicationDriver
     {
-        private readonly TaskCompletionSource<UiVisualSnapshot?> _capture = new();
-        private IDisposable? _reservation;
+        private readonly Queue<(TaskCompletionSource<UiVisualSnapshot?> Completion, IDisposable Reservation)> _captures = new();
 
         internal override bool SupportsVisuals => true;
 
@@ -220,16 +358,17 @@ public sealed class VisualResourceTests
 
         internal void CompleteCapture()
         {
+            (TaskCompletionSource<UiVisualSnapshot?> completion, IDisposable reservation) = _captures.Dequeue();
             var texture = new Texture();
-            _capture.SetResult(new(texture, new View(texture), _reservation!));
-            _reservation = null;
+            completion.SetResult(new(texture, new View(texture), reservation));
         }
 
         internal override ValueTask<UiVisualSnapshot?> CaptureVisualAsync(DrawList2D commands, uint width, uint height, IDisposable reservation, IReadOnlyList<UiVisualSnapshot>? visuals = null)
         {
             Captures++;
-            _reservation = reservation;
-            return new(_capture.Task);
+            var completion = new TaskCompletionSource<UiVisualSnapshot?>();
+            _captures.Enqueue((completion, reservation));
+            return new(completion.Task);
         }
 
         internal override ValueTask InitializeAsync(UiApplication application, IServiceProvider services, bool textInput, CancellationToken cancellationToken) => ValueTask.CompletedTask;

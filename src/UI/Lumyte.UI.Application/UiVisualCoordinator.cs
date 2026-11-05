@@ -64,7 +64,7 @@ internal sealed class UiVisualCoordinator(UiApplication application, UiSurface s
         Vector2 origin = Vector2.Zero;
         for (UiElement? node = widget; node is not null; node = node.Parent)
         {
-            origin += new Vector2(node.Bounds.X, node.Bounds.Y);
+            origin = UiLayoutMath.Add(UiLayoutMath.Add(origin, new(node.Bounds.X, node.Bounds.Y)), node.Parent?.ContentOffset ?? Vector2.Zero);
         }
 
         return new(origin.X, origin.Y, widget.Size.X, widget.Size.Y);
