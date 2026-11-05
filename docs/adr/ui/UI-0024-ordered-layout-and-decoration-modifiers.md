@@ -111,6 +111,8 @@ ElementのPrepareUpdateで次の修飾列を検証し、公開前の失敗では
 
 修飾の追加・削除・並べ替え、余白・線幅・制約・整列係数の差分はlayout、入力幾何、描画を無効化する。枠色だけの差分は描画を無効化し、layoutを再実行しない。共通CompareConfiguration経路で判定し、色変更から不要なhostサービス検証やIME文書変更を発生させない。
 
+共有要素のcapture再利用では、修飾列の差分に加えて、修飾がある要素の本体矩形と各中間層の矩形の一致を確認する。枠やinsetを含む内容を単純に伸縮すると線幅や余白が変わるためである。修飾がない共有rootの位置・寸法差は、既存のcomponent固有の内容比較と子の幾何比較を通れば再利用を妨げない。保持した描画を演出中の外側矩形へ伸縮する既存契約を維持する。
+
 ### 公開APIの差分
 
 以下は基準コードへの追加を示す主要宣言であり、実装stubではない。Color2Dは既存のLumyte.Graphics.Drawing2D、Vector2はSystem.Numericsを使用する。privateなComposeActionの定義と、生成される利用者向けのAction入口を区別する。

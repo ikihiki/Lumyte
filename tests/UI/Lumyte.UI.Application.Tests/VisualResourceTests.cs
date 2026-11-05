@@ -297,6 +297,46 @@ public sealed class VisualResourceTests
         Assert.False(first.RootElement.HasEquivalentVisualContent(second.RootElement));
     }
 
+    /// <summary>Checks the differently sized shared rectangles in the Browser same-content scene reuse live content.</summary>
+    [Fact]
+    public void SharedRectangleResizeWithoutModifiersReusesVisualContent()
+    {
+        var key = new UiSharedElementKey("photo");
+        var color = new Color2D(1, 0, 0, 0.5f);
+        using var before = new UiSurface(Panel(width: 180, height: 40)[Rectangle(width: 40, height: 40, fill: new Color2D(0, 1, 0, 1)), Rectangle(width: 40, height: 40, fill: color, sharedElementKey: key)]);
+        using var after = new UiSurface(Stack(orientation: UiOrientation.Horizontal, height: 40)[Rectangle(width: 100, height: 40, fill: new Color2D(1, 1, 1, 1)), Rectangle(width: 80, height: 40, fill: color, sharedElementKey: key)]);
+        foreach (UiSurface surface in new[] { before, after })
+        {
+            surface.SetViewport(new(240, 180));
+            surface.UpdateLayout();
+        }
+
+        UiElement previous = before.FindSharedElement(key)!;
+        UiElement next = after.FindSharedElement(key)!;
+        Assert.NotEqual(previous.Bounds, next.Bounds);
+        Assert.NotEqual(previous.ContentBounds, next.ContentBounds);
+        Assert.True(next.HasEquivalentVisualContent(previous));
+        Assert.True(previous.HasEquivalentVisualContent(next));
+    }
+
+    /// <summary>Checks identical modifier configuration cannot hide changed body or intermediate geometry.</summary>
+    /// <param name="border">Whether the modifier paints a border rather than applying padding.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SharedRectangleResizeWithModifiersRejectsChangedGeometry(bool border)
+    {
+        Action<Definitions.Widget>[] modifiers = border ? [Border.Stroke(new(1, 0, 0, 1), 2)] : [Padding.All(2)];
+        using var before = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 0.5f), with: modifiers));
+        using var after = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 0.5f), with: modifiers));
+        before.SetViewport(new(40, 40));
+        after.SetViewport(new(80, 40));
+        before.UpdateLayout();
+        after.UpdateLayout();
+        Assert.NotEqual(before.RootElement.ContentBounds, after.RootElement.ContentBounds);
+        Assert.False(after.RootElement.HasEquivalentVisualContent(before.RootElement));
+    }
+
     private sealed class MotionHost : IUiVisualHost
     {
         public bool CanPresent => true;
