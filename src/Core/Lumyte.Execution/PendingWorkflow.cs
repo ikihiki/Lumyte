@@ -34,6 +34,10 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
         _command = command;
         _bytes = work.PayloadBytes;
         _context = new WorkflowContext(this);
+
+        // A stream consumer may post the first continuation. Allocate its reusable
+        // queue before dispatch, not on that allocation-free notification path.
+        _callbacks = new(4);
         _source.RunContinuationsAsynchronously = true;
     }
 
