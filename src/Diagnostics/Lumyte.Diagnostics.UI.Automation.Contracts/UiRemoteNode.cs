@@ -17,4 +17,6 @@ namespace Lumyte.Diagnostics.UI.Automation.Contracts;
 /// <param name="HasActivePress">The HasActivePress value.</param>
 /// <param name="Actions">The Actions value.</param>
 /// <param name="IsTransitioning">Whether an element, ancestor or page visual transition gates normal actions.</param>
-public sealed record UiRemoteNode(string Id, string? ParentId, string? TestId, string? Name, string Role, UiRemoteRect Bounds, UiRemoteRect ClippedBounds, bool IsVisible, bool IsEnabled, bool HitTestVisible, bool IsFocusable, bool IsFocused, bool IsPressed, bool HasActivePress, string[] Actions, bool IsTransitioning = false);
+/// <param name="Value">Optional finite semantic value between zero and one inclusive, not editable text.</param>
+/// <param name="IsIndeterminate">Whether the component represents indeterminate progress.</param>
+public sealed record UiRemoteNode(string Id, string? ParentId, string? TestId, string? Name, string Role, UiRemoteRect Bounds, UiRemoteRect ClippedBounds, bool IsVisible, bool IsEnabled, bool HitTestVisible, bool IsFocusable, bool IsFocused, bool IsPressed, bool HasActivePress, string[] Actions, bool IsTransitioning = false, double? Value = null, bool IsIndeterminate = false);

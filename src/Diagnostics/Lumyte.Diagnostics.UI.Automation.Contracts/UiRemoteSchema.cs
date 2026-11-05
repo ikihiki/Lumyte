@@ -157,7 +157,7 @@ public static class UiRemoteSchema
             }
             else
             {
-                Require(step.Kind == "role" && step.Role is "button" or "group" or "textbox" or "ime-candidates" && step.Value is null && (step.Name is null || step.Name.Length <= 256));
+                Require(step.Kind == "role" && step.Role is "button" or "group" or "textbox" or "ime-candidates" or "text" or "image" or "icon" or "progressbar" or "busyindicator" && step.Value is null && (step.Name is null || step.Name.Length <= 256));
             }
         }
 

@@ -194,3 +194,20 @@ ContentSize for custom inside checks. Without modifiers both sizes remain equal.
 ClipToBounds clips the outer box; modifiers add no implicit clip. Padding and
 border do not enlarge the body's click target. Automation Bounds remains outer;
 ContentBounds and ActionableBounds expose body geometry for point selection.
+
+### Owner-driven custom frame drawing
+
+Optional display packages may override `HasFrameAnimation` with a passive constant
+true and `OnAnimationFrame(TimePoint? now)` to update per-mount visual state.
+The surface registers that instance after publication and removes it before
+unmount. Only `AdvanceAnimations` supplies time, using the borrowed surface clock;
+call `InvalidateDrawing` when local content changes, not `InvalidateLayout` for
+phase-only changes. Hidden ancestors and host suspension send null to freeze the
+last sampled time. The first resumed sample establishes a new baseline, so hidden
+time does not catch up. Getters, layout and Record do not drive time.
+Do not create a timer, thread or independent dispatcher loop for this hook.
+Exceptions during advancement follow the existing surface animation fault policy.
+
+Read-only semantic extensions can override `AutomationValue` (null or finite
+0–1) and `IsAutomationIndeterminate` (default false). These getters must be pure;
+redacted boundaries do not evaluate them. Roles alone never add capabilities.
