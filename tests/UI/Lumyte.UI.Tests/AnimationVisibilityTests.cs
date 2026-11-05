@@ -60,6 +60,34 @@ public sealed class AnimationVisibilityTests
         Assert.All(animations, animation => Assert.Equal(20, animation.Value));
     }
 
+    /// <summary>Checks idle presence entries do not box an enumerator on either state query.</summary>
+    /// <param name="present">Whether the presence entry is visible or hidden.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IdlePresenceStateQueriesDoNotAllocate(bool present)
+    {
+        using var surface = new UiSurface(Rectangle(isPresent: present, transitions: new UiElementTransitions { AnimateInitial = false }));
+        surface.UpdateLayout();
+        Assert.Single(surface.VisualEntries);
+        for (int warmup = 0; warmup < 20; warmup++)
+        {
+            Assert.False(surface.HasPendingAnimationUpdates);
+            Assert.False(surface.HasRunningAnimations);
+        }
+
+        bool work = false;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int iteration = 0; iteration < 100; iteration++)
+        {
+            work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.False(work);
+        Assert.Equal(0, allocated);
+    }
+
     /// <summary>Checks a hidden occurrence does not hide another occurrence of the same producer.</summary>
     [Fact]
     public void SharedProducerFindsVisibleOccurrenceAfterHiddenOccurrence()

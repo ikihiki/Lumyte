@@ -28,7 +28,10 @@ public sealed class PresenceTests
         Assert.True(node.IsEnabled);
         Assert.True((node.Actions & UiAutomationActions.Click) != 0);
         Assert.False(surface.MoveFocus(UiFocusNavigation.First));
+        Assert.True(surface.HasRunningAnimations);
+        Assert.True(surface.HasPendingAnimationUpdates);
         entry.Begin(clock.Now);
+        Assert.False(surface.HasPendingAnimationUpdates);
         clock.Advance(Duration.FromSeconds(0.5));
         surface.AdvanceAnimations();
         Assert.InRange(entry.Pose.Opacity, 0.5f, 0.99f);
@@ -38,11 +41,15 @@ public sealed class PresenceTests
         surface.UpdateLayout();
         Assert.Equal(UiPresenceState.Visible, surface.RootElement.PresenceState);
         Assert.True(Assert.Single(surface.CaptureAutomationSnapshot().Nodes).IsTransitioning);
+        Assert.False(surface.HasRunningAnimations);
+        Assert.False(surface.HasPendingAnimationUpdates);
         surface.ConfirmVisualPresentation(surface.CaptureVisualPresentation());
         Assert.Equal(0, entered);
+        Assert.True(surface.HasPendingAnimationUpdates);
         surface.AdvanceAnimations();
         surface.UpdateLayout();
         Assert.Equal(1, entered);
+        Assert.False(surface.HasPendingAnimationUpdates);
         Assert.False(Assert.Single(surface.CaptureAutomationSnapshot().Nodes).IsTransitioning);
         Assert.True(surface.MoveFocus(UiFocusNavigation.First));
     }
