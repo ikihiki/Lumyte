@@ -6,6 +6,7 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("directory", type=Path)
+parser.add_argument("--samples", type=int, default=2000)
 args = parser.parse_args()
 metrics = ("updateMs", "layoutInclusiveMs", "textLayoutNestedMs", "recordMs", "prepareMs", "encodeMs", "submitMs", "submitCompletionCpuMs", "disposeMs", "frameCpuWallMs", "gpuRecordedSpanMs", "allocatedProcessWide")
 
@@ -26,7 +27,7 @@ for pair in range(1, 6):
         identity = [row for row in rows if row.get("check") == "active-device"]
         assert len(identity) == 1 and "device=0x1586" in identity[0]["device"]
         frames = [row for row in rows if "iteration" in row]
-        assert len(frames) == 2000 and [row["iteration"] for row in frames] == list(range(2000))
+        assert len(frames) == args.samples and [row["iteration"] for row in frames] == list(range(args.samples))
         assert all(row["commandCount"] == 619 and row["layerCount"] == 1 for row in frames)
         assert sum(row["frameCpuWallMs"] for row in frames) >= 10000
         assert all(row["gpuRecordedSpanMs"] >= 0 for row in frames)
