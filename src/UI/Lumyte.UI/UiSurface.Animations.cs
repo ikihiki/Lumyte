@@ -28,7 +28,7 @@ public sealed partial class UiSurface
     }
 
     /// <summary>Gets a value indicating whether any visible producer needs continuous time progression.</summary>
-    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || HasPresenceAnimation(true));
+    public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || HasPresenceAnimation(true) || HasVisibleFrameAnimation());
 
     /// <summary>Gets a value indicating whether visible animations have a one-shot target or control update.</summary>
     public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(false) || HasPresenceAnimation(false));
@@ -46,7 +46,14 @@ public sealed partial class UiSurface
         _animationUpdatesEnabled = enabled;
         if (!enabled)
         {
-            InterruptVisuals();
+            try
+            {
+                InterruptVisuals();
+            }
+            finally
+            {
+                FreezeFrameAnimations();
+            }
         }
 
         foreach (UiAnimationProducer producer in _animationProducers)
@@ -64,7 +71,7 @@ public sealed partial class UiSurface
             ExceptionDispatchInfo.Capture(failed).Throw();
         }
 
-        if (_advancingAnimations || _dispatchDepth != 0 || _layoutPass is not null || _recordDepth != 0 || _applyingRebuild)
+        if (_notifyingFrameFreeze || _advancingAnimations || _dispatchDepth != 0 || _layoutPass is not null || _recordDepth != 0 || _applyingRebuild)
         {
             throw new InvalidOperationException("Advance animations once at the owner's update boundary.");
         }
@@ -78,9 +85,25 @@ public sealed partial class UiSurface
         try
         {
             UpdateTree();
+            TimePoint? capturedTime = HasVisibleFrameAnimation() || _presenceEntries.Count != 0 ? _animationClock.Now : null;
+            if (_frameAnimations.Count != 0)
+            {
+                AdvanceFrameAnimations(capturedTime);
+            }
+
+            if (_isDisposed || !_animationUpdatesEnabled || _animationFailure is not null)
+            {
+                if (_animationFailure is { } frameFailure)
+                {
+                    ExceptionDispatchInfo.Capture(frameFailure).Throw();
+                }
+
+                return;
+            }
+
             if (_presenceEntries.Count != 0)
             {
-                AdvanceVisuals(_animationClock.Now);
+                AdvanceVisuals(capturedTime!.Value);
             }
 
             if (_isDisposed || _animationProducers.Count == 0)
@@ -126,7 +149,7 @@ public sealed partial class UiSurface
                 return;
             }
 
-            TimePoint now = _animationClock.Now;
+            TimePoint now = capturedTime ?? _animationClock.Now;
             UiAnimationProducer[] snapshot = _animationProducers.ToArray();
             var callbacks = new List<(UiAnimationProducer Producer, ulong Generation, Action Callback)>();
             _publishingAnimations = true;
@@ -172,9 +195,7 @@ public sealed partial class UiSurface
         }
         catch (Exception error)
         {
-            _animationFailure = error;
-            _signalFailure = new UiStateUpdateException(error);
-            _animationUpdatesEnabled = false;
+            LatchAnimationFailure(error);
             throw;
         }
         finally

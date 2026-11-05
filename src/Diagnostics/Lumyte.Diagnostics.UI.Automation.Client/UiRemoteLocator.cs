@@ -27,7 +27,7 @@ public sealed class UiRemoteLocator
     public UiRemoteLocator GetByTestId(string testId) => new(Page, [.. _steps, UiRemotePage.Step(testId)]);
 
     /// <summary>Restricts a role/name query to descendants.</summary>
-    /// <param name = "role">button or group.</param>
+    /// <param name = "role">A closed wire role accepted by UiRemotePage.GetByRole.</param>
     /// <param name = "name">Optional exact name.</param>
     /// <param name = "includeHidden">Whether hidden elements match.</param>
     /// <returns>A new locator.</returns>

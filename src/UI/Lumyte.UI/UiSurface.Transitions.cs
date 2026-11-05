@@ -63,10 +63,7 @@ public sealed partial class UiSurface
     internal void FreezeValueAnimations()
     {
         _animationUpdatesEnabled = false;
-        foreach (UiAnimationProducer producer in _animationProducers)
-        {
-            producer.Freeze();
-        }
+        FreezeFrameAnimations();
     }
 
     internal void SetPageTransitioning(bool value)

@@ -250,5 +250,7 @@ public sealed partial class UiSurface
 
             update.Element.NotifyPublished(update.Previous, update.ChildrenChanged);
         }
+
+        FreezeHiddenFrameAnimations();
     }
 }

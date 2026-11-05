@@ -75,6 +75,7 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `VerifyEnvironment` / `NativeSmoke` | 共通環境の検証／Slang・CMake・vcpkg・Native NuGet・P/Invoke・software GPUの検証 |
 | `Direct3D12Native` | 選択したAgility SDK・MSVC・CMakeによるDirect3D 12 native DLLのビルド。`--agility-channel Stable/Preview` と復元済み `--agility-sdk-root` を使用 |
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
+| `TestUiMedia` | Media・Parley adapterの単体検査と実フォントを渡すHeadless sample（先にsolutionをCompile） |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
 | `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
