@@ -7,6 +7,7 @@ namespace Lumyte.Resources;
 internal sealed class ResourceStreamProducerSignal : IValueTaskSource
 {
     private readonly object _gate = new();
+    private readonly SendOrPostCallback _resume = static posted => ((ResourceStreamProducerSignal)posted!).Resume();
     private ManualResetValueTaskSourceCore<bool> _completion;
     private SynchronizationContext? _context;
     private Action<object?>? _continuation;
@@ -32,7 +33,7 @@ internal sealed class ResourceStreamProducerSignal : IValueTaskSource
                 static source =>
                 {
                     var signal = (ResourceStreamProducerSignal)source!;
-                    signal._context!.Post(static posted => ((ResourceStreamProducerSignal)posted!).Resume(), signal);
+                    signal._context!.Post(signal._resume, signal);
                 },
                 this,
                 token,

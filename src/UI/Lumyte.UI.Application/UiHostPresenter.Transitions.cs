@@ -76,15 +76,21 @@ internal sealed partial class UiHostPresenter
         _frames.Add(frame);
         try
         {
-            PreparedDraw2D prepared = frame.Own(await _renderer.PrepareAsync(list, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = default }));
+            using var scene = new DrawingScene2D();
+            scene.Insert(scene.Root, 0, list);
+            using DrawingSnapshot2D drawing = scene.CaptureSnapshot();
+            frame.Retained = await _renderer.PrepareAsync(drawing, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = default });
             IGraphicsCommandBuffer commands = frame.Own(_device.CreateCommandBuffer(new()));
             var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
             var sampled = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
             commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = initial ? TextureState.Undefined : TextureState.Sampled, Before = initial ? default : sampled, AfterState = TextureState.ColorAttachment, After = color });
-            prepared.Record(commands);
+            frame.RetainedRecorded = true;
+            frame.Retained.Record(commands);
             commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = color, After = sampled });
             commands.Finish();
+            frame.SubmissionAttempted = true;
             frame.Submission = _device.Queue.Submit(new QueueSubmitDesc { CommandBuffers = [commands] });
+            frame.Retained.AttachSubmission(frame.Submission);
             submitted?.Invoke();
             await frame.DrainAsync();
             if (frame.IsRetired)
@@ -97,7 +103,7 @@ internal sealed partial class UiHostPresenter
         }
         catch
         {
-            if (frame.Submission is null)
+            if (!frame.SubmissionAttempted)
             {
                 frame.Dispose();
                 _frames.Remove(frame);

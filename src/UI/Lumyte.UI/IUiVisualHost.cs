@@ -8,6 +8,9 @@ internal interface IUiVisualHost
     /// <summary>Gets a value indicating whether this declaration has been published.</summary>
     bool CanPresent { get; }
 
+    /// <summary>Gets a value indicating whether custom visual composition must run during this frame.</summary>
+    bool RequiresComposition => true;
+
     /// <summary>Gets the validated immutable motion policy.</summary>
     UiMotionOptions Motion { get; }
 

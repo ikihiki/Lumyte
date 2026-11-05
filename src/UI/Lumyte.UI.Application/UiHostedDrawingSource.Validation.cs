@@ -7,6 +7,8 @@ internal sealed partial class UiHostedDrawingSource
     {
         for (int attempt = 0; attempt < 100; attempt++)
         {
+            surface.ValidateRetainedDrawingDependencies();
+
             surface.UpdateLayout();
             if (ValidateSurface is { } validate)
             {

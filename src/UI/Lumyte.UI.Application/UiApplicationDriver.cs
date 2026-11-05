@@ -54,7 +54,7 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     internal abstract void Pump();
 
-    internal abstract Task<bool> DrawAsync(UiDriverWindow window, DrawList2D commands);
+    internal abstract Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene);
 
     internal abstract ValueTask CloseWindowAsync(UiDriverWindow window);
 
@@ -64,7 +64,7 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     internal virtual ValueTask RetireResourcesAsync() => ValueTask.CompletedTask;
 
-    internal virtual ValueTask PrepareCandidateAsync(UiDriverWindow window, Lumyte.Graphics.Drawing2D.DrawList2D commands, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    internal virtual ValueTask PrepareCandidateAsync(UiDriverWindow window, DrawingSnapshot2D commands, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
     internal virtual ValueTask DrainWindowAsync(UiDriverWindow window) => ValueTask.CompletedTask;
 
