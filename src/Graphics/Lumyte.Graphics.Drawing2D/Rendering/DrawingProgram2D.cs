@@ -31,6 +31,41 @@ internal sealed class DrawingProgram2D
         return new(Decode(color.R) * color.A, Decode(color.G) * color.A, Decode(color.B) * color.A, color.A);
     }
 
+    internal static bool TryRectangle(Path2D path, out Rect2D rectangle)
+    {
+        IReadOnlyList<PathSegment2D> segments = path.Segments;
+        rectangle = default;
+        if (segments.Count != 5 || segments[0].Verb != PathVerb2D.Move
+            || segments[1].Verb != PathVerb2D.Line || segments[2].Verb != PathVerb2D.Line
+            || segments[3].Verb != PathVerb2D.Line || segments[4].Verb != PathVerb2D.Close)
+        {
+            return false;
+        }
+
+        Vector2 a = segments[0].P0;
+        Vector2 b = segments[1].P0;
+        Vector2 c = segments[2].P0;
+        Vector2 d = segments[3].P0;
+        if (a.Y != b.Y || b.X != c.X || c.Y != d.Y || d.X != a.X
+            || b.X <= a.X || c.Y <= a.Y)
+        {
+            return false;
+        }
+
+        float width = b.X - a.X;
+        float height = c.Y - a.Y;
+
+        // Reconstructed extents must preserve the original edge coordinates.
+        if (!float.IsFinite(width) || !float.IsFinite(height)
+            || a.X + width != b.X || a.Y + height != c.Y)
+        {
+            return false;
+        }
+
+        rectangle = new(a.X, a.Y, width, height);
+        return true;
+    }
+
     internal uint Compile(DrawingCommand2D command)
     {
         Matrix3x2 transform = command.State.Transform * _pixelTransform;
@@ -178,9 +213,10 @@ internal sealed class DrawingProgram2D
 
     private uint ApplyClip(uint result, DrawingState2D state)
     {
+        // Target nested UI clipping; leave standalone path/paint compilation unchanged.
         foreach (ClipElement2D clip in state.Clip.Elements)
         {
-            result = Multiply(result, Path(clip.Path, clip.Rule, clip.Transform * _pixelTransform));
+            result = Multiply(result, Path(clip.Path, clip.Rule, clip.Transform * _pixelTransform, rectangularClip: state.Clip.Elements.Count > 1));
         }
 
         return result;
@@ -259,8 +295,15 @@ internal sealed class DrawingProgram2D
         }
     }
 
-    private uint Path(Path2D path, FillRule2D rule, Matrix3x2 transform)
+    private uint Path(Path2D path, FillRule2D rule, Matrix3x2 transform, bool rectangularClip = false)
     {
+        // Nested UI rectangle clips need neither flattened edges nor geometry uploads.
+        if (rectangularClip && TryRectangle(path, out Rect2D rectangle))
+        {
+            // Rect would overwrite the transparent kind-0 fallback with rectangle coordinates.
+            return Invertible(transform) ? Rect(rectangle, transform) : Solid(default);
+        }
+
         uint first = (uint)Data.Count;
         foreach (PathFlattening2D.Contour contour in PathFlattening2D.Flatten(path, transform))
         {
