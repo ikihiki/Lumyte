@@ -8,11 +8,20 @@ public sealed partial class UiSurface
 {
     internal Vector2 DrawingViewport => _viewport;
 
-    internal bool RequiresOpaqueDrawing => VisualHost is not null || PageTransitioning || _visualExclusions is not null || _logicalVisualCapture;
+    internal bool RequiresOpaqueDrawing => VisualHost is { RequiresComposition: true } || PageTransitioning || _visualExclusions is not null || _logicalVisualCapture;
 
     /// <summary>Creates an opt-in retained drawing adapter; disposing it does not dispose this surface.</summary>
     /// <returns>A caller-owned adapter, independent of the hosted drawing source.</returns>
     public UiDrawingScene2D CreateDrawingScene() => new(this);
+
+    internal void ValidateRetainedDrawingDependencies()
+    {
+        UpdateTree();
+        foreach (UiElement element in CollectElements(RootElement))
+        {
+            element.ValidateRetainedDrawingDependencies();
+        }
+    }
 
     internal DrawList2D RecordDrawingFragment(UiElement element, bool selfOnly)
     {

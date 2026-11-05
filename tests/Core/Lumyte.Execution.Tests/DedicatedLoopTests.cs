@@ -23,13 +23,17 @@ public sealed class DedicatedLoopTests
         };
         fixture.Start();
         Assert.True(fixture.Module.Updated.Wait(TimeSpan.FromSeconds(5)));
-        Task<int> first = fixture.Module.Port.ExecuteAsync(1).AsTask();
+        ValueTask<int> first = fixture.Module.Port.ExecuteAsync(1);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-            Task<int> second = fixture.Module.Port.ExecuteAsync(2).AsTask();
+            ValueTask<int> second = fixture.Module.Port.ExecuteAsync(2);
             release.Set();
-            Assert.Equal(new[] { 1, 2 }, fixture.Wait(Task.WhenAll(first, second), TimeSpan.FromSeconds(2)));
+
+            // Observe owner completion directly. AsTask/WhenAll would additionally wait for
+            // asynchronous adapter callbacks on the shared ThreadPool, not control progress.
+            Assert.True(SpinWait.SpinUntil(() => first.IsCompleted && second.IsCompleted, TimeSpan.FromSeconds(2)));
+            Assert.Equal(new[] { 1, 2 }, new[] { CompletedResult.Read(first), CompletedResult.Read(second) });
             Assert.Equal(new[] { 1, 2 }, fixture.Module.Executed.Select(static item => item.Command));
         }
         finally

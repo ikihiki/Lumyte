@@ -40,6 +40,33 @@ public sealed class WorkflowTests
         Assert.Same(outer, SynchronizationContext.Current);
     }
 
+    /// <summary>The first notification must not lazily allocate a callback queue on its caller.</summary>
+    [Fact]
+    public void FirstWorkflowNotificationUsesPreallocatedStorage()
+    {
+        using var fixture = new WorkflowFixture();
+        var ready = new TaskCompletionSource();
+        SynchronizationContext? context = null;
+        fixture.Module.Handler = async (value, _) =>
+        {
+            context = SynchronizationContext.Current;
+            await ready.Task;
+            return value;
+        };
+
+        ValueTask<int> result = fixture.Module.Port.ExecuteAsync(12);
+        fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
+        Assert.NotNull(context);
+        SendOrPostCallback callback = static _ => { };
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        context.Post(callback, null);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
+        ready.SetResult();
+        Assert.Equal(12, fixture.Wait(result));
+        Assert.Equal(0L, allocated);
+    }
+
     /// <summary>Each resumed synchronous dispatch gets a fresh budget, excluding time spent waiting for I/O.</summary>
     [Fact]
     public void DispatchBudgetExcludesSuspendedTime()

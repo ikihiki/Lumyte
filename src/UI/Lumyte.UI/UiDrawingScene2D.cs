@@ -38,7 +38,48 @@ public sealed class UiDrawingScene2D : IDisposable
 
     /// <summary>Applies pending layout and synchronizes visible elements in their existing painter order.</summary>
     /// <remarks>A live scene borrow rejects this operation before layout or custom drawing runs.</remarks>
-    public void Update()
+    public void Update() => UpdateCore(false);
+
+    /// <summary>Updates this scene, then borrows its latest CPU content until renderer preparation finishes.</summary>
+    /// <returns>A caller-owned read lease; dispose before the next update.</returns>
+    public DrawingSceneReadLease2D Borrow()
+    {
+        Update();
+        return _scene.Borrow();
+    }
+
+    /// <summary>Disposes the owned scene without disposing the surface or borrowed drawing resources.</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_updating)
+        {
+            throw new InvalidOperationException("Cannot dispose during a retained drawing update.");
+        }
+
+        _scene.Dispose();
+        _placements.Clear();
+        _disposed = true;
+    }
+
+    internal void UpdatePrepared() => UpdateCore(true);
+
+    private static Path2D RectangleClip(Vector2 size)
+    {
+        var path = new PathBuilder2D();
+        path.MoveTo(Vector2.Zero);
+        path.LineTo(new(size.X, 0));
+        path.LineTo(size);
+        path.LineTo(new(0, size.Y));
+        path.Close();
+        return path.Build();
+    }
+
+    private void UpdateCore(bool prepared)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_updating)
@@ -51,13 +92,12 @@ public sealed class UiDrawingScene2D : IDisposable
         _updating = true;
         try
         {
-            _surface.UpdateTree();
-            foreach (UiElement element in UiSurface.CollectElements(_surface.RootElement))
+            if (!prepared)
             {
-                element.ValidateRetainedDrawingDependencies();
+                _surface.ValidateRetainedDrawingDependencies();
+                _surface.UpdateLayout();
             }
 
-            _surface.UpdateLayout();
             UiElement root = _surface.RootElement;
             int recordings = 0;
             if (_surface.RequiresOpaqueDrawing)
@@ -113,43 +153,6 @@ public sealed class UiDrawingScene2D : IDisposable
         {
             _updating = false;
         }
-    }
-
-    /// <summary>Updates this scene, then borrows its latest CPU content until renderer preparation finishes.</summary>
-    /// <returns>A caller-owned read lease; dispose before the next update.</returns>
-    public DrawingSceneReadLease2D Borrow()
-    {
-        Update();
-        return _scene.Borrow();
-    }
-
-    /// <summary>Disposes the owned scene without disposing the surface or borrowed drawing resources.</summary>
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (_updating)
-        {
-            throw new InvalidOperationException("Cannot dispose during a retained drawing update.");
-        }
-
-        _scene.Dispose();
-        _placements.Clear();
-        _disposed = true;
-    }
-
-    private static Path2D RectangleClip(Vector2 size)
-    {
-        var path = new PathBuilder2D();
-        path.MoveTo(Vector2.Zero);
-        path.LineTo(new(size.X, 0));
-        path.LineTo(size);
-        path.LineTo(new(0, size.Y));
-        path.Close();
-        return path.Build();
     }
 
     private void Synchronize(UiElement element, DrawingNodeId2D parent, int index, HashSet<UiElement> visited, ref int recordings)

@@ -340,7 +340,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         }
     }
 
-    internal override async Task<bool> DrawAsync(UiDriverWindow target, DrawList2D commands)
+    internal override async Task<bool> DrawAsync(UiDriverWindow target, DrawingSnapshot2D scene)
     {
         var window = (Window)target;
         ulong epoch = _lease?.State.Epoch ?? 0;
@@ -427,7 +427,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             SurfaceStatus status;
             try
             {
-                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted);
+                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted);
             }
             catch (NotSupportedException error) when (crops.Count != 0)
             {
@@ -436,7 +436,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                     capture.Completion.TrySetException(error);
                 }
 
-                status = await _presenter!.DrawAsync(window.Swapchain, commands, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted);
+                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted);
             }
 
             await flight.ResumeAsync();
@@ -527,7 +527,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         }
     }
 
-    internal override async ValueTask PrepareCandidateAsync(UiDriverWindow window, DrawList2D commands, CancellationToken cancellationToken)
+    internal override async ValueTask PrepareCandidateAsync(UiDriverWindow window, DrawingSnapshot2D commands, CancellationToken cancellationToken)
     {
         await _renderGate.WaitAsync(cancellationToken);
         try
@@ -603,10 +603,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         {
             if (window.Drawing is null && !window.Closing)
             {
-                var canvas = new Canvas2D();
-                canvas.Begin();
-                window.Source.Record(canvas);
-                window.Drawing = Application.DrawFrameAsync(window, canvas.End());
+                window.Drawing = Application.DrawFrameAsync(window, window.Source.RecordRetainedFrame(Application.GraphicsGeneration));
                 recorded = true;
             }
         }
@@ -721,7 +718,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                 await _graphics!.InitializeAsync(cancellationToken);
                 _lease = await _graphics.AcquireAsync(cancellationToken);
                 _device = _lease.Device;
-                _presenter = new(_device, Application.Options.Background);
+                _presenter = new(_device, Application.Options.Background, Application.Options.MaximumFramesInFlight);
             }
             catch (Exception error)
             {
@@ -761,7 +758,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             await _graphics.RecoverAsync();
             _lease = await _graphics.AcquireAsync();
             _device = _lease.Device;
-            _presenter = new(_device, Application.Options.Background);
+            _presenter = new(_device, Application.Options.Background, Application.Options.MaximumFramesInFlight);
             await Application.EndGraphicsRecoveryAsync();
         }
         catch (Exception error)

@@ -316,6 +316,63 @@ public sealed class RetainedRenderingLifetimeTests
         Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
     }
 
+    /// <summary>Checks confirmed device retirement requires disposed commands and never publishes residency.</summary>
+    /// <param name="attachSubmission">Whether a pending submission is attached before retirement.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DeviceRetirementReleaseRequiresDisposedCommandsAndNeverPublishes(bool attachSubmission)
+    {
+        var publications = new List<bool>();
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        var frame = new PreparedDrawingFrame2D(new DispatchDevice(), new() { View = view }, [], publications.Add);
+        var commands = new DispatchCommands();
+        frame.Record(commands);
+        if (attachSubmission)
+        {
+            commands.Submit();
+            frame.AttachSubmission(new Submission { Status = SubmissionStatus.Pending });
+        }
+
+        Assert.Throws<InvalidOperationException>(frame.ReleaseAfterDeviceRetirement);
+        Assert.Empty(publications);
+        commands.Dispose();
+        frame.ReleaseAfterDeviceRetirement();
+        frame.ReleaseAfterDeviceRetirement();
+        frame.Dispose();
+        Assert.Equal(new[] { false }, publications);
+        Assert.Throws<ObjectDisposedException>(() => frame.Record(new DispatchCommands()));
+    }
+
+    /// <summary>Checks failed retirement cleanup retains the release callback and retries without publication.</summary>
+    [Fact]
+    public void DeviceRetirementReleaseRetriesFailedCleanup()
+    {
+        int attempts = 0;
+        var publications = new List<bool>();
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        var frame = new PreparedDrawingFrame2D(new DispatchDevice(), new() { View = view }, [], completed =>
+        {
+            if (++attempts == 1)
+            {
+                throw new ArithmeticException("retirement cleanup");
+            }
+
+            publications.Add(completed);
+        });
+        var commands = new DispatchCommands();
+        frame.Record(commands);
+        commands.Dispose();
+        Assert.Throws<ArithmeticException>(frame.ReleaseAfterDeviceRetirement);
+        Assert.Empty(publications);
+        frame.ReleaseAfterDeviceRetirement();
+        frame.Dispose();
+        Assert.Equal(2, attempts);
+        Assert.Equal(new[] { false }, publications);
+    }
+
     private static DrawList2D PathContent(int batches)
     {
         var canvas = new Canvas2D();

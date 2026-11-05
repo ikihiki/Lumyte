@@ -17,7 +17,7 @@ internal sealed partial class UiHostPresenter : IDisposable
     private readonly List<Frame> _frames = [];
     private TextureFormat? _intermediate;
 
-    internal UiHostPresenter(IGraphicDevice device, Color2D background)
+    internal UiHostPresenter(IGraphicDevice device, Color2D background, int maximumFrames = 3)
     {
         _device = device;
         _background = background;
@@ -28,7 +28,7 @@ internal sealed partial class UiHostPresenter : IDisposable
             services.UseGraphics2D();
             ServiceProvider provider = Own(services.BuildServiceProvider());
             IServiceScope scope = Own(provider.CreateScope());
-            _renderer = Own(new Renderer2D(device, scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>()));
+            _renderer = Own(new Renderer2D(device, scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>(), retentionOptions: new() { MaxFramesInFlight = maximumFrames }));
             IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(UiHostPresenter).Assembly, "Lumyte.UI.Application.present-vertex.lshader")));
             IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(UiHostPresenter).Assembly, "Lumyte.UI.Application.present-fragment.lshader")));
             _pipeline = Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
@@ -82,14 +82,14 @@ internal sealed partial class UiHostPresenter : IDisposable
         return new() { Width = checked((uint)width), Height = checked((uint)height), Format = format, Usage = TextureUsage.RenderAttachment | (caps.SupportedUsage & TextureUsage.CopySource), AlphaMode = SurfaceAlphaMode.Opaque };
     }
 
-    internal async ValueTask PrepareCandidateAsync(DrawList2D commands, uint width, uint height)
+    internal async ValueTask PrepareCandidateAsync(DrawingSnapshot2D commands, uint width, uint height)
     {
         using IGraphicsTexture target = CreateIntermediate(width, height);
         using IGraphicsTextureView view = target.CreateView();
-        using PreparedDraw2D prepared = await _renderer.PrepareAsync(commands, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background });
+        using PreparedDrawingFrame2D prepared = await _renderer.PrepareAsync(commands, new() { View = view, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background });
     }
 
-    internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawList2D list, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null)
+    internal async Task<SurfaceStatus> DrawAsync(IGraphicsSwapchain swapchain, DrawingSnapshot2D scene, Guid owner, Action<UiFramePixels>? capture = null, IReadOnlyList<UiVisualSnapshot>? visuals = null, Action? submitted = null)
     {
         var frame = new Frame(owner);
         if (visuals is not null)
@@ -124,7 +124,9 @@ internal sealed partial class UiHostPresenter : IDisposable
             }
 
             IGraphicsTextureView targetView = intermediate.View;
-            PreparedDraw2D prepared = frame.Own(await _renderer.PrepareAsync(list, new() { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background }));
+            var drawingTarget = new RenderTarget2D { View = targetView, PixelScale = 1, LoadOp = AttachmentLoadOp.Clear, ClearColor = _background };
+            frame.Retained = await _renderer.PrepareAsync(scene, drawingTarget);
+
             IArgumentTable table = frame.Own(_device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1 }));
             uint encode = swapchain.Configuration.Format is TextureFormat.Bgra8Srgb or TextureFormat.Rgba8Srgb ? 0u : 1u;
             var arguments = new UiPresentArguments(table.WriteTexture(0, targetView), table.WriteSampler(0, _sampler), new(target.Width, target.Height), encode);
@@ -149,7 +151,9 @@ internal sealed partial class UiHostPresenter : IDisposable
             var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
             var sample = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
             commands.Barrier(intermediate.ColorAttachmentBarrier);
-            prepared.Record(commands);
+            frame.RetainedRecorded = true;
+            frame.Retained.Record(commands);
+
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = color, After = sample });
             commands.Barrier(new TextureBarrierDesc { Texture = image.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = display, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
@@ -188,7 +192,9 @@ internal sealed partial class UiHostPresenter : IDisposable
 
             commands.Barrier(new TextureBarrierDesc { Texture = image.Texture, Range = new(0, 1, 0, 1), BeforeState = imageState, AfterState = TextureState.Present, Before = imageAccess, After = default });
             commands.Finish();
+            frame.SubmissionAttempted = true;
             frame.Submission = _device.Queue.Submit(new QueueSubmitDesc() { CommandBuffers = [commands], WaitSemaphores = [new() { Semaphore = acquired, Stages = PipelineStage.AllCommands }], SignalSemaphores = [rendered] });
+            frame.Retained?.AttachSubmission(frame.Submission);
             intermediate.State = readback is not null && !captureDisplay ? TextureState.CopySource : TextureState.Sampled;
             SurfaceStatus status = image.Present([rendered]);
             if (status == SurfaceStatus.Success && result.Status == SurfaceStatus.Suboptimal)
@@ -334,11 +340,17 @@ internal sealed partial class UiHostPresenter : IDisposable
 
         internal IGraphicsSubmission? Submission { get; set; }
 
+        internal PreparedDrawingFrame2D? Retained { get; set; }
+
+        internal bool RetainedRecorded { get; set; }
+
+        internal bool SubmissionAttempted { get; set; }
+
         internal UiIntermediateTexturePool.Entry? Intermediate { get; set; }
 
         public void Dispose()
         {
-            if (!_retired && ((Submission is not null && !_submitted) || (Image is not null && !_released)))
+            if (!_retired && ((SubmissionAttempted && Submission is null) || (Submission is not null && !_submitted) || (Image is not null && !_released)))
             {
                 throw new InvalidOperationException("Confirm submission and presentation completion before releasing frame resources.");
             }
@@ -351,8 +363,31 @@ internal sealed partial class UiHostPresenter : IDisposable
                     _resources.Pop();
                 }
 
+                if (Retained is { } retained)
+                {
+                    if (_retired)
+                    {
+                        retained.ReleaseAfterDeviceRetirement();
+                    }
+                    else if (RetainedRecorded)
+                    {
+                        if (Submission is null)
+                        {
+                            retained.AbortUnsubmitted();
+                        }
+                        else
+                        {
+                            retained.Retire();
+                        }
+                    }
+
+                    retained.Dispose();
+                    Retained = null;
+                }
+
                 Submission?.Dispose();
                 Submission = null;
+                SubmissionAttempted = false;
                 Image?.Dispose();
                 Image = null;
                 Intermediate?.Release();

@@ -24,7 +24,7 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
 
     internal Action<UiSurface>? ValidateSurface { get; set; }
 
-    internal Func<DrawList2D, CancellationToken, ValueTask>? PrepareCandidate { get; set; }
+    internal Func<DrawingSnapshot2D, CancellationToken, ValueTask>? PrepareCandidate { get; set; }
 
     public UiWindowSourceSnapshot CaptureState() => capture();
 
@@ -168,9 +168,11 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
 
         internal UiSurface Surface { get; } = surface;
 
-        internal ulong EligibilityRevision { get; set; } = ulong.MaxValue;
+        internal UiDrawingScene2D? Drawing { get; set; }
 
-        internal bool CacheEligible { get; set; }
+        internal Rect2D? DrawingClip { get; set; }
+
+        internal Path2D? DrawingClipPath { get; set; }
 
         internal UiWindowPresentationView View { get; private set; } = view;
 
@@ -194,7 +196,8 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
                 await frame.Task;
             }
 
-            source.DiscardCache();
+            Drawing?.Dispose();
+            Drawing = null;
             source._presentations.Remove(this);
             source._paused.Remove(Surface);
         }
@@ -221,13 +224,12 @@ internal sealed partial class UiHostedDrawingSource(Func<UiWindowSourceSnapshot>
             _state = source.CaptureState();
             _candidate = new(source, surface, view) { Active = false };
             source._presentations.Add(_candidate);
-            var canvas = new Canvas2D();
-            canvas.Begin();
-            surface.Record(canvas);
-            DrawList2D commands = canvas.End();
+            _candidate.Drawing = surface.CreateDrawingScene();
+            _candidate.Drawing.UpdatePrepared();
+            using DrawingSnapshot2D snapshot = _candidate.Drawing.Scene.CaptureSnapshot();
             if (source.PrepareCandidate is { } prepare)
             {
-                await prepare(commands, cancellationToken);
+                await prepare(snapshot, cancellationToken);
             }
         }
 

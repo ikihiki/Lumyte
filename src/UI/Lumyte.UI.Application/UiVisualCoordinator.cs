@@ -19,6 +19,8 @@ internal sealed class UiVisualCoordinator(UiApplication application, UiSurface s
 
     public bool CanPresent => _published;
 
+    public bool RequiresComposition => Page is not null || surface.VisualEntries.Count != 0;
+
     public UiMotionOptions Motion => application.Motion;
 
     internal ulong PresentedSequence { get; private set; }

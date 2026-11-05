@@ -119,7 +119,7 @@ Function components keep parameters in passive `UiFunctionWidget` declarations. 
 Its `Content` property exposes the currently mounted result. Nested functions get separate frames;
 calling a definition directly shares its caller's frame. Applications use generated static factories.
 
-## Opt-in retained drawing scene
+## Retained drawing scene
 
 ```csharp
 using var drawing = surface.CreateDrawingScene();
@@ -146,10 +146,11 @@ validates its document/layout dependencies. Merely moving an unchanged leaf does
 Custom RecordOverride implementations remain fresh opaque subtree recordings, preserving
 arbitrary RecordSelf/RecordChild interleaving and inherited canvas state.
 
-This is an explicit renderer integration point, not an automatic conversion of the Application
-host. UiSurface.Record and existing Canvas/DrawList callers are unchanged. A visual host, page
-transition, or active visual exclusions force fresh whole-surface recording through the existing
-composition path; visual layers and presentation receipts remain owned by the existing host.
+The standard Desktop/Browser Application host uses this adapter automatically for ordinary
+frames, including auxiliary windows. UiSurface.Record and explicit Canvas/DrawList callers remain
+unchanged. Active visual composition, page transitions, unknown visual hosts and visual exclusions
+use fresh opaque recording through the existing composition path. An inactive standard visual
+coordinator does not disable local reuse; visual layers and presentation receipts remain host-owned.
 
 ## Ordered box modifiers
 

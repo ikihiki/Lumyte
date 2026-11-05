@@ -6,5 +6,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Headless/Lumyte.UI.Application.Headless.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Diagnostics/Lumyte.UI.Application.Diagnostics.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
+    <Compile Include="../../Graphics/Lumyte.Graphics.Tests/GpuFactAttribute.cs" Link="Fixtures/GpuFactAttribute.cs" />
   </ItemGroup>
 </Project>

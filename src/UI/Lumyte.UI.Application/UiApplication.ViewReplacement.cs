@@ -27,6 +27,6 @@ public sealed partial class UiApplication
     {
         window.Source.ValidateRoot = ValidateEditors;
         window.Source.ValidateSurface = ValidateEditors;
-        window.Source.PrepareCandidate = (DrawList2D commands, CancellationToken cancellationToken) => Driver.PrepareCandidateAsync(window, commands, cancellationToken);
+        window.Source.PrepareCandidate = (DrawingSnapshot2D commands, CancellationToken cancellationToken) => Driver.PrepareCandidateAsync(window, commands, cancellationToken);
     }
 }

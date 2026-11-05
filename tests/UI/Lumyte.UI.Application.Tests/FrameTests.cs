@@ -79,6 +79,145 @@ public sealed class FrameTests
         Assert.Equal(TextureUsage.RenderAttachment | (copy ? TextureUsage.CopySource : 0), configuration.Usage);
     }
 
+    /// <summary>Checks exact submission completion releases commands before publishing retained residency.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task RetainedCompletionDisposesCommandsBeforePublishingAsync()
+    {
+        var fixture = new RetainedFrameFixture();
+        var submission = new Submission();
+        var image = new Image();
+        fixture.Frame.Image = image;
+        fixture.Record();
+        fixture.Submit(submission);
+        Assert.Throws<InvalidOperationException>(fixture.Frame.Dispose);
+        Assert.Empty(fixture.Publications);
+        await fixture.Frame.DrainAsync();
+        Assert.Empty(fixture.Publications);
+        fixture.Frame.Dispose();
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { "commands", "retained" }, fixture.Events);
+        Assert.Equal(new[] { true }, fixture.Publications);
+        Assert.Equal(1, submission.Disposals);
+        Assert.Equal(1, image.Disposals);
+        Assert.Null(fixture.Frame.Retained);
+    }
+
+    /// <summary>Checks neither failed GPU completion nor failed presentation releases real retained ownership.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task FailedWaitsKeepRetainedPreparedOwnerAliveAsync()
+    {
+        var fixture = new RetainedFrameFixture();
+        var submission = new Submission { Failures = 1 };
+        var image = new Image { Failures = 1 };
+        fixture.Frame.Image = image;
+        fixture.Record();
+        fixture.Submit(submission);
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            await Assert.ThrowsAsync<ArithmeticException>(() => fixture.Frame.DrainAsync().AsTask());
+            Assert.Throws<InvalidOperationException>(fixture.Frame.Dispose);
+            Assert.Same(fixture.Prepared, fixture.Frame.Retained);
+            Assert.Empty(fixture.Publications);
+            Assert.Equal(0, fixture.Commands.DisposeAttempts);
+            Assert.Equal(0, submission.Disposals);
+            Assert.Equal(0, image.Disposals);
+        }
+
+        await fixture.Frame.DrainAsync();
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { true }, fixture.Publications);
+        Assert.Equal(2, submission.Waits);
+        Assert.Equal(2, image.Waits);
+    }
+
+    /// <summary>Checks explicitly never-submitted recorded work aborts only after command disposal.</summary>
+    [Fact]
+    public void UnsubmittedRetainedFrameAbortsWithoutPublishing()
+    {
+        var fixture = new RetainedFrameFixture();
+        fixture.Record();
+        fixture.Frame.Dispose();
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { "commands", "retained" }, fixture.Events);
+        Assert.Equal(new[] { false }, fixture.Publications);
+        Assert.Null(fixture.Frame.Retained);
+    }
+
+    /// <summary>Checks preparation abandoned before recording releases ownership without residency publication.</summary>
+    [Fact]
+    public void UnrecordedRetainedFrameDisposesWithoutPublishing()
+    {
+        var fixture = new RetainedFrameFixture();
+        fixture.Frame.Dispose();
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { false }, fixture.Publications);
+        Assert.Equal(1, fixture.ReleaseAttempts);
+        Assert.Null(fixture.Frame.Retained);
+    }
+
+    /// <summary>Checks a throwing submit with no tracker remains quarantined until device retirement.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task UncertainSubmitRetainsOwnerUntilConfirmedDeviceRetirementAsync()
+    {
+        var fixture = new RetainedFrameFixture();
+        fixture.Record();
+        fixture.Frame.SubmissionAttempted = true;
+        fixture.Commands.Submit();
+        await fixture.Frame.DrainAsync();
+        Assert.Throws<InvalidOperationException>(fixture.Frame.Dispose);
+        Assert.Empty(fixture.Publications);
+        Assert.Equal(0, fixture.Commands.DisposeAttempts);
+        fixture.Frame.ConfirmDeviceRetirement();
+        fixture.Frame.Dispose();
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { "commands", "retained" }, fixture.Events);
+        Assert.Equal(new[] { false }, fixture.Publications);
+    }
+
+    /// <summary>Checks confirmed retirement never publishes residency even with an attached pending submission.</summary>
+    [Fact]
+    public void RetirementReleasesPendingRetainedSubmissionWithoutPublishing()
+    {
+        var fixture = new RetainedFrameFixture();
+        var submission = new Submission();
+        fixture.Record();
+        fixture.Submit(submission);
+        fixture.Frame.ConfirmDeviceRetirement();
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { false }, fixture.Publications);
+        Assert.Equal(0, submission.Waits);
+        Assert.Equal(1, submission.Disposals);
+    }
+
+    /// <summary>Checks failed command or retained cleanup can be retried without prematurely losing ownership.</summary>
+    /// <param name="commandFailure">Whether command disposal fails rather than retained release.</param>
+    /// <returns>The verification.</returns>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RetainedCleanupFailurePreservesOwnerForRetryAsync(bool commandFailure)
+    {
+        var fixture = new RetainedFrameFixture();
+        var submission = new Submission();
+        fixture.Commands.Failures = commandFailure ? 1 : 0;
+        fixture.ReleaseFailures = commandFailure ? 0 : 1;
+        fixture.Record();
+        fixture.Submit(submission);
+        await fixture.Frame.DrainAsync();
+        Assert.Throws<ArithmeticException>(fixture.Frame.Dispose);
+        Assert.Same(fixture.Prepared, fixture.Frame.Retained);
+        Assert.Empty(fixture.Publications);
+        Assert.Equal(0, submission.Disposals);
+        fixture.Frame.Dispose();
+        Assert.Equal(new[] { true }, fixture.Publications);
+        Assert.Equal(commandFailure ? 2 : 1, fixture.Commands.DisposeAttempts);
+        Assert.Equal(commandFailure ? 1 : 2, fixture.ReleaseAttempts);
+        Assert.Equal(1, submission.Disposals);
+    }
+
     private sealed class Surface(IReadOnlyList<TextureFormat> formats, bool copy) : IGraphicsSurface
     {
         public void Dispose()
@@ -120,7 +259,7 @@ public sealed class FrameTests
 
     private sealed class Submission : IGraphicsSubmission
     {
-        public SubmissionStatus Status => SubmissionStatus.Pending;
+        public SubmissionStatus Status { get; private set; } = SubmissionStatus.Pending;
 
         internal int Failures { get; set; }
 
@@ -138,6 +277,7 @@ public sealed class FrameTests
                 throw new ArithmeticException("submission");
             }
 
+            Status = SubmissionStatus.Completed;
             return ValueTask.CompletedTask;
         }
     }

@@ -6,13 +6,13 @@ using static Lumyte.UI.Compose;
 
 namespace Lumyte.UI.Application.Tests;
 
-/// <summary>Checks the application submits cached recordings on successive real owner turns.</summary>
+/// <summary>Checks the application submits retained snapshots on successive real owner turns.</summary>
 public sealed class RecordingHostTests
 {
-    /// <summary>Checks cache hits still traverse the real application driver submission boundary.</summary>
+    /// <summary>Checks reused fragments still traverse the real application driver submission boundary.</summary>
     /// <returns>The verification.</returns>
     [Fact]
-    public async Task StandardHostSubmitsEveryCachedFrameAsync()
+    public async Task StandardHostSubmitsEveryRetainedFrameAsync()
     {
         var driver = new Driver();
         UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1) });
@@ -54,7 +54,15 @@ public sealed class RecordingHostTests
         {
         }
 
-        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawList2D commands)
+        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene)
+        {
+            IReadOnlyList<DrawingSceneEntry2D> entries = ((IDrawingSceneSource2D)scene).Entries;
+            return entries.Count == 0 ? Task.FromResult(true) : Count(entries.Single().Content);
+        }
+
+        internal override ValueTask CloseWindowAsync(UiDriverWindow window) => window.DisposeAsync();
+
+        private Task<bool> Count(DrawList2D commands)
         {
             Draws++;
             if (commands.Commands.Count == 1 && ReferenceEquals(_previous, commands))
@@ -69,8 +77,6 @@ public sealed class RecordingHostTests
             _previous = commands;
             return Task.FromResult(true);
         }
-
-        internal override ValueTask CloseWindowAsync(UiDriverWindow window) => window.DisposeAsync();
     }
 
     private sealed class Window(string key) : UiDriverWindow(key)
