@@ -300,7 +300,8 @@ internal sealed class DrawingProgram2D
         // Nested UI rectangle clips need neither flattened edges nor geometry uploads.
         if (rectangularClip && TryRectangle(path, out Rect2D rectangle))
         {
-            return Rect(rectangle, transform);
+            // Rect would overwrite the transparent kind-0 fallback with rectangle coordinates.
+            return Invertible(transform) ? Rect(rectangle, transform) : Solid(default);
         }
 
         uint first = (uint)Data.Count;

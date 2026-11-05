@@ -47,6 +47,12 @@ Secondary 10-warmup/20-sample single-process diagnostics (not formal conclusions
 - All ten measured process readbacks have identical SHA-256: `4EC6BE6E72F98AC2EF33AE5AF274DF11E540E766ECFD293EDDEBD4AEA9CC2B05`. This is before/after equality, not an independent golden for every intermediate frame.
 - Deterministic structural guard checks no clip-edge upload/winding instruction for nested canonical rectangles; invalid topology/extents fall back.
 
+## Non-invertible clip regression guard
+
+Nested rectangle compilation explicitly returns transparent coverage when the captured clip transform cannot be inverted with finite coordinates. Otherwise the rectangle helper would overwrite the kind-zero transparent fallback with rectangle coordinates interpreted as solid color. A public Canvas sequence of scale 1e-24, clip capture, compensating scale 1e24, a second clip and drawing exercises this independently of an invertible drawing transform.
+
+The regression tests check the transparent compiler constant and exact Vulkan/wgpu pixels against an unspecialized winding contour for both fill rules. All three new tests failed on the original optimization before applying the guard. Their reproduction logs and corrected TRX results are under ignored `artifacts/clip-review-fix/`. The repeated performance measurements above remain evidence for the frozen implementation commit, not a remeasurement of this correctness guard.
+
 ## Reproduce and inspect evidence
 
 Use an owned baseline worktree and this branch, activate the same existing absolute `LUMYTE_ENV_ROOT`, and build both before any timing. Do not use `run-workloads.sh`: its historical wrapper disables tiering. Run the unchanged compiled executable directly:

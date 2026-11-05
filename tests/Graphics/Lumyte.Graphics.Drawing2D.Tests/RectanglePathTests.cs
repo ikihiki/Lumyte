@@ -80,6 +80,30 @@ public sealed class RectanglePathTests
         program.ValidateFiniteData();
     }
 
+    /// <summary>A captured clip whose determinant underflows must remain transparent.</summary>
+    [Fact]
+    public void NonInvertibleNestedRectangleClipRemainsTransparent()
+    {
+        var target = new DrawingTargetInfo2D { Description = new() { Width = 8, Height = 8, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment } };
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.Scale(new Vector2(1e-24f));
+        canvas.ClipRect(new(0, 0, 32, 32));
+        canvas.Scale(new Vector2(1e24f));
+        canvas.ClipRect(new(0, 0, 8, 8));
+        canvas.FillCircle(new(1, 1), 4, new Color2D(1, 0, 0, 1));
+        DrawingCommand2D command = Assert.Single(canvas.End().Commands);
+        Assert.False(Matrix3x2.Invert(command.State.Clip.Elements[0].Transform, out _));
+        Assert.True(Matrix3x2.Invert(command.State.Transform, out _));
+        var program = new DrawingProgram2D(null!, null!, target);
+        program.CompileClip(command.State);
+        DrawingInstruction[] constants = program.Instructions.Where(instruction => instruction.Kind == 0).ToArray();
+        Assert.Equal(2, constants.Length);
+        Assert.Equal(Vector4.One, constants[0].A);
+        Assert.Equal(Vector4.Zero, constants[1].A);
+        program.ValidateFiniteData();
+    }
+
     private static Path2D Rectangle(float left, float top, float right, float bottom)
     {
         var builder = new PathBuilder2D();

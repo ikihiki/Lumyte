@@ -29,6 +29,44 @@ public sealed partial class Drawing2DTests
         await CheckRectanglePathsAsync(device);
     }
 
+    /// <summary>Non-invertible captured clips preserve transparent Vulkan pixels.</summary>
+    /// <returns>The asynchronous pixel checks.</returns>
+    [GpuFact]
+    public async Task VulkanNonInvertibleRectangleClipPixelsAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await CheckNonInvertibleRectangleClipAsync(device);
+    }
+
+    /// <summary>Non-invertible captured clips preserve transparent wgpu pixels.</summary>
+    /// <returns>The asynchronous pixel checks.</returns>
+    [GpuFact]
+    public async Task WgpuNonInvertibleRectangleClipPixelsAsync()
+    {
+        using var device = WgpuDevice.Create();
+        await CheckNonInvertibleRectangleClipAsync(device);
+    }
+
+    private static async Task CheckNonInvertibleRectangleClipAsync(IGraphicDevice device)
+    {
+        foreach (FillRule2D rule in new[] { FillRule2D.NonZero, FillRule2D.EvenOdd })
+        {
+            void Draw(RenderGraphCanvas2D canvas, bool split)
+            {
+                canvas.Scale(new Vector2(1e-24f));
+                canvas.ClipPath(RectanglePath(split), rule);
+                canvas.Scale(new Vector2(1e24f));
+                canvas.ClipRect(new(0, 0, 8, 8));
+                canvas.FillCircle(new(1, 1), 4, new Color2D(1, 0, 0, 1));
+            }
+
+            Vector4[] winding = await RenderAsync(device, 8, 8, canvas => Draw(canvas, true));
+            Vector4[] rectangle = await RenderAsync(device, 8, 8, canvas => Draw(canvas, false));
+            Assert.All(winding, pixel => Assert.Equal(Vector4.Zero, pixel));
+            Assert.Equal(winding, rectangle);
+        }
+    }
+
     private static async Task CheckRectanglePathsAsync(IGraphicDevice device)
     {
         foreach (float scale in new[] { 1f, 1.5f, 2f })
