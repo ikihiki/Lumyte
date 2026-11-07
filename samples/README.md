@@ -36,6 +36,11 @@ Graphics の native host は続いて exercise を選びます。すべて指定
 | 統合 | `input` | アクション・認識・永続設定 / managed |
 | 統合 | `audio-execution` | 実音声デバイスと Execution / openal, webaudio |
 | 統合 | `diagnostics-remote` | 診断サーバー接続 / http, magiconion |
+| 統合 | `diagnostics-ui-game` | UI操作Agent（別サーバーとGameTokenが必要） / managed |
+| 統合 | `diagnostics-ui-operator` | UI操作Operator（OperatorTokenが必要） / managed |
+| 描画 | `ui` | UI記録・offscreen・Browser / record-only, vulkan, wgpu, browser |
+| 統合 | `ui-popup` | Hosted Popupの操作と合成描画 / none, vulkan, wgpu |
+| 統合 | `ui-text-editing` | Windows TSFと文字編集（font.ttfが必要） / windows |
 | 描画 | `graphics-window` | 三角形・resize・Present / d3d12, warp |
 | 描画 | `text` | 多言語シェーピングと描画 / webgpu |
 | 契約検証 | `graphics` | 共通 GPU API / vulkan, wgpu, d3d12, warp, webgpu |
@@ -64,6 +69,10 @@ WebGPU 対応ブラウザー、Slang、Parley の native/Wasm ビルドなど、
 
 `diagnostics-remote` は別途起動した診断サーバーと `LUMYTE_DIAGNOSTICS_GAME_TOKEN` が必要です。
 接続先と実行秒数は `-- http://127.0.0.1:5000 60` のように渡します。
+`diagnostics-ui-game` は別サーバーと `LUMYTE_DIAGNOSTICS_GAME_TOKEN`、`diagnostics-ui-operator` は `LUMYTE_DIAGNOSTICS_OPERATOR_TOKEN` が必要です。
+Gameの通信方式・接続先・描画方式は `-- http http://127.0.0.1:5000 none`、Operatorの接続先とPNG保存先は `-- http://127.0.0.1:5000 ui-remote.png` のように渡します。
+`ui-text-editing` はWindows専用です。`-- path/to/font.ttf` でフォントを指定してください。
+`ui` の `record-only` と `ui-popup` の `none` はGPUなしで実行できます。Vulkan/wgpuはoffscreen、`browser`はBrowser配信です。
 `input` は設定ファイルを書き込みます。必要なら `-- path/to/settings.json` で保存先を指定してください。
 その他のオプションや native library の導入方法は各サンプルの README を参照してください。
 
