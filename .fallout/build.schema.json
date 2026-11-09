@@ -50,6 +50,7 @@
         "TestRust",
         "TestSignals",
         "TestText",
+        "TestUiMedia",
         "TestWasm",
         "TestWindowing",
         "VerifyEnvironment",
