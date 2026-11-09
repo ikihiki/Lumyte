@@ -121,3 +121,18 @@ private WithPage mutation measurements. Measured source, raw archives, independe
 CPU UI cases are flat Panel siblings (N+1 UI elements), while GPU UI cases use
 Stack grids. Each row emits layoutKind; these are separate workload shapes.
 The unchanged 512-asset default renderer budget can cause UI1000 cache misses.
+
+## 目標寸法とhost処理区間
+
+既定targetは従来どおり1280×720です。`--target-width 1920 --target-height 1080`でattachment寸法を明示できます。
+実際の寸法・DPR 1・Rgba8Srgbをactive-device行へ出力し、readbackも同寸法を使います。
+UIの論理viewportやfixtureの可視件数は変更しません。寸法だけで全ADR profileへの適合を主張しないでください。
+
+`hostFrameMs`はupdate開始からSubmit復帰までの実測壁時計時間です。工程p95の和ではなく、
+完了待ち・破棄を含む既存の`frameCpuWallMs`とも異なります。GPU timestamp区間は初期target遷移の後から、
+記録されたupload・fallback clear・draw・layer間barrierまでです。Prepare内部の仕事は区間外です。
+背景とHUDを分けたqueryや実hostの固定epoch期限は追加していません。
+
+ADR準拠の反復を行う場合は、既存wrapperがtiering/PGOを無効にする点に注意し、activate後に直接DLLを起動してください。
+独立processのA/A、固定warmup、5組の交互A/B、各2000 frames以上かつ10秒以上、正しさ検証が別途必要です。
+短い既存の結果は診断であり、1920×1080の達成結果へ読み替えません。

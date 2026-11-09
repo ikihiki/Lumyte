@@ -80,7 +80,7 @@ internal static class RenderingWorkloadRunner
         using var device = VulkanDevice.Create();
         using (var identity = new HardwareGpuTimer(device))
         {
-            Emit(new { check = "active-device", device = identity.DeviceDescription, gpuTimestamp = identity.Supported, source = Environment.GetEnvironmentVariable("LUMYTE_WORKLOAD_REVISION"), suite = options.Suite, count = options.Count, warmup = options.Warmup, samples = options.Samples, depth = options.Depth, scope = options.Pipeline ? "pipeline" : "stages", tieredCompilation = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation"), gcServer = Environment.GetEnvironmentVariable("DOTNET_gcServer") });
+            Emit(new { check = "active-device", device = identity.DeviceDescription, gpuTimestamp = identity.Supported, source = Environment.GetEnvironmentVariable("LUMYTE_WORKLOAD_REVISION"), suite = options.Suite, count = options.Count, warmup = options.Warmup, samples = options.Samples, depth = options.Depth, targetWidth = options.Width, targetHeight = options.Height, dpr = 1, format = "Rgba8Srgb", scope = options.Pipeline ? "pipeline" : "stages", tieredCompilation = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation"), gcServer = Environment.GetEnvironmentVariable("DOTNET_gcServer") });
         }
 
         foreach (string name in selected)
@@ -94,7 +94,7 @@ internal static class RenderingWorkloadRunner
         long setupStart = Stopwatch.GetTimestamp();
         using IRenderingWorkload workload = RenderingWorkloadCatalog.Create(name, options.Count);
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
-        WorkloadSlot[] slots = Enumerable.Range(0, options.Depth).Select(_ => new WorkloadSlot(device)).ToArray();
+        WorkloadSlot[] slots = Enumerable.Range(0, options.Depth).Select(_ => new WorkloadSlot(device, options.Width, options.Height)).ToArray();
         double setupMs = Ms(setupStart);
         var rows = new List<object>();
         var gpuTimes = new List<double>(options.Samples);
@@ -149,6 +149,7 @@ internal static class RenderingWorkloadRunner
                 start = Stopwatch.GetTimestamp();
                 slot.Submission = device.Queue.Submit([slot.Commands!]);
                 double submitMs = Ms(start);
+                double hostFrameMs = Ms(frameStart);
                 if (!options.Pipeline)
                 {
                     await slot.Submission.WaitAsync();
@@ -157,7 +158,7 @@ internal static class RenderingWorkloadRunner
                     start = Stopwatch.GetTimestamp();
                     slot.ReleaseCompleted();
                     double disposeMs = Ms(start);
-                    rows.Add(new { scope = "stages", suite = workload.Suite, workload = name, description = workload.Description, count = options.Count, iteration = i, updateMs, layoutInclusiveMs = layoutMs, textLayoutNestedMs = textLayoutMs, recordMs, prepareMs, encodeMs, submitMs, submitCompletionCpuMs = submitCompletionMs, disposeMs, frameCpuWallMs = Ms(frameStart), gpuRecordedSpanMs = gpuMs, allocatedProcessWide = GC.GetTotalAllocatedBytes(false) - allocatedStart, layerCount = lists.Count, commandCount, counters = workload.Counters.ToDictionary(), presentation = false });
+                    rows.Add(new { scope = "stages", suite = workload.Suite, workload = name, description = workload.Description, count = options.Count, iteration = i, hostFrameMs, updateMs, layoutInclusiveMs = layoutMs, textLayoutNestedMs = textLayoutMs, recordMs, prepareMs, encodeMs, submitMs, submitCompletionCpuMs = submitCompletionMs, disposeMs, frameCpuWallMs = Ms(frameStart), gpuRecordedSpanMs = gpuMs, allocatedProcessWide = GC.GetTotalAllocatedBytes(false) - allocatedStart, layerCount = lists.Count, commandCount, counters = workload.Counters.ToDictionary(), presentation = false });
                 }
             }
 
@@ -256,11 +257,13 @@ internal static class RenderingWorkloadRunner
 
     private static async Task<string> ReadPixelsAsync(VulkanDevice device, WorkloadSlot slot)
     {
-        const uint Pitch = 5120;
-        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = Pitch * 720UL, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        uint width = slot.Texture.Width;
+        uint height = slot.Texture.Height;
+        uint pitch = checked((((width * 4) + 255) / 256) * 256);
+        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * (ulong)height, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IGraphicsCommandBuffer copy = device.CreateCommandBuffer(new());
         copy.Barrier(new TextureBarrierDesc { Texture = slot.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-        copy.CopyTextureToBuffer(new() { Texture = slot.Texture, Width = 1280, Height = 720 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = Pitch, RowsPerImage = 720 });
+        copy.CopyTextureToBuffer(new() { Texture = slot.Texture, Width = width, Height = height }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = height });
         copy.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         copy.Finish();
         using IGraphicsSubmission submitted = device.Queue.Submit([copy]);
@@ -269,12 +272,19 @@ internal static class RenderingWorkloadRunner
         byte[] data = new byte[(int)readback.Count];
         readback.CopyTo(data);
         readback.Unmap();
-        if (!data.Any(b => b != 0))
+        byte[] pixels = new byte[checked((int)(width * height * 4))];
+        for (uint y = 0; y < height; y++)
+        {
+            data.AsSpan(checked((int)(y * pitch)), checked((int)(width * 4)))
+                .CopyTo(pixels.AsSpan(checked((int)(y * width * 4))));
+        }
+
+        if (!pixels.Any(b => b != 0))
         {
             throw new InvalidOperationException("Workload produced an empty target.");
         }
 
-        return Convert.ToHexString(SHA256.HashData(data));
+        return Convert.ToHexString(SHA256.HashData(pixels));
     }
 
     private static long Counter(IRenderingWorkload workload, string name) => workload.Counters.TryGetValue(name, out long value) ? value : 0;
@@ -285,9 +295,9 @@ internal static class RenderingWorkloadRunner
 
     private sealed class WorkloadSlot : IDisposable
     {
-        internal WorkloadSlot(VulkanDevice device)
+        internal WorkloadSlot(VulkanDevice device, uint width, uint height)
         {
-            Texture = device.CreateTexture(new() { Width = 1280, Height = 720, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
+            Texture = device.CreateTexture(new() { Width = width, Height = height, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
             View = Texture.CreateView();
             Timer = new(device);
         }
@@ -342,7 +352,7 @@ internal static class RenderingWorkloadRunner
         }
     }
 
-    private sealed record Options(string Mode, string Suite, string? Case, int Count, int Warmup, int Samples, int Depth, bool Pipeline, bool Quick, string Artifacts)
+    private sealed record Options(string Mode, string Suite, string? Case, int Count, int Warmup, int Samples, int Depth, bool Pipeline, bool Quick, string Artifacts, uint Width, uint Height)
     {
         internal static Options Parse(string[] args)
         {
@@ -365,7 +375,7 @@ internal static class RenderingWorkloadRunner
                 {
                     quick = true;
                 }
-                else if (arg is "--suite" or "--case" or "--count" or "--warmup" or "--samples" or "--frames-in-flight" or "--mode" or "--artifacts")
+                else if (arg is "--suite" or "--case" or "--count" or "--warmup" or "--samples" or "--frames-in-flight" or "--mode" or "--artifacts" or "--target-width" or "--target-height")
                 {
                     if (++i >= args.Length || !values.TryAdd(arg, args[i]))
                     {
@@ -401,7 +411,7 @@ internal static class RenderingWorkloadRunner
                 throw new ArgumentException("Stages mode requires one frame in flight.");
             }
 
-            return new(mode ?? throw new ArgumentException("Missing workload command."), values.GetValueOrDefault("--suite", "all"), values.GetValueOrDefault("--case"), Number("--count", 200, 1, 100000), Number("--warmup", 41, 0, 1000), Number("--samples", 120, 1, 10000), depth, renderMode == "pipeline", quick, values.GetValueOrDefault("--artifacts", "artifacts/rendering-workloads/bdn"));
+            return new(mode ?? throw new ArgumentException("Missing workload command."), values.GetValueOrDefault("--suite", "all"), values.GetValueOrDefault("--case"), Number("--count", 200, 1, 100000), Number("--warmup", 41, 0, 2000), Number("--samples", 120, 1, 10000), depth, renderMode == "pipeline", quick, values.GetValueOrDefault("--artifacts", "artifacts/rendering-workloads/bdn"), (uint)Number("--target-width", 1280, 1, 16384), (uint)Number("--target-height", 720, 1, 16384));
         }
     }
 }
