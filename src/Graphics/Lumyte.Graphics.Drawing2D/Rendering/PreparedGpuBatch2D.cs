@@ -155,8 +155,13 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
     }
 
     internal static bool FitsSharedStorage(ulong instructionCount, ulong dataCount, ulong instructionStride, ulong maximumBytes)
-        => instructionStride > 0 && instructionCount <= int.MaxValue
-            && instructionCount <= maximumBytes / instructionStride && dataCount <= maximumBytes / 16;
+    {
+        // Vulkan mapped uploads address each program with a checked signed byte offset.
+        // Bound both combined allocations conservatively before choosing the shared route.
+        ulong uploadBytes = Math.Min(maximumBytes, (ulong)int.MaxValue);
+        return instructionStride > 0 && instructionCount <= int.MaxValue
+            && instructionCount <= uploadBytes / instructionStride && dataCount <= uploadBytes / 16;
+    }
 
     private void RecordCore(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
     {

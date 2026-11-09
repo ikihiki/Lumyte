@@ -8,7 +8,7 @@ Source inspection showed four native buffer allocations, two mappings, two copie
 
 On the native-address SPIR-V route, the implementation combines instruction storage/staging and geometry storage/staging within the existing prepared batch. Each program keeps its own argument table and local instruction/data indices, bound to its own range. Compilation, painter order, scissor, coverage, clips, fill rules and draw calls stay unchanged. Shared uploads complete before any draw in the batch. The batch owns all four allocations through the existing GPU completion/command-disposal retirement boundary. There is no cross-frame pool or new cache ownership.
 
-Single-command batches, non-SPIR-V backends and conservatively oversized combined allocations keep the original per-command implementation. Portable descriptor-range alignment is deliberately not assumed. The unchanged implementation is retained separately as the fallback rather than broadening backend contracts. Allocation eligibility uses the actual backend instruction stride and overflow-safe byte/element limits. Cache estimates retain conservative descriptor/CPU overhead and include all actual shared allocation bytes. ADR-GRAPHICS-0027/0028 remain proposals. Snapshot storage and public bulk drawing designs are not changed.
+Single-command batches, non-SPIR-V backends and conservatively oversized combined allocations keep the original per-command implementation. Portable descriptor-range alignment is deliberately not assumed. The unchanged implementation is retained separately as the fallback rather than broadening backend contracts. Allocation eligibility uses the actual backend instruction stride and overflow-safe byte/element limits. Both combined allocations are additionally capped at the signed 32-bit CPU upload byte range, even if the device permits larger buffers; larger batches retain individual allocations. Cache estimates retain conservative descriptor/CPU overhead and include all actual shared allocation bytes. ADR-GRAPHICS-0027/0028 remain proposals. Snapshot storage and public bulk drawing designs are not changed.
 
 ## Frozen comparison
 
@@ -38,6 +38,10 @@ Paired frame-median improvement spans 24.0–26.2%. Main process frame medians s
 - All ten primary process readbacks match SHA-256 `249B43005137962C390304740DF937A0B11FAC8770CEDFD6134F88668151C4F4`. The compiled Drawing2D DLL used by both test suites and the candidate benchmark has the same SHA-256 `dfd0af1a6514bf579b4a84a2f78d61c3f93474b4cdcc1e7593aa43a3025dc1ec`.
 - A wrong/software ICD is rejected before workload execution, with no silent fallback. The expected negative-control process exits nonzero; its exception log is retained.
 - Independent read-only source review found no blocking defect. Actual stride/element-limit eligibility, sampled-resource coverage and a comment explaining the deliberately retained fallback were added before freezing/retesting. A full recording-device failure-injection/allocation-counter suite is still absent; existing lifetime tests and native readback do not replace that coverage.
+
+## Upload-range regression guard
+
+A no-allocation boundary test rejects instruction and geometry allocations beyond the signed 32-bit CPU upload byte range, including devices with a 4 GiB or unlimited reported buffer limit. The new test failed on the reviewed implementation before the eligibility guard was applied. Boundary values below the cap and stricter device limits remain eligible. The earlier repeated timing data stays tied to its frozen production commit; it is not a new performance measurement of this guard. Reproduction and verification logs for the guard are stored under ignored `artifacts/pr118-review-fix/`.
 
 ## Controls and bounded depth
 
