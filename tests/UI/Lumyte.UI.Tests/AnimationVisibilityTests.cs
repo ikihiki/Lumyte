@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Lumyte.Animation;
 using Lumyte.Core.Time;
 using Lumyte.Signals;
@@ -7,6 +8,7 @@ using static Lumyte.UI.Compose;
 namespace Lumyte.UI.Tests;
 
 /// <summary>Checks hidden independent producers and producers shared across visible branches.</summary>
+[Collection(nameof(AnimationAllocationCollection))]
 public sealed class AnimationVisibilityTests
 {
     /// <summary>Checks hidden pending and running producers retain their targets without allocating on state queries.</summary>
@@ -42,13 +44,18 @@ public sealed class AnimationVisibilityTests
         }
 
         bool work = false;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int iteration = 0; iteration < 100; iteration++)
+        long allocated;
+        using (new AllocationRegion())
         {
-            work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int iteration = 0; iteration < 100; iteration++)
+            {
+                work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
+            }
+
+            allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         }
 
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.False(work);
         Assert.Equal(0, allocated);
         visible.Value = true;
@@ -77,13 +84,18 @@ public sealed class AnimationVisibilityTests
         }
 
         bool work = false;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int iteration = 0; iteration < 100; iteration++)
+        long allocated;
+        using (new AllocationRegion())
         {
-            work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int iteration = 0; iteration < 100; iteration++)
+            {
+                work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
+            }
+
+            allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         }
 
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.False(work);
         Assert.Equal(0, allocated);
     }
@@ -99,5 +111,36 @@ public sealed class AnimationVisibilityTests
         Assert.True(surface.HasPendingAnimationUpdates);
         surface.AdvanceAnimations();
         Assert.True(surface.HasRunningAnimations);
+    }
+
+    /// <summary>Checks the isolated measurement still detects an actual managed allocation.</summary>
+    [Fact]
+    public void AllocationRegionCountsManagedAllocations()
+    {
+        long allocated;
+        using (new AllocationRegion())
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            byte[] control = AllocateControl();
+            allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            GC.KeepAlive(control);
+        }
+
+        Assert.True(allocated > 0);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static byte[] AllocateControl() => new byte[32];
+
+    private sealed class AllocationRegion : IDisposable
+    {
+        public AllocationRegion()
+        {
+            // Background GC can discard an unused allocation-context tail and inflate the thread counter.
+            // Reserve outside the measured interval; the nonparallel collection keeps other tests out of this budget.
+            Assert.True(GC.TryStartNoGCRegion(1024 * 1024));
+        }
+
+        public void Dispose() => GC.EndNoGCRegion();
     }
 }

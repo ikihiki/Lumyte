@@ -596,7 +596,7 @@ public sealed partial class Drawing2DTests
         AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
     }
 
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false)
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false)
     {
         using ExternalDrawingResources? resources = useDefaultResources ? null : new(device);
         var canvas = new RenderGraphCanvas2D();
@@ -618,7 +618,11 @@ public sealed partial class Drawing2DTests
             Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled | TextureUsage.CopySource,
         };
         RenderGraphTexture target = graph.CreateTexture(description, "canvas");
-        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources?.Resources, resourceOwner: resources);
+        var defaults = DrawingCommandRenderers2D.CreateDefault();
+        DrawingCommandRenderers2D strategies = individualPaths
+            ? new(defaults.FillRect, defaults.FillRoundedRect, defaults.FillCircle, defaults.DrawLine, new IndividualPathRenderer(), defaults.StrokePath, defaults.DrawImage, defaults.DrawCoverageMask, defaults.DrawDistanceField, defaults.DrawMesh, defaults.DrawPaintGraph)
+            : defaults;
+        using var renderer = new RenderGraphRenderer2D(strategies, list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources?.Resources, resourceOwner: resources);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
