@@ -15,7 +15,9 @@ bash tools/benchmarks/drawing2d-incremental/run-workloads.sh smoke --suite all -
 ```
 
 buildは計測より先に完了する。他のbuild/testと並行測定しない。
-wrapperはrepo指定SDK/native環境をactivateし、tiering/PGOを無効、workstation GCへ揃える。既存の比較ハーネスのentry pointは維持する。
+wrapperはrepo指定SDK/native環境をactivateし、JIT／tiered PGO／GCの製品既定値を変更しません。
+`LUMYTE_ENV_ROOT`の明示指定を維持し、診断用runtime環境変数は呼出し側の設定を継承します。
+従来のtiering無効の結果は別系列です。
 
 ## Suiteとcase
 
@@ -58,7 +60,17 @@ bash tools/benchmarks/drawing2d-incremental/run-workloads.sh cpu --suite editor-
 `--case editor-line-edit`等で1ケースだけ選べる。
 `--quick`はbuild/実行確認用の短いjobであり、正式な性能結論には使わない。
 
-測定対象はUpdate＋Layout＋CPU Recordで、GPU・Presentは含まない。
+測定対象は集約`CpuFrame`と、独立した`Update`／`Layout`／`Record`です。GPU・Presentは含みません。
+2Dには実layoutがないため空のLayout benchmarkを登録しません。
+UIのLayoutは文字組みを内包し、Update中にもreconcile／text処理があり得ます。
+静止caseのclean／cache経路は意図したfixture policyです。
+集約の正式jobは5 launches、5 warmup、15 iterations、250 ms目標、outlier除去なしです。
+
+工程別はBDN 0.15.8の`IterationSetup`と`InvocationCount(1, 1)`で一操作ずつ測ります。
+事前stage・入力更新・counter／snapshot検証は計測外です。繰返し呼出しが無変更cacheへ退化するのを検出します。
+**工程別は単発帰属診断であり250 ms iterationの正式throughput jobではありません。**
+工程の独立費用は加算可能なE2E分解ではありません。pure compile／packは現行公開境界から分離できず、
+新しい製品APIは追加せず、実runnerの非同期Prepareに含めて報告します。
 MemoryDiagnoserはmanaged byte/op。native ParleyのメモリやVRAMは含まない。
 中央値/p95はBDN iteration推定値の分布で、個々のframe latencyとは異なる。
 
@@ -133,6 +145,68 @@ UIの論理viewportやfixtureの可視件数は変更しません。寸法だけ
 記録されたupload・fallback clear・draw・layer間barrierまでです。Prepare内部の仕事は区間外です。
 背景とHUDを分けたqueryや実hostの固定epoch期限は追加していません。
 
-ADR準拠の反復を行う場合は、既存wrapperがtiering/PGOを無効にする点に注意し、activate後に直接DLLを起動してください。
+ADR準拠の反復でも製品既定runtimeを使い、診断overrideを付けた結果とは混ぜません。
 独立processのA/A、固定warmup、5組の交互A/B、各2000 frames以上かつ10秒以上、正しさ検証が別途必要です。
 短い既存の結果は診断であり、1920×1080の達成結果へ読み替えません。
+
+## 毎回の安定性qualification
+
+正しさ→固定上限pilot→事前宣言したA/A雑音幅→固定A/Bの順に進めます。
+安定は物理環境の恒久保証ではなく、その実行の最後の4区間の条件です。
+失敗・query不正・未測定・unstableをpassへ置換しません。
+
+stage runnerはwarmupも`phase=warmup`で保存し、measuredとはphase内の0始まりiterationで区別します。
+frame観測は事前確保した値型bufferへ保存し、JSON生成・counter辞書・command集計はhost/frame計測外です。
+text counterはUpdate前と完了後の差なのでnested値であり、hostへ再加算しません。
+Prepare／Encode／Submit／完了壁時計／退役を保持し、GPU queryをCPU待機へ置換しません。
+queryは有限かつ正値を要求します。pipelineは別のthroughput診断で、この集計器の資格対象外です。
+
+environmentとsource/harness/binary/font/shader hashをignored `artifacts/`へ保存し、同一入力・同一profileで実行します。
+active-deviceはbuild時の全harness C#／project hashと実行DLL hashを持ち、dirty/untracked実装も識別します。
+sourceラベルはcheckoutの申告値なので、それだけでbinary由来を証明せず、保存したhash／diffと照合します。
+`unrecorded`等のsourceではA/A／正式資格を拒否します。
+
+A/Aは少なくとも5独立process、例の許容値は**実行前に決める値**であり自動推奨ではありません。
+
+実行例:
+
+```bash
+export LUMYTE_ENV_ROOT=/path/to/existing/dev-env
+bash tools/benchmarks/drawing2d-incremental/run-workloads.sh hardware --case editor-scroll-list --count 32 --warmup 2000 --samples 200 --target-width 1920 --target-height 1080 > artifacts/pilot.jsonl
+python3 -B tools/benchmarks/drawing2d-incremental/qualify-workloads.py pilot --warmup-frames 2000 artifacts/pilot.jsonl
+python3 -B tools/benchmarks/drawing2d-incremental/qualify-workloads.py aa --warmup-frames 2000 --relative-threshold .05 --host-absolute-ms 1 --gpu-absolute-ms 1 artifacts/aa-{1,2,3,4,5}.jsonl
+python3 -B tools/benchmarks/drawing2d-incremental/test-qualify-workloads.py
+```
+
+周期負荷は実行前に`--cycle-frames`を50の倍数へ固定し、同位相の4周期を比較します。
+200〜2000の固定warmupを50刻みで選び、途中の最良窓で最終unstableを上書きしません。
+正式A/Bは各2000 measured frames以上かつ10秒以上、5組以上のAB／BA交互順序、
+共通frame数・trace・warmupとqualified raw A/Aを要求します。
+
+`formal --help`に完全な指定形式を示します。集計器だけでは正しさ、process独立性、事前宣言の真実性は証明できません。
+GPU readbackの非空checksumを独立golden正解とは扱わず、既存exact-pixel検証と区別します。
+
+### 2026-11-10のハーネス実行確認
+
+Radeon 8060S／RADV Mesa 26.0.8、SDK 10.0.403／runtime 10.0.14、製品既定runtimeで直列実行しました。
+事前固定したcount 32、1920×1080、warmup 2000、measured 200、50-frame窓×最後4区間の診断です。
+
+- editor-scroll-list: host中央値比1.14867でunstable、GPU比1.00115でstable。
+- 2d-transform-all: host比1.17498でunstable、GPU比1.00646でstable。
+- editor-scroll-listの独立5process A/A: host中央値range 6.2653 ms／12.92%で不合格。
+  GPU range 0.29282 ms／0.4775%は事前宣言した1 ms／5%内でしたが、全processのhost warmup安定を満たしません。
+- よって正式A/B資格はブロックしました。GPUだけの安定を全体のpassにせず、安定するまでの再試行はしていません。
+
+変更前の同case・200 measured framesの4窓host比は1.26245、GPU比1.00148でした。
+変更前warmupの観測はないため、変更後pilotと同等の正式比較や改善率とは扱いません。
+buffer事前確保、frame内の匿名object／counter辞書生成除去、同一warmup計測経路で避けられる計測器雑音を減らしましたが、
+この結果から共有host変動や製品側の割当・GC・driver動作の原因を一意には特定していません。
+
+Release buildは警告0／error 0、Drawing2D単体157件成功・skip 0、全12caseのCPU smoke成功、
+既存の実GPU exact-pixel照合59件成功。BDN quickはUIの4方法と2Dの3方法で各3正値sample、
+非ゼロTotalOperationsとMemoryDiagnoser値を確認しました。最後に現sourceのUI工程と非整列1279×719 readbackを再実行しました。
+単発工程probeの数値は正式性能順位に使いません。qualification／analyzer／CLIの決定的テストも実行しています。
+
+raw JSONL、full BDN JSON、失敗preflight、固定plan、source／binary／font／shader hashはignored`artifacts/stability-20261110/`へ保存しています。長いcampaignは保存済みfrozen binaryに結び付け、後続の例外時cleanup修正と診断category追加を
+source-amendmentへ記録しました。最終sourceと同一と偽らず、最終sourceのbuild／smokeを別証跡にしています。
+これはheadless確認であり、実host期限、Present、物理scanout、全ADR目標達成は未測定です。

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using BenchmarkDotNet.Columns;
@@ -40,11 +41,22 @@ internal static class RenderingWorkloadRunner
             IConfig config = ManualConfig.Create(DefaultConfig.Instance)
                 .AddJob(Job.Default.WithId("rendering-workloads")
                     .WithToolchain(new Toolchain("ExplicitProject", new ExplicitProjectGenerator(), new DotNetCliBuilder("net10.0"), new DotNetCliExecutor(null!)))
-                    .WithLaunchCount(1).WithWarmupCount(options.Quick ? 1 : 3).WithIterationCount(options.Quick ? 3 : 8)
-                    .WithIterationTime(TimeInterval.FromMilliseconds(options.Quick ? 50 : 150))
+                    .WithLaunchCount(options.Quick ? 1 : 5).WithWarmupCount(5).WithIterationCount(options.Quick ? 3 : 15)
+                    .WithIterationTime(TimeInterval.FromMilliseconds(options.Quick ? 50 : 250))
                     .WithOutlierMode(Perfolizer.Mathematics.OutlierDetection.OutlierMode.DontRemove))
                 .AddDiagnoser(MemoryDiagnoser.Default).AddColumn(StatisticColumn.Median, StatisticColumn.P95).AddExporter(JsonExporter.Full);
-            BenchmarkSwitcher.FromTypes([typeof(RenderingWorkloadCpuBenchmarks)]).Run(["--filter", "*", "--artifacts", options.Artifacts], config);
+            var benchmarkTypes = new List<Type> { typeof(RenderingWorkloadCpuBenchmarks) };
+            if (selected.Any(Content2DWorkloads.Cases.Contains))
+            {
+                benchmarkTypes.Add(typeof(RenderingWorkloadContentPhaseBenchmarks));
+            }
+
+            if (selected.Any(name => !Content2DWorkloads.Cases.Contains(name)))
+            {
+                benchmarkTypes.Add(typeof(RenderingWorkloadPhaseBenchmarks));
+            }
+
+            BenchmarkSwitcher.FromTypes(benchmarkTypes.ToArray()).Run(["--filter", "*", "--artifacts", options.Artifacts], config);
             return;
         }
 
@@ -80,7 +92,7 @@ internal static class RenderingWorkloadRunner
         using var device = VulkanDevice.Create();
         using (var identity = new HardwareGpuTimer(device))
         {
-            Emit(new { check = "active-device", device = identity.DeviceDescription, gpuTimestamp = identity.Supported, source = Environment.GetEnvironmentVariable("LUMYTE_WORKLOAD_REVISION"), suite = options.Suite, count = options.Count, warmup = options.Warmup, samples = options.Samples, depth = options.Depth, targetWidth = options.Width, targetHeight = options.Height, dpr = 1, format = "Rgba8Srgb", scope = options.Pipeline ? "pipeline" : "stages", tieredCompilation = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation"), gcServer = Environment.GetEnvironmentVariable("DOTNET_gcServer") });
+            Emit(new { check = "active-device", schemaVersion = 2, harnessBuildHashes = typeof(RenderingWorkloadRunner).Assembly.GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>().Single(attribute => attribute.Key == "BenchmarkHarnessHashes").Value, binaryHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(RenderingWorkloadRunner).Assembly.Location))), scenarioVersion = "rendering-workloads-v1", trace = "deterministic-frame-counter-v1", traceHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"rendering-workloads-v1:{options.Case ?? options.Suite}:{options.Count}:{options.Warmup}:{options.Samples}"))), profile = $"{options.Case ?? options.Suite}:{options.Count}:{options.Width}x{options.Height}:{options.Depth}:{(options.Pipeline ? "pipeline" : "stages")}", runtime = Environment.Version.ToString(), os = System.Runtime.InteropServices.RuntimeInformation.OSDescription, cpu = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(), device = identity.DeviceDescription, gpuTimestamp = identity.Supported, source = Environment.GetEnvironmentVariable("LUMYTE_WORKLOAD_REVISION") ?? "unrecorded", suite = options.Suite, count = options.Count, warmup = options.Warmup, samples = options.Samples, depth = options.Depth, targetWidth = options.Width, targetHeight = options.Height, dpr = 1, format = "Rgba8Srgb", scope = options.Pipeline ? "pipeline" : "stages", tieredCompilation = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation"), tieredPgo = Environment.GetEnvironmentVariable("DOTNET_TieredPGO"), gcServer = Environment.GetEnvironmentVariable("DOTNET_gcServer") });
         }
 
         foreach (string name in selected)
@@ -96,33 +108,32 @@ internal static class RenderingWorkloadRunner
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
         WorkloadSlot[] slots = Enumerable.Range(0, options.Depth).Select(_ => new WorkloadSlot(device, options.Width, options.Height)).ToArray();
         double setupMs = Ms(setupStart);
-        var rows = new List<object>();
+        var rows = new FrameObservation[checked(options.Warmup + options.Samples)];
         var gpuTimes = new List<double>(options.Samples);
         try
         {
-            for (int i = 0; i < options.Warmup; i++)
+            long allStart = 0;
+            long allAllocated = 0;
+            for (int index = 0; index < rows.Length; index++)
             {
-                WorkloadSlot slot = slots[i % slots.Length];
-                await RetireAsync(slot);
-                workload.Update();
-                workload.Layout();
-                await PrepareAsync(renderer, slot, workload.Record());
-                Encode(device, slot);
-                slot.Submission = device.Queue.Submit([slot.Commands!]);
-            }
+                bool measured = index >= options.Warmup;
+                int i = measured ? index - options.Warmup : index;
+                if (index == options.Warmup)
+                {
+                    foreach (WorkloadSlot pending in slots)
+                    {
+                        await RetireAsync(pending);
+                    }
 
-            foreach (WorkloadSlot slot in slots)
-            {
-                await RetireAsync(slot);
-            }
+                    allAllocated = GC.GetTotalAllocatedBytes(false);
+                    allStart = Stopwatch.GetTimestamp();
+                }
 
-            long allStart = Stopwatch.GetTimestamp();
-            long allAllocated = GC.GetTotalAllocatedBytes(false);
-            for (int i = 0; i < options.Samples; i++)
-            {
                 WorkloadSlot slot = slots[i % slots.Length];
+                long retireStart = Stopwatch.GetTimestamp();
                 double? retiredGpu = await RetireAsync(slot);
-                if (retiredGpu.HasValue)
+                double retireMs = Ms(retireStart);
+                if (measured && retiredGpu.HasValue)
                 {
                     gpuTimes.Add(retiredGpu.Value);
                 }
@@ -135,11 +146,9 @@ internal static class RenderingWorkloadRunner
                 long start = Stopwatch.GetTimestamp();
                 workload.Layout();
                 double layoutMs = Ms(start);
-                double textLayoutMs = (Counter(workload, "text_layout_ticks") - textStart) * 1000.0 / Stopwatch.Frequency;
                 start = Stopwatch.GetTimestamp();
                 IReadOnlyList<DrawList2D> lists = workload.Record();
                 double recordMs = Ms(start);
-                int commandCount = lists.Sum(l => l.Commands.Count);
                 start = Stopwatch.GetTimestamp();
                 await PrepareAsync(renderer, slot, lists);
                 double prepareMs = Ms(start);
@@ -158,7 +167,10 @@ internal static class RenderingWorkloadRunner
                     start = Stopwatch.GetTimestamp();
                     slot.ReleaseCompleted();
                     double disposeMs = Ms(start);
-                    rows.Add(new { scope = "stages", suite = workload.Suite, workload = name, description = workload.Description, count = options.Count, iteration = i, hostFrameMs, updateMs, layoutInclusiveMs = layoutMs, textLayoutNestedMs = textLayoutMs, recordMs, prepareMs, encodeMs, submitMs, submitCompletionCpuMs = submitCompletionMs, disposeMs, frameCpuWallMs = Ms(frameStart), gpuRecordedSpanMs = gpuMs, allocatedProcessWide = GC.GetTotalAllocatedBytes(false) - allocatedStart, layerCount = lists.Count, commandCount, counters = workload.Counters.ToDictionary(), presentation = false });
+                    double frameCpuWallMs = Ms(frameStart);
+                    long allocatedFrame = GC.GetTotalAllocatedBytes(false) - allocatedStart;
+                    double textLayoutMs = (Counter(workload, "text_layout_ticks") - textStart) * 1000.0 / Stopwatch.Frequency;
+                    rows[index] = new(measured ? "measured" : "warmup", i, hostFrameMs, updateMs, layoutMs, textLayoutMs, recordMs, prepareMs, encodeMs, submitMs, submitCompletionMs, disposeMs, retireMs, frameCpuWallMs, gpuMs, allocatedFrame, lists.Count, lists.Sum(l => l.Commands.Count));
                 }
             }
 
@@ -174,9 +186,14 @@ internal static class RenderingWorkloadRunner
             double elapsedMs = Ms(allStart);
             long allocated = GC.GetTotalAllocatedBytes(false) - allAllocated;
             workload.Verify();
-            foreach (object row in rows)
+            if (!options.Pipeline)
             {
-                Emit(row);
+                foreach (FrameObservation row in rows)
+                {
+                    Emit(new { scope = "stages", suite = workload.Suite, workload = name, description = workload.Description, count = options.Count, phase = row.Phase, iteration = row.Iteration, hostFrameMs = row.HostFrameMs, updateMs = row.UpdateMs, layoutInclusiveMs = row.LayoutInclusiveMs, textLayoutNestedMs = row.TextLayoutNestedMs, recordMs = row.RecordMs, prepareMs = row.PrepareMs, encodeMs = row.EncodeMs, submitMs = row.SubmitMs, submitCompletionCpuMs = row.SubmitCompletionCpuMs, disposeMs = row.DisposeMs, retireMs = row.RetireMs, frameCpuWallMs = row.FrameCpuWallMs, gpuRecordedSpanMs = row.GpuRecordedSpanMs, allocatedProcessWide = row.AllocatedProcessWide, layerCount = row.LayerCount, commandCount = row.CommandCount, presentation = false });
+                }
+
+                Emit(new { check = "stages-summary", scope = "stages-summary", workload = name, frames = options.Samples, elapsedMs, includesFinalDrain = true, counters = workload.Counters });
             }
 
             if (options.Pipeline)
@@ -189,10 +206,34 @@ internal static class RenderingWorkloadRunner
         }
         finally
         {
+            List<Exception>? cleanupErrors = null;
             foreach (WorkloadSlot slot in slots)
             {
-                await RetireAsync(slot);
-                slot.Dispose();
+                try
+                {
+                    await RetireAsync(slot);
+                }
+                catch (Exception error)
+                {
+                    (cleanupErrors ??= []).Add(error);
+                }
+
+                if (slot.Submission is null)
+                {
+                    try
+                    {
+                        slot.Dispose();
+                    }
+                    catch (Exception error)
+                    {
+                        (cleanupErrors ??= []).Add(error);
+                    }
+                }
+            }
+
+            if (cleanupErrors is not null)
+            {
+                throw new AggregateException("Failed to retire workload slots.", cleanupErrors);
             }
         }
     }
@@ -240,7 +281,18 @@ internal static class RenderingWorkloadRunner
         slot.Commands.Finish();
     }
 
-    private static double? ReadTimer(WorkloadSlot slot) => slot.Timer.Supported ? slot.Timer.ReadMilliseconds() : null;
+    private static double? ReadTimer(WorkloadSlot slot)
+    {
+        if (!slot.Timer.Supported)
+        {
+            return null;
+        }
+
+        double value = slot.Timer.ReadMilliseconds();
+        return double.IsFinite(value) && value > 0
+            ? value
+            : throw new InvalidOperationException("GPU timestamp interval must be finite and positive.");
+    }
 
     private static async Task<double?> RetireAsync(WorkloadSlot slot)
     {
@@ -250,9 +302,15 @@ internal static class RenderingWorkloadRunner
         }
 
         await slot.Submission.WaitAsync();
-        double? gpu = ReadTimer(slot);
-        slot.ReleaseCompleted();
-        return gpu;
+        try
+        {
+            return ReadTimer(slot);
+        }
+        finally
+        {
+            // Completion was confirmed even if the timestamp pair is invalid.
+            slot.ReleaseCompleted();
+        }
     }
 
     private static async Task<string> ReadPixelsAsync(VulkanDevice device, WorkloadSlot slot)
@@ -292,6 +350,8 @@ internal static class RenderingWorkloadRunner
     private static double Ms(long start) => Stopwatch.GetElapsedTime(start).TotalMilliseconds;
 
     private static void Emit(object value) => Console.WriteLine(JsonSerializer.Serialize(value));
+
+    private readonly record struct FrameObservation(string Phase, int Iteration, double HostFrameMs, double UpdateMs, double LayoutInclusiveMs, double TextLayoutNestedMs, double RecordMs, double PrepareMs, double EncodeMs, double SubmitMs, double SubmitCompletionCpuMs, double DisposeMs, double RetireMs, double FrameCpuWallMs, double? GpuRecordedSpanMs, long AllocatedProcessWide, int LayerCount, int CommandCount);
 
     private sealed class WorkloadSlot : IDisposable
     {
@@ -373,11 +433,16 @@ internal static class RenderingWorkloadRunner
                 }
                 else if (arg == "--quick")
                 {
+                    if (quick)
+                    {
+                        throw new ArgumentException("Duplicate option: --quick");
+                    }
+
                     quick = true;
                 }
                 else if (arg is "--suite" or "--case" or "--count" or "--warmup" or "--samples" or "--frames-in-flight" or "--mode" or "--artifacts" or "--target-width" or "--target-height")
                 {
-                    if (++i >= args.Length || !values.TryAdd(arg, args[i]))
+                    if (++i >= args.Length || string.IsNullOrWhiteSpace(args[i]) || args[i].StartsWith("--", StringComparison.Ordinal) || !values.TryAdd(arg, args[i]))
                     {
                         throw new ArgumentException($"Missing or duplicate option: {arg}");
                     }
@@ -399,6 +464,22 @@ internal static class RenderingWorkloadRunner
                 return value;
             }
 
+            if (quick && mode != "--workload-cpu")
+            {
+                throw new ArgumentException("--quick requires --workload-cpu.");
+            }
+
+            string[] hardwareOptions = ["--warmup", "--samples", "--frames-in-flight", "--mode", "--target-width", "--target-height"];
+            if (mode != "--workload-hardware" && hardwareOptions.Any(values.ContainsKey))
+            {
+                throw new ArgumentException("Hardware options require --workload-hardware.");
+            }
+
+            if (mode != "--workload-cpu" && values.ContainsKey("--artifacts"))
+            {
+                throw new ArgumentException("--artifacts requires --workload-cpu.");
+            }
+
             string renderMode = values.GetValueOrDefault("--mode", "stages");
             if (renderMode is not ("stages" or "pipeline"))
             {
@@ -411,7 +492,7 @@ internal static class RenderingWorkloadRunner
                 throw new ArgumentException("Stages mode requires one frame in flight.");
             }
 
-            return new(mode ?? throw new ArgumentException("Missing workload command."), values.GetValueOrDefault("--suite", "all"), values.GetValueOrDefault("--case"), Number("--count", 200, 1, 100000), Number("--warmup", 41, 0, 2000), Number("--samples", 120, 1, 10000), depth, renderMode == "pipeline", quick, values.GetValueOrDefault("--artifacts", "artifacts/rendering-workloads/bdn"), (uint)Number("--target-width", 1280, 1, 16384), (uint)Number("--target-height", 720, 1, 16384));
+            return new(mode ?? throw new ArgumentException("Missing workload command."), values.GetValueOrDefault("--suite", "all"), values.GetValueOrDefault("--case"), Number("--count", 200, 1, 100000), Number("--warmup", 41, 0, 2000), Number("--samples", 120, 1, 10000000), depth, renderMode == "pipeline", quick, values.GetValueOrDefault("--artifacts", "artifacts/rendering-workloads/bdn"), (uint)Number("--target-width", 1280, 1, 16384), (uint)Number("--target-height", 720, 1, 16384));
         }
     }
 }
