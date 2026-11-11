@@ -1,4 +1,4 @@
-# ADR-DIAGNOSTICS-0007: 本体開発の性能調査を共通のフレーム記録で行う
+# ADR-DIAGNOSTICS-0007: 本体開発の性能計測を標準 .NET トレースで行う
 
 - 状態: 提案
 - 日付: 2026-11-11
@@ -6,148 +6,151 @@
 
 ## 背景
 
-Lumyte 本体の開発者は、遅い処理を特定し、変更前後でその原因が改善したかを確認したい。UI の詳細調査は製品ソースへの計測パッチと専用集計器、RenderGraph は個別の集計と単発キャプチャを使うため、同じフレームの更新・描画準備・送信・待機を一つの記録として比較しにくい。
+Lumyte 本体の開発者は、重いフレームの処理段階と作業量を、ランタイムのスタックサンプルや GC 情報と一緒に調べたい。調査ごとの計測パッチと専用集計器では通常実行との比較が難しく、独自の収集・保存基盤まで持つと .NET の診断機能と責務が重複する。
 
-基準コードの `tools/benchmarks/ui-device/DetailedDiagnostics.cs` は任意パッチが追加する内部 callback を取得し、処理名ごとの時間と割当を集計する。同じ基準の `src/Diagnostics/Lumyte.Diagnostics.RenderGraph/RenderGraphDiagnostics.cs` は通常時の固定サイズ集計と、要求された graph run だけの Activity を提供する。GPU 計測は `tools/benchmarks/drawing2d-incremental/HardwareGpuTimer.cs` にある Vulkan 専用のベンチマーク実装で、共通バックエンド機能ではない。
+基準コードの `tools/benchmarks/ui-device/DetailedDiagnostics.cs` は任意パッチの callback から詳細値を集計する一方、同じファイルの `DeviceBenchmarkEvents` は既に `EventSource` でフレーム marker を発行する。`tools/benchmarks/ui-device-trace/Program.cs` は標準トレースを読み取る解析器の入口である。RenderGraph の `src/Diagnostics/Lumyte.Diagnostics.RenderGraph/RenderGraphDiagnostics.cs` は既存の概要集計と要求時の Activity を提供する。
 
 ## 決定
 
-本体開発用の計測を、フレームに関連付けた CPU 区間・作業量カウンター・利用可能な GPU 区間という共通の記録契約にそろえる。既定は無効、通常の概要集計と有限区間の詳細キャプチャを分け、既存ベンチマークと実アプリの通常実行から同じ意味のデータを取得できるようにする。
+本体の処理区間・フレーム・作業量を `EventSource` で発行し、EventPipe と `dotnet-trace` によってランタイムイベントと同じ `.nettrace` へ収集する。Lumyte が追加するのは処理の意味と明示的な相関情報であり、収集バッファ、独自 sink、専用セッション API、保存形式、ビューアは新設しない。
 
-対象は本体の処理段階と資源利用の調査である。アプリ作者向けの安定した計測 API、UI 要素への帰属、専用ビューア、リモート操作の追加は今回の判断に含めない。公開 API と既存診断操作の契約は変更せず、以下では開発用の内部計測契約を定める。
+対象は本体開発用の計測である。既存の `System.Diagnostics.Metrics` による概要値と `ActivitySource` による論理的な trace は維持するが、細粒度の全フレーム計測を Activity へ置き換えない。アプリ作者向けの安定した計測 API、UI 要素への帰属、リモート診断操作の追加は対象外とする。
 
 ### 利用者の変更前・変更後
 
-同じ「UI を更新して描画する際の遅さを調べる」操作を比較する。
-
-変更前は、調査する checkout に計測パッチを適用し、専用ハーネスの callback と出力を使う。基準コードの `tools/benchmarks/ui-device/detail-instrumentation.patch` と `DetailedDiagnostics` がこの経路であり、他の通常実行経路には同じ記録が自動的には付かない。
+同じ「UI 更新から描画までの遅さを調べる」操作を比較する。変更前は `tools/benchmarks/ui-device/detail-instrumentation.patch` を適用して専用ハーネスを build し、`DetailedDiagnostics` の集計とランタイムの trace を照合する。通常アプリには同じ計測点がない。
 
 ```sh
 git apply tools/benchmarks/ui-device/detail-instrumentation.patch
 dotnet build tools/benchmarks/ui-device -c Release
 ```
 
-変更後は次の操作を開発ホストとベンチマークハーネスの両方で行う。これは提案する手順であり、既存のコマンドや登録 API を表すものではない。
+変更後は製品の計測点を有効にするためのパッチを適用せず、Release build のアプリまたは既存ベンチマークへ標準ツールを接続する。以下の provider は本 ADR で提案する名前であり、基準コードに実装済みの名前ではない。`12345` は調査対象の PID に置き換える。ツールは別途導入済みとする。
 
-1. 実行単位の計測セッションを作り、処理区間の種類、記録上限、出力先、実行環境を設定する。製品ソースへの調査用パッチは適用しない。
-2. 同じ入力でウォームアップし、その後の連続する 120 フレームを詳細記録する。ウォームアップと測定の区別を記録に残す。
-3. フレームごとの更新・layout・描画準備・command 記録・submit・待機と、それぞれの作業量をタイムラインおよび生データで調べる。存在しない処理段階は追加しない。
-4. 変更前後を同じ条件で実行し、詳細記録で原因を調べ、計測を無効にしたベンチマークで性能差を検証する。
-
-ホストの起動、デバイス作成と既存描画処理の呼び出しは維持する。追加する責務は計測セッションの所有、フレーム識別子の伝播、記録の完了と出力であり、描画資源の解放責任は変えない。
-
-### 既存診断との境界
-
-[診断通信の「決定」](DIAGNOSTICS-0001-diagnostics-transport.md#決定)が定める標準 .NET の Meter・ActivitySource・ILogger と、有界収集・通信の責務は維持する。[RenderGraph の「決定」](../graphics/GRAPHICS-0015-render-graph.md#決定)が定める通常集計・要求時の構造キャプチャも維持し、プロファイルの開始だけで構造 snapshot を毎フレーム生成しない。
-
-詳細な全区間を Activity に変換して既存の通信キューへ流すのではなく、開発セッションが所有する専用の有界記録を使う。これは観測用途の固定レコードであり、診断操作・W3C trace・分散 span の新しい生成 API ではない。既存の trace ID と graph ID・run ID は存在する場合に関連情報として保持し、異なる記録の ID を同一視しない。
-
-内部契約は `Lumyte.Profiling` という、通信やドメインに依存しない低層の計測アセンブリに置く。本体モジュールと開発ホストからこのアセンブリを参照し、逆方向の参照は持たせない。計測する本体モジュールと開発ホストだけを明示的な `InternalsVisibleTo` の対象にし、内部型を利用するために公開 API へ昇格させない。ホストが実行スコープを作る際に内部の接続点へ sink を渡し、その実行のワーカーへ伝播する。公開 DI 契約や任意アプリからの登録 API は追加しない。
-
-計測点は通信・ファイル・ビューアに依存しない。RenderGraph には開発ホストが既存 constructor の observer 引数へ内部 composite adapter を渡す。adapter は既存の診断 observer を保持し、`IsEnabled` は診断とプロファイルの論理和とする。`RequestCapture` は既存 observer へ委譲し、返る構造 capture 要求を維持する。`Begin` の既存 trace scope は保持して確実に解放し、compile・record の成功時間・統計・snapshot と失敗通知を既存 observer へそのまま配送する。プロファイル側は同じ通知の計時値を再利用する。現行 observer は正確な開始 tick を渡さないため、通知の受信時刻と duration によるタイムライン上の配置は推定と明示し、通知遅延を含み得る境界を厳密な重なり判定や自己時間の算出に使わない。処理結果通知由来の区間として、既存 trace と新しい独立計時を二重に積まない。既存 observer がない場合も同じ adapter を使用でき、公開 constructor と登録 API は変更しない。
-
-### 計測モードと負荷
-
-- 無効: 区間ごとの時計取得、ID 生成、文字列整形、記録用の割当、GPU query を行わない。無効判定と事前登録済みの計測点は残せる。
-- 概要: 登録済みの段階ごとに件数・時間合計・最大値・作業量を固定サイズで集計する。イベント列を保持せず、個々のフレームの p95 をこの集計から推定しない。
-- 詳細: 要求した次のフレーム境界から、指定フレーム数までの区間とカウンターを保持する。フレーム数に加え、記録 byte 数・登録名数・スレッドレーン数・保持期限を起動前に制限する。
-
-設定値は正の値で上限内であることを開始前に検証し、無効な設定は開始を拒否する。製品の通常ビルドでも無効経路を保ち、開発専用計測点を条件付きコンパイルする場合はそのビルド条件も来歴に記録する。
-
-byte 上限は CPU イベントだけでなく、定義・進行中区間の管理・graph と trace の相関・GPU 結果・終端情報を含む全 managed 記録に適用する。さらに GPU 区間数、query 数、未回収結果数に実行スコープ全体の固定上限を設ける。GPU 計測枠が枯渇した場合は新しい query を発行せず、その理由と省略件数を固定管理領域へ残す。終端確定後も安全回収が必要な query はこの上限を消費し続け、次のキャプチャが同じ予算を超える場合は開始を拒否する。
-
-詳細記録ではシリアライズ、ファイル出力、通信、ビューア更新を計測点で行わない。記録領域は開始前に確保し、区間ごとの名前・タグの動的登録を禁止する。書き込みは空き領域を待たず、容量超過時は新しい記録を落として欠落数を別の固定サイズ管理領域へ数える。正確な負荷と実現可能な上限は検証対象であり、未測定の一定割合以下を保証しない。
-
-### 区間の意味と相関
-
-CPU 区間は単調増加時計の開始・終了 tick と周波数で表す経過時間である。OS のスレッド実行時間ではなく、プリエンプトや区間内の待機を含み得る。待機の計測点は、GPU 完了待ち、フレーム枠の再利用待ち、owner loop の待機などを別の段階として記録する。
-
-親区間の時間は子区間を含む。重なった区間、並列スレッド、CPU と GPU の時間を単純加算しない。同じレーンで欠落のない入れ子が確認できる場合に限り子区間の和集合を引いた自己時間を導出し、確認できない場合は未算出とする。
-
-実行ごとに Run ID、実行内で再利用しない正の Frame ID、区間ごとの Span ID と任意の Parent Span ID を持つ。ホストが採番して非同期作業へ明示的に渡し、thread local な「現在のフレーム」だけでは帰属を決めない。フレーム外の作業は Frame ID を 0 とし、再描画を省略したフレームも種別を記録する。
-
-開始・終了スレッドを保持し、スレッド移動した区間は非同期レーンに配置する。`GC.GetAllocatedBytesForCurrentThread` の差分は同一スレッドの同期区間だけで使用し、移動した区間は割当不明とする。全プロセスの割当と GC 停止情報は実行区間単位で別記録し、特定の処理やフレームへ正確に帰属した値とみなさない。
-
-区間の例は UI 更新、Measure、Arrange、描画データ生成、描画準備、RenderGraph compile、command 記録、submit である。細分化は調査対象を選んで有効化し、全関数の呼び出し記録は行わない。
-
-### 作業量カウンター
-
-時間を説明するため、処理要素数、再計算数、cache hit・miss、draw・batch・pass 数、upload byte 数、資源生成数を対応する処理段階で数える。各カウンターには単位、実測か推定か、差分か現在値か、集計範囲を登録する。取得不能は欠測として扱い、0 を記録しない。
-
-カウンターの値を持つ要素や GPU 資源自体を記録に保持しない。名前は開発者が登録した固定名を使用し、ユーザー文字列・ファイル内容・入力値を自動収集しない。
-
-### GPU 計測と資源寿命
-
-GPU 時間はバックエンドが timestamp 計測に対応するときだけ取得する。非対応・未準備・device lost を区別し、submit から完了通知までの CPU 経過時間で代用しない。既存のベンチマーク専用 reflection 経路を製品の共通 API として扱わない。
-
-記録にはデバイス・queue・周波数または timestamp period・有効 bit 数・計測境界を含める。GPU 内の差分だけが取得できる場合は CPU タイムラインの絶対位置を作らず、Frame ID と submission の識別子で対応付ける。CPU と GPU の時計の校正がない限り同一時刻軸上の配置を保証しない。
-
-query は同時進行するフレーム枠ごとに所有し、対応する submission の完了を確認してから読み出し・再利用・解放する。計測のための毎フレーム同期や追加の完了待ちを挿入せず、通常の完了確認後に結果を回収する。GPU 区間は排他的な GPU busy 時間ではなく、境界内の経過時間である。
-
-セッション停止は新しい記録の開始を止めるだけで、GPU 資源を解放する合図にはしない。失敗時もバックエンド本来の完了・device lost の規則に従って回収し、未回収の結果を欠測として終端状態へ含める。
-
-### セッションの所有と終端
-
-セッションはアプリまたはハーネスの実行スコープが所有し、別実行のサービスを static callback で捕捉しない。同じ実行の詳細キャプチャは同時に一つとし、実行中の再要求は拒否する。ワーカースレッドにはセッション世代と有効期間を持つ書き込み先を渡す。終了処理中は新しい区間を拒否し、既に開始済みの区間の終了と GPU 結果だけを受け付ける。終端確定後または異なる世代への通知は破棄する。
-
-状態は待機、記録中、終了処理中、完了、部分記録、取消、失敗とする。取消要求もまず終了処理中へ移し、既存区間の終了を期限まで受理した後に取消を確定する。終了処理では新しい区間を止め、既に始まった区間と GPU 結果を指定期限内で回収する。期限を超えた区間、容量超過、未対応 GPU、描画の失敗は原因別に残し、欠落した開始・終了を正常な 0ms 区間として補わない。
-
-未対応 GPU だけなら CPU キャプチャは完了できる。CPU 記録の欠落や未完了区間があれば部分記録とし、プロファイル自身の出力不能は失敗とする。記録の失敗を描画処理へ伝播させず、描画例外を握り潰さない。取消・停止後も GPU query の安全な回収責任は実行スコープに残る。
-
-### 内部契約の差分
-
-基準コードに共通のプロファイル sink はない。次は計測点と記録器の境界に追加する内部宣言の抜粋であり、公開パッケージ API の宣言ではない。レコードの時刻はセッションの CPU 単調時計の tick で、GPU 値は別の結果レコードとして保持する。
-
-```diff
-+namespace Lumyte.Profiling;
-+
-+// 実行スコープが所有する。描画の状態や GPU 資源を保持しない。
-+internal interface IProfileSink
-+{
-+    // 新しい区間を開始できる間だけ true。終了処理中は false。
-+    // 開始済み区間はこの値にかかわらず TryWrite で終了を通知する。
-+    bool IsEnabled { get; }
-+
-+    // 固定サイズの記録をコピーする。満杯・終端確定後は false。
-+    // 終了処理中は開始済み区間の終了だけを受け付ける。
-+    // 名前登録、待機、I/O、描画への例外伝播を行わない。
-+    bool TryWrite(in ProfileRecord record);
-+}
-+
-+internal enum ProfileRecordKind { SpanBegin, SpanEnd, Counter, FrameBegin, FrameEnd }
-+
-+internal readonly record struct ProfileRecord(
-+    ProfileRecordKind Kind, int DefinitionId, long FrameId,
-+    long SpanId, long ParentSpanId, long Timestamp, int ThreadId, long Value);
+```sh
+dotnet-trace collect --process-id 12345 \
+  --profile gc-verbose \
+  --providers "Microsoft-DotNETCore-SampleProfiler,Lumyte-UI-Application-Profiling:0xF:4,Lumyte-UI-Profiling:0xF:4,Lumyte-Drawing2D-Profiling:0xF:4,Lumyte-RenderGraph-Profiling:0xF:4" \
+  --output lumyte.nettrace
 ```
 
-Run ID、時計周波数、定義一覧と上限はセッションのヘッダーに一度記録する。`DefinitionId` は区間名または単位付きカウンターの定義を参照する。開始・終了は同じ Span ID、同じ親とフレームを持ち、終了が開始と異なる thread でも明示的に対応付ける。レコードを個別に落としても復元不能を検出できるよう、欠落数と未完了区間数を出力する。
+1. `dotnet-trace ps` で対象を選び、必要な provider と keyword だけを有効にして収集を開始する。起動直後も必要なら標準の `collect -- <実行コマンド>` でアプリを起動する。
+2. ウォームアップ後に調査する操作やシナリオを実行する。既存ベンチマークではウォームアップと測定の marker で対象区間を分ける。
+3. Enter または `--duration` によって標準の収集セッションを止め、`.nettrace` を保存する。フレーム数指定はベンチマークが実行する仕事量の指定であり、独自の収集セッション機能にはしない。
+4. PerfView のイベント表示などで Lumyte の区間とランタイム情報を調べる。自動比較が必要な場合は既存の TraceEvent 解析経路を再利用し、対象フレームの分布を抽出する。
+5. 改善候補は同じ入力で比較し、性能差の採否は詳細トレースを無効にしたベンチマークでも確認する。
 
-### 出力と比較
+接続可能な .NET ランタイム、診断ポートへのアクセス、対象と同じ権限など、標準ツールの前提に従う。ブラウザー、診断無効のランタイム、NativeAOT 等で同じ取得方法が使えるとは保証せず、対応可否を環境ごとに明示する。
 
-セッションは schema version 付きのヘッダー、定義、イベント列、GPU 結果、終端情報を生データとして出力する。ヘッダーには対象とハーネスの commit・未コミット差分の識別、ビルド設定と実行バイナリの hash、runtime、OS、CPU、GPU、driver、backend、描画先サイズ、提示方式、同時進行フレーム数、入力 seed、ウォームアップ数、計測モード・上限・有効段階を残す。取得できない情報は不明とする。
+### 標準機能の役割分担
 
-生データから Chrome Trace Event 形式へ変換し、Perfetto などの既存ビューアで区間を調べる。非同期区間・欠落・時計の異なる GPU 結果を変換で隠さず、欠落情報を生データと変換出力の双方に残す。関数の CPU サンプリング、型別 allocation、GC 解析は .NET の既存診断ツールを使い、同じ測定区間の marker で関連付ける。
+- `EventSource`: フレーム境界、処理区間、作業量、取得可能な GPU 結果を固定スキーマのイベントとして発行する。
+- EventPipe と `dotnet-trace`: provider の有効化、ランタイム情報との収集、バッファリング、保存、収集開始・停止を担当する。
+- `System.Diagnostics.Metrics` と `dotnet-counters`: 通常調査用の件数・時間合計・最大値などの概要を扱う。個々のフレームの p95 を合計と最大値から推定しない。
+- `ActivitySource`: 既存の論理的な処理追跡を継続する。フレーム計測のために毎区間の Activity を生成しない。
 
-集計には対象母集団、単位、件数、中央値・p95・最大値を含める。個々のフレーム分布と反復平均の分布を分け、欠落がある記録を正常な完全分布として比較しない。詳細計測の有無、直列実行と複数フレーム並行、headless と提示ありの条件が違う結果は別系列にする。
+[診断通信の「決定」](DIAGNOSTICS-0001-diagnostics-transport.md#決定)の Meter・ActivitySource・ILogger と既存の有界収集・通信は維持する。新しい EventSource の詳細イベントを既存診断の通信キューへ複製しない。Metrics を直接 `dotnet-counters` で見る経路と、既存診断 collector が受ける概要値は別の購読経路として扱う。
+
+`.nettrace` を一次資料とし、独自の生データ形式を正本にしない。スタック向けの Speedscope 変換だけで独自イベントもすべて保存・表示できるとは扱わない。Perfetto 用変換や専用 UI は取得の前提にせず、必要な場合にイベントの対応を検証して選択する。
+
+### Provider と計測負荷
+
+provider は各責務の assembly が所有する。UI.Application は `Lumyte-UI-Application-Profiling`、UI は `Lumyte-UI-Profiling`、Drawing2D は `Lumyte-Drawing2D-Profiling`、RenderGraph は `Lumyte-RenderGraph-Profiling` を使う。同じ provider 名を複数 assembly から定義しない。共通 sink 用 assembly と計測のための新しい `InternalsVisibleTo` は追加しない。
+
+keyword はフレーム・測定 marker が `0x1`、CPU 区間が `0x2`、作業量が `0x4`、GPU 結果が `0x8` とし、通常は Informational level で発行する。収集例の `0xF` は全種類を選ぶ。フレーム単位の解析ではホストの `0x1` も必ず購読し、段階イベントだけの取得から完全なフレーム分布を作らない。イベント ID・payload の単位と意味は固定し、互換性のない変更には Event version を付ける。
+
+各計測点は `IsEnabled(level, keywords)` を時計取得や payload 作成より前に確認する。未購読時は計測用の時計取得・相関 ID 生成・文字列整形・割当・GPU query を行わない。既存処理や別の診断購読が元から行う計時と ID 生成まで除去するという保証ではない。
+
+有効時も固定名、数値 ID、型付き payload を使い、毎イベントの dictionary、任意オブジェクトの保持、同期 I/O を避ける。細分化は keyword と provider で選び、全関数の呼び出しを記録しない。EventSource の書き込み方法による boxing・割当も含め、無効時と有効時の負荷を実測する。一定割合以下の負荷は未測定のまま保証しない。
+
+### フレームと処理区間の契約
+
+相関キーは実行を表す `Guid` の ProfileRunId、実行内で再利用しない正の Frame ID、provider 内で再利用しない Span ID と任意の Parent Span ID とする。Span の識別には provider 名も含める。Parent Span ID は同じ provider 内の明示的な親に限り、assembly をまたいだ任意の処理の親子関係を推測しない。異なる provider の処理は ProfileRunId と Frame ID で同じフレームにまとめる。
+
+assembly 間の伝播には標準の `Activity.Current` と `Activity.SetCustomProperty` を使う。ホストは制御 keyword の購読中だけ実行の ProfileRunId を作り、各フレームを標準 `Activity` の相関スコープで囲む。`Lumyte.Profiling.RunId` に boxed Guid、`Lumyte.Profiling.FrameId` に boxed long を設定する。これは新規に追加する内部動作であり、基準コードに既存の伝播機能があるという説明ではない。`ActivitySource.StartActivity` の listener 有無に依存せず、相関用の `new Activity(...).Start()` を使用し、終了時に Dispose して元の Current を復元する。個々の処理段階には Activity を生成しない。フレーム単位の Activity と boxing の負荷は有効時の負荷へ含める。
+
+下流 assembly は `Activity.Current` から Parent を辿り、この二つの標準 custom property を持つ最も近い Activity を読む。これにより共有の内部型、公開引数の変更、新しい IVT は不要である。区間開始時に取得した数値を終了まで保持し、終了時の Current で帰属を変更しない。通常の async 継続では ExecutionContext による伝播を使い、flow を抑制する既存 worker へは開始側で取得した Activity をその work item の内部フィールドで渡す。参照を保持するだけで所有権は移さず、worker がフレーム Activity を Dispose しない。値がない場合は ProfileRunId を空、Frame ID を 0 とし、未帰属として残す。別実行の状態を static callback で捕捉しない。
+
+開始と終了イベントは同じ相関キーを持つ。イベントヘッダーの時刻と thread 情報を使い、非同期継続では終了が別 thread でも対応付ける。例外時も finally 相当で失敗の終了を発行するが、途中からの接続・停止・欠落では片側だけ存在することを許容する。解析器はその区間を未完了に分類し、0ms の正常区間へ補完しない。
+
+CPU 区間は単調時計の経過時間であり、OS がスレッドを実行した CPU 時間ではない。更新、Measure、Arrange、描画データ生成、描画準備、compile、command 記録、submit と、GPU 完了待ち・フレーム枠待ち・owner loop の待機を別の段階として扱う。親区間は子を含み、並列や入れ子の時間を単純加算しない。欠落のない同一 thread の入れ子でのみ子区間の和集合を引いた自己時間を算出する。
+
+作業量は処理要素数、再計算数、cache hit・miss、draw・batch・pass 数、upload byte 数、資源生成数を段階に関連付ける。単位、実測か推定か、差分か現在値か、集計範囲を定義し、取得不能は欠測とする。画面の内容やユーザー文字列・入力値は自動収集しない。
+
+GC 停止・allocation sample・スタックサンプルは標準ランタイムイベントを利用する。スタックのサンプル比率を実 CPU 使用時間の割合、allocation sample を正確な全割当とみなさない。同一 thread の同期区間で明示的に取る割当差分と、全プロセスの割当近似値は別の値とし、スレッド移動した区間の差分は欠測とする。
+
+### 内部イベント宣言の差分
+
+公開ライブラリ API と既存の診断操作は変更しない。次は基準コードにない、UI assembly 内の EventSource 宣言の抜粋である。呼び出しは本体内に限定し、標準ツールは provider 名で購読する。独自の span 型や記録用 interface は導入しない。
+
+```diff
++namespace Lumyte.UI;
++
++// using System.Diagnostics.Tracing; を使う内部計測型。
++[EventSource(Name = "Lumyte-UI-Profiling")]
++internal sealed class UiProfilingEvents : EventSource
++{
++    // 0x2 = CPU 区間。発行前に同じ level/keyword の IsEnabled を確認する。
++    [Event(1, Level = EventLevel.Informational, Keywords = (EventKeywords)0x2)]
++    public void StageBegin(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage);
++
++    // 同じキーで対応付ける。outcome は成功・取消・失敗を表す固定コード。
++    [Event(2, Level = EventLevel.Informational, Keywords = (EventKeywords)0x2)]
++    public void StageEnd(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int outcome);
++}
+```
+
+EventSource の Start/Stop の自動 activity ID 相関には依存せず、上の明示キーで非同期区間を対応付ける。フレーム境界とカウンターも同じキー体系で各所有 assembly から発行する。EventSource の singleton は固定スキーマの発行器だけを所有し、実行スコープ・描画資源・ユーザーオブジェクトを保持しない。
+
+### 既存 RenderGraph 診断との共存
+
+[RenderGraph の「決定」](../graphics/GRAPHICS-0015-render-graph.md#決定)の概要集計と要求時の構造キャプチャを維持する。EventSource の購読だけで詳細 snapshot や graph ごとの Activity を毎フレーム作らない。ホストのフレーム相関用 Activity は前節の有効時の契約に従う。
+
+RenderGraph 本体の計測境界から、その assembly の EventSource へ直接発行する。`RenderGraphRun.RunId` は既存どおり Compile ごとの Guid で、ProfileRunId とは別の `GraphRunId` としてイベントへ記録する。Compile の入口で標準 Activity から ProfileRunId と Frame ID を読み、生成した GraphRunId と対応付ける。明示指定された `Compile(frameId: ...)` と相関用 Frame ID が一致しなければ不一致と記録し、勝手に統合しない。対応は既存の CompiledRenderGraph が内部の数値情報として保持し、別フレームでの Record や後続通知でも同じキーを使う。フレーム Activity 自体を plan に保持せず、GraphId／GraphRunId／ProfileRunId の違いを失わない。既存 observer は引き続き constructor で受け取り、`RequestCapture`、`Begin` の trace scope、成功の時間・統計・snapshot と失敗通知を変更しない。これにより observer を差し替える composite と新しい公開登録 API は不要である。
+
+observer と EventSource が両方有効なら同じ内部時計の開始・終了を共有し、独立の時計を二重に取らない。既存 observer が要求する計時だけは購読がなくても維持する。EventSource は既存の duration から開始時刻を推定せず、実際の処理境界のイベントとして記録する。
+
+### バッファ、欠落と停止
+
+収集容量は標準ツールの `--buffersize` で指定し、実行を待たせないドロップ型の収集を使う。対応版で buffering mode を指定する場合も Drop を選ぶ。無制限の独自キューやアプリ側のキャプチャ履歴は追加しない。
+
+バッファ上限は記録ファイルの総サイズや実行時間の上限ではない。取得者は duration または明示停止で範囲を制御し、保存先の容量を管理する。解析器は取得可能な lost-event 情報、フレーム番号の欠落、開始・終了不一致を検査する。標準形式から正確な欠落数を取得できない場合は不明とし、完全記録と断定しない。
+
+収集停止はアプリの停止・GPU 完了待ち・資源解放を意味しない。停止前に開始し停止後に終わった区間や遅れて回収した GPU 結果は、記録にない場合がある。有限シナリオで完全な結果が必要なら、ハーネスが既存の終了処理を完了して測定終了 marker を出した後で収集を止める。
+
+### GPU 計測の境界
+
+GPU timestamp は .NET の標準ランタイムイベントだけでは取得できない。基準コードの `tools/benchmarks/drawing2d-incremental/HardwareGpuTimer.cs` は Vulkan 専用のベンチマーク実装であり、これを製品の共通 API や全 backend 対応とみなさない。CPU とカウンターの標準収集を基本とし、GPU 計測は実際に対応した経路だけが結果を EventSource へ発行する。
+
+GPU 結果には Frame ID、submission ID、device・queue、計測境界、timestamp period または周波数、有効 bit 数を含める。非対応・結果未準備・device lost を区別し、submit から完了通知までの CPU 経過時間で代用しない。CPU と GPU の時計を校正しない場合は ID で対応付け、同一時刻軸上の絶対位置を作らない。
+
+query は各フレーム枠が所有し、通常の submission 完了確認後に読み出し・再利用・解放する。追加同期や毎フレーム待ちを計測のために挿入しない。query 数と未回収結果数には実行全体の固定上限を設け、枯渇時は新しい計測を省略する。購読停止後も安全回収が必要な資源は上限へ算入し、再接続のたびに増殖させない。
+
+### 来歴と比較
+
+測定開始・終了 marker で Run ID、シナリオ、ウォームアップと測定の区分、期待フレーム数を残す。来歴は制御用 keyword `0x1` で低頻度に発行し、既存ベンチマークの出力にも残す。接続前に開始 marker が終わっている通常アプリでは、次のフレーム境界で有効化を検知して実行の識別と来歴を再発行する。複数の標準収集セッションが重なっても途中接続を扱えるよう、制御 keyword の購読中は次のフレーム境界で最大 1 秒に一回、同じ来歴を再発行する。解析器は対応する来歴が届くまで実行属性を不明とする。
+
+対象とハーネスの commit、未コミット差分・実行バイナリの hash、build、runtime、OS、CPU、GPU、driver、backend、描画先サイズ、提示方式、同時進行フレーム数、入力 seed と取得した provider・keyword・ツール版を照合する。来歴の発行頻度は制御し、動的名を毎区間登録しない。取得できない情報は不明とする。
+
+中央値・p95・最大値は母集団・件数・単位を示して集計する。個々のフレームと反復平均、直列と複数フレーム並行、headless と提示ありは分ける。詳細計測の有無や provider が違う結果を同条件と扱わず、欠落区間を都合よく除外して改善を主張しない。
 
 ## 検討した代替案
 
-- 調査ごとのパッチとハーネスを継続する: 対象だけを短く計測できるが、通常実行との接続と区間の意味を毎回作り直す。共通の記録契約にそろえ、細分化する計測点だけを選択可能にする。
-- 標準 Activity だけで全区間を記録する: 既存診断へ直接接続できるが、全フレームの細かいイベントを通常の span として作ると生成負荷と既存キューの競合が増える。低頻度の既存 trace は維持し、詳細キャプチャを分離する。
-- 外部プロファイラだけを使う: 関数・GC・GPU の深い解析に有効だが、Lumyte の段階名、作業量、フレーム帰属を自動ではそろえられない。外部解析を置き換えず、その解釈に必要な文脈だけを本体側で記録する。
-- 専用の可視化 UI を作る: 表示を最適化できるが、取得契約が固まる前にビューアまで保守する負担が生じる。生データと既存形式への変換を優先する。
+- 独自 sink・バッファ・保存形式を用意する: 任意のフレーム数や詳細な保持予算を直接制御できるが、EventPipe の収集責務を再実装し、ランタイム情報との統合も必要になる。標準経路の負荷や機能が実測で不足した部分だけを個別に判断する。
+- ActivitySource だけで全区間を記録する: 既存診断との接続は容易だが、細粒度の全フレーム記録に論理 trace の生成負荷とサンプリング契約を持ち込む。論理 trace は維持し、性能調査のイベントは EventSource に分ける。
+- 外部サンプラだけで調査する: 関数・GC の解析に有効だが、Lumyte の処理段階、作業量、フレーム帰属は自動で分からない。必要な文脈を EventSource で補う。
+- 調査ごとの計測パッチを維持する: 小さな調査には適するが、通常実行との比較と保守が難しい。再利用する主要計測点を本体内へ置く。
 
 ## 結果と影響
 
-開発者は同じフレームの処理時間と作業量を横断して調査でき、変更前後で記録の意味と来歴を照合できる。計測点の管理、相関情報の伝播、有界記録と変換器の保守が増え、詳細計測そのものの実行負荷は残る。公開 API の互換性と既存の診断権限・通信仕様は維持する。
+開発者は標準ツールを対象へ接続する手順で、Lumyte の処理と .NET ランタイムの情報を同じトレースから調べられる。本体側には固定イベントの保守と相関情報の伝播が増えるが、独自収集セッションと保存基盤の保守は不要になる。公開 API と既存の診断権限・通信仕様を維持する。
 
-検証では次を受け入れ条件とする。数値の改善を本 ADR 自体で保証せず、性能の採否には計測無効時のベンチマークを使う。
+受け入れ条件は次とする。文書で数値上の性能改善や標準ツールの全環境対応を保証しない。
 
-- 無効時に時計取得・記録用割当・GPU query がなく、同じ入力で描画結果・例外・資源寿命が変わらない。概要・詳細モードの追加負荷は同一ビルドの無効実行と比較して報告する。
-- 決定的な入力で段階ごとの作業量を確認し、キャッシュ再利用と再計算、描画省略と提出済みフレームを区別できる。
-- 入れ子、複数スレッド、非同期継続、複数実行スコープで、親・フレーム・実行の取り違えが起きない。スレッド移動時の割当値は欠測になる。
-- 容量超過、停止との競合、未終了区間、取消、出力不能を注入し、全管理領域のメモリー上限、非待機の書き込み、欠落数と終端状態を確認する。GPU query 枯渇と未回収のままの再要求でも実行スコープの予算が増殖しない。
-- GPU 非対応、結果未準備、同時進行フレーム、device lost で、追加同期や早すぎる query 再利用・解放が起きず、CPU 経過時間を GPU 時間として出力しない。
-- 既存 RenderGraph 診断との同時利用でも二重計時と毎フレームの構造 snapshot がなく、既存操作の結果と権限が変わらない。
-- 生データと変換後の件数・相関・時間単位・欠落が一致し、ウォームアップ除外、分位点の母集団、最後の GPU 回収を含む測定境界を再現できる。
+- 未購読時に追加の時計取得・記録用割当・GPU query がなく、描画結果・例外・資源寿命が変わらない。有効時は同一 build の未購読実行と負荷を比較する。
+- `dotnet-trace` の実接続で Lumyte とランタイムの双方のイベントを取得し、型・ID・単位・version・keyword と明示相関を検証する。取得例は使用するツール版で確認する。
+- 通常アプリへの途中接続、ウォームアップ、複数実行、非同期継続、例外でフレームと親区間を取り違えない。スタックサンプルを実 CPU 時間と誤表示しない。
+- バッファ圧迫・途中停止・終了不一致を解析し、欠落または不明を明示する。収集停止でアプリや GPU 資源を早期解放しない。
+- 既存 RenderGraph observer と同時利用して、通知・構造 capture・Activity の条件が変わらず、独立計時が二重化しない。
+- GPU 非対応・query 枯渇・結果未準備・device lost で安全回収と固定上限を維持する。CPU の標準収集を GPU 機能の不足で妨げない。
+- ベンチマークの期待フレーム数、実取得数、来歴、ウォームアップ除外と集計母集団を照合し、トレース無効の性能比較でも改善を確認する。
