@@ -124,7 +124,7 @@ texture の layout、access、subresource は利用側が指定します。Undef
 binary signal の消費を native fence の値に対応付けます。未 signal の wait、二重 signal、同一提出の重複 semaphore は拒否します。
 
 Map は GPU を待ちません。Readback は明示的な submission 完了後に読んでください。
-WaitAsync は fence を非 blocking に照会し、1 ms 間隔で非同期に待機します。キャンセルは待機のみを取り消します。
+WaitAsync は最初の未完了待機でID3D12Fence.SetEventOnCompletionを登録し、Windows eventのThreadPool登録待機から共有Taskを完了します。1 msタイマーやcallerごとのblocking workerは使用しません。キャンセルはそのcallerの待機のみを取り消し、native登録と他のcallerの待機を維持します。native登録は別のCOM参照とevent handleをsignalまで保持するため、全callerのキャンセルやsubmission.Disposeでもhandleを早期解放しません。Statusは従来どおり非blocking照会です。
 Dispose は GPU 待機・依存 resource の生存走査を行いません。利用者が GPU 使用完了と並行操作の同期を保証し、
 submission／command／pipeline／resource を device より先に解放してください。
 提出後の signal 失敗では command を Faulted にし、再提出を禁止します。

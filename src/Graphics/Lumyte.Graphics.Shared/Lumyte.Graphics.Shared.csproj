@@ -6,6 +6,8 @@
     <Description>Shared graphics shader layout, dependency tracking and binding implementation.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Graphics.Vulkan" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
