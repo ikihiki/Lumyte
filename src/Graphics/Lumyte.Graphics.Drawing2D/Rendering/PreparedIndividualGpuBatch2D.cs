@@ -16,6 +16,9 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
     private readonly IGraphicsTexture _fallback;
     private readonly IGraphicsTextureView _fallbackView;
     private readonly ShaderArtifact _artifact;
+    private long _profileInstructions;
+    private long _profileVectors;
+    private long _profileCopied;
     private bool _recorded;
     private bool _disposed;
 
@@ -109,23 +112,43 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
     internal static async ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
-        ArgumentNullException.ThrowIfNull(context);
-        cancellationToken.ThrowIfCancellationRequested();
-        var batch = new PreparedIndividualGpuBatch2D(context, cancellationToken);
+        using var profile = DrawingProfileScope.Start(8);
+        PreparedIndividualGpuBatch2D? batch = null;
         try
         {
-            for (int i = 0; i < commands.Length; i++)
+            ArgumentNullException.ThrowIfNull(context);
+            cancellationToken.ThrowIfCancellationRequested();
+            batch = new PreparedIndividualGpuBatch2D(context, cancellationToken);
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                await batch.AddAsync(commands.Span[i], cancellationToken).ConfigureAwait(false);
-            }
+                for (int i = 0; i < commands.Length; i++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await batch.AddAsync(commands.Span[i], cancellationToken, profile is not null).ConfigureAwait(false);
+                }
 
-            return batch;
+                profile?.Success();
+                return batch;
+            }
+            catch
+            {
+                batch.Dispose();
+                throw;
+            }
         }
-        catch
+        catch (Exception error)
         {
-            batch.Dispose();
+            profile?.Failure(error);
             throw;
+        }
+        finally
+        {
+            if (batch is not null)
+            {
+                profile?.Counter(6, batch._profileInstructions);
+                profile?.Counter(7, batch._profileVectors);
+                profile?.Counter(8, batch._profileCopied);
+            }
         }
     }
 
@@ -148,7 +171,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         }
     }
 
-    private async ValueTask AddAsync(DrawingCommand2D command, CancellationToken cancellationToken)
+    private async ValueTask AddAsync(DrawingCommand2D command, CancellationToken cancellationToken, bool profiling)
     {
         IArgumentTable table = Own(_context.Device.CreateArgumentTable(new() { TextureCapacity = DrawingProgram2D.MaximumInstructions + 3, SamplerCapacity = DrawingProgram2D.MaximumInstructions + 2, BufferCapacity = 2 }));
         IGpuRef<IGraphicsSampler> sampler = table.WriteSampler(0, _sampler);
@@ -167,6 +190,12 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
             program.Data.Add(default);
         }
 
+        if (profiling)
+        {
+            _profileInstructions += program.Instructions.Count;
+            _profileVectors += program.Data.Count;
+        }
+
         IGraphicsShaderDataBuffer<DrawingInstruction> instructions = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count));
         IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
@@ -174,6 +203,10 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         try
         {
             upload.CopyFrom(program.Instructions.ToArray());
+            if (profiling)
+            {
+                _profileCopied += (long)((ulong)program.Instructions.Count * upload.ShaderElementStrideInBytes);
+            }
         }
         finally
         {
@@ -184,6 +217,10 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         try
         {
             data.CopyFrom(program.Data.ToArray());
+            if (profiling)
+            {
+                _profileCopied += (long)program.Data.Count * 16;
+            }
         }
         finally
         {

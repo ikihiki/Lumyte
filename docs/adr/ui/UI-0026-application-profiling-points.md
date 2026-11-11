@@ -1,6 +1,6 @@
 # ADR-UI-0026: アプリケーションのフレーム所有権と待機を計測する
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-11
 - 基準コミット: `8ea844540cd98d2beb70eebb132e6086be66e662`
 
@@ -39,6 +39,12 @@ UI ホストの開発者は、遅いフレームが準備、描画面取得、�
 | 7 SurfaceResult | Acquire と Present の直後。区分と実際の SurfaceStatus、presenter 試行番号を記録する |
 | 8 DeviceRetired | `Frame.ConfirmDeviceRetirement` の初回状態変更。保持中フレームのキーで記録する |
 | 9 FrameResourcesReleased | Frame が正常に Dispose を終えた最初の 1 回。通常完了か確認済み退役かを記録する |
+| 10 OwnerRelation | OwnerDrain 開始直後に `rootSpanId: long` と `owner: Guid`（SourceId）を対応付ける。Control のみで工程購読がなければ rootSpanId は 0 |
+| 11 RunMetadata | `profileRunId: Guid` と runtime / operatingSystem / processArchitecture / backend / assemblyVersion / gpu / buildHash / seed / scenario / warmup の string。Control 初回有効フレームと、その後の受理フレーム境界で最大 1 Hz。即取得可能な実行時・OS・プロセス architecture・driver 型・assembly informational version 以外は `unknown`。ファイル I/O や GPU query は行わない |
+
+`SurfaceResult.kind` は `1 Acquire / 2 Present / 3 サイズ不一致で合成した Outdated`、`attempt` は同じホスト描画内の Presenter 呼出し試行番号（初回 1、capture 非対応後の再描画 2）とする。
+
+RunMetadata は同時収集セッションの途中接続にも最大 1 秒間隔で同じ実行を再通知する。ウォームアップ・シナリオ・期待フレーム数の測定開始終了 marker は既存ベンチマークの責務であり、本体は未取得値を推測しない。
 
 抑止理由は `1 回復中 / 2 間隔未到達 / 3 Drawing あり / 4 entry 停止中 / 5 StopFailed` に固定する。複数条件はこの順で一つに分類する。抑止は受理前なので FrameId = 0 とし、架空のフレーム開始・終了を作らない。
 

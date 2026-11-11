@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0030: Drawing2D の準備・再利用・記録を区別して計測する
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-11
 - 基準コミット: `8ea844540cd98d2beb70eebb132e6086be66e662`
 
@@ -27,7 +27,7 @@ Drawing2D の開発者は、フレーム準備の遅延が描画命令の変換�
 
 ### イベントと相関
 
-イベント ID は `1=StageBegin`、`2=StageEnd`、`3=StageCounter` に固定する。区間は Level 4（Informational）・Stages=2、集計は同レベル・Counters=4 を使う。予約 keyword は Control=1、GPU=8 とし、この provider では発火しない。EventSource の入れ子 `Keywords` クラスとその `const` フィールドは `public` に宣言し、provider 自体は内部に保つ。
+イベント ID は `1=StageBegin`、`2=StageEnd`、`3=StageCounter` に固定する。Stage 12 の解放操作は追加の `4=ReleaseOperation`（Level 4、Stages=2）で ProfileRunId、FrameId、対象 SpanId と operation（1=Retire、2=AbortUnsubmitted、3=Dispose、4=ReleaseAfterDeviceRetirement）を発行し、同じ区間に一意に対応付ける。区間は Level 4（Informational）・Stages=2、集計は同レベル・Counters=4 を使う。予約 keyword は Control=1、GPU=8 とし、この provider では発火しない。EventSource の入れ子 `Keywords` クラスとその `const` フィールドは `public` に宣言し、provider 自体は内部に保つ。
 
 イベントは `ProfileRunId(Guid)`、`FrameId(long)`、`SpanId(long)` と `ParentSpanId(long)`、数値 stage ID を持つ。SpanId は provider 内で一意にし、親は同じ provider の有効区間だけを指す。モジュール間は run/frame で結び、他 provider の span を親にしない。root の ParentSpanId は 0 とする。
 

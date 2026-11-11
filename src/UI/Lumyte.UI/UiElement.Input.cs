@@ -29,6 +29,7 @@ public partial class UiElement
         var bounds = UiInputBounds.From(origin, Size);
         Vector2 bodyOrigin = UiLayoutMath.Add(origin, ContentOffset);
         UiInputBounds clip = Widget.ClipToBounds ? ancestorClip.Intersect(bounds) : ancestorClip;
+        UiProfiling.Add(3, 301);
         InputVersion = version;
         InputFocusable = CanReceiveFocus;
         InputBounds = UiInputBounds.From(bodyOrigin, ContentSize).Intersect(clip);
@@ -48,6 +49,7 @@ public partial class UiElement
 
     internal UiElement? FindInputHit(Vector2 position, object? version)
     {
+        UiProfiling.Add(4, 401);
         if (!ReferenceEquals(InputVersion, version) || !_inputSubtreeBounds.Contains(position))
         {
             return null;

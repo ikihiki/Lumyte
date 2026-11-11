@@ -29,6 +29,8 @@ internal sealed class TestDevice : IGraphicDevice
 
     internal int FailureOnAllocation { get; init; }
 
+    internal Exception? AllocationException { get; init; }
+
     internal int Textures { get; private set; }
 
     internal int Buffers { get; private set; }
@@ -87,6 +89,11 @@ internal sealed class TestDevice : IGraphicDevice
 
     private void Allocate()
     {
+        if (AllocationException is { } failure)
+        {
+            throw failure;
+        }
+
         if (++_allocations == FailureOnAllocation)
         {
             throw new InvalidOperationException("Simulated allocation failure.");

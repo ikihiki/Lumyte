@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Pure 2D drawing commands and direct GPU rendering without a render graph dependency.</Description>
   </PropertyGroup>

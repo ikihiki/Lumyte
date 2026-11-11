@@ -17,6 +17,8 @@ internal abstract class UiDriverWindow : IAsyncDisposable
 
     internal UiHostedDrawingSource Source => _source;
 
+    internal UiApplicationProfiling.Key ProfileKey { get; set; }
+
     internal virtual IWindow? NativeWindow => null;
 
     internal virtual IUiWindowSource PresentationSource => Source;

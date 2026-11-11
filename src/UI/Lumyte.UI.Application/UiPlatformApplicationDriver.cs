@@ -427,7 +427,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             SurfaceStatus status;
             try
             {
-                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted);
+                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, crops.Count == 0 ? null : CompleteCapture, visuals, submitted: flight.Submitted, attempt: 1);
             }
             catch (NotSupportedException error) when (crops.Count != 0)
             {
@@ -436,7 +436,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                     capture.Completion.TrySetException(error);
                 }
 
-                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted);
+                status = await _presenter!.DrawAsync(window.Swapchain, scene, window.Source.SourceId, visuals: visuals, submitted: flight.Submitted, attempt: 2);
             }
 
             await flight.ResumeAsync();
@@ -542,17 +542,26 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
 
     internal override async ValueTask DrainWindowAsync(UiDriverWindow window)
     {
-        if (_lease is { IsUsable: false } lease)
+        using UiApplicationProfiling.Scope? profile = UiApplicationProfiling.Begin(27);
+        try
         {
-            await _graphics!.WaitForRetirementAsync(lease.State.Epoch);
-            if (_presenter is { } retired)
+            if (_lease is { IsUsable: false } lease)
             {
-                await retired.ReleaseAfterDeviceRetirementAsync();
+                await _graphics!.WaitForRetirementAsync(lease.State.Epoch);
+                if (_presenter is { } retired)
+                {
+                    await retired.ReleaseAfterDeviceRetirementAsync();
+                }
+            }
+            else if (_presenter is { } presenter)
+            {
+                await presenter.DrainAsync(window.Source.SourceId);
             }
         }
-        else if (_presenter is { } presenter)
+        catch (Exception profileError)
         {
-            await presenter.DrainAsync(window.Source.SourceId);
+            profile?.Failed(profileError);
+            throw;
         }
     }
 
@@ -603,7 +612,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         {
             if (window.Drawing is null && !window.Closing)
             {
-                window.Drawing = Application.DrawFrameAsync(window, window.Source.RecordRetainedFrame(Application.GraphicsGeneration));
+                window.Drawing = Application.RecordAndDrawFrame(window);
                 recorded = true;
             }
         }

@@ -70,39 +70,57 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
     internal static async ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken)
     {
-        context.ValidateResources();
-        cancellationToken.ThrowIfCancellationRequested();
-        if (context.RectangleResources() is not { } resources)
-        {
-            return await PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken).ConfigureAwait(false);
-        }
-
-        var result = new PreparedRectangleBatch2D(context);
+        using var profile = DrawingProfileScope.Start(5);
+        long runs = 0;
         try
         {
-            int start = 0;
-            while (start < commands.Length)
+            context.ValidateResources();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (context.RectangleResources() is not { } resources)
             {
-                bool fast = Eligible(commands.Span[start], context.Target);
-                int end = start + 1;
-                while (end < commands.Length && end - start < MaximumRectangles && Eligible(commands.Span[end], context.Target) == fast)
-                {
-                    end++;
-                }
-
-                ReadOnlyMemory<FillRectCommand2D> run = commands.Slice(start, end - start);
-                result._batches.Add((IRetainedCommandBatch2D)(fast
-                    ? await SolidBatch.PrepareAsync(context, resources, run, cancellationToken).ConfigureAwait(false)
-                    : await PreparedGpuBatch2D.PrepareAsync(context, run, cancellationToken).ConfigureAwait(false)));
-                start = end;
+                IPreparedCommandBatch2D fallback = await PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken).ConfigureAwait(false);
+                profile?.Success();
+                return fallback;
             }
 
-            return result;
+            var result = new PreparedRectangleBatch2D(context);
+            try
+            {
+                int start = 0;
+                while (start < commands.Length)
+                {
+                    bool fast = Eligible(commands.Span[start], context.Target);
+                    int end = start + 1;
+                    while (end < commands.Length && end - start < MaximumRectangles && Eligible(commands.Span[end], context.Target) == fast)
+                    {
+                        end++;
+                    }
+
+                    ReadOnlyMemory<FillRectCommand2D> run = commands.Slice(start, end - start);
+                    result._batches.Add((IRetainedCommandBatch2D)(fast
+                        ? await SolidBatch.PrepareAsync(context, resources, run, cancellationToken).ConfigureAwait(false)
+                        : await PreparedGpuBatch2D.PrepareAsync(context, run, cancellationToken).ConfigureAwait(false)));
+                    runs++;
+                    start = end;
+                }
+
+                profile?.Success();
+                return result;
+            }
+            catch
+            {
+                result.Dispose();
+                throw;
+            }
         }
-        catch
+        catch (Exception error)
         {
-            result.Dispose();
+            profile?.Failure(error);
             throw;
+        }
+        finally
+        {
+            profile?.Counter(9, runs);
         }
     }
 
@@ -224,55 +242,75 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
         internal static async ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, SolidRectangleResources2D resources, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken)
         {
-            var batch = new SolidBatch(context, resources);
-            Vector4[]? values = null;
+            using var profile = DrawingProfileScope.Start(9);
+            long vectors = 0;
+            long copied = 0;
             try
             {
-                int capacity = commands.Length * 6;
-                ClipStack2D? previous = null;
-                foreach (FillRectCommand2D command in commands.Span)
-                {
-                    if (!ReferenceEquals(previous, command.State.Clip))
-                    {
-                        capacity += command.State.Clip.Elements.Count * 3;
-                        previous = command.State.Clip;
-                    }
-                }
-
-                values = ArrayPool<Vector4>.Shared.Rent(capacity);
-                batch._instances = commands.Length;
-                batch._vectors = Fill(context.Target, commands.Span, values);
-                batch._entry = resources.Rent(batch._vectors);
-                await batch._entry.Upload.MapAsync(cancellationToken).ConfigureAwait(false);
+                var batch = new SolidBatch(context, resources);
+                Vector4[]? values = null;
                 try
                 {
-                    batch._entry.Upload.SliceElements(0, (ulong)batch._vectors).CopyFrom(values.AsSpan(0, batch._vectors));
+                    int capacity = commands.Length * 6;
+                    ClipStack2D? previous = null;
+                    foreach (FillRectCommand2D command in commands.Span)
+                    {
+                        if (!ReferenceEquals(previous, command.State.Clip))
+                        {
+                            capacity += command.State.Clip.Elements.Count * 3;
+                            previous = command.State.Clip;
+                        }
+                    }
+
+                    values = ArrayPool<Vector4>.Shared.Rent(capacity);
+                    batch._instances = commands.Length;
+                    batch._vectors = Fill(context.Target, commands.Span, values);
+                    vectors += batch._vectors;
+                    batch._entry = resources.Rent(batch._vectors);
+                    await batch._entry.Upload.MapAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        batch._entry.Upload.SliceElements(0, (ulong)batch._vectors).CopyFrom(values.AsSpan(0, batch._vectors));
+                        copied += (long)batch._vectors * 16;
+                    }
+                    finally
+                    {
+                        batch._entry.Upload.Unmap();
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    batch._arguments = new(batch._entry.Table.WriteBuffer(0, batch._entry.Data.SliceElements(0, (ulong)batch._vectors)), new(context.Target.Description.Width, context.Target.Description.Height));
+                    profile?.Success();
+                    return batch;
+                }
+                catch
+                {
+                    if (batch._entry is { } entry)
+                    {
+                        entry.Discard = true;
+                    }
+
+                    batch.Dispose();
+                    throw;
                 }
                 finally
                 {
-                    batch._entry.Upload.Unmap();
+                    if (values is not null)
+                    {
+                        ArrayPool<Vector4>.Shared.Return(values);
+                    }
                 }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                batch._arguments = new(batch._entry.Table.WriteBuffer(0, batch._entry.Data.SliceElements(0, (ulong)batch._vectors)), new(context.Target.Description.Width, context.Target.Description.Height));
-                return batch;
             }
-            catch
+            catch (Exception error)
             {
-                if (batch._entry is { } entry)
-                {
-                    entry.Discard = true;
-                }
-
-                batch.Dispose();
+                profile?.Failure(error);
                 throw;
             }
             finally
             {
-                if (values is not null)
-                {
-                    ArrayPool<Vector4>.Shared.Return(values);
-                }
+                profile?.Counter(7, vectors);
+                profile?.Counter(8, copied);
+                profile?.Counter(10, commands.Length);
             }
         }
 

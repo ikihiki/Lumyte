@@ -90,6 +90,7 @@ public sealed partial class UiSurface
         long reset = _inputReset;
         try
         {
+            UiProfiling.Add(4, 402);
             return target.InvokeInput(in context);
         }
         catch (Exception failure)
@@ -175,57 +176,67 @@ public sealed partial class UiSurface
 
     private void UpdateInput()
     {
-        if (!_inputDirty)
+        using UiProfiling.Scope? profile = UiProfiling.Begin(3);
+        try
         {
-            return;
-        }
-
-        _inputVersion = new object();
-        _rootElement.UpdateInput(Vector2.Zero, UiInputBounds.From(Vector2.Zero, _viewport), _inputVersion);
-        RebuildFocusCandidates();
-        _inputDirty = false;
-        RefreshFocusState();
-
-        List<Exception>? failures = null;
-
-        // Notifications can invoke component code, so only refresh the captures present at this point.
-        foreach ((long pointerId, PointerCapture capture) in _pointerCaptures.ToArray())
-        {
-            if (_isDisposed)
+            if (!_inputDirty)
             {
-                break;
+                profile?.Skip();
+                return;
             }
 
-            if (!_pointerCaptures.TryGetValue(pointerId, out PointerCapture? current) || !ReferenceEquals(current, capture))
-            {
-                continue;
-            }
+            _inputVersion = new object();
+            _rootElement.UpdateInput(Vector2.Zero, UiInputBounds.From(Vector2.Zero, _viewport), _inputVersion);
+            RebuildFocusCandidates();
+            _inputDirty = false;
+            RefreshFocusState();
 
-            try
+            List<Exception>? failures = null;
+
+            // Notifications can invoke component code, so only refresh the captures present at this point.
+            foreach ((long pointerId, PointerCapture capture) in _pointerCaptures.ToArray())
             {
-                if (!ReferenceEquals(capture.Target.InputVersion, _inputVersion))
+                if (_isDisposed)
                 {
-                    ReleasePointer(pointerId, true);
+                    break;
                 }
-                else
+
+                if (!_pointerCaptures.TryGetValue(pointerId, out PointerCapture? current) || !ReferenceEquals(current, capture))
                 {
-                    NotifyCapture(pointerId, capture, true);
+                    continue;
+                }
+
+                try
+                {
+                    if (!ReferenceEquals(capture.Target.InputVersion, _inputVersion))
+                    {
+                        ReleasePointer(pointerId, true);
+                    }
+                    else
+                    {
+                        NotifyCapture(pointerId, capture, true);
+                    }
+                }
+                catch (Exception failure)
+                {
+                    (failures ??= new()).Add(failure);
                 }
             }
-            catch (Exception failure)
+
+            if (failures is { Count: 1 })
             {
-                (failures ??= new()).Add(failure);
+                ExceptionDispatchInfo.Capture(failures[0]).Throw();
+            }
+
+            if (failures is not null)
+            {
+                throw new AggregateException(failures);
             }
         }
-
-        if (failures is { Count: 1 })
+        catch (Exception error)
         {
-            ExceptionDispatchInfo.Capture(failures[0]).Throw();
-        }
-
-        if (failures is not null)
-        {
-            throw new AggregateException(failures);
+            profile?.Fail(error);
+            throw;
         }
     }
 
