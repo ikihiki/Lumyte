@@ -8,6 +8,8 @@ namespace Lumyte.Graphics.RenderGraph;
 public sealed class CompiledRenderGraph : IDisposable
 {
     private readonly RenderGraph _owner;
+    private readonly Guid _profileRunId;
+    private readonly long _profileFrameId;
     private readonly Dictionary<RenderGraphResource, (TextureState State, BarrierScope Scope)> _states = [];
     private readonly Dictionary<RenderGraphResource, object> _allocations = [];
     private readonly HashSet<RenderGraphResource> _outputs;
@@ -26,6 +28,8 @@ public sealed class CompiledRenderGraph : IDisposable
         _owner = owner;
         _outputs = outputs;
         Run = run;
+        _profileRunId = RenderGraphProfiling.CurrentRunId;
+        _profileFrameId = RenderGraphProfiling.CurrentFrameId;
         foreach (RenderGraphResource resource in resources)
         {
             _states.Add(resource, (resource.InitialState, resource.InitialScope));
@@ -190,8 +194,14 @@ public sealed class CompiledRenderGraph : IDisposable
         IRenderGraphObserver? observer = _owner.Observer is { IsEnabled: true } ? _owner.Observer : null;
         using IDisposable? diagnostic = observer?.Begin(Run, "record");
         long started = observer is null ? 0 : Stopwatch.GetTimestamp();
+        RenderGraphProfiling.ProfileScope? profile = RenderGraphProfiling.Log.Begin(5, Run, _profileRunId, _profileFrameId, operation: 2);
+        profile?.Add(7, 0);
+        profile?.Add(8, 0);
+        profile?.Add(9, 0);
+        int operationOutcome = 2;
         try
         {
+            int executionIndex = 0;
             foreach (CompiledPass pass in _passes)
             {
                 foreach (RenderGraphUse use in pass.Uses)
@@ -201,6 +211,7 @@ public sealed class CompiledRenderGraph : IDisposable
 
                 RecordBarriers(commands, pass.Barriers);
                 var context = new RenderGraphContext(commands, pass.Uses, this);
+                using RenderGraphProfiling.ProfileScope? passProfile = RenderGraphProfiling.Log.BeginChild(8, executionIndex++);
                 try
                 {
                     pass.Callback(context);
@@ -208,21 +219,47 @@ public sealed class CompiledRenderGraph : IDisposable
                     {
                         throw new InvalidOperationException("A graph callback must leave the command buffer recording.");
                     }
+
+                    RenderGraphProfiling.Count(8);
+                }
+                catch (Exception exception)
+                {
+                    passProfile?.Fail(exception);
+                    throw;
                 }
                 finally
                 {
                     context.Close();
                 }
+
+                passProfile?.Complete();
             }
 
             RecordBarriers(commands, _exports);
             _successful = true;
+            profile?.Complete();
+            profile?.Dispose();
             observer?.Recorded(Run, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            operationOutcome = 0;
         }
         catch (Exception exception)
         {
+            operationOutcome = exception is OperationCanceledException ? 1 : 2;
+            if (!_successful)
+            {
+                profile?.Fail(exception);
+            }
+
             observer?.Failed(Run, "record", exception);
             throw;
+        }
+        finally
+        {
+            profile?.Dispose();
+            if (profile is not null)
+            {
+                RenderGraphProfiling.Log.GraphOperationResult(Run.RunId, profile.SpanId, 2, operationOutcome);
+            }
         }
     }
 
@@ -240,29 +277,53 @@ public sealed class CompiledRenderGraph : IDisposable
             throw new InvalidOperationException("Complete GPU work or discard the command buffer before disposing its graph resources.");
         }
 
-        while (_views.Count > 0)
+        using RenderGraphProfiling.ProfileScope? profile = RenderGraphProfiling.Log.Begin(7, Run, _profileRunId, _profileFrameId, operation: 3);
+        profile?.Add(10, 0);
+        profile?.Add(11, 0);
+        profile?.Add(12, 0);
+        try
         {
-            _views[^1].Dispose();
-            _views.RemoveAt(_views.Count - 1);
-        }
-
-        while (_owned.Count > 0)
-        {
-            _owned[^1].Dispose();
-            _owned.RemoveAt(_owned.Count - 1);
-        }
-
-        if (_lifetimes is { } lifetimes)
-        {
-            while (lifetimes.Count != 0)
+            while (_views.Count > 0)
             {
-                lifetimes[^1].Dispose();
-                lifetimes.RemoveAt(lifetimes.Count - 1);
+                _views[^1].Dispose();
+                _views.RemoveAt(_views.Count - 1);
+                profile?.Add(10, 1);
+            }
+
+            while (_owned.Count > 0)
+            {
+                _owned[^1].Dispose();
+                _owned.RemoveAt(_owned.Count - 1);
+                profile?.Add(11, 1);
+            }
+
+            if (_lifetimes is { } lifetimes)
+            {
+                while (lifetimes.Count != 0)
+                {
+                    lifetimes[^1].Dispose();
+                    lifetimes.RemoveAt(lifetimes.Count - 1);
+                    profile?.Add(12, 1);
+                }
+            }
+
+            _allocations.Clear();
+            _disposed = true;
+            profile?.Complete();
+        }
+        catch (Exception exception)
+        {
+            profile?.Fail(exception);
+            throw;
+        }
+        finally
+        {
+            profile?.Dispose();
+            if (profile is not null)
+            {
+                RenderGraphProfiling.Log.GraphOperationResult(Run.RunId, profile.SpanId, 3, profile.Outcome);
             }
         }
-
-        _allocations.Clear();
-        _disposed = true;
     }
 
     internal object Resolve(RenderGraphResource resource)
@@ -400,6 +461,7 @@ public sealed class CompiledRenderGraph : IDisposable
         {
             EnsureAllocation(barrier.Resource);
             barrier.Resource.Barrier(commands, Resolve(barrier.Resource), barrier.BeforeState, barrier.AfterState, barrier.Before, barrier.After);
+            RenderGraphProfiling.Count(9);
         }
     }
 
@@ -410,9 +472,20 @@ public sealed class CompiledRenderGraph : IDisposable
             return;
         }
 
-        IDisposable allocation = resource.Create(_owner.Device!);
-        _owned.Add(allocation);
-        _allocations.Add(resource, allocation);
+        using RenderGraphProfiling.ProfileScope? profile = RenderGraphProfiling.Log.BeginChild(6);
+        try
+        {
+            IDisposable allocation = resource.Create(_owner.Device!);
+            RenderGraphProfiling.Count(7);
+            _owned.Add(allocation);
+            _allocations.Add(resource, allocation);
+            profile?.Complete();
+        }
+        catch (Exception exception)
+        {
+            profile?.Fail(exception);
+            throw;
+        }
     }
 
     private object GetOutput(RenderGraphResource resource)

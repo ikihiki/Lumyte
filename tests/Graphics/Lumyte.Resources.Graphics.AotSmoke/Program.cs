@@ -14,12 +14,15 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
+        using var profiling = new ProfilingListener();
         bool host = args.Contains("--host", StringComparer.Ordinal);
         VerifyDirectImageEffects();
         VerifyShaderLoading(host);
         VerifyImageEffects(host, false);
         VerifyImageEffects(host, true);
+        profiling.Verify();
         Console.WriteLine("Native AOT graph extensions, direct/managed image effects and graph retention passed.");
+        Console.WriteLine("Native AOT profiling event payloads and balanced metadata passed.");
     }
 
     private static void VerifyShaderLoading(bool host)

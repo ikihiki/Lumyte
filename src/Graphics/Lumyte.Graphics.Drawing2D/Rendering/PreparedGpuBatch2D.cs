@@ -124,10 +124,31 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         var batch = new PreparedGpuBatch2D(context, cancellationToken);
         try
         {
-            for (int i = 0; i < commands.Length; i++)
+            using (var compile = DrawingProfileScope.Start(6))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                batch.Add(commands.Span[i]);
+                try
+                {
+                    for (int i = 0; i < commands.Length; i++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        batch.Add(commands.Span[i]);
+                    }
+
+                    compile?.Success();
+                }
+                catch (Exception error)
+                {
+                    compile?.Failure(error);
+                    throw;
+                }
+                finally
+                {
+                    if (compile is { CountersEnabled: true })
+                    {
+                        compile.Counter(6, batch._commands.Sum(item => (long)item.Program.Instructions.Count));
+                        compile.Counter(7, batch._commands.Sum(item => (long)item.Program.Data.Count));
+                    }
+                }
             }
 
             ulong instructionCount = checked((ulong)batch._commands.Sum(item => (long)item.Program.Instructions.Count));
@@ -220,68 +241,91 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
 
     private async ValueTask UploadAsync(CancellationToken cancellationToken)
     {
-        if (_commands.Count == 0)
-        {
-            return;
-        }
-
-        // Keep each program's indices local by binding ranges of the shared allocation.
-        ulong instructionCount = 0;
-        ulong dataCount = 0;
-        foreach (PreparedCommand command in _commands)
-        {
-            instructionCount = checked(instructionCount + (ulong)command.Program.Instructions.Count);
-            dataCount = checked(dataCount + (ulong)command.Program.Data.Count);
-        }
-
-        _instructions = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructionCount));
-        _upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructionCount, MemoryPreference.Upload));
-        _data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = dataCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
-        _geometry = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = dataCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
-        await _upload.MapAsync(cancellationToken).ConfigureAwait(false);
+        using var profile = DrawingProfileScope.Start(7);
+        long copied = 0;
         try
         {
-            ulong offset = 0;
+            if (_commands.Count == 0)
+            {
+                profile?.Success();
+                return;
+            }
+
+            // Keep each program's indices local by binding ranges of the shared allocation.
+            ulong instructionCount = 0;
+            ulong dataCount = 0;
             foreach (PreparedCommand command in _commands)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                _upload.CopyFrom(CollectionsMarshal.AsSpan(command.Program.Instructions), offset);
-                offset += (ulong)command.Program.Instructions.Count;
+                instructionCount = checked(instructionCount + (ulong)command.Program.Instructions.Count);
+                dataCount = checked(dataCount + (ulong)command.Program.Data.Count);
             }
+
+            _instructions = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructionCount));
+            _upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructionCount, MemoryPreference.Upload));
+            _data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = dataCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
+            _geometry = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = dataCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
+            await _upload.MapAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ulong offset = 0;
+                foreach (PreparedCommand command in _commands)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _upload.CopyFrom(CollectionsMarshal.AsSpan(command.Program.Instructions), offset);
+                    if (profile is not null)
+                    {
+                        copied += (long)((ulong)command.Program.Instructions.Count * _upload.ShaderElementStrideInBytes);
+                    }
+
+                    offset += (ulong)command.Program.Instructions.Count;
+                }
+            }
+            finally
+            {
+                _upload.Unmap();
+            }
+
+            await _data.MapAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ulong offset = 0;
+                foreach (PreparedCommand command in _commands)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _data.SliceElements(offset, (ulong)command.Program.Data.Count).CopyFrom(CollectionsMarshal.AsSpan(command.Program.Data));
+                    copied += (long)command.Program.Data.Count * 16;
+                    offset += (ulong)command.Program.Data.Count;
+                }
+            }
+            finally
+            {
+                _data.Unmap();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ulong instructionOffset = 0;
+            ulong dataOffset = 0;
+            foreach (PreparedCommand command in _commands)
+            {
+                command.InstructionRef = command.Table.WriteBuffer(0, _instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count));
+                command.DataRef = command.Table.WriteBuffer(1, _geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count));
+                instructionOffset += (ulong)command.Program.Instructions.Count;
+                dataOffset += (ulong)command.Program.Data.Count;
+            }
+
+            EstimatedBytes = checked(EstimatedBytes + (long)(_instructions.SizeInBytes + _upload.SizeInBytes + _data.SizeInBytes + _geometry.SizeInBytes));
+
+            profile?.Success();
+        }
+        catch (Exception error)
+        {
+            profile?.Failure(error);
+            throw;
         }
         finally
         {
-            _upload.Unmap();
+            profile?.Counter(8, copied);
         }
-
-        await _data.MapAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            ulong offset = 0;
-            foreach (PreparedCommand command in _commands)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                _data.SliceElements(offset, (ulong)command.Program.Data.Count).CopyFrom(CollectionsMarshal.AsSpan(command.Program.Data));
-                offset += (ulong)command.Program.Data.Count;
-            }
-        }
-        finally
-        {
-            _data.Unmap();
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        ulong instructionOffset = 0;
-        ulong dataOffset = 0;
-        foreach (PreparedCommand command in _commands)
-        {
-            command.InstructionRef = command.Table.WriteBuffer(0, _instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count));
-            command.DataRef = command.Table.WriteBuffer(1, _geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count));
-            instructionOffset += (ulong)command.Program.Instructions.Count;
-            dataOffset += (ulong)command.Program.Data.Count;
-        }
-
-        EstimatedBytes = checked(EstimatedBytes + (long)(_instructions.SizeInBytes + _upload.SizeInBytes + _data.SizeInBytes + _geometry.SizeInBytes));
     }
 
     private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command)

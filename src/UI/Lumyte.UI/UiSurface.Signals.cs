@@ -194,58 +194,69 @@ public sealed partial class UiSurface
 
     private void ProcessSignals(bool explicitUpdate)
     {
-        if (_isDisposed || _processingSignals || _publishingAnimations || _applyingRebuild || _dispatchDepth != 0 || _recordDepth != 0 || _layoutPass is not null || (!explicitUpdate && !_signalUpdatesEnabled))
-        {
-            return;
-        }
-
-        ThrowSignalFailure();
-        _processingSignals = true;
+        using UiProfiling.Scope? profile = UiProfiling.Begin(8);
         try
         {
-            for (int iteration = 0; iteration < 100; iteration++)
+            if (_isDisposed || _processingSignals || _publishingAnimations || _applyingRebuild || _dispatchDepth != 0 || _recordDepth != 0 || _layoutPass is not null || (!explicitUpdate && !_signalUpdatesEnabled))
             {
-                while (true)
-                {
-                    SignalJob work;
-                    lock (_signalJobs)
-                    {
-                        _signalPosted = false;
-                        if (!_signalJobs.TryDequeue(out work))
-                        {
-                            break;
-                        }
-                    }
-
-                    RecordSignalRevision(work.Observer.Revision);
-                    lock (_signalJobs)
-                    {
-                        _pendingSignalObservers.Remove(work.Observer);
-                    }
-
-                    work.Work();
-                    ThrowSignalFailure();
-                }
-
-                if (_isDisposed || _pendingRebuild is not null || _signalElements.Count == 0)
-                {
-                    CommitSignalRevision();
-                    return;
-                }
-
-                ApplySignalElements();
+                profile?.Skip();
+                return;
             }
 
-            throw new UiStateUpdateException(new InvalidOperationException("Reactive construction did not converge."));
+            ThrowSignalFailure();
+            _processingSignals = true;
+            try
+            {
+                for (int iteration = 0; iteration < 100; iteration++)
+                {
+                    while (true)
+                    {
+                        SignalJob work;
+                        lock (_signalJobs)
+                        {
+                            _signalPosted = false;
+                            if (!_signalJobs.TryDequeue(out work))
+                            {
+                                break;
+                            }
+                        }
+
+                        RecordSignalRevision(work.Observer.Revision);
+                        lock (_signalJobs)
+                        {
+                            _pendingSignalObservers.Remove(work.Observer);
+                        }
+
+                        UiProfiling.Add(8, 801);
+                        work.Work();
+                        ThrowSignalFailure();
+                    }
+
+                    if (_isDisposed || _pendingRebuild is not null || _signalElements.Count == 0)
+                    {
+                        CommitSignalRevision();
+                        return;
+                    }
+
+                    ApplySignalElements();
+                }
+
+                throw new UiStateUpdateException(new InvalidOperationException("Reactive construction did not converge."));
+            }
+            catch (Exception error)
+            {
+                FailSignalUpdate(error);
+                ThrowSignalFailure();
+            }
+            finally
+            {
+                _processingSignals = false;
+            }
         }
         catch (Exception error)
         {
-            FailSignalUpdate(error);
-            ThrowSignalFailure();
-        }
-        finally
-        {
-            _processingSignals = false;
+            profile?.Fail(error);
+            throw;
         }
     }
 

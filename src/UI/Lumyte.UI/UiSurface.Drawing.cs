@@ -17,18 +17,31 @@ public sealed partial class UiSurface
         try
         {
             UpdateLayout();
-            if (!_isDisposed && _viewport.X > 0 && _viewport.Y > 0)
+            using UiProfiling.Scope? profile = UiProfiling.Begin(5);
+            try
             {
-                canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
-                _recordDepth++;
-                try
+                if (!_isDisposed && _viewport.X > 0 && _viewport.Y > 0)
                 {
-                    RecordElement(_rootElement, canvas);
+                    canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
+                    _recordDepth++;
+                    try
+                    {
+                        RecordElement(_rootElement, canvas);
+                    }
+                    finally
+                    {
+                        _recordDepth--;
+                    }
                 }
-                finally
+                else
                 {
-                    _recordDepth--;
+                    profile?.Skip();
                 }
+            }
+            catch (Exception error)
+            {
+                profile?.Fail(error);
+                throw;
             }
         }
         finally
@@ -44,6 +57,7 @@ public sealed partial class UiSurface
             return;
         }
 
+        UiProfiling.Add(5, 501);
         canvas.Save();
         try
         {

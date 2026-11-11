@@ -81,77 +81,87 @@ public sealed class UiDrawingScene2D : IDisposable
 
     private void UpdateCore(bool prepared)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_updating)
-        {
-            throw new InvalidOperationException("Retained drawing updates cannot be reentered.");
-        }
-
-        // Even an unchanged root transform validates exclusive write access before user callbacks.
-        _scene.SetTransform(_scene.Root, Matrix3x2.Identity);
-        _updating = true;
+        using UiProfiling.Scope? profile = UiProfiling.Begin(6);
         try
         {
-            if (!prepared)
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_updating)
             {
-                _surface.ValidateRetainedDrawingDependencies();
-                _surface.UpdateLayout();
+                throw new InvalidOperationException("Retained drawing updates cannot be reentered.");
             }
 
-            UiElement root = _surface.RootElement;
-            int recordings = 0;
-            if (_surface.RequiresOpaqueDrawing)
+            // Even an unchanged root transform validates exclusive write access before user callbacks.
+            _scene.SetTransform(_scene.Root, Matrix3x2.Identity);
+            _updating = true;
+            try
             {
-                ClearPlacements();
-                _scene.SetClip(_scene.Root, null);
-                _viewport = null;
-                var canvas = new Canvas2D();
-                canvas.Begin();
-                _surface.Record(canvas);
-                DrawList2D content = canvas.End();
-                if (_opaque is { } opaque)
+                if (!prepared)
                 {
-                    _scene.ReplaceContent(opaque, content);
-                }
-                else
-                {
-                    _opaque = _scene.Insert(_scene.Root, 0, content);
+                    _surface.ValidateRetainedDrawingDependencies();
+                    _surface.UpdateLayout();
                 }
 
-                LastRecordingCount = 1;
-                return;
-            }
+                UiElement root = _surface.RootElement;
+                int recordings = 0;
+                if (_surface.RequiresOpaqueDrawing)
+                {
+                    ClearPlacements();
+                    _scene.SetClip(_scene.Root, null);
+                    _viewport = null;
+                    var canvas = new Canvas2D();
+                    canvas.Begin();
+                    _surface.Record(canvas);
+                    DrawList2D content = canvas.End();
+                    if (_opaque is { } opaque)
+                    {
+                        _scene.ReplaceContent(opaque, content);
+                    }
+                    else
+                    {
+                        _opaque = _scene.Insert(_scene.Root, 0, content);
+                    }
 
-            if (_opaque is { } previous)
+                    UiProfiling.Add(6, 601);
+                    LastRecordingCount = 1;
+                    return;
+                }
+
+                if (_opaque is { } previous)
+                {
+                    _scene.Remove(previous);
+                    _opaque = null;
+                }
+
+                Vector2 viewport = _surface.DrawingViewport;
+                if (_viewport != viewport)
+                {
+                    _scene.SetClip(_scene.Root, RectangleClip(viewport));
+                    _viewport = viewport;
+                }
+
+                var visited = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
+                if (viewport.X > 0 && viewport.Y > 0)
+                {
+                    Synchronize(root, _scene.Root, 0, visited, ref recordings);
+                }
+
+                // Detach stale groups only after all surviving identities have moved to their new parents.
+                foreach (UiElement stale in _placements.Keys.Where(element => !visited.Contains(element)).ToArray())
+                {
+                    RemovePlacement(stale);
+                }
+
+                LastRecordingCount = recordings;
+            }
+            finally
             {
-                _scene.Remove(previous);
-                _opaque = null;
+                _updating = false;
             }
-
-            Vector2 viewport = _surface.DrawingViewport;
-            if (_viewport != viewport)
-            {
-                _scene.SetClip(_scene.Root, RectangleClip(viewport));
-                _viewport = viewport;
-            }
-
-            var visited = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
-            if (viewport.X > 0 && viewport.Y > 0)
-            {
-                Synchronize(root, _scene.Root, 0, visited, ref recordings);
-            }
-
-            // Detach stale groups only after all surviving identities have moved to their new parents.
-            foreach (UiElement stale in _placements.Keys.Where(element => !visited.Contains(element)).ToArray())
-            {
-                RemovePlacement(stale);
-            }
-
-            LastRecordingCount = recordings;
         }
-        finally
+        catch (Exception error)
         {
-            _updating = false;
+            profile?.Fail(error);
+            throw;
         }
     }
 
@@ -219,6 +229,11 @@ public sealed class UiDrawingScene2D : IDisposable
             placement.Size = element.Size;
             placement.Recorded = true;
             recordings++;
+            UiProfiling.Add(6, 601);
+        }
+        else
+        {
+            UiProfiling.Add(6, 602);
         }
 
         if (split)

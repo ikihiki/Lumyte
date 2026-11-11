@@ -52,106 +52,163 @@ public sealed partial class Renderer2D
 
     private async ValueTask<PreparedDrawingFrame2D> PrepareRetainedAsync(IDrawingSceneSource2D source, RenderTarget2D target, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(target);
-        ArgumentNullException.ThrowIfNull(target.View);
-        ValidateView(target.View);
-        var info = new DrawingTargetInfo2D { Description = Describe(target.View.Texture), PixelScale = target.PixelScale, LoadOp = AttachmentLoadOp.Load };
-        ValidateTarget(info with { LoadOp = target.LoadOp, ClearColor = target.ClearColor });
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_device.Status != GraphicsDeviceStatus.Ready)
-        {
-            throw new InvalidOperationException("Retained preparation requires a ready device.");
-        }
-
-        if (Interlocked.CompareExchange(ref _preparing, 1, 0) != 0)
-        {
-            throw new InvalidOperationException("Concurrent preparation using one Renderer2D is not supported.");
-        }
-
-        RetainedDrawingCache2D.FrameLease? frame = null;
+        using var profile = DrawingProfileScope.Start(2, root: true);
+        long groups = 0;
+        long reused = 0;
+        long compiled = 0;
         try
         {
-            frame = _retained.AcquireFrame();
-            List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
-            var context = new RenderPreparationContext2D(_device, info, _resources);
-
-            // Capture only immutable page/property values. The source and its mutable lease
-            // are never captured by the returned frame or by cached GPU assets.
-            foreach (DrawingSceneEntry2D entry in source.Entries)
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(target);
+            ArgumentNullException.ThrowIfNull(target.View);
+            ValidateView(target.View);
+            var info = new DrawingTargetInfo2D { Description = Describe(target.View.Texture), PixelScale = target.PixelScale, LoadOp = AttachmentLoadOp.Load };
+            ValidateTarget(info with { LoadOp = target.LoadOp, ClearColor = target.ClearColor });
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_device.Status != GraphicsDeviceStatus.Ready)
             {
-                for (int first = 0; first < entry.Content.RetainedPages.Pages.Count; first += 16)
+                throw new InvalidOperationException("Retained preparation requires a ready device.");
+            }
+
+            if (Interlocked.CompareExchange(ref _preparing, 1, 0) != 0)
+            {
+                throw new InvalidOperationException("Concurrent preparation using one Renderer2D is not supported.");
+            }
+
+            RetainedDrawingCache2D.FrameLease? frame = null;
+            try
+            {
+                frame = _retained.AcquireFrame();
+                List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
+                var context = new RenderPreparationContext2D(_device, info, _resources);
+
+                // Capture only immutable page/property values. The source and its mutable lease
+                // are never captured by the returned frame or by cached GPU assets.
+                foreach (DrawingSceneEntry2D entry in source.Entries)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(first).Take(16).ToArray();
-                    var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale);
-                    RetainedDrawingCache2D.Asset? cached = _retained.Take(key);
-                    if (cached is not null)
+                    for (int first = 0; first < entry.Content.RetainedPages.Pages.Count; first += 16)
                     {
-                        assets.Add(cached);
-                        continue;
-                    }
-
-                    DrawList2D transformed = TransformPages(pages, entry.Transform, entry.Clips);
-                    var batches = new List<IPreparedCommandBatch2D>();
-                    try
-                    {
-                        int index = 0;
-                        while (index < transformed.Commands.Count)
+                        cancellationToken.ThrowIfCancellationRequested();
+                        DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(first).Take(16).ToArray();
+                        var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale);
+                        groups++;
+                        RetainedDrawingCache2D.Asset? cached = _retained.Take(key);
+                        if (cached is not null)
                         {
-                            batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
+                            reused++;
+                            assets.Add(cached);
+                            continue;
+                        }
 
-                            // Match the default contiguous type/clip batching contract.
-                            DrawingCommand2D command = transformed.Commands[index++];
-                            while (index < transformed.Commands.Count && transformed.Commands[index].GetType() == command.GetType() && ReferenceEquals(transformed.Commands[index].State.Clip, command.State.Clip))
+                        DrawList2D transformed;
+                        using (var transform = DrawingProfileScope.Start(3))
+                        {
+                            try
                             {
-                                index++;
+                                transformed = TransformPages(pages, entry.Transform, entry.Clips);
+                                transform?.Success();
+                            }
+                            catch (Exception error)
+                            {
+                                transform?.Failure(error);
+                                throw;
                             }
                         }
 
-                        _retained.CountCompilation();
-                        assets.Add(new(key, new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer))));
-                    }
-                    catch
-                    {
-                        if (batches.Count != 0)
+                        var batches = new List<IPreparedCommandBatch2D>();
+                        try
                         {
-                            _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
-                        }
+                            int index = 0;
+                            using (var build = DrawingProfileScope.Start(4))
+                            {
+                                try
+                                {
+                                    while (index < transformed.Commands.Count)
+                                    {
+                                        batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
 
-                        throw;
+                                        // Match the default contiguous type/clip batching contract.
+                                        DrawingCommand2D command = transformed.Commands[index++];
+                                        while (index < transformed.Commands.Count && transformed.Commands[index].GetType() == command.GetType() && ReferenceEquals(transformed.Commands[index].State.Clip, command.State.Clip))
+                                        {
+                                            index++;
+                                        }
+                                    }
+
+                                    build?.Success();
+                                }
+                                catch (Exception error)
+                                {
+                                    build?.Failure(error);
+                                    throw;
+                                }
+                                finally
+                                {
+                                    build?.Counter(5, batches.Count);
+                                }
+                            }
+
+                            _retained.CountCompilation();
+                            compiled++;
+                            assets.Add(new(key, new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer))));
+                        }
+                        catch
+                        {
+                            if (batches.Count != 0)
+                            {
+                                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
+                            }
+
+                            throw;
+                        }
                     }
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Re-read the guard before returning: disposed sources cannot publish a frame.
+                _ = source.Revision;
+                RetainedDrawingCache2D cache = _retained;
+                RetainedDrawingCache2D.FrameLease ownedFrame = frame;
+                profile?.Success();
+                return new(_device, target, assets, completed => cache.ReleaseFrame(ownedFrame, completed), profile?.Context, cache);
             }
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Re-read the guard before returning: disposed sources cannot publish a frame.
-            _ = source.Revision;
-            RetainedDrawingCache2D cache = _retained;
-            RetainedDrawingCache2D.FrameLease ownedFrame = frame;
-            return new(_device, target, assets, completed => cache.ReleaseFrame(ownedFrame, completed));
-        }
-        catch (Exception preparationFailure)
-        {
-            if (frame is not null)
+            catch (Exception preparationFailure)
             {
-                try
+                if (frame is not null)
                 {
-                    _retained.ReleaseFrame(frame, false);
+                    try
+                    {
+                        _retained.ReleaseFrame(frame, false);
+                    }
+                    catch (Exception cleanupFailure)
+                    {
+                        throw new AggregateException("Retained preparation and cleanup both failed; pending resources remain cache-owned.", preparationFailure, cleanupFailure);
+                    }
                 }
-                catch (Exception cleanupFailure)
-                {
-                    throw new AggregateException("Retained preparation and cleanup both failed; pending resources remain cache-owned.", preparationFailure, cleanupFailure);
-                }
-            }
 
+                throw;
+            }
+            finally
+            {
+                Volatile.Write(ref _preparing, 0);
+            }
+        }
+        catch (Exception error)
+        {
+            profile?.Failure(error);
             throw;
         }
         finally
         {
-            Volatile.Write(ref _preparing, 0);
+            profile?.Counter(2, groups);
+            profile?.Counter(3, reused);
+            profile?.Counter(4, compiled);
+            if (profile is { CountersEnabled: true })
+            {
+                profile.Snapshot(_retained.Statistics);
+            }
         }
     }
 

@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>UI application lifecycle, dispatcher, windows and standard frame coordination.</Description>
   </PropertyGroup>

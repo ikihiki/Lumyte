@@ -7,126 +7,135 @@ public sealed partial class UiApplication
 {
     private async Task StopCoreAsync()
     {
-        ReleaseWindowSignals();
-        _dispatcher.BeginStop();
-        _startupCancellation.Cancel();
-        foreach (Entry entry in _entries.Values.ToArray())
+        using UiApplicationProfiling.Scope? profile = UiApplicationProfiling.Begin(25);
+        try
         {
-            BeginStop(entry);
-        }
-
-        if (!_participantsStopping)
-        {
-            _participantsStopping = true;
-            foreach (IUiApplicationParticipant participant in _participants)
+            ReleaseWindowSignals();
+            _dispatcher.BeginStop();
+            _startupCancellation.Cancel();
+            foreach (Entry entry in _entries.Values.ToArray())
             {
-                participant.BeginStop();
-            }
-        }
-
-        if (_startup is not null)
-        {
-            try
-            {
-                await _startup;
-            }
-            catch (Exception)
-            {
-                // Startup has its own failure observation; cleanup owns every successfully published partial resource.
-            }
-        }
-
-        if (_reconciling is not null)
-        {
-            try
-            {
-                await _reconciling;
-            }
-            catch (Exception)
-            {
-                // The partially created entry remains in the owned entry set.
-            }
-        }
-
-        foreach (Entry entry in _entries.Values.OrderByDescending(Depth).ThenBy(entry => entry.Declaration.Key == _primaryKey).ToArray())
-        {
-            await CloseEntryAsync(entry);
-        }
-
-        _popups?.BeginStop();
-        while ((_popups?.IsStopped == false) || _participants.Any(participant => !participant.IsStopped))
-        {
-            await NextTurnAsync();
-        }
-
-        foreach (IUiApplicationParticipant participant in _participants.ToArray())
-        {
-            try
-            {
-                await participant.DisposeAsync();
-            }
-            catch (Exception error)
-            {
-                RecordFailure(new UiApplicationException("cleanup-failed", error));
-            }
-            finally
-            {
-                _participants.Remove(participant);
-            }
-        }
-
-        _popups?.Dispose();
-        _popups = null;
-        if (!_managersStopped)
-        {
-            _windows?.BeginStop();
-            if (!ReferenceEquals(_windows, _defaultWindows))
-            {
-                _defaultWindows?.BeginStop();
+                BeginStop(entry);
             }
 
-            while (_windows?.IsStopped == false || _defaultWindows?.IsStopped == false)
+            if (!_participantsStopping)
             {
-                _defaultWindows?.Advance();
+                _participantsStopping = true;
+                foreach (IUiApplicationParticipant participant in _participants)
+                {
+                    participant.BeginStop();
+                }
+            }
+
+            if (_startup is not null)
+            {
+                try
+                {
+                    await _startup;
+                }
+                catch (Exception)
+                {
+                    // Startup has its own failure observation; cleanup owns every successfully published partial resource.
+                }
+            }
+
+            if (_reconciling is not null)
+            {
+                try
+                {
+                    await _reconciling;
+                }
+                catch (Exception)
+                {
+                    // The partially created entry remains in the owned entry set.
+                }
+            }
+
+            foreach (Entry entry in _entries.Values.OrderByDescending(Depth).ThenBy(entry => entry.Declaration.Key == _primaryKey).ToArray())
+            {
+                await CloseEntryAsync(entry);
+            }
+
+            _popups?.BeginStop();
+            while ((_popups?.IsStopped == false) || _participants.Any(participant => !participant.IsStopped))
+            {
                 await NextTurnAsync();
             }
 
-            _windows?.Dispose();
-            if (!ReferenceEquals(_windows, _defaultWindows))
+            foreach (IUiApplicationParticipant participant in _participants.ToArray())
             {
-                _defaultWindows?.Dispose();
+                try
+                {
+                    await participant.DisposeAsync();
+                }
+                catch (Exception error)
+                {
+                    RecordFailure(new UiApplicationException("cleanup-failed", error));
+                }
+                finally
+                {
+                    _participants.Remove(participant);
+                }
             }
 
-            _managersStopped = true;
-            _windows = null;
-            _defaultWindows = null;
-        }
-
-        if (_resources is not null)
-        {
-            await _resources.DisposeAsync();
-            _resources = null;
-        }
-
-        await Driver.RetireResourcesAsync();
-        await StopExecutionAsync();
-        if (!_driverReleased)
-        {
-            await Driver.DisposeAsync();
-            _driverReleased = true;
-        }
-
-        if (!_providerReleased)
-        {
-            _providerReleased = true;
-            try
+            _popups?.Dispose();
+            _popups = null;
+            if (!_managersStopped)
             {
-                await _services.DisposeAsync();
+                _windows?.BeginStop();
+                if (!ReferenceEquals(_windows, _defaultWindows))
+                {
+                    _defaultWindows?.BeginStop();
+                }
+
+                while (_windows?.IsStopped == false || _defaultWindows?.IsStopped == false)
+                {
+                    _defaultWindows?.Advance();
+                    await NextTurnAsync();
+                }
+
+                _windows?.Dispose();
+                if (!ReferenceEquals(_windows, _defaultWindows))
+                {
+                    _defaultWindows?.Dispose();
+                }
+
+                _managersStopped = true;
+                _windows = null;
+                _defaultWindows = null;
             }
-            catch (Exception error)
+
+            if (_resources is not null)
             {
-                RecordFailure(new UiApplicationException("cleanup-failed", error));
+                await _resources.DisposeAsync();
+                _resources = null;
             }
+
+            await Driver.RetireResourcesAsync();
+            await StopExecutionAsync();
+            if (!_driverReleased)
+            {
+                await Driver.DisposeAsync();
+                _driverReleased = true;
+            }
+
+            if (!_providerReleased)
+            {
+                _providerReleased = true;
+                try
+                {
+                    await _services.DisposeAsync();
+                }
+                catch (Exception error)
+                {
+                    RecordFailure(new UiApplicationException("cleanup-failed", error));
+                }
+            }
+        }
+        catch (Exception profileError)
+        {
+            profile?.Failed(profileError);
+            throw;
         }
     }
 
@@ -163,7 +172,16 @@ public sealed partial class UiApplication
         {
             try
             {
-                await drawing;
+                using UiApplicationProfiling.Scope? waitProfile = UiApplicationProfiling.Begin(26, root.DrawingProfileKey);
+                try
+                {
+                    await drawing;
+                }
+                catch (Exception error)
+                {
+                    waitProfile?.Failed(error);
+                    throw;
+                }
             }
             catch (Exception error)
             {

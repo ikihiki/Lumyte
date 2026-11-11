@@ -87,6 +87,7 @@ internal sealed class UiLayoutPass
         UiBoxConstraints effective = node.Widget.BoxModifiers.Length == 0 ? constraints.Tighten(node.Widget.Width, node.Widget.Height) : constraints;
         if (node.CanReuseLayout(effective))
         {
+            UiProfiling.Add(2, 202);
             node.PublishLayout(node.Size, Vector2.Zero);
             node.LayoutComplete = true;
             return node.Size;
@@ -96,6 +97,7 @@ internal sealed class UiLayoutPass
         _current = node;
         try
         {
+            UiProfiling.Add(2, 201);
             Vector2 size = node.LayoutModified(effective);
             if (!float.IsFinite(size.X) || !float.IsFinite(size.Y)
                 || size.X < effective.MinWidth || size.X > effective.MaxWidth
@@ -129,6 +131,7 @@ internal sealed class UiLayoutPass
     {
         foreach (UiElement node in UiSurface.CollectElements(root))
         {
+            UiProfiling.Add(2, 203);
             BeginNode(node);
             node.InvalidateLayoutCache();
             node.LayoutComplete = true;
