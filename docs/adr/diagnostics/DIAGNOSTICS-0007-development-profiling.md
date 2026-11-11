@@ -79,36 +79,15 @@ CPU 区間は単調時計の経過時間であり、OS がスレッドを実行�
 
 GC 停止・allocation sample・スタックサンプルは標準ランタイムイベントを利用する。スタックのサンプル比率を実 CPU 使用時間の割合、allocation sample を正確な全割当とみなさない。同一 thread の同期区間で明示的に取る割当差分と、全プロセスの割当近似値は別の値とし、スレッド移動した区間の差分は欠測とする。
 
-### 内部イベント宣言の差分
+### 共通イベント契約とモジュールの責務
 
-公開ライブラリ API と既存の診断操作は変更しない。次は基準コードにない、UI assembly 内の EventSource 宣言の抜粋である。呼び出しは本体内に限定し、標準ツールは provider 名で購読する。独自の span 型や記録用 interface は導入しない。
+公開ライブラリ API と既存の診断操作は変更しない。共通 event ID は 1=`StageBegin`、2=`StageEnd`、3=`StageCounter` とし、各 provider が内部の EventSource 型へ定義する。区間は ProfileRunId、Frame ID、Span ID、Parent Span ID、stage ID を持つ。終了は outcome、カウンターは stage ID、counter ID と long の値を持つ。outcome は 0=成功、1=取消、2=失敗、3=省略とする。
 
-```diff
-+namespace Lumyte.UI;
-+
-+// using System.Diagnostics.Tracing; を使う内部計測型。
-+[EventSource(Name = "Lumyte-UI-Profiling")]
-+internal sealed class UiProfilingEvents : EventSource
-+{
-+    // 0x2 = CPU 区間。発行前に同じ level/keyword の IsEnabled を確認する。
-+    [Event(1, Level = EventLevel.Informational, Keywords = (EventKeywords)0x2)]
-+    public void StageBegin(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage);
-+
-+    // 同じキーで対応付ける。outcome は成功・取消・失敗を表す固定コード。
-+    [Event(2, Level = EventLevel.Informational, Keywords = (EventKeywords)0x2)]
-+    public void StageEnd(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int outcome);
-+}
-```
+stage ID、counter ID、その単位と実測・推定の区別、実際のメソッド内の開始・終了位置、例外・省略時の扱いは各モジュールの判断として固定する。本体に存在しない段階を名前だけで作らず、複数モジュールが同じ処理を独立の計測点として重複発行しない。親子の区間が重なることと、同じ処理を二重に計時することは区別する。
 
-EventSource の Start/Stop の自動 activity ID 相関には依存せず、上の明示キーで非同期区間を対応付ける。フレーム境界とカウンターも同じキー体系で各所有 assembly から発行する。EventSource の singleton は固定スキーマの発行器だけを所有し、実行スコープ・描画資源・ユーザーオブジェクトを保持しない。
+provider ごとの追加 event ID は 4 以降を使う。keyword は EventSource の nested `Keywords` クラスへ `public const EventKeywords` として宣言する。大量の個別対象イベントには各 provider 内で `0x10` 以降を追加できるが、既定の `0xF` へ含めず opt-in とし、意味をモジュール内で定義する。
 
-### 既存 RenderGraph 診断との共存
-
-[RenderGraph の「決定」](../graphics/GRAPHICS-0015-render-graph.md#決定)の概要集計と要求時の構造キャプチャを維持する。EventSource の購読だけで詳細 snapshot や graph ごとの Activity を毎フレーム作らない。ホストのフレーム相関用 Activity は前節の有効時の契約に従う。
-
-RenderGraph 本体の計測境界から、その assembly の EventSource へ直接発行する。`RenderGraphRun.RunId` は既存どおり Compile ごとの Guid で、ProfileRunId とは別の `GraphRunId` としてイベントへ記録する。Compile の入口で標準 Activity から ProfileRunId と Frame ID を読み、生成した GraphRunId と対応付ける。明示指定された `Compile(frameId: ...)` と相関用 Frame ID が一致しなければ不一致と記録し、勝手に統合しない。対応は既存の CompiledRenderGraph が内部の数値情報として保持し、別フレームでの Record や後続通知でも同じキーを使う。フレーム Activity 自体を plan に保持せず、GraphId／GraphRunId／ProfileRunId の違いを失わない。既存 observer は引き続き constructor で受け取り、`RequestCapture`、`Begin` の trace scope、成功の時間・統計・snapshot と失敗通知を変更しない。これにより observer を差し替える composite と新しい公開登録 API は不要である。
-
-observer と EventSource が両方有効なら同じ内部時計の開始・終了を共有し、独立の時計を二重に取らない。既存 observer が要求する計時だけは購読がなくても維持する。EventSource は既存の duration から開始時刻を推定せず、実際の処理境界のイベントとして記録する。
+EventSource の Start/Stop の自動 activity ID 相関には依存せず、上の明示キーで非同期区間を対応付ける。singleton は固定スキーマの発行器だけを所有し、実行スコープ・描画資源・ユーザーオブジェクトを保持しない。既存の observer・Activity・capture の通知条件と資源寿命を維持し、新しいイベントの購読だけでは構造 snapshot を生成しない。
 
 ### バッファ、欠落と停止
 
