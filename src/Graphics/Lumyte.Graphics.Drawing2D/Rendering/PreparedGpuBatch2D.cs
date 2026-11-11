@@ -207,11 +207,25 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
             commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = _geometry.SliceElements(0, _geometry.Count), Before = copyWrite, After = _fragmentRead });
         }
 
+        IRenderEncoder? render = null;
         foreach (PreparedCommand command in _commands)
         {
-            // SetArgumentTable/Draw resolve the existing registrations and validate sampled
-            // resource lifetimes on every record, including resident draws.
-            RecordCommand(commands, target, command);
+            if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
+            {
+                continue;
+            }
+
+            // Ordered attachment blending preserves painter order inside one pass.
+            // Sampled-target feedback is rejected before entering RecordCore.
+            render ??= BeginBatchPass(commands, target);
+            RecordCommand(render, command);
+        }
+
+        if (render is not null)
+        {
+            render.End();
+            var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
+            commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
         }
     }
 
@@ -328,32 +342,32 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         }
     }
 
-    private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command)
+    private IRenderEncoder BeginBatchPass(IGraphicsCommandBuffer commands, IGraphicsTextureView view)
     {
-        if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
-        {
-            return;
-        }
-
         DrawingTargetInfo2D target = _context.Target;
-        var arguments = new DrawingArguments(command.InstructionRef, command.DataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(_pipeline);
-        render.SetArgumentTable(command.Table);
         render.SetRenderState(new()
         {
             Rasterization = new() { Cull = CullMode.None },
             ColorTargets = [new() { BlendEnable = true, Color = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha }, Alpha = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha } }],
         });
         render.SetViewport(new(0, 0, target.Description.Width, target.Description.Height, 0, 1));
-        render.SetScissor(command.Scissor);
         render.SetBlendConstant(new(0, 0, 0, 0));
         render.SetStencilReference(0);
+        return render;
+    }
+
+    private void RecordCommand(IRenderEncoder render, PreparedCommand command)
+    {
+        DrawingTargetInfo2D target = _context.Target;
+        var arguments = new DrawingArguments(command.InstructionRef, command.DataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
+
+        // Resolve and validate every command's sampled resources, including resident draws.
+        render.SetArgumentTable(command.Table);
+        render.SetScissor(command.Scissor);
         render.SetArguments(in arguments);
         render.Draw(3);
-        render.End();
-        var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
-        commands.Barrier(new TextureBarrierDesc { Texture = view.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
     }
 
     private T Own<T>(T resource)

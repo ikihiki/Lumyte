@@ -39,6 +39,18 @@ public sealed partial class Drawing2DTests
                 {
                     canvas.ClipRect(new(0.25f, 0.5f, 30.5f, 22.25f));
                     canvas.ClipRect(new(1.125f, 1.25f, 29.5f, 21.5f));
+
+                    // Empty scissors before, between and after visible commands must not
+                    // break the shared pass or leak clip/state into later draws.
+                    void Empty()
+                    {
+                        canvas.Save();
+                        canvas.ClipRect(new(100, 100, 1, 1));
+                        canvas.FillPath(Rectangle(0, 0, 4, 4), new Color2D(1, 1, 1, 1));
+                        canvas.Restore();
+                    }
+
+                    Empty();
                     for (int i = 0; i < 24; i++)
                     {
                         canvas.Save();
@@ -61,6 +73,7 @@ public sealed partial class Drawing2DTests
                         path.Close();
                         canvas.FillPath(path.Build(), new Color2D(i % 2, 0.5f, (i % 3) / 2f, 0.25f), rule);
                         canvas.Restore();
+                        Empty();
                     }
                 }
 
@@ -102,6 +115,7 @@ public sealed partial class Drawing2DTests
         AssertPixel(sampled, 8, 5, 1, new(0, 0, 0.5f, 0.5f));
 
         Vector4[] solid = await RenderAsync(device, 8, 8, Solid);
+        Assert.Equal(await RenderAsync(device, 8, 8, Solid, individualPaths: true), solid);
         AssertPixel(solid, 8, 4, 4, new(0.25f, 0, 0.5f, 0.75f));
         AssertPixel(solid, 8, 0, 0, Vector4.Zero);
     }
