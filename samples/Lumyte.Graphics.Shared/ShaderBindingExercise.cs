@@ -20,6 +20,10 @@ public static class ShaderBindingExercise
         await CameraAsync(device);
         Console.WriteLine("Shader binding: layout and range regressions.");
         await BindingRegressionExercise.RunAsync(device);
+        Console.WriteLine("Shader binding: persistent numeric/reference updates and frozen metadata.");
+        await ComputeAsync(device, persistent: true);
+        await DrawAsync(device, persistent: true);
+        await PersistentMatrixExercise.RunAsync(device);
         return "Shader binding checks passed: matrix root, cyclic dependencies, explicit staging transfers, twenty distinct textures, shader layouts and registered buffer ranges.";
     }
 
@@ -37,7 +41,7 @@ public static class ShaderBindingExercise
 
     private static ShaderArtifact Artifact(string name) => ShaderArtifact.LoadEmbedded(typeof(ShaderBindingExercise).Assembly, "Lumyte.Shaders." + name + ".lshader");
 
-    private static async Task ComputeAsync(IGraphicDevice device, ShaderArtifact? sourceArtifact = null)
+    private static async Task ComputeAsync(IGraphicDevice device, ShaderArtifact? sourceArtifact = null, bool persistent = false)
     {
         ShaderArtifact artifact = sourceArtifact ?? Artifact("binding-compute");
         using IGraphicsShader shader = device.CreateShader(artifact);
@@ -53,10 +57,37 @@ public static class ShaderBindingExercise
         using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateShaderDataBuffer<BindingNode>(artifact, 2, MemoryPreference.Upload);
         using IGraphicsShaderDataBuffer<BindingNode> changed = device.CreateShaderDataBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
         await staging.MapAsync();
-        staging.CopyFrom([new(3, node.GetElement(1)), new(7, node.GetElement(0))]);
+        if (persistent)
+        {
+            ShaderDataStorage<BindingNode> retained = staging.CreateStorage([new(0, node.GetElement(0)), new(7, node.GetElement(0))]);
+            retained.SetValue(0, BindingNode.StorageMembers.Value, 3u);
+            retained.SetReference(0, BindingNode.StorageMembers.Next, node.GetElement(1));
+            staging.CopyFrom(retained);
+            ShaderValueSnapshot frozen = ((IShaderDataSource)staging).Read(0);
+            retained.SetValue(0, BindingNode.StorageMembers.Value, 999u);
+            retained.SetReference(0, BindingNode.StorageMembers.Next, node.GetElement(0));
+            Require(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(frozen.Values[0].Data.Span) == 3, "Persistent numeric snapshot changed after mutation.");
+            Require(ReferenceEquals(frozen.Values[1].Reference, ((IShaderDataSource)staging).Read(0).Values[1].Reference), "Persistent reference identity changed after mutation.");
+        }
+        else
+        {
+            staging.CopyFrom([new(3, node.GetElement(1)), new(7, node.GetElement(0))]);
+        }
+
         staging.Unmap();
         await changed.MapAsync();
-        changed.CopyFrom([new(9, node.GetElement(1))]);
+        if (persistent)
+        {
+            ShaderDataStorage<BindingNode> retained = changed.CreateStorage([new(0, node.GetElement(0))]);
+            retained.SetValue(0, BindingNode.StorageMembers.Value, 9u);
+            retained.SetReference(0, BindingNode.StorageMembers.Next, node.GetElement(1));
+            changed.CopyFrom(retained);
+        }
+        else
+        {
+            changed.CopyFrom([new(9, node.GetElement(1))]);
+        }
+
         changed.Unmap();
         Require(nodes.Count == 2 && nodes.SizeInBytes == nodes.ShaderElementStrideInBytes * 2, "Shader data count or size changed.");
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
@@ -93,7 +124,7 @@ public static class ShaderBindingExercise
         Require(values[3] == 36 && values[4] == 48, "Root matrix, recursive references or explicit staging copies are incorrect.");
     }
 
-    private static async Task DrawAsync(IGraphicDevice device)
+    private static async Task DrawAsync(IGraphicDevice device, bool persistent = false)
     {
         const int Count = 20;
         const uint Width = Count * 4;
@@ -132,7 +163,24 @@ public static class ShaderBindingExercise
             }
 
             await staging.MapAsync();
-            staging.CopyFrom(values);
+            if (persistent)
+            {
+                ShaderDataStorage<BindingMaterial> retained = staging.CreateStorage(values);
+                for (int i = 0; i < Count; i++)
+                {
+                    retained.SetValue(i, BindingMaterial.StorageMembers.Color, Vector4.One);
+                    retained.SetReference(i, BindingMaterial.StorageMembers.Texture, values[i].Texture);
+                    retained.SetReference(i, BindingMaterial.StorageMembers.Sampler, samplerRef);
+                }
+
+                staging.CopyFrom(retained);
+                retained.SetValue(0, BindingMaterial.StorageMembers.Color, Vector4.Zero);
+            }
+            else
+            {
+                staging.CopyFrom(values);
+            }
+
             staging.Unmap();
             RecordUpload(commands, staging, materials, Count, PipelineStage.FragmentShader);
             IGpuRef<BindingMaterial> materialRef = table.WriteBuffer(0, materials.SliceElements(0, Count));

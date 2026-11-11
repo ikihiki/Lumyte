@@ -152,3 +152,30 @@ slotの置換・Release・table Dispose後の古い参照と派生要素は使�
 opaque binaryのartifactをそのまま `IGraphicDevice.CreateShader` に渡すと、backendが自分用のtargetを取り出し、バックエンド所有の `IGraphicsShader` が返ります。必要な同期は利用側が管理します。[設計](../../../docs/adr/graphics/GRAPHICS-0006-shader-compilation-and-modules.md)／[Slang コンパイラーとオフライン設定](../Lumyte.Graphics.Shaders/README.md)を参照してください。
 
 形状・静的モデルの描画には [Lumyte.Graphics.Drawing](../Lumyte.Graphics.Drawing/README.md)、共有画像処理には [ImageEffects](../Lumyte.Graphics.ImageEffects/README.md) を使用できます。
+
+## シェーダーデータを更新間で保持する
+
+既存の `CopyFrom(ReadOnlySpan<T>)` は論理構造体を毎回変換します。生成対象の `IShaderData` では、初期変換を一度行い、以降は変更するmemberだけを更新する経路も選べます。
+
+```csharp
+using System.Numerics;
+using Lumyte.Graphics.Abstractions;
+
+// BindingMaterialはアプリ側のpartial IShaderDataで、Color・Texture・Samplerを持つ。
+// device、artifact、staging、values、登録済みtextureRefは生成済みとする。
+ShaderDataStorage<BindingMaterial> retained = staging.CreateStorage(values);
+retained.SetValue(0, BindingMaterial.StorageMembers.Color, Vector4.One);
+retained.SetReference(0, BindingMaterial.StorageMembers.Texture, textureRef);
+await staging.MapAsync();
+staging.CopyFrom(retained, sourceOffset: 0, count: 1, elementOffset: 2);
+staging.Unmap();
+// 続いて明示的なCopyBuffer、barrier、Submit、GPU完了待機を行う。
+```
+
+入れ子のmemberは `Type.StorageMembers.Child.Value` のように指定します。tokenはpathと型を検証し、未定義のfieldや同サイズの異なる数値型を受け入れません。全論理値を置き換える `Set(index, value)` も使えますが、この操作には全値の変換費用が残ります。
+
+`CreateStorage` は初期値を読む前にartifactのfield集合、数値型、helperのABI、offset、stride、alignmentを認証します。空のinitialでも認証し、返るstorageのCountはinitialの長さです。任意の手書きcodecの静的なmember構成は推測せず、metadataのない型は `NotSupportedException` で拒否します。手書きcodecは既存の論理span経路を引き続き使用できます。
+
+保持領域のbytesにはGC参照を含めず、16 byteのbackend製の不透明値と、CPU側の登録identityを分けます。VulkanとDirect3D12の保持経路は毎回のCapture・Packを省きます。WebGPUではこの公開APIからbackend用の表現を作り、draw／dispatch時の有限bindingへの変換は残ります。
+
+storageはCPU領域だけを所有し、Disposeを要求しません。同device・同schemaのbufferへだけコピーできます。GPU資源の寿命、登録の置換・Release、stagingの再利用とCPU／GPU同期は利用者が管理し、自動待機は行いません。並行更新の安全性は保証しません。凍結snapshotは一要素のbytesとその参照だけを保持し、後続更新で古いRead結果を書き換えません。

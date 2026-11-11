@@ -12,6 +12,7 @@ internal static class BindingRegressionExercise
         CheckCompatibleCyclicStages(device);
         Console.WriteLine("Shader binding regression: vector and nested layouts.");
         await CheckLayoutsAsync(device);
+        await CheckLayoutsAsync(device, persistent: true);
         Console.WriteLine("Shader binding regression: separate-buffer cycles.");
         await CheckSeparateCyclesAsync(device);
         ulong alignment = checked(Math.Max(4, device.Caps.StorageBufferOffsetAlignment) * 4UL);
@@ -76,7 +77,7 @@ internal static class BindingRegressionExercise
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
     }
 
-    private static async Task CheckLayoutsAsync(IGraphicDevice device)
+    private static async Task CheckLayoutsAsync(IGraphicDevice device, bool persistent = false)
     {
         ShaderArtifact artifact = Artifact("binding-layout");
         using IGraphicsShader shader = device.CreateShader(artifact);
@@ -87,9 +88,34 @@ internal static class BindingRegressionExercise
         using IGraphicsShaderDataBuffer<BindingVector> vectorStaging = device.CreateShaderDataBuffer<BindingVector>(artifact, 2, MemoryPreference.Upload);
         using IGraphicsShaderDataBuffer<BindingPackedVector> packedStaging = device.CreateShaderDataBuffer<BindingPackedVector>(artifact, 2, MemoryPreference.Upload);
         using IGraphicsShaderDataBuffer<BindingNestedVector> nestedStaging = device.CreateShaderDataBuffer<BindingNestedVector>(artifact, 2, MemoryPreference.Upload);
-        await WriteAsync(vectorStaging, [new(new(11, 12, 13)), new(new(21, 22, 23))]);
-        await WriteAsync(packedStaging, [new(31, new(32, 33, 34)), new(41, new(42, 43, 44))]);
-        await WriteAsync(nestedStaging, [new(new(new(51, 52, 53)), 54), new(new(new(61, 62, 63)), 64)]);
+        if (persistent)
+        {
+            ShaderDataStorage<BindingVector> vectorValues = vectorStaging.CreateStorage([new(default), new(default)]);
+            vectorValues.SetValue(0, BindingVector.StorageMembers.Value, new System.Numerics.Vector3(11, 12, 13));
+            vectorValues.SetValue(1, BindingVector.StorageMembers.Value, new System.Numerics.Vector3(21, 22, 23));
+            ShaderDataStorage<BindingPackedVector> packedValues = packedStaging.CreateStorage([new(0, default), new(0, default)]);
+            packedValues.Set(0, new(31, new(32, 33, 34)));
+            packedValues.Set(1, new(41, new(42, 43, 44)));
+            ShaderDataStorage<BindingNestedVector> nestedValues = nestedStaging.CreateStorage([new(default, 54), new(default, 64)]);
+            nestedValues.SetValue(0, BindingNestedVector.StorageMembers.Child.Value, new System.Numerics.Vector3(51, 52, 53));
+            nestedValues.SetValue(1, BindingNestedVector.StorageMembers.Child.Value, new System.Numerics.Vector3(61, 62, 63));
+            await vectorStaging.MapAsync();
+            vectorStaging.CopyFrom(vectorValues);
+            vectorStaging.Unmap();
+            await packedStaging.MapAsync();
+            packedStaging.CopyFrom(packedValues);
+            packedStaging.Unmap();
+            await nestedStaging.MapAsync();
+            nestedStaging.CopyFrom(nestedValues);
+            nestedStaging.Unmap();
+        }
+        else
+        {
+            await WriteAsync(vectorStaging, [new(new(11, 12, 13)), new(new(21, 22, 23))]);
+            await WriteAsync(packedStaging, [new(31, new(32, 33, 34)), new(41, new(42, 43, 44))]);
+            await WriteAsync(nestedStaging, [new(new(new(51, 52, 53)), 54), new(new(new(61, 62, 63)), 64)]);
+        }
+
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 22, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 22, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 4 });

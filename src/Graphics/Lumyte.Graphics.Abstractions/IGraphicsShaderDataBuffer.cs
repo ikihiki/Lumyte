@@ -25,6 +25,21 @@ public interface IGraphicsShaderDataBuffer<T> : IDisposable
     /// <param name="elementOffset">The first logical element.</param>
     void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0);
 
+    /// <summary>Certifies the generated schema and converts initial values into device-specific CPU storage.</summary>
+    /// <param name="initial">Initial logical values; an empty span still certifies the complete schema.</param>
+    /// <returns>Independent CPU storage that does not retain this buffer or the initial span.</returns>
+    ShaderDataStorage<T> CreateStorage(ReadOnlySpan<T> initial) => throw new NotSupportedException("This backend does not implement persistent shader data storage.");
+
+    /// <summary>Copies retained transfer bytes and freezes complete metadata into mapped upload staging.</summary>
+    /// <remarks>Source and destination must have the same device and schema. Native backends do not
+    /// capture or pack logical values here. Validation and snapshot allocation precede writes.
+    /// Each frozen element owns at most one stride and its reference identities.</remarks>
+    /// <param name="source">The device-specific persistent source.</param>
+    /// <param name="sourceOffset">The first source element.</param>
+    /// <param name="count">The element count, or -1 for all remaining source elements.</param>
+    /// <param name="elementOffset">The first destination element; empty copies may use Count.</param>
+    void CopyFrom(ShaderDataStorage<T> source, int sourceOffset = 0, int count = -1, ulong elementOffset = 0) => throw new NotSupportedException("This backend does not implement persistent shader data uploads.");
+
     /// <summary>Maps idle upload staging for explicit CPU writes.</summary>
     /// <param name="cancellationToken">Cancels retaining the mapping after native completion.</param>
     /// <returns>The mapping operation.</returns>

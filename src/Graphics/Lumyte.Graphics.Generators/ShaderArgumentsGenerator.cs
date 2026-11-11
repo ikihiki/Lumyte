@@ -66,10 +66,43 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             return;
         }
 
+        bool generateStorage = generateWrite && type.AllInterfaces.Any(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderData");
+        if (generateStorage && (type.Name == "StorageMembers" || type.GetMembers("StorageMembers").Length != 0))
+        {
+            Report(output, type, "generated persistent storage requires the reserved member name StorageMembers");
+            return;
+        }
+
+        if (generateStorage && type.GetMembers().OfType<IPropertySymbol>().Any(p => p.ExplicitInterfaceImplementations.Any(i =>
+            i.Name == "StorageSchema" && i.ContainingType.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderData")))
+        {
+            Report(output, type, "generated persistent storage cannot replace an explicit IShaderData.StorageSchema implementation");
+            return;
+        }
+
         var body = new StringBuilder();
-        if (generateWrite && !Members(output, type, "this", string.Empty, body, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default)))
+        StringBuilder? schema = generateStorage ? new StringBuilder() : null;
+        StringBuilder? tokens = generateStorage ? new StringBuilder() : null;
+        string owner = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (generateWrite && !Members(output, type, "this", string.Empty, body, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default), schema, tokens, owner, "StorageMembers", 2))
         {
             return;
+        }
+
+        string storageSource = string.Empty;
+        if (generateStorage)
+        {
+            // A read-only wrapper prevents callers from mutating the cached schema array.
+            string schemaField = "__lumyteStorageSchema";
+            while (type.GetMembers(schemaField).Length != 0 || schemaField == type.Name)
+            {
+                schemaField += "_";
+            }
+
+            storageSource = "    private static readonly global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderDataMember> " + schemaField + " =\n" +
+                "        global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderDataMember[]\n        {\n" + schema + "        });\n" +
+                "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderDataMember> global::Lumyte.Graphics.Abstractions.IShaderData.StorageSchema => " + schemaField + ";\n" +
+                "    /// <summary>Provides typed tokens for persistent shader data updates.</summary>\n    public static class StorageMembers\n    {\n" + tokens + "    }\n";
         }
 
         AttributeData? nameAttribute = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute");
@@ -79,11 +112,11 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             (type.ContainingNamespace.IsGlobalNamespace ? string.Empty : "namespace " + type.ContainingNamespace.ToDisplayString() + ";\n") +
             (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(shaderName) + ";\n" : string.Empty) +
-            (generateWrite ? "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + body + "    }\n" : string.Empty) + "}\n";
+            (generateWrite ? "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + body + "    }\n" : string.Empty) + storageSource + "}\n";
         output.AddSource("ShaderArguments_" + id + ".g.cs", SourceText.From(source, Encoding.UTF8));
     }
 
-    private static bool Members(SourceProductionContext output, INamedTypeSymbol type, string expression, string prefix, StringBuilder body, HashSet<ITypeSymbol> stack)
+    private static bool Members(SourceProductionContext output, INamedTypeSymbol type, string expression, string prefix, StringBuilder body, HashSet<ITypeSymbol> stack, StringBuilder? schema, StringBuilder? tokens, string owner, string tokenContainer, int tokenIndent)
     {
         if (!stack.Add(type))
         {
@@ -108,20 +141,33 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
 
             string path = prefix + member.Name;
             string access = expression + ".@" + member.Name;
+            if (tokens != null && member.Name == tokenContainer)
+            {
+                Report(output, member, "persistent storage member path " + path + " conflicts with its generated StorageMembers container " + tokenContainer);
+                return false;
+            }
+
             if (memberType is INamedTypeSymbol reference && reference.OriginalDefinition.ToDisplayString() == "Lumyte.Graphics.Abstractions.IGpuRef<T>")
             {
                 body.Append("        writer.WriteReference(").Append(Quote(path)).Append(", ").Append(access).AppendLine(");");
+                StorageMember(schema, tokens, owner, member.Name, path, reference.TypeArguments[0], true, tokenIndent);
             }
             else if (Numeric(memberType))
             {
                 body.Append("        writer.WriteValue(").Append(Quote(path)).Append(", ").Append(access).AppendLine(");");
+                StorageMember(schema, tokens, owner, member.Name, path, memberType, false, tokenIndent);
             }
             else if (memberType is INamedTypeSymbol nested && nested.TypeKind == TypeKind.Struct && nested.SpecialType == SpecialType.None && !nested.IsGenericType)
             {
-                if (!Members(output, nested, access, path + ".", body, stack))
+                tokens?.Append(new string(' ', tokenIndent * 4)).AppendLine("/// <summary>Provides tokens for a nested shader value.</summary>")
+                    .Append(new string(' ', tokenIndent * 4)).Append("public static class @").Append(member.Name).AppendLine()
+                    .Append(new string(' ', tokenIndent * 4)).AppendLine("{");
+                if (!Members(output, nested, access, path + ".", body, stack, schema, tokens, owner, member.Name, tokenIndent + 1))
                 {
                     return false;
                 }
+
+                tokens?.Append(new string(' ', tokenIndent * 4)).AppendLine("}");
             }
             else
             {
@@ -132,6 +178,36 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
 
         stack.Remove(type);
         return true;
+    }
+
+    private static void StorageMember(StringBuilder? schema, StringBuilder? tokens, string owner, string name, string path, ITypeSymbol valueType, bool isReference, int indent)
+    {
+        if (schema == null || tokens == null)
+        {
+            return;
+        }
+
+        string valueTypeName = valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        schema.Append("            new global::Lumyte.Graphics.Abstractions.ShaderDataMember(").Append(Quote(path))
+            .Append(", typeof(").Append(valueTypeName).Append("), ").Append(isReference ? "true" : "false")
+            .Append(isReference ? ", " + ReferenceTarget(valueType) : string.Empty).AppendLine("),");
+        tokens.Append(new string(' ', indent * 4)).AppendLine("/// <summary>Gets a typed persistent member token.</summary>")
+            .Append(new string(' ', indent * 4)).Append("public static global::Lumyte.Graphics.Abstractions.")
+            .Append(isReference ? "ShaderDataReferenceMember<" : "ShaderDataValueMember<").Append(owner).Append(", ").Append(valueTypeName)
+            .Append("> @").Append(name).Append(" { get; } = new(").Append(Quote(path)).AppendLine(");");
+    }
+
+    private static string ReferenceTarget(ITypeSymbol type)
+    {
+        if (type.AllInterfaces.Any(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderArguments"))
+        {
+            return "global::Lumyte.Graphics.Abstractions.IShaderArguments.TypeName<" + type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ">()";
+        }
+
+        string? name = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute")?.ConstructorArguments[0].Value as string;
+        return Quote(name ?? (type.SpecialType == SpecialType.System_Int32 ? "int" : type.SpecialType == SpecialType.System_UInt32 ? "uint" : type.SpecialType == SpecialType.System_Single ? "float" :
+            type.ToDisplayString() == "System.Numerics.Vector2" ? "float2" : type.ToDisplayString() == "System.Numerics.Vector3" ? "float3" :
+            type.ToDisplayString() == "System.Numerics.Vector4" ? "float4" : type.ToDisplayString() == "System.Numerics.Matrix4x4" ? "float4x4" : type.Name));
     }
 
     private static bool Numeric(ITypeSymbol type) => type.SpecialType is SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Single ||

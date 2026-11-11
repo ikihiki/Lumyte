@@ -234,3 +234,11 @@ Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとr
 VK_ERROR_DEVICE_LOSTをdevice・子資源・submission・presentationから共通状態へ接続します。Pending submissionはFailed、commandはFaultedとなり、WaitAsyncはGraphicsDeviceLostExceptionを返します。loss後のWaitForRetirementAsyncは明示的にvkDeviceWaitIdleを呼び、Success／ErrorDeviceLostを破棄安全性の確認として扱います。Engineがその後に子資源とdeviceを明示的にDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 更新間で保持するシェーダーデータ
+
+生成されたIShaderDataでは、bufferの `CreateStorage(initial)` でCPUの転送表現を保持できます。`Type.StorageMembers` の型付きtokenを使う `SetValue` と `SetReference` が、数値と登録identityを独立に更新します。初期変換と全値を置き換える `Set` には変換費用が残ります。
+
+map済みUploadの `CopyFrom(storage)` は保持済みのbackend互換bytesを直接コピーし、論理値のCapture・Packを呼びません。 各要素の凍結snapshotは一要素分のbytesと参照情報だけを保持します。後続のsource更新で以前のRead結果を書き換えません。
+
+作成元と同device・同schemaのbufferだけへ使用し、GPUの所有権や登録の寿命は延長しません。Release・登録置換後の古い参照の使用や、copy完了前のstaging再利用は従来どおり禁止です。既存の `CopyFrom(ReadOnlySpan<T>)` は互換経路として残り、毎回のCapture・Packを行います。

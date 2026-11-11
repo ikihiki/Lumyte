@@ -20,3 +20,11 @@ GPU同期とリソースの有効期間は利用者が管理します。この�
 `SurfaceFrameLifetime`は取得・提示の局所状態を扱い、ネイティブ取得・提示の明示的な完了待機を提供します。GPU submissionを自動収集せず、GPU使用の完了は利用者が別途確認します。semaphoreのsignal／wait履歴、使用中resourceの保持数、検証callbackは管理しません。
 
 共通の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)に従います。
+
+## 保持する転送表現
+
+`ShaderDataLayout.CreateStorage<T>` は生成された静的schemaとartifactを、値に依存せず照合します。保持領域はartifactのoffsetへ数値と16 byteの不透明参照値を配置し、typed reference identityは別のCPU配列へ保持します。`Upload` は同device・同schemaを確認し、指定範囲の全snapshotを準備した後にmapped bufferへbytesをコピーします。通常の引数不正や準備の失敗では、destinationのbytesとmetadataを変更しません。
+
+各凍結要素は一要素のbytesと参照配列を所有します。数値のReadはそのbytesから遅延して論理ShaderValueを返しますが、mutableなsource、元のstorageや巨大な一括copy全体を保持しません。型とlayoutの不変情報だけを共有し、新しいprocess-wide cacheは追加しません。
+
+このfactoryとUploadはbackend向けの公開接続であり、backendが公開しない製造identity、参照の製造元検査とencoding、destinationのmappingと範囲検査を提供します。製造identityにはapplicationが知るdevice objectを使わず、公開factoryで任意のencoderから作った値をbackendが受け入れないようにします。公開IShaderReferenceの実装だけを製造元の証拠とせず、各backend内部のmarkerを使います。既存のtransfer overlayとSubmit成功後の公開処理を変更せず、登録の失効追跡やSubmit時の再検証は追加しません。

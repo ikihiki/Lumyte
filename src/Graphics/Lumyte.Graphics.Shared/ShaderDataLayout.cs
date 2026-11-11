@@ -12,6 +12,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
     private ShaderDataLayout(JsonElement type, JsonElement metadata, bool uniform = false)
     {
+        _storageType = type.Clone();
         _referenceTargets = metadata.TryGetProperty("lumyteReferenceTargets", out JsonElement targets) ? targets.Clone() : default;
         Name = type.GetProperty("name").GetString()!;
         JsonElement storage = type.GetProperty("sizes").EnumerateArray().Single(s => s.GetProperty("kind").GetString() == "uniform");

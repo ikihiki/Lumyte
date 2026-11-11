@@ -63,6 +63,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     /// <summary>Gets a value indicating whether Preview partial programs were requested and validated on the selected driver.</summary>
     public bool PartialGraphicsProgramsEnabled { get; }
 
+    // Private manufacture capability; never use the publicly known device object as this identity.
+    internal object ShaderDataStorageIdentity { get; } = new();
+
     internal nint Native
     {
         get

@@ -15,6 +15,12 @@ public interface IShaderArguments
     void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter;
 
+    /// <summary>Reads a logical type name through static dispatch for generated reference metadata.</summary>
+    /// <typeparam name="T">The referenced shader structure type.</typeparam>
+    /// <returns>The declared logical shader type name.</returns>
+    public static string TypeName<T>()
+        where T : struct, IShaderArguments => T.ShaderTypeName;
+
     /// <summary>Captures values through the type's implementation without codec registration.</summary>
     /// <typeparam name="T">The application value type.</typeparam>
     /// <param name="value">The application value.</param>

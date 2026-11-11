@@ -175,3 +175,11 @@ GPU を使わないテストは DXIL container、helper の binding、natural／
 stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
 一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
 Stable の WARP（debug layer 有効）では共通 suite 全体も成功しました。Preview partial program は未実行です。
+
+## 更新間で保持するシェーダーデータ
+
+生成されたIShaderDataでは、bufferの `CreateStorage(initial)` でCPUの転送表現を保持できます。`Type.StorageMembers` の型付きtokenを使う `SetValue` と `SetReference` が、数値と登録identityを独立に更新します。初期変換と全値を置き換える `Set` には変換費用が残ります。
+
+map済みUploadの `CopyFrom(storage)` は保持済みのbackend互換bytesを直接コピーし、論理値のCapture・Packを呼びません。 各要素の凍結snapshotは一要素分のbytesと参照情報だけを保持します。後続のsource更新で以前のRead結果を書き換えません。
+
+作成元と同device・同schemaのbufferだけへ使用し、GPUの所有権や登録の寿命は延長しません。Release・登録置換後の古い参照の使用や、copy完了前のstaging再利用は従来どおり禁止です。既存の `CopyFrom(ReadOnlySpan<T>)` は互換経路として残り、毎回のCapture・Packを行います。

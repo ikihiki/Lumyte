@@ -70,6 +70,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <summary>Gets the effective device capabilities captured during creation.</summary>
     public DeviceCaps Caps { get; }
 
+    // Private manufacture capability; never use the publicly known device object as this identity.
+    internal object ShaderDataStorageIdentity { get; } = new();
+
     internal WGPULimits Limits { get; }
 
     internal A.Device NativeDevice => _device;
