@@ -157,6 +157,10 @@ API HRESULT device_removed(Device* device) noexcept
 {
     return device->device->GetDeviceRemovedReason();
 }
+API void object_add_ref(IUnknown* object) noexcept
+{
+    object->AddRef();
+}
 API void object_release(IUnknown* object) noexcept
 {
     if (object)
@@ -248,6 +252,10 @@ API HRESULT queue_signal(Device* device, ID3D12Fence* fence) noexcept
 API UINT64 fence_completed(ID3D12Fence* fence) noexcept
 {
     return fence->GetCompletedValue();
+}
+API HRESULT fence_set_event(ID3D12Fence* fence, HANDLE event) noexcept
+{
+    return fence->SetEventOnCompletion(1, event);
 }
 API HRESULT queue_signal_value(Device* device, ID3D12Fence* fence, UINT64 value) noexcept
 {

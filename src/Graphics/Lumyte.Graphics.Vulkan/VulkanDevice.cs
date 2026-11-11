@@ -16,6 +16,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Queue _nativeQueue;
     private readonly VulkanPresentation? _presentation;
     private readonly GraphicsDeviceLifetime _lifetime;
+    private readonly VulkanCompletionDispatcher _completions = new();
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
@@ -314,6 +315,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             return;
         }
 
+        _completions.Dispose();
         _presentation?.Dispose();
         _api.DestroyDevice(_device, null);
         _api.DestroyInstance(_instance, null);
@@ -337,6 +339,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
         return ValueTask.CompletedTask;
     }
+
+    internal void EnqueueCompletion(Func<Action> wait, Func<bool> ready) => _completions.Enqueue(wait, ready);
+
+    internal void ReportCompletionLoss(string message) => _lifetime.ReportLossDeferred("VK_ERROR_DEVICE_LOST", message);
 
     internal void ReportLoss(string message) => _lifetime.ReportLoss("VK_ERROR_DEVICE_LOST", message);
 

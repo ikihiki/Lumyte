@@ -100,9 +100,9 @@ Vulkan 1.3のdynamic renderingとsynchronization2を必要機能として実装�
 
 barrierはMemoryBarrier2／BufferMemoryBarrier2／ImageMemoryBarrier2をCmdPipelineBarrier2へ渡します。stage・access、image layout、選択subresourceを明示的に変換し、queue familyは同一queueなのでIgnoredです。CopyBuffer・CopyImage・CopyBufferToImage・CopyImageToBufferを使用します。非圧縮colorのtexel sizeは4 byteで、GetTextureCopyLayoutはoffset alignmentとrow alignmentに4を返します。Capsのrow alignment 1に加え、formatのtexel block制約を反映した値です。nativeのBufferRowLengthは指定row byte数を4で割った値、BufferImageHeightはRowsPerImageです。
 
-Submitは専用VkFenceを確保してQueueSubmitし、Status／WaitAsyncはそのfenceを非blockingに確認します。GPU全体のidle待機、CPUデータのreadback、resourceの自動解放を挿入しません。提出失敗時のout-of-memoryは未提出として扱い、device lossはFaultedにして再提出を拒否します。fenceとcommand poolはGPU使用終了後に明示的にDisposeします。
+Submitは専用VkFenceを確保してQueueSubmitし、Statusはそのfenceを非blockingに確認します。WaitAsyncはデバイスごとに一つの専用workerがvkWaitForFences（無期限待機）で得た結果を共有し、1 msタイマーやThreadPool workerのblockingを使用しません。workerは最初のSubmitで起動し、待機の呼出順ではなくSubmit順にfenceを待ちます。callerのキャンセルはそのcallerだけを取り消し、native待機・他のcaller・fenceの寿命は維持します。commandの完了状態は従来どおりStatus／WaitAsyncで明示的に確認します。GPU全体のidle待機、CPUデータのreadback、resourceの自動解放を挿入しません。提出失敗時のout-of-memoryは未提出として扱い、device lossはFaultedにして再提出を拒否します。fenceとcommand poolはGPU使用終了後に明示的にDisposeします。
 
-共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。command、submissionとdeviceの解放順は利用者が管理します。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。command、submissionとdeviceの解放順は利用者が管理します。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。submissionのnative完了通知とfence解放には内部lockを使用しますが、resourceの並列操作を自動同期したり、GPU完了を暗黙に待機したりはしません。
 
 ## Pipeline
 
@@ -156,7 +156,7 @@ Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>
 
 shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
 
-共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
+共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルは使用しません。native完了workerからのloss通知を安全に配送するための内部bridgeと回帰テストに限りInternalsVisibleToを使用します。
 
 ## Depth／Stencil、Indexed／Indirect実行
 
@@ -230,6 +230,8 @@ Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとr
 実行時検証の共通方針は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を参照してください。resourceの保持数、commandからの依存resource走査、subresourceの状態表は検証目的で維持しません。binding生成とshader dataの明示copyに必要な参照収集・metadata伝播は行います。
 
 ## デバイスロスト
+
+submissionのnative待機中はfenceを保持し、Statusが先に完了を観測してDisposeされてもnative待機のreturn後に解放します。Device.Disposeは未完了fenceがあれば拒否し、完了済みfenceのhost側待機retirementとworker終了を確認してからnative deviceを解放します。GPU仕事を暗黙に完了まで待つ経路は追加しません。native待機からのDeviceLost通知は状態を即座に記録し、subscriberの実行をThreadPoolへ配送してworker自身へのjoinを防ぎます。
 
 VK_ERROR_DEVICE_LOSTをdevice・子資源・submission・presentationから共通状態へ接続します。Pending submissionはFailed、commandはFaultedとなり、WaitAsyncはGraphicsDeviceLostExceptionを返します。loss後のWaitForRetirementAsyncは明示的にvkDeviceWaitIdleを呼び、Success／ErrorDeviceLostを破棄安全性の確認として扱います。Engineがその後に子資源とdeviceを明示的にDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。
 

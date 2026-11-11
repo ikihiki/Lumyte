@@ -198,3 +198,37 @@ FrameはGPU submissionを追跡しません。`WaitForReleaseAsync`はこのback
 WgpuDevice.ProcessEventsをEngineのevent loopで定期的に呼んでNative loss callbackを配送します。Status／Lossはcached値です。Ahjo.Wgpu 0.7.0の非公開Device constructorへのアクセスはWgpuDeviceCreationだけに隔離しています。依存更新時はNative生成・lossテストを実行してください。Engineがloss後にWaitForRetirementAsyncでmap／queue callbackの完了を確認してから子資源をDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。Native status slotはcallback完了前に解放しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 非ポーリング完了待機の制約（Ahjo.Wgpu 0.7.0）
+
+現在の WgpuSubmission.WaitAsync、buffer map、WaitForRetirementAsync は
+ProcessEvents と 1 ms の再確認を使用します。通知ベースへの変更は未実装です。
+タイマーを別 thread に移すだけの変更や、キャンセル時に native callback storage を
+解放する変更は行いません。caller のキャンセルは GPU の停止を意味しません。
+
+依存の実装を確認する場合は、NuGet の repository commit
+[eda3ed8](https://github.com/pekkah/wgpu-sharp/tree/eda3ed8ca9359b6c9a3fbc2074dcbdceaff179b1)
+と、その Directory.Build.props が指定する wgpu-native
+[v29.0.0.0](https://github.com/gfx-rs/wgpu-native/tree/v29.0.0.0) を使用します。
+
+- Ahjo の Queue.BeginOnSubmittedWorkDone／Buffer.BeginMap は
+  AllowProcessEvents の callback が native status slot を更新する polled request です。
+  Task、event、callback の差し替え、future handle の公開はありません。
+- raw binding の wgpuInstanceWaitAny は存在しますが、対応する native release の
+  src/unimplemented.rs は unimplemented!() です。queue／map request は
+  src/lib.rs で NULL_FUTURE を返します。呼び出して capability probe することも
+  process abort の危険があるため行いません。
+- AllowSpontaneous の指定だけでは GPU の進行通知になりません。この native release の
+  queue／map 実装は callback mode を参照せず、wgpu-core の進行処理から callback を呼びます。
+- wgpuDevicePoll(device, true, submissionIndex) は本当の blocking primitive ですが、
+  同 release の実装は device_poll のエラーを handle_error_fatal に渡します。
+  wgpu-core 29.0.1 の Device::maintain は fence wait／fence-value query の device-loss
+  エラーを WaitIdleError として返し、native 側は Rust panic を C ABI の外へ返せず abort
+  します。managed worker の try/catch、caller cancellation、事前の Status 確認では
+  待機開始後の loss race を回避できません。
+
+従ってこの依存版では、device loss を安全に扱う非ポーリング待機への置換は保留です。
+上流で実装済み future wait／通知 API、または device-loss error を process abort せず
+返す blocking wait が必要です。依存の fork や未対応 API の呼び出しは追加していません。
+更新時には concurrent waits、caller cancellation 後の callback retirement、device loss、
+submission／device disposal と callback storage の寿命を一緒に再検証してください。

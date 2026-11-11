@@ -7,6 +7,7 @@
     <Description>Graphics Vulkan device capabilities.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
     <Using Include="Lumyte.Graphics.Shared" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />

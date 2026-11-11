@@ -40,6 +40,15 @@ resourceの寿命・登録参照の有効性・shader ABI・texture状態・wait
 
 RenderGraphTests は共通 RenderGraphExercise を使い、一時 buffer／texture、plan-owned view、culling と自動 barrier による GPU readback を Wgpu／Vulkan で確認します。Browser sample と verifier も同じ exercise の成功 report を必須にします。GPU 不要の依存・寿命・診断検証は `Lumyte.Graphics.RenderGraph.Tests` に配置します。
 
+## 非ポーリングsubmission完了の回帰
+
+VulkanCompletionTestsは、未signalのnative fenceを明示的にsignalして待機を制御します。
+複数caller・一方のみのキャンセル・未完了時のDispose拒否・逆順のWaitAsync・
+Statusだけで完了確認した後の破棄・cached device lossとnative successの競合を検証します。
+GPU不要のdispatcherテストは一つの非ThreadPool workerで待機が共有されることと、
+DeviceLost subscriberからのDisposeがworker自身へのjoinにならないことを確認します。
+時間の短さを合格条件にせず、10秒の期限はdeadlock検出だけに使用します。
+
 ## Cold-cache命令数境界の回帰
 
 Linux x64 CIでは通常のsuiteより前に `VulkanProgramCapacitiesAsync` を新しい空のMesa shader cacheで実行します。過去のdriver生成コードを使うと、最大256命令のnative readbackで起きる問題が隠れるためです。通常suiteのdriver cacheを削除・無効化せず、専用の一時directoryを使います。
