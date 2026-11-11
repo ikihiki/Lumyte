@@ -65,7 +65,7 @@ SetValueは数値だけを直接更新する。SetReferenceはbackend製の同de
 
 CopyFromはmap済みUploadに限定する。sourceOffsetとcountはsourceの要素単位、elementOffsetはdestinationの要素単位とする。countの既定値-1はsource末尾までを意味する。空範囲は有効な末尾offsetでもno-opとし、それ以外の負値、overflow、範囲外は拒否する。device・schema不一致と未対応形式は空範囲でも検証する。
 
-通常の引数不正、schema不一致、凍結用の確保失敗、変換失敗ではdestinationのbytesとmetadataをともに維持する。範囲全体のsnapshotを準備してからbytesを書き、書込み後にmetadata用の確保を残さない。native失敗のrollbackは保証しない。コピー前に指定範囲のbytesとCPU参照を凍結する。各要素のsnapshotは最大で一要素のbytesとその参照情報だけを所有し、一要素を残すことで元の巨大なcopy全体を保持しない。sourceの後続更新、別範囲の更新、stagingの再書き込みは以前のRead結果を書き換えない。Readは従来と同じ完全な論理snapshotであり、数値のデコード費用は残る。
+通常の引数不正、schema不一致、凍結用の確保失敗、変換失敗ではdestinationのbytesとmetadataをともに維持する。範囲全体のsnapshotを準備してからbytesを書き、書込み後にmetadata用の確保を残さない。native失敗のrollbackは保証しない。コピー前に指定範囲のbytesとCPU参照を凍結する。各要素のsnapshotは最大で一要素のbytesとその参照情報だけを所有し、一要素を残すことで元の巨大なcopy全体を保持しない。sourceの後続更新、別範囲の更新、stagingの再書き込みは以前のRead結果を書き換えない。Readは従来と同じ完全な論理snapshotであり、数値のデコード費用は残る。数値payloadの保持領域では参照fieldのbytesをゼロ化し、ReadOnlyMemoryの裏配列を調べても不透明な参照のwire値を取得できないようにする。GPUへの直接copyにはゼロ化前の保持bytesを使う。
 
 [GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)の寿命・同期契約を継続する。登録をRelease・置換した後の古い参照を使用せず、copy完了前にstagingを再利用しない。失効検出、世代の再検証、Submit時の生存走査は追加しない。command内overlay、copy順序、Submit成功後だけのmetadata公開、失敗・破棄したcommandの未公開、実行結果不明時のretirementは既存のままとする。
 
@@ -171,7 +171,8 @@ member tokenの既定値や任意のpathもschemaへ照合するため、未定�
 -        // 不変のCPU要素snapshotを返す。
 +        // 全数値と元のtyped reference identityを返す。
 +        // 保持経路のsnapshotは一要素分だけを所有し、copy全体・storage・
-+        // mutable stagingを保持しない。参照resourceのGPU寿命は延長しない。
++        // mutable stagingを保持しない。数値の裏領域にも参照wire値を公開しない。
++        // 参照resourceのGPU寿命は延長しない。
          ShaderValueSnapshot Read(ulong index);
      }
  }

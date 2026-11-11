@@ -17,7 +17,8 @@ public interface IShaderDataSource
 
     /// <summary>Reads a complete immutable CPU element snapshot with numeric values and original typed references.</summary>
     /// <remarks>Persistent uploads retain at most one element stride and its reference identities per
-    /// snapshot, not the mutable source or the entire copy. GPU resource lifetime is not extended.</remarks>
+    /// snapshot, not the mutable source or the entire copy. Numeric backing memory excludes backend
+    /// reference wire bytes. GPU resource lifetime is not extended.</remarks>
     /// <param name="index">The logical element.</param>
     /// <returns>The immutable CPU value snapshot.</returns>
     ShaderValueSnapshot Read(ulong index);

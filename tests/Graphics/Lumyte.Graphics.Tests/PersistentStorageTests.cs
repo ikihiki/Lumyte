@@ -78,6 +78,27 @@ public sealed partial class PersistentStorageTests
         Assert.Equal(Matrix4x4.Identity, MemoryMarshal.Read<Matrix4x4>(Leaf(partial, "Transform").Data.Span));
     }
 
+    /// <summary>Numeric Read backing arrays must not disclose backend reference wire bytes.</summary>
+    [Fact]
+    public void LogicalReadDoesNotExposePrivateReferenceWireBytes()
+    {
+        var fixture = new Fixture();
+        Value value = fixture.Make(7);
+        ShaderDataStorage<Value> storage = fixture.Layout.CreateStorage<Value>(fixture.Owner, [value], fixture.Encode);
+        var destination = new FakeBuffer(fixture.Layout.Size);
+        ShaderValueSnapshot snapshot = Assert.Single(fixture.Layout.Upload(storage, fixture.Owner, destination, 0, 1, 0));
+        Assert.Equal(7, MemoryMarshal.Read<int>(destination.Bytes.AsSpan(96)));
+        Assert.Equal(8, MemoryMarshal.Read<int>(destination.Bytes.AsSpan(112)));
+        Assert.True(MemoryMarshal.TryGetArray(Leaf(snapshot, "Number").Data, out ArraySegment<byte> segment));
+        Assert.NotNull(segment.Array);
+        Assert.All(segment.Array.AsSpan(96, 32).ToArray(), dataByte => Assert.Equal((byte)0, dataByte));
+        Assert.True(Leaf(snapshot, "Buffer").Data.IsEmpty);
+        Assert.True(Leaf(snapshot, "Other").Data.IsEmpty);
+        Assert.Same(value.Buffer, Leaf(snapshot, "Buffer").Reference);
+        Assert.Same(value.Other, Leaf(snapshot, "Other").Reference);
+        Assert.Equal(7f, Number(snapshot));
+    }
+
     /// <summary>Tokens, null references and indices are checked before retained state changes.</summary>
     [Fact]
     public void InvalidUpdatesLeaveBytesAndIdentitiesUnchanged()

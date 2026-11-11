@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Samples;
@@ -79,6 +80,9 @@ public sealed class PersistentShaderDataGpuTests
         staging.CopyFrom(source, elementOffset: 1);
         ShaderValueSnapshot old = ((IShaderDataSource)staging).Read(1);
         Assert.Equal(Vector4.One, ReadColor(old));
+        Assert.True(MemoryMarshal.TryGetArray(old.Values[0].Data, out ArraySegment<byte> logicalBytes));
+        Assert.NotNull(logicalBytes.Array);
+        Assert.All(logicalBytes.Array.AsSpan(16, 32).ToArray(), dataByte => Assert.Equal((byte)0, dataByte));
         Assert.Same(samplerRef, old.Values[2].Reference);
         Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)staging).Read(0));
         source.SetValue(0, BindingMaterial.StorageMembers.Color, new Vector4(3));

@@ -11,6 +11,7 @@ public sealed partial class ShaderDataLayout
         where T : struct, IShaderData
     {
         private readonly Field[] _fields;
+        private readonly ShaderMember[] _referenceFields;
         private readonly Dictionary<string, int> _indices;
         private readonly ShaderValue?[][] _references;
         private readonly Func<ShaderValue, string, byte[]> _encoder;
@@ -26,6 +27,7 @@ public sealed partial class ShaderDataLayout
             Count = initial.Length;
             Bytes = new byte[checked(Count * layout.Size)];
             _fields = schema.Select(s => new Field(s, layout._members[s.Path])).ToArray();
+            _referenceFields = _fields.Where(field => field.Schema.IsReference).Select(field => field.Member).ToArray();
             _indices = schema.Select((s, i) => (s.Path, Index: i)).ToDictionary(p => p.Path, p => p.Index, StringComparer.Ordinal);
             _references = new ShaderValue?[Count][];
             for (int i = 0; i < Count; i++)
@@ -109,6 +111,14 @@ public sealed partial class ShaderDataLayout
         internal ShaderValueSnapshot Freeze(int index)
         {
             byte[] bytes = Bytes.AsSpan(checked(index * Layout.Size), Layout.Size).ToArray();
+
+            // Numeric ReadOnlyMemory may reveal its backing array. Keep reference wire bits
+            // out of that logical CPU snapshot; the GPU copy still uses the original Bytes.
+            foreach (ShaderMember member in _referenceFields)
+            {
+                bytes.AsSpan(member.Offset, member.Size).Clear();
+            }
+
             var references = (ShaderValue?[])_references[index].Clone();
             return new(_root, Layout.Name, new FrozenValues(_fields, bytes, references));
         }
