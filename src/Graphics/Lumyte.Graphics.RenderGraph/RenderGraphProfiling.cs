@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Tracing;
 
 namespace Lumyte.Graphics.RenderGraph;
@@ -35,6 +36,7 @@ internal sealed class RenderGraphProfiling : EventSource
         => WriteStage(3, profileRunId, frameId, spanId, parentSpanId, stage, counterId, value, 7);
 
     [Event(4, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only fixed-width Guid, long and int values; no object graph or reflected properties are serialized.")]
     public unsafe void GraphRelation(Guid graphId, Guid graphRunId, Guid profileRunId, long frameId, long rootSpanId, int operation, int frameMatch)
     {
         EventData* data = stackalloc EventData[7];
@@ -57,6 +59,7 @@ internal sealed class RenderGraphProfiling : EventSource
         => WriteStage(6, profileRunId, frameId, spanId, parentSpanId, stage, executionIndex, outcome, 8);
 
     [Event(7, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only fixed-width Guid, long and int values; no object graph or reflected properties are serialized.")]
     public unsafe void GraphOperationResult(Guid graphRunId, long rootSpanId, int operation, int outcome)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -137,6 +140,7 @@ internal sealed class RenderGraphProfiling : EventSource
     private static unsafe EventData Data(void* pointer, int size) => new() { DataPointer = (IntPtr)pointer, Size = size };
 
     [NonEvent]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only fixed-width Guid, long and int values; no object graph or reflected properties are serialized.")]
     private unsafe void WriteStage(int id, Guid run, long frame, long span, long parent, int stage, int tail, long value, int count)
     {
         EventData* data = stackalloc EventData[7];

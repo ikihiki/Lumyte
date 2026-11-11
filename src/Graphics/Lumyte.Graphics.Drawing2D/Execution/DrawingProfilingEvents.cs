@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Tracing;
 
 namespace Lumyte.Graphics.Drawing2D;
@@ -8,6 +9,7 @@ internal sealed class DrawingProfilingEvents : EventSource
     internal static readonly DrawingProfilingEvents Log = new();
 
     [Event(1, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageBegin(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage)
     {
         EventData* data = stackalloc EventData[5];
@@ -25,6 +27,7 @@ internal sealed class DrawingProfilingEvents : EventSource
     }
 
     [Event(2, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageEnd(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int outcome)
     {
         EventData* data = stackalloc EventData[6];
@@ -44,6 +47,7 @@ internal sealed class DrawingProfilingEvents : EventSource
     }
 
     [Event(3, Level = EventLevel.Informational, Keywords = Keywords.Counters)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageCounter(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int counterId, long value)
     {
         EventData* data = stackalloc EventData[7];
@@ -65,6 +69,7 @@ internal sealed class DrawingProfilingEvents : EventSource
     }
 
     [Event(4, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void ReleaseOperation(Guid profileRunId, long frameId, long spanId, int operation)
     {
         EventData* data = stackalloc EventData[4];

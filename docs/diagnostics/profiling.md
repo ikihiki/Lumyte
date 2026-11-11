@@ -63,3 +63,11 @@ EventListener による契約テストと、既存の配置・描画・フレー
 - 両トレースで標準ランタイムのイベントも同じファイルに存在します。回数はこの実行の観測値であり、owner loop の回数などはスケジューリングで変わります。
 
 この確認は取得・対応付けの動作確認で、GPU timestamp や物理表示、計測負荷の一定割合以下を保証する測定ではありません。
+
+### Trimming／NativeAOT
+
+各モジュールの低水準イベント書き込みは、宣言済みの Guid／Boolean／Int32／Int64 を固定幅でコピーします。RunMetadata も Guid と string だけを渡します。動的なオブジェクトやプロパティをシリアライズしないため、IL2026 はこれらの書き込みメソッドだけに根拠付きの局所抑制を置きます。イベントの型や書き込み方式を変える場合は、この根拠も再確認してください。全体のトリミング警告やCIのエラー扱いは維持します。
+
+.NET 10 NativeAOT は既定で EventSource を無効にします。イベント機能を有効にするには、対象実行ファイルの publish に `-p:EventSourceSupport=true` を明示します。製品全体の既定値は変更しません。
+
+既存の `tests/Graphics/Lumyte.Resources.Graphics.AotSmoke` だけはこの機能を有効にし、厳格な NativeAOT publish と通常／`--host` 実行で、GraphRelation のpayload型、非空の区間開始・終了の対応、EventSource エラー不在を検証します。既存の資源寿命検証も維持しています。このin-process検証を、すべてのNativeAOT環境でのEventPipe接続やBrowser上の実取得の保証とは扱いません。

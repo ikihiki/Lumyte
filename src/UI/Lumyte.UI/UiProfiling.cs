@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Tracing;
 
 namespace Lumyte.UI;
@@ -12,6 +13,7 @@ internal sealed class UiProfiling : EventSource
     private static long _nextSpan;
 
     [Event(1, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageBegin(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage)
     {
         EventData* data = stackalloc EventData[5];
@@ -29,6 +31,7 @@ internal sealed class UiProfiling : EventSource
     }
 
     [Event(2, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageEnd(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int outcome)
     {
         EventData* data = stackalloc EventData[6];
@@ -48,6 +51,7 @@ internal sealed class UiProfiling : EventSource
     }
 
     [Event(3, Level = EventLevel.Informational, Keywords = Keywords.Counters)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageCounter(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int counterId, long value)
     {
         EventData* data = stackalloc EventData[7];

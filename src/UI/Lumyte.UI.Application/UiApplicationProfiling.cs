@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Tracing;
 
 namespace Lumyte.UI.Application;
@@ -11,6 +12,7 @@ internal sealed class UiApplicationProfiling : EventSource
     private static long _nextSpan;
 
     [Event(1, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageBegin(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage)
     {
         EventData* data = stackalloc EventData[5];
@@ -28,6 +30,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(2, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageEnd(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int outcome, int reason)
     {
         EventData* data = stackalloc EventData[7];
@@ -49,6 +52,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(3, Level = EventLevel.Informational, Keywords = Keywords.Counters)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void StageCounter(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int counterId, long value)
     {
         EventData* data = stackalloc EventData[7];
@@ -70,6 +74,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(4, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void FrameAccepted(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, Guid sourceId, long graphicsGeneration)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -96,6 +101,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(5, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void FrameFinished(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int outcome, bool presented, Guid sourceId)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -125,6 +131,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(6, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void FrameSuppressed(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int reason, long count)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -151,6 +158,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(7, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void SurfaceResult(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int kind, int status, int attempt)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -179,6 +187,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(8, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void DeviceRetired(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -201,6 +210,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(9, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void FrameResourcesReleased(Guid profileRunId, long frameId, long spanId, long parentSpanId, int stage, int reason)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -225,6 +235,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(10, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
     public unsafe void OwnerRelation(long rootSpanId, Guid owner)
     {
         if (!IsEnabled(EventLevel.Informational, Keywords.Control))
@@ -241,6 +252,7 @@ internal sealed class UiApplicationProfiling : EventSource
     }
 
     [Event(11, Level = EventLevel.Informational, Keywords = Keywords.Control)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Only the declared Guid and string scalar fields are written; no arbitrary object graph or reflected properties are serialized.")]
     public void RunMetadata(Guid profileRunId, string runtime, string operatingSystem, string processArchitecture, string backend, string assemblyVersion, string gpu, string buildHash, string seed, string scenario, string warmup)
     {
         if (IsEnabled(EventLevel.Informational, Keywords.Control))
