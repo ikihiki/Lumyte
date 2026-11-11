@@ -166,7 +166,9 @@ public sealed class PersistentShaderDataGpuTests
         BindingNode.Storage storage = BindingNode.CreateStorage(firstBuffer, [new(1, first)]);
         for (int index = 0; index < 1024; index++)
         {
+            storage[0].Value = (uint)index;
             storage[0].Next = first;
+            _ = storage[0].Value;
             _ = storage[0].Next;
         }
 
