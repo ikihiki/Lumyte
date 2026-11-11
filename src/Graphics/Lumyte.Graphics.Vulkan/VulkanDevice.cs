@@ -50,6 +50,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     /// <summary>Gets the enabled capabilities and physical device limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
 
+    // Private manufacture capability; never use the publicly known device object as this identity.
+    internal object ShaderDataStorageIdentity { get; } = new();
+
     internal bool CacheGraphicsPipelines { get; }
 
     internal uint QueueFamily { get; }

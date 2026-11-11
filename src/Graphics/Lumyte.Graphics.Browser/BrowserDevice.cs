@@ -38,6 +38,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <summary>Gets the effective GPUDevice limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
 
+    // Private manufacture capability; never use the publicly known device object as this identity.
+    internal object ShaderDataStorageIdentity { get; } = new();
+
     internal Task<GraphicsDeviceLoss> LostTask => _lifetime.LostTask;
 
     internal JSObject Handle => _handle;

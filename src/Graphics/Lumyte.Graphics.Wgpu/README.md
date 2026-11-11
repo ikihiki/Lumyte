@@ -198,3 +198,11 @@ FrameはGPU submissionを追跡しません。`WaitForReleaseAsync`はこのback
 WgpuDevice.ProcessEventsをEngineのevent loopで定期的に呼んでNative loss callbackを配送します。Status／Lossはcached値です。Ahjo.Wgpu 0.7.0の非公開Device constructorへのアクセスはWgpuDeviceCreationだけに隔離しています。依存更新時はNative生成・lossテストを実行してください。Engineがloss後にWaitForRetirementAsyncでmap／queue callbackの完了を確認してから子資源をDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。Native status slotはcallback完了前に解放しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 更新間で保持するシェーダーデータ
+
+生成されたIShaderDataでは、`Type.CreateStorage(buffer, initial)` で型付き `Type.Storage` を作り、CPUの転送表現を保持できます。`storage[i].Color = value` や `storage[i].Texture = reference` のpropertyが、数値と登録identityを独立に更新します。要素viewをコピーしても同じownerとindexへ書き込み、propertyアクセス時にheap確保やCaptureを行いません。初期変換と全値を置き換える `Set` には変換費用が残ります。
+
+map済みUploadの `CopyFrom(storage)` はこのbackend用の論理slot表現をコピーします。有限bindingへの変換表は引き続きdraw／dispatch時にCPUの登録identityから作成し、native address経路の変換費用ゼロを保証しません。 各要素の凍結snapshotは一要素分のbytesと参照情報だけを保持します。後続のsource更新で以前のRead結果を書き換えません。
+
+作成元と同device・同schemaのbufferだけへ使用し、GPUの所有権や登録の寿命は延長しません。Release・登録置換後の古い参照の使用や、copy完了前のstaging再利用は従来どおり禁止です。既存の `CopyFrom(ReadOnlySpan<T>)` は互換経路として残り、毎回のCapture・Packを行います。

@@ -15,6 +15,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         bool host = args.Contains("--host", StringComparer.Ordinal);
+        PersistentShaderDataSmoke.Run();
         VerifyDirectImageEffects();
         VerifyShaderLoading(host);
         VerifyImageEffects(host, false);

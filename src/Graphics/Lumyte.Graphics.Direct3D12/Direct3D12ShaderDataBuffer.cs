@@ -104,6 +104,48 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         snapshots.CopyTo(_values, checked((int)elementOffset));
     }
 
+    /// <summary>Creates independent device-specific CPU storage without retaining this buffer.</summary>
+    public ShaderDataStorage<T> CreateStorage(ReadOnlySpan<T> initial)
+    {
+        ValidateAlive();
+        Direct3D12Device owner = Owner;
+        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (member, reference, kind, destination) => Direct3D12ShaderReferenceEncoding.EncodePersistent(owner, member, reference, kind, destination));
+    }
+
+    /// <summary>Uploads retained bytes after validating the complete range and freezing metadata.</summary>
+    public void CopyFrom(ShaderDataStorage<T> source, int sourceOffset = 0, int count = -1, ulong elementOffset = 0)
+    {
+        ValidateAlive();
+        ArgumentNullException.ThrowIfNull(source);
+        if (Memory != MemoryPreference.Upload || !IsMapped)
+        {
+            throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
+        }
+
+        if (sourceOffset < 0 || sourceOffset > source.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceOffset));
+        }
+
+        if (count < -1 || (count != -1 && count > source.Count - sourceOffset))
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
+        int length = count == -1 ? source.Count - sourceOffset : count;
+        if (elementOffset > Count || (ulong)length > Count - elementOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elementOffset));
+        }
+
+        int offset = checked((int)elementOffset);
+        ulong byteOffset = checked(elementOffset * ShaderElementStrideInBytes);
+
+        // Upload validates even empty copies; all allocations precede the native write.
+        ShaderValueSnapshot[] snapshots = ((ShaderDataLayout)Layout).Upload(source, Owner.ShaderDataStorageIdentity, Storage, sourceOffset, length, byteOffset);
+        snapshots.CopyTo(_values, offset);
+    }
+
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
     {
         ValidateAlive();

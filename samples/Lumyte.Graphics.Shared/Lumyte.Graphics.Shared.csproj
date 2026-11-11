@@ -17,6 +17,7 @@
     <SlangShader Include="Shaders/indirect-execute.slang" ResourceName="Lumyte.Shaders.indirect-execute" Stage="compute" />
     <SlangShader Include="Shaders/binding-cycle-vertex.slang" ResourceName="Lumyte.Shaders.binding-cycle-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/binding-cycle-fragment.slang" ResourceName="Lumyte.Shaders.binding-cycle-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/binding-persistent.slang" ResourceName="Lumyte.Shaders.binding-persistent" Stage="compute" />
     <SlangShader Include="Shaders/binding-layout.slang" ResourceName="Lumyte.Shaders.binding-layout" Stage="compute" />
     <SlangShader Include="Shaders/binding-ranges.slang" ResourceName="Lumyte.Shaders.binding-ranges" Stage="compute" />
     <SlangShader Include="Shaders/binding-mismatch-vertex.slang" ResourceName="Lumyte.Shaders.binding-mismatch-vertex" Stage="vertex" />
