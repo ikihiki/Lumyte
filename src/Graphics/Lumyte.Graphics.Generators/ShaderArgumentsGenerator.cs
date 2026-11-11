@@ -10,7 +10,7 @@ namespace Lumyte.Graphics.Generators;
 
 /// <summary>Generates direct AOT-safe shader member readers for application structures.</summary>
 [Generator]
-public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
+public sealed partial class ShaderArgumentsGenerator : IIncrementalGenerator
 {
     private static readonly DiagnosticDescriptor _unsupported = new(
         "LUMG001", "Unsupported shader value", "Shader arguments cannot serialize '{0}': {1}", "Lumyte.Graphics", DiagnosticSeverity.Error, true);
@@ -67,10 +67,16 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         }
 
         bool generateStorage = generateWrite && type.AllInterfaces.Any(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderData");
-        if (generateStorage && (type.Name == "StorageMembers" || type.GetMembers("StorageMembers").Length != 0))
+        if (generateStorage)
         {
-            Report(output, type, "generated persistent storage requires the reserved member name StorageMembers");
-            return;
+            foreach (string reserved in new[] { "StorageMembers", "Storage", "CreateStorage" })
+            {
+                if (type.Name == reserved || type.GetMembers(reserved).Length != 0)
+                {
+                    Report(output, type, "generated persistent storage requires the reserved member name " + reserved);
+                    return;
+                }
+            }
         }
 
         if (generateStorage && type.GetMembers().OfType<IPropertySymbol>().Any(p => p.ExplicitInterfaceImplementations.Any(i =>
@@ -103,6 +109,11 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
                 "        global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderDataMember[]\n        {\n" + schema + "        });\n" +
                 "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderDataMember> global::Lumyte.Graphics.Abstractions.IShaderData.StorageSchema => " + schemaField + ";\n" +
                 "    /// <summary>Provides typed tokens for persistent shader data updates.</summary>\n    public static class StorageMembers\n    {\n" + tokens + "    }\n";
+        }
+
+        if (generateStorage)
+        {
+            storageSource += StorageViews(type, owner);
         }
 
         AttributeData? nameAttribute = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute");

@@ -11,6 +11,21 @@ public abstract class ShaderDataStorage<T>
     /// <summary>Gets the number of independently mutable elements.</summary>
     public abstract int Count { get; }
 
+    /// <summary>Reads a supported numeric leaf without capturing a logical value.</summary>
+    /// <typeparam name="TValue">The supported unmanaged numeric type.</typeparam>
+    /// <param name="index">The element index.</param>
+    /// <param name="member">The generated typed member token.</param>
+    /// <returns>The current numeric value.</returns>
+    public abstract TValue GetValue<TValue>(int index, ShaderDataValueMember<T, TValue> member)
+        where TValue : unmanaged;
+
+    /// <summary>Reads the original typed registration identity without encoding it.</summary>
+    /// <typeparam name="TReference">The referenced logical element type.</typeparam>
+    /// <param name="index">The element index.</param>
+    /// <param name="member">The generated typed member token.</param>
+    /// <returns>The current backend-created reference.</returns>
+    public abstract IGpuRef<TReference> GetReference<TReference>(int index, ShaderDataReferenceMember<T, TReference> member);
+
     /// <summary>Converts a complete logical value, preserving the old element on validation failure.</summary>
     /// <param name="index">The element index.</param>
     /// <param name="value">The replacement value. All references must originate from this device.</param>

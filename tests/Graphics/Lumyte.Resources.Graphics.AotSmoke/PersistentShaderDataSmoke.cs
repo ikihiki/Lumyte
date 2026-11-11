@@ -15,24 +15,34 @@ internal static class PersistentShaderDataSmoke
         object owner = new();
         var texture = new Reference<IGraphicsTextureView>();
         var sampler = new Reference<IGraphicsSampler>();
-        ShaderDataStorage<BindingMaterial> storage = layout.CreateStorage<BindingMaterial>(owner, [new(Vector4.One, texture, sampler)], static (_, _) => new byte[16]);
-        storage.SetValue(0, BindingMaterial.StorageMembers.Color, new Vector4(2, 3, 4, 5));
-        storage.SetReference(0, BindingMaterial.StorageMembers.Sampler, sampler);
+        BindingMaterial.Storage storage = new(layout.CreateStorage<BindingMaterial>(owner, [new(Vector4.One, texture, sampler)], EncodeReference));
+        storage[0].Color = new Vector4(2, 3, 4, 5);
+        storage[0].Sampler = sampler;
         using var target = new MappedBytes(layout.Size);
-        ShaderValueSnapshot old = layout.Upload(storage, owner, target, 0, 1, 0)[0];
-        storage.SetValue(0, BindingMaterial.StorageMembers.Color, Vector4.Zero);
-        layout.Upload(storage, owner, target, 0, 1, 0);
+        ShaderValueSnapshot old = layout.Upload(storage.Data, owner, target, 0, 1, 0)[0];
+        storage[0].Color = Vector4.Zero;
+        if (storage[0].Color != Vector4.Zero || !ReferenceEquals(storage[0].Sampler, sampler))
+        {
+            throw new InvalidOperationException("NativeAOT property getter differs.");
+        }
+
+        layout.Upload(storage.Data, owner, target, 0, 1, 0);
         if (MemoryMarshal.Read<Vector4>(old.Values[0].Data.Span) != new Vector4(2, 3, 4, 5) || !ReferenceEquals(old.Values[1].Reference, texture) || !ReferenceEquals(old.Values[2].Reference, sampler))
         {
             throw new InvalidOperationException("NativeAOT persistent shader metadata or numeric snapshot differs.");
         }
 
+        if (!MemoryMarshal.TryGetArray(old.Values[0].Data, out ArraySegment<byte> logical) || logical.Array!.AsSpan(16, 32).IndexOfAnyExcept((byte)0) >= 0)
+        {
+            throw new InvalidOperationException("NativeAOT logical snapshot contains opaque wire bytes.");
+        }
+
         var vectors = ShaderArtifact.LoadEmbedded(typeof(BindingNestedVector).Assembly, "Lumyte.Shaders.binding-layout.lshader");
         var nestedLayout = ShaderDataLayout.Data(vectors, ShaderTarget.Wgsl, "BindingNestedVector");
-        ShaderDataStorage<BindingNestedVector> nested = nestedLayout.CreateStorage<BindingNestedVector>(owner, [new(default, 7)], static (_, _) => throw new InvalidOperationException());
-        nested.SetValue(0, BindingNestedVector.StorageMembers.Child.Value, new Vector3(11, 12, 13));
+        BindingNestedVector.Storage nested = new(nestedLayout.CreateStorage<BindingNestedVector>(owner, [new(default, 7)], static (_, _, _, _) => throw new InvalidOperationException()));
+        nested[0].Child.Value = new Vector3(11, 12, 13);
         using var nestedTarget = new MappedBytes(nestedLayout.Size);
-        ShaderValueSnapshot snapshot = nestedLayout.Upload(nested, owner, nestedTarget, 0, 1, 0)[0];
+        ShaderValueSnapshot snapshot = nestedLayout.Upload(nested.Data, owner, nestedTarget, 0, 1, 0)[0];
         if (MemoryMarshal.Read<Vector3>(snapshot.Values[0].Data.Span) != new Vector3(11, 12, 13))
         {
             throw new InvalidOperationException("NativeAOT nested generated member update differs.");
@@ -41,18 +51,29 @@ internal static class PersistentShaderDataSmoke
         var matrixArtifact = ShaderArtifact.LoadEmbedded(typeof(BindingMatrixData).Assembly, "Lumyte.Shaders.binding-persistent.lshader");
         var matrixLayout = ShaderDataLayout.Data(matrixArtifact, ShaderTarget.SpirV, "BindingMatrixData");
         var node = new Reference<BindingNode>();
-        ShaderDataStorage<BindingMatrixData> matrix = matrixLayout.CreateStorage<BindingMatrixData>(owner, [new(default, default, node)], static (_, _) => new byte[16]);
+        BindingMatrixData.Storage matrix = new(matrixLayout.CreateStorage<BindingMatrixData>(owner, [new(default, default, node)], EncodeReference));
         Matrix4x4 transform = new(2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53);
-        matrix.SetValue(0, BindingMatrixData.StorageMembers.Transform, transform);
-        matrix.SetReference(0, BindingMatrixData.StorageMembers.Node, node);
+        matrix[0].Transform = transform;
+        matrix[0].Node = node;
         using var matrixTarget = new MappedBytes(matrixLayout.Size);
-        ShaderValueSnapshot matrixSnapshot = matrixLayout.Upload(matrix, owner, matrixTarget, 0, 1, 0)[0];
+        ShaderValueSnapshot matrixSnapshot = matrixLayout.Upload(matrix.Data, owner, matrixTarget, 0, 1, 0)[0];
         if (MemoryMarshal.Read<Matrix4x4>(matrixSnapshot.Values[0].Data.Span) != transform || !ReferenceEquals(matrixSnapshot.Values[2].Reference, node))
         {
             throw new InvalidOperationException("NativeAOT matrix and typed buffer reference storage differs.");
         }
 
-        Console.WriteLine("NativeAOT persistent generated matrix/nested/reference storage and frozen snapshots passed.");
+        if (matrix[0].Transform != transform || !ReferenceEquals(matrix[0].Node, node) || nested[0].Child.Value != new Vector3(11, 12, 13))
+        {
+            throw new InvalidOperationException("NativeAOT nested/matrix/reference property getter differs.");
+        }
+
+        Console.WriteLine("NativeAOT generated write-through properties, matrix/nested/reference data and frozen snapshots passed.");
+    }
+
+    private static int EncodeReference(ShaderDataMember member, object reference, string kind, Span<byte> destination)
+    {
+        destination.Fill(0xA5);
+        return 16;
     }
 
     private sealed class Reference<T> : IGpuRef<T>

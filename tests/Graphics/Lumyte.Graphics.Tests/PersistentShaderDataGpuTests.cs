@@ -38,6 +38,7 @@ public sealed class PersistentShaderDataGpuTests
 
     private static async Task CheckAsync(IGraphicDevice owner, IGraphicDevice foreign)
     {
+        CheckBufferReferencePropertyAllocations(owner);
         ShaderArtifact artifact = Artifact("binding-fragment");
         using IGraphicsShaderDataBuffer<BindingMaterial> staging = owner.CreateShaderDataBuffer<BindingMaterial>(artifact, 3, MemoryPreference.Upload);
         using IGraphicsShaderDataBuffer<BindingMaterial> other = owner.CreateShaderDataBuffer<BindingMaterial>(artifact, 3, MemoryPreference.Upload);
@@ -55,11 +56,19 @@ public sealed class PersistentShaderDataGpuTests
         IGpuRef<IGraphicsSampler> sameSlot = secondTable.WriteSampler(0, sampler);
         IGpuRef<IGraphicsSampler> foreignRef = foreignTable.WriteSampler(0, foreignSampler);
         BindingMaterial[] initial = [new(Vector4.One, textureRef, samplerRef), new(new(2), textureRef, samplerRef)];
-        ShaderDataStorage<BindingMaterial> source = staging.CreateStorage(initial);
-        ShaderDataStorage<BindingMaterial> empty = staging.CreateStorage([]);
+        BindingMaterial.Storage source = BindingMaterial.CreateStorage(staging, initial);
+        BindingMaterial.Storage empty = BindingMaterial.CreateStorage(staging, []);
         var publicLayout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, "BindingMaterial");
-        ShaderDataStorage<BindingMaterial> forged = publicLayout.CreateStorage<BindingMaterial>(owner, [initial[0]], static (_, _) => Enumerable.Repeat((byte)255, 16).ToArray());
-        ShaderDataStorage<BindingMaterial> forgedEmpty = publicLayout.CreateStorage<BindingMaterial>(owner, [], static (_, _) => new byte[16]);
+        ShaderDataStorage<BindingMaterial> forged = publicLayout.CreateStorage<BindingMaterial>(owner, [initial[0]], static (_, _, _, destination) =>
+        {
+            destination.Fill(255);
+            return 16;
+        });
+        ShaderDataStorage<BindingMaterial> forgedEmpty = publicLayout.CreateStorage<BindingMaterial>(owner, [], static (_, _, _, destination) =>
+        {
+            destination.Clear();
+            return 16;
+        });
         initial[0] = default;
         Assert.Equal(2, source.Count);
         Assert.Equal(0, empty.Count);
@@ -67,13 +76,13 @@ public sealed class PersistentShaderDataGpuTests
         Assert.Throws<InvalidOperationException>(() => gpu.CopyFrom(source));
         Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)staging).Read(0));
         Assert.Throws<ArgumentException>(() => staging.CreateStorage([new(Vector4.One, textureRef, foreignRef)]));
-        Assert.Throws<ArgumentException>(() => source.SetReference(0, BindingMaterial.StorageMembers.Sampler, foreignRef));
-        Assert.Throws<ArgumentException>(() => source.SetReference(0, BindingMaterial.StorageMembers.Sampler, new FakeReference()));
+        Assert.Throws<ArgumentException>(() => source[0].Sampler = foreignRef);
+        Assert.Throws<ArgumentException>(() => source[0].Sampler = new FakeReference());
         Assert.Throws<ArgumentException>(() => source.Set(0, new(Vector4.Zero, textureRef, foreignRef)));
-        Assert.Throws<ArgumentException>(() => source.SetValue(0, new ShaderDataValueMember<BindingMaterial, float>("Color"), 1f));
-        Assert.Throws<ArgumentException>(() => source.SetValue(0, default(ShaderDataValueMember<BindingMaterial, Vector4>), Vector4.Zero));
-        Assert.Throws<ArgumentOutOfRangeException>(() => source.SetValue(-1, BindingMaterial.StorageMembers.Color, Vector4.Zero));
-        Assert.Throws<ArgumentOutOfRangeException>(() => source.SetValue(2, BindingMaterial.StorageMembers.Color, Vector4.Zero));
+        Assert.Throws<ArgumentException>(() => source.Data.SetValue(0, new ShaderDataValueMember<BindingMaterial, float>("Color"), 1f));
+        Assert.Throws<ArgumentException>(() => source.Data.SetValue(0, default(ShaderDataValueMember<BindingMaterial, Vector4>), Vector4.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() => source[-1].Color = Vector4.Zero);
+        Assert.Throws<ArgumentOutOfRangeException>(() => source[2].Color = Vector4.Zero);
         await staging.MapAsync();
         Assert.Throws<ArgumentException>(() => staging.CopyFrom(forged));
         Assert.Throws<ArgumentException>(() => staging.CopyFrom(forgedEmpty));
@@ -85,8 +94,8 @@ public sealed class PersistentShaderDataGpuTests
         Assert.All(logicalBytes.Array.AsSpan(16, 32).ToArray(), dataByte => Assert.Equal((byte)0, dataByte));
         Assert.Same(samplerRef, old.Values[2].Reference);
         Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)staging).Read(0));
-        source.SetValue(0, BindingMaterial.StorageMembers.Color, new Vector4(3));
-        source.SetReference(0, BindingMaterial.StorageMembers.Sampler, sameSlot);
+        source[0].Color = new Vector4(3);
+        source[0].Sampler = sameSlot;
         staging.CopyFrom(source, 0, 1, 2);
         Assert.Equal(new Vector4(3), ReadColor(((IShaderDataSource)staging).Read(2)));
         Assert.Same(sameSlot, ((IShaderDataSource)staging).Read(2).Values[2].Reference);
@@ -144,6 +153,41 @@ public sealed class PersistentShaderDataGpuTests
         Assert.Throws<ObjectDisposedException>(() => staging.CreateStorage([]));
         Assert.Equal(Vector4.One, ReadColor(old));
         Assert.Same(samplerRef, old.Values[2].Reference);
+    }
+
+    private static void CheckBufferReferencePropertyAllocations(IGraphicDevice owner)
+    {
+        var artifact = ShaderArtifact.LoadEmbedded(typeof(BindingNode).Assembly, "Lumyte.Shaders.binding-compute.lshader");
+        using IGraphicsShaderDataBuffer<BindingNode> firstBuffer = owner.CreateShaderDataBuffer<BindingNode>(artifact, 2);
+        using IGraphicsShaderDataBuffer<BindingNode> secondBuffer = owner.CreateShaderDataBuffer<BindingNode>(artifact, 2);
+        using IArgumentTable table = owner.CreateArgumentTable(new() { BufferCapacity = 2 });
+        IGpuRef<BindingNode> first = table.WriteBuffer(0, firstBuffer.SliceElements(0, 2));
+        IGpuRef<BindingNode> second = table.WriteBuffer(1, secondBuffer.SliceElements(0, 2));
+        BindingNode.Storage storage = BindingNode.CreateStorage(firstBuffer, [new(1, first)]);
+        for (int index = 0; index < 1024; index++)
+        {
+            storage[0].Next = first;
+            _ = storage[0].Next;
+        }
+
+        // The second resource has never been encoded; a per-resource cache miss must not allocate.
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        storage[0].Next = second;
+        long firstUse = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0L, firstUse);
+        before = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < 1024; index++)
+        {
+            storage[0].Value = (uint)index;
+            storage[0].Next = (index & 1) == 0 ? first : second;
+            _ = storage[0].Value;
+            _ = storage[0].Next;
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0L, allocated);
+        Assert.Same(second, storage[0].Next);
+        Assert.Equal(1023u, storage[0].Value);
     }
 
     private static Vector4 ReadColor(ShaderValueSnapshot snapshot)

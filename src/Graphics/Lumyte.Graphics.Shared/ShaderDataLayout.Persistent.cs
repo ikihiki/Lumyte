@@ -16,7 +16,7 @@ public sealed partial class ShaderDataLayout
     /// <param name="initial">Initial logical values, which may be empty.</param>
     /// <param name="encoder">The backend encoder, including provenance, device and usage checks.</param>
     /// <returns>The device-specific persistent storage; never exposes its wire bytes.</returns>
-    public ShaderDataStorage<T> CreateStorage<T>(object owner, ReadOnlySpan<T> initial, Func<ShaderValue, string, byte[]> encoder)
+    public ShaderDataStorage<T> CreateStorage<T>(object owner, ReadOnlySpan<T> initial, ShaderDataReferenceEncoder encoder)
         where T : struct, IShaderData
     {
         ArgumentNullException.ThrowIfNull(owner);

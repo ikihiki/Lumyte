@@ -90,15 +90,15 @@ internal static class BindingRegressionExercise
         using IGraphicsShaderDataBuffer<BindingNestedVector> nestedStaging = device.CreateShaderDataBuffer<BindingNestedVector>(artifact, 2, MemoryPreference.Upload);
         if (persistent)
         {
-            ShaderDataStorage<BindingVector> vectorValues = vectorStaging.CreateStorage([new(default), new(default)]);
-            vectorValues.SetValue(0, BindingVector.StorageMembers.Value, new System.Numerics.Vector3(11, 12, 13));
-            vectorValues.SetValue(1, BindingVector.StorageMembers.Value, new System.Numerics.Vector3(21, 22, 23));
-            ShaderDataStorage<BindingPackedVector> packedValues = packedStaging.CreateStorage([new(0, default), new(0, default)]);
+            BindingVector.Storage vectorValues = BindingVector.CreateStorage(vectorStaging, [new(default), new(default)]);
+            vectorValues[0].Value = new System.Numerics.Vector3(11, 12, 13);
+            vectorValues[1].Value = new System.Numerics.Vector3(21, 22, 23);
+            BindingPackedVector.Storage packedValues = BindingPackedVector.CreateStorage(packedStaging, [new(0, default), new(0, default)]);
             packedValues.Set(0, new(31, new(32, 33, 34)));
             packedValues.Set(1, new(41, new(42, 43, 44)));
-            ShaderDataStorage<BindingNestedVector> nestedValues = nestedStaging.CreateStorage([new(default, 54), new(default, 64)]);
-            nestedValues.SetValue(0, BindingNestedVector.StorageMembers.Child.Value, new System.Numerics.Vector3(51, 52, 53));
-            nestedValues.SetValue(1, BindingNestedVector.StorageMembers.Child.Value, new System.Numerics.Vector3(61, 62, 63));
+            BindingNestedVector.Storage nestedValues = BindingNestedVector.CreateStorage(nestedStaging, [new(default, 54), new(default, 64)]);
+            nestedValues[0].Child.Value = new System.Numerics.Vector3(51, 52, 53);
+            nestedValues[1].Child.Value = new System.Numerics.Vector3(61, 62, 63);
             await vectorStaging.MapAsync();
             vectorStaging.CopyFrom(vectorValues);
             vectorStaging.Unmap();

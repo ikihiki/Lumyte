@@ -109,7 +109,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
     {
         ValidateAlive();
         Direct3D12Device owner = Owner;
-        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (value, kind) => Direct3D12ShaderReferenceEncoding.PackPersistent(owner, value, kind));
+        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (member, reference, kind, destination) => Direct3D12ShaderReferenceEncoding.EncodePersistent(owner, member, reference, kind, destination));
     }
 
     /// <summary>Uploads retained bytes after validating the complete range and freezing metadata.</summary>

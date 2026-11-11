@@ -163,19 +163,21 @@ using Lumyte.Graphics.Abstractions;
 
 // BindingMaterialはアプリ側のpartial IShaderDataで、Color・Texture・Samplerを持つ。
 // device、artifact、staging、values、登録済みtextureRefは生成済みとする。
-ShaderDataStorage<BindingMaterial> retained = staging.CreateStorage(values);
-retained.SetValue(0, BindingMaterial.StorageMembers.Color, Vector4.One);
-retained.SetReference(0, BindingMaterial.StorageMembers.Texture, textureRef);
+BindingMaterial.Storage retained = BindingMaterial.CreateStorage(staging, values);
+retained[0].Color = Vector4.One;
+retained[0].Texture = textureRef;
 await staging.MapAsync();
 staging.CopyFrom(retained, sourceOffset: 0, count: 1, elementOffset: 2);
 staging.Unmap();
 // 続いて明示的なCopyBuffer、barrier、Submit、GPU完了待機を行う。
 ```
 
-入れ子のmemberは `Type.StorageMembers.Child.Value` のように指定します。tokenはpathと型を検証し、未定義のfieldや同サイズの異なる数値型を受け入れません。全論理値を置き換える `Set(index, value)` も使えますが、この操作には全値の変換費用が残ります。
+入れ子は `storage[i].Child.Value` で読み書きします。返るreadonly viewをコピー・cacheしても同じownerとindexへ書き込み、論理Tのコピーだけを変更することはありません。defaultのviewはInvalidOperationException、index範囲外はArgumentOutOfRangeExceptionで拒否します。低水準のtyped tokenもpathと型を検証し、未定義fieldや同サイズの異なる数値型を受け入れません。全論理値を置き換える `Set(index, value)` も使えますが、この操作には全値の変換費用が残ります。
 
 `CreateStorage` は初期値を読む前にartifactのfield集合、数値型、helperのABI、offset、stride、alignmentを認証します。空のinitialでも認証し、返るstorageのCountはinitialの長さです。任意の手書きcodecの静的なmember構成は推測せず、metadataのない型は `NotSupportedException` で拒否します。手書きcodecは既存の論理span経路を引き続き使用できます。
 
 保持領域のbytesにはGC参照を含めず、16 byteのbackend製の不透明値と、CPU側の登録identityを分けます。VulkanとDirect3D12の保持経路は毎回のCapture・Packを省きます。WebGPUではこの公開APIからbackend用の表現を作り、draw／dispatch時の有限bindingへの変換は残ります。
 
 storageはCPU領域だけを所有し、Disposeを要求しません。同device・同schemaのbufferへだけコピーできます。GPU資源の寿命、登録の置換・Release、stagingの再利用とCPU／GPU同期は利用者が管理し、自動待機は行いません。並行更新の安全性は保証しません。凍結snapshotは一要素のbytesとその参照だけを保持し、後続更新で古いRead結果を書き換えません。
+
+このAPIのCPU upload部品の改善を、UI全体の性能目標達成へ読み替えないでください。現在のDrawing2D汎用producerは論理spanのCopyFromを使い、単色矩形の高速経路はraw bufferを使います。保持storageをUI producerへ接続したprofileを測るまでは、UIのhost／GPU p95や0 B／4 KiB割当目標に対する本APIの効果は未測定です。

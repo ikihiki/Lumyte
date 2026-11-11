@@ -203,19 +203,19 @@ public sealed partial class PersistentStorageTests
 
         public Value Make(int number) => new(number, new Vector4(number, 2, 3, 4), Matrix4x4.Identity, Reference(number), Reference(number + 1));
 
-        public byte[] Encode(ShaderValue value, string kind)
+        public int Encode(ShaderDataMember member, object value, string kind, Span<byte> destination)
         {
             Encodes++;
-            if (value.Reference is not Ref reference || !ReferenceEquals(reference.Owner, Owner) || kind != "GpuBufferRef")
+            if (value is not Ref reference || !ReferenceEquals(reference.Owner, Owner) || kind != "GpuBufferRef")
             {
                 throw new ArgumentException("Invalid reference provenance or kind.", nameof(value));
             }
 
-            if (value.Path == FailPath && Failure != null)
+            if (member.Path == FailPath && Failure != null)
             {
                 if (Failure == "short")
                 {
-                    return new byte[15];
+                    return 15;
                 }
 
                 if (Failure == "null")
@@ -231,10 +231,10 @@ public sealed partial class PersistentStorageTests
                 throw new InvalidOperationException("Injected encoder failure.");
             }
 
-            byte[] result = new byte[16];
+            destination.Clear();
             int id = reference.Id;
-            MemoryMarshal.Write(result, in id);
-            return result;
+            MemoryMarshal.Write(destination, in id);
+            return 16;
         }
     }
 
@@ -259,6 +259,10 @@ public sealed partial class PersistentStorageTests
     private sealed class ForeignStorage : ShaderDataStorage<Value>
     {
         public override int Count => 0;
+
+        public override TValue GetValue<TValue>(int index, ShaderDataValueMember<Value, TValue> member) => throw new NotSupportedException();
+
+        public override IGpuRef<TReference> GetReference<TReference>(int index, ShaderDataReferenceMember<Value, TReference> member) => throw new NotSupportedException();
 
         public override void Set(int index, in Value value) => throw new NotSupportedException();
 

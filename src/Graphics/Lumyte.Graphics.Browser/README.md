@@ -199,7 +199,7 @@ Status／Lossは診断と上位の制御に使い、backend APIの操作可否�
 
 ## 更新間で保持するシェーダーデータ
 
-生成されたIShaderDataでは、bufferの `CreateStorage(initial)` でCPUの転送表現を保持できます。`Type.StorageMembers` の型付きtokenを使う `SetValue` と `SetReference` が、数値と登録identityを独立に更新します。初期変換と全値を置き換える `Set` には変換費用が残ります。
+生成されたIShaderDataでは、`Type.CreateStorage(buffer, initial)` で型付き `Type.Storage` を作り、CPUの転送表現を保持できます。`storage[i].Color = value` や `storage[i].Texture = reference` のpropertyが、数値と登録identityを独立に更新します。要素viewをコピーしても同じownerとindexへ書き込み、propertyアクセス時にheap確保やCaptureを行いません。初期変換と全値を置き換える `Set` には変換費用が残ります。
 
 map済みUploadの `CopyFrom(storage)` はこのbackend用の論理slot表現をコピーします。有限bindingへの変換表は引き続きdraw／dispatch時にCPUの登録identityから作成し、native address経路の変換費用ゼロを保証しません。 各要素の凍結snapshotは一要素分のbytesと参照情報だけを保持します。後続のsource更新で以前のRead結果を書き換えません。
 

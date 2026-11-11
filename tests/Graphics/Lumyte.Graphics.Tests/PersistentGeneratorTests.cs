@@ -268,6 +268,173 @@ public sealed class PersistentGeneratorTests
         Assert.Equal("Value", Assert.Single(capture.Values).Path);
     }
 
+    /// <summary>Real C# clients compile and execute temporary nested setters and every supported property kind.</summary>
+    /// <param name="collidingMember">Whether a logical member uses the preferred root view type name.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GeneratedPropertyClientCompilesAndExecutesWithoutLogicalIndexerCopies(bool collidingMember)
+    {
+        const string Source = """
+            using System;
+            using System.Numerics;
+            using System.Collections.Generic;
+            using Lumyte.Graphics.Abstractions;
+            public readonly record struct Leaf(float Value);
+            public readonly record struct Branch(Leaf Child);
+            public readonly partial record struct Data(int Signed, uint Unsigned, float Scalar,
+                Vector2 Pair, Vector3 Triple, Vector4 Color, Matrix4x4 Transform,
+                Branch Nested, IGpuRef<float> Buffer) : IShaderData;
+            public sealed class Reference : IGpuRef<float>
+            {
+                public ulong Count => 1;
+                public IGpuRef<float> GetElement(ulong index) => this;
+            }
+            public sealed class Memory : ShaderDataStorage<Data>
+            {
+                private readonly Dictionary<string, object>[] values;
+                public int Captures;
+                public int NumericSets;
+                public int ReferenceSets;
+                public override int Count { get; }
+                public Memory(int count)
+                {
+                    Count = count;
+                    values = new Dictionary<string, object>[Math.Max(0, count)];
+                    for (int index = 0; index < values.Length; index++) values[index] = new();
+                }
+                public override V GetValue<V>(int index, ShaderDataValueMember<Data, V> member)
+                    => (V)values[index][member.Path];
+                public override IGpuRef<R> GetReference<R>(int index, ShaderDataReferenceMember<Data, R> member)
+                    => (IGpuRef<R>)values[index][member.Path];
+                public override void SetValue<V>(int index, ShaderDataValueMember<Data, V> member, in V value)
+                {
+                    NumericSets++;
+                    values[index][member.Path] = value;
+                }
+                public override void SetReference<R>(int index, ShaderDataReferenceMember<Data, R> member, IGpuRef<R> value)
+                {
+                    ReferenceSets++;
+                    values[index][member.Path] = value;
+                }
+                public override void Set(int index, in Data value)
+                {
+                    Captures++;
+                    _ = IShaderArguments.Capture(in value);
+                    values[index]["Signed"] = value.Signed;
+                    values[index]["Unsigned"] = value.Unsigned;
+                    values[index]["Scalar"] = value.Scalar;
+                    values[index]["Pair"] = value.Pair;
+                    values[index]["Triple"] = value.Triple;
+                    values[index]["Color"] = value.Color;
+                    values[index]["Transform"] = value.Transform;
+                    values[index]["Nested.Child.Value"] = value.Nested.Child.Value;
+                    values[index]["Buffer"] = value.Buffer;
+                }
+            }
+            public sealed class Buffer : IGraphicsShaderDataBuffer<Data>
+            {
+                public Memory? Created;
+                public ulong Count => 2;
+                public ulong SizeInBytes => 512;
+                public ulong ShaderElementStrideInBytes => 256;
+                public MemoryPreference Memory => MemoryPreference.Upload;
+                public bool IsMapped => true;
+                public ShaderDataStorage<Data> CreateStorage(ReadOnlySpan<Data> initial)
+                {
+                    Created = new Memory(initial.Length);
+                    for (int index = 0; index < initial.Length; index++) Created.Set(index, initial[index]);
+                    return Created;
+                }
+                public void CopyFrom(ReadOnlySpan<Data> source, ulong elementOffset = 0) => throw new NotSupportedException();
+                public System.Threading.Tasks.ValueTask MapAsync(System.Threading.CancellationToken cancellationToken = default)
+                    => System.Threading.Tasks.ValueTask.CompletedTask;
+                public void Unmap() { }
+                public ShaderDataSlice<Data> SliceElements(ulong offset, ulong count) => new(this, offset, count);
+                public void Dispose() { }
+            }
+            public static class Probe
+            {
+                private static T Default<T>(T value) => default!;
+                private static void Check(bool condition)
+                {
+                    if (!condition) throw new InvalidOperationException("Generated property client assertion failed.");
+                }
+                private static void Throws<E>(Action action) where E : Exception
+                {
+                    try { action(); }
+                    catch (E) { return; }
+                    throw new InvalidOperationException("Expected " + typeof(E).Name);
+                }
+                public static object Run()
+                {
+                    var reference = new Reference();
+                    var initial = new Data(1, 2, 3, Vector2.One, Vector3.One, Vector4.One,
+                        Matrix4x4.Identity, new Branch(new Leaf(4)), reference);
+                    var buffer = new Buffer();
+                    Data.Storage storage = Data.CreateStorage(buffer, new[] { initial, initial });
+                    Memory memory = buffer.Created!;
+                    Check(storage.Count == 2 && ReferenceEquals(memory, storage.Data));
+                    ShaderDataStorage<Data> unwrapped = storage;
+                    Check(ReferenceEquals(memory, unwrapped));
+                    var root = storage[0];
+                    var branch = root.Nested;
+                    var child = branch.Child;
+                    ref readonly var cached = ref storage[0];
+                    ref readonly var cachedChild = ref cached.Nested.Child;
+                    storage[0].Nested.Child.Value = 9;
+                    Check(child.Value == 9 && cachedChild.Value == 9);
+                    child.Value = 10;
+                    cachedChild.Value = 11;
+                    Check(storage[0].Nested.Child.Value == 11 && storage[1].Nested.Child.Value == 4);
+                    storage[0].Signed = -7;
+                    storage[0].Unsigned = 8;
+                    storage[0].Scalar = 9;
+                    storage[0].Pair = new Vector2(10);
+                    storage[0].Triple = new Vector3(11);
+                    storage[0].Color = new Vector4(12);
+                    Matrix4x4 matrix = Matrix4x4.CreateTranslation(1, 2, 3);
+                    cached.Transform = matrix;
+                    var replacement = new Reference();
+                    root.Buffer = replacement;
+                    Check(root.Signed == -7 && root.Unsigned == 8 && root.Scalar == 9);
+                    Check(root.Pair == new Vector2(10) && root.Triple == new Vector3(11));
+                    Check(root.Color == new Vector4(12) && root.Transform == matrix);
+                    Check(ReferenceEquals(cached.Buffer, replacement));
+                    Check(memory.Captures == 2 && memory.NumericSets == 10 && memory.ReferenceSets == 1);
+                    storage.Set(0, initial);
+                    Check(memory.Captures == 3 && child.Value == 4 && root.Signed == 1);
+                    Check(ReferenceEquals(root.Buffer, reference));
+                    var invalid = Default(storage[0]);
+                    var invalidChild = Default(child);
+                    Throws<InvalidOperationException>(() => { _ = invalid.Nested; });
+                    Throws<InvalidOperationException>(() => { _ = invalid.Signed; });
+                    Throws<InvalidOperationException>(() => invalid.Signed = 1);
+                    Throws<InvalidOperationException>(() => { _ = invalid.Buffer; });
+                    Throws<InvalidOperationException>(() => invalid.Buffer = reference);
+                    Throws<InvalidOperationException>(() => { _ = invalidChild.Value; });
+                    Throws<InvalidOperationException>(() => invalidChild.Value = 1);
+                    Throws<ArgumentOutOfRangeException>(() => { _ = storage[-1]; });
+                    Throws<ArgumentOutOfRangeException>(() => { _ = storage[storage.Count]; });
+                    Throws<ArgumentOutOfRangeException>(() => new Data.Storage(new Memory(-1)));
+                    Throws<ArgumentNullException>(() => new Data.Storage(null!));
+                    Throws<ArgumentNullException>(() => Data.CreateStorage(null!, ReadOnlySpan<Data>.Empty));
+                    Throws<ArgumentNullException>(() => { ShaderDataStorage<Data> ignored = (Data.Storage)null!; });
+                    var temporaryBuffer = new Buffer();
+                    Data.CreateStorage(temporaryBuffer, new[] { initial })[0].Nested.Child.Value = 19;
+                    Check(temporaryBuffer.Created!.GetValue(0, Data.StorageMembers.Nested.Child.Value) == 19);
+                    new Data.Storage(memory)[1].Color = new Vector4(23);
+                    Check(storage[1].Color == new Vector4(23));
+                    return true;
+                }
+            }
+            """;
+        string source = collidingMember ? Source.Replace("Signed", "Element", StringComparison.Ordinal) : Source;
+        (GeneratorDriverRunResult Run, Compilation Output) result = Run(source);
+        AssertCompiles(result);
+        Assert.True(Execute<bool>(result.Output));
+    }
+
     private static void AssertCompiles((GeneratorDriverRunResult Run, Compilation Output) result)
     {
         Assert.Empty(result.Run.Diagnostics);

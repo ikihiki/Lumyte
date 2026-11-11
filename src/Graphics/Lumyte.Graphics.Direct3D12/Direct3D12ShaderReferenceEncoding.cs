@@ -35,9 +35,14 @@ internal static class Direct3D12ShaderReferenceEncoding
 
     // Validate only manufacture, device, immutable access and range facts. Registration
     // release/replacement and GPU lifetime remain caller-managed; no generation scan is added.
-    internal static byte[] PackPersistent(Direct3D12Device owner, ShaderValue value, string kind)
+    internal static int EncodePersistent(Direct3D12Device owner, ShaderDataMember member, object value, string kind, Span<byte> destination)
     {
-        if (value.Reference is not IBackendShaderReference reference ||
+        if (destination.Length != 16)
+        {
+            throw new ArgumentException("A backend reference must occupy exactly 16 bytes.", nameof(destination));
+        }
+
+        if (value is not IBackendShaderReference reference ||
             reference.Table is not Direct3D12ArgumentTable table || !table.BelongsTo(owner))
         {
             throw new ArgumentException("A backend-created shader reference from the same device is required.");
@@ -46,6 +51,11 @@ internal static class Direct3D12ShaderReferenceEncoding
         switch (kind)
         {
             case "GpuTextureRef":
+                if (member.ValueType != typeof(IGraphicsTextureView))
+                {
+                    throw new ArgumentException("The texture reference target does not match the compiled field.");
+                }
+
                 if (reference.Resource is not Direct3D12TextureView view || !ReferenceEquals(view.Owner, owner) ||
                     (view.Texture.Usage & TextureUsage.Sampled) == 0)
                 {
@@ -70,6 +80,11 @@ internal static class Direct3D12ShaderReferenceEncoding
 
                 break;
             case "GpuSamplerRef":
+                if (member.ValueType != typeof(IGraphicsSampler))
+                {
+                    throw new ArgumentException("The sampler reference target does not match the compiled field.");
+                }
+
                 if (reference.Resource is not Direct3D12Sampler sampler || !ReferenceEquals(sampler.Owner, owner))
                 {
                     throw new ArgumentException("A sampler from the same device is required.");
@@ -91,6 +106,11 @@ internal static class Direct3D12ShaderReferenceEncoding
                 ulong size;
                 if (reference.Resource is IShaderDataSource data && kind == "GpuBufferRef" && data.Memory == MemoryPreference.Automatic)
                 {
+                    if (data.Layout.Name != member.ReferenceTarget)
+                    {
+                        throw new ArgumentException("The shader data reference target does not match the compiled field.");
+                    }
+
                     size = data.SizeInBytes;
                 }
                 else if (reference.Resource is IShaderRawBuffer raw &&
@@ -122,6 +142,11 @@ internal static class Direct3D12ShaderReferenceEncoding
                 throw new NotSupportedException("The compiled shader reference kind is unsupported.");
         }
 
-        return Pack(owner, value, kind);
+        owner.RequireReady();
+        destination.Clear();
+        BinaryPrimitives.WriteUInt32LittleEndian(destination, reference.Slot);
+        BinaryPrimitives.WriteUInt32LittleEndian(destination[4..], checked((uint)reference.OffsetInBytes));
+        BinaryPrimitives.WriteUInt32LittleEndian(destination[8..], checked((uint)reference.Count));
+        return 16;
     }
 }

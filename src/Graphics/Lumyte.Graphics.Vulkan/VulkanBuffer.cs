@@ -4,7 +4,7 @@ using VkBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
+internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IVulkanBufferHandle
     where T : unmanaged
 {
     private readonly VulkanDevice _owner;
@@ -79,6 +79,8 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
     }
 
     public object ShaderHandle => Native;
+
+    Silk.NET.Vulkan.Buffer IVulkanBufferHandle.NativeBuffer => Native;
 
     public BufferLayout<T> Layout { get; }
 

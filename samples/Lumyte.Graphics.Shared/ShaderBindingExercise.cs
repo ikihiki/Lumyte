@@ -59,13 +59,13 @@ public static class ShaderBindingExercise
         await staging.MapAsync();
         if (persistent)
         {
-            ShaderDataStorage<BindingNode> retained = staging.CreateStorage([new(0, node.GetElement(0)), new(7, node.GetElement(0))]);
-            retained.SetValue(0, BindingNode.StorageMembers.Value, 3u);
-            retained.SetReference(0, BindingNode.StorageMembers.Next, node.GetElement(1));
+            BindingNode.Storage retained = BindingNode.CreateStorage(staging, [new(0, node.GetElement(0)), new(7, node.GetElement(0))]);
+            retained[0].Value = 3u;
+            retained[0].Next = node.GetElement(1);
             staging.CopyFrom(retained);
             ShaderValueSnapshot frozen = ((IShaderDataSource)staging).Read(0);
-            retained.SetValue(0, BindingNode.StorageMembers.Value, 999u);
-            retained.SetReference(0, BindingNode.StorageMembers.Next, node.GetElement(0));
+            retained[0].Value = 999u;
+            retained[0].Next = node.GetElement(0);
             Require(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(frozen.Values[0].Data.Span) == 3, "Persistent numeric snapshot changed after mutation.");
             Require(ReferenceEquals(frozen.Values[1].Reference, ((IShaderDataSource)staging).Read(0).Values[1].Reference), "Persistent reference identity changed after mutation.");
         }
@@ -78,9 +78,9 @@ public static class ShaderBindingExercise
         await changed.MapAsync();
         if (persistent)
         {
-            ShaderDataStorage<BindingNode> retained = changed.CreateStorage([new(0, node.GetElement(0))]);
-            retained.SetValue(0, BindingNode.StorageMembers.Value, 9u);
-            retained.SetReference(0, BindingNode.StorageMembers.Next, node.GetElement(1));
+            BindingNode.Storage retained = BindingNode.CreateStorage(changed, [new(0, node.GetElement(0))]);
+            retained[0].Value = 9u;
+            retained[0].Next = node.GetElement(1);
             changed.CopyFrom(retained);
         }
         else
@@ -165,16 +165,16 @@ public static class ShaderBindingExercise
             await staging.MapAsync();
             if (persistent)
             {
-                ShaderDataStorage<BindingMaterial> retained = staging.CreateStorage(values);
+                BindingMaterial.Storage retained = BindingMaterial.CreateStorage(staging, values);
                 for (int i = 0; i < Count; i++)
                 {
-                    retained.SetValue(i, BindingMaterial.StorageMembers.Color, Vector4.One);
-                    retained.SetReference(i, BindingMaterial.StorageMembers.Texture, values[i].Texture);
-                    retained.SetReference(i, BindingMaterial.StorageMembers.Sampler, samplerRef);
+                    retained[i].Color = Vector4.One;
+                    retained[i].Texture = values[i].Texture;
+                    retained[i].Sampler = samplerRef;
                 }
 
                 staging.CopyFrom(retained);
-                retained.SetValue(0, BindingMaterial.StorageMembers.Color, Vector4.Zero);
+                retained[0].Color = Vector4.Zero;
             }
             else
             {

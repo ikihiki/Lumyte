@@ -178,7 +178,7 @@ Stable の WARP（debug layer 有効）では共通 suite 全体も成功しま�
 
 ## 更新間で保持するシェーダーデータ
 
-生成されたIShaderDataでは、bufferの `CreateStorage(initial)` でCPUの転送表現を保持できます。`Type.StorageMembers` の型付きtokenを使う `SetValue` と `SetReference` が、数値と登録identityを独立に更新します。初期変換と全値を置き換える `Set` には変換費用が残ります。
+生成されたIShaderDataでは、`Type.CreateStorage(buffer, initial)` で型付き `Type.Storage` を作り、CPUの転送表現を保持できます。`storage[i].Color = value` や `storage[i].Texture = reference` のpropertyが、数値と登録identityを独立に更新します。要素viewをコピーしても同じownerとindexへ書き込み、propertyアクセス時にheap確保やCaptureを行いません。初期変換と全値を置き換える `Set` には変換費用が残ります。
 
 map済みUploadの `CopyFrom(storage)` は保持済みのbackend互換bytesを直接コピーし、論理値のCapture・Packを呼びません。 各要素の凍結snapshotは一要素分のbytesと参照情報だけを保持します。後続のsource更新で以前のRead結果を書き換えません。
 

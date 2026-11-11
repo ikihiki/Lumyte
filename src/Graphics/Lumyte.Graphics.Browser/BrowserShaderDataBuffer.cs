@@ -109,7 +109,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
     {
         ValidateAlive();
         BrowserDevice owner = Owner;
-        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (value, kind) => BrowserShaderReferenceEncoding.PackPersistent(owner, value, kind));
+        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (member, reference, kind, destination) => BrowserShaderReferenceEncoding.EncodePersistent(owner, member, reference, kind, destination));
     }
 
     /// <summary>Uploads retained bytes after validating the complete range and freezing metadata.</summary>

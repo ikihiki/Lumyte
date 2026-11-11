@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource
+internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IVulkanBufferHandle
     where T : struct, IShaderData
 {
     private readonly ShaderValueSnapshot?[] _values;
@@ -43,6 +43,8 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
     public bool IsMapped => Storage.IsMapped;
 
     public object ShaderHandle => ((IShaderRawBuffer)Storage).ShaderHandle;
+
+    Silk.NET.Vulkan.Buffer IVulkanBufferHandle.NativeBuffer => ((VulkanBuffer<byte>)Storage).Native;
 
     internal IGraphicsBuffer<byte> Storage { get; }
 
@@ -109,7 +111,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
     {
         ValidateAlive();
         VulkanDevice owner = Owner;
-        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (value, kind) => VulkanShaderReferenceEncoding.PackPersistent(owner, value, kind));
+        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (member, reference, kind, destination) => VulkanShaderReferenceEncoding.EncodePersistent(owner, member, reference, kind, destination));
     }
 
     /// <summary>Uploads retained bytes after validating the complete range and freezing metadata.</summary>

@@ -14,7 +14,7 @@
 
 ## 決定
 
-artifactに従うunmanagedな転送用領域と、登録identityを保持するCPU側の情報を分離したShaderDataStorageを追加する。通常の論理構造体を渡す既存経路を維持し、保持経路では数値変更と参照変更を個別に受け付ける。VulkanとDirect3D12では保持済みbytesをCopyFromで直接コピーし、各回のCaptureとPackを行わない。
+artifactに従うunmanagedな転送用領域と、登録identityを保持するCPU側の情報を分離したShaderDataStorageを追加する。通常の論理構造体を渡す既存経路を維持し、保持経路では生成された型付きの生きた要素viewのpropertyで数値と参照を変更する。VulkanとDirect3D12では保持済みbytesをCopyFromで直接コピーし、各回のCaptureとPackを行わない。
 
 ### 利用者の変更前・変更後
 
@@ -39,9 +39,9 @@ using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 
 // 初期変換は一度だけ。以降の更新で元のmaterials配列は参照しない。
-ShaderDataStorage<Material> retained = staging.CreateStorage(materials);
-retained.SetValue(0, Material.StorageMembers.Color, Vector4.One);
-retained.SetReference(0, Material.StorageMembers.Texture, textureRef);
+Material.Storage retained = Material.CreateStorage(staging, materials);
+retained[0].Color = Vector4.One;
+retained[0].Texture = textureRef;
 await staging.MapAsync();
 staging.CopyFrom(retained);
 staging.Unmap();
@@ -49,9 +49,19 @@ staging.Unmap();
 
 どちらもCopyBuffer、barrier、Submitを利用者が明示する。全論理値を置き換えるSetは変換を行い、その費用をCopyFromの高速化に含めない。新経路は手書きcodecへ自動適用せず、生成metadataがない場合はNotSupportedExceptionとする。既存の `CopyFrom(ReadOnlySpan<T>)` は従来どおり互換経路として残る。
 
+### 型付きpropertyとviewの意味
+
+Tごとに生成する `T.Storage` は共通の `ShaderDataStorage<T>` を一つ保持する。`T.CreateStorage(buffer, initial)` が作成し、CopyFromでは共通storageへ暗黙変換する。汎用Tそのものをindexerから返さず、`storage[i].Color = value` は生成されたreadonly要素viewから元の保持領域へ書き込む。viewを値コピー・cacheしても同じowner・indexを指し、論理Tのコピーだけが変更される罠を設けない。
+
+Storageは初回に要素viewの配列を一つ作る。indexerはその配列の要素へのref readonlyを返すため、viewを置換できない。入れ子はview内のreadonly子viewをref readonlyで返し、`storage[i].Child.Value = vector` を使う。生成する入れ子getterのUnscopedRefはC#のlifetime解析用であり、unsafe、boxing、native pointerを公開しない。propertyアクセス時のheap確保、Capture、Packは行わない。参照setter用encoderはcachedなShaderDataMember、参照object、kindと16 byteのSpanを受け取り、書込数を返す専用delegateに変更する。ShaderValueやbyte配列をsetter内でnewしない。CPU sidecarは参照objectと不変ShaderValue cacheを持つcellで保持し、参照変更時はcacheを無効化するだけにする。必要な不変ShaderValueの確保は次のCopyFromのmetadata凍結時に含め、同じ参照の既存cacheは再利用する。初回の配列と子viewの保持量・構築費は初回費用として測る。
+
+数値leafは値として返すため、Vector4や行列の成分を変更する場合は変更した値全体をpropertyへ戻す。defaultで作った要素view／子viewはownerを持たないため、getter／setterでInvalidOperationExceptionを返す。indexerの範囲外はArgumentOutOfRangeExceptionであり、不正な参照setterの失敗時はbytes・参照identity・cacheを変更しない。
+
+要素viewはliveな編集口であって不変snapshotではない。CopyFromで得る以前のReadだけが、後続のproperty更新から独立したsnapshotになる。初期bufferをDisposeしてもCPU領域を所有するStorageとviewは残るが、GPU転送先のDisposeと参照の寿命・同期の責務は変わらない。
+
 ### 保持表現と型検証
 
-生成器は対応する数値、vector、Matrix4x4、入れ子構造体、IGpuRefについて、値を読まない静的なmember metadata（bufferの論理参照先名を含む）と型付きのStorageMembersを生成する。参照をたどって型をinline展開しないため、buffer参照経由の循環を許可する。配列、custom getter、未対応型の診断は維持する。手書きcodecが生成metadataを偽って提供する場合は契約違反である。
+生成器は対応する数値、vector、Matrix4x4、入れ子構造体、IGpuRefについて、値を読まない静的なmember metadata（bufferの論理参照先名を含む）、低水準接続用のStorageMembers、型付きStorageと要素viewを生成する。参照をたどって型をinline展開しないため、buffer参照経由の循環を許可する。配列、custom getter、未対応型の診断は維持する。手書きcodecが生成metadataを偽って提供する場合は契約違反である。
 
 生成metadataの全fieldのpath・型・参照先をartifactへ照合する。CreateStorage時に初期値を読む前に、両者の完全なfield集合（重複・欠落・余分fieldを含む）、配置、stride、alignment、範囲、scalar・vector・matrixの要素型と形状・順序、helperのkind・サイズ・fieldの型と配置を、要素数によらず検証する。C#のsizeof(T)をshader strideとみなさず、保持領域をartifactのoffsetへ直接配置する。paddingはゼロで初期化し、値を書き込む操作はそのfieldだけを変更する。Matrix4x4は既存のrow-major契約を維持し、別の配置は明確に拒否する。
 
@@ -61,7 +71,7 @@ backendは16 byteの不透明なunmanaged参照値を製造する。保持storag
 
 storageは作成元と同じdeviceと同じschemaのstagingだけへコピーできる。生成元bufferを所有せず、自身のCPU領域を所有する。storageはDispose不要であり、明示的な共有cacheを作らない。並行更新・copy・map・解放を同期せず、利用者が競合を避ける。
 
-SetValueは数値だけを直接更新する。SetReferenceはbackend製の同deviceの参照を型・用途・登録rangeへ照合してから、そのfieldのwire値とCPU情報を一緒に変更する。任意のIGpuRef実装は拒否する。初期変換と全値を置き換えるSetにも同じ参照検査を適用し、全memberを検証してから反映する。公開IShaderReferenceの実装だけをprovenanceの根拠にせず、backend内部の製造元を確認する。失敗時は以前のbytesとmetadataを維持する。
+数値propertyのgetter／setterは保持bytesを直接読み書きする。参照propertyのgetterは元のtyped referenceを返し、setterはbackend製の同deviceの参照を型・用途・登録rangeへ照合してから、そのfieldのwire値とCPU情報を一緒に変更する。任意のIGpuRef実装は拒否する。初期変換と全値を置き換えるSetにも同じ参照検査を適用し、全memberを検証してから反映する。公開IShaderReferenceの実装だけをprovenanceの根拠にせず、backend内部の製造元を確認する。失敗時は以前のbytesとmetadataを維持する。
 
 CopyFromはmap済みUploadに限定する。sourceOffsetとcountはsourceの要素単位、elementOffsetはdestinationの要素単位とする。countの既定値-1はsource末尾までを意味する。空範囲は有効な末尾offsetでもno-opとし、それ以外の負値、overflow、範囲外は拒否する。device・schema不一致と未対応形式は空範囲でも検証する。
 
@@ -97,6 +107,10 @@ WebGPUのnative wgpuとbrowserも同じ公開APIを提供する。保持表現�
 +    // backendと生成器の接続用metadata。native handleは持たない。
 +    public sealed record ShaderDataMember(string Path, Type ValueType, bool IsReference,
 +        string? ReferenceTarget = null);
++    // backend接続用。destinationは16 byte。成功時は16を書き込んで返す。
++    public delegate int ShaderDataReferenceEncoder(ShaderDataMember member,
++        object reference, string kind, Span<byte> destination);
++
 +    public readonly record struct ShaderDataValueMember<T, TValue>(string Path)
 +        where T : struct, IShaderData where TValue : unmanaged;
 +    public readonly record struct ShaderDataReferenceMember<T, TReference>(string Path)
@@ -105,6 +119,11 @@ WebGPUのnative wgpuとbrowserも同じ公開APIを提供する。保持表現�
 +    public abstract class ShaderDataStorage<T> where T : struct, IShaderData
 +    {
 +        public abstract int Count { get; }
++        // 生成property向けのallocation-freeな読出し。index・path・型を検査。
++        public abstract TValue GetValue<TValue>(int index, ShaderDataValueMember<T, TValue> member)
++            where TValue : unmanaged;
++        public abstract IGpuRef<TReference> GetReference<TReference>(int index,
++            ShaderDataReferenceMember<T, TReference> member);
 +        // index範囲外はArgumentOutOfRangeException。
 +        // 論理値全体の変換を行う。失敗時は元の要素を維持する。
 +        public abstract void Set(int index, in T value);
@@ -134,6 +153,27 @@ WebGPUのnative wgpuとbrowserも同じ公開APIを提供する。保持表現�
 +// applicationのpartial Material内に生成する。
 +partial record struct Material
 +{
++    // 生成する公開property API。構築時だけview配列を一つ確保する。
++    public static Storage CreateStorage(IGraphicsShaderDataBuffer<Material> buffer,
++        ReadOnlySpan<Material> initial);
++    public sealed class Storage
++    {
++        public Storage(ShaderDataStorage<Material> storage);
++        public int Count { get; }
++        // range外はArgumentOutOfRangeException。readonlyのlive viewを返す。
++        public ref readonly Element this[int index] { get; }
++        public ShaderDataStorage<Material> Data { get; }
++        public void Set(int index, in Material value);
++        public static implicit operator ShaderDataStorage<Material>(Storage storage);
++        public readonly struct Element
++        {
++            // 数値は直接読み書きする。viewのコピーでも同じ要素へ書く。
++            public Vector4 Color { get; set; }
++            // setterは低水準SetReferenceと同じ検査と未変更保証を維持する。
++            public IGpuRef<IGraphicsTextureView> Texture { get; set; }
++        }
++    }
++
 +    public static class StorageMembers
 +    {
 +        public static ShaderDataValueMember<Material, Vector4> Color { get; }
@@ -144,7 +184,7 @@ WebGPUのnative wgpuとbrowserも同じ公開APIを提供する。保持表現�
 
 新しいbufferメソッドにはNotSupportedExceptionを返す既定実装を置き、第三者backendの既存実装を壊さない。Vulkan・Direct3D12・Wgpu・Browserは各backendで実装する。
 
-member tokenの既定値や任意のpathもschemaへ照合するため、未定義fieldを書き換えられない。RenderGraphのwrapperは同じ所有権と転送の意味を透過的に委譲する。入れ子の数値はMaterial.StorageMembers.Nested.Colorのようにアクセスする。backend間には次の公開shared factoryを追加し、その内部がschema認証、field書込み、デコードを担う。保持bytesをapplicationへ返さず、reflection、InternalsVisibleTo、実行時codec登録を追加しない。
+member tokenの既定値や任意のpathもschemaへ照合するため、未定義fieldを書き換えられない。RenderGraphのwrapperは同じ所有権と転送の意味を透過的に委譲する。入れ子の実例は `BindingMatrixData.Storage` の `storage[i].Child.Value` である。低水準のSetValue／SetReferenceとtokenはbackend接続・互換用に維持し、利用例はpropertyを使う。backend間には次の公開shared factoryを追加し、その内部がschema認証、field書込み、デコードを担う。保持bytesをapplicationへ返さず、reflection、InternalsVisibleTo、実行時codec登録を追加しない。
 
 ```diff
  namespace Lumyte.Graphics.Shared
@@ -155,7 +195,7 @@ member tokenの既定値や任意のpathもschemaへ照合するため、未定�
 +        // encoderは同deviceのbackendが提供する。
 +        // schema認証後に初期値を変換し、encoderが製造元・用途も検査する。
 +        public ShaderDataStorage<T> CreateStorage<T>(object owner,
-+            ReadOnlySpan<T> initial, Func<ShaderValue, string, byte[]> encoder)
++            ReadOnlySpan<T> initial, ShaderDataReferenceEncoder encoder)
 +            where T : struct, IShaderData;
 +        // 同owner・schema・範囲を確認し、全metadata確保後にbytesを転送する。
 +        // 呼出backendがmap状態・destination範囲を先に確認する。

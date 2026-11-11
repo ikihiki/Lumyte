@@ -7,17 +7,19 @@ namespace Lumyte.Graphics.Shared;
 /// <summary>Owns mutable wire bytes separately from immutable per-copy CPU snapshots.</summary>
 public sealed partial class ShaderDataLayout
 {
+    private record struct ReferenceValue(object? Reference, ShaderValue? Snapshot);
+
     private sealed class PersistentStorage<T> : ShaderDataStorage<T>
         where T : struct, IShaderData
     {
         private readonly Field[] _fields;
         private readonly ShaderMember[] _referenceFields;
         private readonly Dictionary<string, int> _indices;
-        private readonly ShaderValue?[][] _references;
-        private readonly Func<ShaderValue, string, byte[]> _encoder;
+        private readonly ReferenceValue[][] _references;
+        private readonly ShaderDataReferenceEncoder _encoder;
         private readonly string _root;
 
-        internal PersistentStorage(ShaderDataLayout layout, object owner, ShaderDataMember[] schema, ReadOnlySpan<T> initial, Func<ShaderValue, string, byte[]> encoder)
+        internal PersistentStorage(ShaderDataLayout layout, object owner, ShaderDataMember[] schema, ReadOnlySpan<T> initial, ShaderDataReferenceEncoder encoder)
         {
             Layout = layout;
             Owner = owner;
@@ -29,7 +31,7 @@ public sealed partial class ShaderDataLayout
             _fields = schema.Select(s => new Field(s, layout._members[s.Path])).ToArray();
             _referenceFields = _fields.Where(field => field.Schema.IsReference).Select(field => field.Member).ToArray();
             _indices = schema.Select((s, i) => (s.Path, Index: i)).ToDictionary(p => p.Path, p => p.Index, StringComparer.Ordinal);
-            _references = new ShaderValue?[Count][];
+            _references = new ReferenceValue[Count][];
             for (int i = 0; i < Count; i++)
             {
                 Set(i, in initial[i]);
@@ -54,7 +56,7 @@ public sealed partial class ShaderDataLayout
             }
 
             byte[] bytes = new byte[Layout.Size];
-            var references = new ShaderValue?[_fields.Length];
+            var references = new ReferenceValue[_fields.Length];
             bool[] visited = new bool[_fields.Length];
             foreach (ShaderValue leaf in snapshot.Values)
             {
@@ -69,9 +71,9 @@ public sealed partial class ShaderDataLayout
                 Span<byte> destination = bytes.AsSpan(field.Member.Offset, field.Member.Size);
                 if (leaf.IsReference)
                 {
-                    var wire = NativeReference.Encode(_encoder(leaf, field.Member.Kind));
+                    NativeReference wire = EncodeReference(field, leaf.Reference);
                     wire.Write(destination);
-                    references[fieldIndex] = leaf;
+                    references[fieldIndex] = new(leaf.Reference, leaf);
                 }
                 else
                 {
@@ -88,6 +90,22 @@ public sealed partial class ShaderDataLayout
             _references[index] = references;
         }
 
+        public override TValue GetValue<TValue>(int index, ShaderDataValueMember<T, TValue> member)
+        {
+            ValidateIndex(index);
+            int fieldIndex = Find(member.Path, typeof(TValue), false);
+            ShaderMember field = _fields[fieldIndex].Member;
+            return MemoryMarshal.Read<TValue>(Bytes.AsSpan(checked((index * Layout.Size) + field.Offset), field.Size));
+        }
+
+        public override IGpuRef<TReference> GetReference<TReference>(int index, ShaderDataReferenceMember<T, TReference> member)
+        {
+            ValidateIndex(index);
+            int fieldIndex = Find(member.Path, typeof(TReference), true);
+            return _references[index][fieldIndex].Reference as IGpuRef<TReference>
+                ?? throw new InvalidOperationException("The persistent reference is not initialized.");
+        }
+
         public override void SetValue<TValue>(int index, ShaderDataValueMember<T, TValue> member, in TValue value)
         {
             ValidateIndex(index);
@@ -101,11 +119,15 @@ public sealed partial class ShaderDataLayout
             ValidateIndex(index);
             ArgumentNullException.ThrowIfNull(value);
             int fieldIndex = Find(member.Path, typeof(TReference), true);
-            ShaderMember field = _fields[fieldIndex].Member;
-            var logical = new ShaderValue(member.Path, typeof(TReference), default, value, true);
-            var wire = NativeReference.Encode(_encoder(logical, field.Kind));
-            wire.Write(Bytes.AsSpan(checked((index * Layout.Size) + field.Offset), field.Size));
-            _references[index][fieldIndex] = logical;
+            Field field = _fields[fieldIndex];
+            NativeReference wire = EncodeReference(field, value);
+            wire.Write(Bytes.AsSpan(checked((index * Layout.Size) + field.Member.Offset), field.Member.Size));
+            ref ReferenceValue current = ref _references[index][fieldIndex];
+            if (!ReferenceEquals(current.Reference, value))
+            {
+                current.Reference = value;
+                current.Snapshot = null;
+            }
         }
 
         internal ShaderValueSnapshot Freeze(int index)
@@ -119,8 +141,31 @@ public sealed partial class ShaderDataLayout
                 bytes.AsSpan(member.Offset, member.Size).Clear();
             }
 
-            var references = (ShaderValue?[])_references[index].Clone();
+            var references = new ShaderValue?[_fields.Length];
+            for (int i = 0; i < _fields.Length; i++)
+            {
+                if (_fields[i].Schema.IsReference)
+                {
+                    ref ReferenceValue current = ref _references[index][i];
+                    ShaderDataMember schema = _fields[i].Schema;
+                    references[i] = current.Snapshot ??= new ShaderValue(schema.Path, schema.ValueType, default, current.Reference, true);
+                }
+            }
+
             return new(_root, Layout.Name, new FrozenValues(_fields, bytes, references));
+        }
+
+        private NativeReference EncodeReference(Field field, object? reference)
+        {
+            ArgumentNullException.ThrowIfNull(reference);
+            Span<byte> encoded = stackalloc byte[16];
+            encoded.Clear();
+            if (_encoder(field.Schema, reference, field.Member.Kind, encoded) != 16)
+            {
+                throw new ArgumentException("A backend reference must occupy exactly 16 bytes.", nameof(reference));
+            }
+
+            return NativeReference.Encode(encoded);
         }
 
         private int Find(string path, Type type, bool reference)

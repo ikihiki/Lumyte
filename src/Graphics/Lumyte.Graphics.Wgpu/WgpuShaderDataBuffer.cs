@@ -109,7 +109,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
     {
         ValidateAlive();
         WgpuDevice owner = Owner;
-        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (value, kind) => WgpuShaderReferenceEncoding.PackPersistent(owner, value, kind));
+        return ((ShaderDataLayout)Layout).CreateStorage(owner.ShaderDataStorageIdentity, initial, (member, reference, kind, destination) => WgpuShaderReferenceEncoding.EncodePersistent(owner, member, reference, kind, destination));
     }
 
     /// <summary>Uploads retained bytes after validating the complete range and freezing metadata.</summary>
