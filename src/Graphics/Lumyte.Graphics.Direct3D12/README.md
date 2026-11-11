@@ -183,3 +183,5 @@ Stable の WARP（debug layer 有効）では共通 suite 全体も成功しま�
 map済みUploadの `CopyFrom(storage)` は保持済みのbackend互換bytesを直接コピーし、論理値のCapture・Packを呼びません。 各要素の凍結snapshotは一要素分のbytesと参照情報だけを保持します。後続のsource更新で以前のRead結果を書き換えません。
 
 作成元と同device・同schemaのbufferだけへ使用し、GPUの所有権や登録の寿命は延長しません。Release・登録置換後の古い参照の使用や、copy完了前のstaging再利用は従来どおり禁止です。既存の `CopyFrom(ReadOnlySpan<T>)` は互換経路として残り、毎回のCapture・Packを行います。
+
+Windows x64 CIのWARP制御は、テストprojectに限定して固定版 `Microsoft.Direct3D.WARP` 1.0.22を使用します。OS付属の古いWARPでは必須のEnhanced Barriersに対応しない場合があるため、テスト開始時にapp-localのDLLを明示的に読み込みます。DLLが欠けた場合は失敗し、OS版へのfallbackやfeature要件の緩和は行いません。この開発・検証用DLLは製品ライブラリのpackageに含めません。

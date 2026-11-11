@@ -21,6 +21,7 @@ public sealed class TransferTests
             return;
         }
 
+        WarpTestRuntime.Enable();
         using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         string? expectedSdk = typeof(TransferTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Single(attribute => attribute.Key == "AgilitySdkVersion").Value;
         Assert.Equal(expectedSdk, device.SdkVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -66,6 +67,7 @@ public sealed class TransferTests
             return;
         }
 
+        WarpTestRuntime.Enable();
         using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         using IGraphicsBuffer<byte> upload = Create(device, MemoryPreference.Upload);
         using IGraphicsBuffer<byte> gpu = Create(device, MemoryPreference.Automatic);
@@ -103,6 +105,7 @@ public sealed class TransferTests
         }
 
         Assert.Throws<ArgumentException>(() => Direct3D12Device.Create(new() { UseWarp = true, AdapterIndex = 1 }));
+        WarpTestRuntime.Enable();
         using var first = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         using var second = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         using IGraphicsBuffer<byte> source = Create(first, MemoryPreference.Upload);

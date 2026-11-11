@@ -24,6 +24,21 @@ public sealed class ParityTests
         }
     }
 
+    /// <summary>Checks the development-only driver and license are deployed only for Windows control runs.</summary>
+    [Fact]
+    public void PinnedWarpDriverIsDeployedForWindows()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "d3d10warp.dll")));
+            Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "WARP", "LICENSE.TXT")));
+        }
+        else
+        {
+            Assert.Throws<PlatformNotSupportedException>(WarpTestRuntime.Enable);
+        }
+    }
+
     /// <summary>Checks DXIL helper reflection and root binding without GPU execution.</summary>
     /// <returns>The asynchronous verification.</returns>
     [Fact]
@@ -63,6 +78,7 @@ public sealed class ParityTests
     [AgilityFact]
     public async Task SharedVulkanExercisesAsync()
     {
+        WarpTestRuntime.Enable();
         using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         _ = await BufferExercise.RunAsync(device);
         _ = TextureExercise.Run(device);
