@@ -165,7 +165,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
     /// <summary>Checks complete root values and optionally native reference metadata.</summary>
     /// <param name="snapshot">The captured root.</param>
-    /// <param name="validateReferences">Whether opaque references must match native resource types.</param>
+    /// <param name="validateReferences">Whether references must be non-null and match native resource types; otherwise the packing callback owns their encoding.</param>
     public void ValidateArguments(ShaderValueSnapshot snapshot, bool validateReferences)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -184,7 +184,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
             if (member.Reference)
             {
-                if (!value.Data.IsEmpty || value.Reference is null)
+                if (!value.Data.IsEmpty || (validateReferences && value.Reference is null))
                 {
                     throw new ArgumentException("A resource member requires only an opaque reference.", nameof(snapshot));
                 }
