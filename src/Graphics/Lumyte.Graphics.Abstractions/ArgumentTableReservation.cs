@@ -8,6 +8,7 @@ public sealed class ArgumentTableReservation
     private readonly List<Action> _collectionGuards = [];
     private readonly List<Action<object, ArgumentBufferAccess>> _inspectors = [];
     private readonly List<Action> _finalizers = [];
+    private IShaderReference[] _references = [];
     private ArgumentPartition? _partition;
     private bool _materialized;
 
@@ -167,6 +168,18 @@ public sealed class ArgumentTableReservation
         _owner.ValidateScope(this);
     }
 
+    internal bool ContainsReference(IShaderReference reference)
+    {
+        ValidateMaterialized();
+        return _references.Any(registered =>
+            (ReferenceEquals(registered, reference) ||
+             (ReferenceEquals(registered.Table, reference.Table) && ReferenceEquals(registered.Resource, reference.Resource) &&
+              registered.Slot == reference.Slot && registered.RegistrationOffsetInBytes == reference.RegistrationOffsetInBytes &&
+              registered.RegistrationSizeInBytes == reference.RegistrationSizeInBytes &&
+              reference.OffsetInBytes >= registered.OffsetInBytes && reference.OffsetInBytes - registered.OffsetInBytes <= registered.SizeInBytes &&
+              reference.SizeInBytes <= registered.SizeInBytes - (reference.OffsetInBytes - registered.OffsetInBytes))));
+    }
+
     internal IArgumentTable? RecordingTable(bool graphics)
     {
         ValidateMaterialized();
@@ -190,6 +203,7 @@ public sealed class ArgumentTableReservation
     internal void Select(ArgumentPartition? partition)
     {
         _partition = partition;
+        _references = _requests.Select(request => request.Reference).OfType<IShaderReference>().ToArray();
         _materialized = true;
     }
 

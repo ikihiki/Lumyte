@@ -1,192 +1,156 @@
-using System.Numerics;
-using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph;
 
-/// <summary>Describes named logical shader inputs consumed directly by graph encoders.</summary>
+/// <summary>Collects the logical resources for one indivisible graph shader operation.</summary>
 public sealed class RenderGraphShaderResources
 {
     private readonly GraphShaderResourceOwner _owner;
-    private readonly ShaderResources _resources;
-    private readonly ShaderArtifact _artifact;
-    private readonly ShaderDataLayout _layout;
-    private readonly string _root;
-    private readonly Dictionary<string, Func<ShaderValue>> _values = new(StringComparer.Ordinal);
+    private readonly Dictionary<ResourceKey, object?> _references = new(new ResourceKeyComparer());
 
-    internal RenderGraphShaderResources(GraphShaderResourceOwner owner, ShaderResources resources, ShaderArtifact artifact, ShaderTarget target, string root)
+    internal RenderGraphShaderResources(GraphShaderResourceOwner owner, ShaderResources resources)
     {
         _owner = owner;
-        _resources = resources;
-        _artifact = artifact;
-        _root = root;
-        _layout = ShaderDataLayout.Root(artifact.GetTarget(target), root);
+        Core = resources;
     }
 
-    internal ShaderResources Core => _resources;
+    internal ShaderResources Core { get; }
 
-    internal bool Graphics => _artifact.GetTarget(_owner.Target).Stage != ShaderStage.Compute;
-
-    /// <summary>Declares a sampled graph image at its compiled logical member path.</summary>
-    /// <param name="path">The compiled root member path.</param>
-    /// <param name="texture">The pass-declared sampled image.</param>
-    /// <param name="desc">The requested view range.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources ReadTexture(string path, RenderGraphTexture texture, TextureViewDesc? desc = null)
+    /// <summary>Declares a sampled logical image and view before graph compilation.</summary>
+    /// <param name="texture">The logical image.</param>
+    /// <param name="desc">The exact view description, or its default.</param>
+    /// <returns>This resource group.</returns>
+    public RenderGraphShaderResources ReadTexture(RenderGraphTexture texture, TextureViewDesc? desc = null)
     {
-        Check(path);
-        _layout.ValidateReference(path, "GpuTextureRef");
-        IGpuRef<IGraphicsTextureView>? reference = null;
-        _resources.RegisterTexture(() => _owner.Texture(_resources, texture, desc), value => reference = value);
-        _values.Add(path, () => new(path, typeof(IGraphicsTextureView), default, reference, true));
+        var key = new ResourceKey(texture, desc ?? new TextureViewDesc(), 0, 0, ArgumentBufferAccess.Read);
+        if (Add(key))
+        {
+            Core.RegisterTexture(() => _owner.Texture(Core, texture, desc), reference => Publish(key, reference));
+        }
+
         return this;
     }
 
-    /// <summary>Declares an immutable graph-owned sampler by logical member name.</summary>
-    /// <param name="path">The compiled root member path.</param>
-    /// <param name="desc">The sampler configuration.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources Sampler(string path, SamplerDesc desc)
+    /// <summary>Declares a graph-owned immutable sampler.</summary>
+    /// <param name="desc">The sampler description used again for lookup.</param>
+    /// <returns>This resource group.</returns>
+    public RenderGraphShaderResources Sampler(SamplerDesc desc)
     {
-        Check(path);
-        _layout.ValidateReference(path, "GpuSamplerRef");
-        IGpuRef<IGraphicsSampler>? reference = null;
-        _resources.RegisterSampler(_owner.Sampler(desc), value => reference = value);
-        _values.Add(path, () => new(path, typeof(IGraphicsSampler), default, reference, true));
+        var key = new ResourceKey(desc, null, 0, 0, ArgumentBufferAccess.Read);
+        if (Add(key))
+        {
+            Core.RegisterSampler(_owner.Sampler(desc), reference => Publish(key, reference));
+        }
+
         return this;
     }
 
-    /// <summary>Uses a borrowed immutable sampler without coalescing its identity.</summary>
-    /// <param name="path">The compiled root member path.</param>
+    /// <summary>Declares a borrowed immutable sampler by object identity.</summary>
     /// <param name="sampler">The borrowed sampler.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources Sampler(string path, IGraphicsSampler sampler)
+    /// <returns>This resource group.</returns>
+    public RenderGraphShaderResources Sampler(IGraphicsSampler sampler)
     {
-        Check(path);
-        _layout.ValidateReference(path, "GpuSamplerRef");
-        IGpuRef<IGraphicsSampler>? reference = null;
-        _resources.RegisterSampler(sampler, value => reference = value);
-        _values.Add(path, () => new(path, typeof(IGraphicsSampler), default, reference, true));
+        ArgumentNullException.ThrowIfNull(sampler);
+        var key = new ResourceKey(sampler, null, 0, 0, ArgumentBufferAccess.Read);
+        if (Add(key))
+        {
+            Core.RegisterSampler(sampler, reference => Publish(key, reference));
+        }
+
         return this;
     }
 
-    /// <summary>Declares a typed graph buffer range with its actual shader access.</summary>
-    /// <typeparam name="T">The unmanaged storage element.</typeparam>
-    /// <param name="path">The compiled root member path.</param>
-    /// <param name="buffer">The declared logical buffer.</param>
-    /// <param name="offset">The element base.</param>
+    /// <summary>Declares an exact typed logical buffer range and its shader access.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="buffer">The logical buffer.</param>
+    /// <param name="offset">The element offset.</param>
     /// <param name="count">The positive element count.</param>
     /// <param name="access">The actual shader access.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources ReadBuffer<T>(string path, RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+    /// <returns>This resource group.</returns>
+    public RenderGraphShaderResources ReadBuffer<T>(RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
         where T : unmanaged
     {
-        Check(path);
         ArgumentOutOfRangeException.ThrowIfZero(count);
-        string kind = access == ArgumentBufferAccess.Read ? "GpuBufferRef" : "GpuRWBufferRef";
-        _layout.ValidateReference(path, kind, RawName<T>());
-        IGpuRef<T>? reference = null;
-        _resources.RegisterBuffer(() => _owner.Buffer(_resources, buffer, access).SliceElements(offset, count), value => reference = value, access);
-        _values.Add(path, () => new(path, typeof(T), default, reference, true));
+        var key = new ResourceKey(buffer, null, offset, count, access);
+        if (Add(key))
+        {
+            Core.RegisterBuffer(() => _owner.Buffer(Core, buffer, access).SliceElements(offset, count), reference => Publish(key, reference), access);
+        }
+
         return this;
     }
 
-    /// <summary>Declares a shader-data range with its static shader element schema.</summary>
-    /// <typeparam name="T">The shader-data element.</typeparam>
-    /// <param name="path">The compiled root member path.</param>
-    /// <param name="buffer">The declared logical buffer.</param>
-    /// <param name="offset">The element base.</param>
+    /// <summary>Declares an exact logical shader-data range including its transitive resources.</summary>
+    /// <typeparam name="T">The shader-data element type.</typeparam>
+    /// <param name="buffer">The logical shader-data buffer.</param>
+    /// <param name="offset">The element offset.</param>
     /// <param name="count">The positive element count.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources ReadBuffer<T>(string path, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
+    /// <returns>This resource group.</returns>
+    public RenderGraphShaderResources ReadBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
         where T : struct, IShaderData
     {
-        Check(path);
         ArgumentOutOfRangeException.ThrowIfZero(count);
-        _layout.ValidateReference(path, "GpuBufferRef", T.ShaderTypeName);
-        IGpuRef<T>? reference = null;
-        _resources.RegisterShaderData(() => _owner.Buffer(_resources, buffer).SliceElements(offset, count), value => reference = value);
-        _values.Add(path, () => new(path, typeof(T), default, reference, true));
+        var key = new ResourceKey(buffer, null, offset, count, ArgumentBufferAccess.Read);
+        if (Add(key))
+        {
+            Core.RegisterShaderData(() => _owner.Buffer(Core, buffer).SliceElements(offset, count), reference => Publish(key, reference));
+        }
+
         return this;
     }
 
-    /// <summary>Sets an explicitly supported numeric shader member.</summary>
-    /// <typeparam name="T">The numeric member type.</typeparam>
-    /// <param name="path">The compiled member path.</param>
-    /// <param name="value">The numeric value copied into this description.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources Value<T>(string path, T value)
-        where T : unmanaged => Value(path, () => value);
+    internal IGpuRef<IGraphicsTextureView> Resolve(RenderGraphContext context, RenderGraphTexture texture, TextureViewDesc? desc)
+        => Resolve<IGraphicsTextureView>(context, new(texture, desc ?? new TextureViewDesc(), 0, 0, ArgumentBufferAccess.Read));
 
-    /// <summary>Evaluates a numeric member once for each encoder SetArguments call.</summary>
-    /// <typeparam name="T">The numeric member type.</typeparam>
-    /// <param name="path">The compiled member path.</param>
-    /// <param name="value">The synchronous value source.</param>
-    /// <returns>This input description.</returns>
-    public RenderGraphShaderResources Value<T>(string path, Func<T> value)
-        where T : unmanaged
-    {
-        Check(path);
-        ArgumentNullException.ThrowIfNull(value);
-        _layout.ValidateValue(path, typeof(T));
-        _values.Add(path, () =>
-        {
-            T captured = value();
-            return new(path, typeof(T), MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref captured, 1)).ToArray(), null, false);
-        });
-        return this;
-    }
+    internal IGpuRef<IGraphicsSampler> Resolve(RenderGraphContext context, SamplerDesc desc)
+        => Resolve<IGraphicsSampler>(context, new(desc, null, 0, 0, ArgumentBufferAccess.Read));
 
-    internal void Bind(IRenderEncoder encoder) => _owner.Bind(_resources, encoder);
+    internal IGpuRef<IGraphicsSampler> Resolve(RenderGraphContext context, IGraphicsSampler sampler)
+        => Resolve<IGraphicsSampler>(context, new(sampler, null, 0, 0, ArgumentBufferAccess.Read));
 
-    internal void Bind(IComputeEncoder encoder) => _owner.Bind(_resources, encoder);
+    internal IGpuRef<T> Resolve<T>(RenderGraphContext context, RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access)
+        where T : unmanaged => Resolve<T>(context, new(buffer, null, offset, count, access));
 
-    internal ShaderValueSnapshot Snapshot()
-    {
-        if (!_resources.IsReady)
-        {
-            throw new InvalidOperationException("The graph inputs are not ready for execution.");
-        }
+    internal IGpuRef<T> Resolve<T>(RenderGraphContext context, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
+        where T : struct, IShaderData => Resolve<T>(context, new(buffer, null, offset, count, ArgumentBufferAccess.Read));
 
-        var snapshot = new ShaderValueSnapshot(_root, _layout.Name, _values.Values.Select(read => read()).ToArray());
-        _layout.ValidateArguments(snapshot);
-        return snapshot;
-    }
-
-    internal void ValidateRender(RenderGraphContext context, IGraphicsPipeline pipeline, IReadOnlyList<RenderGraphTexture> colorAttachments, RenderGraphTexture? depthAttachment)
-    {
-        _owner.ValidateExecution(_resources, context.Pass, colorAttachments, graphics: true);
-        if (!ReferenceEquals(pipeline.Desc.VertexShader.Artifact, _artifact) && !ReferenceEquals(pipeline.Desc.FragmentShader?.Artifact, _artifact))
-        {
-            throw new ArgumentException("The selected pipeline does not contain the pinned shader artifact.", nameof(pipeline));
-        }
-
-        if (!Graphics || (colorAttachments.Count == 0 && depthAttachment is null))
-        {
-            throw new InvalidOperationException("The shader inputs do not describe this render execution.");
-        }
-    }
-
-    internal void ValidateCompute(RenderGraphContext context, IGraphicsComputePipeline pipeline)
-    {
-        _owner.ValidateExecution(_resources, context.Pass, [], graphics: false);
-        if (Graphics || !ReferenceEquals(pipeline.Desc.ComputeShader.Artifact, _artifact))
-        {
-            throw new ArgumentException("The compute program does not contain the pinned shader artifact.", nameof(pipeline));
-        }
-    }
-
-    private static string RawName<T>()
-        where T : unmanaged => typeof(T) == typeof(int) ? "int" : typeof(T) == typeof(uint) ? "uint" : typeof(T) == typeof(float) ? "float" : typeof(T) == typeof(Vector2) ? "float2" : typeof(T) == typeof(Vector3) ? "float3" : typeof(T) == typeof(Vector4) ? "float4" : typeof(T) == typeof(Matrix4x4) ? "float4x4" : throw new NotSupportedException("The raw buffer element is not a supported shader numeric type.");
-
-    private void Check(string path)
+    private bool Add(ResourceKey key)
     {
         _owner.ValidateBuilding();
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (_values.ContainsKey(path))
+        ArgumentNullException.ThrowIfNull(key.Resource);
+        if (key.Resource is RenderGraphResource resource)
         {
-            throw new ArgumentException("A shader member is declared exactly once.", nameof(path));
+            _owner.ValidateResource(resource);
         }
+
+        return _references.TryAdd(key, null);
     }
+
+    private void Publish<T>(ResourceKey key, IGpuRef<T> reference) => _references[key] = reference;
+
+    private IGpuRef<T> Resolve<T>(RenderGraphContext context, ResourceKey key)
+    {
+        context.EnsureActive();
+        _owner.ValidateLookup(Core, context.Pass);
+        if (!_references.TryGetValue(key, out object? reference) || reference is not IGpuRef<T> typed)
+        {
+            throw new ArgumentException("Declare this exact logical resource, view and range before compilation.");
+        }
+
+        return typed;
+    }
+
+    private sealed class ResourceKeyComparer : IEqualityComparer<ResourceKey>
+    {
+        public bool Equals(ResourceKey? x, ResourceKey? y)
+            => ReferenceEquals(x, y) || (x is not null && y is not null &&
+                (x.Resource is SamplerDesc ? x.Resource.Equals(y.Resource) : ReferenceEquals(x.Resource, y.Resource)) &&
+                Equals(x.View, y.View) && x.Offset == y.Offset && x.Count == y.Count && x.Access == y.Access);
+
+        public int GetHashCode(ResourceKey key)
+            => HashCode.Combine(key.Resource is SamplerDesc ? key.Resource.GetHashCode() : RuntimeHelpers.GetHashCode(key.Resource), key.View, key.Offset, key.Count, key.Access);
+    }
+
+    private sealed record ResourceKey(object Resource, TextureViewDesc? View, ulong Offset, ulong Count, ArgumentBufferAccess Access);
 }

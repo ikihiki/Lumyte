@@ -11,7 +11,8 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     private readonly IReadOnlyList<RenderGraphTexture> _colorAttachments;
     private readonly RenderGraphTexture? _depthAttachment;
     private IGraphicsPipeline? _pipeline;
-    private RenderGraphShaderResources? _arguments;
+    private IReadOnlyList<ShaderResources>? _arguments;
+    private bool _hasArguments;
     private object? _argumentPipeline;
     private bool _ended;
 
@@ -89,14 +90,23 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         _native.SetIndexBuffer(indices);
     }
 
-    /// <summary>Captures logical numeric values once and selects arguments for the current pipeline.</summary>
-    /// <param name="resources">The shader inputs declared for this graph pass.</param>
-    public void SetArguments(RenderGraphShaderResources resources)
+    /// <summary>Captures ordinary application arguments once and infers their predeclared resource group.</summary>
+    /// <typeparam name="T">The existing application argument type and its ordinary shader codec.</typeparam>
+    /// <param name="arguments">The application values, copied through their codec.</param>
+    public void SetArguments<T>(in T arguments)
+        where T : struct, IShaderArguments
     {
-        Validate(resources);
-        ShaderValueSnapshot snapshot = resources.Snapshot();
-        _native.SetArguments(snapshot);
+        EnsureActive();
+        if (_pipeline is null)
+        {
+            throw new InvalidOperationException("Select a pipeline before setting its arguments.");
+        }
+
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
+        (IReadOnlyList<ShaderResources>? resources, ShaderValueSnapshot selected) = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
+        _native.SetArguments(selected);
         _arguments = resources;
+        _hasArguments = true;
         _argumentPipeline = _pipeline;
     }
 
@@ -189,22 +199,20 @@ public sealed class RenderGraphRenderEncoder : IDisposable
             return;
         }
 
-        RenderGraphShaderResources resources = _arguments ?? throw new InvalidOperationException("Set arguments before recording shader operations.");
+        if (!_hasArguments)
+        {
+            throw new InvalidOperationException("Set arguments before recording shader operations.");
+        }
+
         if (!ReferenceEquals(_argumentPipeline, _pipeline))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        Validate(resources);
-        resources.Bind(_native);
-    }
-
-    private void Validate(RenderGraphShaderResources resources)
-    {
-        EnsureActive();
-        ArgumentNullException.ThrowIfNull(resources);
-        IGraphicsPipeline pipeline = _pipeline ?? throw new InvalidOperationException("Select a pipeline before recording shader operations.");
-        resources.ValidateRender(_context, pipeline, _colorAttachments, _depthAttachment);
+        if (_arguments is { } resources)
+        {
+            _context.BindResources(resources, _native, _colorAttachments);
+        }
     }
 
     private void EnsureActive()

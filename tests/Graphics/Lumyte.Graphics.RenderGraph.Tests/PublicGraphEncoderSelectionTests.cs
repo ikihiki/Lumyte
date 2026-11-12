@@ -18,7 +18,9 @@ public sealed partial class PublicGraphEncoderConsumerTests
         static void Check(Type graph, Type ordinary, string[] names)
         {
             MethodInfo setter = Assert.Single(graph.GetMethods(), method => method.Name == "SetArguments");
-            Assert.Equal(typeof(RenderGraphShaderResources), Assert.Single(setter.GetParameters()).ParameterType);
+            Assert.True(setter.IsGenericMethodDefinition);
+            Assert.True(Assert.Single(setter.GetParameters()).ParameterType.IsByRef);
+            Assert.Contains(typeof(IShaderArguments), Assert.Single(setter.GetGenericArguments()).GetGenericParameterConstraints());
             foreach (string name in names)
             {
                 MethodInfo actual = Assert.Single(graph.GetMethods(), method => method.Name == name);
@@ -80,7 +82,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         float value = 1;
         int reads = 0;
         bool fail = false;
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(artifact), () =>
+        var logical = new ConsumerArguments(0, () =>
         {
             reads++;
             return fail ? throw new ApplicationException("capture failed") : value;
@@ -104,7 +106,6 @@ public sealed partial class PublicGraphEncoderConsumerTests
             encoder.SetPipeline(other);
             Assert.Throws<InvalidOperationException>(() => encoder.Draw(3));
             encoder.SetPipeline(wrong);
-            Assert.Throws<ArgumentException>(() => encoder.SetArguments(logical));
             Assert.Throws<InvalidOperationException>(() => encoder.Draw(3));
             encoder.SetPipeline(pipeline);
             encoder.Draw(3);
@@ -115,7 +116,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             encoder.DrawIndirect(indirect.SliceElements(0, 1));
             using var indexed = new TestTypedBuffer<DrawIndexedIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
             encoder.DrawIndexedIndirect(indexed.SliceElements(0, 1));
-        }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite)).UseShaderResources(logical, target).KeepAlive();
+        }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite)).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
@@ -132,7 +133,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         using var other = new PublicGraphConsumerComputePipeline(artifact);
         float value = 1;
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(artifact), () => value);
+        var logical = new ConsumerArguments(0, () => value);
         graph.AddPass("selection", context =>
         {
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
@@ -150,7 +151,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             encoder.SetArguments(logical);
             using var indirect = new TestTypedBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
             encoder.DispatchIndirect(indirect.SliceElements(0, 1));
-        }).UseShaderResources(logical).KeepAlive();
+        }).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
@@ -193,8 +194,8 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
-        RenderGraphShaderResources first = Complete(graph.CreateShaderResources(artifact), () => 1f);
-        RenderGraphShaderResources second = Complete(graph.CreateShaderResources(artifact), () => 2f);
+        var first = new ConsumerArguments(1f);
+        var second = new ConsumerArguments(2f);
         using var commands = new PublicGraphConsumerCommands();
         graph.AddPass("native rejection", context =>
         {
@@ -205,7 +206,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             Assert.Throws<ArgumentException>(() => encoder.SetArguments(second));
             commands.Encoder.SetArgumentsException = null;
             encoder.Dispatch(1);
-        }).UseShaderResources(first).UseShaderResources(second).KeepAlive();
+        }).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         plan.Record(commands);
         Assert.Equal(1f, ReadFloat(Assert.Single(commands.Encoder.Executions)));

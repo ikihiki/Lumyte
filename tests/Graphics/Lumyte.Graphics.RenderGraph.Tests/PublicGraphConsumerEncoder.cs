@@ -1,9 +1,13 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncoder
 {
+    private ShaderTargetData? _target;
+    private IArgumentTable? _table;
+
     internal List<ShaderValueSnapshot> Snapshots { get; } = [];
 
     internal List<ShaderValueSnapshot> Executions { get; } = [];
@@ -20,9 +24,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     internal Exception? EndException { get; init; }
 
-    public void SetArgumentTable(IArgumentTable table)
-    {
-    }
+    public void SetArgumentTable(IArgumentTable table) => _table = table;
 
     public void SetArguments<T>(in T arguments)
         where T : struct, IShaderArguments => throw new NotSupportedException();
@@ -34,16 +36,13 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
             throw error;
         }
 
+        ShaderDataLayout.Root(_target!, arguments.RootParameter).ValidateArguments(arguments, validateReferences: true);
         Snapshots.Add(arguments.Copy());
     }
 
-    public void SetPipeline(IGraphicsPipeline pipeline)
-    {
-    }
+    public void SetPipeline(IGraphicsPipeline pipeline) => _target = pipeline.Desc.VertexShader.Artifact.GetTarget(ShaderTarget.SpirV);
 
-    public void SetPipeline(IGraphicsComputePipeline pipeline)
-    {
-    }
+    public void SetPipeline(IGraphicsComputePipeline pipeline) => _target = pipeline.Desc.ComputeShader.Artifact.GetTarget(ShaderTarget.SpirV);
 
     public void SetRenderState(GraphicsRenderStateDesc state)
     {
@@ -126,6 +125,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         if (Snapshots.Count != 0)
         {
+            _ = ShaderBindingSnapshot.Capture(Snapshots.Last(), _table);
             Executions.Add(Snapshots.Last());
         }
     }

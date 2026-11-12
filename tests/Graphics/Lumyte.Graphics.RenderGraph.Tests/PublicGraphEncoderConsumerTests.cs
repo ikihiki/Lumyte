@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -24,18 +23,24 @@ public sealed partial class PublicGraphEncoderConsumerTests
         }
     }
 
-    /// <summary>All supported numeric types are specified without an application root argument structure.</summary>
+    /// <summary>Ordinary application argument codecs are accepted without a graph-specific root description.</summary>
     [Fact]
-    public void NumericMembersRejectUnknownDuplicateAndWrongTypes()
+    public void TypedArgumentsDoNotRequireAResourceOrArtifactDescription()
     {
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(Artifact(ShaderStage.Vertex)));
-        Assert.Throws<ArgumentException>(() => logical.Value("Float", 2f));
-        Assert.Throws<ArgumentException>(() => logical.Value("Unknown", 2f));
-        RenderGraphShaderResources other = graph.CreateShaderResources(Artifact(ShaderStage.Vertex));
-        Assert.Throws<ArgumentException>(() => other.Value("Float", 2));
-        Assert.Throws<ArgumentException>(() => other.Value("Vector2", Vector3.One));
-        Assert.Throws<ArgumentException>(() => other.Value("Matrix", Vector4.One));
+        using var pipeline = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute));
+        graph.AddPass("typed numeric", context =>
+        {
+            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
+            encoder.SetPipeline(pipeline);
+            var arguments = new ConsumerArguments(7f);
+            encoder.SetArguments(in arguments);
+            encoder.Dispatch(1);
+        }).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using var commands = new PublicGraphConsumerCommands();
+        plan.Record(commands);
+        Assert.Equal(7f, ReadFloat(Assert.Single(commands.Encoder.Executions)));
     }
 
     /// <summary>SetArguments captures once; indexed drawing and ended/context scopes stay guarded.</summary>
@@ -48,7 +53,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var image = new TestTexture();
         RenderGraphTexture target = graph.ImportTexture(image, TextureState.Undefined, default);
         int reads = 0;
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(artifact), () => ++reads);
+        var logical = new ConsumerArguments(0, () => ++reads);
         RenderGraphRenderEncoder? escaped = null;
         graph.AddPass("draw", context =>
         {
@@ -56,7 +61,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             Assert.Throws<InvalidOperationException>(() => escaped.SetArguments(logical));
             using var wrong = new PublicGraphConsumerPipeline(Artifact(ShaderStage.Vertex));
             escaped.SetPipeline(wrong);
-            Assert.Throws<ArgumentException>(() => escaped.SetArguments(logical));
+            escaped.SetArguments(in logical);
             escaped.SetPipeline(pipeline);
             escaped.SetArguments(logical);
             escaped.Draw(3);
@@ -66,14 +71,14 @@ public sealed partial class PublicGraphEncoderConsumerTests
             escaped.End();
             Assert.Throws<InvalidOperationException>(() => escaped.SetArguments(logical));
         }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite))
-          .UseShaderResources(logical, target).KeepAlive();
+          .KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
         Assert.Equal(1, commands.Encoder.Draws);
         Assert.Equal(1, commands.Encoder.IndexedDraws);
-        Assert.Equal(1, reads);
-        Assert.Equal(new[] { 1f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span)));
+        Assert.Equal(2, reads);
+        Assert.Equal(new[] { 1f, 2f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span)));
         Assert.Equal(1, commands.Encoder.Ends);
         Assert.Throws<InvalidOperationException>(() => escaped!.SetPipeline(pipeline));
     }
@@ -87,14 +92,14 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var image = new TestTexture();
         RenderGraphTexture target = graph.ImportTexture(image, TextureState.Undefined, default);
-        RenderGraphShaderResources logical = graph.CreateShaderResources(artifact).Value("Float", 1f);
+        MissingConsumerArguments logical = default;
         graph.AddPass("missing", context =>
         {
             using RenderGraphRenderEncoder encoder = context.BeginRenderPass(Attachments(target));
             encoder.SetPipeline(pipeline);
             Assert.Throws<ArgumentException>(() => encoder.SetArguments(logical));
         }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite))
-          .UseShaderResources(logical, target).KeepAlive();
+          .KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
@@ -102,30 +107,30 @@ public sealed partial class PublicGraphEncoderConsumerTests
         Assert.Empty(commands.Encoder.Snapshots);
     }
 
-    /// <summary>Compute dispatch uses the same logical schema and closes an undisposed callback scope.</summary>
+    /// <summary>Compute uses the ordinary codec schema, not artifact object identity, and closes its callback scope.</summary>
     [Fact]
-    public void ComputeDispatchClosesCallbackAndRejectsDifferentArtifact()
+    public void ComputeDispatchAcceptsCompatibleArtifactsAndClosesCallback()
     {
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         using var wrong = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute));
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(artifact));
+        var logical = new ConsumerArguments(1f);
         RenderGraphComputeEncoder? escaped = null;
         graph.AddPass("dispatch", context =>
         {
             escaped = context.BeginComputePass();
             escaped.SetPipeline(wrong);
-            Assert.Throws<ArgumentException>(() => escaped.SetArguments(logical));
+            escaped.SetArguments(in logical);
             escaped.SetPipeline(pipeline);
             escaped.SetArguments(logical);
             escaped.Dispatch(2, 3, 4);
-        }).UseShaderResources(logical).KeepAlive();
+        }).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
         Assert.Equal(1, commands.Encoder.Dispatches);
-        Assert.Single(commands.Encoder.Snapshots);
+        Assert.Equal(2, commands.Encoder.Snapshots.Count);
         Assert.Equal(1, commands.Encoder.Ends);
         Assert.Throws<InvalidOperationException>(() => escaped!.Dispatch(1));
     }
@@ -137,33 +142,26 @@ public sealed partial class PublicGraphEncoderConsumerTests
         var device = new PublicGraphConsumerDevice();
         using var first = new RenderGraph(device);
         using var second = new RenderGraph(device);
-        RenderGraphShaderResources logical = Complete(first.CreateShaderResources(Artifact(ShaderStage.Compute)));
+        RenderGraphShaderResources logical = first.CreateShaderResources();
         RenderGraphPass foreign = second.AddPass("foreign", _ => { });
         Assert.Throws<ArgumentException>(() => foreign.UseShaderResources(logical));
         first.AddPass("owner", _ => { }).UseShaderResources(logical);
         Assert.Throws<ArgumentException>(() => first.AddPass("duplicate", _ => { }).UseShaderResources(logical));
     }
 
-    /// <summary>Inputs bound to a different pass cannot dispatch even when the artifact matches.</summary>
+    /// <summary>A group connected to another pass cannot resolve references during a callback.</summary>
     [Fact]
-    public void WrongPassCannotDispatch()
+    public void WrongPassCannotResolveLogicalInputs()
     {
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
-        ShaderArtifact artifact = Artifact(ShaderStage.Compute);
-        using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(artifact));
-        graph.AddPass("owner", _ => { }).UseShaderResources(logical).KeepAlive();
-        graph.AddPass("wrong", context =>
-        {
-            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
-            encoder.SetPipeline(pipeline);
-            Assert.Throws<ArgumentException>(() => encoder.SetArguments(logical));
-        }).KeepAlive();
+        using var image = new TestTexture();
+        RenderGraphTexture source = graph.ImportTexture(image, TextureState.Sampled, default);
+        RenderGraphShaderResources resources = graph.CreateShaderResources().ReadTexture(source);
+        graph.AddPass("owner", _ => { }).UseTexture(source, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).UseShaderResources(resources).KeepAlive();
+        graph.AddPass("wrong", context => Assert.Throws<ArgumentException>(() => context.GetGpuRef(resources, source))).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
-        Assert.Equal(0, commands.Encoder.Dispatches);
-        Assert.Empty(commands.Encoder.Snapshots);
     }
 
     /// <summary>A callback exception remains the primary failure while automatic encoder cleanup runs.</summary>
@@ -268,7 +266,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var depth = new TestTexture { Format = TextureFormat.Depth32Float };
         RenderGraphTexture target = graph.ImportTexture(depth, TextureState.Undefined, default);
-        RenderGraphShaderResources logical = Complete(graph.CreateShaderResources(artifact));
+        var logical = new ConsumerArguments(1f);
         graph.AddPass("depth only", context =>
         {
             using RenderGraphRenderEncoder encoder = context.BeginRenderPass(new()
@@ -279,7 +277,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             encoder.SetArguments(logical);
             encoder.Draw(3);
         }).UseTexture(target, TextureState.DepthStencilAttachment, new(PipelineStage.DepthStencil, ResourceAccess.DepthStencilWrite))
-          .UseShaderResources(logical).KeepAlive();
+          .KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
@@ -291,11 +289,6 @@ public sealed partial class PublicGraphEncoderConsumerTests
     {
         ColorAttachments = [new() { Texture = target, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }],
     };
-
-    private static RenderGraphShaderResources Complete(RenderGraphShaderResources resources, Func<float>? value = null)
-        => resources.Value("Float", value ?? (() => 1f)).Value("Int", -2).Value("UInt", 3u)
-            .Value("Vector2", Vector2.One).Value("Vector3", Vector3.One).Value("Vector4", Vector4.One)
-            .Value("Matrix", Matrix4x4.Identity);
 
     private static ShaderArtifact Artifact(ShaderStage stage, bool hasRoot = true)
     {

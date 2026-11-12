@@ -26,6 +26,8 @@ public sealed class RenderGraphPass
 
     internal Action<RenderGraphContext> Record { get; }
 
+    internal GraphShaderResourceOwner? ShaderResourcesOwner { get; set; }
+
     internal IReadOnlyList<RenderGraphUse> Uses => _uses;
 
     internal IReadOnlySet<RenderGraphPass> Dependencies => _dependencies;

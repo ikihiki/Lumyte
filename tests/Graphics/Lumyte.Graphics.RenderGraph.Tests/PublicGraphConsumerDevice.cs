@@ -21,9 +21,13 @@ internal sealed class PublicGraphConsumerDevice : IGraphicDevice
 
     public GraphicsDeviceLoss? Loss => null;
 
-    public DeviceCaps Caps => new() { ShaderTarget = ShaderTarget.SpirV, MaxColorAttachments = 8 };
+    public DeviceCaps Caps => new() { ShaderTarget = ShaderTarget.SpirV, MaxColorAttachments = 8, ArgumentTableBindingLimits = Limits };
 
     public IGraphicsQueue Queue => throw new NotSupportedException();
+
+    internal ArgumentTableBindingLimits Limits { get; init; } = new();
+
+    internal List<IArgumentTable> Tables { get; } = [];
 
     internal List<string> Lifetime { get; } = [];
 
@@ -74,9 +78,14 @@ internal sealed class PublicGraphConsumerDevice : IGraphicDevice
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IGraphicsSampler CreateSampler(SamplerDesc desc) => throw new NotSupportedException();
+    public IGraphicsSampler CreateSampler(SamplerDesc desc) => new PublicGraphConsumerSampler(desc);
 
-    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => new PublicGraphConsumerTable(desc);
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
+    {
+        var table = new PublicGraphConsumerTable(desc);
+        Tables.Add(table);
+        return table;
+    }
 
     public IGraphicsShader CreateShader(ShaderArtifact artifact) => throw new NotSupportedException();
 

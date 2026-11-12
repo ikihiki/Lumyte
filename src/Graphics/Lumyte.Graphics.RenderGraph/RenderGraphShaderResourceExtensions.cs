@@ -5,29 +5,25 @@ namespace Lumyte.Graphics.RenderGraph;
 /// <summary>Connects logical shader descriptions and native prepared modules to graph execution.</summary>
 public static class RenderGraphShaderResourceExtensions
 {
-    /// <summary>Describes named logical inputs for the pinned shader root.</summary>
+    /// <summary>Collects an opaque resource group without choosing an application argument schema.</summary>
     /// <param name="graph">The building graph.</param>
-    /// <param name="artifact">The exact artifact contained by the selected pipeline.</param>
-    /// <param name="rootParameter">The compiled logical root parameter.</param>
     /// <returns>A logical input description with no native registration handles.</returns>
-    public static RenderGraphShaderResources CreateShaderResources(this RenderGraph graph, ShaderArtifact artifact, string rootParameter = "arguments")
+    public static RenderGraphShaderResources CreateShaderResources(this RenderGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        return GraphShaderResourceOwner.Get(graph).Create(artifact, rootParameter);
+        return GraphShaderResourceOwner.Get(graph).Create();
     }
 
-    /// <summary>Describes an existing prepared module group's root without exposing its coordinator.</summary>
+    /// <summary>Describes the logical resources of an existing indivisible prepared module group.</summary>
     /// <param name="graph">The building graph.</param>
     /// <param name="resources">The graph-owned prepared module group.</param>
-    /// <param name="artifact">The pinned shader artifact.</param>
-    /// <param name="rootParameter">The compiled logical root name.</param>
     /// <returns>The logical description of that same indivisible group.</returns>
-    public static RenderGraphShaderResources DescribeModuleShaderResources(this RenderGraph graph, ShaderResources resources, ShaderArtifact artifact, string rootParameter = "arguments")
+    public static RenderGraphShaderResources DescribeModuleShaderResources(this RenderGraph graph, ShaderResources resources)
     {
         ArgumentNullException.ThrowIfNull(graph);
         var owner = GraphShaderResourceOwner.Get(graph);
         owner.ValidateModule(resources);
-        return new(owner, resources, artifact, owner.Target, rootParameter);
+        return new(owner, resources);
     }
 
     /// <summary>Connects a logical operation to its consuming pass and actual color outputs.</summary>
@@ -39,7 +35,7 @@ public static class RenderGraphShaderResourceExtensions
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(resources);
-        GraphShaderResourceOwner.Get(pass.Owner).Use(pass, resources.Core, colorAttachments, resources.Graphics);
+        GraphShaderResourceOwner.Get(pass.Owner).Use(pass, resources.Core, colorAttachments);
         return pass;
     }
 

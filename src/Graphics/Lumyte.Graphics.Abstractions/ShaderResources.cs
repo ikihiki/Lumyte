@@ -314,6 +314,27 @@ public class ShaderResources
         }
     }
 
+    /// <summary>Checks whether a root or derived reference is part of this indivisible reservation.</summary>
+    /// <param name="reference">The native reference to check.</param>
+    /// <returns>Whether its registered range belongs to this reservation.</returns>
+    protected bool ContainsReference(IShaderReference reference) => _reservation.ContainsReference(reference);
+
+    /// <summary>Constrains native command-local root and transitive capture to this reservation.</summary>
+    /// <param name="arguments">The root snapshot already captured through the application codec.</param>
+    /// <param name="candidates">Groups individually covering every root reference and sharing its native table.</param>
+    /// <returns>The snapshot with a command-local validation constraint.</returns>
+    protected ShaderValueSnapshot ConstrainArguments(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates)
+        => arguments with
+        {
+            ExecutionReferenceValidation = references =>
+            {
+                if (!candidates.Any(candidate => references.All(candidate._reservation.ContainsReference)))
+                {
+                    throw new ArgumentException("A shader reference is outside the selected indivisible resource group.");
+                }
+            },
+        };
+
     /// <summary>Connects a host's immutable collection boundary to every inherited registration path.</summary>
     /// <param name="validate">The serial host collection guard.</param>
     protected void ValidateBeforeCollection(Action validate)

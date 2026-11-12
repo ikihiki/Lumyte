@@ -130,26 +130,22 @@ ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の�
 
 ## Shader inputs and execution
 
-Graph consumers describe named logical members of a pinned shader artifact and pass that description directly to a dedicated graph encoder. They do not implement an application argument codec or allocate, size, seal or bind argument tables.
+Graph consumers predeclare logical resource groups and resolve their actual references through the pass callback context. Dedicated graph encoders accept the same existing application argument types and codecs as ordinary encoders; callers do not allocate, size, seal or bind argument tables.
 
-This example uses the existing `EffectArguments` root in `Lumyte.Graphics.ImageEffects/Shaders/effects.slang` for an opacity operation. The caller supplies `fragment`, its `pipeline`, declared `source` and `target` textures, `samplerDesc`, `width`/`height`, `Vector4 bounds = new(0, 0, width, height)`, and `float opacity`. Import/creation, using directives (including System.Numerics), export, Submit/Wait and failure cleanup are omitted; retain the compiled plan and borrowed pipeline until GPU completion as described above.
+This example uses the existing `EffectArguments` root in `Lumyte.Graphics.ImageEffects/Shaders/effects.slang` for an opacity operation. The caller supplies the existing effect `pipeline`, matching `sampleRead`/`colorWrite` barrier scopes, declared `source` and `target` textures, `samplerDesc`, `width`/`height`, `Vector4 bounds = new(0, 0, width, height)`, and `float opacity`. Import/creation, using directives (including System.Numerics), export, Submit/Wait and failure cleanup are omitted; retain the compiled plan and borrowed pipeline until GPU completion as described above.
 
 ```csharp
-RenderGraphShaderResources inputs = graph.CreateShaderResources(fragment.Artifact)
-    .ReadTexture("Input", source)
-    .ReadTexture("Backdrop", source)
-    .Sampler("Sampler", samplerDesc)
-    .Value("InputBounds", bounds)
-    .Value("BackdropBounds", bounds)
-    .Value("OutputBounds", bounds)
-    .Value("Settings", () => new Vector4(3, 0, 0, opacity))
-    .Value("Row0", Vector4.Zero)
-    .Value("Row1", Vector4.Zero)
-    .Value("Row2", Vector4.Zero)
-    .Value("Row3", Vector4.Zero)
-    .Value("Constant", Vector4.Zero);
+RenderGraphShaderResources inputs = graph.CreateShaderResources()
+    .ReadTexture(source)
+    .Sampler(samplerDesc);
 graph.AddPass("sample", context =>
 {
+    var arguments = new EffectArguments(
+        context.GetGpuRef(inputs, source),
+        context.GetGpuRef(inputs, source),
+        context.GetGpuRef(inputs, samplerDesc),
+        bounds, bounds, bounds, new Vector4(3, 0, 0, opacity),
+        Vector4.Zero, Vector4.Zero, Vector4.Zero, Vector4.Zero, Vector4.Zero);
     using RenderGraphRenderEncoder render = context.BeginRenderPass(new()
     {
         ColorAttachments = [new()
@@ -165,21 +161,21 @@ graph.AddPass("sample", context =>
     render.SetScissor(new(0, 0, width, height));
     render.SetBlendConstant(new(0, 0, 0, 0));
     render.SetStencilReference(0);
-    render.SetArguments(inputs);
+    render.SetArguments(in arguments);
     render.Draw(3);
 }).UseTexture(source, TextureState.Sampled, sampleRead)
   .UseTexture(target, TextureState.ColorAttachment, colorWrite)
   .UseShaderResources(inputs, target);
 ```
 
-`CreateShaderResources(fragment.Artifact, rootParameter: "arguments")` pins the exact artifact object and the device's `Caps.ShaderTarget`. All fluent calls return the same sealed graph description, not native references. The compiled root layout validates exact member paths, CLR numeric types and reference kinds/element types. Missing, duplicate, unknown or mistyped members and a different pipeline artifact are rejected before execution. `SetArguments(inputs)` evaluates each `Value(path, Func<T>)` once and freezes numeric bytes. Draw/dispatch reuse that selection until the next successful SetArguments; failed selection preserves the last valid arguments. Switching to a different argument-bearing pipeline requires SetArguments again (switching back before another successful SetArguments can reuse the one last selection; this is not a per-pipeline cache). Each execution still validates the selected resource cohort and native resource lifetime, and captures indirect shader-data metadata at the ordinary native command-recording point. Argument-free pipelines need no SetArguments.
+`CreateShaderResources()` collects only logical resource keys: no artifact pin, root name, string member paths or numeric value bag. This example is inside ImageEffects and reuses its existing `EffectArguments`; application code likewise reuses its ordinary `IShaderArguments` type and codec. `context.GetGpuRef(inputs, key)` returns an actual native reference only inside the declaring pass callback. Lookup requires the registered view, exact typed range/access or sampler key and cannot allocate new slots.
 
-Declare the actual color outputs in `UseShaderResources(inputs, target)` and declare matching attachment state/access on that pass. No color outputs can mean compute or depth-only graphics: the artifact stage distinguishes them. Depth-only graphics uses `RenderGraphRenderPassDesc.DepthStencilAttachment`. For compute, use `using var compute = context.BeginComputePass(); compute.SetPipeline(pipeline); compute.SetArguments(inputs); compute.Dispatch(x, y, z);` with the compute artifact and matching buffer/texture declarations.
+`render.SetArguments(in arguments)` captures the ordinary codec once. Numeric bytes are frozen until another successful SetArguments. Failed replacement preserves the last valid selection. Switching to another argument-bearing pipeline requires another SetArguments; switching back before another successful selection may reuse the one last selection, not a per-pipeline cache. Programs with no arguments need no selection.
 
-The render encoder supports pipeline/render state, viewport, scissor, blend constants, stencil reference, index buffers, `Draw`/`DrawIndexed` and their indirect forms. Compute supports `Dispatch` and `DispatchIndirect`. Native encoders never escape these wrappers. Exactly one graph encoder can be active per context. `End` ends once; `Dispose` is idempotent after ending. Context closure cleans up an outstanding encoder and preserves the original callback exception if cleanup also fails. Contexts and encoders cannot be used after the callback. Raw `context.Commands` remains for deliberate interoperability; do not mix raw passes with an active graph encoder.
+Root references privately identify candidate predeclared resource groups for this pass. Every command revalidates the selected groups and native table. After the ordinary native command-local transfer snapshot collects all root and transitive references, one whole declared group must cover them; resources from multiple groups cannot be combined merely because they share a physical table. No SetResources/SetArgumentTable operation or global reference registry is required. Compatible pipeline artifacts use the normal root schema contract instead of object identity pinning.
 
-An input set belongs to one pass execution unit; create another description for an independent unit. Preparation installs all native references, runs all typed resolution callbacks, then all finalizers, and only then permits recording. Any failure invalidates the entire new generation.
+Declare actual color outputs with `UseShaderResources(inputs, target)` and matching pass state/access. Depth-only graphics has a declared depth attachment; compute has no render attachments. Compute uses `compute.SetArguments(in arguments); compute.Dispatch(x, y, z);`. All Draw/Dispatch execution signatures, names and defaults match the ordinary interfaces. Callback/End guards and caller-owned Submit/Wait responsibilities remain unchanged.
 
-Independently prepared modules use the separate `CreateModuleShaderResources()` bridge, returning an opaque Abstractions `ShaderResources` with no Table accessor. `RegisterModuleTexture(resources, handle, callback)` and typed `RegisterModuleBuffer` deliver real references during preparation. `DescribeModuleShaderResources(module, artifact)` describes that same indivisible cohort for nested metadata/composite execution; it does not create an independent reservation. Ordinary graph consumers do not need this bridge. Low-level non-graph `IShaderArguments` and static codecs remain available; native `SetArguments(ShaderValueSnapshot)` is a defensive-copy interop overload.
+Independently prepared modules use the separate `CreateModuleShaderResources()` bridge, returning an opaque Abstractions `ShaderResources` with no Table accessor. `RegisterModuleTexture(resources, handle, callback)` and typed `RegisterModuleBuffer` deliver real references during preparation. `DescribeModuleShaderResources(module)` describes that same indivisible cohort for nested metadata/composite execution; it does not create an independent reservation. Ordinary graph consumers do not need this bridge. Low-level non-graph `IShaderArguments` and static codecs remain available; native `SetArguments(ShaderValueSnapshot)` is a defensive-copy interop overload.
 
 `UseLocalBuffer` and `UseLocalShaderDataBuffer` describe borrowed storage whose effects are confined to one pass. They retain actual resource validation and synchronization declarations, cannot be exported or promoted to outputs, and cannot be used by another pass. Existing global imports keep their original observability. Locality does not transfer allocation ownership or remove the caller completion requirement.

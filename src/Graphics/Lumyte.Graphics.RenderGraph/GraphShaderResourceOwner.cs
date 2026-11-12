@@ -84,16 +84,65 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         return resources;
     });
 
+    internal ShaderValueSnapshot Constrain(IReadOnlyList<ShaderResources> resources, ShaderValueSnapshot arguments) => ((ModuleResources)resources[0]).Constrain(arguments, resources);
+
     internal void Bind(ShaderResources resources, IRenderEncoder encoder) => ((ModuleResources)resources).BindRender(encoder);
 
     internal void Bind(ShaderResources resources, IComputeEncoder encoder) => ((ModuleResources)resources).BindCompute(encoder);
 
-    internal RenderGraphShaderResources Create(ShaderArtifact artifact, string root)
+    internal RenderGraphShaderResources Create()
     {
         ValidateBuilding();
-        ArgumentNullException.ThrowIfNull(artifact);
-        ArgumentException.ThrowIfNullOrWhiteSpace(root);
-        return new(this, CreateModule(), artifact, Target, root);
+        return new(this, CreateModule());
+    }
+
+    internal void ValidateResource(RenderGraphResource resource)
+    {
+        if (!ReferenceEquals(resource.Owner, _graph))
+        {
+            throw new ArgumentException("The logical resource belongs to another graph.");
+        }
+    }
+
+    internal void ValidateLookup(ShaderResources resources, RenderGraphPass pass)
+    {
+        Validate();
+        if (!_byResources.TryGetValue(resources, out RenderGraphPass? consumer) || !ReferenceEquals(consumer, pass))
+        {
+            throw new ArgumentException("Shader resources belong to another graph or pass.");
+        }
+
+        if (!resources.IsReady)
+        {
+            throw new InvalidOperationException("The shader resource group is not ready for recording.");
+        }
+    }
+
+    internal IReadOnlyList<ShaderResources> SelectArguments(ShaderValueSnapshot snapshot, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    {
+        Validate();
+        IShaderReference[] references = snapshot.Values.Where(value => value.IsReference).Select(value => value.Reference as IShaderReference
+            ?? throw new ArgumentException("Root references must resolve from a declared graph resource group.")).ToArray();
+        var candidates = new List<ShaderResources>();
+        foreach (ShaderResources resources in _byPass.GetValueOrDefault(pass) ?? [])
+        {
+            if (!_execution.TryGetValue(resources, out (RenderGraphTexture[] Outputs, bool Graphics) shape) || shape.Graphics != graphics || !shape.Outputs.SequenceEqual(outputs) ||
+                !references.All(reference => ((ModuleResources)resources).Accepts(reference)))
+            {
+                continue;
+            }
+
+            ValidateExecution(resources, pass, outputs, graphics);
+            ValidateLookup(resources, pass);
+            candidates.Add(resources);
+        }
+
+        if (candidates.Count != 0)
+        {
+            return candidates.AsReadOnly();
+        }
+
+        throw new ArgumentException("All root references must belong to one declared resource group; mixed or foreign groups are not executable.");
     }
 
     internal ShaderResources CreateModule()
@@ -118,7 +167,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
             throw new ArgumentException("Declare each actual color output exactly once before connecting shader resources.", nameof(attachments));
         }
 
-        bool render = graphics ?? attachments.Count != 0;
+        bool render = graphics ?? (attachments.Count != 0 || pass.Uses.Any(use => use.State == TextureState.DepthStencilAttachment));
         if (!render && attachments.Count != 0)
         {
             throw new ArgumentException("Compute resources cannot have color outputs.", nameof(attachments));
@@ -132,6 +181,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
             _byPass.Add(pass, list);
         }
 
+        pass.ShaderResourcesOwner = this;
         _byResources.Add(resources, pass);
         list.Add(resources);
         resources.InspectResources((resource, access) =>
@@ -218,6 +268,10 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
 
         public override ShaderResources CreateSibling() => _owner.CreateModule();
+
+        internal bool Accepts(IShaderReference reference) => ContainsReference(reference);
+
+        internal ShaderValueSnapshot Constrain(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates) => ConstrainArguments(arguments, candidates);
 
         internal void BindRender(IRenderEncoder encoder) => Bind(encoder);
 

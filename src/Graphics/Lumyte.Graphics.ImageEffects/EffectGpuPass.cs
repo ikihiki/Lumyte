@@ -35,19 +35,11 @@ internal static class EffectGpuPass
         IGraphicsShader vertex = shaders.FullscreenShader ?? owner.Add(device.CreateShader(shaders.Fullscreen));
         IGraphicsShader fragment = shaders.EffectsShader ?? owner.Add(device.CreateShader(shaders.Effects));
         IGraphicsPipeline pipeline = shaders.Pipeline ?? owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
-        RenderGraphShaderResources resources = graph.CreateShaderResources(fragment.Artifact)
-            .ReadTexture("Input", input.Texture)
-            .ReadTexture("Backdrop", backdrop.Texture)
-            .Sampler("Sampler", shaders.Sampler ?? graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }))
-            .Value("InputBounds", RelativeBounds(input.Bounds.Offset(offsetX, offsetY), outputBounds))
-            .Value("BackdropBounds", RelativeBounds(backdrop.Bounds, outputBounds))
-            .Value("OutputBounds", new Vector4(0, 0, outputBounds.Width, outputBounds.Height))
-            .Value("Settings", settings)
-            .Value("Row0", matrix is null ? extra : Row(matrix, 0))
-            .Value("Row1", Row(matrix, 1))
-            .Value("Row2", Row(matrix, 2))
-            .Value("Row3", Row(matrix, 3))
-            .Value("Constant", Constants(matrix));
+        IGraphicsSampler sampler = shaders.Sampler ?? graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
+        RenderGraphShaderResources resources = graph.CreateShaderResources()
+            .ReadTexture(input.Texture)
+            .ReadTexture(backdrop.Texture)
+            .Sampler(sampler);
         int recorded = 0;
         RenderGraphPass pass = graph.AddPass("image-effect", context =>
         {
@@ -69,7 +61,20 @@ internal static class EffectGpuPass
             render.SetScissor(new(0, 0, descriptor.Width, descriptor.Height));
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
-            render.SetArguments(resources);
+            var arguments = new EffectArguments(
+                context.GetGpuRef(resources, input.Texture),
+                context.GetGpuRef(resources, backdrop.Texture),
+                context.GetGpuRef(resources, sampler),
+                RelativeBounds(input.Bounds.Offset(offsetX, offsetY), outputBounds),
+                RelativeBounds(backdrop.Bounds, outputBounds),
+                new Vector4(0, 0, outputBounds.Width, outputBounds.Height),
+                settings,
+                matrix is null ? extra : Row(matrix, 0),
+                Row(matrix, 1),
+                Row(matrix, 2),
+                Row(matrix, 3),
+                Constants(matrix));
+            render.SetArguments(in arguments);
             render.Draw(3);
             render.End();
         }).UseTexture(input.Texture, TextureState.Sampled, _sample);

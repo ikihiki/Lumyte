@@ -132,19 +132,12 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         .UseBuffer(dataUpload, new(PipelineStage.Copy, ResourceAccess.CopyRead))
         .UseBuffer(data, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
 
-        RenderGraphShaderResources inputs = graph.DescribeModuleShaderResources(command.Resources, _artifact)
-            .ReadBuffer("Instructions", instructions, 0, command.Upload.Count)
-            .ReadBuffer("Data", data, 0, command.Data.Count)
-            .ReadTexture("SourceTexture", command.Source.Texture)
-            .ReadTexture("OriginalTexture", command.Original?.Texture ?? _shared.Fallback)
-            .Sampler("GraphSampler", _sampler)
-            .Value("Count", (uint)command.Program.Instructions.Count)
-            .Value("Root", command.Root)
-            .Value("GraphMode", command.Original is null ? 1u : 2u)
-            .Value("Opacity", command.Opacity)
-            .Value("SourceBounds", Bounds(command.Source))
-            .Value("OriginalBounds", Bounds(command.Original))
-            .Value("PixelOrigin", new Vector4(target.PixelOrigin, 0, 0));
+        RenderGraphShaderResources inputs = graph.DescribeModuleShaderResources(command.Resources)
+            .ReadBuffer(instructions, 0, command.Upload.Count)
+            .ReadBuffer(data, 0, command.Data.Count)
+            .ReadTexture(command.Source.Texture)
+            .ReadTexture(command.Original?.Texture ?? _shared.Fallback)
+            .Sampler(_sampler);
         RenderGraphPass pass = graph.AddPass("Draw 2D command", context =>
         {
             if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
@@ -163,7 +156,20 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             render.SetScissor(command.Scissor);
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
-            render.SetArguments(inputs);
+            var arguments = new DrawingArguments(
+                context.GetGpuRef(inputs, instructions, 0, command.Upload.Count),
+                context.GetGpuRef(inputs, data, 0, command.Data.Count),
+                (uint)command.Program.Instructions.Count,
+                command.Root,
+                command.Original is null ? 1u : 2u,
+                command.Opacity,
+                Bounds(command.Source),
+                Bounds(command.Original),
+                new Vector4(target.PixelOrigin, 0, 0),
+                context.GetGpuRef(inputs, command.Source.Texture),
+                context.GetGpuRef(inputs, command.Original?.Texture ?? _shared.Fallback),
+                context.GetGpuRef(inputs, _sampler));
+            render.SetArguments(in arguments);
             render.Draw(3);
         })
         .UseTexture(target.Texture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite))

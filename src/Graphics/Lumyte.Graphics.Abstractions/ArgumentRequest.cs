@@ -4,6 +4,8 @@ internal sealed class ArgumentRequest(Func<ResolvedArgument> resolve, Action<obj
 {
     private object? _reference;
 
+    internal IShaderReference? Reference => _reference as IShaderReference;
+
     internal ResolvedArgument Resolve() => resolve();
 
     internal void Install(object reference) => _reference = reference;
