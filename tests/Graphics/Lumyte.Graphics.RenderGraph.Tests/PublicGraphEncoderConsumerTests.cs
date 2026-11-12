@@ -9,7 +9,7 @@ using Xunit;
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 /// <summary>Exercises graph-native inputs from an assembly with no friend access to graphics internals.</summary>
-public sealed class PublicGraphEncoderConsumerTests
+public sealed partial class PublicGraphEncoderConsumerTests
 {
     /// <summary>Logical graph objects expose neither registration coordination nor native encoder escapes.</summary>
     [Fact]
@@ -19,7 +19,7 @@ public sealed class PublicGraphEncoderConsumerTests
         {
             Assert.True(type.IsSealed);
             Assert.Equal(typeof(object), type.BaseType);
-            Assert.DoesNotContain(type.GetMethods(BindingFlags.Public | BindingFlags.Instance), method => method.Name is "SetArguments" or "SetArgumentTable" or "RegisterTexture" or "RegisterBuffer");
+            Assert.DoesNotContain(type.GetMethods(BindingFlags.Public | BindingFlags.Instance), method => method.Name is "SetArgumentTable" or "RegisterTexture" or "RegisterBuffer");
             Assert.DoesNotContain(type.GetProperties(), property => typeof(IArgumentTable).IsAssignableFrom(property.PropertyType) || typeof(IRenderEncoder).IsAssignableFrom(property.PropertyType) || typeof(IComputeEncoder).IsAssignableFrom(property.PropertyType));
         }
     }
@@ -38,9 +38,9 @@ public sealed class PublicGraphEncoderConsumerTests
         Assert.Throws<ArgumentException>(() => other.Value("Matrix", Vector4.One));
     }
 
-    /// <summary>Each draw captures fresh values; indexed drawing and ended/context scopes stay guarded.</summary>
+    /// <summary>SetArguments captures once; indexed drawing and ended/context scopes stay guarded.</summary>
     [Fact]
-    public void DrawAndIndexedDrawCaptureFreshValuesAndCloseScope()
+    public void DrawAndIndexedDrawReuseSelectedSnapshotAndCloseScope()
     {
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
@@ -53,17 +53,18 @@ public sealed class PublicGraphEncoderConsumerTests
         graph.AddPass("draw", context =>
         {
             escaped = context.BeginRenderPass(Attachments(target));
-            Assert.Throws<InvalidOperationException>(() => escaped.Draw(logical, 3));
+            Assert.Throws<InvalidOperationException>(() => escaped.SetArguments(logical));
             using var wrong = new PublicGraphConsumerPipeline(Artifact(ShaderStage.Vertex));
             escaped.SetPipeline(wrong);
-            Assert.Throws<ArgumentException>(() => escaped.Draw(logical, 3));
+            Assert.Throws<ArgumentException>(() => escaped.SetArguments(logical));
             escaped.SetPipeline(pipeline);
-            escaped.Draw(logical, 3);
+            escaped.SetArguments(logical);
+            escaped.Draw(3);
             using var indices = new TestTypedBuffer<ushort>(new() { Count = 3, Usage = BufferUsage.Index }, []);
             escaped.SetIndexBuffer(indices.SliceElements(0, 3));
-            escaped.DrawIndexed(logical, 3);
+            escaped.DrawIndexed(3);
             escaped.End();
-            Assert.Throws<InvalidOperationException>(() => escaped.Draw(logical, 3));
+            Assert.Throws<InvalidOperationException>(() => escaped.SetArguments(logical));
         }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite))
           .UseShaderResources(logical, target).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
@@ -71,8 +72,8 @@ public sealed class PublicGraphEncoderConsumerTests
         plan.Record(commands);
         Assert.Equal(1, commands.Encoder.Draws);
         Assert.Equal(1, commands.Encoder.IndexedDraws);
-        Assert.Equal(2, reads);
-        Assert.Equal(new[] { 1f, 2f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span)));
+        Assert.Equal(1, reads);
+        Assert.Equal(new[] { 1f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span)));
         Assert.Equal(1, commands.Encoder.Ends);
         Assert.Throws<InvalidOperationException>(() => escaped!.SetPipeline(pipeline));
     }
@@ -91,7 +92,7 @@ public sealed class PublicGraphEncoderConsumerTests
         {
             using RenderGraphRenderEncoder encoder = context.BeginRenderPass(Attachments(target));
             encoder.SetPipeline(pipeline);
-            Assert.Throws<ArgumentException>(() => encoder.Draw(logical, 3));
+            Assert.Throws<ArgumentException>(() => encoder.SetArguments(logical));
         }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite))
           .UseShaderResources(logical, target).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
@@ -115,9 +116,10 @@ public sealed class PublicGraphEncoderConsumerTests
         {
             escaped = context.BeginComputePass();
             escaped.SetPipeline(wrong);
-            Assert.Throws<ArgumentException>(() => escaped.Dispatch(logical, 1));
+            Assert.Throws<ArgumentException>(() => escaped.SetArguments(logical));
             escaped.SetPipeline(pipeline);
-            escaped.Dispatch(logical, 2, 3, 4);
+            escaped.SetArguments(logical);
+            escaped.Dispatch(2, 3, 4);
         }).UseShaderResources(logical).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
@@ -125,7 +127,7 @@ public sealed class PublicGraphEncoderConsumerTests
         Assert.Equal(1, commands.Encoder.Dispatches);
         Assert.Single(commands.Encoder.Snapshots);
         Assert.Equal(1, commands.Encoder.Ends);
-        Assert.Throws<InvalidOperationException>(() => escaped!.Dispatch(logical, 1));
+        Assert.Throws<InvalidOperationException>(() => escaped!.Dispatch(1));
     }
 
     /// <summary>A logical resource set cannot be connected to another graph or two consumers.</summary>
@@ -155,7 +157,7 @@ public sealed class PublicGraphEncoderConsumerTests
         {
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
-            Assert.Throws<ArgumentException>(() => encoder.Dispatch(logical, 1));
+            Assert.Throws<ArgumentException>(() => encoder.SetArguments(logical));
         }).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
@@ -274,7 +276,8 @@ public sealed class PublicGraphEncoderConsumerTests
                 DepthStencilAttachment = new() { Texture = target, DepthLoadOp = AttachmentLoadOp.Clear, DepthStoreOp = AttachmentStoreOp.Store },
             });
             encoder.SetPipeline(pipeline);
-            encoder.Draw(logical, 3);
+            encoder.SetArguments(logical);
+            encoder.Draw(3);
         }).UseTexture(target, TextureState.DepthStencilAttachment, new(PipelineStage.DepthStencil, ResourceAccess.DepthStencilWrite))
           .UseShaderResources(logical).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
@@ -294,7 +297,7 @@ public sealed class PublicGraphEncoderConsumerTests
             .Value("Vector2", Vector2.One).Value("Vector3", Vector3.One).Value("Vector4", Vector4.One)
             .Value("Matrix", Matrix4x4.Identity);
 
-    private static ShaderArtifact Artifact(ShaderStage stage)
+    private static ShaderArtifact Artifact(ShaderStage stage, bool hasRoot = true)
     {
         // Metadata-only fixture: public artifact packing validates the header; no shader compiler or GPU is used.
         object Scalar(string name) => new { kind = "scalar", scalarType = name };
@@ -307,6 +310,6 @@ public sealed class PublicGraphEncoderConsumerTests
         });
         byte[] code = new byte[20];
         BinaryPrimitives.WriteUInt32LittleEndian(code, 0x07230203);
-        return ShaderArtifact.PackTarget(ShaderTarget.SpirV, stage, "main", "metadata-only-test-fixture", code, reflection);
+        return ShaderArtifact.PackTarget(ShaderTarget.SpirV, stage, "main", "metadata-only-test-fixture", code, hasRoot ? reflection : "{\"parameters\":[]}");
     }
 }

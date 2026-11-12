@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph;
 
@@ -10,6 +11,8 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     private readonly IReadOnlyList<RenderGraphTexture> _colorAttachments;
     private readonly RenderGraphTexture? _depthAttachment;
     private IGraphicsPipeline? _pipeline;
+    private RenderGraphShaderResources? _arguments;
+    private object? _argumentPipeline;
     private bool _ended;
 
     internal RenderGraphRenderEncoder(RenderGraphContext context, IRenderEncoder native, RenderGraphTexture[] colorAttachments, RenderGraphTexture? depthAttachment)
@@ -86,47 +89,54 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         _native.SetIndexBuffer(indices);
     }
 
-    /// <summary>Validates logical resources, snapshots current values and records Draw.</summary>
+    /// <summary>Captures logical numeric values once and selects arguments for the current pipeline.</summary>
     /// <param name="resources">The shader inputs declared for this graph pass.</param>
+    public void SetArguments(RenderGraphShaderResources resources)
+    {
+        Validate(resources);
+        ShaderValueSnapshot snapshot = resources.Snapshot();
+        _native.SetArguments(snapshot);
+        _arguments = resources;
+        _argumentPipeline = _pipeline;
+    }
+
+    /// <summary>Records Draw with the previously selected arguments.</summary>
     /// <param name="vertexCount">The vertexCount value.</param>
     /// <param name="instanceCount">The instanceCount value.</param>
     /// <param name="firstVertex">The firstVertex value.</param>
     /// <param name="firstInstance">The firstInstance value.</param>
-    public void Draw(RenderGraphShaderResources resources, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
+    public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
-        Validate(resources);
-        resources.Core.Draw(_native, resources.Snapshot(), vertexCount, instanceCount, firstVertex, firstInstance);
+        ValidateExecution();
+        _native.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
     }
 
-    /// <summary>Validates logical resources, snapshots current values and records DrawIndexed.</summary>
-    /// <param name="resources">The shader inputs declared for this graph pass.</param>
+    /// <summary>Records DrawIndexed with the previously selected arguments.</summary>
     /// <param name="indexCount">The indexCount value.</param>
     /// <param name="instanceCount">The instanceCount value.</param>
     /// <param name="firstIndex">The firstIndex value.</param>
     /// <param name="baseVertex">The baseVertex value.</param>
     /// <param name="firstInstance">The firstInstance value.</param>
-    public void DrawIndexed(RenderGraphShaderResources resources, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
+    public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
-        Validate(resources);
-        resources.Core.DrawIndexed(_native, resources.Snapshot(), indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        ValidateExecution();
+        _native.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
     }
 
-    /// <summary>Validates logical resources, snapshots current values and records DrawIndirect.</summary>
-    /// <param name="resources">The shader inputs declared for this graph pass.</param>
+    /// <summary>Records DrawIndirect with the previously selected arguments.</summary>
     /// <param name="arguments">The arguments value.</param>
-    public void DrawIndirect(RenderGraphShaderResources resources, BufferSlice<DrawIndirectArguments> arguments)
+    public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
-        Validate(resources);
-        resources.Core.DrawIndirect(_native, resources.Snapshot(), arguments);
+        ValidateExecution();
+        _native.DrawIndirect(arguments);
     }
 
-    /// <summary>Validates logical resources, snapshots current values and records DrawIndexedIndirect.</summary>
-    /// <param name="resources">The shader inputs declared for this graph pass.</param>
+    /// <summary>Records DrawIndexedIndirect with the previously selected arguments.</summary>
     /// <param name="arguments">The arguments value.</param>
-    public void DrawIndexedIndirect(RenderGraphShaderResources resources, BufferSlice<DrawIndexedIndirectArguments> arguments)
+    public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
-        Validate(resources);
-        resources.Core.DrawIndexedIndirect(_native, resources.Snapshot(), arguments);
+        ValidateExecution();
+        _native.DrawIndexedIndirect(arguments);
     }
 
     /// <summary>Ends this pass once without submitting or releasing GPU resources.</summary>
@@ -158,6 +168,35 @@ public sealed class RenderGraphRenderEncoder : IDisposable
                 _context.DeferEncoderCleanup(cleanupError);
             }
         }
+    }
+
+    private void ValidateExecution()
+    {
+        EnsureActive();
+        if (_pipeline is null)
+        {
+            throw new InvalidOperationException("Select a pipeline before recording shader operations.");
+        }
+
+        // Borrowed graphs without a device cannot create logical resources; native execution validates its own root contract.
+        if (_context.DeviceTarget is not { } target)
+        {
+            return;
+        }
+
+        if (!(ShaderDataLayout.HasRoot(_pipeline.Desc.VertexShader.Artifact.GetTarget(target)) || (_pipeline.Desc.FragmentShader is { } fragment && ShaderDataLayout.HasRoot(fragment.Artifact.GetTarget(target)))))
+        {
+            return;
+        }
+
+        RenderGraphShaderResources resources = _arguments ?? throw new InvalidOperationException("Set arguments before recording shader operations.");
+        if (!ReferenceEquals(_argumentPipeline, _pipeline))
+        {
+            throw new InvalidOperationException("Set arguments again after switching to a different program.");
+        }
+
+        Validate(resources);
+        resources.Bind(_native);
     }
 
     private void Validate(RenderGraphShaderResources resources)

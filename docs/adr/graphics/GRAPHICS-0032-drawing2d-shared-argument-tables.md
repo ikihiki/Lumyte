@@ -76,7 +76,8 @@ graph.AddPass("sample", context =>
     render.SetScissor(new(0, 0, width, height));
     render.SetBlendConstant(new(0, 0, 0, 0));
     render.SetStencilReference(0);
-    render.Draw(inputs, 3);
+    render.SetArguments(inputs);
+    render.Draw(3);
 }).UseTexture(source, TextureState.Sampled, sampleRead)
   .UseTexture(target, TextureState.ColorAttachment, colorWrite)
   .UseShaderResources(inputs, target);
@@ -86,7 +87,7 @@ graph.AddPass("sample", context =>
 
 ### 論理入力と専用 encoder の契約
 
-入力は ShaderArtifact の object identity と実 device の `Caps.ShaderTarget` に固定する。Shared の compiled root layout を使い、root 名、完全一致の member path、CLR 数値型、reference kind と対象型を検査する。未知・重複・不足する member と pipeline の別 artifact は draw/dispatch 前に拒否する。Value の Func は各 draw/dispatch で新しい snapshot に評価し、pipeline 切替後もその時点の root を適用する。実行時 reflection、新しい friend 宣言、手書きの graph 引数 shim は使わない。
+入力は ShaderArtifact の object identity と実 device の `Caps.ShaderTarget` に固定する。Shared の compiled root layout を使い、root 名、完全一致の member path、CLR 数値型、reference kind と対象型を検査する。未知・重複・不足する member と pipeline の別 artifact は draw/dispatch 前に拒否する。Value の Func は SetArguments ごとに一度だけ評価し、数値 bytes をコピーする。以後の draw/dispatch は同じ snapshot を使い、closure の変更を取り込まない。別 pipeline へ切り替えた場合は SetArguments を再度呼ぶ。別の SetArguments が成功する前に同じ pipeline へ戻す場合だけ、最後の選択を使える。pipeline 別の選択 cache は作らない。失敗した SetArguments は最後の有効な選択を保持する。参照の寿命・宣言と間接 shader-data の command-local capture は各 draw/dispatch で検査する。引数を持たない program は SetArguments を要求しない。実行時 reflection、新しい friend 宣言、手書きの graph 引数 shim は使わない。
 
 UseShaderResources の出力は実際の color attachment と一致させ、同じ pass に state/access を宣言する。出力が空でも compute とは限らず、artifact の stage により compute と depth-only graphics を区別する。depth-only は BeginRenderPass に宣言済み depth attachment を渡す。render は Draw/DrawIndexed と indirect、compute は BeginComputePass の Dispatch/DispatchIndirect を提供する。
 
@@ -261,6 +262,8 @@ composite の GPU instruction と geometry は graph 一時資源とし、明示
 +    }
 +    public sealed class RenderGraphRenderEncoder : IDisposable
 +    {
++        // 数値を一度 capture。失敗時は以前の選択を保持する。
++        public void SetArguments(RenderGraphShaderResources resources);
 +        public void SetPipeline(IGraphicsPipeline pipeline);
 +        public void SetRenderState(GraphicsRenderStateDesc state);
 +        public void SetViewport(Viewport viewport);
@@ -269,18 +272,19 @@ composite の GPU instruction と geometry は graph 一時資源とし、明示
 +        public void SetStencilReference(uint reference);
 +        public void SetIndexBuffer(BufferSlice<ushort> indices);
 +        public void SetIndexBuffer(BufferSlice<uint> indices);
-+        public void Draw(RenderGraphShaderResources resources, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
-+        public void DrawIndexed(RenderGraphShaderResources resources, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
-+        public void DrawIndirect(RenderGraphShaderResources resources, BufferSlice<DrawIndirectArguments> arguments);
-+        public void DrawIndexedIndirect(RenderGraphShaderResources resources, BufferSlice<DrawIndexedIndirectArguments> arguments);
++        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
++        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
++        public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments);
++        public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments);
 +        public void End();
 +        public void Dispose();
 +    }
 +    public sealed class RenderGraphComputeEncoder : IDisposable
 +    {
++        public void SetArguments(RenderGraphShaderResources resources);
 +        public void SetPipeline(IGraphicsComputePipeline pipeline);
-+        public void Dispatch(RenderGraphShaderResources resources, uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1);
-+        public void DispatchIndirect(RenderGraphShaderResources resources, BufferSlice<DispatchIndirectArguments> arguments);
++        public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1);
++        public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments);
 +        public void End();
 +        public void Dispose();
 +    }

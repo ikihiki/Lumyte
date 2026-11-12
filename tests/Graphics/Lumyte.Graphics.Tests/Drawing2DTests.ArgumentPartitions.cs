@@ -385,6 +385,7 @@ public sealed partial class Drawing2DTests
     private sealed class PartitionRenderEncoder(IRenderEncoder native, List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> roots) : IRenderEncoder
     {
         private IArgumentTable? _table;
+        private ShaderValueSnapshot? _arguments;
 
         public void SetArgumentTable(IArgumentTable table)
         {
@@ -395,16 +396,16 @@ public sealed partial class Drawing2DTests
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments
         {
-            Assert.NotNull(_table);
-            roots.Add((_table!, IShaderArguments.Capture(in arguments)));
+            ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
             native.SetArguments(in arguments);
+            _arguments = snapshot;
         }
 
         public void SetArguments(ShaderValueSnapshot arguments)
         {
-            Assert.NotNull(_table);
-            roots.Add((_table!, arguments.Copy()));
+            ShaderValueSnapshot snapshot = arguments.Copy();
             native.SetArguments(arguments);
+            _arguments = snapshot;
         }
 
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);
@@ -419,18 +420,42 @@ public sealed partial class Drawing2DTests
 
         public void SetStencilReference(uint reference) => native.SetStencilReference(reference);
 
-        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) => native.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
+        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
+        {
+            CaptureDraw();
+            native.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
+        }
 
         public void SetIndexBuffer(BufferSlice<ushort> indices) => native.SetIndexBuffer(indices);
 
         public void SetIndexBuffer(BufferSlice<uint> indices) => native.SetIndexBuffer(indices);
 
-        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0) => native.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
+        {
+            CaptureDraw();
+            native.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        }
 
-        public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments) => native.DrawIndirect(arguments);
+        public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
+        {
+            CaptureDraw();
+            native.DrawIndirect(arguments);
+        }
 
-        public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments) => native.DrawIndexedIndirect(arguments);
+        public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
+        {
+            CaptureDraw();
+            native.DrawIndexedIndirect(arguments);
+        }
 
         public void End() => native.End();
+
+        private void CaptureDraw()
+        {
+            // Native root and transitive shader-data capture happens per command, not when SetArguments selects numeric values.
+            Assert.NotNull(_table);
+            Assert.NotNull(_arguments);
+            roots.Add((_table!, _arguments!.Copy()));
+        }
     }
 }

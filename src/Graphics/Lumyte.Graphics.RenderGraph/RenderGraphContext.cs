@@ -32,6 +32,8 @@ public sealed class RenderGraphContext
 
     internal RenderGraphPass Pass { get; }
 
+    internal ShaderTarget? DeviceTarget => Pass.Owner.Device?.Caps.ShaderTarget;
+
     /// <summary>Resolves a texture declared by this pass.</summary>
     /// <param name="texture">The imported handle.</param>
     /// <returns>The caller-owned texture.</returns>

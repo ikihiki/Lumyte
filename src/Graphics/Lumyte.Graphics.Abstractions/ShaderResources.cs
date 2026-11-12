@@ -292,6 +292,28 @@ public class ShaderResources
 
     internal bool Uses(ArgumentTableReservation reservation) => ReferenceEquals(_reservation, reservation);
 
+    /// <summary>Validates this reservation and selects its render bindings without recapturing root values.</summary>
+    /// <param name="encoder">The native encoder.</param>
+    protected void Bind(IRenderEncoder encoder)
+    {
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+    }
+
+    /// <summary>Validates this reservation and selects its compute bindings without recapturing root values.</summary>
+    /// <param name="encoder">The native encoder.</param>
+    protected void Bind(IComputeEncoder encoder)
+    {
+        IArgumentTable? table = _reservation.RecordingTable(graphics: false);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+    }
+
     /// <summary>Connects a host's immutable collection boundary to every inherited registration path.</summary>
     /// <param name="validate">The serial host collection guard.</param>
     protected void ValidateBeforeCollection(Action validate)

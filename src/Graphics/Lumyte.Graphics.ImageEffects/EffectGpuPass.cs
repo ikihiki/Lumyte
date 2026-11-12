@@ -69,7 +69,8 @@ internal static class EffectGpuPass
             render.SetScissor(new(0, 0, descriptor.Width, descriptor.Height));
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
-            render.Draw(resources, 3);
+            render.SetArguments(resources);
+            render.Draw(3);
             render.End();
         }).UseTexture(input.Texture, TextureState.Sampled, _sample);
         if (backdrop.Texture != input.Texture)

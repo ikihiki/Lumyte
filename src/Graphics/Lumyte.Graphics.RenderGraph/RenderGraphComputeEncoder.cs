@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph;
 
@@ -8,6 +9,8 @@ public sealed class RenderGraphComputeEncoder : IDisposable
     private readonly RenderGraphContext _context;
     private readonly IComputeEncoder _native;
     private IGraphicsComputePipeline? _pipeline;
+    private RenderGraphShaderResources? _arguments;
+    private object? _argumentPipeline;
     private bool _ended;
 
     internal RenderGraphComputeEncoder(RenderGraphContext context, IComputeEncoder native)
@@ -26,24 +29,33 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         _pipeline = pipeline;
     }
 
-    /// <summary>Validates logical resources, snapshots current values and records Dispatch.</summary>
+    /// <summary>Captures logical numeric values once and selects arguments for the current pipeline.</summary>
     /// <param name="resources">The shader inputs declared for this graph pass.</param>
+    public void SetArguments(RenderGraphShaderResources resources)
+    {
+        Validate(resources);
+        ShaderValueSnapshot snapshot = resources.Snapshot();
+        _native.SetArguments(snapshot);
+        _arguments = resources;
+        _argumentPipeline = _pipeline;
+    }
+
+    /// <summary>Records Dispatch with the previously selected arguments.</summary>
     /// <param name="groupCountX">The groupCountX value.</param>
     /// <param name="groupCountY">The groupCountY value.</param>
     /// <param name="groupCountZ">The groupCountZ value.</param>
-    public void Dispatch(RenderGraphShaderResources resources, uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
+    public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
-        Validate(resources);
-        resources.Core.Dispatch(_native, resources.Snapshot(), groupCountX, groupCountY, groupCountZ);
+        ValidateExecution();
+        _native.Dispatch(groupCountX, groupCountY, groupCountZ);
     }
 
-    /// <summary>Validates logical resources, snapshots current values and records DispatchIndirect.</summary>
-    /// <param name="resources">The shader inputs declared for this graph pass.</param>
+    /// <summary>Records DispatchIndirect with the previously selected arguments.</summary>
     /// <param name="arguments">The arguments value.</param>
-    public void DispatchIndirect(RenderGraphShaderResources resources, BufferSlice<DispatchIndirectArguments> arguments)
+    public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
     {
-        Validate(resources);
-        resources.Core.DispatchIndirect(_native, resources.Snapshot(), arguments);
+        ValidateExecution();
+        _native.DispatchIndirect(arguments);
     }
 
     /// <summary>Ends this pass once without submitting or releasing GPU resources.</summary>
@@ -75,6 +87,35 @@ public sealed class RenderGraphComputeEncoder : IDisposable
                 _context.DeferEncoderCleanup(cleanupError);
             }
         }
+    }
+
+    private void ValidateExecution()
+    {
+        EnsureActive();
+        if (_pipeline is null)
+        {
+            throw new InvalidOperationException("Select a pipeline before recording shader operations.");
+        }
+
+        // Borrowed graphs without a device cannot create logical resources; native execution validates its own root contract.
+        if (_context.DeviceTarget is not { } target)
+        {
+            return;
+        }
+
+        if (!ShaderDataLayout.HasRoot(_pipeline.Desc.ComputeShader.Artifact.GetTarget(target)))
+        {
+            return;
+        }
+
+        RenderGraphShaderResources resources = _arguments ?? throw new InvalidOperationException("Set arguments before recording shader operations.");
+        if (!ReferenceEquals(_argumentPipeline, _pipeline))
+        {
+            throw new InvalidOperationException("Set arguments again after switching to a different program.");
+        }
+
+        Validate(resources);
+        resources.Bind(_native);
     }
 
     private void Validate(RenderGraphShaderResources resources)

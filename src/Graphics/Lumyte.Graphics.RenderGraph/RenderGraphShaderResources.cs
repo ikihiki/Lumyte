@@ -119,7 +119,7 @@ public sealed class RenderGraphShaderResources
     public RenderGraphShaderResources Value<T>(string path, T value)
         where T : unmanaged => Value(path, () => value);
 
-    /// <summary>Evaluates a numeric member afresh for each draw or dispatch.</summary>
+    /// <summary>Evaluates a numeric member once for each encoder SetArguments call.</summary>
     /// <typeparam name="T">The numeric member type.</typeparam>
     /// <param name="path">The compiled member path.</param>
     /// <param name="value">The synchronous value source.</param>
@@ -137,6 +137,10 @@ public sealed class RenderGraphShaderResources
         });
         return this;
     }
+
+    internal void Bind(IRenderEncoder encoder) => _owner.Bind(_resources, encoder);
+
+    internal void Bind(IComputeEncoder encoder) => _owner.Bind(_resources, encoder);
 
     internal ShaderValueSnapshot Snapshot()
     {

@@ -163,7 +163,8 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             render.SetScissor(command.Scissor);
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
-            render.Draw(inputs, 3);
+            render.SetArguments(inputs);
+            render.Draw(3);
         })
         .UseTexture(target.Texture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite))
         .UseShaderDataBuffer(instructions, _fragmentRead)

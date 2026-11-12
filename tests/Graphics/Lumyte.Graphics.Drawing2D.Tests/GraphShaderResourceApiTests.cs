@@ -113,7 +113,7 @@ public sealed class GraphShaderResourceApiTests
             Assert.DoesNotContain(encoder.GetInterfaces(), type => type == typeof(Lumyte.Graphics.Abstractions.IRenderEncoder) || type == typeof(Lumyte.Graphics.Abstractions.IComputeEncoder));
             foreach (MemberInfo member in encoder.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
-                Assert.DoesNotContain(member.Name, new[] { "SetArguments", "SetArgumentTable", "Underlying", "Native", "Commands", "Reference", "Table" });
+                Assert.DoesNotContain(member.Name, new[] { "SetArgumentTable", "Underlying", "Native", "Commands", "Reference", "Table" });
                 if (member is MethodInfo method)
                 {
                     Assert.DoesNotContain(method.GetParameters(), parameter => parameter.ParameterType.Name.Contains("ShaderValueSnapshot", StringComparison.Ordinal) || parameter.ParameterType.Name.Contains("IShaderArguments", StringComparison.Ordinal));

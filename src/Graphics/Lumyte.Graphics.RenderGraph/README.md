@@ -165,15 +165,16 @@ graph.AddPass("sample", context =>
     render.SetScissor(new(0, 0, width, height));
     render.SetBlendConstant(new(0, 0, 0, 0));
     render.SetStencilReference(0);
-    render.Draw(inputs, 3);
+    render.SetArguments(inputs);
+    render.Draw(3);
 }).UseTexture(source, TextureState.Sampled, sampleRead)
   .UseTexture(target, TextureState.ColorAttachment, colorWrite)
   .UseShaderResources(inputs, target);
 ```
 
-`CreateShaderResources(fragment.Artifact, rootParameter: "arguments")` pins the exact artifact object and the device's `Caps.ShaderTarget`. All fluent calls return the same sealed graph description, not native references. The compiled root layout validates exact member paths, CLR numeric types and reference kinds/element types. Missing, duplicate, unknown or mistyped members and a different pipeline artifact are rejected before execution. `Value(path, Func<T>)` is evaluated into a fresh snapshot for each draw or dispatch, including after pipeline changes.
+`CreateShaderResources(fragment.Artifact, rootParameter: "arguments")` pins the exact artifact object and the device's `Caps.ShaderTarget`. All fluent calls return the same sealed graph description, not native references. The compiled root layout validates exact member paths, CLR numeric types and reference kinds/element types. Missing, duplicate, unknown or mistyped members and a different pipeline artifact are rejected before execution. `SetArguments(inputs)` evaluates each `Value(path, Func<T>)` once and freezes numeric bytes. Draw/dispatch reuse that selection until the next successful SetArguments; failed selection preserves the last valid arguments. Switching to a different argument-bearing pipeline requires SetArguments again (switching back before another successful SetArguments can reuse the one last selection; this is not a per-pipeline cache). Each execution still validates the selected resource cohort and native resource lifetime, and captures indirect shader-data metadata at the ordinary native command-recording point. Argument-free pipelines need no SetArguments.
 
-Declare the actual color outputs in `UseShaderResources(inputs, target)` and declare matching attachment state/access on that pass. No color outputs can mean compute or depth-only graphics: the artifact stage distinguishes them. Depth-only graphics uses `RenderGraphRenderPassDesc.DepthStencilAttachment`. For compute, use `using var compute = context.BeginComputePass(); compute.SetPipeline(pipeline); compute.Dispatch(inputs, x, y, z);` with the compute artifact and matching buffer/texture declarations.
+Declare the actual color outputs in `UseShaderResources(inputs, target)` and declare matching attachment state/access on that pass. No color outputs can mean compute or depth-only graphics: the artifact stage distinguishes them. Depth-only graphics uses `RenderGraphRenderPassDesc.DepthStencilAttachment`. For compute, use `using var compute = context.BeginComputePass(); compute.SetPipeline(pipeline); compute.SetArguments(inputs); compute.Dispatch(x, y, z);` with the compute artifact and matching buffer/texture declarations.
 
 The render encoder supports pipeline/render state, viewport, scissor, blend constants, stencil reference, index buffers, `Draw`/`DrawIndexed` and their indirect forms. Compute supports `Dispatch` and `DispatchIndirect`. Native encoders never escape these wrappers. Exactly one graph encoder can be active per context. `End` ends once; `Dispose` is idempotent after ending. Context closure cleans up an outstanding encoder and preserves the original callback exception if cleanup also fails. Contexts and encoders cannot be used after the callback. Raw `context.Commands` remains for deliberate interoperability; do not mix raw passes with an active graph encoder.
 

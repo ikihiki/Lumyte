@@ -84,6 +84,10 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         return resources;
     });
 
+    internal void Bind(ShaderResources resources, IRenderEncoder encoder) => ((ModuleResources)resources).BindRender(encoder);
+
+    internal void Bind(ShaderResources resources, IComputeEncoder encoder) => ((ModuleResources)resources).BindCompute(encoder);
+
     internal RenderGraphShaderResources Create(ShaderArtifact artifact, string root)
     {
         ValidateBuilding();
@@ -214,5 +218,9 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
 
         public override ShaderResources CreateSibling() => _owner.CreateModule();
+
+        internal void BindRender(IRenderEncoder encoder) => Bind(encoder);
+
+        internal void BindCompute(IComputeEncoder encoder) => Bind(encoder);
     }
 }
