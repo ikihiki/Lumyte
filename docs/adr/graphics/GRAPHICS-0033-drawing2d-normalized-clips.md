@@ -30,7 +30,7 @@
 | Analytic | 軸平行矩形交差の端がサンプル区間となる | CPU で確定した整数サンプル添字区間を 1 命令で比較 |
 | SampleMask | 一般パスの交差 | 画素ごとの 16 bit の membership を 1 命令で読む |
 
-隣接する paint clip は同じスコープ内だけで統合する。opacity・composition 境界を越えて移動せず、paint 子に大域 scissor を設定しない。子の整数 clip でも coverage が必要なら、その子で解析区間として評価する。外側の整数 clip は interpreter では hardware scissor、矩形 batch では各インスタンスの geometry 境界との交差で処理する。矩形 batch の hardware scissor は target 全域のままなので、異なる整数 clip を同一 batch に保持できる。双方とも残余 coverage 命令は不要である。これはスコープと描画経路に基づく決定的な規則であり、CPU/GPU の適応的切替ではない。
+隣接する paint clip は同じスコープ内だけで統合する。連続 transform をまとめる場合も、各段階の累積行列に既存の有限な逆行列の条件を適用し、一度でも不成立ならその子を透明とする。opacity・composition 境界を越えて移動せず、paint 子に大域 scissor を設定しない。子の整数 clip でも coverage が必要なら、その子で解析区間として評価する。外側の整数 clip は interpreter では hardware scissor、矩形 batch では各インスタンスの geometry 境界との交差で処理する。矩形 batch の hardware scissor は target 全域のままなので、異なる整数 clip を同一 batch に保持できる。双方とも残余 coverage 命令は不要である。これはスコープと描画経路に基づく決定的な規則であり、CPU/GPU の適応的切替ではない。
 
 一般 mask の全 bit が 0 なら Empty、全 bit が 1 ならその境界に応じて None / Scissor へ縮約できる。単なる AABB の内包からパス内部と推定して clip を除去してはならない。
 
@@ -65,7 +65,9 @@ mask 境界は非退化辺の保守的範囲を target と矩形 clip で交差�
 
 画素の 16 bit 値は整数を正確に表現できる float lane として格納し、4 画素を float4 に入れる。これは **4 B/画素**であり、密な ushort の理論値 2 B/画素ではない。数値として load し、平均 alpha、正規化 texture、filtering を介さない。inactive SIMD lane の load は範囲内へ clamp する。
 
-CPU cache は準備 context に属する descriptor のみを持ち、可変の大域 GPU mask cache を作らない。GPU mask は既存の owned geometry buffer に入り、遅延 upload、CopyWrite/ShaderRead 宣言、barrier、共有引数表からの間接参照を再利用する。prepared owner と retained asset は GPU 完了と command disposal まで有効とする。target・property・generation による既存の再利用・失効規則を保ち、Graph の producer/read 宣言も省略しない。追加 GPU reference や別系統の寿命管理は不要とする。
+CPU cache は準備 context に属する CPU mask を持ち、引数準備 plan がその準備限定の寿命を管理する。直接描画と retained preparation では upload の完了時に解放し、失敗・キャンセルでも準備 owner の返却時に解放する。Graph では遅延 upload の最後の callback まで保持する。culled payload や未実行の graph は graph owner の破棄時、append 失敗はその準備の中断時に解放する。GPU 資源を保持する batch の参照が残っても、準備 cache の mask や辞書の格納領域を保持しない。
+
+interpreter は mask を自身の CPU payload へコピーし、compiled program の clip metadata は元の mask 配列を借用しない。矩形 batch は遅延 pack で CPU cache を読むため、その完了より前に cache を解放しない。GPU mask は既存の owned geometry buffer に入り、遅延 upload、CopyWrite/ShaderRead 宣言、barrier、共有引数表からの間接参照を再利用する。prepared owner と retained asset は GPU 完了と command disposal まで有効とする。target・property・generation による既存の再利用・失効規則を保ち、Graph の producer/read 宣言も省略しない。
 
 ## 検討した代替案
 

@@ -14,6 +14,7 @@ public sealed class RenderPreparationContext2D
         _resources = resources;
         ArgumentPlan = argumentPlan ?? new(device);
         Clips = new(target);
+        ArgumentPlan.RegisterPreparationCache(Clips);
     }
 
     /// <summary>Gets the borrowed device.</summary>

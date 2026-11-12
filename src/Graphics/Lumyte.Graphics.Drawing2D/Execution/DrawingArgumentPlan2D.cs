@@ -8,6 +8,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private readonly object _gate = new();
     private readonly List<IDisposable> _owned = [];
     private readonly List<Upload> _uploads = [];
+    private readonly List<ClipNormalizationCache2D> _preparationCaches = [];
     private readonly List<ShaderResources> _scopes = [];
     private readonly IGraphicDevice _device;
     private readonly Func<ArgumentTablePlan>? _registrationFactory;
@@ -22,6 +23,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private IGraphicsSampler? _sampler;
     private IGraphicsTexture? _fallback;
     private IGraphicsTextureView? _fallbackView;
+    private int _completedUploads;
     private int _users = 1;
     private bool _returned;
     private bool _fallbackRecorded;
@@ -258,6 +260,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
             profile?.Counter(22, Registrations.IsMaterialized ? 1 : 0);
             profile?.Counter(23, stats.Rollovers);
             _uploads.Clear();
+            ReleasePreparationCaches();
         }
     }
 
@@ -300,10 +303,25 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         {
             if (!_returned)
             {
+                ReleasePreparationCaches();
                 Release();
                 _returned = true;
             }
         }
+    }
+
+    internal void RegisterPreparationCache(ClipNormalizationCache2D cache) => _preparationCaches.Add(cache);
+
+    // Cache arrays are borrowed only while compiling/packing. Prepared payloads own their copies.
+    // Keep graph caches through deferred callbacks, but never through retained GPU resource leases.
+    internal void ReleasePreparationCaches()
+    {
+        foreach (ClipNormalizationCache2D cache in _preparationCaches)
+        {
+            cache.Clear();
+        }
+
+        _preparationCaches.Clear();
     }
 
     /// <summary>Declares only builtin GPU roots allocated for the selected prepared draws.</summary>
@@ -393,6 +411,10 @@ public sealed class DrawingArgumentPlan2D : IDisposable
 
         upload.Mapped();
         upload.Completed = true;
+        if (++_completedUploads == _uploads.Count)
+        {
+            ReleasePreparationCaches();
+        }
     }
 
     private List<Action<IDrawingResourceDeclarations2D>> PreparedMarks(ShaderResources resources)

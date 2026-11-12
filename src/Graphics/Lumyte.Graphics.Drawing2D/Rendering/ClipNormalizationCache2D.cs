@@ -4,8 +4,14 @@ namespace Lumyte.Graphics.Drawing2D;
 
 internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
 {
-    private readonly Dictionary<(object Key, Matrix3x2 Transform, bool PixelSpace), NormalizedClip2D> _clips = [];
+    private Dictionary<(object Key, Matrix3x2 Transform, bool PixelSpace), NormalizedClip2D> _clips = [];
     private long _bytes;
+
+    internal void Clear()
+    {
+        _clips = [];
+        _bytes = 0;
+    }
 
     internal NormalizedClip2D Get(object key, Matrix3x2 transform, IReadOnlyList<ClipElement2D> elements, bool pixelSpace = false)
     {

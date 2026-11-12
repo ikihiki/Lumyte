@@ -95,7 +95,8 @@ internal sealed class DrawingProgram2D
 
     internal uint Compile(DrawingCommand2D command)
     {
-        Clip = _clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
+        NormalizedClip2D clip = _clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
+        Clip = clip.Mask.Length == 0 ? clip : clip with { Mask = [] };
         if (Clip.Kind == NormalizedClipKind2D.Empty)
         {
             return Solid(default);
@@ -184,13 +185,14 @@ internal sealed class DrawingProgram2D
 
         uint result = Multiply(shape, paint);
 
-        return ApplyNormalizedClip(result, Clip, scissorInstalled: true);
+        return ApplyNormalizedClip(result, clip, scissorInstalled: true);
     }
 
     internal uint CompileClip(DrawingState2D state)
     {
-        Clip = _clips.Get(state.Clip, Matrix3x2.Identity, state.Clip.Elements);
-        return ApplyNormalizedClip(Solid(Vector4.One), Clip, scissorInstalled: true);
+        NormalizedClip2D clip = _clips.Get(state.Clip, Matrix3x2.Identity, state.Clip.Elements);
+        Clip = clip.Mask.Length == 0 ? clip : clip with { Mask = [] };
+        return ApplyNormalizedClip(Solid(Vector4.One), clip, scissorInstalled: true);
     }
 
     internal void ValidateFiniteData()
@@ -353,6 +355,11 @@ internal sealed class DrawingProgram2D
                     else if (childPaint is TransformPaintNode2D transformed)
                     {
                         captured = transformed.Transform * captured;
+                        if (!Invertible(captured))
+                        {
+                            return Solid(default);
+                        }
+
                         childPaint = transformed.Child;
                     }
                 }

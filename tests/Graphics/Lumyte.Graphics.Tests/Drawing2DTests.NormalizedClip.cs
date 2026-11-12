@@ -28,6 +28,49 @@ public sealed partial class Drawing2DTests
         await CheckNormalizedClipSamplesAsync(device);
     }
 
+    /// <summary>Vulkan preserves transparency at each folded singular transform.</summary>
+    /// <returns>The asynchronous GPU checks.</returns>
+    [GpuFact]
+    public async Task VulkanSingularFoldedClipPaintAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await CheckSingularFoldedClipPaintAsync(device);
+    }
+
+    /// <summary>Wgpu preserves transparency at each folded singular transform.</summary>
+    /// <returns>The asynchronous GPU checks.</returns>
+    [GpuFact]
+    public async Task WgpuSingularFoldedClipPaintAsync()
+    {
+        using var device = WgpuDevice.Create();
+        await CheckSingularFoldedClipPaintAsync(device);
+    }
+
+    private static async Task CheckSingularFoldedClipPaintAsync(IGraphicDevice device)
+    {
+        var path = new PathBuilder2D();
+        path.MoveTo(Vector2.Zero);
+        path.LineTo(new(4, 0));
+        path.LineTo(new(4, 4));
+        path.LineTo(new(0, 4));
+        path.Close();
+        var a = new Matrix3x2(3, 9, 5, 15, 0, 0);
+        var b = new Matrix3x2(0.1f, 0.1f, 0.1f, 0.5f, 0, 0);
+        Assert.False(Matrix3x2.Invert(a, out _));
+        Assert.True(Matrix3x2.Invert(b * a, out _));
+        var clipped = PaintGraph2D.Clip(path.Build(), PaintGraph2D.Transform(a, PaintGraph2D.Transform(b, PaintGraph2D.Solid(_red))));
+        foreach (bool backdrop in new[] { false, true })
+        {
+            PaintGraph2D paint = backdrop
+                ? PaintGraph2D.Composite(clipped, PaintGraph2D.Solid(_blue), CompositeMode2D.SrcOver)
+                : clipped;
+            Vector4[] pixels = await RenderAsync(device, 4, 4, canvas => canvas.FillRect(new(0, 0, 4, 4), paint));
+
+            // Analytic expectation, independent of the CPU compiler and clip rasterizer.
+            Assert.All(pixels, pixel => Assert.Equal(backdrop ? new Vector4(0, 0, 1, 1) : Vector4.Zero, pixel));
+        }
+    }
+
     private static async Task CheckNormalizedClipSamplesAsync(IGraphicDevice device)
     {
         static Path2D Triangle(float size)
