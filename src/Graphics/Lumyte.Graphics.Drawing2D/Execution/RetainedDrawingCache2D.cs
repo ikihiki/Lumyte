@@ -11,6 +11,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
     private readonly List<FrameLease> _active = [];
     private readonly List<IDisposable> _retiring = [];
     private readonly object _gate = new();
+    private DrawingResourceState2D? _storageOwner;
     private int _frames;
     private bool _disposed;
     private long _compiled;
@@ -45,6 +46,19 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             }
 
             DisposeRetiring();
+        }
+    }
+
+    internal void BindStorageOwner(DrawingResourceState2D owner)
+    {
+        lock (_gate)
+        {
+            if (_storageOwner is not null && !ReferenceEquals(_storageOwner, owner))
+            {
+                throw new InvalidOperationException("The retained cache already has a different storage owner.");
+            }
+
+            _storageOwner = owner;
         }
     }
 
@@ -182,6 +196,9 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             }
         }
 
+        long held = OwnedBytes(includeActive: true, includePool: false);
+        _storageOwner?.TrimIdleRecordStorage(Math.Max(0, _options.MaxCachedBytes - held));
+
         if (failures is { Count: 1 })
         {
             ExceptionDispatchInfo.Capture(failures[0]).Throw();
@@ -195,7 +212,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     private long IdleBytes() => OwnedBytes(includeActive: false);
 
-    private long OwnedBytes(bool includeActive)
+    private long OwnedBytes(bool includeActive, bool includePool = true)
     {
         var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
         foreach (Asset asset in _idle.Concat(includeActive ? _active.SelectMany(frame => frame.Assets) : []))
@@ -215,7 +232,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             }
         }
 
-        long bytes = 0;
+        long bytes = includePool ? _storageOwner?.IdleRecordBytes ?? 0 : 0;
         foreach (long count in owners.Values)
         {
             bytes = count > long.MaxValue - bytes ? long.MaxValue : bytes + count;

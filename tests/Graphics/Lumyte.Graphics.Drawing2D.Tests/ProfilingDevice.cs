@@ -4,6 +4,8 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 
 internal sealed class ProfilingDevice : IGraphicDevice
 {
+    private bool _uploadDisposeFailed;
+
     public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
     {
         add
@@ -42,6 +44,10 @@ internal sealed class ProfilingDevice : IGraphicDevice
     internal bool FailTableDisposeOnce { get; init; }
 
     internal int NativeBuffers { get; private set; }
+
+    internal bool FailUploadDisposeOnce { get; init; }
+
+    internal HashSet<object> DisposedBuffers { get; } = new(ReferenceEqualityComparer.Instance);
 
     internal int Copies { get; private set; }
 
@@ -97,6 +103,8 @@ internal sealed class ProfilingDevice : IGraphicDevice
     }
 
     internal static IArgumentTable Owner<T>(IGpuRef<T> reference) => ((Reference<T>)reference).Owner;
+
+    internal static IArgumentTable Owner(IShaderReference reference) => (IArgumentTable)reference.Table;
 
     private static async ValueTask MapAsync(CancellationToken cancellationToken)
     {
@@ -273,6 +281,13 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public void Dispose()
         {
+            if (Memory == MemoryPreference.Upload && device.FailUploadDisposeOnce && !device._uploadDisposeFailed)
+            {
+                device._uploadDisposeFailed = true;
+                throw new InvalidOperationException("Injected upload disposal failure.");
+            }
+
+            device.DisposedBuffers.Add(this);
         }
     }
 
@@ -288,6 +303,8 @@ internal sealed class ProfilingDevice : IGraphicDevice
             nameof(DrawRecord2D) => 96,
             nameof(DrawDirectoryEntry2D) => 16,
             nameof(DrawPageMetadata2D) or nameof(MaskDescriptor2D) => 80,
+            nameof(DrawBasicMetadata2D) => 48,
+            nameof(DrawMaskMetadata2D) or nameof(DrawImageMetadata2D) => 64,
             nameof(ImagePaintData2D) => 128,
             _ => 144,
         };

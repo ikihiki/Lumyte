@@ -8,7 +8,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 {
     private static readonly BarrierScope _read = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
     private readonly RenderPreparationContext2D _context;
-    private readonly IGraphicsPipeline _pipeline;
+    private readonly DrawRecordResources2D _resources;
     private readonly List<IDisposable> _owned = [];
     private readonly List<Page> _pages = [];
     private readonly HashSet<IGraphicsTextureView> _views = new(ReferenceEqualityComparer.Instance);
@@ -20,7 +20,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     private PreparedRecordBatch2D(RenderPreparationContext2D context, DrawRecordResources2D resources)
     {
         _context = context;
-        _pipeline = resources.Pipeline;
+        _resources = resources;
         Own(context.RetainResources());
         Own(context.ArgumentPlan.Retain());
     }
@@ -160,7 +160,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                         continue;
                     }
 
-                    if (page is null || page.Cpu.Records.Count == DrawRecordPage2D.Capacity || !page.CanAdmit(null, 0, clip, color))
+                    if (page is null || !page.CanAdmit(null, 0, clip, color))
                     {
                         page?.Allocate();
                         page = new(batch);
@@ -199,7 +199,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     continue;
                 }
 
-                if (page is null || page.Cpu.Records.Count == DrawRecordPage2D.Capacity || !page.CanAdmit(program, root, clip))
+                if (page is null || !page.CanAdmit(program, root, clip))
                 {
                     page?.Allocate();
                     page = new(batch);
@@ -277,12 +277,16 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         private Stream<DrawDirectoryEntry2D> _clips = null!;
         private Stream<ImagePaintData2D> _images = null!;
         private Stream<MaskDescriptor2D> _masks = null!;
-        private Stream<DrawPageMetadata2D> _metadata = null!;
+        private Stream<DrawPageMetadata2D>? _metadata;
+        private Stream<DrawBasicMetadata2D>? _basicMetadata;
+        private Stream<DrawMaskMetadata2D>? _maskMetadata;
+        private Stream<DrawImageMetadata2D>? _imageMetadata;
+        private IGraphicsPipeline _pipeline = null!;
+        private int _mode;
         private ulong _numericCount;
         private IGraphicsBuffer<Vector4>? _numericUpload;
         private IGraphicsBuffer<Vector4>? _numeric;
         private IGpuRef<Vector4>? _numericRef;
-        private IGpuRef<IGraphicsTextureView>? _fallback;
         private IGpuRef<IGraphicsSampler>? _sampler;
 
         internal Page(PreparedRecordBatch2D batch)
@@ -291,11 +295,6 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             Reservation = batch._context.ArgumentPlan.Reserve();
             Scopes.Add(Reservation);
             _group = new(Reservation);
-            IGraphicsSampler sampler = batch._context.ArgumentPlan.Sampler(batch._context.Resources);
-            batch._samplers.Add(sampler);
-            _samplers.Add(sampler);
-            Reservation.RegisterSampler(sampler, reference => _sampler = reference);
-            batch._context.ArgumentPlan.Fallback(Reservation, reference => _fallback = reference);
         }
 
         internal DrawRecordPage2D Cpu { get; } = new();
@@ -326,19 +325,28 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             ArgumentTableBindingLimits limits = _batch._context.Device.Caps.ArgumentTableBindingLimits;
             DeviceCaps caps = _batch._context.Device.Caps;
             ulong maximum = caps.MaxStorageBufferBindingSize == 0 ? caps.MaxBufferSize : Math.Min(caps.MaxBufferSize, caps.MaxStorageBufferBindingSize);
-            maximum = Math.Min(maximum, limits.MaximumBufferRangeBytes);
-            if (!Cpu.FitsAddition(program, root, clip, color, maximum))
+            maximum = Math.Min(Math.Min(maximum, limits.MaximumBufferRangeBytes), int.MaxValue);
+            if (!Cpu.FitsAddition(program, root, clip, color, maximum, out uint buffers, out bool needsSampler))
             {
                 return false;
             }
 
-            uint views = checked((uint)(program is null ? _views.Count : _views.Union(program.Views, ReferenceEqualityComparer.Instance).Count()) + 1);
+            uint views = checked((uint)(program is null ? _views.Count : _views.Union(program.Views, ReferenceEqualityComparer.Instance).Count()));
             uint samplers = checked((uint)(program is null ? _samplers.Count : _samplers.Union(program.Samplers, ReferenceEqualityComparer.Instance).Count()));
+            if (needsSampler)
+            {
+                IGraphicsSampler nearest = _batch._context.ArgumentPlan.Sampler(_batch._context.Resources);
+                if (!_samplers.Contains(nearest) && (program is null || !program.Samplers.Contains(nearest)))
+                {
+                    samplers++;
+                }
+            }
+
             uint textureBindings = Math.Max(views, limits.MinimumTextureBindings);
             uint samplerBindings = Math.Max(samplers, limits.MinimumSamplerBindings);
-            ulong combined = limits.ReservedBindings + limits.ColorAttachmentBindingWeight + ((ulong)textureBindings * limits.TextureBindingWeight) + ((ulong)samplerBindings * limits.SamplerBindingWeight) + (7ul * limits.BufferBindingWeight);
+            ulong combined = limits.ReservedBindings + limits.ColorAttachmentBindingWeight + ((ulong)textureBindings * limits.TextureBindingWeight) + ((ulong)samplerBindings * limits.SamplerBindingWeight) + ((ulong)buffers * limits.BufferBindingWeight);
             return views <= limits.TextureSlots && textureBindings <= limits.TexturesPerDraw && samplers <= limits.SamplerSlots && samplerBindings <= limits.SamplersPerDraw
-                && Math.Min(limits.BufferSlots, limits.BuffersPerDraw) >= 7 && combined <= limits.CombinedBindings;
+                && Math.Min(limits.BufferSlots, limits.BuffersPerDraw) >= buffers && combined <= limits.CombinedBindings;
         }
 
         internal void Admit(ShaderResources scope, DrawingProgram2D program)
@@ -362,17 +370,45 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
 
             RecordCount = Cpu.Records.Count;
+            _mode = Cpu.IsSimple ? 4 : (Cpu.Masks.Count > 0 ? 1 : 0) | (Cpu.Images.Count > 0 ? 2 : 0);
+            _pipeline = _batch._resources.GetPipeline(_mode);
             _records = Create<DrawRecord2D>(Cpu.Records.Count, 96);
-            _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count, 16);
-            _clips = Create<DrawDirectoryEntry2D>(Cpu.Clips.Count, 16);
-            _images = Create<ImagePaintData2D>(Math.Max(1, Cpu.Images.Count), 128);
-            _masks = Create<MaskDescriptor2D>(Math.Max(1, Cpu.Masks.Count), 80);
-            _metadata = Create<DrawPageMetadata2D>(1, 80);
+            if (_mode != 4)
+            {
+                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count, 16);
+                if (Cpu.Clips.Count > 1)
+                {
+                    _clips = Create<DrawDirectoryEntry2D>(Cpu.Clips.Count, 16);
+                }
+
+                if (Cpu.Images.Count > 0)
+                {
+                    _images = Create<ImagePaintData2D>(Cpu.Images.Count, 128);
+                    IGraphicsSampler sampler = _batch._context.ArgumentPlan.Sampler(_batch._context.Resources);
+                    _batch._samplers.Add(sampler);
+                    _samplers.Add(sampler);
+                    Reservation.RegisterSampler(sampler, reference => _sampler = reference);
+                }
+
+                if (Cpu.Masks.Count > 0)
+                {
+                    _masks = Create<MaskDescriptor2D>(Cpu.Masks.Count, 80);
+                }
+
+                switch (_mode)
+                {
+                    case 0: _basicMetadata = Create<DrawBasicMetadata2D>(1, 48); break;
+                    case 1: _maskMetadata = Create<DrawMaskMetadata2D>(1, 64); break;
+                    case 2: _imageMetadata = Create<DrawImageMetadata2D>(1, 64); break;
+                    default: _metadata = Create<DrawPageMetadata2D>(1, 80); break;
+                }
+            }
+
             ulong count = checked((ulong)Math.Max(1, Cpu.Numeric.Count));
             _numericCount = count;
-            ulong capacity = Math.Max(count, Math.Min(2048, _batch._context.Device.Caps.MaxBufferSize / 16));
-            _numericUpload = _batch.Own(_batch._context.Device.CreateBuffer<Vector4>(new() { Count = capacity, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
-            _numeric = _batch.Own(_batch._context.Device.CreateBuffer<Vector4>(new() { Count = capacity, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
+            DrawNumericPool2D.Lease numeric = _batch.Own(_batch._resources.NumericPool.Rent(checked((int)count)));
+            _numericUpload = numeric.Upload;
+            _numeric = numeric.Data;
             Reservation.RegisterBuffer(_numeric.SliceElements(0, count), reference => _numericRef = reference);
             _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             _batch._bytes = checked(_batch._bytes + (long)(_numeric.SizeInBytes + _numericUpload.SizeInBytes));
@@ -388,9 +424,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
 
             DrawingTargetInfo2D info = _batch._context.Target;
-            var args = new DrawRangeArguments2D(_records.Reference!, _metadata.Reference!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = target, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
-            render.SetPipeline(_batch._pipeline);
+            render.SetPipeline(_pipeline);
             render.SetRenderState(new()
             {
                 Rasterization = new() { Cull = CullMode.None },
@@ -401,19 +436,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             render.SetBlendConstant(default);
             render.SetStencilReference(0);
 
-            // Vulkan attachment blending preserves primitive order. Other backends
-            // retain the same record format but use ordered individual draws until
-            // their runtime order acceptance has been established.
-            if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
+            if (_mode == 4)
             {
-                Reservation.Draw(render, in args, 6, count, 0, 0);
+                DrawSimple(render, info, first, count);
             }
             else
             {
-                for (uint i = 0; i < count; i++)
+                switch (_mode)
                 {
-                    DrawRangeArguments2D selected = args with { FirstRecord = first + i, RecordCount = 1 };
-                    Reservation.Draw(render, in selected, 6, 1, 0, 0);
+                    case 0: Draw(render, info, _basicMetadata!.Reference!, first, count); break;
+                    case 1: Draw(render, info, _maskMetadata!.Reference!, first, count); break;
+                    case 2: Draw(render, info, _imageMetadata!.Reference!, first, count); break;
+                    default: Draw(render, info, _metadata!.Reference!, first, count); break;
                 }
             }
 
@@ -447,10 +481,45 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
+        private void Draw<TMetadata>(IRenderEncoder render, DrawingTargetInfo2D info, IGpuRef<TMetadata> metadata, uint first, uint count)
+            where TMetadata : struct, IShaderData
+        {
+            var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
+            if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
+            {
+                Reservation.Draw(render, in args, 6, count, 0, 0);
+            }
+            else
+            {
+                for (uint i = 0; i < count; i++)
+                {
+                    DrawRangeArguments2D<TMetadata> selected = args with { FirstRecord = first + i, RecordCount = 1 };
+                    Reservation.Draw(render, in selected, 6, 1, 0, 0);
+                }
+            }
+        }
+
+        private void DrawSimple(IRenderEncoder render, DrawingTargetInfo2D info, uint first, uint count)
+        {
+            var args = new SimpleDrawRangeArguments2D(_records.Reference!, _numericRef!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
+            if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
+            {
+                Reservation.Draw(render, in args, 6, count, 0, 0);
+            }
+            else
+            {
+                for (uint i = 0; i < count; i++)
+                {
+                    SimpleDrawRangeArguments2D selected = args with { FirstRecord = first + i, RecordCount = 1 };
+                    Reservation.Draw(render, in selected, 6, 1, 0, 0);
+                }
+            }
+        }
+
         private Stream<T> Create<T>(int count, ulong stride)
             where T : struct, IShaderData
         {
-            var result = new Stream<T>(_batch, Reservation, count, stride);
+            var result = new Stream<T>(_batch, Reservation, count, stride, _pipeline.Desc.FragmentShader!.Artifact);
             _streams.Add(result);
             return result;
         }
@@ -477,29 +546,37 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             long copied = 0;
             try
             {
-                Cpu.Resolve(_fallback!, _sampler!);
+                Cpu.Resolve(null!, _sampler!);
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
-                copied += _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
-                copied += _clips.Fill(CollectionsMarshal.AsSpan(Cpu.Clips));
-                if (Cpu.Images.Count == 0)
+                if (_mode != 4)
                 {
-                    copied += _images.Fill([new(default, default, default, default, 0, 0, 0, 0, 0, 0, 0, 0, _fallback!, _sampler!)]);
-                }
-                else
-                {
-                    copied += _images.Fill(CollectionsMarshal.AsSpan(Cpu.Images));
+                    copied += _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
+                    IGpuRef<DrawDirectoryEntry2D> clips = _paints.Reference!;
+                    if (Cpu.Clips.Count > 1)
+                    {
+                        copied += _clips.Fill(CollectionsMarshal.AsSpan(Cpu.Clips));
+                        clips = _clips.Reference!;
+                    }
+
+                    if (Cpu.Images.Count > 0)
+                    {
+                        copied += _images.Fill(CollectionsMarshal.AsSpan(Cpu.Images));
+                    }
+
+                    if (Cpu.Masks.Count > 0)
+                    {
+                        copied += _masks.Fill(CollectionsMarshal.AsSpan(Cpu.Masks));
+                    }
+
+                    copied += _mode switch
+                    {
+                        0 => _basicMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!)]),
+                        1 => _maskMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!)]),
+                        2 => _imageMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _images.Reference!)]),
+                        _ => _metadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!, _images.Reference!)]),
+                    };
                 }
 
-                if (Cpu.Masks.Count == 0)
-                {
-                    copied += _masks.Fill([new(default, default, 0, 0, 0, 0, _fallback!, _sampler!)]);
-                }
-                else
-                {
-                    copied += _masks.Fill(CollectionsMarshal.AsSpan(Cpu.Masks));
-                }
-
-                copied += _metadata.Fill([new(_paints.Reference!, _clips.Reference!, _numericRef!, _masks.Reference!, _images.Reference!)]);
                 if (Cpu.Numeric.Count == 0)
                 {
                     _numericUpload!.CopyFrom([Vector4.Zero]);
@@ -562,11 +639,10 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         private readonly IGraphicsShaderDataBuffer<T> _upload;
         private readonly IGraphicsShaderDataBuffer<T> _data;
 
-        internal Stream(PreparedRecordBatch2D owner, ShaderResources reservation, int count, ulong stride)
+        internal Stream(PreparedRecordBatch2D owner, ShaderResources reservation, int count, ulong stride, ShaderArtifact artifact)
         {
             _count = checked((ulong)count);
-            ulong capacity = typeof(T) == typeof(DrawPageMetadata2D) ? 1 : Math.Max(_count, Math.Min(32768 / stride, owner._context.Device.Caps.MaxBufferSize / stride));
-            ShaderArtifact artifact = owner._pipeline.Desc.FragmentShader!.Artifact;
+            ulong capacity = _count;
             _upload = owner.Own(owner._context.Device.CreateShaderDataBuffer<T>(artifact, capacity, MemoryPreference.Upload));
             _data = owner.Own(owner._context.Device.CreateShaderDataBuffer<T>(artifact, (ulong)count));
             if (_data.ShaderElementStrideInBytes != stride || _upload.ShaderElementStrideInBytes != stride)

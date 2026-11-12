@@ -298,8 +298,8 @@ public sealed class GraphArgumentOwnershipTests
         IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
         Assert.Contains(commands.Events.OfType<ShaderValueSnapshot>(), root => root.ShaderTypeName == nameof(DrawingArguments));
         Assert.All(commands.Events.OfType<ShaderValueSnapshot>().SelectMany(root => root.Values).Where(value => value.IsReference), value => Assert.Same(table, ((IShaderReference)value.Reference!).Table));
-        Assert.Equal(2, commands.Events.OfType<DrawRangeArguments2D>().Count());
-        Assert.All(commands.Events.OfType<DrawRangeArguments2D>(), root =>
+        Assert.Equal(2, commands.Events.OfType<RecordedDrawRange>().Count());
+        Assert.All(commands.Events.OfType<RecordedDrawRange>(), root =>
         {
             Assert.Same(table, ProfilingDevice.Owner(root.Records));
             Assert.Same(table, ProfilingDevice.Owner(root.PageMetadata));

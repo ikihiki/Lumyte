@@ -1,4 +1,13 @@
 #include "lumyte.slang"
+#ifndef LUMYTE_RECORD_MASKS
+#define LUMYTE_RECORD_MASKS 1
+#endif
+#ifndef LUMYTE_RECORD_IMAGES
+#define LUMYTE_RECORD_IMAGES 1
+#endif
+#ifndef LUMYTE_SIMPLE_RECORDS
+#define LUMYTE_SIMPLE_RECORDS 0
+#endif
 struct DrawRecord2D {
     uint Kind; uint Flags; uint PaintId; uint ClipId;
     float4 DeviceBounds; float4 InverseX; float4 InverseY; float4 Shape0;
@@ -20,12 +29,22 @@ struct DrawPageMetadata2D {
     GpuBufferRef<DrawDirectoryEntry2D> PaintDirectory;
     GpuBufferRef<DrawDirectoryEntry2D> ClipDirectory;
     GpuBufferRef<float4> NumericPayload;
+
+#if LUMYTE_RECORD_MASKS
     GpuBufferRef<MaskDescriptor2D> MaskDescriptors;
+#endif
+#if LUMYTE_RECORD_IMAGES
     GpuBufferRef<ImagePaintData2D> ImagePaintData;
+#endif
 };
 struct DrawRangeArguments2D {
     GpuBufferRef<DrawRecord2D> Records;
+
+#if LUMYTE_SIMPLE_RECORDS
+    GpuBufferRef<float4> Palette;
+#else
     GpuBufferRef<DrawPageMetadata2D> PageMetadata;
+#endif
     uint FirstRecord; uint RecordCount;
     float2 TargetSize; float2 PixelOrigin; uint Reserved0; uint Reserved1;
 };

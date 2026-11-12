@@ -38,3 +38,62 @@ internal readonly partial record struct ImagePaintData2D(
     uint Alpha, uint FieldMode, uint Reserved0, uint Reserved1,
     IGpuRef<IGraphicsTextureView> Texture,
     IGpuRef<IGraphicsSampler> Sampler) : IShaderData;
+
+internal readonly partial record struct DrawBasicMetadata2D(
+    IGpuRef<DrawDirectoryEntry2D> PaintDirectory,
+    IGpuRef<DrawDirectoryEntry2D> ClipDirectory,
+    IGpuRef<Vector4> NumericPayload) : IShaderData
+{
+    static string IShaderArguments.ShaderTypeName => "DrawPageMetadata2D";
+}
+
+internal readonly partial record struct DrawMaskMetadata2D(
+    IGpuRef<DrawDirectoryEntry2D> PaintDirectory,
+    IGpuRef<DrawDirectoryEntry2D> ClipDirectory,
+    IGpuRef<Vector4> NumericPayload,
+    IGpuRef<MaskDescriptor2D> MaskDescriptors) : IShaderData
+{
+    static string IShaderArguments.ShaderTypeName => "DrawPageMetadata2D";
+}
+
+internal readonly partial record struct DrawImageMetadata2D(
+    IGpuRef<DrawDirectoryEntry2D> PaintDirectory,
+    IGpuRef<DrawDirectoryEntry2D> ClipDirectory,
+    IGpuRef<Vector4> NumericPayload,
+    IGpuRef<ImagePaintData2D> ImagePaintData) : IShaderData
+{
+    static string IShaderArguments.ShaderTypeName => "DrawPageMetadata2D";
+}
+
+internal readonly partial record struct DrawRangeArguments2D<TMetadata>(
+    IGpuRef<DrawRecord2D> Records,
+    IGpuRef<TMetadata> PageMetadata,
+    uint FirstRecord, uint RecordCount,
+    Vector2 TargetSize, Vector2 PixelOrigin,
+    uint Reserved0, uint Reserved1) : IShaderArguments
+    where TMetadata : struct, IShaderData
+{
+    static string IShaderArguments.ShaderTypeName => "DrawRangeArguments2D";
+
+    void IShaderArguments.Write<TWriter>(ref TWriter writer)
+    {
+        writer.WriteReference(nameof(Records), Records);
+        writer.WriteReference(nameof(PageMetadata), PageMetadata);
+        writer.WriteValue(nameof(FirstRecord), FirstRecord);
+        writer.WriteValue(nameof(RecordCount), RecordCount);
+        writer.WriteValue(nameof(TargetSize), TargetSize);
+        writer.WriteValue(nameof(PixelOrigin), PixelOrigin);
+        writer.WriteValue(nameof(Reserved0), Reserved0);
+        writer.WriteValue(nameof(Reserved1), Reserved1);
+    }
+}
+
+internal readonly partial record struct SimpleDrawRangeArguments2D(
+    IGpuRef<DrawRecord2D> Records,
+    IGpuRef<Vector4> Palette,
+    uint FirstRecord, uint RecordCount,
+    Vector2 TargetSize, Vector2 PixelOrigin,
+    uint Reserved0, uint Reserved1) : IShaderArguments
+{
+    static string IShaderArguments.ShaderTypeName => "DrawRangeArguments2D";
+}

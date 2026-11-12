@@ -8,6 +8,7 @@ internal sealed class DrawingResourceState2D : IDisposable
     private readonly List<IDisposable> _failedCleanup = [];
     private readonly IGraphicDevice? _device;
     private readonly Action? _validate;
+    private readonly long _numericPoolBudget;
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
     private SolidRectangleResources2D? _rectangles;
@@ -17,7 +18,7 @@ internal sealed class DrawingResourceState2D : IDisposable
     private bool _closing;
     private bool _retryingCleanup;
 
-    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null)
+    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null, long numericPoolBudget = 8 * 1024 * 1024)
     {
         if (resources is not null && !ReferenceEquals(device, resources.Device))
         {
@@ -30,6 +31,7 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
 
         (_device, _resources, _owner, _validate) = (device, resources, owner, validate);
+        _numericPoolBudget = numericPoolBudget;
     }
 
     internal DrawingResources2D Resources
@@ -41,6 +43,17 @@ internal sealed class DrawingResourceState2D : IDisposable
                 EnsureResources();
                 Validate();
                 return _resources!;
+            }
+        }
+    }
+
+    internal long IdleRecordBytes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _records?.NumericPool.IdleBytes ?? 0;
             }
         }
     }
@@ -105,7 +118,15 @@ internal sealed class DrawingResourceState2D : IDisposable
                 return null;
             }
 
-            return _records ??= new(_resources.Device);
+            return _records ??= new(_resources.Device, _numericPoolBudget);
+        }
+    }
+
+    internal void TrimIdleRecordStorage(long maximum)
+    {
+        lock (_gate)
+        {
+            _records?.NumericPool.Trim(maximum);
         }
     }
 

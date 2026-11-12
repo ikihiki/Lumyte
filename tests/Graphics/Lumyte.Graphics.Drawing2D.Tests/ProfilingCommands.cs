@@ -47,10 +47,10 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
     {
         public void SetArgumentTable(IArgumentTable table) => owner.Events.Add(table);
 
-        public void SetArguments(ShaderValueSnapshot arguments) => owner.Events.Add(arguments);
+        public void SetArguments(ShaderValueSnapshot arguments) => owner.Events.Add(arguments.ShaderTypeName == "DrawRangeArguments2D" ? RecordedDrawRange.Capture(arguments) : arguments);
 
         public void SetArguments<T>(in T arguments)
-            where T : struct, IShaderArguments => owner.Events.Add(arguments);
+            where T : struct, IShaderArguments => owner.Events.Add(T.ShaderTypeName == "DrawRangeArguments2D" ? RecordedDrawRange.Capture(IShaderArguments.Capture(arguments)) : arguments);
 
         public void SetPipeline(IGraphicsPipeline pipeline)
         {

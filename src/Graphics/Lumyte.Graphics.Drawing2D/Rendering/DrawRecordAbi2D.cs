@@ -5,16 +5,39 @@ namespace Lumyte.Graphics.Drawing2D;
 
 internal static class DrawRecordAbi2D
 {
-    internal static void Validate(ShaderArtifact artifact, ShaderTarget target)
+    internal static void Validate(ShaderArtifact artifact, ShaderTarget target, int mode = 3)
     {
         using var document = JsonDocument.Parse(artifact.GetTarget(target).ReflectionJson);
         JsonElement parameters = document.RootElement.GetProperty("parameters");
         Check<DrawRecord2D>(parameters, 96, [0, 4, 8, 12, 16, 32, 48, 64, 80, 84, 88, 92]);
         Check<DrawDirectoryEntry2D>(parameters, 16, [0, 4, 8, 12]);
-        Check<DrawPageMetadata2D>(parameters, 80, [0, 16, 32, 48, 64]);
+        switch (mode)
+        {
+            case 0:
+            case 4:
+                Check<DrawBasicMetadata2D>(parameters, 48, [0, 16, 32]);
+                break;
+            case 1:
+                Check<DrawMaskMetadata2D>(parameters, 64, [0, 16, 32, 48]);
+                break;
+            case 2:
+                Check<DrawImageMetadata2D>(parameters, 64, [0, 16, 32, 48]);
+                break;
+            default:
+                Check<DrawPageMetadata2D>(parameters, 80, [0, 16, 32, 48, 64]);
+                break;
+        }
+
         Check<MaskDescriptor2D>(parameters, 80, [0, 16, 32, 36, 40, 44, 48, 64]);
         Check<ImagePaintData2D>(parameters, 128, [0, 16, 32, 48, 64, 68, 72, 76, 80, 84, 88, 92, 96, 112]);
-        Check<DrawRangeArguments2D>(parameters, 64, [0, 16, 32, 36, 40, 48, 56, 60]);
+        if (mode == 4)
+        {
+            Check<SimpleDrawRangeArguments2D>(parameters, 64, [0, 16, 32, 36, 40, 48, 56, 60]);
+        }
+        else
+        {
+            Check<DrawRangeArguments2D>(parameters, 64, [0, 16, 32, 36, 40, 48, 56, 60]);
+        }
     }
 
     private static void Check<T>(JsonElement parameters, int size, int[] offsets)

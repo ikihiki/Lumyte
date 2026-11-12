@@ -1,4 +1,13 @@
 #include "lumyte.slang"
+#ifndef LUMYTE_RECORD_MASKS
+#define LUMYTE_RECORD_MASKS 1
+#endif
+#ifndef LUMYTE_RECORD_IMAGES
+#define LUMYTE_RECORD_IMAGES 1
+#endif
+#ifndef LUMYTE_SIMPLE_RECORDS
+#define LUMYTE_SIMPLE_RECORDS 0
+#endif
 struct DrawRecord2D {
     uint Kind; uint Flags; uint PaintId; uint ClipId;
     float4 DeviceBounds; float4 InverseX; float4 InverseY; float4 Shape0;
@@ -20,17 +29,41 @@ struct DrawPageMetadata2D {
     GpuBufferRef<DrawDirectoryEntry2D> PaintDirectory;
     GpuBufferRef<DrawDirectoryEntry2D> ClipDirectory;
     GpuBufferRef<float4> NumericPayload;
+
+#if LUMYTE_RECORD_MASKS
     GpuBufferRef<MaskDescriptor2D> MaskDescriptors;
+#endif
+#if LUMYTE_RECORD_IMAGES
     GpuBufferRef<ImagePaintData2D> ImagePaintData;
+#endif
 };
 struct DrawRangeArguments2D {
     GpuBufferRef<DrawRecord2D> Records;
+
+#if LUMYTE_SIMPLE_RECORDS
+    GpuBufferRef<float4> Palette;
+#else
     GpuBufferRef<DrawPageMetadata2D> PageMetadata;
+#endif
     uint FirstRecord; uint RecordCount;
     float2 TargetSize; float2 PixelOrigin; uint Reserved0; uint Reserved1;
 };
 ConstantBuffer<DrawRangeArguments2D> arguments;
 
+ImagePaintData2D loadImage(DrawPageMetadata2D page,uint index) {
+#if LUMYTE_RECORD_IMAGES
+    return page.ImagePaintData.Load(min(index,page.ImagePaintData.Count-1));
+#else
+    return (ImagePaintData2D)0;
+#endif
+}
+MaskDescriptor2D loadMask(DrawPageMetadata2D page,uint index) {
+#if LUMYTE_RECORD_MASKS
+    return page.MaskDescriptors.Load(min(index,page.MaskDescriptors.Count-1));
+#else
+    return (MaskDescriptor2D)0;
+#endif
+}
 // A register-local evaluator view, never a GPU instruction stream.
 struct EvaluationNode { float4 T0; float4 T1; float4 A; float4 B; float4 C; float4 D; uint Kind; uint First; uint Count; uint Mode; GpuTextureRef Texture; GpuSamplerRef Sampler; };
 float4 numericLoad(GpuBufferRef<float4> data,uint index) { return data.Load(min(index,data.Count-1)); }
@@ -340,7 +373,7 @@ uint reachable(DrawPageMetadata2D page,uint root,out uint ids[256])
             uint4 data=asuint(page.NumericPayload.Load(min(entry.PayloadOffset16,page.NumericPayload.Count-1)));
             children.x=data.x; if(entry.Kind==7) children.y=data.y;
         }
-        else if(entry.Kind==9) children.x=page.ImagePaintData.Load(min(entry.PayloadOffset16/8,page.ImagePaintData.Count-1)).ChildId;
+        else if(entry.Kind==9) children.x=loadImage(page,entry.PayloadOffset16/8).ChildId;
         if(children.x!=0) pending[pendingCount++]=children.x;
         if(children.y!=0) pending[pendingCount++]=children.y;
     }
@@ -364,7 +397,7 @@ EvaluationNode paintLeaf(DrawPageMetadata2D page,DrawDirectoryEntry2D entry)
     }
     else if(entry.Kind==5 || entry.Kind==9)
     {
-        ImagePaintData2D image=page.ImagePaintData.Load(min(first/8,page.ImagePaintData.Count-1));
+        ImagePaintData2D image=loadImage(page,first/8);
         n=imageNode(image); n.Kind=entry.Kind==5 ? 9 : 15; n.First=image.ChildId;
     }
     return n;
@@ -425,6 +458,25 @@ float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,
     }
     return result/16;
 }
+#if LUMYTE_SIMPLE_RECORDS
+float simpleShape(DrawRecord2D r,float2 pixel) {
+    float2 p=float2(dot(r.InverseX.xyz,float3(pixel,1)),dot(r.InverseY.xyz,float3(pixel,1)));
+    if(r.Kind==1) return all(p>=r.Shape0.xy) && all(p<r.Shape0.xy+r.Shape0.zw) ? 1 : 0;
+    if(r.Kind==3) return distance(p,r.Shape0.xy)<r.Shape0.z ? 1 : 0;
+    float radius=asfloat(r.ExtraBits);
+    float2 halfSize=r.Shape0.zw/2,q=abs(p-r.Shape0.xy-halfSize)-halfSize+radius;
+    return length(max(q,0))+min(max(q.x,q.y),0)<=radius && all(r.Shape0.zw>0) ? 1 : 0;
+}
+[shader("fragment")]
+float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV_Target0 {
+    DrawRecord2D record=arguments.Records.Load(min(index,arguments.Records.Count-1));
+    if(record.PaintId==0) return 0;
+    float4 color=arguments.Palette.Load(min(record.PaintId-1,arguments.Palette.Count-1));
+    float2 origin=floor(position.xy); float coverage=0;
+    for(uint sample=0;sample<16;sample++) coverage+=simpleShape(record,origin+(float2(sample%4,sample/4)+0.5)/4);
+    return color*(coverage/16);
+}
+#else
 [shader("fragment")]
 float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV_Target0
 {
@@ -436,7 +488,7 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
     uint outer=clipBits(page,record.ClipId,origin);
     if(outer==0) return 0;
     MaskDescriptor2D mask=(MaskDescriptor2D)0;
-    if(record.Kind==7 || record.Kind==8) mask=page.MaskDescriptors.Load(min(record.PayloadOffset16/5,page.MaskDescriptors.Count-1));
+    if(record.Kind==7 || record.Kind==8) mask=loadMask(page,record.PayloadOffset16/5);
     if(root.Kind<=5)
     {
         EvaluationNode leaf=paintLeaf(page,root); float4 result=0;
@@ -453,3 +505,5 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
         : count<=16 ? shadeGraph<16>(record,page,mask,outer,origin,ids,count)
         : shadeGraph<256>(record,page,mask,outer,origin,ids,count);
 }
+
+#endif

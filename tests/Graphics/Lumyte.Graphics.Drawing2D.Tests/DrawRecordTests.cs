@@ -19,10 +19,14 @@ public sealed class DrawRecordTests
     [InlineData(ShaderTarget.Dxil)]
     public void EveryBackendMatchesCanonicalWire(ShaderTarget target)
     {
-        foreach (string stage in new[] { "vertex", "fragment" })
+        for (int mode = 0; mode <= 4; mode++)
         {
-            var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records-" + stage + ".lshader");
-            DrawRecordAbi2D.Validate(artifact, target);
+            string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", _ => string.Empty };
+            foreach (string stage in new[] { "vertex", "fragment" })
+            {
+                var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-" + stage + ".lshader");
+                DrawRecordAbi2D.Validate(artifact, target, mode);
+            }
         }
     }
 
@@ -66,8 +70,6 @@ public sealed class DrawRecordTests
     public void StreamStartsUseLeastCommonMultiple(ulong offset, ulong stride, ulong expected)
     {
         Assert.Equal(expected, DrawRecordPage2D.AlignedStart(offset, 256, stride));
-        Assert.Equal(341, DrawRecordPage2D.Capacity);
-        Assert.Equal(32, 32768 - (DrawRecordPage2D.Capacity * 96));
         Assert.Throws<OverflowException>(() => DrawRecordPage2D.AlignedStart(ulong.MaxValue, 256, stride));
     }
 
@@ -163,7 +165,7 @@ public sealed class DrawRecordTests
         using IGraphicsTextureView view = texture.CreateView();
         using var commands = new ProfilingCommands();
         prepared.RecordRange(commands, view, 0, 16, 5);
-        DrawRangeArguments2D selected = Assert.Single(commands.Events.OfType<DrawRangeArguments2D>());
+        RecordedDrawRange selected = Assert.Single(commands.Events.OfType<RecordedDrawRange>());
         Assert.Equal(16u, selected.FirstRecord);
         Assert.Equal(5u, selected.RecordCount);
         Assert.Equal((6u, 5u), Assert.Single(commands.Events.OfType<(uint, uint)>()));
@@ -174,13 +176,13 @@ public sealed class DrawRecordTests
         prepared.RecordRange(commands, view, 0, 25, 0);
         Assert.Equal(events, commands.Events.Count);
         prepared.RecordRange(commands, view, 0, 24, 1, resident: true);
-        DrawRangeArguments2D last = commands.Events.OfType<DrawRangeArguments2D>().Last();
+        RecordedDrawRange last = commands.Events.OfType<RecordedDrawRange>().Last();
         Assert.Same(selected.Records, last.Records);
         Assert.Same(selected.PageMetadata, last.PageMetadata);
         Assert.Equal(copies, device.Copies);
     }
 
-    /// <summary>Native buffer pages cross 341 records independently of kind and clip boundaries.</summary>
+    /// <summary>Compatible mixed records form one contiguous range, with no 341-record allocation boundary.</summary>
     /// <param name="count">The logical draw count.</param>
     /// <returns>The completed CPU preparation and command encoding.</returns>
     [Theory]
@@ -189,7 +191,8 @@ public sealed class DrawRecordTests
     [InlineData(340)]
     [InlineData(341)]
     [InlineData(342)]
-    public async Task ActualPageAllocationsFollowRecordCapacityAsync(int count)
+    [InlineData(1000)]
+    public async Task ActualAllocationsFollowNeededStreamsAsync(int count)
     {
         var device = new ProfilingDevice();
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
@@ -211,19 +214,19 @@ public sealed class DrawRecordTests
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         Assert.Equal(count, device.Records.Count);
-        Assert.Equal(((count + 340) / 341) * 14, device.NativeBuffers);
+        Assert.Equal(count == 0 ? 0 : 4, device.NativeBuffers);
         using var commands = new ProfilingCommands();
         prepared.Record(commands);
-        Assert.Equal((count + 340) / 341, commands.Events.OfType<DrawRangeArguments2D>().Count());
-        Assert.Equal(count, commands.Events.OfType<DrawRangeArguments2D>().Sum(range => (long)range.RecordCount));
+        Assert.Equal(count == 0 ? 0 : 1, commands.Events.OfType<RecordedDrawRange>().Count());
+        Assert.Equal(count, commands.Events.OfType<RecordedDrawRange>().Sum(range => (long)range.RecordCount));
     }
 
-    /// <summary>Seven read streams plus the reserved WGSL remap fit exactly; one fewer fails before publication.</summary>
+    /// <summary>A palette range needs only two read streams plus the reserved WGSL remap; one fewer fails before publication.</summary>
     /// <param name="buffers">The effective nonreserved storage binding budget.</param>
     /// <returns>The completed preparation or preflight rejection.</returns>
     [Theory]
-    [InlineData(7u)]
-    [InlineData(6u)]
+    [InlineData(2u)]
+    [InlineData(1u)]
     public async Task PhysicalBindingBudgetIncludesEveryStreamAsync(uint buffers)
     {
         var device = new ProfilingDevice { Caps = new() { ShaderTarget = ShaderTarget.Wgsl, MaxBufferSize = 1UL << 30, MaxStorageBuffersPerStage = buffers + 1, ArgumentTableBindingLimits = new() { BufferSlots = buffers, BuffersPerDraw = buffers, ReservedBindings = 1, CombinedBindings = buffers + 3 } } };
@@ -234,10 +237,10 @@ public sealed class DrawRecordTests
         canvas.Begin();
         canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 0, 0, 1));
         DrawList2D list = canvas.End();
-        if (buffers == 7)
+        if (buffers == 2)
         {
             using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view });
-            Assert.Equal(7u, Assert.Single(device.Tables).BufferCapacity);
+            Assert.Equal(2u, Assert.Single(device.Tables).BufferCapacity);
         }
         else
         {
@@ -247,10 +250,10 @@ public sealed class DrawRecordTests
         }
     }
 
-    /// <summary>A 64-command CPU edit rebuilds only the intersecting immutable GPU record page.</summary>
+    /// <summary>A CPU page edit invalidates the containing contiguous GPU range without claiming dirty-page-only GPU work.</summary>
     /// <returns>The completed mocked submissions and retirement checks.</returns>
     [Fact]
-    public async Task PartialUpdatePreservesUnaffectedGpuPagesAsync()
+    public async Task PartialUpdateRebuildsTheImmutableContainingRangeAsync()
     {
         var device = new ProfilingDevice();
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
@@ -266,8 +269,8 @@ public sealed class DrawRecordTests
 
         DrawList2D original = canvas.End();
         DrawingNodeId2D node = scene.Insert(scene.Root, 0, original);
-        DrawRangeArguments2D[] before = await RenderFrameAsync();
-        Assert.Equal(new uint[] { 341, 341, 341, 177 }, before.Select(range => range.RecordCount));
+        RecordedDrawRange[] before = await RenderFrameAsync();
+        Assert.Equal(new uint[] { 1200 }, before.Select(range => range.RecordCount));
         canvas.Begin();
         for (int i = 0; i < 64; i++)
         {
@@ -275,24 +278,19 @@ public sealed class DrawRecordTests
         }
 
         scene.ReplaceContent(node, original.WithPage(0, canvas.End()));
-        DrawRangeArguments2D[] after = await RenderFrameAsync();
+        RecordedDrawRange[] after = await RenderFrameAsync();
         Assert.NotSame(before[0].Records, after[0].Records);
-        for (int i = 1; i < before.Length; i++)
-        {
-            Assert.Same(before[i].Records, after[i].Records);
-            Assert.Same(before[i].PageMetadata, after[i].PageMetadata);
-        }
+        Assert.Single(after);
+        Assert.Equal(0, renderer.RetentionStatistics.ReusedRuns);
+        Assert.Equal(2, renderer.RetentionStatistics.CompiledRuns);
 
-        Assert.Equal(3, renderer.RetentionStatistics.ReusedRuns);
-        Assert.Equal(5, renderer.RetentionStatistics.CompiledRuns);
-
-        async Task<DrawRangeArguments2D[]> RenderFrameAsync()
+        async Task<RecordedDrawRange[]> RenderFrameAsync()
         {
             using DrawingSceneReadLease2D read = scene.Borrow();
             using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(read, new() { View = view });
             using var commands = new ProfilingCommands();
             frame.Record(commands);
-            DrawRangeArguments2D[] ranges = commands.Events.OfType<DrawRangeArguments2D>().ToArray();
+            RecordedDrawRange[] ranges = commands.Events.OfType<RecordedDrawRange>().ToArray();
             commands.Submit();
             frame.AttachSubmission(new Completed());
             commands.Dispose();
@@ -360,15 +358,23 @@ public sealed class DrawRecordTests
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         canvas.FillPath(geometry, new Color2D(1, 0, 0, 1));
-        canvas.FillPath(geometry, new Color2D(0, 0, 1, 1));
+        var distinct = new PathBuilder2D();
+        distinct.MoveTo(new(0.125f, 0));
+        for (int i = 1; i < 2200; i++)
+        {
+            distinct.LineTo(new((i % 16) + 0.125f, (i / 16) % 16));
+        }
+
+        distinct.Close();
+        canvas.FillPath(distinct.Build(), new Color2D(0, 0, 1, 1));
         using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), canvas.End(), new() { Texture = target, Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = texture.Usage } }, new DrawingGraphBindings2D(graph));
         using PreparedDrawingPasses2D prepared = await graph.Append2D(renderer);
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Equal(2, plan.PassNames.Count(name => name == "drawing2d.batch"));
         using var commands = new ProfilingCommands();
         plan.Record(commands);
-        Assert.Equal(2, commands.Events.OfType<DrawRangeArguments2D>().Count());
-        Assert.All(device.Tables, table => Assert.Equal(7u, table.BufferCapacity));
+        Assert.Equal(2, commands.Events.OfType<RecordedDrawRange>().Count());
+        Assert.All(device.Tables, table => Assert.Equal(4u, table.BufferCapacity));
     }
 
     /// <summary>Distinct incoming masks count toward page limits; one oversized draw fails before publication.</summary>
@@ -389,8 +395,8 @@ public sealed class DrawRecordTests
         {
             float extent = oversized ? 128 : 64;
             var path = new PathBuilder2D();
-            path.MoveTo(new(0.125f, 0.125f));
-            path.LineTo(new(extent, 0.25f));
+            path.MoveTo(new(0.125f + i, 0.125f));
+            path.LineTo(new(extent, 0.25f + i));
             path.LineTo(new(0.25f, extent));
             path.Close();
             canvas.Save();
@@ -412,7 +418,7 @@ public sealed class DrawRecordTests
             using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view });
             using var commands = new ProfilingCommands();
             prepared.Record(commands);
-            Assert.Equal(2, commands.Events.OfType<DrawRangeArguments2D>().Select(range => range.Records).Distinct().Count());
+            Assert.Equal(2, commands.Events.OfType<RecordedDrawRange>().Select(range => range.Records).Distinct().Count());
             Assert.Equal(5, device.Records.Count);
             foreach (ShaderValue value in device.ShaderValues.SelectMany(snapshot => snapshot.Values).Where(value => value.IsReference && value.ValueType == typeof(Vector4)))
             {

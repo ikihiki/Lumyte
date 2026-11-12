@@ -532,7 +532,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             int firstReservation = argumentPlan.Reservations.Count;
             RenderPreparationContext2D preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan);
             IPreparedCommandBatch2D batch = IsBuiltinRenderer(commands[index]) && preparation.RecordResources() is not null
-                ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false)
+                ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end), cancellationToken).ConfigureAwait(false)
                 : commands[index] switch
                 {
                     FillRectCommand2D => await _renderers.FillRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
@@ -634,33 +634,11 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         _ => false,
     };
 
-    private ReadOnlyMemory<DrawingCommand2D> TakeRecordBatch(DrawList2D list, ref int index, int end, IGraphicDevice device)
+    private ReadOnlyMemory<DrawingCommand2D> TakeRecordBatch(DrawList2D list, ref int index, int end)
     {
         int first = index;
-        var views = new HashSet<IGraphicsTextureView>(ReferenceEqualityComparer.Instance);
-        var samplers = new HashSet<IGraphicsSampler>(ReferenceEqualityComparer.Instance);
-        while (index < end && index - first < DrawRecordPage2D.Capacity && IsBuiltinRenderer(list.Commands[index]))
+        while (index < end && IsBuiltinRenderer(list.Commands[index]))
         {
-            DrawingCommand2D command = list.Commands[index];
-            foreach (IGraphicsTextureView view in GetImageViews([command]))
-            {
-                views.Add(view);
-            }
-
-            if (command is DrawCoverageMaskCommand2D mask)
-            {
-                samplers.Add(mask.Mask.Sampler);
-            }
-            else if (command is DrawDistanceFieldCommand2D field)
-            {
-                samplers.Add(field.Field.Sampler);
-            }
-
-            if (index > first && !FitsPass(0, views.Count, samplers.Count, device, 7))
-            {
-                break;
-            }
-
             index++;
         }
 

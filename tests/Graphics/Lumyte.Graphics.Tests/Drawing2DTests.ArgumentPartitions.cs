@@ -109,11 +109,11 @@ public sealed partial class Drawing2DTests
         {
             commands.AssertOwners(device.Tables, views);
             bool instanced = device.Caps.ShaderTarget == ShaderTarget.SpirV;
-            Assert.Equal(instanced ? 4 : 10, commands.Roots.Count);
-            Assert.Equal(4, commands.Roots.Select(root => root.Table).Distinct().Count());
+            Assert.Equal(instanced ? 3 : 10, commands.Roots.Count);
+            Assert.Equal(3, commands.Roots.Select(root => root.Table).Distinct().Count());
             for (int x = 0; x < commands.Roots.Count; x++)
             {
-                Assert.Same(device.Tables[instanced ? x : x / 3].Table, commands.Roots[x].Table);
+                Assert.Same(device.Tables[instanced ? x : x / 4].Table, commands.Roots[x].Table);
             }
 
             await submission.WaitAsync();
@@ -168,17 +168,18 @@ public sealed partial class Drawing2DTests
             AssertPartitionDescriptions(device, graph: true);
             Assert.Equal(4, commands.Roots.Select(root => root.Table).Distinct().Count());
 
-            // The final image, real effect and layer compositor fit the SAME last partition.
+            // The final image and effect share a partition; compositor owns its exact separate scope.
             bool instanced = device.Caps.ShaderTarget == ShaderTarget.SpirV;
-            Assert.Equal(instanced ? 7 : 13, commands.Roots.Count);
+            Assert.Equal(instanced ? 6 : 13, commands.Roots.Count);
             Assert.Same(device.Tables[0].Table, commands.Roots[0].Table);
-            for (int x = 0; x < (instanced ? 4 : 10); x++)
+            for (int x = 0; x < (instanced ? 3 : 10); x++)
             {
-                Assert.Same(device.Tables[instanced ? x : x / 3].Table, commands.Roots[x + 1].Table);
+                Assert.Same(device.Tables[instanced ? x : x / 4].Table, commands.Roots[x + 1].Table);
             }
 
             Assert.Same(commands.Roots[^3].Table, commands.Roots[^2].Table);
-            Assert.Same(commands.Roots[^2].Table, commands.Roots[^1].Table);
+            Assert.Same(device.Tables[3].Table, commands.Roots[^1].Table);
+            Assert.NotSame(commands.Roots[^2].Table, commands.Roots[^1].Table);
             await submission.WaitAsync();
             await AssertPartitionPixelsAsync(plan.GetBuffer(result), pitch, graph: true);
         }
@@ -190,15 +191,15 @@ public sealed partial class Drawing2DTests
 
     private static void AssertPartitionDescriptions(PartitionDevice device, bool graph)
     {
-        // Fallback + three distinct caller views; the last direct partition has only one view.
+        // Four actual image views fit directly, without a page-local fallback.
 
-        // In the graph, the layer source and effect output fill its two remaining slots.
-        Assert.Equal(4, device.Tables.Count); // Native tables, NOT one count per resource kind.
-        Assert.Equal(new uint[] { 4, 4, 4, graph ? 4u : 2u }, device.Tables.Select(item => item.Desc.TextureCapacity));
-        Assert.Equal(new uint[] { 1, 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
+        // Graph source/effect/compositor references are counted only in their actual scopes.
+        Assert.Equal(graph ? 4 : 3, device.Tables.Count); // Native tables, NOT one count per resource kind.
+        Assert.Equal(graph ? new uint[] { 4, 4, 3, 2 } : new uint[] { 4, 4, 2 }, device.Tables.Select(item => item.Desc.TextureCapacity));
+        Assert.Equal(graph ? new uint[] { 1, 1, 1, 1 } : new uint[] { 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
 
-        // Seven exact streams per page; graph adds its rectangle page and two compositor ranges.
-        Assert.Equal(graph ? new uint[] { 14, 7, 7, 9 } : new uint[] { 7, 7, 7, 7 }, device.Tables.Select(item => item.Desc.BufferCapacity));
+        // Image-only ranges use five streams; background palette uses two, compositor two.
+        Assert.Equal(graph ? new uint[] { 7, 5, 5, 2 } : new uint[] { 5, 5, 5 }, device.Tables.Select(item => item.Desc.BufferCapacity));
     }
 
     private static uint PartitionPitch(IGraphicDevice device)

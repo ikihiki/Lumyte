@@ -10,6 +10,8 @@ internal sealed class DrawingProgram2D
     private readonly bool _recordLowering;
     private readonly List<IGpuRef<IGraphicsTextureView>?> _textures = [];
     private readonly List<IGpuRef<IGraphicsSampler>?> _samplers = [];
+    private readonly List<IGraphicsTextureView> _textureInputs = [];
+    private readonly List<IGraphicsSampler> _samplerInputs = [];
     private readonly Matrix3x2 _pixelTransform;
     private readonly ClipNormalizationCache2D _clips;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
@@ -98,6 +100,9 @@ internal sealed class DrawingProgram2D
         transform = default;
         return false;
     }
+
+    internal (IGraphicsTextureView? View, IGraphicsSampler? Sampler) InputIdentity(DrawingInstruction instruction)
+        => (instruction.TextureIndex >= 0 ? _textureInputs[instruction.TextureIndex] : null, instruction.SamplerIndex >= 0 ? _samplerInputs[instruction.SamplerIndex] : null);
 
     internal void ResolveReferences(IGpuRef<IGraphicsTextureView> fallback, IGpuRef<IGraphicsSampler> nearest)
     {
@@ -528,6 +533,7 @@ internal sealed class DrawingProgram2D
         Views.Add(view);
         int index = _textures.Count;
         _textures.Add(null);
+        _textureInputs.Add(view);
         List<IGpuRef<IGraphicsTextureView>?> references = _textures;
         _plan.RegisterTexture(view, reference => references[index] = reference);
         return index;
@@ -538,6 +544,7 @@ internal sealed class DrawingProgram2D
         Samplers.Add(sampler);
         int index = _samplers.Count;
         _samplers.Add(null);
+        _samplerInputs.Add(sampler);
         List<IGpuRef<IGraphicsSampler>?> references = _samplers;
         _plan.RegisterSampler(sampler, reference => references[index] = reference);
         return index;

@@ -27,10 +27,10 @@ public sealed class SharedTableRegressionTests
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         Assert.Single(device.Tables);
-        Assert.Equal(14, device.NativeBuffers);
+        Assert.Equal(4, device.NativeBuffers);
         using var commands = new ProfilingCommands();
         prepared.Record(commands);
-        Assert.Equal(200u, Assert.Single(commands.Events.OfType<DrawRangeArguments2D>()).RecordCount);
+        Assert.Equal(200u, Assert.Single(commands.Events.OfType<RecordedDrawRange>()).RecordCount);
         Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
     }
 }

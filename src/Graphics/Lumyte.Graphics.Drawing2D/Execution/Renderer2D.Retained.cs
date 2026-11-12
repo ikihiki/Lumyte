@@ -52,6 +52,12 @@ public sealed partial class Renderer2D
                     clips.Add(command.State.Clip, clip);
                 }
 
+                if (transform == Matrix3x2.Identity && parentClips.Count == 0)
+                {
+                    result.Add(command);
+                    continue;
+                }
+
                 Matrix3x2 combined = command.State.Transform * transform;
                 ModelValidation2D.Matrix(combined, nameof(transform));
                 result.Add(command with { State = new(combined, clip) });
@@ -90,6 +96,7 @@ public sealed partial class Renderer2D
             RetainedDrawingCache2D.FrameLease? frame = null;
             try
             {
+                _retained.BindStorageOwner(_resources);
                 frame = _retained.AcquireFrame();
                 List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
                 var plan = new DrawingArgumentPlan2D(_device);
@@ -100,14 +107,12 @@ public sealed partial class Renderer2D
                 // are never captured by the returned frame or by cached GPU assets.
                 foreach (DrawingSceneEntry2D entry in source.Entries)
                 {
-                    for (int first = 0; first < entry.Content.RetainedPages.Count; first += Math.Min(DrawRecordPage2D.Capacity, entry.Content.RetainedPages.Count - first))
+                    if (entry.Content.RetainedPages.Count != 0)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        int firstPage = first / DrawingContentPages2D.PageCapacity;
-                        int firstCommand = first % DrawingContentPages2D.PageCapacity;
-                        int commandCount = Math.Min(DrawRecordPage2D.Capacity, entry.Content.RetainedPages.Count - first);
-                        int pageCount = (firstCommand + commandCount + DrawingContentPages2D.PageCapacity - 1) / DrawingContentPages2D.PageCapacity;
-                        DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(firstPage).Take(pageCount).ToArray();
+                        int firstCommand = 0;
+                        int commandCount = entry.Content.RetainedPages.Count;
+                        DrawList2D[] pages = entry.Content.RetainedPages.Pages.ToArray();
                         var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale, firstCommand, commandCount);
                         groups++;
                         RetainedDrawingCache2D.Asset? cached = _retained.Take(key);

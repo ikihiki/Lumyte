@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
@@ -7,14 +8,25 @@ namespace Lumyte.Graphics.Drawing2D;
 // instruction array is uploaded: reachable nodes are lowered to the compact ABI.
 internal sealed class DrawRecordPage2D
 {
-    internal const int Capacity = 32768 / 96;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Vector4, uint> _solidCache = [];
+    private readonly Dictionary<Color2D, uint> _colors = [];
     private readonly Dictionary<NormalizedClip2D, uint> _clipCache = new(ReferenceEqualityComparer.Instance);
 
     private readonly List<(DrawingProgram2D Program, uint Instruction, int Descriptor, bool Image)> _references = [];
+    private readonly Dictionary<(int Count, ulong Hash), List<uint>> _copies = [];
+    private readonly Dictionary<(NormalizedClipKind2D Kind, ScissorRect Bounds, Vector4 Samples, int Cells), List<(NormalizedClip2D Clip, uint Id)>> _clipValues = [];
+    private readonly Dictionary<(MaskDescriptor2D Data, IGraphicsTextureView? View, IGraphicsSampler? Sampler), uint> _maskIds = [];
+    private readonly Dictionary<(ImagePaintData2D Data, IGraphicsTextureView? View, IGraphicsSampler? Sampler), uint> _imageIds = [];
+    private readonly Dictionary<DrawDirectoryEntry2D, uint> _directories = [];
+    private readonly List<(List<Vector4> Data, DrawingInstruction Instruction, uint Paint)> _gradients = [];
+    private bool _simpleOnly = true;
 
     internal List<DrawRecord2D> Records { get; } = [];
+
+    internal bool IsSimple => _simpleOnly && Clips.Count == 1;
+
+    internal uint BufferCount => IsSimple ? 2u : 4u + (Clips.Count > 1 ? 1u : 0u) + (Images.Count > 0 ? 1u : 0u) + (Masks.Count > 0 ? 1u : 0u);
 
     internal List<DrawDirectoryEntry2D> Paints { get; } = [default];
 
@@ -112,24 +124,32 @@ internal sealed class DrawRecordPage2D
         return checked((offset + multiple - 1) / multiple * multiple);
     }
 
-    internal bool FitsAddition(DrawingProgram2D? program, uint root, NormalizedClip2D clip, Color2D color, ulong maximum)
+    internal bool FitsAddition(DrawingProgram2D? program, uint root, NormalizedClip2D clip, Color2D color, ulong maximum, out uint buffers, out bool needsSampler)
     {
         int outerCells = AdditionalClipCells(clip);
         ulong numeric = checked((ulong)Numeric.Count + (ulong)outerCells);
         ulong paints = (ulong)Paints.Count, clips = checked((ulong)Clips.Count + (outerCells == 0 ? 0ul : 1ul));
         ulong images = (ulong)Images.Count, masks = (ulong)Masks.Count;
-        var seen = new HashSet<uint>();
-        var solids = new HashSet<Vector4>();
+        buffers = 0;
+        needsSampler = images > 0;
         if (program is null)
         {
-            Vector4 linear = DrawingProgram2D.Linear(color);
+            Vector4 linear = _colors.ContainsKey(color) ? Vector4.Zero : DrawingProgram2D.Linear(color);
             if (linear != Vector4.Zero && !_solidCache.ContainsKey(linear))
             {
                 numeric++;
                 paints++;
             }
+
+            buffers = IsSimple && outerCells == 0 ? 2u : 4u + (clips > 1 ? 1u : 0u) + (images > 0 ? 1u : 0u) + (masks > 0 ? 1u : 0u);
+            return Fits();
         }
-        else
+
+        var seen = new HashSet<uint>();
+        var solids = new HashSet<Vector4>();
+        var pendingCopies = new List<(List<Vector4> Source, uint First, uint Count)>();
+        var pendingGradients = new List<(List<Vector4> Data, DrawingInstruction Instruction)>();
+        var pendingImages = new HashSet<(ImagePaintData2D Data, IGraphicsTextureView? View, IGraphicsSampler? Sampler, bool KnownChild)>();
         {
             DrawingInstruction terminal = program.Instructions[(int)root];
             if (terminal.Kind is 16 or 17)
@@ -138,18 +158,47 @@ internal sealed class DrawRecordPage2D
             }
 
             DrawingInstruction shape = program.Instructions[(int)terminal.First];
-            numeric = checked(numeric + (shape.Kind == 4 ? shape.Count : shape.Kind == 5 ? (ulong)shape.Count * 3 : 0));
+            numeric = checked(numeric + AdditionalCopy(program.Data, shape.First, shape.Kind == 4 ? shape.Count : shape.Kind == 5 ? checked(shape.Count * 3) : 0));
             if (shape.Kind is 13 or 14)
             {
-                masks++;
+                DrawingInstruction descriptor = shape;
+                (IGraphicsTextureView? View, IGraphicsSampler? Sampler) identity = program.InputIdentity(descriptor);
+                if (!_maskIds.ContainsKey((new(descriptor.B, descriptor.C, descriptor.Mode, 0, 0, 0, null!, null!), identity.View, identity.Sampler)))
+                {
+                    masks++;
+                }
             }
 
             CountPaint(terminal.Count);
         }
 
-        return maximum >= 80 && checked(((ulong)Records.Count + 1) * 96) <= maximum
+        buffers = 4u + (clips > 1 ? 1u : 0u) + (images > 0 ? 1u : 0u) + (masks > 0 ? 1u : 0u);
+        needsSampler = images > 0;
+        return Fits();
+
+        bool Fits() => maximum >= 96 && checked(((ulong)Records.Count + 1) * 96) <= maximum
             && paints <= maximum / 16 && clips <= maximum / 16 && Math.Max(1ul, numeric) <= maximum / 16
-            && Math.Max(1ul, images) <= maximum / 128 && Math.Max(1ul, masks) <= maximum / 80;
+            && images <= maximum / 128 && masks <= maximum / 80;
+
+        ulong AdditionalCopy(List<Vector4> source, uint first, uint count)
+        {
+            if (count == 0 || FindCopy(source, first, count, out _, out _))
+            {
+                return 0;
+            }
+
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(source).Slice(checked((int)first), checked((int)count)));
+            foreach ((List<Vector4> Source, uint First, uint Count) pending in pendingCopies)
+            {
+                if (pending.Count == count && bytes.SequenceEqual(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(pending.Source).Slice(checked((int)pending.First), checked((int)count)))))
+                {
+                    return 0;
+                }
+            }
+
+            pendingCopies.Add((source, first, count));
+            return count;
+        }
 
         void CountPaint(uint index)
         {
@@ -165,6 +214,24 @@ internal sealed class DrawRecordPage2D
             }
 
             DrawingInstruction n = program.Instructions[(int)index];
+            if (n.Kind is 6 or 7 or 8)
+            {
+                if (TrySharedGradient(program.Data, n, out _))
+                {
+                    return;
+                }
+
+                foreach ((List<Vector4> Data, DrawingInstruction Instruction) pending in pendingGradients)
+                {
+                    if (SameGradient(program.Data, n, pending.Data, pending.Instruction))
+                    {
+                        return;
+                    }
+                }
+
+                pendingGradients.Add((program.Data, n));
+            }
+
             if (n.Kind == 0)
             {
                 if (n.A == Vector4.Zero || _solidCache.ContainsKey(n.A) || !solids.Add(n.A))
@@ -176,11 +243,22 @@ internal sealed class DrawRecordPage2D
             }
             else if (n.Kind is 6 or 7 or 8)
             {
-                numeric = checked(numeric + ((ulong)n.Count * 2) + (n.Kind == 8 ? 4ul : 5ul));
+                numeric = checked(numeric + AdditionalCopy(program.Data, n.First, checked(n.Count * 2)) + (n.Kind == 8 ? 4ul : 5ul));
             }
             else if (n.Kind is 9 or 15)
             {
+                uint child = 0;
+                bool knownChild = n.Kind == 9 || ExistingPaint(program, n.First, out child);
+                (IGraphicsTextureView? View, IGraphicsSampler? Sampler) identity = program.InputIdentity(n);
+                ImagePaintData2D descriptor = ImageDescriptor(n, knownChild ? child : n.First);
+                if ((knownChild && _imageIds.ContainsKey((descriptor, identity.View, identity.Sampler)))
+                    || !pendingImages.Add((descriptor, identity.View, identity.Sampler, knownChild)))
+                {
+                    return;
+                }
+
                 images++;
+
                 if (n.Kind == 15)
                 {
                     CountPaint(n.First);
@@ -197,7 +275,7 @@ internal sealed class DrawRecordPage2D
                 if (n.Kind is 16 or 17)
                 {
                     clips++;
-                    numeric = checked(numeric + (n.Kind == 16 ? 1ul : ((((ulong)n.A.Z * (ulong)n.A.W) + 3) / 4) + 2));
+                    numeric = checked(numeric + (n.Kind == 16 ? 1ul : AdditionalCopy(program.Data, n.Count, checked((((uint)n.A.Z * (uint)n.A.W) + 3) / 4)) + 2));
                 }
 
                 numeric++;
@@ -209,7 +287,7 @@ internal sealed class DrawRecordPage2D
 
     internal int AdditionalClipCells(NormalizedClip2D clip)
     {
-        if (clip.Kind is NormalizedClipKind2D.None or NormalizedClipKind2D.Scissor || _clipCache.ContainsKey(clip))
+        if (clip.Kind is NormalizedClipKind2D.None or NormalizedClipKind2D.Scissor || TrySharedClip(clip, out _))
         {
             return 0;
         }
@@ -219,9 +297,10 @@ internal sealed class DrawRecordPage2D
 
     internal void AddSimple(DrawRecord2D record, Color2D color, NormalizedClip2D clip)
     {
-        if (Records.Count == Capacity)
+        if (_colors.TryGetValue(color, out uint known))
         {
-            throw new InvalidOperationException("Close a full record page before appending.");
+            Records.Add(record with { PaintId = known, ClipId = Clip(clip) });
+            return;
         }
 
         Vector4 linear = DrawingProgram2D.Linear(color);
@@ -235,16 +314,13 @@ internal sealed class DrawRecordPage2D
             _solidCache.Add(linear, paint);
         }
 
+        _colors[color] = paint;
         Records.Add(record with { PaintId = paint, ClipId = Clip(clip) });
     }
 
     internal void Add(DrawingCommand2D command, DrawingProgram2D program, uint root, ScissorRect bounds, NormalizedClip2D outer)
     {
-        if (Records.Count == Capacity)
-        {
-            throw new InvalidOperationException("Close a full record page before appending.");
-        }
-
+        _simpleOnly = false;
         var ids = new Dictionary<uint, uint>();
         DrawingInstruction terminal = program.Instructions[(int)root];
         if (terminal.Kind is 16 or 17)
@@ -284,10 +360,18 @@ internal sealed class DrawRecordPage2D
         }
         else if (kind is 7 or 8)
         {
-            offset = checked((uint)Masks.Count * 5);
+            var descriptor = new MaskDescriptor2D(shape.B, shape.C, shape.Mode, 0, 0, 0, null!, null!);
+            (IGraphicsTextureView? View, IGraphicsSampler? Sampler) identity = program.InputIdentity(shape);
+            if (!_maskIds.TryGetValue((descriptor, identity.View, identity.Sampler), out uint descriptorId))
+            {
+                descriptorId = checked((uint)Masks.Count);
+                _maskIds.Add((descriptor, identity.View, identity.Sampler), descriptorId);
+                _references.Add((program, terminal.First, Masks.Count, false));
+                Masks.Add(descriptor);
+            }
+
+            offset = checked(descriptorId * 5);
             count = 1;
-            _references.Add((program, terminal.First, Masks.Count, false));
-            Masks.Add(new(shape.B, shape.C, shape.Mode, 0, 0, 0, null!, null!));
         }
 
         uint clip = Clip(outer);
@@ -335,13 +419,46 @@ internal sealed class DrawRecordPage2D
         Masks.TrimExcess();
         _references.Clear();
         _references.TrimExcess();
+        _copies.Clear();
+        _copies.TrimExcess();
+        _maskIds.Clear();
+        _maskIds.TrimExcess();
+        _imageIds.Clear();
+        _imageIds.TrimExcess();
+        _directories.Clear();
+        _directories.TrimExcess();
+        _gradients.Clear();
+        _gradients.TrimExcess();
         _paintCache.Clear();
         _paintCache.TrimExcess();
         _solidCache.Clear();
         _solidCache.TrimExcess();
+        _colors.Clear();
+        _colors.TrimExcess();
         _clipCache.Clear();
         _clipCache.TrimExcess();
+        _clipValues.Clear();
+        _clipValues.TrimExcess();
     }
+
+    private static bool SameGradient(List<Vector4> leftData, DrawingInstruction left, List<Vector4> rightData, DrawingInstruction right)
+    {
+        if (left.Kind != right.Kind || left.Mode != right.Mode || left.Count != right.Count
+            || !SameBits(left.T0, right.T0) || !SameBits(left.T1, right.T1) || !SameBits(left.A, right.A) || !SameBits(left.B, right.B))
+        {
+            return false;
+        }
+
+        int cells = checked((int)left.Count * 2);
+        return MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(leftData).Slice(checked((int)left.First), cells))
+            .SequenceEqual(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(rightData).Slice(checked((int)right.First), cells)));
+    }
+
+    private static bool SameBits(Vector4 left, Vector4 right)
+        => MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref left, 1)).SequenceEqual(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref right, 1)));
+
+    private static ImagePaintData2D ImageDescriptor(DrawingInstruction n, uint child)
+        => new(n.T0, n.T1, n.A, new(n.B.X, n.B.Y, n.Kind == 15 ? n.D.X : 0, 0), child, checked((uint)n.B.Z), checked((uint)n.B.W), checked((uint)n.C.X), checked((uint)n.C.Y), n.Kind == 15 ? checked((uint)n.D.Y) : 0, 0, 0, null!, null!);
 
     private static Vector4 Bits(uint x, uint y, uint z, uint w) => new(
         BitConverter.UInt32BitsToSingle(x), BitConverter.UInt32BitsToSingle(y), BitConverter.UInt32BitsToSingle(z), BitConverter.UInt32BitsToSingle(w));
@@ -361,6 +478,12 @@ internal sealed class DrawRecordPage2D
         }
 
         DrawingInstruction n = program.Instructions[checked((int)index)];
+        if (n.Kind is 6 or 7 or 8 && TrySharedGradient(program.Data, n, out uint gradient))
+        {
+            ids.Add(index, gradient);
+            return gradient;
+        }
+
         if (n.Kind == 0 && _solidCache.TryGetValue(n.A, out uint solid))
         {
             ids.Add(index, solid);
@@ -394,9 +517,17 @@ internal sealed class DrawRecordPage2D
             case 9:
             case 15:
                 uint child = n.Kind == 15 ? Paint(program, n.First, ids) : 0;
-                first = checked((uint)Images.Count * 8); length = 8; kind = n.Kind == 9 ? 5u : 9u;
-                _references.Add((program, index, Images.Count, true));
-                Images.Add(new(n.T0, n.T1, n.A, new(n.B.X, n.B.Y, n.Kind == 15 ? n.D.X : 0, 0), child, checked((uint)n.B.Z), checked((uint)n.B.W), checked((uint)n.C.X), checked((uint)n.C.Y), n.Kind == 15 ? checked((uint)n.D.Y) : 0, 0, 0, null!, null!));
+                ImagePaintData2D image = ImageDescriptor(n, child);
+                (IGraphicsTextureView? View, IGraphicsSampler? Sampler) imageIdentity = program.InputIdentity(n);
+                if (!_imageIds.TryGetValue((image, imageIdentity.View, imageIdentity.Sampler), out uint imageId))
+                {
+                    imageId = checked((uint)Images.Count);
+                    _imageIds.Add((image, imageIdentity.View, imageIdentity.Sampler), imageId);
+                    _references.Add((program, index, Images.Count, true));
+                    Images.Add(image);
+                }
+
+                first = checked(imageId * 8); length = 8; kind = n.Kind == 9 ? 5u : 9u;
                 break;
             case 10:
                 uint opacityChild = Paint(program, n.First, ids);
@@ -415,8 +546,15 @@ internal sealed class DrawRecordPage2D
             default: throw new NotSupportedException("Unknown compact paint node.");
         }
 
-        uint id = checked((uint)Paints.Count);
-        Paints.Add(new(kind, first, length, 0));
+        var directory = new DrawDirectoryEntry2D(kind, first, length, 0);
+        uint id;
+        if (!_directories.TryGetValue(directory, out id))
+        {
+            id = checked((uint)Paints.Count);
+            Paints.Add(directory);
+            _directories.Add(directory, id);
+        }
+
         ids.Add(index, id);
         if (identified)
         {
@@ -432,6 +570,10 @@ internal sealed class DrawRecordPage2D
         if (n.Kind == 0)
         {
             _solidCache[n.A] = id;
+        }
+        else if (n.Kind is 6 or 7 or 8)
+        {
+            _gradients.Add((program.Data, n, id));
         }
 
         return id;
@@ -461,7 +603,7 @@ internal sealed class DrawRecordPage2D
 
     private uint Clip(NormalizedClip2D clip)
     {
-        if (_clipCache.TryGetValue(clip, out uint cached))
+        if (TrySharedClip(clip, out uint cached))
         {
             return cached;
         }
@@ -489,7 +631,82 @@ internal sealed class DrawRecordPage2D
         uint id = checked((uint)Clips.Count);
         Clips.Add(new((uint)clip.Kind, first, clip.Kind == NormalizedClipKind2D.SampleMask ? 2u : 1u, 0));
         _clipCache.Add(clip, id);
+        (NormalizedClipKind2D Kind, ScissorRect Bounds, Vector4 Samples, int Cells) key = (clip.Kind, clip.Bounds, clip.Samples, clip.Mask.Length);
+        if (!_clipValues.TryGetValue(key, out List<(NormalizedClip2D Clip, uint Id)>? values))
+        {
+            values = [];
+            _clipValues.Add(key, values);
+        }
+
+        values.Add((clip, id));
         return id;
+    }
+
+    private bool TrySharedGradient(List<Vector4> data, DrawingInstruction instruction, out uint paint)
+    {
+        foreach ((List<Vector4> Data, DrawingInstruction Instruction, uint Paint) candidate in _gradients)
+        {
+            if (SameGradient(data, instruction, candidate.Data, candidate.Instruction))
+            {
+                paint = candidate.Paint;
+                return true;
+            }
+        }
+
+        paint = 0;
+        return false;
+    }
+
+    private bool ExistingPaint(DrawingProgram2D program, uint index, out uint id)
+    {
+        DrawingInstruction n = program.Instructions[checked((int)index)];
+        if (n.Kind is 6 or 7 or 8 && TrySharedGradient(program.Data, n, out id))
+        {
+            return true;
+        }
+
+        if (n.Kind == 0)
+        {
+            if (n.A == Vector4.Zero)
+            {
+                id = 0;
+                return true;
+            }
+
+            return _solidCache.TryGetValue(n.A, out id);
+        }
+
+        if (program.TryPaintIdentity(index, out PaintNode2D? node, out Matrix3x2 transform)
+            && _paintCache.TryGetValue(node!, out Dictionary<Matrix3x2, uint>? transforms) && transforms.TryGetValue(transform, out id))
+        {
+            return true;
+        }
+
+        id = 0;
+        return false;
+    }
+
+    private bool TrySharedClip(NormalizedClip2D clip, out uint id)
+    {
+        if (_clipCache.TryGetValue(clip, out id))
+        {
+            return true;
+        }
+
+        if (_clipValues.TryGetValue((clip.Kind, clip.Bounds, clip.Samples, clip.Mask.Length), out List<(NormalizedClip2D Clip, uint Id)>? candidates))
+        {
+            foreach ((NormalizedClip2D Clip, uint Id) candidate in candidates)
+            {
+                if (clip.Mask.AsSpan().SequenceEqual(candidate.Clip.Mask))
+                {
+                    id = candidate.Id;
+                    return true;
+                }
+            }
+        }
+
+        id = 0;
+        return false;
     }
 
     private uint Copy(List<Vector4> source, uint first, uint count)
@@ -504,12 +721,50 @@ internal sealed class DrawRecordPage2D
             throw new ArgumentOutOfRangeException(nameof(first));
         }
 
+        if (FindCopy(source, first, count, out uint existing, out (int Count, ulong Hash) key))
+        {
+            return existing;
+        }
+
         uint result = checked((uint)Numeric.Count);
+        if (!_copies.TryGetValue(key, out List<uint>? offsets))
+        {
+            offsets = [];
+            _copies.Add(key, offsets);
+        }
+
+        offsets.Add(result);
         for (uint i = 0; i < count; i++)
         {
             Numeric.Add(source[checked((int)(first + i))]);
         }
 
         return result;
+    }
+
+    private bool FindCopy(List<Vector4> source, uint first, uint count, out uint offset, out (int Count, ulong Hash) key)
+    {
+        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(source).Slice(checked((int)first), checked((int)count)));
+        ulong hash = 14695981039346656037;
+        foreach (byte value in bytes)
+        {
+            hash = unchecked((hash ^ value) * 1099511628211);
+        }
+
+        key = (checked((int)count), hash);
+        if (_copies.TryGetValue(key, out List<uint>? candidates))
+        {
+            foreach (uint candidate in candidates)
+            {
+                if (bytes.SequenceEqual(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(Numeric).Slice(checked((int)candidate), checked((int)count)))))
+                {
+                    offset = candidate;
+                    return true;
+                }
+            }
+        }
+
+        offset = 0;
+        return false;
     }
 }

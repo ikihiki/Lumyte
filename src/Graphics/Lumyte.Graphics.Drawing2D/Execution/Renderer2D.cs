@@ -13,7 +13,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-    private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources);
+    private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources, retentionOptions?.MaxCachedBytes ?? 64 * 1024 * 1024);
     private readonly RetainedDrawingCache2D _retained = new(retentionOptions ?? new());
     private bool _disposed;
     private int _preparing;
@@ -55,6 +55,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             var batches = new List<IPreparedCommandBatch2D>();
             try
             {
+                _retained.BindStorageOwner(_resources);
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device);
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
@@ -210,7 +211,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     private ReadOnlyMemory<DrawingCommand2D> TakeBuiltinBatch(DrawList2D list, ref int index, int end)
     {
         int first = index;
-        while (index < end && index - first < DrawRecordPage2D.Capacity && IsBuiltinRenderer(list.Commands[index]))
+        while (index < end && IsBuiltinRenderer(list.Commands[index]))
         {
             index++;
         }

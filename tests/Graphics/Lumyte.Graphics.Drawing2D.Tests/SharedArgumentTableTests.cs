@@ -211,16 +211,16 @@ public sealed class SharedArgumentTableTests
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         ArgumentTableDesc desc = Assert.Single(device.Tables);
-        Assert.Equal(1u, desc.TextureCapacity);
-        Assert.Equal(1u, desc.SamplerCapacity);
-        Assert.Equal(7u, desc.BufferCapacity);
-        Assert.Equal(14, device.NativeBuffers);
+        Assert.Equal(0u, desc.TextureCapacity);
+        Assert.Equal(0u, desc.SamplerCapacity);
+        Assert.Equal(2u, desc.BufferCapacity);
+        Assert.Equal(4, device.NativeBuffers);
         using var commands = new ProfilingCommands();
         prepared.Record(commands);
-        Assert.Equal(portable ? 200 : 1, commands.Events.OfType<DrawRangeArguments2D>().Count());
-        Assert.Equal(200u, commands.Events.OfType<DrawRangeArguments2D>().Sum(arguments => arguments.RecordCount));
+        Assert.Equal(portable ? 200 : 1, commands.Events.OfType<RecordedDrawRange>().Count());
+        Assert.Equal(200u, commands.Events.OfType<RecordedDrawRange>().Sum(arguments => arguments.RecordCount));
         IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
-        foreach (DrawRangeArguments2D arguments in commands.Events.OfType<DrawRangeArguments2D>())
+        foreach (RecordedDrawRange arguments in commands.Events.OfType<RecordedDrawRange>())
         {
             Assert.Same(table, ProfilingDevice.Owner(arguments.Records));
             Assert.Same(table, ProfilingDevice.Owner(arguments.PageMetadata));
@@ -275,13 +275,13 @@ public sealed class SharedArgumentTableTests
         canvas.DrawPaintGraph(paint);
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         ArgumentTableDesc desc = Assert.Single(device.Tables);
-        Assert.Equal(3u, desc.TextureCapacity);
+        Assert.Equal(2u, desc.TextureCapacity);
         Assert.Equal(2u, desc.SamplerCapacity);
-        Assert.Equal(7u, desc.BufferCapacity);
+        Assert.Equal(6u, desc.BufferCapacity);
         using var commands = new ProfilingCommands();
         prepared.Record(commands);
         Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
-        Assert.Equal(11u, Assert.Single(commands.Events.OfType<DrawRangeArguments2D>()).RecordCount);
+        Assert.Equal(11u, Assert.Single(commands.Events.OfType<RecordedDrawRange>()).RecordCount);
         Assert.Equal((6u, 11u), Assert.Single(commands.Events.OfType<(uint, uint)>()));
         Assert.Equal(11, device.Records.Count);
         IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
@@ -290,7 +290,7 @@ public sealed class SharedArgumentTableTests
             Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
             Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
         });
-        Assert.All(commands.Events.OfType<DrawRangeArguments2D>(), arguments =>
+        Assert.All(commands.Events.OfType<RecordedDrawRange>(), arguments =>
         {
             Assert.Same(table, ProfilingDevice.Owner(arguments.Records));
             Assert.Same(table, ProfilingDevice.Owner(arguments.PageMetadata));
@@ -324,7 +324,7 @@ public sealed class SharedArgumentTableTests
         }
 
         Assert.Single(device.Tables);
-        Assert.Equal(14u, device.Tables[0].BufferCapacity);
+        Assert.Equal(4u, device.Tables[0].BufferCapacity);
         Assert.Equal(2, renderer.RetentionStatistics.ReusedRuns);
         renderer.Dispose();
         Assert.Equal(0, device.ActiveTables);
