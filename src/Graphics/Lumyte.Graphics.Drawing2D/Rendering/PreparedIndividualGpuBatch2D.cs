@@ -11,14 +11,14 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
     private readonly RenderPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
     private readonly List<PreparedCommand> _commands = [];
+    private readonly List<Action> _mappedUploads = [];
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
-    private readonly IGraphicsTexture _fallback;
-    private readonly IGraphicsTextureView _fallbackView;
     private readonly ShaderArtifact _artifact;
     private long _profileInstructions;
     private long _profileVectors;
     private long _profileCopied;
+    private long _estimatedBytes = 4096;
     private bool _recorded;
     private bool _disposed;
 
@@ -28,33 +28,38 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         try
         {
             Own(context.RetainResources());
+            Own(context.ArgumentPlan.Retain());
             cancellationToken.ThrowIfCancellationRequested();
             DrawingResources2D resources = context.Resources;
             _artifact = resources.Pipeline.Desc.FragmentShader?.Artifact
                 ?? throw new ArgumentException("Drawing requires a fragment shader.");
             _pipeline = resources.Pipeline;
-            _sampler = resources.Sampler ?? Own(context.Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
-            _fallback = Own(context.Device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled }));
-            _fallbackView = Own(_fallback.CreateView());
+            _sampler = context.ArgumentPlan.Sampler(resources);
         }
-        catch
+        catch (Exception error)
         {
-            Dispose();
+            context.CleanupAfterFailure(this, error);
             throw;
         }
     }
 
     // Includes staging/device allocations, packed CPU payloads and conservative descriptor overhead.
-    public long EstimatedBytes { get; private set; } = 4096;
+    public long EstimatedBytes => checked(_estimatedBytes + _context.ArgumentPlan.EstimatedBytes);
 
     /// <inheritdoc/>
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        foreach (IGraphicsTexture texture in _commands.SelectMany(command => command.Program.Textures).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsTexture>())
+        foreach (IGraphicsTextureView view in _commands.SelectMany(command => command.Program.Views).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsTextureView>())
         {
-            resources.UseTexture(texture, TextureState.Sampled, _fragmentRead);
+            resources.UseTextureView(view, _fragmentRead);
+        }
+
+        resources.UseSampler(_sampler);
+        foreach (IGraphicsSampler sampler in _commands.SelectMany(command => command.Program.Samplers).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsSampler>())
+        {
+            resources.UseSampler(sampler);
         }
     }
 
@@ -102,6 +107,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         }
 
         _disposed = true;
+        UnmapStaging();
         while (_owned.Count != 0)
         {
             _owned[^1].Dispose();
@@ -127,12 +133,17 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
                     await batch.AddAsync(commands.Span[i], cancellationToken, profile is not null).ConfigureAwait(false);
                 }
 
+                if (batch._commands.Count != 0)
+                {
+                    context.ArgumentPlan.DeferUpload(batch._commands[0].Reservation, batch.UploadAsync, batch.MapStorageAsync, batch.UploadMapped);
+                }
+
                 profile?.Success();
                 return batch;
             }
-            catch
+            catch (Exception error)
             {
-                batch.Dispose();
+                context.CleanupAfterFailure(batch, error);
                 throw;
             }
         }
@@ -154,37 +165,23 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
 
     private void RecordCore(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
     {
-        if (!resident)
-        {
-            var attachmentWrite = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-            commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = attachmentWrite });
-            IRenderEncoder clear = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = _fallbackView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
-            clear.End();
-            commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.Sampled, Before = attachmentWrite, After = _fragmentRead });
-        }
+        _context.ArgumentPlan.InitializeFallback(commands);
 
         foreach (PreparedCommand command in _commands)
         {
-            // SetArgumentTable/Draw resolve the existing registrations and validate sampled
+            // Opaque draws resolve the existing registrations and validate sampled
             // resource lifetimes on every record, including resident draws.
             RecordCommand(commands, target, command, resident);
         }
     }
 
-    private async ValueTask AddAsync(DrawingCommand2D command, CancellationToken cancellationToken, bool profiling)
+    private ValueTask AddAsync(DrawingCommand2D command, CancellationToken cancellationToken, bool profiling)
     {
-        IArgumentTable table = Own(_context.Device.CreateArgumentTable(new() { TextureCapacity = DrawingProgram2D.MaximumInstructions + 3, SamplerCapacity = DrawingProgram2D.MaximumInstructions + 2, BufferCapacity = 2 }));
-        IGpuRef<IGraphicsSampler> sampler = table.WriteSampler(0, _sampler);
-        IGpuRef<IGraphicsTextureView> fallbackRef = table.WriteTexture(DrawingProgram2D.MaximumInstructions + 2, _fallbackView);
-        var program = new DrawingProgram2D(table, sampler, _context.Target);
+        DrawingArgumentPlan2D plan = _context.ArgumentPlan;
+        ShaderResources reservation = plan.Reserve();
+        var program = new DrawingProgram2D(reservation, _context.Target);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
-        for (int i = 0; i < program.Instructions.Count; i++)
-        {
-            DrawingInstruction instruction = program.Instructions[i];
-            program.Instructions[i] = instruction with { Texture = instruction.Texture ?? fallbackRef, Sampler = instruction.Sampler ?? sampler };
-        }
-
         if (program.Data.Count == 0)
         {
             program.Data.Add(default);
@@ -199,46 +196,126 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         IGraphicsShaderDataBuffer<DrawingInstruction> instructions = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count));
         IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
-        await upload.MapAsync().ConfigureAwait(false);
-        try
-        {
-            upload.CopyFrom(program.Instructions.ToArray());
-            if (profiling)
-            {
-                _profileCopied += (long)((ulong)program.Instructions.Count * upload.ShaderElementStrideInBytes);
-            }
-        }
-        finally
-        {
-            upload.Unmap();
-        }
-
-        await data.MapAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            data.CopyFrom(program.Data.ToArray());
-            if (profiling)
-            {
-                _profileCopied += (long)program.Data.Count * 16;
-            }
-        }
-        finally
-        {
-            data.Unmap();
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        IGpuRef<DrawingInstruction> instructionRef = table.WriteBuffer(0, instructions.SliceElements(0, instructions.Count));
-        ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
         IGraphicsBuffer<Vector4> geometry = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = data.Count, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
-        IGpuRef<Vector4> dataRef = table.WriteBuffer(1, geometry.SliceElements(0, geometry.Count));
-        EstimatedBytes = checked(EstimatedBytes + (long)(instructions.SizeInBytes + upload.SizeInBytes + data.SizeInBytes + geometry.SizeInBytes)
+        BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
+        plan.MarkPreparedShaderData(reservation, instructions.SliceElements(0, instructions.Count), prepared);
+        plan.MarkPreparedBuffer(reservation, geometry.SliceElements(0, geometry.Count), prepared);
+        ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
+        var preparedCommand = new PreparedCommand(program, reservation, instructions, upload, data, geometry, root, scissor);
+        reservation.RegisterSampler(_sampler, reference => preparedCommand.ResolvedSampler = reference);
+        plan.Fallback(reservation, reference => preparedCommand.ResolvedFallback = reference);
+        reservation.RegisterBuffer(instructions.SliceElements(0, instructions.Count), reference => preparedCommand.ResolvedInstructions = reference);
+        reservation.RegisterBuffer(geometry.SliceElements(0, geometry.Count), reference => preparedCommand.ResolvedData = reference);
+        _mappedUploads.Add(() =>
+        {
+            if (!reservation.IsReady)
+            {
+                return;
+            }
+
+            program.ResolveReferences(preparedCommand.Fallback, preparedCommand.Sampler);
+            if (!upload.IsMapped || !data.IsMapped)
+            {
+                throw new InvalidOperationException("Prepare staging maps before synchronous graph finalization.");
+            }
+
+            try
+            {
+                upload.CopyFrom(program.Instructions.ToArray());
+                if (profiling)
+                {
+                    _profileCopied += (long)((ulong)program.Instructions.Count * upload.ShaderElementStrideInBytes);
+                }
+
+                data.CopyFrom(program.Data.ToArray());
+                if (profiling)
+                {
+                    _profileCopied += (long)program.Data.Count * 16;
+                }
+            }
+            finally
+            {
+                upload.Unmap();
+                data.Unmap();
+            }
+        });
+        _estimatedBytes = checked(_estimatedBytes + (long)(instructions.SizeInBytes + upload.SizeInBytes + data.SizeInBytes + geometry.SizeInBytes)
             + ((long)program.Instructions.Count * 256) + ((long)program.Data.Count * 32) + 65536);
-        _commands.Add(new(program, table, instructions, upload, data, geometry, instructionRef, dataRef, sampler, fallbackRef, root, scissor));
+        _commands.Add(preparedCommand);
+        return ValueTask.CompletedTask;
+    }
+
+    private async ValueTask MapStorageAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (PreparedCommand command in _commands)
+            {
+                await command.Upload.MapAsync(cancellationToken).ConfigureAwait(false);
+                await command.Data.MapAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            UnmapStaging();
+            throw;
+        }
+    }
+
+    private async ValueTask UploadAsync(CancellationToken cancellationToken)
+    {
+        await MapStorageAsync(cancellationToken).ConfigureAwait(false);
+        UploadMapped();
+    }
+
+    private void UploadMapped()
+    {
+        using var profile = DrawingProfileScope.Start(8);
+        try
+        {
+            foreach (Action upload in _mappedUploads)
+            {
+                upload();
+            }
+
+            profile?.Success();
+        }
+        catch (Exception error)
+        {
+            profile?.Failure(error);
+            throw;
+        }
+        finally
+        {
+            UnmapStaging();
+            profile?.Counter(8, _profileCopied);
+            _mappedUploads.Clear();
+        }
+    }
+
+    private void UnmapStaging()
+    {
+        foreach (PreparedCommand command in _commands)
+        {
+            if (command.Upload.IsMapped)
+            {
+                command.Upload.Unmap();
+            }
+
+            if (command.Data.IsMapped)
+            {
+                command.Data.Unmap();
+            }
+        }
     }
 
     private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command, bool resident)
     {
+        if (!command.Reservation.IsReady)
+        {
+            throw new InvalidOperationException("Materialize the resource set before recording.");
+        }
+
         if (!resident)
         {
             var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
@@ -260,7 +337,6 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         var arguments = new DrawingArguments(command.InstructionRef, command.DataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(_pipeline);
-        render.SetArgumentTable(command.Table);
         render.SetRenderState(new()
         {
             Rasterization = new() { Cull = CullMode.None },
@@ -270,8 +346,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         render.SetScissor(command.Scissor);
         render.SetBlendConstant(new(0, 0, 0, 0));
         render.SetStencilReference(0);
-        render.SetArguments(in arguments);
-        render.Draw(3);
+        command.Reservation.Draw(render, in arguments, 3);
         render.End();
         var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
         commands.Barrier(new TextureBarrierDesc { Texture = view.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
@@ -284,5 +359,26 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         return resource;
     }
 
-    private sealed record PreparedCommand(DrawingProgram2D Program, IArgumentTable Table, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGraphicsBuffer<Vector4> Geometry, IGpuRef<DrawingInstruction> InstructionRef, IGpuRef<Vector4> DataRef, IGpuRef<IGraphicsSampler> Sampler, IGpuRef<IGraphicsTextureView> Fallback, uint Root, ScissorRect Scissor);
+    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGraphicsBuffer<Vector4> Geometry, uint Root, ScissorRect Scissor)
+    {
+        internal IGpuRef<DrawingInstruction>? ResolvedInstructions { get; set; }
+
+        internal IGpuRef<Vector4>? ResolvedData { get; set; }
+
+        internal IGpuRef<IGraphicsSampler>? ResolvedSampler { get; set; }
+
+        internal IGpuRef<IGraphicsTextureView>? ResolvedFallback { get; set; }
+
+        internal IGpuRef<DrawingInstruction> InstructionRef => Ready(ResolvedInstructions);
+
+        internal IGpuRef<Vector4> DataRef => Ready(ResolvedData);
+
+        internal IGpuRef<IGraphicsSampler> Sampler => Ready(ResolvedSampler);
+
+        internal IGpuRef<IGraphicsTextureView> Fallback => Ready(ResolvedFallback);
+
+        private IGpuRef<T> Ready<T>(IGpuRef<T>? reference) => Reservation.IsReady && reference is not null
+            ? reference
+            : throw new InvalidOperationException("Materialize the resource set before using native references.");
+    }
 }

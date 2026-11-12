@@ -13,6 +13,19 @@ export async function createDevice() {
         const caps = Object.freeze({
             shaderTarget: 0, // WGSL.
             features: 3, // WebGPU core: indirect draw and anisotropic filtering.
+            argumentTableBindingLimits: {
+                textureSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
+                samplerSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
+                bufferSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
+                texturesPerDraw: limits.maxSampledTexturesPerShaderStage,
+                samplersPerDraw: limits.maxSamplersPerShaderStage,
+                buffersPerDraw: Math.max(0, limits.maxStorageBuffersPerShaderStage - 1),
+                combinedBindings: limits.maxUniformBuffersPerShaderStage > 0 ? limits.maxBindingsPerBindGroup : 0,
+                reservedBindings: 2,
+                maximumBufferRangeBytes: Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize),
+                bufferRangeAlignment: limits.minStorageBufferOffsetAlignment,
+                bufferRangeSizeAlignment: 4,
+            },
             maxBufferSize: limits.maxBufferSize,
             maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
             maxTextureDimension2D: limits.maxTextureDimension2D,

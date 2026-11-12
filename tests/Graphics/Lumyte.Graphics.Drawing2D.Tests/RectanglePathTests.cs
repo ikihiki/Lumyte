@@ -72,7 +72,7 @@ public sealed class RectanglePathTests
         canvas.ClipRect(new(1.125f, 2.25f, 17.5f, 13.5f));
         canvas.FillCircle(new(8, 8), 10, new Color2D(1, 0, 0, 1));
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
-        var program = new DrawingProgram2D(null!, null!, target);
+        var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         program.Compile(command);
         Assert.Empty(program.Data);
         Assert.Equal(2, program.Instructions.Count(instruction => instruction.Kind == 1));
@@ -95,7 +95,7 @@ public sealed class RectanglePathTests
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         Assert.False(Matrix3x2.Invert(command.State.Clip.Elements[0].Transform, out _));
         Assert.True(Matrix3x2.Invert(command.State.Transform, out _));
-        var program = new DrawingProgram2D(null!, null!, target);
+        var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         program.CompileClip(command.State);
         DrawingInstruction[] constants = program.Instructions.Where(instruction => instruction.Kind == 0).ToArray();
         Assert.Equal(2, constants.Length);

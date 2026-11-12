@@ -81,7 +81,9 @@ public sealed partial class Renderer2D
             {
                 frame = _retained.AcquireFrame();
                 List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
-                var context = new RenderPreparationContext2D(_device, info, _resources);
+                var plan = new DrawingArgumentPlan2D(_device);
+                using IDisposable planOwner = _resources.CleanupOwner(plan);
+                var context = new RenderPreparationContext2D(_device, info, _resources, plan);
 
                 // Capture only immutable page/property values. The source and its mutable lease
                 // are never captured by the returned frame or by cached GPU assets.
@@ -166,6 +168,8 @@ public sealed partial class Renderer2D
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+
+                await plan.SealAsync(cancellationToken).ConfigureAwait(false);
 
                 // Re-read the guard before returning: disposed sources cannot publish a frame.
                 _ = source.Revision;

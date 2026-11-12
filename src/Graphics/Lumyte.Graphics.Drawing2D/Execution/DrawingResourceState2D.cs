@@ -5,6 +5,7 @@ namespace Lumyte.Graphics.Drawing2D;
 internal sealed class DrawingResourceState2D : IDisposable
 {
     private readonly object _gate = new();
+    private readonly List<IDisposable> _failedCleanup = [];
     private readonly IGraphicDevice? _device;
     private readonly Action? _validate;
     private DrawingResources2D? _resources;
@@ -13,6 +14,7 @@ internal sealed class DrawingResourceState2D : IDisposable
     private int _users = 1;
     private bool _returned;
     private bool _closing;
+    private bool _retryingCleanup;
 
     internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null)
     {
@@ -51,6 +53,7 @@ internal sealed class DrawingResourceState2D : IDisposable
                 return;
             }
 
+            RetryCleanup();
             Release();
             _returned = true;
         }
@@ -91,8 +94,50 @@ internal sealed class DrawingResourceState2D : IDisposable
     {
         lock (_gate)
         {
+            RetryCleanup();
             ObjectDisposedException.ThrowIf(_users == 0 || _closing, this);
             _validate?.Invoke();
+        }
+    }
+
+    internal IDisposable CleanupOwner(IDisposable resource) => new CleanupUse(this, resource);
+
+    internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure)
+    {
+        try
+        {
+            resource.Dispose();
+        }
+        catch (Exception cleanupFailure)
+        {
+            lock (_gate)
+            {
+                _failedCleanup.Add(resource);
+            }
+
+            throw new AggregateException("Preparation and cleanup failed; the renderer resource owner retains pending retries.", preparationFailure, cleanupFailure);
+        }
+    }
+
+    private void RetryCleanup()
+    {
+        if (_retryingCleanup)
+        {
+            return;
+        }
+
+        _retryingCleanup = true;
+        try
+        {
+            while (_failedCleanup.Count != 0)
+            {
+                _failedCleanup[^1].Dispose();
+                _failedCleanup.RemoveAt(_failedCleanup.Count - 1);
+            }
+        }
+        finally
+        {
+            _retryingCleanup = false;
         }
     }
 
@@ -145,6 +190,35 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
 
         _users--;
+    }
+
+    private sealed class CleanupUse(DrawingResourceState2D state, IDisposable resource) : IDisposable
+    {
+        private bool _returned;
+
+        public void Dispose()
+        {
+            if (_returned)
+            {
+                return;
+            }
+
+            try
+            {
+                resource.Dispose();
+                _returned = true;
+            }
+            catch
+            {
+                lock (state._gate)
+                {
+                    state._failedCleanup.Add(resource);
+                    _returned = true;
+                }
+
+                throw;
+            }
+        }
     }
 
     private sealed class Use(DrawingResourceState2D state) : IDisposable

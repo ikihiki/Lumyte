@@ -55,7 +55,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             var batches = new List<IPreparedCommandBatch2D>();
             try
             {
-                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources);
+                _retained.RetryCleanup();
+                var plan = new DrawingArgumentPlan2D(_device);
+                using IDisposable planOwner = _resources.CleanupOwner(plan);
+                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan);
                 int index = 0;
                 using (var build = DrawingProfileScope.Start(4))
                 {
@@ -96,15 +99,21 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                     }
                 }
 
+                await plan.SealAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 profile?.Success();
                 return new PreparedDraw2D(target, batches, profile?.Context);
             }
-            catch
+            catch (Exception preparationFailure)
             {
-                for (int i = batches.Count - 1; i >= 0; i--)
+                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
+                try
                 {
-                    batches[i].Dispose();
+                    _retained.RetryCleanup();
+                }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException("Preparation and cleanup failed; the renderer owns pending retries.", preparationFailure, cleanupFailure);
                 }
 
                 throw;

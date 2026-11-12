@@ -35,6 +35,16 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     public DeviceCaps Caps { get; } = new()
     {
         ShaderTarget = ShaderTarget.Dxil,
+        ArgumentTableBindingLimits = new()
+        {
+            TextureSlots = 128,
+            SamplerSlots = 16,
+            BufferSlots = 64,
+            DirectSlotBindings = true,
+            TexturesPerDraw = 128,
+            SamplersPerDraw = 16,
+            BuffersPerDraw = 64,
+        },
         MaxBufferSize = 128 * 1024 * 1024,
         CopyBytesPerRowAlignment = 256,
         MaxStorageBufferBindingSize = 128 * 1024 * 1024,

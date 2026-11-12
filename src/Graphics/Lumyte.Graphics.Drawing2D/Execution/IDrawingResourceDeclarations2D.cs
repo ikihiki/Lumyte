@@ -24,4 +24,29 @@ public interface IDrawingResourceDeclarations2D
     /// <param name="scope">The accesses made during the batch.</param>
     void UseShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
         where T : struct, IShaderData;
+
+    /// <summary>Declares one exact sampled view; default adapters retain allocation-wide access semantics.</summary>
+    /// <param name="view">The sampled view.</param>
+    /// <param name="scope">The shader-read scope.</param>
+    void UseTextureView(IGraphicsTextureView view, BarrierScope scope) => UseTexture(view.Texture, TextureState.Sampled, scope);
+
+    /// <summary>Declares a borrowed immutable sampler.</summary>
+    /// <param name="sampler">The sampled immutable state.</param>
+    void UseSampler(IGraphicsSampler sampler)
+    {
+    }
+
+    /// <summary>Declares an exact raw binding range.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="range">The binding range.</param>
+    /// <param name="scope">The actual accesses.</param>
+    void UseBuffer<T>(BufferSlice<T> range, BarrierScope scope)
+        where T : unmanaged => UseBuffer(range.Buffer, scope);
+
+    /// <summary>Declares an exact shader-data binding range.</summary>
+    /// <typeparam name="T">The shader-data element type.</typeparam>
+    /// <param name="range">The binding range.</param>
+    /// <param name="scope">The actual accesses.</param>
+    void UseShaderDataBuffer<T>(ShaderDataSlice<T> range, BarrierScope scope)
+        where T : struct, IShaderData => UseShaderDataBuffer(range.Buffer, scope);
 }

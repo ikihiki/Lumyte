@@ -6,4 +6,9 @@ namespace Lumyte.Graphics.Drawing2D;
 internal readonly partial record struct DrawingInstruction(
     Vector4 T0, Vector4 T1, Vector4 A, Vector4 B, Vector4 C, Vector4 D,
     uint Kind, uint First, uint Count, uint Mode,
-    IGpuRef<IGraphicsTextureView> Texture, IGpuRef<IGraphicsSampler> Sampler) : IShaderData;
+    IGpuRef<IGraphicsTextureView> Texture, IGpuRef<IGraphicsSampler> Sampler) : IShaderData
+{
+    internal int TextureIndex { get; init; } = -1;
+
+    internal int SamplerIndex { get; init; } = -1;
+}

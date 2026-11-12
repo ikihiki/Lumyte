@@ -39,6 +39,22 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         _argumentProgram = _pipeline;
     }
 
+    public void SetArguments(ShaderValueSnapshot arguments)
+    {
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+        ShaderValueSnapshot snapshot = arguments.Copy();
+        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        _arguments = snapshot;
+        _argumentProgram = _pipeline;
+    }
+
     public void SetPipeline(IGraphicsComputePipeline pipeline)
     {
         owner.ValidatePass(this);

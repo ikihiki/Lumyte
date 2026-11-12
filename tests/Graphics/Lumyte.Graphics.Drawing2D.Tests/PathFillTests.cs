@@ -58,7 +58,7 @@ public sealed class PathFillTests
             Description = new TextureDesc { Width = 200, Height = 200, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment },
             PixelScale = 2,
         };
-        var program = new DrawingProgram2D(null!, null!, target);
+        var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
 

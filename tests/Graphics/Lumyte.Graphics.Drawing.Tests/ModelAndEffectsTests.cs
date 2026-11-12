@@ -52,6 +52,28 @@ public sealed class ModelAndEffectsTests
         }
     }
 
+    /// <summary>Custom layout encoding may handle unresolved references, but native argument admission remains strict.</summary>
+    [Fact]
+    public void CustomReferencePackingDoesNotRelaxNativeAdmission()
+    {
+        ModelDrawArguments arguments = default;
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
+        {
+            var layout = ShaderDataLayout.Root(DrawingShaders.LoadModelVertex().GetTarget(target), "arguments");
+            Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
+            int encoded = 0;
+            byte[] bytes = layout.Pack(snapshot, (member, _) =>
+            {
+                Assert.Null(member.Reference);
+                encoded++;
+                return new byte[16];
+            });
+            Assert.Equal(11, encoded);
+            Assert.Equal(layout.Size, bytes.Length);
+        }
+    }
+
     /// <summary>Checks a changed compiled stride is rejected rather than silently repacked.</summary>
     [Fact]
     public void ChangedVertexAbiIsRejected()

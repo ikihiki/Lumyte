@@ -17,6 +17,8 @@ public sealed class ShaderBindingSnapshot
         {
             Collect(value, table, ref pending, read);
         }
+
+        Root.ValidateExecutionReferences(_references);
     }
 
     /// <summary>Gets the immutable root values.</summary>

@@ -535,6 +535,21 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return new()
         {
             ShaderTarget = ShaderTarget.SpirV,
+            ArgumentTableBindingLimits = new()
+            {
+                TextureSlots = Math.Min(limits.MaxPerStageDescriptorSampledImages, limits.MaxDescriptorSetSampledImages),
+                SamplerSlots = Math.Min(limits.MaxPerStageDescriptorSamplers, limits.MaxDescriptorSetSamplers),
+                DirectSlotBindings = true,
+                MinimumTextureBindings = 1,
+                MinimumSamplerBindings = 1,
+                TexturesPerDraw = Math.Min(limits.MaxPerStageDescriptorSampledImages, limits.MaxDescriptorSetSampledImages),
+                SamplersPerDraw = Math.Min(limits.MaxPerStageDescriptorSamplers, limits.MaxDescriptorSetSamplers),
+                CombinedBindings = limits.MaxPerStageResources,
+                ReservedBindings = limits.MaxPerStageDescriptorUniformBuffers >= 1 && limits.MaxDescriptorSetUniformBuffers >= 1 && limits.MaxBoundDescriptorSets >= 1 ? 1u : uint.MaxValue,
+                SamplerBindingWeight = 0,
+                BufferBindingWeight = 0,
+                ColorAttachmentBindingWeight = 1,
+            },
             Features = features,
             MaxBufferSize = maxBufferSize,
             MaxStorageBufferBindingSize = Math.Min(limits.MaxStorageBufferRange, maxBufferSize),

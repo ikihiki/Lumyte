@@ -28,6 +28,20 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         Caps = new()
         {
             ShaderTarget = ShaderTarget.Wgsl,
+            ArgumentTableBindingLimits = new()
+            {
+                TextureSlots = checked((uint)(Math.Min((ulong)int.MaxValue, Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)) / 16)),
+                SamplerSlots = checked((uint)(Math.Min((ulong)int.MaxValue, Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)) / 16)),
+                BufferSlots = checked((uint)(Math.Min((ulong)int.MaxValue, Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)) / 16)),
+                TexturesPerDraw = limits.maxSampledTexturesPerShaderStage,
+                SamplersPerDraw = limits.maxSamplersPerShaderStage,
+                BuffersPerDraw = limits.maxStorageBuffersPerShaderStage > 0 ? limits.maxStorageBuffersPerShaderStage - 1 : 0,
+                CombinedBindings = limits.maxUniformBuffersPerShaderStage > 0 ? limits.maxBindingsPerBindGroup : 0,
+                ReservedBindings = 2,
+                MaximumBufferRangeBytes = Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize),
+                BufferRangeAlignment = limits.minStorageBufferOffsetAlignment,
+                BufferRangeSizeAlignment = 4,
+            },
             Features = GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering,
             MaxBufferSize = limits.maxBufferSize,
             MaxStorageBufferBindingSize = limits.maxStorageBufferBindingSize,

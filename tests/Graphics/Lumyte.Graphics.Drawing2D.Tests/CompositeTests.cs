@@ -115,7 +115,7 @@ public sealed class CompositeTests
         return program;
     }
 
-    private static DrawingProgram2D Program() => new(null!, null!, new DrawingTargetInfo2D
+    private static DrawingProgram2D Program() => new(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), new DrawingTargetInfo2D
     {
         Description = new TextureDesc { Width = 64, Height = 64, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment },
     });

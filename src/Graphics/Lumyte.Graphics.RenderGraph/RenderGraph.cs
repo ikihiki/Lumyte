@@ -49,6 +49,8 @@ public sealed class RenderGraph : IDisposable
     /// <summary>Gets a value indicating whether this graph accepts preparation, ownership and pass declarations.</summary>
     public bool IsBuilding => !_closed && !_faulted && !_compiling;
 
+    internal GraphShaderResourceOwner? ShaderResourceOwner { get; set; }
+
     internal IRenderGraphObserver? Observer { get; }
 
     /// <summary>Gets the cached state created by an explicitly registered extension factory.</summary>
@@ -119,6 +121,32 @@ public sealed class RenderGraph : IDisposable
         return resource;
     }
 
+    /// <summary>Reuses a typed imported allocation or imports it without transferring ownership.</summary>
+    /// <typeparam name="T">The storage element.</typeparam>
+    /// <param name="buffer">The borrowed allocation.</param>
+    /// <param name="initialScope">Preceding accesses, used only for a new import.</param>
+    /// <param name="name">The optional name of a new import.</param>
+    /// <returns>The unique graph handle; an existing import retains its initial scope.</returns>
+    public RenderGraphBuffer<T> GetOrImportBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope initialScope, string? name = null)
+        where T : unmanaged
+    {
+        EnsureBuilding();
+        return _resources.OfType<RenderGraphBuffer<T>>().FirstOrDefault(resource => ReferenceEquals(resource.Allocation, buffer)) ?? ImportBuffer(buffer, initialScope, name);
+    }
+
+    /// <summary>Reuses imported shader data or imports it without changing transfer provenance.</summary>
+    /// <typeparam name="T">The logical element.</typeparam>
+    /// <param name="buffer">The borrowed allocation.</param>
+    /// <param name="initialScope">Preceding accesses, used only for a new import.</param>
+    /// <param name="name">The optional name of a new import.</param>
+    /// <returns>The unique graph handle; an existing import retains its initial scope.</returns>
+    public RenderGraphShaderDataBuffer<T> GetOrImportShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope initialScope, string? name = null)
+        where T : struct, IShaderData
+    {
+        EnsureBuilding();
+        return _resources.OfType<RenderGraphShaderDataBuffer<T>>().FirstOrDefault(resource => ReferenceEquals(resource.Allocation, buffer)) ?? ImportShaderDataBuffer(buffer, initialScope, name);
+    }
+
     /// <summary>Declares an uninitialized temporary texture, allocated only if used by live work.</summary>
     /// <param name="desc">The exact allocation requirements.</param>
     /// <param name="name">The optional diagnostic name.</param>
@@ -157,12 +185,35 @@ public sealed class RenderGraph : IDisposable
         return resource;
     }
 
+    /// <summary>Declares graph-owned, uninitialized Automatic shader data, allocated only for live uses.</summary>
+    /// <typeparam name="T">The logical shader data type.</typeparam>
+    /// <param name="artifact">The target ABI and element schema.</param>
+    /// <param name="count">The positive logical element count.</param>
+    /// <param name="name">The optional diagnostic name.</param>
+    /// <returns>A temporary whose first read requires an explicit graph copy-write producer.</returns>
+    public RenderGraphShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, string? name = null)
+        where T : struct, IShaderData
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        ArgumentOutOfRangeException.ThrowIfZero(count);
+        RequireDevice();
+        var resource = new RenderGraphShaderDataBuffer<T>(this, artifact, count, ResourceName(name));
+        Register(resource);
+        return resource;
+    }
+
     /// <summary>Retains the last producer of a resource as an observable graph output.</summary>
     /// <param name="resource">The graph-local resource.</param>
     /// <returns>This graph.</returns>
     public RenderGraph MarkOutput(RenderGraphResource resource)
     {
         EnsureBuilding();
+        ArgumentNullException.ThrowIfNull(resource);
+        if (resource.LocalPassOwner is not null)
+        {
+            throw new ArgumentException("Pass-local storage cannot be a graph output.", nameof(resource));
+        }
+
         CheckResource(resource);
         _outputs.Add(resource);
         return this;
@@ -360,6 +411,42 @@ public sealed class RenderGraph : IDisposable
         {
             throw new ArgumentException("Resource belongs to another graph.", nameof(resource));
         }
+    }
+
+    internal RenderGraphBuffer<T> LocalBuffer<T>(RenderGraphPass pass, IGraphicsBuffer<T> buffer, BarrierScope scope)
+        where T : unmanaged => LocalResource(pass, buffer, scope, () => new RenderGraphBuffer<T>(this, buffer, default, "pass-local-buffer"));
+
+    internal RenderGraphShaderDataBuffer<T> LocalShaderData<T>(RenderGraphPass pass, IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
+        where T : struct, IShaderData => LocalResource(pass, buffer, scope, () => new RenderGraphShaderDataBuffer<T>(this, buffer, default, "pass-local-shader-data"));
+
+    internal RenderGraphSampler GetSamplerResource(IGraphicsSampler sampler)
+    {
+        EnsureBuilding();
+        ArgumentNullException.ThrowIfNull(sampler);
+        RenderGraphSampler? existing = _resources.OfType<RenderGraphSampler>().FirstOrDefault(resource => ReferenceEquals(resource.Key, sampler));
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var created = new RenderGraphSampler(this, sampler);
+        _resources.Add(created);
+        return created;
+    }
+
+    internal RenderGraphSampler GetSamplerResource(SamplerDesc desc)
+    {
+        EnsureBuilding();
+        ArgumentNullException.ThrowIfNull(desc);
+        RenderGraphSampler? existing = _resources.OfType<RenderGraphSampler>().FirstOrDefault(resource => resource.Key is SamplerDesc value && value == desc);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var created = new RenderGraphSampler(this, desc);
+        _resources.Add(created);
+        return created;
     }
 
     private static void ValidateName(string name)
@@ -564,8 +651,39 @@ public sealed class RenderGraph : IDisposable
         }
     }
 
+    private TResource LocalResource<TResource>(RenderGraphPass pass, object allocation, BarrierScope scope, Func<TResource> create)
+        where TResource : RenderGraphResource
+    {
+        EnsureBuilding();
+        ArgumentNullException.ThrowIfNull(allocation);
+        RenderGraphValidation.Scope(scope, required: true);
+        RenderGraphResource? existing = _resources.FirstOrDefault(resource => ReferenceEquals(resource.Allocation, allocation));
+        if (existing is not null)
+        {
+            if (existing is not TResource typed || (typed.LocalPassOwner is not null && !ReferenceEquals(typed.LocalPassOwner, pass)))
+            {
+                throw new ArgumentException("The allocation has another type, kind, or pass-local owner.", nameof(allocation));
+            }
+
+            typed.Validate(TextureState.Undefined, scope);
+            return typed;
+        }
+
+        TResource result = create();
+        result.Validate(TextureState.Undefined, scope);
+        result.LocalPassOwner = pass;
+        Register(result);
+        return result;
+    }
+
     private void Export(RenderGraphResource resource, TextureState state, BarrierScope scope)
     {
+        ArgumentNullException.ThrowIfNull(resource);
+        if (resource.LocalPassOwner is not null)
+        {
+            throw new ArgumentException("Pass-local storage cannot be exported.", nameof(resource));
+        }
+
         EnsureBuilding();
         CheckResource(resource);
         RenderGraphValidation.Scope(scope, required: state != TextureState.Present);
@@ -607,13 +725,21 @@ public sealed class RenderGraph : IDisposable
         }
     }
 
-    private sealed class LifetimeGroup(List<IRenderGraphLifetime> lifetimes) : IRenderGraphLifetime
+    private sealed class LifetimeGroup(List<IRenderGraphLifetime> lifetimes) : IRenderGraphPreparation
     {
         public void Validate()
         {
             foreach (IRenderGraphLifetime lifetime in lifetimes)
             {
                 lifetime.Validate();
+            }
+        }
+
+        public void Prepare(RenderGraphPreparationContext context)
+        {
+            foreach (IRenderGraphPreparation preparation in lifetimes.OfType<IRenderGraphPreparation>())
+            {
+                preparation.Prepare(context);
             }
         }
 

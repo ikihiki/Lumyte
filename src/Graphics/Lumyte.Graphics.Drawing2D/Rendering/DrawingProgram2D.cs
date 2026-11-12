@@ -6,22 +6,25 @@ namespace Lumyte.Graphics.Drawing2D;
 internal sealed class DrawingProgram2D
 {
     internal const int MaximumInstructions = 256;
-    private readonly IArgumentTable _table;
-    private readonly IGpuRef<IGraphicsSampler> _nearest;
+    private readonly ShaderResources _plan;
+    private readonly List<IGpuRef<IGraphicsTextureView>?> _textures = [];
+    private readonly List<IGpuRef<IGraphicsSampler>?> _samplers = [];
     private readonly Matrix3x2 _pixelTransform;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
-    private uint _textureSlot;
 
-    internal DrawingProgram2D(IArgumentTable table, IGpuRef<IGraphicsSampler> nearest, DrawingTargetInfo2D target)
+    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target)
     {
-        _table = table;
-        _nearest = nearest;
+        _plan = plan ?? throw new ArgumentNullException(nameof(plan));
         _pixelTransform = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
     }
 
     internal List<DrawingInstruction> Instructions { get; } = [];
 
     internal List<Vector4> Data { get; } = [];
+
+    internal HashSet<IGraphicsTextureView> Views { get; } = new(ReferenceEqualityComparer.Instance);
+
+    internal HashSet<IGraphicsSampler> Samplers { get; } = new(ReferenceEqualityComparer.Instance);
 
     internal HashSet<IGraphicsTexture> Textures { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -64,6 +67,26 @@ internal sealed class DrawingProgram2D
 
         rectangle = new(a.X, a.Y, width, height);
         return true;
+    }
+
+    internal void ResolveReferences(IGpuRef<IGraphicsTextureView> fallback, IGpuRef<IGraphicsSampler> nearest)
+    {
+        if (!_plan.IsReady)
+        {
+            throw new InvalidOperationException("Materialize the resource set before resolving instructions.");
+        }
+
+        for (int i = 0; i < Instructions.Count; i++)
+        {
+            DrawingInstruction instruction = Instructions[i];
+            Instructions[i] = instruction with
+            {
+                Texture = instruction.TextureIndex >= 0 ? _textures[instruction.TextureIndex] ?? throw new InvalidOperationException("Texture reference is unresolved.") : instruction.Texture ?? fallback,
+                Sampler = instruction.SamplerIndex >= 0 ? _samplers[instruction.SamplerIndex] ?? throw new InvalidOperationException("Sampler reference is unresolved.") : instruction.Sampler ?? nearest,
+                TextureIndex = -1,
+                SamplerIndex = -1,
+            };
+        }
     }
 
     internal uint Compile(DrawingCommand2D command)
@@ -359,8 +382,9 @@ internal sealed class DrawingProgram2D
             A = Vector(source),
             B = new(width, height, (float)tileX, (float)tileY),
             C = new((float)filter, (float)alpha, 0, 0),
-            Texture = Register(view),
-            Sampler = _nearest,
+            Texture = null!,
+            Sampler = null!,
+            TextureIndex = Request(view),
         };
     }
 
@@ -377,27 +401,36 @@ internal sealed class DrawingProgram2D
         }
 
         (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
-        uint samplerSlot = _textureSlot + 1;
         return Add(Node(kind, transform) with
         {
             A = Vector(destination),
             B = Vector(source),
             C = new(width, height, range, 0),
             Mode = mode,
-            Texture = Register(view),
-            Sampler = _table.WriteSampler(samplerSlot, sampler),
+            Texture = null!,
+            Sampler = null!,
+            TextureIndex = Request(view),
+            SamplerIndex = Request(sampler),
         });
     }
 
-    private IGpuRef<IGraphicsTextureView> Register(IGraphicsTextureView view)
+    private int Request(IGraphicsTextureView view)
     {
-        if (_textureSlot >= MaximumInstructions)
-        {
-            throw new NotSupportedException("Paint graph exceeds its texture binding budget.");
-        }
-
         Textures.Add(view.Texture);
-        return _table.WriteTexture(_textureSlot++, view);
+        Views.Add(view);
+        int index = _textures.Count;
+        _textures.Add(null);
+        _plan.RegisterTexture(view, reference => _textures[index] = reference);
+        return index;
+    }
+
+    private int Request(IGraphicsSampler sampler)
+    {
+        Samplers.Add(sampler);
+        int index = _samplers.Count;
+        _samplers.Add(null);
+        _plan.RegisterSampler(sampler, reference => _samplers[index] = reference);
+        return index;
     }
 
     private uint Add(DrawingInstruction instruction)
