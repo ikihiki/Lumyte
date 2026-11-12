@@ -46,7 +46,7 @@ public sealed class GraphPassCapacityTests
         canvas.FillCircle(new Vector2(12, 8), 3, second);
         RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
         using var renderer = new RenderGraphRenderer2D(
-            DrawingCommandRenderers2D.CreateDefault(),
+            LegacyDrawRenderers2D.Create(),
             canvas.End(),
             new() { Texture = target, Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = targetTexture.Usage }, LoadOp = AttachmentLoadOp.Clear },
             bindings);
@@ -87,7 +87,7 @@ public sealed class GraphPassCapacityTests
         canvas.FillCircle(new Vector2(4, 8), 3, new Color2D(1, 0, 0, 1));
         canvas.FillCircle(new Vector2(12, 8), 3, new Color2D(0, 1, 0, 1));
         using var renderer = new RenderGraphRenderer2D(
-            DrawingCommandRenderers2D.CreateDefault(),
+            LegacyDrawRenderers2D.Create(),
             canvas.End(),
             new() { Texture = target, Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = targetTexture.Usage }, LoadOp = AttachmentLoadOp.Clear },
             new DrawingGraphBindings2D(graph));

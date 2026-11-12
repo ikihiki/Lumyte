@@ -11,6 +11,7 @@ internal sealed class DrawingResourceState2D : IDisposable
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
     private SolidRectangleResources2D? _rectangles;
+    private DrawRecordResources2D? _records;
     private int _users = 1;
     private bool _returned;
     private bool _closing;
@@ -87,6 +88,24 @@ internal sealed class DrawingResourceState2D : IDisposable
             }
 
             return _rectangles ??= new(_resources.Device);
+        }
+    }
+
+    internal DrawRecordResources2D? Records()
+    {
+        lock (_gate)
+        {
+            EnsureResources();
+            Validate();
+            GraphicsPipelineDesc pipeline = _resources!.Pipeline.Desc;
+            if (!ReferenceEquals(pipeline.VertexShader.Artifact, DrawingShaders2D.Vertex)
+                || !ReferenceEquals(pipeline.FragmentShader?.Artifact, DrawingShaders2D.Fragment)
+                || pipeline.TopologyClass != PrimitiveTopologyClass.Triangle || pipeline.AlphaToCoverageEnable)
+            {
+                return null;
+            }
+
+            return _records ??= new(_resources.Device);
         }
     }
 
@@ -183,6 +202,8 @@ internal sealed class DrawingResourceState2D : IDisposable
         if (_users == 1)
         {
             _closing = true;
+            _records?.Dispose();
+            _records = null;
             _rectangles?.Dispose();
             _rectangles = null;
             _owner?.Dispose();

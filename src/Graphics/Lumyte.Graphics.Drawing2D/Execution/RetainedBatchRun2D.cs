@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedBuiltins) : IRetainedCommandBatch2D
+internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedBuiltins) : IRetainedCommandBatch2D, IRetainedMemory2D
 {
     private int _remaining = batches.Count;
     private List<IPreparedCommandBatch2D>? _failedCleanup;
@@ -11,6 +11,21 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
     public long EstimatedBytes => batches.OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes);
 
     internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D);
+
+    public void AccountMemory(Dictionary<object, long> owners)
+    {
+        foreach (IPreparedCommandBatch2D batch in batches)
+        {
+            if (batch is IRetainedMemory2D shared)
+            {
+                shared.AccountMemory(owners);
+            }
+            else if (batch is IRetainedCommandBatch2D retained)
+            {
+                owners.TryAdd(batch, retained.EstimatedBytes);
+            }
+        }
+    }
 
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {

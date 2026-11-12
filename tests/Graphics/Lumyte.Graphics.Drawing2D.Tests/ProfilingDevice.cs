@@ -29,6 +29,10 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     internal List<DrawingInstruction> Instructions { get; } = [];
 
+    internal List<DrawRecord2D> Records { get; } = [];
+
+    internal List<ShaderValueSnapshot> ShaderValues { get; } = [];
+
     internal int ActiveTables { get; private set; }
 
     internal int Writes { get; private set; }
@@ -279,7 +283,14 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public ulong SizeInBytes => count * ShaderElementStrideInBytes;
 
-        public ulong ShaderElementStrideInBytes => 144;
+        public ulong ShaderElementStrideInBytes => typeof(T).Name switch
+        {
+            nameof(DrawRecord2D) => 96,
+            nameof(DrawDirectoryEntry2D) => 16,
+            nameof(DrawPageMetadata2D) or nameof(MaskDescriptor2D) => 80,
+            nameof(ImagePaintData2D) => 128,
+            _ => 144,
+        };
 
         public MemoryPreference Memory => memory;
 
@@ -287,9 +298,15 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
         {
-            device.Copy(source.Length * 144L);
+            device.Copy(checked(source.Length * (long)ShaderElementStrideInBytes));
             foreach (T item in source)
             {
+                device.ShaderValues.Add(IShaderArguments.Capture(item));
+                if (item is DrawRecord2D record && record.Kind != 0)
+                {
+                    device.Records.Add(record);
+                }
+
                 if (item is DrawingInstruction instruction)
                 {
                     device.Instructions.Add(instruction);

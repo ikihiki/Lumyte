@@ -19,6 +19,8 @@
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/drawing-vertex.slang" ResourceName="Lumyte.Drawing2D.drawing-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/drawing-fragment.slang" ResourceName="Lumyte.Drawing2D.drawing-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/rectangles-vertex.slang" ResourceName="Lumyte.Drawing2D.rectangles-vertex" Stage="vertex" />

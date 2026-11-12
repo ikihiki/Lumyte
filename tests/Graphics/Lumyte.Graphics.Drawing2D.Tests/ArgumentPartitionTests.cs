@@ -288,7 +288,7 @@ public sealed class ArgumentPartitionTests
     public async Task RendererRootsAndNestedReferencesUseSameOwnerAcrossPartitionsAsync()
     {
         ProfilingDevice device = Device(new() { BufferSlots = 2 });
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        using var renderer = new Renderer2D(device, LegacyDrawRenderers2D.Create());
         using var target = new DispatchTexture();
         using IGraphicsTextureView view = target.CreateView();
         var canvas = new Canvas2D();

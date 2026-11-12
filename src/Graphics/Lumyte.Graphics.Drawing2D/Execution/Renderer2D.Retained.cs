@@ -25,14 +25,25 @@ public sealed partial class Renderer2D
     public ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSnapshot2D source, RenderTarget2D target, CancellationToken cancellationToken = default)
         => PrepareRetainedAsync(source, target, cancellationToken);
 
-    private static DrawList2D TransformPages(IReadOnlyList<DrawList2D> pages, Matrix3x2 transform, IReadOnlyList<DrawingSceneClip2D> parentClips)
+    private static DrawList2D TransformPages(IReadOnlyList<DrawList2D> pages, Matrix3x2 transform, IReadOnlyList<DrawingSceneClip2D> parentClips, int firstCommand = 0, int commandCount = int.MaxValue)
     {
         var clips = new Dictionary<ClipStack2D, ClipStack2D>(ReferenceEqualityComparer.Instance);
         var result = new List<DrawingCommand2D>();
+        int order = 0;
         foreach (DrawList2D page in pages)
         {
             foreach (DrawingCommand2D command in page.Commands)
             {
+                if (order++ < firstCommand)
+                {
+                    continue;
+                }
+
+                if (result.Count == commandCount)
+                {
+                    return new(result);
+                }
+
                 if (!clips.TryGetValue(command.State.Clip, out ClipStack2D? clip))
                 {
                     var elements = parentClips.Select(c => new ClipElement2D(c.Path, c.Transform, c.Rule)).ToList();
@@ -89,11 +100,15 @@ public sealed partial class Renderer2D
                 // are never captured by the returned frame or by cached GPU assets.
                 foreach (DrawingSceneEntry2D entry in source.Entries)
                 {
-                    for (int first = 0; first < entry.Content.RetainedPages.Pages.Count; first += 16)
+                    for (int first = 0; first < entry.Content.RetainedPages.Count; first += Math.Min(DrawRecordPage2D.Capacity, entry.Content.RetainedPages.Count - first))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(first).Take(16).ToArray();
-                        var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale);
+                        int firstPage = first / DrawingContentPages2D.PageCapacity;
+                        int firstCommand = first % DrawingContentPages2D.PageCapacity;
+                        int commandCount = Math.Min(DrawRecordPage2D.Capacity, entry.Content.RetainedPages.Count - first);
+                        int pageCount = (firstCommand + commandCount + DrawingContentPages2D.PageCapacity - 1) / DrawingContentPages2D.PageCapacity;
+                        DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(firstPage).Take(pageCount).ToArray();
+                        var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale, firstCommand, commandCount);
                         groups++;
                         RetainedDrawingCache2D.Asset? cached = _retained.Take(key);
                         if (cached is not null)
@@ -108,7 +123,7 @@ public sealed partial class Renderer2D
                         {
                             try
                             {
-                                transformed = TransformPages(pages, entry.Transform, entry.Clips);
+                                transformed = TransformPages(pages, entry.Transform, entry.Clips, firstCommand, commandCount);
                                 transform?.Success();
                             }
                             catch (Exception error)
@@ -128,6 +143,12 @@ public sealed partial class Renderer2D
                                 {
                                     while (index < transformed.Commands.Count)
                                     {
+                                        if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
+                                        {
+                                            batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
+                                            continue;
+                                        }
+
                                         batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
 
                                         // Match the default contiguous type/clip batching contract.
@@ -170,6 +191,8 @@ public sealed partial class Renderer2D
                 cancellationToken.ThrowIfCancellationRequested();
 
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
+
+                _retained.AdmitFrame(frame);
 
                 // Re-read the guard before returning: disposed sources cannot publish a frame.
                 _ = source.Revision;

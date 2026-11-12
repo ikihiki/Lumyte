@@ -296,7 +296,14 @@ public sealed class GraphArgumentOwnershipTests
         Assert.Contains("image-effect", compiled.PassNames);
         Assert.Single(device.Tables);
         IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
-        Assert.True(commands.Events.OfType<DrawingArguments>().Count() >= 2);
+        Assert.Contains(commands.Events.OfType<ShaderValueSnapshot>(), root => root.ShaderTypeName == nameof(DrawingArguments));
+        Assert.All(commands.Events.OfType<ShaderValueSnapshot>().SelectMany(root => root.Values).Where(value => value.IsReference), value => Assert.Same(table, ((IShaderReference)value.Reference!).Table));
+        Assert.Equal(2, commands.Events.OfType<DrawRangeArguments2D>().Count());
+        Assert.All(commands.Events.OfType<DrawRangeArguments2D>(), root =>
+        {
+            Assert.Same(table, ProfilingDevice.Owner(root.Records));
+            Assert.Same(table, ProfilingDevice.Owner(root.PageMetadata));
+        });
         Assert.All(commands.Events.OfType<DrawingArguments>(), root =>
         {
             Assert.Same(table, ProfilingDevice.Owner(root.Instructions));

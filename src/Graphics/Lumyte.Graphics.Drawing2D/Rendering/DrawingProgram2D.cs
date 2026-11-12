@@ -7,15 +7,19 @@ internal sealed class DrawingProgram2D
 {
     internal const int MaximumInstructions = 256;
     private readonly ShaderResources _plan;
+    private readonly bool _recordLowering;
     private readonly List<IGpuRef<IGraphicsTextureView>?> _textures = [];
     private readonly List<IGpuRef<IGraphicsSampler>?> _samplers = [];
     private readonly Matrix3x2 _pixelTransform;
     private readonly ClipNormalizationCache2D _clips;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
 
-    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target, ClipNormalizationCache2D? clips = null)
+    private int _outerMaskAdmissionCells;
+
+    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target, ClipNormalizationCache2D? clips = null, bool recordLowering = false)
     {
         _plan = plan ?? throw new ArgumentNullException(nameof(plan));
+        _recordLowering = recordLowering;
         _clips = clips ?? new(target);
         _pixelTransform = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
     }
@@ -25,6 +29,8 @@ internal sealed class DrawingProgram2D
     internal NormalizedClip2D? Clip { get; private set; }
 
     internal List<Vector4> Data { get; } = [];
+
+    internal int AdmissionDataCount => checked(Data.Count + _outerMaskAdmissionCells);
 
     internal HashSet<IGraphicsTextureView> Views { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -71,6 +77,26 @@ internal sealed class DrawingProgram2D
 
         rectangle = new(a.X, a.Y, width, height);
         return true;
+    }
+
+    internal bool TryPaintIdentity(uint instruction, out PaintNode2D? node, out Matrix3x2 transform)
+    {
+        foreach ((PaintNode2D paint, Dictionary<Matrix3x2, uint> transforms) in _paintCache)
+        {
+            foreach ((Matrix3x2 captured, uint index) in transforms)
+            {
+                if (index == instruction)
+                {
+                    node = paint;
+                    transform = captured;
+                    return true;
+                }
+            }
+        }
+
+        node = null;
+        transform = default;
+        return false;
     }
 
     internal void ResolveReferences(IGpuRef<IGraphicsTextureView> fallback, IGpuRef<IGraphicsSampler> nearest)
@@ -271,7 +297,18 @@ internal sealed class DrawingProgram2D
                 throw new NotSupportedException("Normalized clip and geometry exceed the 262144 vector payload budget.");
             }
 
-            Data.AddRange(clip.Mask);
+            if (_recordLowering && scissorInstalled)
+            {
+                // The compact page stores this outer mask once in its independent
+                // clip stream. Keep its old per-draw admission charge, not another
+                // transient copy that the compact lowering will never consume.
+                _outerMaskAdmissionCells = clip.Mask.Length;
+            }
+            else
+            {
+                Data.AddRange(clip.Mask);
+            }
+
             return Add(Node(17, Matrix3x2.Identity) with { First = result, Count = first, A = new(clip.Bounds.X, clip.Bounds.Y, clip.Bounds.Width, clip.Bounds.Height) });
         }
 
@@ -327,6 +364,11 @@ internal sealed class DrawingProgram2D
             case DistanceFieldPaintNode2D node:
                 ImagePattern2D field = node.Pattern;
                 uint child = Paint(node.Child, transform, depth + 1);
+                if (!Invertible(field.PatternToLocal * transform))
+                {
+                    return Solid(default);
+                }
+
                 return Add(ImageInstruction(field.View, field.Source, field.Alpha, field.TileX, field.TileY, field.Filter, field.PatternToLocal * transform) with
                 {
                     Kind = 15,
@@ -438,7 +480,7 @@ internal sealed class DrawingProgram2D
     }
 
     private uint Image(IGraphicsTextureView view, Rect2D source, AlphaRepresentation2D alpha, ImageTileMode2D tileX, ImageTileMode2D tileY, ImageFilter2D filter, Matrix3x2 transform)
-        => Add(ImageInstruction(view, source, alpha, tileX, tileY, filter, transform));
+        => Invertible(transform) ? Add(ImageInstruction(view, source, alpha, tileX, tileY, filter, transform)) : Solid(default);
 
     private DrawingInstruction ImageInstruction(IGraphicsTextureView view, Rect2D source, AlphaRepresentation2D alpha, ImageTileMode2D tileX, ImageTileMode2D tileY, ImageFilter2D filter, Matrix3x2 transform)
     {
@@ -486,7 +528,8 @@ internal sealed class DrawingProgram2D
         Views.Add(view);
         int index = _textures.Count;
         _textures.Add(null);
-        _plan.RegisterTexture(view, reference => _textures[index] = reference);
+        List<IGpuRef<IGraphicsTextureView>?> references = _textures;
+        _plan.RegisterTexture(view, reference => references[index] = reference);
         return index;
     }
 
@@ -495,13 +538,14 @@ internal sealed class DrawingProgram2D
         Samplers.Add(sampler);
         int index = _samplers.Count;
         _samplers.Add(null);
-        _plan.RegisterSampler(sampler, reference => _samplers[index] = reference);
+        List<IGpuRef<IGraphicsSampler>?> references = _samplers;
+        _plan.RegisterSampler(sampler, reference => references[index] = reference);
         return index;
     }
 
     private uint Add(DrawingInstruction instruction)
     {
-        if (Instructions.Count >= MaximumInstructions || Data.Count > 262144)
+        if (Instructions.Count >= MaximumInstructions || AdmissionDataCount > 262144)
         {
             throw new NotSupportedException("Drawing exceeds the 256 instruction or 262144 geometry element budget.");
         }
