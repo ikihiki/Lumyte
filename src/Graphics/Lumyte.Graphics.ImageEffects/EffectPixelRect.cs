@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.ImageEffects;
 /// <summary>A finite half-open rectangle in the common device-pixel coordinate system.</summary>
 public readonly record struct EffectPixelRect
 {
-    private readonly IntegerRect2D<int> _bounds;
+    private readonly Rect2D<int> _bounds;
 
     /// <summary>Initializes a new instance of the <see cref="EffectPixelRect"/> struct with validated nonnegative size and finite integer edges.</summary>
     /// <param name="x">The left edge.</param>
@@ -13,11 +13,11 @@ public readonly record struct EffectPixelRect
     /// <param name="width">The nonnegative width.</param>
     /// <param name="height">The nonnegative height.</param>
     public EffectPixelRect(int x, int y, int width, int height)
-        : this(new IntegerRect2D<int>(x, y, width, height))
+        : this(new Rect2D<int>(x, y, width, height))
     {
     }
 
-    private EffectPixelRect(IntegerRect2D<int> bounds)
+    private EffectPixelRect(Rect2D<int> bounds)
     {
         _bounds = bounds;
     }
@@ -53,10 +53,23 @@ public readonly record struct EffectPixelRect
     /// <param name="x">The horizontal margin.</param>
     /// <param name="y">The vertical margin.</param>
     /// <returns>The expanded rectangle, or the unchanged empty rectangle.</returns>
-    public EffectPixelRect Outset(int x, int y) => new(_bounds.Outset(x, y));
+    public EffectPixelRect Outset(int x, int y)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(x);
+        ArgumentOutOfRangeException.ThrowIfNegative(y);
+        return IsEmpty ? this : new(_bounds.Outset(x, y));
+    }
 
     /// <summary>Returns the smallest rectangle containing both finite inputs.</summary>
     /// <param name="other">The second rectangle.</param>
     /// <returns>The bounding union, treating empty rectangles as absent.</returns>
-    public EffectPixelRect Union(EffectPixelRect other) => new(_bounds.Union(other._bounds));
+    public EffectPixelRect Union(EffectPixelRect other)
+    {
+        if (IsEmpty)
+        {
+            return other;
+        }
+
+        return other.IsEmpty ? this : new(_bounds.Union(other._bounds));
+    }
 }

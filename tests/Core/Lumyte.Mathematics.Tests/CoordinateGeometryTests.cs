@@ -6,6 +6,15 @@ namespace Lumyte.Mathematics.Tests;
 /// <summary>Checks raw edge arithmetic independently of domain empty policies.</summary>
 public sealed class CoordinateGeometryTests
 {
+    /// <summary>Unsigned disjoint intersections clamp before subtraction and edge arithmetic never wraps.</summary>
+    [Fact]
+    public void UnsignedCoordinateArithmeticDoesNotWrap()
+    {
+        Assert.Equal((10u, 10u, 0u, 0u), CoordinateGeometry.Intersect((10u, 10u, 2u, 2u), (0u, 0u, 2u, 2u)));
+        Assert.Throws<OverflowException>(() => CoordinateGeometry.ContainsHalfOpen(uint.MaxValue, 0u, 1u, 1u, uint.MaxValue, 0u));
+        Assert.Equal(0u, new Bounds2D<uint>(10u, 10u, 0u, 0u).Width);
+    }
+
     /// <summary>Raw edges match the original arithmetic including signed zero, NaN and infinity.</summary>
     [Fact]
     public void RawEdgesMatchIeeeOracle()
@@ -45,21 +54,22 @@ public sealed class CoordinateGeometryTests
         Assert.Equal((20d, 20d, 0d, 0d), CoordinateGeometry.IntersectEdges((0d, 0d, 10d, 10d), (20d, 20d, 30d, 30d)));
     }
 
-    /// <summary>Integer union retains checked extents, checked edges and empty-anchor precedence.</summary>
+    /// <summary>Integer union retains checked extents, checked edges and degenerate closed bounds.</summary>
     [Fact]
-    public void IntegerUnionRetainsCheckedAndEmptyPolicies()
+    public void IntegerUnionRetainsCheckedAndClosedPolicies()
     {
-        var first = new IntegerRect2D<int>(-10, -20, 12, 24);
-        var second = new IntegerRect2D<int>(1, 2, 8, 9);
+        var first = new Rect2D<int>(-10, -20, 12, 24);
+        var second = new Rect2D<int>(1, 2, 8, 9);
         Assert.Equal(new(-10, -20, 19, 31), first.Union(second));
-        var empty = new IntegerRect2D<int>(int.MinValue, int.MinValue, 0, 0);
-        Assert.Equal(second, empty.Union(second));
-        Assert.Equal(second, second.Union(empty));
-        Assert.Equal(default, empty.Union(default));
-        Assert.Throws<OverflowException>(() => new IntegerRect2D<int>(int.MaxValue, 0, 1, 1));
-        Assert.Throws<OverflowException>(() => new IntegerRect2D<int>(int.MinValue, 0, 1, 1).Union(new(0, 0, 1, 1)));
-        Assert.Throws<OverflowException>(() => new IntegerRect2D<int>(0, int.MinValue, 1, 1).Union(new(0, 0, 1, 1)));
-        Assert.Equal(new IntegerRect2D<long>(long.MinValue, 0, 2, 1), new IntegerRect2D<long>(long.MinValue, 0, 1, 1).Union(new(long.MinValue + 1, 0, 1, 1)));
+        var empty = new Rect2D<int>(int.MinValue, int.MinValue, 0, 0);
+        Assert.Throws<OverflowException>(() => empty.Union(second));
+        Assert.Throws<OverflowException>(() => second.Union(empty));
+        Assert.Throws<OverflowException>(() => empty.Union(default));
+        Assert.Equal(new Rect2D<int>(-1, -2, 10, 13), new Rect2D<int>(-1, -2, 0, 0).Union(second));
+        Assert.Throws<OverflowException>(() => new Rect2D<int>(int.MaxValue, 0, 1, 1));
+        Assert.Throws<OverflowException>(() => new Rect2D<int>(int.MinValue, 0, 1, 1).Union(new(0, 0, 1, 1)));
+        Assert.Throws<OverflowException>(() => new Rect2D<int>(0, int.MinValue, 1, 1).Union(new(0, 0, 1, 1)));
+        Assert.Equal(new Rect2D<long>(long.MinValue, 0, 2, 1), new Rect2D<long>(long.MinValue, 0, 1, 1).Union(new(long.MinValue + 1, 0, 1, 1)));
     }
 
     private static void AssertBits((double Left, double Top, double Right, double Bottom) expected, (double Left, double Top, double Right, double Bottom) actual)

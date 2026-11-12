@@ -43,6 +43,10 @@ public sealed class ImageEffectTests
         Assert.Equal(new EffectPixelRect(16777217, -3, 5, 6), first.Union(second));
         Assert.Equal(first, first.Union(new EffectPixelRect(int.MinValue, 0, 0, 1)));
         Assert.Equal(first, new EffectPixelRect(0, 0, 1, 0).Union(first));
+        var empty = new EffectPixelRect(int.MinValue, 4, 0, 1);
+        var otherEmpty = new EffectPixelRect(int.MaxValue, -4, 0, 0);
+        Assert.Equal(otherEmpty, empty.Union(otherEmpty));
+        Assert.Equal(empty, otherEmpty.Union(empty));
         Assert.Throws<OverflowException>(() => new EffectPixelRect(int.MinValue, 0, 1, 1).Union(new EffectPixelRect(0, 0, 1, 1)));
     }
 

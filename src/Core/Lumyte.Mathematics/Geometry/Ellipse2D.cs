@@ -3,9 +3,9 @@ using System.Numerics;
 namespace Lumyte.Mathematics.Geometry;
 
 /// <summary>A closed axis-aligned ellipse with nonnegative semiaxes, including line and point degeneracies.</summary>
-/// <typeparam name="T">The IEEE floating-point coordinate precision.</typeparam>
+/// <typeparam name="T">The numeric coordinate scalar.</typeparam>
 public readonly record struct Ellipse2D<T>
-    where T : unmanaged, IFloatingPointIeee754<T>
+    where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="Ellipse2D{T}"/> struct.</summary>
     /// <param name="center">The center.</param>
@@ -34,20 +34,37 @@ public readonly record struct Ellipse2D<T>
     /// <param name="point">The query point.</param>
     /// <returns>Whether the point belongs to the ellipse.</returns>
     /// <exception cref="OverflowException">A required coordinate difference is not finite.</exception>
-    public bool Contains(Point2D<T> point)
-    {
-        T x = T.Abs(GeometryScalar<T>.Checked(point.X - Center.X));
-        T y = T.Abs(GeometryScalar<T>.Checked(point.Y - Center.Y));
-        if (x > RadiusX || y > RadiusY)
-        {
-            return false;
-        }
+    public bool Contains(Point2D<T> point) => ShapeScalar<T>.Ellipse(point.X, point.Y, Center.X, Center.Y, RadiusX, RadiusY);
 
-        if (RadiusX == T.Zero || RadiusY == T.Zero)
+    /// <summary>Attempts validated construction.</summary>
+    /// <param name="center">The shape center.</param>
+    /// <param name="radiusX">The horizontal semiaxis.</param>
+    /// <param name="radiusY">The vertical semiaxis.</param>
+    /// <param name="result">The shape, or default on failure.</param>
+    /// <returns>Whether construction succeeded.</returns>
+    public static bool TryCreate(Point2D<T> center, T radiusX, T radiusY, out Ellipse2D<T> result)
+    {
+        try
         {
+            result = new(center, radiusX, radiusY);
             return true;
         }
-
-        return GeometryScalar<T>.Hypot(x / RadiusX, y / RadiusY) <= T.One;
+        catch (ArgumentException)
+        {
+            result = default;
+            return false;
+        }
+        catch (OverflowException)
+        {
+            result = default;
+            return false;
+        }
     }
+
+    /// <summary>Converts components with checked numeric conversion.</summary>
+    /// <typeparam name="TOther">The destination scalar.</typeparam>
+    /// <returns>The validated converted shape.</returns>
+    public Ellipse2D<TOther> ConvertChecked<TOther>()
+        where TOther : INumber<TOther>
+        => new(new(TOther.CreateChecked(Center.X), TOther.CreateChecked(Center.Y)), TOther.CreateChecked(RadiusX), TOther.CreateChecked(RadiusY));
 }

@@ -3,19 +3,26 @@ using System.Numerics;
 namespace Lumyte.Mathematics.Geometry;
 
 /// <summary>A closed rectangle with a uniform circular corner radius clamped to half its smaller dimension.</summary>
-/// <typeparam name="T">The IEEE floating-point coordinate precision.</typeparam>
+/// <typeparam name="T">The numeric coordinate scalar.</typeparam>
 public readonly record struct RoundedRect2D<T>
-    where T : unmanaged, IFloatingPointIeee754<T>
+    where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="RoundedRect2D{T}"/> struct.</summary>
     /// <param name="bounds">The outer bounds.</param>
     /// <param name="radius">The requested finite nonnegative corner radius.</param>
     /// <exception cref="ArgumentOutOfRangeException">The radius is nonfinite or negative.</exception>
+    /// <exception cref="ArgumentException">Clamping requires a half extent not representable by the scalar.</exception>
     public RoundedRect2D(Rect2D<T> bounds, T radius)
     {
         GeometryScalar<T>.NonNegative(radius, nameof(radius));
         Bounds = bounds;
-        Radius = T.Min(radius, T.Min(bounds.Width, bounds.Height) / (T.One + T.One));
+        T extent = T.Min(bounds.Width, bounds.Height);
+
+        // Compare twice the requested radius in widened arithmetic before requiring a half extent.
+        bool fits = ShapeScalar<T>.IsExact
+            ? (2 * ShapeScalar<T>.Exact(radius)) <= ShapeScalar<T>.Exact(extent)
+            : radius <= extent - T.Min(radius, extent);
+        Radius = fits ? radius : ShapeScalar<T>.HalfExact(extent);
     }
 
     /// <summary>Gets the outer rectangle.</summary>
@@ -35,11 +42,47 @@ public readonly record struct RoundedRect2D<T>
             return false;
         }
 
+        if (ShapeScalar<T>.IsExact)
+        {
+            return ShapeScalar<T>.Rounded(Bounds, Radius, point);
+        }
+
         // Local coordinates preserve radii smaller than the translation spacing.
-        T localX = GeometryScalar<T>.Checked(point.X - Bounds.X);
-        T localY = GeometryScalar<T>.Checked(point.Y - Bounds.Y);
-        T x = localX - T.Clamp(localX, Radius, Bounds.Width - Radius);
-        T y = localY - T.Clamp(localY, Radius, Bounds.Height - Radius);
-        return GeometryScalar<T>.Hypot(x, y) <= Radius;
+        T localX = GeometryScalar<T>.Checked(checked(point.X - Bounds.X));
+        T localY = GeometryScalar<T>.Checked(checked(point.Y - Bounds.Y));
+        T x = T.Max(Radius > localX ? Radius - localX : T.Zero, localX > Bounds.Width - Radius ? localX - (Bounds.Width - Radius) : T.Zero);
+        T y = T.Max(Radius > localY ? Radius - localY : T.Zero, localY > Bounds.Height - Radius ? localY - (Bounds.Height - Radius) : T.Zero);
+        return ShapeScalar<T>.Ball(x, y, T.Zero, T.Zero, T.Zero, T.Zero, Radius);
     }
+
+    /// <summary>Attempts validated construction.</summary>
+    /// <param name="bounds">The outer rectangle.</param>
+    /// <param name="radius">The nonnegative radius.</param>
+    /// <param name="result">The shape, or default on failure.</param>
+    /// <returns>Whether construction succeeded.</returns>
+    public static bool TryCreate(Rect2D<T> bounds, T radius, out RoundedRect2D<T> result)
+    {
+        try
+        {
+            result = new(bounds, radius);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            result = default;
+            return false;
+        }
+        catch (OverflowException)
+        {
+            result = default;
+            return false;
+        }
+    }
+
+    /// <summary>Converts components with checked numeric conversion.</summary>
+    /// <typeparam name="TOther">The destination scalar.</typeparam>
+    /// <returns>The validated converted shape.</returns>
+    public RoundedRect2D<TOther> ConvertChecked<TOther>()
+        where TOther : INumber<TOther>
+        => new(Bounds.ConvertChecked<TOther>(), TOther.CreateChecked(Radius));
 }

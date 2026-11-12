@@ -3,8 +3,10 @@ using System.Numerics;
 namespace Lumyte.Mathematics.Geometry;
 
 internal static class GeometryScalar<T>
-    where T : unmanaged, IFloatingPointIeee754<T>
+    where T : INumber<T>
 {
+    internal static bool IsIeee => typeof(T) == typeof(double) || typeof(T) == typeof(float) || typeof(T) == typeof(Half);
+
     internal static void Finite(T value, string name)
     {
         if (!T.IsFinite(value))
@@ -22,187 +24,187 @@ internal static class GeometryScalar<T>
         }
     }
 
-    internal static T Checked(T value)
+    internal static T Checked(T value) => T.IsFinite(value) ? value : throw new OverflowException("The geometry result is not finite in the selected precision.");
+
+    internal static T Sqrt(T value)
     {
-        if (!T.IsFinite(value))
+        if (typeof(T) == typeof(double))
         {
-            throw new OverflowException("The geometry result is not finite in the selected precision.");
+            return Checked((T)(object)double.Sqrt((double)(object)value));
         }
 
-        return value;
+        if (typeof(T) == typeof(float))
+        {
+            return Checked((T)(object)float.Sqrt((float)(object)value));
+        }
+
+        if (typeof(T) == typeof(Half))
+        {
+            return Checked((T)(object)Half.Sqrt((Half)(object)value));
+        }
+
+        if (typeof(T) == typeof(decimal))
+        {
+            decimal v = (decimal)(object)value;
+            if (v == 0)
+            {
+                return T.Zero;
+            }
+
+            decimal root = v >= 1 ? v : 1;
+            decimal previous = 0;
+            for (int i = 0; i < 256; i++)
+            {
+                decimal next = (root / 2) + (v / root / 2);
+                if (next == root || next == previous)
+                {
+                    return (T)(object)next;
+                }
+
+                previous = root;
+                root = next;
+            }
+
+            return (T)(object)root;
+        }
+
+        if (GeometryRational.Supports<T>())
+        {
+            return GeometryRational.From(value).Root<T>();
+        }
+
+        throw new NotSupportedException("No square-root policy exists for this result type; select an explicit supported result type.");
     }
 
     internal static T Hypot(T x, T y)
     {
-        if (typeof(T) == typeof(float))
+        if (typeof(T) == typeof(double))
         {
-            float result = new Vector2(float.CreateChecked(x), float.CreateChecked(y)).Length();
-
-            // Squaring subnormal components loses information even when the norm is normal.
-            if (float.IsFinite(result) && result > 0 && (x == T.Zero || T.IsNormal(x * x)) && (y == T.Zero || T.IsNormal(y * y)))
-            {
-                return T.CreateChecked(result);
-            }
+            return (T)(object)IeeeGeometryScalar<double>.Hypot((double)(object)x, (double)(object)y);
         }
 
-        return Checked(T.Hypot(x, y));
+        if (typeof(T) == typeof(float))
+        {
+            return (T)(object)IeeeGeometryScalar<float>.Hypot((float)(object)x, (float)(object)y);
+        }
+
+        if (typeof(T) == typeof(Half))
+        {
+            return (T)(object)IeeeGeometryScalar<Half>.Hypot((Half)(object)x, (Half)(object)y);
+        }
+
+        if (GeometryRational.Supports<T>())
+        {
+            return ((GeometryRational.From(x) * GeometryRational.From(x)) + (GeometryRational.From(y) * GeometryRational.From(y))).Root<T>();
+        }
+
+        return Sqrt(Checked(checked((x * x) + (y * y))));
     }
 
     internal static T Hypot(T x, T y, T z)
     {
-        if (typeof(T) == typeof(float))
+        if (typeof(T) == typeof(double))
         {
-            float result = new Vector3(float.CreateChecked(x), float.CreateChecked(y), float.CreateChecked(z)).Length();
-            T small = T.Min(T.Abs(x), T.Min(T.Abs(y), T.Abs(z)));
-            if (float.IsFinite(result) && result > 0 && (small == T.Zero || T.IsNormal(small * small)))
-            {
-                // Check every nonzero component, including when an axis is zero.
-                if ((x == T.Zero || T.IsNormal(x * x)) && (y == T.Zero || T.IsNormal(y * y)) && (z == T.Zero || T.IsNormal(z * z)))
-                {
-                    return T.CreateChecked(result);
-                }
-            }
+            return (T)(object)IeeeGeometryScalar<double>.Hypot((double)(object)x, (double)(object)y, (double)(object)z);
         }
 
-        return Checked(T.Hypot(T.Hypot(x, y), z));
+        if (typeof(T) == typeof(float))
+        {
+            return (T)(object)IeeeGeometryScalar<float>.Hypot((float)(object)x, (float)(object)y, (float)(object)z);
+        }
+
+        if (typeof(T) == typeof(Half))
+        {
+            return (T)(object)IeeeGeometryScalar<Half>.Hypot((Half)(object)x, (Half)(object)y, (Half)(object)z);
+        }
+
+        if (GeometryRational.Supports<T>())
+        {
+            return ((GeometryRational.From(x) * GeometryRational.From(x)) + (GeometryRational.From(y) * GeometryRational.From(y)) + (GeometryRational.From(z) * GeometryRational.From(z))).Root<T>();
+        }
+
+        return Sqrt(Checked(checked((x * x) + (y * y) + (z * z))));
     }
 
     internal static (T Numerator, T Denominator, int Exponent) Projection(T dx, T dy, T dz, T px, T py, T pz)
     {
-        // Keep product exponents separate so perpendicular coordinates cannot
-        // erase a small parallel component before the dot product is formed.
-        (T Value, int Exponent) numerator = SumProducts(Product(dx, px), Product(dy, py), Product(dz, pz));
-        if (numerator.Value <= T.Zero)
+        if (typeof(T) == typeof(double))
         {
-            return (T.Zero, T.One, 0);
+            (double Numerator, double Denominator, int Exponent) result = IeeeGeometryScalar<double>.Projection((double)(object)dx, (double)(object)dy, (double)(object)dz, (double)(object)px, (double)(object)py, (double)(object)pz);
+            return ((T)(object)result.Numerator, (T)(object)result.Denominator, result.Exponent);
         }
 
-        (T Value, int Exponent) denominator = SumProducts(Product(dx, dx), Product(dy, dy), Product(dz, dz));
-        if (denominator.Value == T.Zero)
+        if (typeof(T) == typeof(float))
         {
-            return (T.Zero, T.One, 0);
+            (float Numerator, float Denominator, int Exponent) result = IeeeGeometryScalar<float>.Projection((float)(object)dx, (float)(object)dy, (float)(object)dz, (float)(object)px, (float)(object)py, (float)(object)pz);
+            return ((T)(object)result.Numerator, (T)(object)result.Denominator, result.Exponent);
         }
 
-        T value = numerator.Value / denominator.Value;
-        int exponent = numerator.Exponent - denominator.Exponent;
-        return exponent + Exponent(value) >= 0 ? (T.One, T.One, 0) : (numerator.Value, denominator.Value, exponent);
+        if (typeof(T) == typeof(Half))
+        {
+            (Half Numerator, Half Denominator, int Exponent) result = IeeeGeometryScalar<Half>.Projection((Half)(object)dx, (Half)(object)dy, (Half)(object)dz, (Half)(object)px, (Half)(object)py, (Half)(object)pz);
+            return ((T)(object)result.Numerator, (T)(object)result.Denominator, result.Exponent);
+        }
+
+        throw new NotSupportedException("Use exact projection for non-IEEE coordinates.");
     }
 
     internal static T Lerp(T start, T end, (T Numerator, T Denominator, int Exponent) amount)
     {
-        if (amount.Numerator == T.Zero)
+        if (typeof(T) == typeof(double))
         {
-            return start;
+            return (T)(object)IeeeGeometryScalar<double>.Lerp((double)(object)start, (double)(object)end, ((double)(object)amount.Numerator, (double)(object)amount.Denominator, amount.Exponent));
         }
 
-        if (amount.Exponent == 0 && amount.Numerator == amount.Denominator)
+        if (typeof(T) == typeof(float))
         {
-            return end;
+            return (T)(object)IeeeGeometryScalar<float>.Lerp((float)(object)start, (float)(object)end, ((float)(object)amount.Numerator, (float)(object)amount.Denominator, amount.Exponent));
         }
 
-        T parameter = T.ScaleB(amount.Numerator / amount.Denominator, amount.Exponent);
-        if (T.IsNormal(parameter))
+        if (typeof(T) == typeof(Half))
         {
-            // Convex interpolation avoids overflowing a displacement or sum.
-            return Checked(((T.One - parameter) * start) + (parameter * end));
+            return (T)(object)IeeeGeometryScalar<Half>.Lerp((Half)(object)start, (Half)(object)end, ((Half)(object)amount.Numerator, (Half)(object)amount.Denominator, amount.Exponent));
         }
 
-        // A subnormal (or zero) parameter can still yield a representable
-        // displacement. Multiply mantissas first and apply the combined exponent
-        // only once, avoiding both premature underflow and double rounding.
-        (T Value, int Exponent) displacement = Product(Difference(end, start), (amount.Numerator, amount.Exponent));
-        return Checked(start + T.ScaleB(displacement.Value / amount.Denominator, displacement.Exponent));
+        throw new NotSupportedException("Use exact projection for non-IEEE coordinates.");
     }
 
     internal static T Orientation(Point2D<T> a, Point2D<T> b, Point2D<T> c)
     {
-        (T Value, int Exponent) x = Difference(b.X, a.X);
-        (T Value, int Exponent) y = Difference(b.Y, a.Y);
-        (T Value, int Exponent) u = Difference(c.X, a.X);
-        (T Value, int Exponent) v = Difference(c.Y, a.Y);
-        return SumProducts(Product(x, v), Product((-y.Value, y.Exponent), u), (T.Zero, 0)).Value;
+        if (typeof(T) == typeof(double))
+        {
+            return (T)(object)IeeeGeometryScalar<double>.Orientation(new Point2D<double>(double.CreateChecked(a.X), double.CreateChecked(a.Y)), new Point2D<double>(double.CreateChecked(b.X), double.CreateChecked(b.Y)), new Point2D<double>(double.CreateChecked(c.X), double.CreateChecked(c.Y)));
+        }
+
+        if (typeof(T) == typeof(float))
+        {
+            return (T)(object)IeeeGeometryScalar<float>.Orientation(new Point2D<float>(float.CreateChecked(a.X), float.CreateChecked(a.Y)), new Point2D<float>(float.CreateChecked(b.X), float.CreateChecked(b.Y)), new Point2D<float>(float.CreateChecked(c.X), float.CreateChecked(c.Y)));
+        }
+
+        if (typeof(T) == typeof(Half))
+        {
+            return (T)(object)IeeeGeometryScalar<Half>.Orientation(new Point2D<Half>(Half.CreateChecked(a.X), Half.CreateChecked(a.Y)), new Point2D<Half>(Half.CreateChecked(b.X), Half.CreateChecked(b.Y)), new Point2D<Half>(Half.CreateChecked(c.X), Half.CreateChecked(c.Y)));
+        }
+
+        return T.CreateChecked(OrientationSign(a, b, c));
     }
 
-    private static (T Value, int Exponent) Difference(T left, T right)
+    internal static int OrientationSign(Point2D<T> a, Point2D<T> b, Point2D<T> c)
     {
-        T difference = left - right;
-        if (T.IsFinite(difference))
+        if (IsIeee)
         {
-            return Product(difference, T.One);
+            return T.Sign(Orientation(a, b, c));
         }
 
-        // A predicate needs only the sign; retain overflowing differences in
-        // exponent form rather than discarding a small coordinate on another axis.
-        return Add(Product(left, T.One), Product(-right, T.One));
-    }
-
-    private static (T Value, int Exponent) Product((T Value, int Exponent) left, (T Value, int Exponent) right)
-    {
-        (T Value, int Exponent) product = Product(left.Value, right.Value);
-        return (product.Value, product.Exponent + left.Exponent + right.Exponent);
-    }
-
-    // .NET 10 Half.ILogB misreports subnormal exponents. Widening to
-    // float is exact and keeps the mantissa normalization finite.
-    private static int Exponent(T value) => typeof(T) == typeof(Half) ? float.ILogB(float.CreateChecked(value)) : T.ILogB(value);
-
-    private static (T Value, int Exponent) Product(T left, T right)
-    {
-        if (left == T.Zero || right == T.Zero)
+        if (GeometryRational.Supports<T>())
         {
-            return (T.Zero, 0);
+            GeometryRational x = GeometryRational.From(b.X) - GeometryRational.From(a.X);
+            GeometryRational y = GeometryRational.From(b.Y) - GeometryRational.From(a.Y);
+            GeometryRational u = GeometryRational.From(c.X) - GeometryRational.From(a.X);
+            GeometryRational v = GeometryRational.From(c.Y) - GeometryRational.From(a.Y);
+            return ((x * v) - (y * u)).Numerator.Sign;
         }
 
-        int leftExponent = Exponent(left);
-        int rightExponent = Exponent(right);
-        T value = T.ScaleB(left, -leftExponent) * T.ScaleB(right, -rightExponent);
-        return (value, leftExponent + rightExponent);
-    }
-
-    private static (T Value, int Exponent) SumProducts((T Value, int Exponent) first, (T Value, int Exponent) second, (T Value, int Exponent) third)
-    {
-        // Cancel the largest terms first, exposing a much smaller third term.
-        if (MagnitudeLess(first, second))
-        {
-            (first, second) = (second, first);
-        }
-
-        if (MagnitudeLess(first, third))
-        {
-            (first, third) = (third, first);
-        }
-
-        if (MagnitudeLess(second, third))
-        {
-            (second, third) = (third, second);
-        }
-
-        return Add(Add(first, second), third);
-    }
-
-    private static bool MagnitudeLess((T Value, int Exponent) left, (T Value, int Exponent) right) => left.Value == T.Zero
-        || (right.Value != T.Zero && (left.Exponent < right.Exponent || (left.Exponent == right.Exponent && T.Abs(left.Value) < T.Abs(right.Value))));
-
-    private static (T Value, int Exponent) Add((T Value, int Exponent) left, (T Value, int Exponent) right)
-    {
-        if (left.Value == T.Zero)
-        {
-            return right;
-        }
-
-        if (right.Value == T.Zero)
-        {
-            return left;
-        }
-
-        int exponent = Math.Max(left.Exponent, right.Exponent);
-        T value = T.ScaleB(left.Value, left.Exponent - exponent) + T.ScaleB(right.Value, right.Exponent - exponent);
-        if (value == T.Zero)
-        {
-            return (T.Zero, 0);
-        }
-
-        int adjustment = Exponent(value);
-        return (T.ScaleB(value, -adjustment), exponent + adjustment);
+        return T.Sign(Checked(checked(((b.X - a.X) * (c.Y - a.Y)) - ((b.Y - a.Y) * (c.X - a.X)))));
     }
 }

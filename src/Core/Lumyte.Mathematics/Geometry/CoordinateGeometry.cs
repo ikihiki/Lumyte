@@ -2,8 +2,8 @@ using System.Numerics;
 
 namespace Lumyte.Mathematics.Geometry;
 
-/// <summary>Provides unchecked coordinate operations for domain rectangles with caller-owned validation.</summary>
-/// <remarks>These operations preserve IEEE arithmetic, empty anchors and half-open boundary conventions without constructing validated geometry values.</remarks>
+/// <summary>Provides coordinate operations for domain rectangles with caller-owned validation.</summary>
+/// <remarks>Bounded integer arithmetic is checked. These operations preserve IEEE arithmetic, empty anchors and half-open boundary conventions without constructing validated geometry values.</remarks>
 public static class CoordinateGeometry
 {
     /// <summary>Tests raw half-open edges without validation, normalization or extent arithmetic.</summary>
@@ -47,7 +47,7 @@ public static class CoordinateGeometry
     /// <returns>Whether the query lies inside the half-open bounds.</returns>
     public static bool ContainsHalfOpen<T>(T x, T y, T width, T height, T pointX, T pointY)
         where T : INumber<T>
-        => width > T.Zero && height > T.Zero && ContainsHalfOpenEdges((x, y, x + width, y + height), pointX, pointY);
+        => width > T.Zero && height > T.Zero && ContainsHalfOpenEdges((x, y, checked(x + width), checked(y + height)), pointX, pointY);
 
     /// <summary>Intersects bounds, retaining the maximum lower-edge anchor for disjoint inputs.</summary>
     /// <typeparam name="T">The coordinate scalar.</typeparam>
@@ -56,7 +56,7 @@ public static class CoordinateGeometry
     /// <returns>The intersection with each negative extent clamped to zero.</returns>
     public static (T X, T Y, T Width, T Height) Intersect<T>((T X, T Y, T Width, T Height) first, (T X, T Y, T Width, T Height) second)
         where T : INumber<T>
-        => IntersectEdges((first.X, first.Y, first.X + first.Width, first.Y + first.Height), (second.X, second.Y, second.X + second.Width, second.Y + second.Height));
+        => IntersectEdges((first.X, first.Y, checked(first.X + first.Width), checked(first.Y + first.Height)), (second.X, second.Y, checked(second.X + second.Width), checked(second.Y + second.Height)));
 
     /// <summary>Intersects edge-form bounds without reconstructing upper edges from rounded extents.</summary>
     /// <typeparam name="T">The coordinate scalar.</typeparam>
@@ -67,7 +67,7 @@ public static class CoordinateGeometry
         where T : INumber<T>
     {
         (T Left, T Top, T Right, T Bottom) edges = IntersectRawEdges(first, second);
-        return (edges.Left, edges.Top, T.Max(T.Zero, edges.Right - edges.Left), T.Max(T.Zero, edges.Bottom - edges.Top));
+        return (edges.Left, edges.Top, Extent(edges.Left, edges.Right), Extent(edges.Top, edges.Bottom));
     }
 
     /// <summary>Computes bounding union, treating zero-width or zero-height inputs as absent.</summary>
@@ -75,7 +75,7 @@ public static class CoordinateGeometry
     /// <param name="first">The first rectangle.</param>
     /// <param name="second">The second rectangle.</param>
     /// <returns>The bounding rectangle, or the other input when one is empty.</returns>
-    /// <remarks>Integer callers needing validated storage and checked arithmetic should use <see cref="IntegerRect2D{T}"/>.</remarks>
+    /// <remarks>Integer callers needing validated storage and checked arithmetic should use <see cref="Rect2D{T}"/>.</remarks>
     public static (T X, T Y, T Width, T Height) Union<T>((T X, T Y, T Width, T Height) first, (T X, T Y, T Width, T Height) second)
         where T : INumber<T>
     {
@@ -89,7 +89,10 @@ public static class CoordinateGeometry
             return first;
         }
 
-        (T Left, T Top, T Right, T Bottom) edges = EncloseRawEdges((first.X, first.Y, first.X + first.Width, first.Y + first.Height), (second.X, second.Y, second.X + second.Width, second.Y + second.Height));
-        return (edges.Left, edges.Top, edges.Right - edges.Left, edges.Bottom - edges.Top);
+        (T Left, T Top, T Right, T Bottom) edges = EncloseRawEdges((first.X, first.Y, checked(first.X + first.Width), checked(first.Y + first.Height)), (second.X, second.Y, checked(second.X + second.Width), checked(second.Y + second.Height)));
+        return (edges.Left, edges.Top, checked(edges.Right - edges.Left), checked(edges.Bottom - edges.Top));
     }
+
+    private static T Extent<T>(T lower, T upper)
+        where T : INumber<T> => upper > lower ? checked(upper - lower) : T.IsNaN(lower) || T.IsNaN(upper) ? upper - lower : T.Zero;
 }

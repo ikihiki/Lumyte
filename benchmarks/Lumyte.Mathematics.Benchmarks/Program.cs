@@ -1,7 +1,5 @@
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Mathematics.Benchmarks;
@@ -12,13 +10,19 @@ internal static class Program
     private const int Repetitions = 10;
     private static Vector4 _sink;
 
-    private static void Main()
+    private static void Main(string[] args)
     {
+        if (args.Contains("--batch"))
+        {
+            BatchBenchmark.Run();
+            return;
+        }
+
 #if DEBUG
         throw new InvalidOperationException("Run this benchmark in Release configuration.");
 #else
-        Console.WriteLine($"Runtime={RuntimeInformation.FrameworkDescription}; OS={RuntimeInformation.OSDescription}; Architecture={RuntimeInformation.ProcessArchitecture}; CPUs={Environment.ProcessorCount}");
-        Console.WriteLine($"TieredCompilation={Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "default"}; Operations={Operations}; Repetitions={Repetitions}; timestampFrequency={Stopwatch.Frequency}");
+        Console.WriteLine($"Runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}; OS={System.Runtime.InteropServices.RuntimeInformation.OSDescription}; Architecture={System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}; CPUs={Environment.ProcessorCount}");
+        Console.WriteLine($"TieredCompilation={Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "default"}; Operations={Operations}; Repetitions={Repetitions}; timestampFrequency={System.Diagnostics.Stopwatch.Frequency}");
         var first = new Vector2[256];
         var last = new Vector2[256];
         var transforms = new Matrix3x2[256];
@@ -56,11 +60,11 @@ internal static class Program
         void Measure(int iteration, bool optimized)
         {
             long allocation = GC.GetAllocatedBytesForCurrentThread();
-            long start = Stopwatch.GetTimestamp();
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
             Vector4 checksum = Run(optimized);
-            long elapsed = Stopwatch.GetTimestamp() - start;
+            long elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - start;
             long bytes = GC.GetAllocatedBytesForCurrentThread() - allocation;
-            Console.WriteLine($"{iteration},{(optimized ? "optimized" : "old-array-linq")},{elapsed * 1e9 / Stopwatch.Frequency / Operations:F3},{bytes / (double)Operations:F3},{checksum}");
+            Console.WriteLine($"{iteration},{(optimized ? "optimized" : "old-array-linq")},{elapsed * 1e9 / System.Diagnostics.Stopwatch.Frequency / Operations:F3},{bytes / (double)Operations:F3},{checksum}");
         }
 
         Vector4 Run(bool optimized)
