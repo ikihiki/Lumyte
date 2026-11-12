@@ -47,6 +47,8 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
     {
         public void SetArgumentTable(IArgumentTable table) => owner.Events.Add(table);
 
+        public void SetArguments(ShaderValueSnapshot arguments) => owner.Events.Add(arguments);
+
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments => owner.Events.Add(arguments);
 
@@ -94,6 +96,8 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
     private sealed class ComputeEncoder(ProfilingCommands owner) : IComputeEncoder
     {
         public void SetArgumentTable(IArgumentTable table) => owner.Events.Add(table);
+
+        public void SetArguments(ShaderValueSnapshot arguments) => owner.Events.Add(arguments);
 
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments => owner.Events.Add(arguments);

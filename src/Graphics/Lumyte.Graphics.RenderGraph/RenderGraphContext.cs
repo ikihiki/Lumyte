@@ -8,16 +8,19 @@ public sealed class RenderGraphContext
     private readonly IGraphicsCommandBuffer _commands;
     private readonly IReadOnlyList<RenderGraphUse> _uses;
     private readonly CompiledRenderGraph _plan;
+    private IDisposable? _encoder;
+    private Exception? _encoderCleanupError;
     private bool _active = true;
 
-    internal RenderGraphContext(IGraphicsCommandBuffer commands, IReadOnlyList<RenderGraphUse> uses, CompiledRenderGraph plan)
+    internal RenderGraphContext(IGraphicsCommandBuffer commands, IReadOnlyList<RenderGraphUse> uses, CompiledRenderGraph plan, RenderGraphPass pass)
     {
         _commands = commands;
         _uses = uses;
         _plan = plan;
+        Pass = pass;
     }
 
-    /// <summary>Gets the caller-owned recording; callbacks must close all render and compute encoders.</summary>
+    /// <summary>Gets the caller-owned recording; do not mix raw passes with an active graph encoder.</summary>
     public IGraphicsCommandBuffer Commands
     {
         get
@@ -26,6 +29,8 @@ public sealed class RenderGraphContext
             return _commands;
         }
     }
+
+    internal RenderGraphPass Pass { get; }
 
     /// <summary>Resolves a texture declared by this pass.</summary>
     /// <param name="texture">The imported handle.</param>
@@ -68,7 +73,154 @@ public sealed class RenderGraphContext
         return _plan.CreateView(texture, desc);
     }
 
-    internal void Close() => _active = false;
+    /// <summary>Begins a render scope using declared logical attachments and plan-owned views.</summary>
+    /// <param name="desc">The logical attachments and load/store operations.</param>
+    /// <returns>A callback-scoped graph render encoder.</returns>
+    public RenderGraphRenderEncoder BeginRenderPass(RenderGraphRenderPassDesc desc)
+    {
+        EnsureCanBegin();
+        ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
+        RenderGraphColorAttachmentDesc[] colors = desc.ColorAttachments.ToArray();
+        RenderGraphDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
+        if ((colors.Length == 0 && depth is null) ||
+            (Pass.Owner.Device is { } device && (uint)colors.Length > device.Caps.MaxColorAttachments))
+        {
+            throw new ArgumentException("Invalid graph render attachment count.", nameof(desc));
+        }
+
+        foreach (RenderGraphColorAttachmentDesc color in colors)
+        {
+            ArgumentNullException.ThrowIfNull(color);
+            ResourceAccess access = ResourceAccess.ColorWrite;
+            if (color.LoadOp == AttachmentLoadOp.Load)
+            {
+                access |= ResourceAccess.ColorRead;
+            }
+
+            CheckAttachment(color.Texture, TextureState.ColorAttachment, PipelineStage.ColorOutput, access);
+        }
+
+        if (depth is not null)
+        {
+            Check(depth.Texture);
+            bool stencil = GetTexture(depth.Texture).Format == TextureFormat.Depth24Stencil8;
+            ResourceAccess access = ResourceAccess.DepthStencilWrite;
+            if (depth.DepthLoadOp == AttachmentLoadOp.Load || (stencil && depth.StencilLoadOp == AttachmentLoadOp.Load))
+            {
+                access |= ResourceAccess.DepthStencilRead;
+            }
+
+            CheckAttachment(depth.Texture, TextureState.DepthStencilAttachment, PipelineStage.DepthStencil, access);
+        }
+
+        var nativeDesc = new RenderPassDesc
+        {
+            Label = desc.Label,
+            ColorAttachments = colors.Select(color => new RenderColorAttachmentDesc
+            {
+                View = CreateTextureView(color.Texture, color.ViewDesc),
+                LoadOp = color.LoadOp,
+                StoreOp = color.StoreOp,
+                ClearValue = color.ClearValue,
+            }).ToArray(),
+            DepthStencilAttachment = depth is null ? null : new RenderDepthStencilAttachmentDesc
+            {
+                View = CreateTextureView(depth.Texture, depth.ViewDesc),
+                DepthLoadOp = depth.DepthLoadOp,
+                DepthStoreOp = depth.DepthStoreOp,
+                DepthClearValue = depth.DepthClearValue,
+                StencilLoadOp = depth.StencilLoadOp,
+                StencilStoreOp = depth.StencilStoreOp,
+                StencilClearValue = depth.StencilClearValue,
+            },
+        };
+        var encoder = new RenderGraphRenderEncoder(this, _commands.BeginRenderPass(nativeDesc), colors.Select(color => color.Texture).ToArray(), depth?.Texture);
+        _encoder = encoder;
+        return encoder;
+    }
+
+    /// <summary>Begins a callback-scoped graph compute encoder.</summary>
+    /// <param name="label">An optional diagnostic label.</param>
+    /// <returns>The graph compute scope.</returns>
+    public RenderGraphComputeEncoder BeginComputePass(string? label = null)
+    {
+        EnsureCanBegin();
+        var encoder = new RenderGraphComputeEncoder(this, _commands.BeginComputePass(new ComputePassDesc { Label = label }));
+        _encoder = encoder;
+        return encoder;
+    }
+
+    internal void EncoderEnded(IDisposable encoder)
+    {
+        if (ReferenceEquals(_encoder, encoder))
+        {
+            _encoder = null;
+        }
+    }
+
+    internal void DeferEncoderCleanup(Exception error) => _encoderCleanupError ??= error;
+
+    internal void Close(Exception? callbackError = null)
+    {
+        if (!_active)
+        {
+            return;
+        }
+
+        try
+        {
+            _encoder?.Dispose();
+            if (_encoderCleanupError is { } cleanupError)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(cleanupError).Throw();
+            }
+        }
+        catch (Exception cleanupError) when (callbackError is not null)
+        {
+            // Retain the original exception and make the secondary failure inspectable.
+            try
+            {
+                callbackError.Data["RenderGraph.EncoderCleanupException"] = cleanupError;
+            }
+            catch (Exception)
+            {
+                // Even an exception with non-writable diagnostic data must remain the primary failure.
+            }
+        }
+        finally
+        {
+            _encoder = null;
+            _active = false;
+        }
+    }
+
+    internal void EnsureActive()
+    {
+        if (!_active || _encoderCleanupError is not null)
+        {
+            throw new InvalidOperationException("Pass context is closed or its encoder cleanup failed.");
+        }
+    }
+
+    private void EnsureCanBegin()
+    {
+        EnsureActive();
+        if (_encoder is not null)
+        {
+            throw new InvalidOperationException("Only one graph encoder can be active in a pass context.");
+        }
+    }
+
+    private void CheckAttachment(RenderGraphTexture texture, TextureState state, PipelineStage stages, ResourceAccess access)
+    {
+        Check(texture);
+        if (!_uses.Any(use => use.Resource == texture && use.State == state &&
+            (use.Scope.Stages & stages) == stages && (use.Scope.Access & access) == access))
+        {
+            throw new InvalidOperationException("Attachment state and actual access must be declared by this pass.");
+        }
+    }
 
     private void Check(RenderGraphResource resource)
     {
@@ -77,14 +229,6 @@ public sealed class RenderGraphContext
         if (!_uses.Any(use => use.Resource == resource))
         {
             throw new ArgumentException("Resource was not declared by this pass.", nameof(resource));
-        }
-    }
-
-    private void EnsureActive()
-    {
-        if (!_active)
-        {
-            throw new InvalidOperationException("Pass context is only valid during its callback.");
         }
     }
 }

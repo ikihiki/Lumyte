@@ -23,9 +23,10 @@ public sealed partial class Drawing2DTests
         using IGraphicsTexture texture = foreign.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.Sampled });
         using IGraphicsTextureView view = texture.CreateView();
         using var plan = new DrawingArgumentPlan2D(device);
-        DrawingArgumentRegistration2D<IGraphicsTextureView> reference = plan.RegisterTexture(view);
+        IGpuRef<IGraphicsTextureView>? reference = null;
+        plan.RegisterTexture(view, resolved => reference = resolved);
         await Assert.ThrowsAsync<ArgumentException>(async () => await plan.SealAsync());
-        Assert.Throws<InvalidOperationException>(() => reference.Reference);
+        Assert.Null(reference);
     }
 
     /// <summary>Checks the same retained ownership and output on the portable backend.</summary>

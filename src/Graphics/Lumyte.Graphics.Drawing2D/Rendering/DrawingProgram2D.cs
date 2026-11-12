@@ -7,6 +7,8 @@ internal sealed class DrawingProgram2D
 {
     internal const int MaximumInstructions = 256;
     private readonly ShaderResources _plan;
+    private readonly List<IGpuRef<IGraphicsTextureView>?> _textures = [];
+    private readonly List<IGpuRef<IGraphicsSampler>?> _samplers = [];
     private readonly Matrix3x2 _pixelTransform;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
 
@@ -65,15 +67,20 @@ internal sealed class DrawingProgram2D
 
     internal void ResolveReferences(IGpuRef<IGraphicsTextureView> fallback, IGpuRef<IGraphicsSampler> nearest)
     {
+        if (!_plan.IsReady)
+        {
+            throw new InvalidOperationException("Materialize the resource set before resolving instructions.");
+        }
+
         for (int i = 0; i < Instructions.Count; i++)
         {
             DrawingInstruction instruction = Instructions[i];
             Instructions[i] = instruction with
             {
-                Texture = instruction.PendingTexture?.Reference ?? instruction.Texture ?? fallback,
-                Sampler = instruction.PendingSampler?.Reference ?? instruction.Sampler ?? nearest,
-                PendingTexture = null,
-                PendingSampler = null,
+                Texture = instruction.TextureIndex >= 0 ? _textures[instruction.TextureIndex] ?? throw new InvalidOperationException("Texture reference is unresolved.") : instruction.Texture ?? fallback,
+                Sampler = instruction.SamplerIndex >= 0 ? _samplers[instruction.SamplerIndex] ?? throw new InvalidOperationException("Sampler reference is unresolved.") : instruction.Sampler ?? nearest,
+                TextureIndex = -1,
+                SamplerIndex = -1,
             };
         }
     }
@@ -373,7 +380,7 @@ internal sealed class DrawingProgram2D
             C = new((float)filter, (float)alpha, 0, 0),
             Texture = null!,
             Sampler = null!,
-            PendingTexture = Request(view),
+            TextureIndex = Request(view),
         };
     }
 
@@ -398,15 +405,26 @@ internal sealed class DrawingProgram2D
             Mode = mode,
             Texture = null!,
             Sampler = null!,
-            PendingTexture = Request(view),
-            PendingSampler = _plan.RegisterSampler(sampler),
+            TextureIndex = Request(view),
+            SamplerIndex = Request(sampler),
         });
     }
 
-    private ArgumentRegistration<IGraphicsTextureView> Request(IGraphicsTextureView view)
+    private int Request(IGraphicsTextureView view)
     {
         Textures.Add(view.Texture);
-        return _plan.RegisterTexture(view);
+        int index = _textures.Count;
+        _textures.Add(null);
+        _plan.RegisterTexture(view, reference => _textures[index] = reference);
+        return index;
+    }
+
+    private int Request(IGraphicsSampler sampler)
+    {
+        int index = _samplers.Count;
+        _samplers.Add(null);
+        _plan.RegisterSampler(sampler, reference => _samplers[index] = reference);
+        return index;
     }
 
     private uint Add(DrawingInstruction instruction)

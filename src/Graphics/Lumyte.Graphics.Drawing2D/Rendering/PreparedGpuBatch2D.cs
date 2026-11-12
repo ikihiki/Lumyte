@@ -227,8 +227,6 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
     {
         DrawingArgumentPlan2D plan = _context.ArgumentPlan;
         ShaderResources reservation = plan.Reserve();
-        ArgumentRegistration<IGraphicsSampler> sampler = reservation.RegisterSampler(_sampler);
-        ArgumentRegistration<IGraphicsTextureView> fallbackRef = plan.Fallback(reservation);
         var program = new DrawingProgram2D(reservation, _context.Target);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
@@ -238,7 +236,10 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         }
 
         ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
-        _commands.Add(new(program, reservation, sampler, fallbackRef, root, scissor));
+        var preparedCommand = new PreparedCommand(program, reservation, root, scissor);
+        reservation.RegisterSampler(_sampler, reference => preparedCommand.ResolvedSampler = reference);
+        plan.Fallback(reservation, reference => preparedCommand.ResolvedFallback = reference);
+        _commands.Add(preparedCommand);
         _estimatedBytes = checked(_estimatedBytes + ((long)program.Instructions.Count * 256) + ((long)program.Data.Count * 32) + 65536);
     }
 
@@ -267,8 +268,8 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         ulong dataOffset = 0;
         foreach (PreparedCommand command in _commands)
         {
-            command.InstructionRegistration = command.Reservation.RegisterBuffer(_instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count));
-            command.DataRegistration = command.Reservation.RegisterBuffer(_geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count));
+            command.Reservation.RegisterBuffer(_instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count), reference => command.ResolvedInstructions = reference);
+            command.Reservation.RegisterBuffer(_geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count), reference => command.ResolvedData = reference);
             BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
             _context.ArgumentPlan.MarkPreparedShaderData(command.Reservation, _instructions, prepared);
             _context.ArgumentPlan.MarkPreparedBuffer(command.Reservation, _geometry, prepared);
@@ -373,6 +374,11 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
 
     private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command)
     {
+        if (!command.Reservation.IsReady)
+        {
+            throw new InvalidOperationException("Materialize the resource set before recording.");
+        }
+
         if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
         {
             return;
@@ -404,18 +410,26 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         return resource;
     }
 
-    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, ArgumentRegistration<IGraphicsSampler> SamplerRegistration, ArgumentRegistration<IGraphicsTextureView> FallbackRegistration, uint Root, ScissorRect Scissor)
+    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, uint Root, ScissorRect Scissor)
     {
-        internal IGpuRef<IGraphicsSampler> Sampler => SamplerRegistration.Reference;
+        internal IGpuRef<DrawingInstruction>? ResolvedInstructions { get; set; }
 
-        internal IGpuRef<IGraphicsTextureView> Fallback => FallbackRegistration.Reference;
+        internal IGpuRef<Vector4>? ResolvedData { get; set; }
 
-        internal ArgumentRegistration<DrawingInstruction> InstructionRegistration { get; set; } = null!;
+        internal IGpuRef<IGraphicsSampler>? ResolvedSampler { get; set; }
 
-        internal ArgumentRegistration<Vector4> DataRegistration { get; set; } = null!;
+        internal IGpuRef<IGraphicsTextureView>? ResolvedFallback { get; set; }
 
-        internal IGpuRef<DrawingInstruction> InstructionRef => InstructionRegistration.Reference;
+        internal IGpuRef<DrawingInstruction> InstructionRef => Ready(ResolvedInstructions);
 
-        internal IGpuRef<Vector4> DataRef => DataRegistration.Reference;
+        internal IGpuRef<Vector4> DataRef => Ready(ResolvedData);
+
+        internal IGpuRef<IGraphicsSampler> Sampler => Ready(ResolvedSampler);
+
+        internal IGpuRef<IGraphicsTextureView> Fallback => Ready(ResolvedFallback);
+
+        private IGpuRef<T> Ready<T>(IGpuRef<T>? reference) => Reservation.IsReady && reference is not null
+            ? reference
+            : throw new InvalidOperationException("Materialize the resource set before using native references.");
     }
 }

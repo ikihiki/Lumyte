@@ -183,6 +183,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
         private readonly IDisposable _tableLease;
         private SolidRectangleResources2D.Entry? _entry;
         private SolidRectangleArguments2D _arguments;
+        private IGpuRef<Vector4>? _dataRef;
         private ShaderResources? _reservation;
         private int _vectors;
         private int _instances;
@@ -271,7 +272,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 batch._entry = resources.Rent(capacity);
                 ShaderResources reservation = context.ArgumentPlan.Reserve();
                 batch._reservation = reservation;
-                ArgumentRegistration<Vector4> data = reservation.RegisterBuffer(batch._entry.Data.SliceElements(0, (ulong)capacity));
+                reservation.RegisterBuffer(batch._entry.Data.SliceElements(0, (ulong)capacity), reference => batch._dataRef = reference);
                 context.ArgumentPlan.MarkPreparedBuffer(reservation, batch._entry.Data, new(PipelineStage.Copy | PipelineStage.VertexShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
                 context.ArgumentPlan.DeferUpload(
                     reservation,
@@ -291,6 +292,11 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                     long copied = 0;
                     try
                     {
+                        if (!reservation.IsReady || batch._dataRef is null)
+                        {
+                            throw new InvalidOperationException("Materialize the resource set before packing rectangle arguments.");
+                        }
+
                         values = ArrayPool<Vector4>.Shared.Rent(capacity);
                         int count = Fill(context.Target, commands.Span, values);
                         if (count != capacity)
@@ -313,7 +319,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                             batch._entry.Upload.Unmap();
                         }
 
-                        batch._arguments = new(data.Reference, new(context.Target.Description.Width, context.Target.Description.Height));
+                        batch._arguments = new(batch._dataRef, new(context.Target.Description.Width, context.Target.Description.Height));
                         profile?.Success();
                     }
                     catch (Exception error)
@@ -423,6 +429,11 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
         private void RecordCore(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
         {
+            if (_reservation?.IsReady != true)
+            {
+                throw new InvalidOperationException("Materialize the resource set before recording.");
+            }
+
             SolidRectangleResources2D.Entry entry = _entry!;
             if (!resident)
             {

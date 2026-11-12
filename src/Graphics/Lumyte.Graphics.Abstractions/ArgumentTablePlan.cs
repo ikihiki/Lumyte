@@ -64,10 +64,21 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
     /// <summary>Configures the actual semantic output count before collection closes.</summary>
     /// <param name="resources">The current resource set.</param>
     /// <param name="colorAttachments">The actual color output count, or zero for compute.</param>
-    public void ConfigureExecution(ShaderResources resources, uint colorAttachments)
+    public void ConfigureExecution(ShaderResources resources, uint colorAttachments) => ConfigureExecution(resources, colorAttachments, graphics: colorAttachments > 0);
+
+    /// <summary>Configures execution kind independently of the number of color attachments.</summary>
+    /// <param name="resources">The current resource set.</param>
+    /// <param name="colorAttachments">The actual color output count.</param>
+    /// <param name="graphics">True for graphics, including depth-only rendering; false for compute.</param>
+    public void ConfigureExecution(ShaderResources resources, uint colorAttachments, bool graphics)
     {
         ValidateCollecting();
-        FindScope(resources).ConfigureColorAttachments(colorAttachments);
+        if (!graphics && colorAttachments != 0)
+        {
+            throw new ArgumentException("Compute execution cannot have color attachments.", nameof(colorAttachments));
+        }
+
+        FindScope(resources).ConfigureExecution(colorAttachments, graphics);
     }
 
     /// <summary>Materializes live opaque resource sets in their actual execution order.</summary>
@@ -200,7 +211,7 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
             {
                 foreach ((ArgumentRequest request, ResolvedArgument value) in requests)
                 {
-                    request.Publish(partition!.Reference(value.Key));
+                    request.Install(partition!.Reference(value.Key));
                 }
 
                 scope.Select(partition);
@@ -212,12 +223,24 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
                 Textures = textures,
                 Samplers = samplers,
                 Buffers = buffers,
-                ReusedTextures = resolved.Sum(r => r.Scope.ReusedTextures + r.Requests.Count(v => v.Value.Key.Namespace == 0)) - textures,
-                ReusedSamplers = resolved.Sum(r => r.Scope.ReusedSamplers + r.Requests.Count(v => v.Value.Key.Namespace == 1)) - samplers,
-                ReusedBuffers = resolved.Sum(r => r.Scope.ReusedBuffers + r.Requests.Count(v => v.Value.Key.Namespace == 2)) - buffers,
+                ReusedTextures = resolved.Sum(r => r.Requests.Count(v => v.Value.Key.Namespace == 0)) - textures,
+                ReusedSamplers = resolved.Sum(r => r.Requests.Count(v => v.Value.Key.Namespace == 1)) - samplers,
+                ReusedBuffers = resolved.Sum(r => r.Requests.Count(v => v.Value.Key.Namespace == 2)) - buffers,
                 Rollovers = Math.Max(0, _partitions.Count - 1),
             };
             _state = 2;
+
+            // Every scope and native reference is installed before any consumer callback runs.
+            foreach ((ArgumentTableReservation scope, ArgumentPartition? partition, List<(ArgumentRequest Request, ResolvedArgument Value)> requests) in selected)
+            {
+                foreach ((ArgumentRequest request, ResolvedArgument value) in requests)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    request.NotifyResolved();
+                    ValidateReferences();
+                }
+            }
+
             foreach (ArgumentTableReservation scope in selected.Select(selection => selection.Scope))
             {
                 cancellationToken.ThrowIfCancellationRequested();

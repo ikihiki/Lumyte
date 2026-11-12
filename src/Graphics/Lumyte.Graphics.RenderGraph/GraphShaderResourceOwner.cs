@@ -9,6 +9,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
     private readonly Dictionary<RenderGraphPass, List<ShaderResources>> _byPass = [];
     private readonly Dictionary<ShaderResources, RenderGraphPass> _byResources = [];
     private readonly Dictionary<SamplerDesc, IGraphicsSampler> _samplers = [];
+    private readonly Dictionary<ShaderResources, (RenderGraphTexture[] Outputs, bool Graphics)> _execution = [];
     private readonly List<IDisposable> _owned = [];
     private RenderGraphPreparationContext? _preparation;
     private bool _disposed;
@@ -19,6 +20,8 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         _graph = graph;
         _registrations = new(graph.Device ?? throw new InvalidOperationException("Shader resources require a physical device."));
     }
+
+    internal ShaderTarget Target => _registrations.Device.Caps.ShaderTarget;
 
     public void Validate() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -81,13 +84,21 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         return resources;
     });
 
-    internal RenderGraphShaderResources Create()
+    internal RenderGraphShaderResources Create(ShaderArtifact artifact, string root)
     {
         ValidateBuilding();
-        return new(this, _registrations.CreateShaderResources());
+        ArgumentNullException.ThrowIfNull(artifact);
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        return new(this, CreateModule(), artifact, Target, root);
     }
 
-    internal void Use(RenderGraphPass pass, ShaderResources resources, IReadOnlyList<RenderGraphTexture> attachments)
+    internal ShaderResources CreateModule()
+    {
+        ValidateBuilding();
+        return new ModuleResources(this, _registrations.CreateShaderResources());
+    }
+
+    internal void Use(RenderGraphPass pass, ShaderResources resources, IReadOnlyList<RenderGraphTexture> attachments, bool? graphics = null)
     {
         ValidateBuilding();
         ArgumentNullException.ThrowIfNull(pass);
@@ -103,7 +114,14 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
             throw new ArgumentException("Declare each actual color output exactly once before connecting shader resources.", nameof(attachments));
         }
 
-        _registrations.ConfigureExecution(resources, checked((uint)attachments.Count));
+        bool render = graphics ?? attachments.Count != 0;
+        if (!render && attachments.Count != 0)
+        {
+            throw new ArgumentException("Compute resources cannot have color outputs.", nameof(attachments));
+        }
+
+        _registrations.ConfigureExecution(resources, checked((uint)attachments.Count), render);
+        _execution.Add(resources, (attachments.ToArray(), render));
         if (!_byPass.TryGetValue(pass, out List<ShaderResources>? list))
         {
             list = [];
@@ -130,6 +148,24 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
                 context.CheckAllocation(pass, resource, required, sampled: false);
             }
         });
+    }
+
+    internal void ValidateModule(ShaderResources resources)
+    {
+        ValidateBuilding();
+        if (!_registrations.Owns(resources))
+        {
+            throw new ArgumentException("The prepared module resources belong to another graph.", nameof(resources));
+        }
+    }
+
+    internal void ValidateExecution(ShaderResources resources, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    {
+        Validate();
+        if (!_byResources.TryGetValue(resources, out RenderGraphPass? consumer) || !ReferenceEquals(consumer, pass) || !_execution.TryGetValue(resources, out (RenderGraphTexture[] Outputs, bool Graphics) shape) || shape.Graphics != graphics || !shape.Outputs.SequenceEqual(outputs))
+        {
+            throw new ArgumentException("Shader inputs belong to another pass, graph, or execution shape.", nameof(resources));
+        }
     }
 
     internal IGraphicsTextureView Texture(ShaderResources resources, RenderGraphTexture texture, TextureViewDesc? desc) => Preparation().CreateTextureView(Pass(resources), texture, desc);
@@ -165,4 +201,18 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
     private RenderGraphPass Pass(ShaderResources resources) => _byResources.TryGetValue(resources, out RenderGraphPass? pass) ? pass : throw new InvalidOperationException("Connect shader resources to their consuming pass before compilation.");
 
     private RenderGraphPreparationContext Preparation() => _preparation ?? throw new InvalidOperationException("Graph shader resources resolve only during preparation.");
+
+    private sealed class ModuleResources : ShaderResources
+    {
+        private readonly GraphShaderResourceOwner _owner;
+
+        internal ModuleResources(GraphShaderResourceOwner owner, ShaderResources resources)
+            : base(resources)
+        {
+            _owner = owner;
+            ValidateBeforeCollection(owner.ValidateBuilding);
+        }
+
+        public override ShaderResources CreateSibling() => _owner.CreateModule();
+    }
 }

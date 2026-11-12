@@ -32,20 +32,24 @@ public sealed class GraphShaderResourceExecutionTests
         RenderGraphBuffer<Vector4> logicalData = graph.ImportBuffer(data, ShaderRead);
         RenderGraphTexture image = graph.ImportTexture(texture, TextureState.Sampled, ShaderRead);
         RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, ColorWrite);
-        RenderGraphShaderResources resources = graph.CreateShaderResources();
-        ArgumentRegistration<DrawingInstruction> rootInstructions = resources.ReadBuffer(logicalInstructions, 0, 1);
-        ArgumentRegistration<Vector4> rootData = resources.ReadBuffer(logicalData, 0, 1);
-        ArgumentRegistration<IGraphicsTextureView> nestedTexture = resources.ReadTexture(image);
-        ArgumentRegistration<IGraphicsSampler> nestedSampler = resources.Sampler(new());
+        ShaderResources resources = graph.CreateModuleShaderResources();
+        IGpuRef<DrawingInstruction>? rootInstructions = null;
+        graph.RegisterModuleBuffer(resources, logicalInstructions, 0, 1, reference => rootInstructions = reference);
+        IGpuRef<Vector4>? rootData = null;
+        graph.RegisterModuleBuffer(resources, logicalData, 0, 1, reference => rootData = reference);
+        IGpuRef<IGraphicsTextureView>? nestedTexture = null;
+        graph.RegisterModuleTexture(resources, image, reference => nestedTexture = reference);
+        IGpuRef<IGraphicsSampler>? nestedSampler = null;
+        resources.RegisterSampler(graph.GetSampler(new()), reference => nestedSampler = reference);
         DrawingInstruction instruction = default;
         resources.WhenReady(() =>
         {
-            instruction = instruction with { Texture = nestedTexture.Reference, Sampler = nestedSampler.Reference };
+            instruction = instruction with { Texture = nestedTexture!, Sampler = nestedSampler! };
             instructions.CopyFrom(new[] { instruction });
         });
         RenderGraphPass pass = graph.AddPass("typed", context =>
         {
-            var arguments = new DrawingArguments(rootInstructions.Reference, rootData.Reference, 1, 0, 0, 1, default, default, default, nestedTexture.Reference, nestedTexture.Reference, nestedSampler.Reference);
+            var arguments = new DrawingArguments(rootInstructions!, rootData!, 1, 0, 0, 1, default, default, default, nestedTexture!, nestedTexture!, nestedSampler!);
             if (operation == 2)
             {
                 IComputeEncoder encoder = context.Commands.BeginComputePass(new());
@@ -104,8 +108,8 @@ public sealed class GraphShaderResourceExecutionTests
         using var graph = new Graph(device);
         using var targetTexture = new DispatchTexture();
         RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, ColorWrite);
-        RenderGraphShaderResources resources = graph.CreateShaderResources();
-        resources.Sampler(new());
+        ShaderResources resources = graph.CreateModuleShaderResources();
+        resources.RegisterSampler(graph.GetSampler(new()), _ => { });
         RenderGraphPass pass = graph.AddPass("shape", _ => { }).KeepAlive();
         if (graphics)
         {
@@ -143,10 +147,18 @@ public sealed class GraphShaderResourceExecutionTests
     {
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
-        RenderGraphShaderResources first = graph.CreateShaderResources();
-        RenderGraphShaderResources later = first.CreateSibling();
-        ArgumentRegistration<IGraphicsSampler> firstHandle = first.Sampler(new());
-        ArgumentRegistration<IGraphicsSampler> laterHandle = later.Sampler(new());
+        ShaderResources first = graph.CreateModuleShaderResources();
+        ShaderResources later = first.CreateSibling();
+        IGpuRef<IGraphicsSampler>? firstHandle = null;
+        first.RegisterSampler(graph.GetSampler(new()), reference =>
+        {
+            Assert.True(first.IsReady);
+            Assert.True(later.IsReady);
+            Assert.NotNull(ProfilingDevice.Owner(reference));
+            firstHandle = reference;
+        });
+        IGpuRef<IGraphicsSampler>? laterHandle = null;
+        later.RegisterSampler(graph.GetSampler(new()), reference => laterHandle = reference);
         graph.AddPass("first", _ => throw new InvalidOperationException("Must not record")).KeepAlive().UseShaderResources(first);
         graph.AddPass("later", _ => throw new InvalidOperationException("Must not record")).KeepAlive().UseShaderResources(later);
         using var callbackCommands = new ProfilingCommands();
@@ -155,7 +167,7 @@ public sealed class GraphShaderResourceExecutionTests
         {
             Assert.True(first.IsReady);
             Assert.True(later.IsReady);
-            Assert.Same(ProfilingDevice.Owner(firstHandle.Reference), ProfilingDevice.Owner(laterHandle.Reference));
+            Assert.Same(ProfilingDevice.Owner(firstHandle!), ProfilingDevice.Owner(laterHandle!));
             var arguments = default(DrawingArguments);
             Assert.Throws<InvalidOperationException>(() => first.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
             Assert.Throws<InvalidOperationException>(() => first.Draw(callbackCommands.BeginRenderPass(new()), in arguments, 3));
@@ -169,8 +181,11 @@ public sealed class GraphShaderResourceExecutionTests
         Assert.True(earlierRan);
         Assert.False(first.IsReady);
         Assert.False(later.IsReady);
-        Assert.Throws<InvalidOperationException>(() => firstHandle.Reference);
-        Assert.Throws<InvalidOperationException>(() => laterHandle.Reference);
+        Assert.NotNull(firstHandle);
+        Assert.NotNull(laterHandle);
+        var arguments = default(DrawingArguments);
+        Assert.Throws<InvalidOperationException>(() => first.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
+        Assert.Throws<InvalidOperationException>(() => later.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
         Assert.Empty(commands.Events);
         Assert.Empty(callbackCommands.Events);
         commands.Dispose();
@@ -183,16 +198,17 @@ public sealed class GraphShaderResourceExecutionTests
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
         using IGraphicsBuffer<uint> native = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead });
-        ShaderResources original = graph.CreateShaderResources();
+        ShaderResources original = graph.CreateModuleShaderResources();
         ShaderResources sibling = original.CreateSibling();
-        Assert.IsType<RenderGraphShaderResources>(sibling);
+        Assert.IsAssignableFrom<ShaderResources>(sibling);
         original.Cancel();
-        ArgumentRegistration<uint> handle = sibling.RegisterBuffer(native.SliceElements(0, 1));
+        IGpuRef<uint>? handle = null;
+        sibling.RegisterBuffer(native.SliceElements(0, 1), reference => handle = reference);
         graph.AddPass("sibling", _ => { }).KeepAlive().UseShaderResources(sibling);
         using CompiledRenderGraph compiled = graph.Compile();
         using var commands = new ProfilingCommands();
         Assert.Throws<ArgumentException>(() => compiled.Record(commands));
-        Assert.Throws<InvalidOperationException>(() => handle.Reference);
+        Assert.Null(handle);
         Assert.Empty(device.Tables);
         Assert.Empty(commands.Events);
         commands.Dispose();
@@ -204,10 +220,12 @@ public sealed class GraphShaderResourceExecutionTests
     {
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
-        RenderGraphShaderResources canceled = graph.CreateShaderResources();
-        ArgumentRegistration<IGraphicsSampler> discarded = canceled.Sampler(new());
-        RenderGraphShaderResources survivor = graph.CreateShaderResources();
-        ArgumentRegistration<IGraphicsSampler> live = survivor.Sampler(new());
+        ShaderResources canceled = graph.CreateModuleShaderResources();
+        IGpuRef<IGraphicsSampler>? discarded = null;
+        canceled.RegisterSampler(graph.GetSampler(new()), reference => discarded = reference);
+        ShaderResources survivor = graph.CreateModuleShaderResources();
+        IGpuRef<IGraphicsSampler>? live = null;
+        survivor.RegisterSampler(graph.GetSampler(new()), reference => live = reference);
         IDisposable lease = survivor.Retain();
         canceled.Cancel();
         graph.AddPass("survivor", _ => { }).KeepAlive().UseShaderResources(survivor);
@@ -215,18 +233,18 @@ public sealed class GraphShaderResourceExecutionTests
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
         Assert.True(survivor.IsReady);
-        Assert.Throws<InvalidOperationException>(() => discarded.Reference);
+        Assert.Null(discarded);
         Assert.Single(device.Tables);
-        IArgumentTable owner = ProfilingDevice.Owner(live.Reference);
+        IArgumentTable owner = ProfilingDevice.Owner(live!);
         commands.Dispose();
         compiled.Dispose();
         graph.Dispose();
         Assert.Equal(1, device.ActiveTables);
-        Assert.Same(owner, ProfilingDevice.Owner(live.Reference));
+        Assert.Same(owner, ProfilingDevice.Owner(live!));
         lease.Dispose();
         lease.Dispose();
         Assert.Equal(0, device.ActiveTables);
-        Assert.Throws<InvalidOperationException>(() => live.Reference);
+        Assert.False(survivor.IsReady);
     }
 
     /// <summary>Two actual color outputs consume their exact budget; compute reserves none.</summary>
@@ -248,8 +266,9 @@ public sealed class GraphShaderResourceExecutionTests
         using var secondTexture = new DispatchTexture();
         RenderGraphTexture first = graph.ImportTexture(firstTexture, TextureState.ColorAttachment, ColorWrite);
         RenderGraphTexture second = graph.ImportTexture(secondTexture, TextureState.ColorAttachment, ColorWrite);
-        RenderGraphShaderResources resources = graph.CreateShaderResources();
-        ArgumentRegistration<IGraphicsSampler> sampler = resources.Sampler(new());
+        ShaderResources resources = graph.CreateModuleShaderResources();
+        IGpuRef<IGraphicsSampler>? sampler = null;
+        resources.RegisterSampler(graph.GetSampler(new()), reference => sampler = reference);
         RenderGraphPass pass = graph.AddPass("budget", _ => { }).KeepAlive();
         if (graphics)
         {
@@ -264,13 +283,13 @@ public sealed class GraphShaderResourceExecutionTests
             compiled.Record(commands);
             Assert.Single(device.Tables);
             Assert.Equal(1u, device.Tables[0].SamplerCapacity);
-            Assert.NotNull(ProfilingDevice.Owner(sampler.Reference));
+            Assert.NotNull(ProfilingDevice.Owner(sampler!));
         }
         else
         {
             Assert.Throws<NotSupportedException>(() => compiled.Record(commands));
             Assert.Empty(device.Tables);
-            Assert.Throws<InvalidOperationException>(() => sampler.Reference);
+            Assert.Null(sampler);
         }
 
         Assert.All(commands.Events, item => Assert.IsType<TextureBarrierDesc>(item));
@@ -292,7 +311,7 @@ public sealed class GraphShaderResourceExecutionTests
         using var foreignNative = new DispatchTexture();
         RenderGraphTexture target = graph.ImportTexture(native, TextureState.ColorAttachment, ColorWrite);
         RenderGraphTexture other = foreign.ImportTexture(foreignNative, TextureState.ColorAttachment, ColorWrite);
-        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        ShaderResources resources = graph.CreateModuleShaderResources();
         RenderGraphPass pass = graph.AddPass("invalid-output", _ => { }).KeepAlive();
         if (invalidKind == 1)
         {
@@ -311,11 +330,11 @@ public sealed class GraphShaderResourceExecutionTests
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
         using var foreign = new Graph(device);
-        ShaderResources original = graph.CreateShaderResources();
+        ShaderResources original = graph.CreateModuleShaderResources();
         ShaderResources sibling = original.CreateSibling();
         original.Cancel();
         using var sampler = new DispatchSampler();
-        sibling.RegisterSampler(sampler);
+        sibling.RegisterSampler(sampler, _ => { });
         RenderGraphPass foreignPass = foreign.AddPass("foreign", _ => { }).KeepAlive();
         Assert.Throws<ArgumentException>(() => foreignPass.UseShaderResources(sibling));
         RenderGraphPass pass = graph.AddPass("local", _ => { }).KeepAlive();

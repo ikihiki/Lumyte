@@ -27,9 +27,18 @@ public sealed class SharedArgumentTableTests
             {
                 IGraphicsTextureView view = texture.CreateView();
                 views.Add(view);
-                DrawingArgumentRegistration2D<IGraphicsTextureView> pending = plan.RegisterTexture(view);
-                Assert.Same(pending, plan.RegisterTexture(view));
-                Assert.Throws<InvalidOperationException>(() => pending.Reference);
+                IGpuRef<IGraphicsTextureView>? pending = null;
+                IGpuRef<IGraphicsTextureView>? duplicate = null;
+                plan.RegisterTexture(view, reference => pending = reference);
+                plan.RegisterTexture(view, reference => duplicate = reference);
+                plan.DeferUpload(_ =>
+                {
+                    Assert.NotNull(pending);
+                    Assert.Same(pending, duplicate);
+                    return ValueTask.CompletedTask;
+                });
+                Assert.Null(pending);
+                Assert.Null(duplicate);
             }
 
             await plan.SealAsync();
@@ -44,7 +53,7 @@ public sealed class SharedArgumentTableTests
                 Assert.Throws<ArgumentOutOfRangeException>(() => plan.Table.WriteTexture((uint)count, views[0]));
             }
 
-            Assert.Throws<InvalidOperationException>(() => plan.RegisterTexture(texture.CreateView()));
+            Assert.Throws<InvalidOperationException>(() => plan.RegisterTexture(texture.CreateView(), _ => { }));
             await Assert.ThrowsAsync<InvalidOperationException>(async () => await plan.SealAsync());
         }
         finally
@@ -69,17 +78,37 @@ public sealed class SharedArgumentTableTests
         using var sampler = new DispatchSampler();
         using var equalSampler = new DispatchSampler();
         using IGraphicsBuffer<Vector4> buffer = device.CreateBuffer<Vector4>(new() { Count = 8, Usage = BufferUsage.ShaderRead });
-        DrawingArgumentRegistration2D<Vector4> range = plan.RegisterBuffer(buffer.SliceElements(0, 4));
-        Assert.Same(range, plan.RegisterBuffer(buffer.SliceElements(0, 4)));
-        Assert.NotSame(range, plan.RegisterBuffer(buffer.SliceElements(1, 4)));
-        Assert.NotSame(range, plan.RegisterBuffer(buffer.SliceElements(0, 3)));
-        Assert.Same(plan.RegisterTexture(first), plan.RegisterTexture(first));
-        Assert.NotSame(plan.RegisterTexture(first), plan.RegisterTexture(second));
-        Assert.Same(plan.RegisterSampler(sampler), plan.RegisterSampler(sampler));
-        Assert.NotSame(plan.RegisterSampler(sampler), plan.RegisterSampler(equalSampler));
+        IGpuRef<Vector4>? range = null;
+        plan.RegisterBuffer(buffer.SliceElements(0, 4), reference => range = reference);
+        IGpuRef<Vector4>? duplicate = null;
+        IGpuRef<Vector4>? offset = null;
+        IGpuRef<Vector4>? count = null;
+        IGpuRef<IGraphicsTextureView>? firstImage = null;
+        IGpuRef<IGraphicsTextureView>? sameImage = null;
+        IGpuRef<IGraphicsTextureView>? otherImage = null;
+        IGpuRef<IGraphicsSampler>? firstSampler = null;
+        IGpuRef<IGraphicsSampler>? sameSampler = null;
+        IGpuRef<IGraphicsSampler>? otherSampler = null;
+        plan.RegisterBuffer(buffer.SliceElements(0, 4), reference => duplicate = reference);
+        plan.RegisterBuffer(buffer.SliceElements(1, 4), reference => offset = reference);
+        plan.RegisterBuffer(buffer.SliceElements(0, 3), reference => count = reference);
+        plan.RegisterTexture(first, reference => firstImage = reference);
+        plan.RegisterTexture(first, reference => sameImage = reference);
+        plan.RegisterTexture(second, reference => otherImage = reference);
+        plan.RegisterSampler(sampler, reference => firstSampler = reference);
+        plan.RegisterSampler(sampler, reference => sameSampler = reference);
+        plan.RegisterSampler(equalSampler, reference => otherSampler = reference);
         await plan.SealAsync();
+        Assert.NotNull(range);
+        Assert.Same(range, duplicate);
+        Assert.NotSame(range, offset);
+        Assert.NotSame(range, count);
+        Assert.Same(firstImage, sameImage);
+        Assert.NotSame(firstImage, otherImage);
+        Assert.Same(firstSampler, sameSampler);
+        Assert.NotSame(firstSampler, otherSampler);
         Assert.Equal(new ArgumentTableDesc { TextureCapacity = 2, SamplerCapacity = 2, BufferCapacity = 3 }, Assert.Single(device.Tables));
-        Assert.Same(plan.Table, ProfilingDevice.Owner(range.Reference));
+        Assert.Same(plan.Table, ProfilingDevice.Owner(range!));
     }
 
     /// <summary>Backend failure publishes no references or uploads and retains final cleanup for retry.</summary>
@@ -92,8 +121,9 @@ public sealed class SharedArgumentTableTests
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
         using var sampler = new DispatchSampler();
-        DrawingArgumentRegistration2D<IGraphicsTextureView> image = plan.RegisterTexture(view);
-        plan.RegisterSampler(sampler);
+        IGpuRef<IGraphicsTextureView>? image = null;
+        plan.RegisterTexture(view, reference => image = reference);
+        plan.RegisterSampler(sampler, _ => { });
         bool uploaded = false;
         plan.DeferUpload(_ =>
         {
@@ -102,7 +132,7 @@ public sealed class SharedArgumentTableTests
         });
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await plan.SealAsync());
         Assert.False(uploaded);
-        Assert.Throws<InvalidOperationException>(() => image.Reference);
+        Assert.Null(image);
         Assert.Throws<InvalidOperationException>(plan.Dispose);
         Assert.Equal(1, device.ActiveTables);
         plan.Dispose();
@@ -119,15 +149,17 @@ public sealed class SharedArgumentTableTests
         using var plan = new DrawingArgumentPlan2D(device);
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
-        DrawingArgumentRegistration2D<IGraphicsTextureView> image = plan.RegisterTexture(view);
+        IGpuRef<IGraphicsTextureView>? image = null;
+        plan.RegisterTexture(view, reference => image = reference);
         plan.DeferUpload(_ =>
         {
-            Assert.Same(plan.Table, ProfilingDevice.Owner(image.Reference));
-            Assert.Throws<InvalidOperationException>(() => plan.RegisterTexture(view));
+            Assert.Same(plan.Table, ProfilingDevice.Owner(image!));
+            Assert.Throws<InvalidOperationException>(() => plan.RegisterTexture(view, _ => { }));
             throw new OperationCanceledException();
         });
         await Assert.ThrowsAsync<OperationCanceledException>(async () => await plan.SealAsync());
-        Assert.Throws<InvalidOperationException>(() => image.Reference);
+        Assert.NotNull(image);
+        Assert.False(Assert.Single(plan.Reservations).IsReady);
     }
 
     /// <summary>Independent leases return out of order and retry the final native disposal.</summary>
@@ -141,17 +173,18 @@ public sealed class SharedArgumentTableTests
         IDisposable second = plan.Retain();
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
-        DrawingArgumentRegistration2D<IGraphicsTextureView> image = plan.RegisterTexture(view);
+        IGpuRef<IGraphicsTextureView>? image = null;
+        plan.RegisterTexture(view, reference => image = reference);
         await plan.SealAsync();
         plan.Dispose();
         second.Dispose();
-        Assert.Same(plan.Table, ProfilingDevice.Owner(image.Reference));
+        Assert.Same(plan.Table, ProfilingDevice.Owner(image!));
         Assert.Throws<InvalidOperationException>(first.Dispose);
         Assert.Equal(1, device.ActiveTables);
         first.Dispose();
         first.Dispose();
         Assert.Equal(0, device.ActiveTables);
-        Assert.Throws<InvalidOperationException>(() => image.Reference);
+        Assert.False(Assert.Single(plan.Reservations).IsReady);
     }
 
     /// <summary>Two hundred independent clips share one table without merging buffers or draws.</summary>
@@ -196,8 +229,7 @@ public sealed class SharedArgumentTableTests
         {
             Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
             Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
-            Assert.Null(instruction.PendingTexture);
-            Assert.Null(instruction.PendingSampler);
+            Assert.DoesNotContain(typeof(DrawingInstruction).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance), property => property.PropertyType.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
         });
         prepared.Dispose();
         Assert.Equal(0, device.ActiveTables);
@@ -431,10 +463,11 @@ public sealed class SharedArgumentTableTests
         {
             DrawingArgumentPlan2D plan = context.ArgumentPlan;
             var batch = new ParticipatingBatch(plan, plan.Retain());
-            DrawingArgumentRegistration2D<IGraphicsTextureView> image = plan.RegisterTexture(view);
+            IGpuRef<IGraphicsTextureView>? image = null;
+            plan.RegisterTexture(view, reference => image = reference);
             plan.DeferUpload(_ =>
             {
-                Assert.Same(plan.Table, ProfilingDevice.Owner(image.Reference));
+                Assert.Same(plan.Table, ProfilingDevice.Owner(image!));
                 Materialized = true;
                 return ValueTask.CompletedTask;
             });

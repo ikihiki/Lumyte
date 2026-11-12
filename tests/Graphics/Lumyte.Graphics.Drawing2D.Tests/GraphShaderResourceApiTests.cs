@@ -79,4 +79,46 @@ public sealed class GraphShaderResourceApiTests
             }
         }
     }
+
+    /// <summary>Graph callers do not construct root shims or extract pending registration references.</summary>
+    [Fact]
+    public void PublicRegistrationWrappersAreAbsent()
+    {
+        Type[] types = typeof(Lumyte.Graphics.Abstractions.ShaderResources).Assembly.GetExportedTypes()
+            .Concat(typeof(DrawingArgumentPlan2D).Assembly.GetExportedTypes()).ToArray();
+        Assert.DoesNotContain(types, type => type.IsGenericTypeDefinition && (type.Name == "ArgumentRegistration`1" || type.Name == "DrawingArgumentRegistration2D`1"));
+        Type[] graphTypes = typeof(RenderGraphContext).Assembly.GetExportedTypes();
+        Assert.Contains(graphTypes, type => type.Name == "RenderGraphRenderEncoder");
+        Assert.Contains(graphTypes, type => type.Name == "RenderGraphComputeEncoder");
+    }
+
+    /// <summary>Logical graph inputs and encoders never expose native registration or root-argument shims.</summary>
+    [Fact]
+    public void LogicalGraphInputsAndEncodersHaveNoNativeEscape()
+    {
+        Type inputs = typeof(RenderGraphShaderResources);
+        Assert.Equal(typeof(object), inputs.BaseType);
+        foreach (MethodInfo method in inputs.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            Assert.DoesNotContain(method.Name, new[] { "Draw", "DrawIndexed", "Dispatch", "RegisterTexture", "RegisterBuffer", "RegisterSampler", "RegisterShaderData", "Snapshot", "Core", "Reference" });
+            Assert.Equal(typeof(RenderGraphShaderResources), method.ReturnType);
+            foreach (ParameterInfo parameter in method.GetParameters())
+            {
+                Assert.False(parameter.ParameterType.Name.StartsWith("IGpuRef", StringComparison.Ordinal));
+            }
+        }
+
+        foreach (Type encoder in typeof(RenderGraphContext).Assembly.GetExportedTypes().Where(type => type.Name is "RenderGraphRenderEncoder" or "RenderGraphComputeEncoder"))
+        {
+            Assert.DoesNotContain(encoder.GetInterfaces(), type => type == typeof(Lumyte.Graphics.Abstractions.IRenderEncoder) || type == typeof(Lumyte.Graphics.Abstractions.IComputeEncoder));
+            foreach (MemberInfo member in encoder.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            {
+                Assert.DoesNotContain(member.Name, new[] { "SetArguments", "SetArgumentTable", "Underlying", "Native", "Commands", "Reference", "Table" });
+                if (member is MethodInfo method)
+                {
+                    Assert.DoesNotContain(method.GetParameters(), parameter => parameter.ParameterType.Name.Contains("ShaderValueSnapshot", StringComparison.Ordinal) || parameter.ParameterType.Name.Contains("IShaderArguments", StringComparison.Ordinal));
+                }
+            }
+        }
+    }
 }

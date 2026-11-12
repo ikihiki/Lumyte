@@ -9,12 +9,11 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private readonly List<IDisposable> _owned = [];
     private readonly List<Upload> _uploads = [];
     private readonly List<ShaderResources> _scopes = [];
-    private readonly Dictionary<object, object> _legacyHandles = new(ReferenceEqualityComparer.Instance);
     private readonly IGraphicDevice _device;
     private readonly Func<ArgumentTablePlan>? _registrationFactory;
     private readonly Func<ShaderResources>? _resourceFactory;
     private readonly Dictionary<ShaderResources, List<Action<IDrawingResourceDeclarations2D>>> _preparedResources = new(ReferenceEqualityComparer.Instance);
-    private readonly Func<ShaderResources, ArgumentRegistration<IGraphicsTextureView>>? _graphFallback;
+    private readonly Action<ShaderResources, Action<IGpuRef<IGraphicsTextureView>>>? _graphFallback;
     private readonly IGraphicsSampler? _sharedSampler;
     private readonly Func<IGraphicsSampler>? _samplerFactory;
     private ArgumentTablePlan? _registrations;
@@ -36,7 +35,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     /// <param name="samplerFactory">An optional lazy graph-owned sampler factory.</param>
     /// <param name="registrationFactory">An optional lazy direct allocator, created only if preparation participates.</param>
     /// <param name="resourceFactory">An optional opaque graph-owned resource-set factory.</param>
-    public DrawingArgumentPlan2D(IGraphicDevice device, ArgumentTablePlan? registrations = null, Func<ShaderResources, ArgumentRegistration<IGraphicsTextureView>>? graphFallback = null, IGraphicsSampler? sharedSampler = null, Func<IGraphicsSampler>? samplerFactory = null, Func<ArgumentTablePlan>? registrationFactory = null, Func<ShaderResources>? resourceFactory = null)
+    public DrawingArgumentPlan2D(IGraphicDevice device, ArgumentTablePlan? registrations = null, Action<ShaderResources, Action<IGpuRef<IGraphicsTextureView>>>? graphFallback = null, IGraphicsSampler? sharedSampler = null, Func<IGraphicsSampler>? samplerFactory = null, Func<ArgumentTablePlan>? registrationFactory = null, Func<ShaderResources>? resourceFactory = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         if (registrations is not null && !ReferenceEquals(registrations.Device, device))
@@ -129,27 +128,48 @@ public sealed class DrawingArgumentPlan2D : IDisposable
 
     /// <summary>Registers a texture in one compatibility reservation; multi-draw callers use Reserve.</summary>
     /// <param name="view">The borrowed view.</param>
-    /// <returns>The pending native reference.</returns>
-    public DrawingArgumentRegistration2D<IGraphicsTextureView> RegisterTexture(IGraphicsTextureView view) => LegacyHandle(Legacy().RegisterTexture(view));
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    public void RegisterTexture(IGraphicsTextureView view, Action<IGpuRef<IGraphicsTextureView>> resolved) => Legacy().RegisterTexture(view, resolved);
+
+    /// <summary>Registers a texture resolved during materialization.</summary>
+    /// <param name="resolve">Provides the borrowed view.</param>
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    public void RegisterTexture(Func<IGraphicsTextureView> resolve, Action<IGpuRef<IGraphicsTextureView>> resolved) => Legacy().RegisterTexture(resolve, resolved);
 
     /// <summary>Registers a sampler in one compatibility reservation.</summary>
     /// <param name="sampler">The borrowed sampler.</param>
-    /// <returns>The pending native reference.</returns>
-    public DrawingArgumentRegistration2D<IGraphicsSampler> RegisterSampler(IGraphicsSampler sampler) => LegacyHandle(Legacy().RegisterSampler(sampler));
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    public void RegisterSampler(IGraphicsSampler sampler, Action<IGpuRef<IGraphicsSampler>> resolved) => Legacy().RegisterSampler(sampler, resolved);
 
     /// <summary>Registers an exact typed range in one compatibility reservation.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="range">The borrowed range.</param>
-    /// <returns>The pending native reference.</returns>
-    public DrawingArgumentRegistration2D<T> RegisterBuffer<T>(BufferSlice<T> range)
-        where T : unmanaged => LegacyHandle(Legacy().RegisterBuffer(range));
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    /// <param name="access">The required shader access.</param>
+    public void RegisterBuffer<T>(BufferSlice<T> range, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+        where T : unmanaged => Legacy().RegisterBuffer(range, resolved, access);
+
+    /// <summary>Registers a raw range resolved during materialization.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="resolve">Provides the borrowed range.</param>
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    /// <param name="access">The required shader access.</param>
+    public void RegisterBuffer<T>(Func<BufferSlice<T>> resolve, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+        where T : unmanaged => Legacy().RegisterBuffer(resolve, resolved, access);
 
     /// <summary>Registers an exact shader-data range in one compatibility reservation.</summary>
     /// <typeparam name="T">The shader-data type.</typeparam>
     /// <param name="range">The borrowed range.</param>
-    /// <returns>The pending native reference.</returns>
-    public DrawingArgumentRegistration2D<T> RegisterBuffer<T>(ShaderDataSlice<T> range)
-        where T : struct, IShaderData => LegacyHandle(Legacy().RegisterBuffer(range));
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved)
+        where T : struct, IShaderData => Legacy().RegisterBuffer(range, resolved);
+
+    /// <summary>Registers a shader-data range resolved during materialization.</summary>
+    /// <typeparam name="T">The shader-data type.</typeparam>
+    /// <param name="resolve">Provides the borrowed range.</param>
+    /// <param name="resolved">Receives the native reference after materialization.</param>
+    public void RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve, Action<IGpuRef<T>> resolved)
+        where T : struct, IShaderData => Legacy().RegisterShaderData(resolve, resolved);
 
     /// <summary>Schedules a compatibility finalizer after all native registrations succeed.</summary>
     /// <param name="upload">The host payload operation.</param>
@@ -230,7 +250,6 @@ public sealed class DrawingArgumentPlan2D : IDisposable
             profile?.Counter(22, Registrations.IsMaterialized ? 1 : 0);
             profile?.Counter(23, stats.Rollovers);
             _uploads.Clear();
-            _legacyHandles.Clear();
         }
     }
 
@@ -322,16 +341,17 @@ public sealed class DrawingArgumentPlan2D : IDisposable
 
     internal IGraphicsSampler Sampler(DrawingResources2D resources) => _sampler ??= resources.Sampler ?? _sharedSampler ?? _samplerFactory?.Invoke() ?? Own(Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
 
-    internal ArgumentRegistration<IGraphicsTextureView> Fallback(ShaderResources reservation)
+    internal void Fallback(ShaderResources reservation, Action<IGpuRef<IGraphicsTextureView>> resolved)
     {
         if (_graphFallback is not null)
         {
-            return _graphFallback(reservation);
+            _graphFallback(reservation, resolved);
+            return;
         }
 
         _fallback ??= Own(Device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled }));
         _fallbackView ??= Own(_fallback.CreateView());
-        return reservation.RegisterTexture(_fallbackView);
+        reservation.RegisterTexture(_fallbackView, resolved);
     }
 
     internal void InitializeFallback(IGraphicsCommandBuffer commands)
@@ -392,17 +412,6 @@ public sealed class DrawingArgumentPlan2D : IDisposable
 
     private ShaderResources Legacy() => _legacy ??= Reserve();
 
-    private DrawingArgumentRegistration2D<T> LegacyHandle<T>(ArgumentRegistration<T> reference)
-    {
-        if (!_legacyHandles.TryGetValue(reference, out object? handle))
-        {
-            handle = new DrawingArgumentRegistration2D<T>(reference);
-            _legacyHandles.Add(reference, handle);
-        }
-
-        return (DrawingArgumentRegistration2D<T>)handle;
-    }
-
     private void Release()
     {
         if (_users == 1)
@@ -415,7 +424,6 @@ public sealed class DrawingArgumentPlan2D : IDisposable
             }
 
             _uploads.Clear();
-            _legacyHandles.Clear();
             _preparedResources.Clear();
         }
 

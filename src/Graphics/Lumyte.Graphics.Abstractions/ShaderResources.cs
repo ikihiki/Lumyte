@@ -41,48 +41,48 @@ public class ShaderResources
 
     /// <summary>Registers an exact borrowed sampled view.</summary>
     /// <param name="view">The immutable sampled view.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<IGraphicsTextureView> RegisterTexture(IGraphicsTextureView view) => _reservation.RegisterTexture(view);
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
+    public void RegisterTexture(IGraphicsTextureView view, Action<IGpuRef<IGraphicsTextureView>> resolved) => _reservation.RegisterTexture(view, resolved);
 
     /// <summary>Registers a sampled view resolved during preparation.</summary>
     /// <param name="resolve">The owner-scoped view resolver.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<IGraphicsTextureView> RegisterTexture(Func<IGraphicsTextureView> resolve) => _reservation.RegisterTexture(resolve);
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
+    public void RegisterTexture(Func<IGraphicsTextureView> resolve, Action<IGpuRef<IGraphicsTextureView>> resolved) => _reservation.RegisterTexture(resolve, resolved);
 
     /// <summary>Registers an immutable borrowed sampler by identity.</summary>
     /// <param name="sampler">The sampled resource's sampler.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<IGraphicsSampler> RegisterSampler(IGraphicsSampler sampler) => _reservation.RegisterSampler(sampler);
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
+    public void RegisterSampler(IGraphicsSampler sampler, Action<IGpuRef<IGraphicsSampler>> resolved) => _reservation.RegisterSampler(sampler, resolved);
 
     /// <summary>Registers an exact borrowed raw buffer range and its shader access.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="range">The borrowed buffer range.</param>
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
     /// <param name="access">The actual shader accesses.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<T> RegisterBuffer<T>(BufferSlice<T> range, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
-        where T : unmanaged => _reservation.RegisterBuffer(range, access);
+    public void RegisterBuffer<T>(BufferSlice<T> range, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+        where T : unmanaged => _reservation.RegisterBuffer(range, resolved, access);
 
     /// <summary>Registers a raw buffer range resolved during preparation.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="resolve">The final buffer range resolver.</param>
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
     /// <param name="access">The actual shader accesses.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<T> RegisterBuffer<T>(Func<BufferSlice<T>> resolve, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
-        where T : unmanaged => _reservation.RegisterBuffer(resolve, access);
+    public void RegisterBuffer<T>(Func<BufferSlice<T>> resolve, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+        where T : unmanaged => _reservation.RegisterBuffer(resolve, resolved, access);
 
     /// <summary>Registers an exact borrowed shader-data range.</summary>
     /// <typeparam name="T">The logical shader element type.</typeparam>
     /// <param name="range">The device-memory shader-data range.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<T> RegisterBuffer<T>(ShaderDataSlice<T> range)
-        where T : struct, IShaderData => _reservation.RegisterBuffer(range);
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
+    public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved)
+        where T : struct, IShaderData => _reservation.RegisterBuffer(range, resolved);
 
     /// <summary>Registers a shader-data range resolved during preparation.</summary>
     /// <typeparam name="T">The logical shader element type.</typeparam>
     /// <param name="resolve">The final shader-data range resolver.</param>
-    /// <returns>A pending resource reference.</returns>
-    public ArgumentRegistration<T> RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve)
-        where T : struct, IShaderData => _reservation.RegisterShaderData(resolve);
+    /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
+    public void RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve, Action<IGpuRef<T>> resolved)
+        where T : struct, IShaderData => _reservation.RegisterShaderData(resolve, resolved);
 
     /// <summary>Adds a resource identity and shader-access validation before native allocation.</summary>
     /// <param name="inspect">The resource declaration validator.</param>
@@ -171,6 +171,123 @@ public class ShaderResources
 
         encoder.SetArguments(in arguments);
         encoder.Dispatch(x, y, z);
+    }
+
+    /// <summary>Selects this set's bindings and snapshot, then records Draw work.</summary>
+    /// <param name="encoder">The native encoder with a selected pipeline.</param>
+    /// <param name="arguments">The logical root snapshot.</param>
+    /// <param name="vertexCount">The vertex count.</param>
+    /// <param name="instanceCount">The instance count.</param>
+    /// <param name="firstVertex">The first vertex.</param>
+    /// <param name="firstInstance">The first instance.</param>
+    public void Draw(IRenderEncoder encoder, ShaderValueSnapshot arguments, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ArgumentNullException.ThrowIfNull(arguments);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(arguments);
+        encoder.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
+    }
+
+    /// <summary>Selects this set's bindings and snapshot, then records DrawIndexed work.</summary>
+    /// <param name="encoder">The native encoder with a selected pipeline.</param>
+    /// <param name="arguments">The logical root snapshot.</param>
+    /// <param name="indexCount">The index count.</param>
+    /// <param name="instanceCount">The instance count.</param>
+    /// <param name="firstIndex">The first index.</param>
+    /// <param name="baseVertex">The signed vertex offset.</param>
+    /// <param name="firstInstance">The first instance.</param>
+    public void DrawIndexed(IRenderEncoder encoder, ShaderValueSnapshot arguments, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ArgumentNullException.ThrowIfNull(arguments);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(arguments);
+        encoder.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+    }
+
+    /// <summary>Selects this set's bindings and snapshot, then records Dispatch work.</summary>
+    /// <param name="encoder">The native encoder with a selected pipeline.</param>
+    /// <param name="arguments">The logical root snapshot.</param>
+    /// <param name="x">The X workgroup count.</param>
+    /// <param name="y">The Y workgroup count.</param>
+    /// <param name="z">The Z workgroup count.</param>
+    public void Dispatch(IComputeEncoder encoder, ShaderValueSnapshot arguments, uint x, uint y = 1, uint z = 1)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ArgumentNullException.ThrowIfNull(arguments);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: false);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(arguments);
+        encoder.Dispatch(x, y, z);
+    }
+
+    /// <summary>Selects this set's bindings and snapshot, then records DrawIndirect work.</summary>
+    /// <param name="encoder">The native encoder with a selected pipeline.</param>
+    /// <param name="arguments">The logical root snapshot.</param>
+    /// <param name="indirectArguments">Exactly one GPU-sourced indirect record.</param>
+    public void DrawIndirect(IRenderEncoder encoder, ShaderValueSnapshot arguments, BufferSlice<DrawIndirectArguments> indirectArguments)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ArgumentNullException.ThrowIfNull(arguments);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(arguments);
+        encoder.DrawIndirect(indirectArguments);
+    }
+
+    /// <summary>Selects this set's bindings and snapshot, then records DrawIndexedIndirect work.</summary>
+    /// <param name="encoder">The native encoder with a selected pipeline.</param>
+    /// <param name="arguments">The logical root snapshot.</param>
+    /// <param name="indirectArguments">Exactly one GPU-sourced indirect record.</param>
+    public void DrawIndexedIndirect(IRenderEncoder encoder, ShaderValueSnapshot arguments, BufferSlice<DrawIndexedIndirectArguments> indirectArguments)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ArgumentNullException.ThrowIfNull(arguments);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(arguments);
+        encoder.DrawIndexedIndirect(indirectArguments);
+    }
+
+    /// <summary>Selects this set's bindings and snapshot, then records DispatchIndirect work.</summary>
+    /// <param name="encoder">The native encoder with a selected pipeline.</param>
+    /// <param name="arguments">The logical root snapshot.</param>
+    /// <param name="indirectArguments">Exactly one GPU-sourced indirect record.</param>
+    public void DispatchIndirect(IComputeEncoder encoder, ShaderValueSnapshot arguments, BufferSlice<DispatchIndirectArguments> indirectArguments)
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        ArgumentNullException.ThrowIfNull(arguments);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: false);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(arguments);
+        encoder.DispatchIndirect(indirectArguments);
     }
 
     internal bool Uses(ArgumentTableReservation reservation) => ReferenceEquals(_reservation, reservation);

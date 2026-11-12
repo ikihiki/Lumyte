@@ -13,6 +13,10 @@ public interface IRenderEncoder
     void SetArguments<T>(in T arguments)
         where T : struct, IShaderArguments;
 
+    /// <summary>Copies a logical root snapshot for the selected program.</summary>
+    /// <param name="arguments">The root member values and numeric payloads.</param>
+    void SetArguments(ShaderValueSnapshot arguments) => throw new NotSupportedException("This encoder does not support logical argument snapshots.");
+
     /// <summary>Selects a program without changing draw state.</summary>
     /// <param name="pipeline">The same-device program.</param>
     void SetPipeline(IGraphicsPipeline pipeline);

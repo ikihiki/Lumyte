@@ -72,11 +72,11 @@ public sealed class GraphLocalResourceTests
     {
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
-        ShaderResources resources = graph.CreateShaderResources();
+        ShaderResources resources = graph.CreateModuleShaderResources();
         using var sampler = new DispatchSampler();
         graph.AddPass("operation", _ => { }).KeepAlive().UseShaderResources(resources);
         using CompiledRenderGraph compiled = graph.Compile();
-        Assert.Throws<InvalidOperationException>(() => resources.RegisterSampler(sampler));
+        Assert.Throws<InvalidOperationException>(() => resources.RegisterSampler(sampler, _ => { }));
         Assert.Throws<InvalidOperationException>(() => resources.CreateSibling());
         Assert.Throws<InvalidOperationException>(() => resources.Cancel());
         Assert.Throws<InvalidOperationException>(() => resources.WhenReady(() => { }));

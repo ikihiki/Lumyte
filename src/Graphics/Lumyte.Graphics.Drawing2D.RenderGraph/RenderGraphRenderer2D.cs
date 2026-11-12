@@ -74,7 +74,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         DrawingArgumentPlan2D? pendingPlan = null;
         pendingPlan = new(
             graph.Device,
-            graphFallback: scope => Shared().RegisterFallback(scope),
+            graphFallback: (scope, resolved) => Shared().RegisterFallback(scope, resolved),
             samplerFactory: () => Shared().Sampler(),
             resourceFactory: () =>
             {

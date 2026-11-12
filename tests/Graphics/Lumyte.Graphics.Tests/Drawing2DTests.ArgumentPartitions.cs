@@ -40,11 +40,12 @@ public sealed partial class Drawing2DTests
         var device = new PartitionDevice(native, native.Caps.ArgumentTableBindingLimits.TextureSlots);
         using IGraphicsBuffer<byte> buffer = device.CreateBuffer<byte>(new() { Count = 4, Usage = BufferUsage.ShaderRead });
         using var plan = new ArgumentTablePlan(device);
-        ArgumentRegistration<byte> earlier = plan.Reserve().RegisterBuffer(buffer.SliceElements(0, 4));
-        plan.Reserve().RegisterBuffer(buffer.SliceElements(0, 1));
+        IGpuRef<byte>? earlier = null;
+        plan.Reserve().RegisterBuffer(buffer.SliceElements(0, 4), reference => earlier = reference);
+        plan.Reserve().RegisterBuffer(buffer.SliceElements(0, 1), _ => throw new InvalidOperationException("An invalid range must never publish."));
         Assert.Throws<NotSupportedException>(() => plan.Materialize());
         Assert.Empty(device.Tables);
-        Assert.Throws<InvalidOperationException>(() => earlier.Reference);
+        Assert.Null(earlier);
         await Task.CompletedTask;
     }
 
@@ -397,6 +398,13 @@ public sealed partial class Drawing2DTests
             Assert.NotNull(_table);
             roots.Add((_table!, IShaderArguments.Capture(in arguments)));
             native.SetArguments(in arguments);
+        }
+
+        public void SetArguments(ShaderValueSnapshot arguments)
+        {
+            Assert.NotNull(_table);
+            roots.Add((_table!, arguments.Copy()));
+            native.SetArguments(arguments);
         }
 
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);

@@ -19,7 +19,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     public GraphicsDeviceLoss? Loss => null;
 
-    public DeviceCaps Caps { get; init; } = new() { MaxTextureDimension2D = 4096, ShaderTarget = ShaderTarget.SpirV, MaxBufferSize = 1UL << 30 };
+    public DeviceCaps Caps { get; init; } = new() { MaxTextureDimension2D = 4096, MaxColorAttachments = 8, ShaderTarget = ShaderTarget.SpirV, MaxBufferSize = 1UL << 30 };
 
     public IGraphicsQueue Queue => throw new InvalidOperationException("Drawing preparation must not access the queue.");
 

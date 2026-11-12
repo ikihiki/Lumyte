@@ -13,6 +13,10 @@ public interface IComputeEncoder
     void SetArguments<T>(in T arguments)
         where T : struct, IShaderArguments;
 
+    /// <summary>Copies a logical root snapshot for the selected program.</summary>
+    /// <param name="arguments">The root member values and numeric payloads.</param>
+    void SetArguments(ShaderValueSnapshot arguments) => throw new NotSupportedException("This encoder does not support logical argument snapshots.");
+
     /// <summary>Selects a same-device compute program.</summary>
     /// <param name="pipeline">The compute program.</param>
     void SetPipeline(IGraphicsComputePipeline pipeline);

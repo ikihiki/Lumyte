@@ -130,22 +130,55 @@ ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の�
 
 ## Shader inputs and execution
 
-Graph consumers describe logical resources and issue an opaque shader operation. The graph owns registration and backend binding selection; callers do not allocate, size, seal or bind argument tables. Existing raw `RenderGraphContext.Commands` remains available for deliberate backend interoperability.
+Graph consumers describe named logical members of a pinned shader artifact and pass that description directly to a dedicated graph encoder. They do not implement an application argument codec or allocate, size, seal or bind argument tables.
+
+This example uses the existing `EffectArguments` root in `Lumyte.Graphics.ImageEffects/Shaders/effects.slang` for an opacity operation. The caller supplies `fragment`, its `pipeline`, declared `source` and `target` textures, `samplerDesc`, `width`/`height`, `Vector4 bounds = new(0, 0, width, height)`, and `float opacity`. Import/creation, using directives (including System.Numerics), export, Submit/Wait and failure cleanup are omitted; retain the compiled plan and borrowed pipeline until GPU completion as described above.
 
 ```csharp
-RenderGraphShaderResources inputs = graph.CreateShaderResources();
-var image = inputs.ReadTexture(source);
+RenderGraphShaderResources inputs = graph.CreateShaderResources(fragment.Artifact)
+    .ReadTexture("Input", source)
+    .ReadTexture("Backdrop", source)
+    .Sampler("Sampler", samplerDesc)
+    .Value("InputBounds", bounds)
+    .Value("BackdropBounds", bounds)
+    .Value("OutputBounds", bounds)
+    .Value("Settings", () => new Vector4(3, 0, 0, opacity))
+    .Value("Row0", Vector4.Zero)
+    .Value("Row1", Vector4.Zero)
+    .Value("Row2", Vector4.Zero)
+    .Value("Row3", Vector4.Zero)
+    .Value("Constant", Vector4.Zero);
 graph.AddPass("sample", context =>
 {
-    IRenderEncoder render = BeginDraw(context); // Application helper: attachment, pipeline and state.
-    var args = new ImageArguments(image.Reference); // Application IShaderArguments.
-    inputs.Draw(render, in args, 3);
-    render.End();
+    using RenderGraphRenderEncoder render = context.BeginRenderPass(new()
+    {
+        ColorAttachments = [new()
+        {
+            Texture = target,
+            LoadOp = AttachmentLoadOp.Clear,
+            StoreOp = AttachmentStoreOp.Store,
+        }],
+    });
+    render.SetPipeline(pipeline);
+    render.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
+    render.SetViewport(new(0, 0, width, height, 0, 1));
+    render.SetScissor(new(0, 0, width, height));
+    render.SetBlendConstant(new(0, 0, 0, 0));
+    render.SetStencilReference(0);
+    render.Draw(inputs, 3);
 }).UseTexture(source, TextureState.Sampled, sampleRead)
   .UseTexture(target, TextureState.ColorAttachment, colorWrite)
   .UseShaderResources(inputs, target);
 ```
 
-Declare the actual color outputs in `UseShaderResources`. Omitting color outputs selects compute and the operation uses `inputs.Dispatch(computeEncoder, in args, x, y, z)`. Graphics operations use `Draw` or `DrawIndexed`. Inputs belong to exactly one pass; use `CreateSibling()` for another independently declared operation. Packing callbacks use `WhenReady`, and execution remains unavailable until every live callback succeeds.
+`CreateShaderResources(fragment.Artifact, rootParameter: "arguments")` pins the exact artifact object and the device's `Caps.ShaderTarget`. All fluent calls return the same sealed graph description, not native references. The compiled root layout validates exact member paths, CLR numeric types and reference kinds/element types. Missing, duplicate, unknown or mistyped members and a different pipeline artifact are rejected before execution. `Value(path, Func<T>)` is evaluated into a fresh snapshot for each draw or dispatch, including after pipeline changes.
+
+Declare the actual color outputs in `UseShaderResources(inputs, target)` and declare matching attachment state/access on that pass. No color outputs can mean compute or depth-only graphics: the artifact stage distinguishes them. Depth-only graphics uses `RenderGraphRenderPassDesc.DepthStencilAttachment`. For compute, use `using var compute = context.BeginComputePass(); compute.SetPipeline(pipeline); compute.Dispatch(inputs, x, y, z);` with the compute artifact and matching buffer/texture declarations.
+
+The render encoder supports pipeline/render state, viewport, scissor, blend constants, stencil reference, index buffers, `Draw`/`DrawIndexed` and their indirect forms. Compute supports `Dispatch` and `DispatchIndirect`. Native encoders never escape these wrappers. Exactly one graph encoder can be active per context. `End` ends once; `Dispose` is idempotent after ending. Context closure cleans up an outstanding encoder and preserves the original callback exception if cleanup also fails. Contexts and encoders cannot be used after the callback. Raw `context.Commands` remains for deliberate interoperability; do not mix raw passes with an active graph encoder.
+
+An input set belongs to one pass execution unit; create another description for an independent unit. Preparation installs all native references, runs all typed resolution callbacks, then all finalizers, and only then permits recording. Any failure invalidates the entire new generation.
+
+Independently prepared modules use the separate `CreateModuleShaderResources()` bridge, returning an opaque Abstractions `ShaderResources` with no Table accessor. `RegisterModuleTexture(resources, handle, callback)` and typed `RegisterModuleBuffer` deliver real references during preparation. `DescribeModuleShaderResources(module, artifact)` describes that same indivisible cohort for nested metadata/composite execution; it does not create an independent reservation. Ordinary graph consumers do not need this bridge. Low-level non-graph `IShaderArguments` and static codecs remain available; native `SetArguments(ShaderValueSnapshot)` is a defensive-copy interop overload.
 
 `UseLocalBuffer` and `UseLocalShaderDataBuffer` describe borrowed storage whose effects are confined to one pass. They retain actual resource validation and synchronization declarations, cannot be exported or promoted to outputs, and cannot be used by another pass. Existing global imports keep their original observability. Locality does not transfer allocation ownership or remove the caller completion requirement.

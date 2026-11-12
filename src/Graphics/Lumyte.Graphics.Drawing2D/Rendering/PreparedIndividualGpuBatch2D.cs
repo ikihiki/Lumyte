@@ -173,8 +173,6 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
     {
         DrawingArgumentPlan2D plan = _context.ArgumentPlan;
         ShaderResources reservation = plan.Reserve();
-        ArgumentRegistration<IGraphicsSampler> sampler = reservation.RegisterSampler(_sampler);
-        ArgumentRegistration<IGraphicsTextureView> fallbackRef = plan.Fallback(reservation);
         var program = new DrawingProgram2D(reservation, _context.Target);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
@@ -193,12 +191,15 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, instructions.Count, MemoryPreference.Upload));
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
         IGraphicsBuffer<Vector4> geometry = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = data.Count, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
-        ArgumentRegistration<DrawingInstruction> instructionRef = reservation.RegisterBuffer(instructions.SliceElements(0, instructions.Count));
-        ArgumentRegistration<Vector4> dataRef = reservation.RegisterBuffer(geometry.SliceElements(0, geometry.Count));
         BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
         plan.MarkPreparedShaderData(reservation, instructions, prepared);
         plan.MarkPreparedBuffer(reservation, geometry, prepared);
         ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
+        var preparedCommand = new PreparedCommand(program, reservation, instructions, upload, data, geometry, root, scissor);
+        reservation.RegisterSampler(_sampler, reference => preparedCommand.ResolvedSampler = reference);
+        plan.Fallback(reservation, reference => preparedCommand.ResolvedFallback = reference);
+        reservation.RegisterBuffer(instructions.SliceElements(0, instructions.Count), reference => preparedCommand.ResolvedInstructions = reference);
+        reservation.RegisterBuffer(geometry.SliceElements(0, geometry.Count), reference => preparedCommand.ResolvedData = reference);
         _mappedUploads.Add(() =>
         {
             if (!reservation.IsReady)
@@ -206,7 +207,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
                 return;
             }
 
-            program.ResolveReferences(fallbackRef.Reference, sampler.Reference);
+            program.ResolveReferences(preparedCommand.Fallback, preparedCommand.Sampler);
             if (!upload.IsMapped || !data.IsMapped)
             {
                 throw new InvalidOperationException("Prepare staging maps before synchronous graph finalization.");
@@ -234,7 +235,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         });
         _estimatedBytes = checked(_estimatedBytes + (long)(instructions.SizeInBytes + upload.SizeInBytes + data.SizeInBytes + geometry.SizeInBytes)
             + ((long)program.Instructions.Count * 256) + ((long)program.Data.Count * 32) + 65536);
-        _commands.Add(new(program, reservation, instructions, upload, data, geometry, instructionRef, dataRef, sampler, fallbackRef, root, scissor));
+        _commands.Add(preparedCommand);
         return ValueTask.CompletedTask;
     }
 
@@ -304,6 +305,11 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
 
     private void RecordCommand(IGraphicsCommandBuffer commands, IGraphicsTextureView view, PreparedCommand command, bool resident)
     {
+        if (!command.Reservation.IsReady)
+        {
+            throw new InvalidOperationException("Materialize the resource set before recording.");
+        }
+
         if (!resident)
         {
             var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
@@ -347,14 +353,26 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         return resource;
     }
 
-    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGraphicsBuffer<Vector4> Geometry, ArgumentRegistration<DrawingInstruction> InstructionRegistration, ArgumentRegistration<Vector4> DataRegistration, ArgumentRegistration<IGraphicsSampler> SamplerRegistration, ArgumentRegistration<IGraphicsTextureView> FallbackRegistration, uint Root, ScissorRect Scissor)
+    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, IGraphicsShaderDataBuffer<DrawingInstruction> Instructions, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, IGraphicsBuffer<Vector4> Geometry, uint Root, ScissorRect Scissor)
     {
-        internal IGpuRef<DrawingInstruction> InstructionRef => InstructionRegistration.Reference;
+        internal IGpuRef<DrawingInstruction>? ResolvedInstructions { get; set; }
 
-        internal IGpuRef<Vector4> DataRef => DataRegistration.Reference;
+        internal IGpuRef<Vector4>? ResolvedData { get; set; }
 
-        internal IGpuRef<IGraphicsSampler> Sampler => SamplerRegistration.Reference;
+        internal IGpuRef<IGraphicsSampler>? ResolvedSampler { get; set; }
 
-        internal IGpuRef<IGraphicsTextureView> Fallback => FallbackRegistration.Reference;
+        internal IGpuRef<IGraphicsTextureView>? ResolvedFallback { get; set; }
+
+        internal IGpuRef<DrawingInstruction> InstructionRef => Ready(ResolvedInstructions);
+
+        internal IGpuRef<Vector4> DataRef => Ready(ResolvedData);
+
+        internal IGpuRef<IGraphicsSampler> Sampler => Ready(ResolvedSampler);
+
+        internal IGpuRef<IGraphicsTextureView> Fallback => Ready(ResolvedFallback);
+
+        private IGpuRef<T> Ready<T>(IGpuRef<T>? reference) => Reservation.IsReady && reference is not null
+            ? reference
+            : throw new InvalidOperationException("Materialize the resource set before using native references.");
     }
 }

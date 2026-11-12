@@ -68,13 +68,13 @@ internal sealed class GraphDrawingArguments2D : IRenderGraphLifetime
 
     internal IGraphicsSampler Sampler() => DefaultSampler();
 
-    internal ArgumentRegistration<IGraphicsTextureView> RegisterFallback(ShaderResources scope)
+    internal void RegisterFallback(ShaderResources scope, Action<IGpuRef<IGraphicsTextureView>> resolved)
     {
         _fallbackScopes.Add(scope);
-        return ((RenderGraphShaderResources)scope).ReadTexture(Fallback);
+        _graph.RegisterModuleTexture(scope, Fallback, resolved);
     }
 
-    internal ShaderResources CreateResources() => _graph.CreateShaderResources();
+    internal ShaderResources CreateResources() => _graph.CreateModuleShaderResources();
 
     private IGraphicsSampler DefaultSampler() => _sampler ??= _graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
 }

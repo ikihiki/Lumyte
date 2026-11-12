@@ -232,8 +232,9 @@ public sealed class CompiledRenderGraph : IDisposable
                 }
 
                 RecordBarriers(commands, pass.Barriers);
-                var context = new RenderGraphContext(commands, pass.Uses, this);
+                var context = new RenderGraphContext(commands, pass.Uses, this, pass.Identity);
                 using RenderGraphProfiling.ProfileScope? passProfile = RenderGraphProfiling.Log.BeginChild(8, executionIndex++);
+                Exception? callbackError = null;
                 try
                 {
                     pass.Callback(context);
@@ -246,12 +247,13 @@ public sealed class CompiledRenderGraph : IDisposable
                 }
                 catch (Exception exception)
                 {
+                    callbackError = exception;
                     passProfile?.Fail(exception);
                     throw;
                 }
                 finally
                 {
-                    context.Close();
+                    context.Close(callbackError);
                 }
 
                 passProfile?.Complete();

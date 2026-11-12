@@ -8,7 +8,7 @@ internal readonly partial record struct DrawingInstruction(
     uint Kind, uint First, uint Count, uint Mode,
     IGpuRef<IGraphicsTextureView> Texture, IGpuRef<IGraphicsSampler> Sampler) : IShaderData
 {
-    internal ArgumentRegistration<IGraphicsTextureView>? PendingTexture { get; init; }
+    internal int TextureIndex { get; init; } = -1;
 
-    internal ArgumentRegistration<IGraphicsSampler>? PendingSampler { get; init; }
+    internal int SamplerIndex { get; init; } = -1;
 }
