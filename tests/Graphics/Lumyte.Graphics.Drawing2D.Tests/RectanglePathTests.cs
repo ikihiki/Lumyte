@@ -75,7 +75,9 @@ public sealed class RectanglePathTests
         var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         program.Compile(command);
         Assert.Empty(program.Data);
-        Assert.Equal(2, program.Instructions.Count(instruction => instruction.Kind == 1));
+        Assert.DoesNotContain(program.Instructions, instruction => instruction.Kind == 1);
+        Assert.Single(program.Instructions, instruction => instruction.Kind == 16);
+        Assert.Equal(NormalizedClipKind2D.Analytic, program.Clip!.Kind);
         Assert.DoesNotContain(program.Instructions, instruction => instruction.Kind == 4);
         program.ValidateFiniteData();
     }

@@ -82,10 +82,14 @@ public sealed class CompositeTests
         uint root = program.Compile(Assert.Single(canvas.End().Commands));
         Assert.Equal(12u, program.Instructions[3].Kind);
         Assert.Equal(11u, program.Instructions[4].Kind);
-        Assert.Equal(4u, program.Instructions[5].Kind);
+        Assert.Equal(4u, root);
+        Assert.Equal(5, program.Instructions.Count);
         Assert.Equal(11u, program.Instructions[(int)root].Kind);
-        Assert.Equal(4u, program.Instructions[(int)root].First);
-        Assert.Equal(5u, program.Instructions[(int)root].Count);
+        Assert.Equal(0u, program.Instructions[(int)root].First);
+        Assert.Equal(3u, program.Instructions[(int)root].Count);
+        Assert.Equal(NormalizedClipKind2D.Scissor, program.Clip!.Kind);
+        Assert.Equal(new ScissorRect(1, 2, 8, 9), program.Clip.Bounds);
+        Assert.DoesNotContain(program.Instructions, instruction => instruction.Kind is 4 or 16 or 17);
     }
 
     /// <summary>Invalid operands and excessive expanded graphs are rejected before recording.</summary>

@@ -108,7 +108,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
 
         IGraphicsShaderDataBuffer<DrawingInstruction> upload = Own(_context.Device.CreateShaderDataBuffer<DrawingInstruction>(_artifact, (ulong)program.Instructions.Count, MemoryPreference.Upload));
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
-        ScissorRect scissor = DrawingBounds2D.GetScissor(null, clip, _context.Target, new(source.Bounds.X, source.Bounds.Y, source.Bounds.Width, source.Bounds.Height), original is not null, replace);
+        ScissorRect scissor = DrawingBounds2D.GetScissor(null, clip, _context.Target, new(source.Bounds.X, source.Bounds.Y, source.Bounds.Width, source.Bounds.Height), original is not null, replace, program.Clip?.Bounds);
         var command = new PreparedCommand(program, resources, upload, data, root, source, original, opacity, replace, scissor);
         command.RegisterReferences(_context.Graph, _sampler, _shared.Fallback);
         _commands.Add(command);

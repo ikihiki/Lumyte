@@ -166,6 +166,11 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
                 }
             }
 
+            if (batch._commands.Count == 0)
+            {
+                return batch;
+            }
+
             ulong instructionCount = checked((ulong)batch._commands.Sum(item => (long)item.Program.Instructions.Count));
             ulong dataCount = checked((ulong)batch._commands.Sum(item => (long)item.Program.Data.Count));
             bool fits;
@@ -231,9 +236,14 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
 
     private void Add(DrawingCommand2D command)
     {
+        if (_context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements).Kind == NormalizedClipKind2D.Empty)
+        {
+            return;
+        }
+
         DrawingArgumentPlan2D plan = _context.ArgumentPlan;
         ShaderResources reservation = plan.Reserve();
-        var program = new DrawingProgram2D(reservation, _context.Target);
+        var program = new DrawingProgram2D(reservation, _context.Target, _context.Clips);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
         if (program.Data.Count == 0)
@@ -241,7 +251,7 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
             program.Data.Add(default);
         }
 
-        ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
+        ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false, program.Clip?.Bounds);
         var preparedCommand = new PreparedCommand(program, reservation, root, scissor);
         reservation.RegisterSampler(_sampler, reference => preparedCommand.ResolvedSampler = reference);
         plan.Fallback(reservation, reference => preparedCommand.ResolvedFallback = reference);

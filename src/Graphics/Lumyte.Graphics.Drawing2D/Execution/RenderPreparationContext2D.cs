@@ -13,6 +13,7 @@ public sealed class RenderPreparationContext2D
         Target = target;
         _resources = resources;
         ArgumentPlan = argumentPlan ?? new(device);
+        Clips = new(target);
     }
 
     /// <summary>Gets the borrowed device.</summary>
@@ -26,6 +27,8 @@ public sealed class RenderPreparationContext2D
 
     /// <summary>Gets the target geometry normalized to Load.</summary>
     public DrawingTargetInfo2D Target { get; }
+
+    internal ClipNormalizationCache2D Clips { get; }
 
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
     /// <returns>A lifetime token containing no pipeline or shader state.</returns>
