@@ -218,6 +218,22 @@ public sealed class IntegerClipScissorTests
         Assert.Single(adjacent.Instructions, instruction => instruction.Kind == 17);
     }
 
+    /// <summary>An isolated move has no coverage edges and cannot inflate mask storage bounds.</summary>
+    [Fact]
+    public void IsolatedMoveDoesNotInflateMask()
+    {
+        var path = new PathBuilder2D();
+        path.MoveTo(Vector2.Zero);
+        path.LineTo(Vector2.UnitX);
+        path.LineTo(Vector2.UnitY);
+        path.Close();
+        path.MoveTo(new(30000, 30000));
+        var clip = NormalizedClip2D.Create([new(path.Build(), Matrix3x2.Identity, FillRule2D.NonZero)], Target());
+        Assert.Equal(new ScissorRect(0, 0, 1, 1), clip.Bounds);
+        Assert.Single(clip.Mask);
+        Assert.Equal(0x0137, (int)clip.Mask[0].X);
+    }
+
     private static DrawingCommand2D Command(Action<Canvas2D> clip)
     {
         var canvas = new Canvas2D();

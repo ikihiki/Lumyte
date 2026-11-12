@@ -19,11 +19,6 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
         const int MaximumMaskPixels = 1048576;
         const long MaximumSampleEdges = 268435456;
         uint width = target.Description.Width, height = target.Description.Height;
-        if (width > 32768 || height > 32768)
-        {
-            throw new NotSupportedException("Clip normalization requires target dimensions at most 32768.");
-        }
-
         if (elements.Count > 4096)
         {
             throw new NotSupportedException("Clip normalization exceeds the 4096 captured element budget.");
@@ -33,6 +28,11 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
         if (elements.Count == 0)
         {
             return new(NormalizedClipKind2D.None, full, default, []);
+        }
+
+        if (width > 32768 || height > 32768)
+        {
+            throw new NotSupportedException("Clip normalization requires target dimensions at most 32768.");
         }
 
         Matrix3x2 pixels = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
@@ -72,10 +72,6 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
                 {
                     Point a = Transform(contour.Points[i], transform);
                     Point b = Transform(contour.Points[(i + 1) % contour.Points.Count], transform);
-                    lowX = Math.Min(lowX, a.X);
-                    lowY = Math.Min(lowY, a.Y);
-                    highX = Math.Max(highX, a.X);
-                    highY = Math.Max(highY, a.Y);
                     if (a != b)
                     {
                         if (edgeCount + edges.Count >= PathFlattening2D.MaximumEdges)
@@ -83,6 +79,10 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
                             throw new NotSupportedException("Clip normalization exceeds the 65536 aggregate edge budget.");
                         }
 
+                        lowX = Math.Min(lowX, Math.Min(a.X, b.X));
+                        lowY = Math.Min(lowY, Math.Min(a.Y, b.Y));
+                        highX = Math.Max(highX, Math.Max(a.X, b.X));
+                        highY = Math.Max(highY, Math.Max(a.Y, b.Y));
                         edges.Add(new(a, b));
                     }
                 }
