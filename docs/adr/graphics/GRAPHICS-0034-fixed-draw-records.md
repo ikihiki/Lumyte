@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0034: 描画を同じ長さの record にまとめ、引数で描画範囲を選ぶ
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-12
 - 基準コミット: `1dbf62977a4805cb32d97811f8a890237bea20cb`
 - 変更関係: 一部変更
@@ -20,7 +20,7 @@ Drawing2D を保守する利用者は、異なる図形を連続格納し、そ�
 
 ### 利用者の変更前・変更後
 
-内部変更なので、利用者の Canvas、Renderer2D、DrawingScene2D、retained content の記述、準備・Record・submit・完了待ち・解放は変わらない。公開 API の追加・削除・保証変更はない。内部の prepared batch は、現在の一描画一 interpreter 実行から、互換な連続 record 範囲のインスタンス実行へ変わる。custom renderer の独自 batch までこの格納形式へ強制しない。
+内部変更なので、利用者の Canvas、Renderer2D、DrawingScene2D、retained content の記述、準備・Record・submit・完了待ち・解放は変わらない。公開シグネチャの追加・削除はない。MaxCachedBytes の共有・in-flight 所有分の計上は「所有権と retained 更新」の契約へ変更する。内部の prepared batch は、現在の一描画一 interpreter 実行から、互換な連続 record 範囲のインスタンス実行へ変わる。custom renderer の独自 batch までこの格納形式へ強制しない。
 
 変更前の内部呼び出しは、基準 SHA の `Rendering/PreparedGpuBatch2D.cs` の `RecordCommand` で次の形を取る。pipeline/state、引数生成、upload、所有者と失敗処理は抜粋外である。
 
@@ -28,7 +28,7 @@ Drawing2D を保守する利用者は、異なる図形を連続格納し、そ�
 command.Reservation.Draw(render, in arguments, 3);
 ```
 
-変更後の提案例では、admission 済みの同じ table と pipeline を使い、ページの 12 番から 5 個、半開区間 [12,17) を選ぶ。初期化・所有・admission は後述の契約に従い、この抜粋で生成や解放を代用しない。
+変更後の内部呼び出し例では、admission 済みの同じ table と pipeline を使い、ページの 12 番から 5 個、半開区間 [12,17) を選ぶ。初期化・所有・admission は後述の契約に従い、この抜粋で生成や解放を代用しない。
 
 ```csharp
 // Lumyte.Graphics.Drawing2D 内部。using Lumyte.Graphics.Abstractions;
@@ -41,7 +41,7 @@ render.Draw(vertexCount: 6, instanceCount: selected.RecordCount,
 
 ### 96 B の格納契約
 
-record は旧式命令ではなく一つの描画である。shader 配列の element alignment は 16 B、stride は正確に 96 B とし、C# の managed sizeof を wire の根拠にしない。数値以外の GPU 参照は record に埋めず、下表の uint ID はページ内の論理索引である。
+record は旧式命令ではなく一つの描画である。shader 配列の各要素の実際の先頭を 16 B 境界へ置き、stride は正確に 96 B とする。これは stream 開始位置と stride による保証であり、compiler の natural-layout reflection が報告する型の最小 alignment と同一であることは要求しない。C# の managed sizeof を wire の根拠にしない。数値以外の GPU 参照は record に埋めず、下表の uint ID はページ内の論理索引である。
 
 | byte offset | 長さ | 内容 |
 | --- | --- | --- |
@@ -86,7 +86,7 @@ ClipId は独立した clip directory を指し、payload と membership の配�
 
 ### 全 stream の byte 配置
 
-以下を提案する canonical ABI とする。offset は各要素または payload 先頭からの byte、範囲は半開区間、スカラーは little-endian の 32 bit である。float4 は各 lane が float32、uint4 は各 lane が uint32、いずれも lane offset は 0/4/8/12 B である。表の長さは padding 込みで正確な長さであり、明記した reserved、tail、未使用 lane はゼロにする。数値 stream の alignment は 16 B とする。
+以下を canonical ABI とする。offset は各要素または payload 先頭からの byte、範囲は半開区間、スカラーは little-endian の 32 bit である。float4 は各 lane が float32、uint4 は各 lane が uint32、いずれも lane offset は 0/4/8/12 B である。表の長さは padding 込みで正確な長さであり、明記した reserved、tail、未使用 lane はゼロにする。数値 stream の alignment は 16 B とする。
 
 NumericPayload は raw の `float4` 配列（16 B/cell）一つであり、以下の paint、clip、stops、geometry、membership はその内部の論理領域であって独立 binding ではない。整数 lane は uint32 の wire bits を float32 storage へ bitcast し、shader で asuint する。CPU staging/upload は NaN を含む全 bit を保存し、float 数値変換・演算・正規化を介さない。membership だけは後述の数値 float である。新しい raw uint pointer API を前提にしない。
 
@@ -103,9 +103,9 @@ NumericPayload は raw の `float4` 配列（16 B/cell）一つであり、以�
 | 同上 | 8 | 4 | uint PayloadLength16 |
 | 同上 | 12 | 4 | uint Reserved = 0 |
 
-Draw Kind は本提案で Rect=1、RoundedRect=2、Circle=3、PathEdges=4、StrokeTriangles=5、MeshTriangles=6、CoverageMask=7、DistanceField=8、PaintGraph=9 とする。Flags は現版では 0 のみ。Path Mode は NonZero=0 / EvenOdd=1、Mesh Mode は 1、他の Mode は 0 とする。PaintGraph の shape coverage は 1、逆変換は identity、geometry payload は空であり、terminal paint は DrawRecord.PaintId で指定する。
+Draw Kind は本決定で Rect=1、RoundedRect=2、Circle=3、PathEdges=4、StrokeTriangles=5、MeshTriangles=6、CoverageMask=7、DistanceField=8、PaintGraph=9 とする。Flags は現版では 0 のみ。Path Mode は NonZero=0 / EvenOdd=1、Mesh Mode は 1、他の Mode は 0 とする。PaintGraph の shape coverage は 1、逆変換は identity、geometry payload は空であり、terminal paint は DrawRecord.PaintId で指定する。
 
-paint Kind は本提案で Transparent=0、Solid=1、Linear=2、Radial=3、Sweep=4、Image=5、Opacity=6、Composite=7、Clip=8、DistanceField=9 とする。clip Kind は None=0、Scissor=2、Analytic=3、SampleMask=4（基準 NormalizedClipKind2D と同値）、Empty=1 は準備時に除き GPU へ送らない。未知 Kind/enum/flag は拒否する。PaintDirectory[0] と ClipDirectory[0] は全 16 B をゼロにし、payload を読まない透明 paint / clip なしとする。Solid の透明値は別の有効 payload としても表せる。ID は全て uint32 の directory element index、0 以外は有効 count 未満でなければならない。
+paint Kind は本決定で Transparent=0、Solid=1、Linear=2、Radial=3、Sweep=4、Image=5、Opacity=6、Composite=7、Clip=8、DistanceField=9 とする。clip Kind は None=0、Scissor=2、Analytic=3、SampleMask=4（基準 NormalizedClipKind2D と同値）、Empty=1 は準備時に除き GPU へ送らない。未知 Kind/enum/flag は拒否する。PaintDirectory[0] と ClipDirectory[0] は全 16 B をゼロにし、payload を読まない透明 paint / clip なしとする。Solid の透明値は別の有効 payload としても表せる。ID は全て uint32 の directory element index、0 以外は有効 count 未満でなければならない。
 
 #### NumericPayload の paint payload
 
@@ -135,7 +135,7 @@ leaf inverse は target-local sample から paint-local（image なら source-re
 
 #### typed image と mask/field descriptor
 
-ImagePaintData は **128 B stride**、MaskDescriptors は **80 B stride** を本提案の固定 wire とする。texture/sampler の 16 B wire は後述の backend 表に従うが、論理値は IGpuRef のまま generated serializer と登録表で解決する。生 uint4 の resource ID を自作して参照を偽装しない。
+ImagePaintData は **128 B stride**、MaskDescriptors は **80 B stride** を本決定の固定 wire とする。texture/sampler の 16 B wire は後述の backend 表に従うが、論理値は IGpuRef のまま generated serializer と登録表で解決する。生 uint4 の resource ID を自作して参照を偽装しない。
 
 | stream | byte offset | 長さ | 内容 |
 | --- | --- | --- | --- |
@@ -266,11 +266,26 @@ paint、clip、geometry は数値 stream と参照を持つ typed descriptor str
 
 準備中の CPU geometry/mask cache と pack plan は準備限定の所有者に置き、upload または最後の遅延 pack 後に mask 配列と辞書容量を解放する。失敗、取消、append 中断、graph abandon/culling でも解放する。小さな生存 retained asset が無関係な大きい mask を pin しないことを維持する。
 
-完成ページは immutable snapshot とし、table と参照先資産を含む shared owner/refcount を持つ。GPU 完了 **かつ command disposal** 前には上書き・pool 返却しない。借用画像/view/sampler の所有者は従来どおり呼出し側であり、shared owner は内部で生成した資源の所有と借用参照の保持を区別し、borrowed 資源の Dispose を防ぐ新しい lease 保証は加えない。retained の部分更新はページ単位 copy-on-write とする。未変更ページは共有できるが、同ページの生存 record の再 pack、挿入・削除・並べ替えによる後続区間の再構築は起こり得る。登録表の所属が変わるページは関連 payload も再 pack する。毎 frame が O(dirty) になる保証や framebuffer damage redraw は追加しない。retained 予算には shared bytes の重複を避けつつ、CPU 保持分、GPU bytes、古い in-flight snapshot をすべて含める。
+完成ページは immutable snapshot とし、table と参照先資産を含む shared owner/refcount を持つ。GPU 完了 **かつ command disposal** 前には上書き・pool 返却しない。借用画像/view/sampler の所有者は従来どおり呼出し側であり、shared owner は内部で生成した資源の所有と借用参照の保持を区別し、borrowed 資源の Dispose を防ぐ新しい lease 保証は加えない。retained の部分更新はページ単位 copy-on-write とする。未変更ページは共有できるが、同ページの生存 record の再 pack、挿入・削除・並べ替えによる後続区間の再構築は起こり得る。登録表の所属が変わるページは関連 payload も再 pack する。毎 frame が O(dirty) になる保証や framebuffer damage redraw は追加しない。retained 予算には shared bytes の重複を避けつつ、CPU 保持分、GPU bytes、古い in-flight snapshot をすべて含める。MaxCachedBytes の既定値と設定値は維持し、idle cache の受け入れ時には active snapshot の保有分も予算を予約する。active frame を eviction したり、既に受理した frame を遡って拒否したりせず、非解放可能な保有分が予算を超える間は idle を保持しない。キーが保持する不変 CPU page、staging/device buffer と共有登録 plan は owner identity ごとに保守的に計数する。driver の内部 heap 消費量を推測して正確な VRAM 使用量とは呼ばない。
 
 ### 内部 API 差分
 
-以下は提案する追加宣言の抜粋で、namespace は既存 Drawing2D と同じにする。既存 DrawingArguments は graph 合成用として維持し、汎用 command の生成だけを新引数へ移す。IRenderEncoder.SetArguments/Draw と IShaderData の公開契約は変えない。各 buffer の IGpuRef は通常の generated codec と選択済み table を使い、追加の公開 binding API を作らない。
+以下は追加する宣言の抜粋で、namespace は既存 Drawing2D と同じにする。既存 DrawingArguments は graph 合成用として維持し、汎用 command の生成だけを新引数へ移す。IRenderEncoder.SetArguments/Draw と IShaderData の公開契約は変えない。DrawingRetentionOptions2D.MaxCachedBytes の説明は次の差分とし、frame の受理上限と caller-managed な寿命保証は維持する。
+
+```diff
+ namespace Lumyte.Graphics.Drawing2D
+ {
+     public sealed record DrawingRetentionOptions2D
+     {
+-        // idle reusable batch の推定 bytes の上限。
++        // 共有 owner と active snapshot の保有分も予約する retained-memory 予算。
++        // active frame は eviction せず、遡って拒否しない。既定値は維持する。
+         public long MaxCachedBytes { get; init; } = 64 * 1024 * 1024;
+     }
+ }
+```
+
+各 buffer の IGpuRef は通常の generated codec と選択済み table を使い、追加の公開 binding API を作らない。
 
 ```diff
  namespace Lumyte.Graphics.Drawing2D
@@ -346,4 +361,4 @@ NumericPayload は geometry、paint 数値、clip 数値のページ内共通 16
 - table exact/+1 と単一超過、transitive reference、paint sharing と別 table 再 pack、AddPass 超過拒否、組込み pass 分割、copy producer と culling を検査する。
 - retained の旧 snapshot と複数 in-flight、挿入/削除/並べ替え、cache eviction、CPU/GPU byte accounting、upload failure/取消/graph abandon、完了前返却拒否と cleanup retry を構造的に検査する。
 
-本書は設計の提案であり、上記の導入条件を満たした実装や backend reflection、pixel、性能の検証済みを意味しない。実装、benchmark、公開手続きは今回の決定対象外とする。
+採用は上記の導入条件を満たした実装や backend reflection、pixel、性能の検証済みを意味しない。導入時には各受け入れ条件を別途確認する。
