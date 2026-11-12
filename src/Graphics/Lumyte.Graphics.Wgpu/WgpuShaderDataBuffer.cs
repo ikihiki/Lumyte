@@ -88,17 +88,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
             return;
         }
 
-        var snapshots = new ShaderValueSnapshot[source.Length];
-        for (int i = 0; i < source.Length; i++)
-        {
-            snapshots[i] = IShaderArguments.Capture(in source[i]);
-        }
-
-        byte[] bytes = new byte[checked(source.Length * Layout.Size)];
-        for (int i = 0; i < snapshots.Length; i++)
-        {
-            Layout.Pack(snapshots[i], PackReference).CopyTo(bytes, i * Layout.Size);
-        }
+        byte[] bytes = ((ShaderDataLayout)Layout).Pack(source, PackReference, out ShaderValueSnapshot[] snapshots);
 
         Storage.SliceElements(checked(elementOffset * (ulong)Layout.Size), (ulong)bytes.Length).CopyFrom(bytes);
         snapshots.CopyTo(_values, checked((int)elementOffset));

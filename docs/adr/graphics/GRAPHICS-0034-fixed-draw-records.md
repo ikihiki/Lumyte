@@ -198,6 +198,26 @@ Vulkan は address + slice offset、D3D12 は raw buffer の byte offset、WGSL 
 
 基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/ShaderSourcePreparation.cs` は `StructuredBuffer<Ptr<T>>` probe を追加し、buffer target schema を保存する。`src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.cs` は natural-layout の field offset/size を読み、`src/Graphics/Lumyte.Graphics.Generators/ShaderArgumentsGenerator.cs` は名前付き value/reference の writer を生成する。したがって C# 宣言順の sizeof を wire とみなさず、各 target の schema と generated codec を上の **固定値へ照合**する。root uniform の layout も別に照合する。96/16/80/128 B と下記48/64/80 B metadata・64 B range・144 B graph の offset/stride が一致しない backend は有効化しない。未知の reflected stride を受け入れて設計値を黙って変更しない。これは ABI の受け入れ gate とし、stride や field の一致を条件に specialization を有効化する。
 
+#### CPU capture と bulk packing
+
+backend の既存 `CopyFrom(ReadOnlySpan<T>)` は、Shared の
+`ShaderDataLayout.Pack<T>(ReadOnlySpan<T>, referenceEncoder, out snapshots)`
+を使う。この追加公開 overload は backend 接続のためであり、描画専用 factory や
+friend assembly を増やさない。既存の単一 snapshot の Pack は維持する。
+
+immutable reflected schema で member path・型・長さ・範囲・非重複を一度検査し、
+codec の全 emission が一致する数値だけの要素は contiguous packed storage と
+遅延 logical member view を保持する。managed sizeof の blit は使わない。
+codec は要素ごとに一度実行し、全 capture 後に generic packing の検証と reference
+encoding を行う。順序違い、欠落、重複、異なる型、reference、unsafe layout は
+その同じ invocation から独立 payload を保持する fallback とし、codec を再実行しない。
+
+転送 metadata は immutable numeric owner と element view を共有し、reference traversal
+では内部の認証済み numeric-only view だけを leaf とする。公開 snapshot の numeric
+backing storage から opaque GPU wire を読めず、返した packed bytes の変更、新しい
+upload、staging disposal は旧 snapshot を変更しない。copy 成功前に backend metadata
+を公開せず、table・generation・range・寿命・completion の契約は変更しない。
+
 #### 参照集合の metadata と全引数
 
 DrawPageMetadata2D という内部名は参照集合の metadata を表し、record の固定長ページや command ごとの allocation を表さない。参照集合ごとに必要なら typed element 一個だけを置く。CPU の有効長、capacity、owner、allocation 一覧、admission counter は GPU record にしない。GPU が必要な各 stream count は既存参照内 Count にある。

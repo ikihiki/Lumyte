@@ -9,6 +9,8 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 {
     private readonly Dictionary<string, ShaderMember> _members = [];
     private readonly JsonElement _referenceTargets;
+    private readonly KeyValuePair<string, ShaderMember>[] _bulkPlan;
+    private readonly bool _bulkSafe;
 
     private ShaderDataLayout(JsonElement type, JsonElement metadata, bool uniform = false)
     {
@@ -19,6 +21,8 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         int alignment = storage.GetProperty("alignment").GetInt32();
         Size = uniform ? checked(((size + alignment - 1) / alignment) * alignment) : size;
         Add(type, string.Empty, 0);
+        _bulkPlan = _members.ToArray();
+        _bulkSafe = BulkWriter.IsSafe(this);
     }
 
     /// <inheritdoc/>
@@ -174,30 +178,18 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
             throw new ArgumentException("Root type or complete member count differs from the compiled schema.", nameof(snapshot));
         }
 
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (ShaderValue value in snapshot.Values)
+        Span<bool> seen = _members.Count <= 256 ? stackalloc bool[_members.Count] : new bool[_members.Count];
+        seen.Clear();
+        for (int i = 0; i < snapshot.Values.Count; i++)
         {
-            if (!seen.Add(value.Path) || !_members.TryGetValue(value.Path, out ShaderMember? member) || value.IsReference != member.Reference)
+            ShaderValue value = snapshot.Values[i];
+            if (!_members.TryGetValue(value.Path, out ShaderMember? member) || seen[member.Ordinal] || value.IsReference != member.Reference)
             {
                 throw new ArgumentException("Root members are missing, duplicated, or incompatible.", nameof(snapshot));
             }
 
-            if (member.Reference)
-            {
-                if (!value.Data.IsEmpty || (validateReferences && value.Reference is null))
-                {
-                    throw new ArgumentException("A resource member requires only an opaque reference.", nameof(snapshot));
-                }
-
-                if (validateReferences && !ReferenceMatches(value, member))
-                {
-                    throw new ArgumentException("Resource kind, element type, or access differs from the compiled schema.", nameof(snapshot));
-                }
-            }
-            else if (value.Reference is not null || value.ValueType != member.ValueType || value.Data.Length != member.Size)
-            {
-                throw new ArgumentException("A numeric member has an incompatible type or payload.", nameof(snapshot));
-            }
+            seen[member.Ordinal] = true;
+            ValidateMember(value, member, validateReferences);
         }
     }
 
@@ -205,7 +197,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     public string ReferenceKind(string path) => _members[path].Kind;
 
     /// <inheritdoc/>
-    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member);
+    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value.Offset == member.Offset && pair.Value.Size == member.Size && pair.Value.Reference == member.Reference && pair.Value.Kind == member.Kind && pair.Value.ValueType == member.ValueType && pair.Value.Target == member.Target);
 
     /// <inheritdoc/>
     public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference)
@@ -225,6 +217,26 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         }
 
         return result;
+    }
+
+    private static void ValidateMember(ShaderValue value, ShaderMember member, bool validateReferences)
+    {
+        if (member.Reference)
+        {
+            if (!value.Data.IsEmpty || (validateReferences && value.Reference is null))
+            {
+                throw new ArgumentException("A resource member requires only an opaque reference.", "snapshot");
+            }
+
+            if (validateReferences && !ReferenceMatches(value, member))
+            {
+                throw new ArgumentException("Resource kind, element type, or access differs from the compiled schema.", "snapshot");
+            }
+        }
+        else if (value.Reference is not null || value.ValueType != member.ValueType || value.Data.Length != member.Size)
+        {
+            throw new ArgumentException("A numeric member has an incompatible type or payload.", "snapshot");
+        }
     }
 
     private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
@@ -385,7 +397,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
                     throw new NotSupportedException("The artifact is missing a buffer reference target schema.");
                 }
 
-                _members.Add(path, new(offset, size, true, name, null, target));
+                _members.Add(path, new(offset, size, true, name, null, target, _members.Count));
             }
             else if (kind == "struct")
             {
@@ -412,10 +424,10 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
                     "matrix" when memberType.GetProperty("rowCount").GetInt32() == 4 && memberType.GetProperty("columnCount").GetInt32() == 4 && memberType.GetProperty("elementType").GetProperty("scalarType").GetString() == "float32" => typeof(Matrix4x4),
                     _ => throw new NotSupportedException("Unsupported shader member layout."),
                 };
-                _members.Add(path, new(offset, size, false, kind, valueType, null));
+                _members.Add(path, new(offset, size, false, kind, valueType, null, _members.Count));
             }
         }
     }
 
-    private sealed record ShaderMember(int Offset, int Size, bool Reference, string Kind, Type? ValueType, string? Target);
+    private sealed record ShaderMember(int Offset, int Size, bool Reference, string Kind, Type? ValueType, string? Target, int Ordinal);
 }
