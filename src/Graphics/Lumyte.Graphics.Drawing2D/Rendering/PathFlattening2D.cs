@@ -252,7 +252,7 @@ internal static class PathFlattening2D
         return (float)Math.Min(float.MaxValue, Math.Sqrt(squared));
     }
 
-    private static float Cross(Vector2 a, Vector2 b) => (a.X * b.Y) - (a.Y * b.X);
+    private static float Cross(Vector2 a, Vector2 b) => Vector2.Cross(a, b);
 
     private static float Distance(Vector2 point, Vector2 start, Vector2 end)
     {

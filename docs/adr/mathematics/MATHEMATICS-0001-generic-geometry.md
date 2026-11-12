@@ -1,6 +1,6 @@
 # ADR-MATHEMATICS-0001: 2D・3D 幾何の精度を型引数で選択する
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-12
 - 基準コミット: `1dbf62977a4805cb32d97811f8a890237bea20cb`
 
@@ -26,7 +26,7 @@ double dx = x - centerX, dy = y - centerY;
 bool inside = Math.Sqrt(dx * dx + dy * dy) <= radius; // true
 ```
 
-変更後は以下の提案 API を使う。境界上の点を含む結果は維持し、精度の選択を型引数へ移す。
+変更後は以下の API を使う。境界上の点を含む結果は維持し、精度の選択を型引数へ移す。
 
 ```csharp
 using Lumyte.Mathematics.Geometry;
@@ -45,44 +45,44 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 
 ### 次元・精度と依存境界
 
-すべての新規幾何型は `where T : unmanaged, IFloatingPointIeee754<T>` を使う。対応する組み込み型は `Half`・`float`・`double` とし、受け入れ検証では三つを区別する。int・decimal はこの制約に含めず、整数格子や十進演算は今回の対象外とする。制約を満たす独自型は同じ契約を満たす必要があり、個別の性能や精度は保証しない。
+ジェネリック幾何値型は `where T : unmanaged, IFloatingPointIeee754<T>` を使う。対応する組み込み型は `Half`・`float`・`double` とし、受け入れ検証では三つを区別する。int・decimal はこの制約に含めず、整数格子や十進演算は今回の対象外とする。制約を満たす独自型は同じ契約を満たす必要があり、個別の性能や精度は保証しない。
 
-保存する成分、距離や半径の戻り値、演算の中間値は T とし、実装都合で float・double へ暗黙に変換しない。精度を上げる場合も呼び出し側が成分を明示変換して構築する。異なる T の暗黙変換や混合演算は追加しない。これは浮動小数点型の選択であり、任意精度や厳密な幾何判定を保証する仕組みではない。
+保存する成分、距離や半径の戻り値、算術の仮数は T とし、実装都合で float・double へ暗黙に変換しない。精度を上げる場合も呼び出し側が成分を明示変換して構築する。指数は整数で別に保持できる。Half の指数取得だけは値を厳密に表現できる float へ拡張し、成分の算術は Half のまま行う。異なる T の暗黙変換や混合演算は追加しない。これは浮動小数点型の選択であり、任意精度や厳密な幾何判定を保証する仕組みではない。
 
-位置と変位を区別する `Point2D<T>`・`Point3D<T>` と `Vector2D<T>`・`Vector3D<T>` を用意する。`System.Numerics.Vector2`・`Vector3` は float 固定なので保存形式には使わず、`System.Numerics.Vector<T>` も座標次元を表す型として使わない。新しいベクトル型は幾何演算に必要な範囲に限定し、既存補間 API のベクトル型は変更しない。
+座標保存には `Point2D<T>`・`Point3D<T>` のみを追加し、ベクトル・行列・Quaternion を再実装しない。float の距離の通常経路は `System.Numerics.Vector2`・`Vector3`、2D 変換は `Matrix3x2` に委譲する。3D の行列演算が必要な利用側も BCL の `Matrix4x4` を使う。BCL に存在しないジェネリック座標の距離・射影・形状判定だけを T の演算で補う。double・Half の座標を float に狭めない。汎用精度の変換行列は追加せず、利用側が T の座標を変換する。
 
 同じ名前空間へ両次元を配置し、2D・3D ごとにパッケージや名前空間を分割しない。値型は描画・物理のオブジェクトを保持せず、座標の単位、画面の上下方向、左右手系を固定しない。
 
 ### 形状と数値の契約
 
-初期範囲は点、変位、線分、軸平行矩形・箱、円・球と、それらの下記主要演算とする。直線、半直線、平面、三角形、回転可能な箱、交差集合の計算、空間索引は今回決める範囲に含めない。
+範囲は点、線分、軸平行矩形・箱、円・球、楕円、角丸矩形、Bezier 曲線の評価・平坦化、線分交差、閉輪郭の winding 判定とする。描画の曲線許容誤差、分割予算、stroke cap・join の三角形化、GPU coverage、整数 scissor の丸めと余白は Drawing2D が保持する。数学側はそれらに使う距離、境界の集約、変換後境界を提供し、レンダラーを複製しない。
 
 - 成分は有限値を要求する。コンストラクターと演算の引数に NaN・無限大があれば `ArgumentOutOfRangeException` とする。半径・幅・高さが負、または箱の各軸で Min が Max より大きい場合も同様とする。
 - `default` は各成分ゼロの有効値である。半径ゼロ、幅・高さゼロ、Min と Max が同じ箱、始点と終点が同じ線分を許す。これらは空集合ではなく、点や線へ退化した閉集合として扱う。
 - `Contains` は境界を含む。矩形・箱は各軸の閉区間、円・球は中心からの距離が半径以下の領域とする。ゼロ半径の円・球は中心だけを含む。距離はユークリッド距離で、点から線分への距離は射影を端点で制限し、ゼロ長線分では端点への距離を返す。
 - 同値性は成分ごとの T の数値等値とし、許容誤差を混ぜない。正負のゼロは等値として同じハッシュを返す。近似比較や許容誤差付き判定の API は今回追加しない。
-- 数値処理は不要な二乗オーバーフローを避けるスケーリングを行う。有限入力でも必要な差や最終結果を T の有限値として表現できない場合は `OverflowException` とし、NaN・無限大を正常な計算結果として返さない。`Contains` も演算不能を false に読み替えない。
+- 数値処理は不要な二乗オーバーフローを避けるスケーリングを行う。有限入力でも距離・射影で必要な差や最終結果を T の有限値として表現できない場合は `OverflowException` とし、NaN・無限大を正常な計算結果として返さない。`Contains` も演算不能を false に読み替えない。向きと交差の符号判定は指数を分離して中間値の不要な桁あふれを避けるが、厳密算術ではない。
 - 例として中心ゼロ・半径 5 の円は (3, 4) を含み、(3, 4.5) を含まない。幅ゼロの矩形はその直線上の閉区間を含む。double の (1e200, 0) と原点の距離は有限の 1e200 を返し、不要な二乗の無限大を返さない。
+
+`NumericsGeometry` は BCL の float 演算をそのまま提供する境界であり、非有限値を拒否しない。描画側は変換後の有限性を検証し、既存の例外・余白・丸めを保持する。
 
 不変な値型なので、破棄・スレッド所有・更新通知の仕組みは持たない。GPU バッファとのメモリ配置互換や SIMD 化、割り当て・速度の数値目標はこの判断では保証しない。
 
 ### 公開 API 差分
 
-基準コードに対する追加の主要宣言を以下に示す。宣言は提案の抜粋であり、実装コードではない。省略した各型の読み取り専用プロパティはコンストラクター引数の先頭を大文字にした同名・同型とし、全型で成分の値等値を提供する。引数の有限性、退化形状、算術失敗は「形状と数値の契約」に従う。
+基準コードに対する追加の主要宣言を以下に示す。宣言は判断対象の抜粋であり、実装コードではない。省略した各型の読み取り専用プロパティはコンストラクター引数の先頭を大文字にした同名・同型とし、全型で成分の値等値を提供する。引数の有限性、退化形状、算術失敗は「形状と数値の契約」に従う。
 
 ```diff
 +using System.Numerics;
 +
 +namespace Lumyte.Mathematics.Geometry;
 +
-+public readonly struct Point2D<T> where T : unmanaged, IFloatingPointIeee754<T>
++public readonly record struct Point2D<T> where T : unmanaged, IFloatingPointIeee754<T>
 +{
 +    public Point2D(T x, T y);
 +    public T X { get; }
 +    public T Y { get; }
 +    public T DistanceTo(Point2D<T> other);
-+    public static Vector2D<T> operator -(Point2D<T> left, Point2D<T> right);
-+    public static Point2D<T> operator +(Point2D<T> point, Vector2D<T> offset);
 +}
 +
 +public readonly struct Point3D<T> where T : unmanaged, IFloatingPointIeee754<T>
@@ -92,35 +92,21 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 +    public T Y { get; }
 +    public T Z { get; }
 +    public T DistanceTo(Point3D<T> other);
-+    public static Vector3D<T> operator -(Point3D<T> left, Point3D<T> right);
-+    public static Point3D<T> operator +(Point3D<T> point, Vector3D<T> offset);
-+}
-+
-+public readonly struct Vector2D<T> where T : unmanaged, IFloatingPointIeee754<T>
-+{
-+    public Vector2D(T x, T y);
-+    public T X { get; }
-+    public T Y { get; }
-+}
-+
-+public readonly struct Vector3D<T> where T : unmanaged, IFloatingPointIeee754<T>
-+{
-+    public Vector3D(T x, T y, T z);
-+    public T X { get; }
-+    public T Y { get; }
-+    public T Z { get; }
 +}
 +
 +public readonly struct Segment2D<T> where T : unmanaged, IFloatingPointIeee754<T>
 +{
 +    public Segment2D(Point2D<T> start, Point2D<T> end);
 +    public T DistanceTo(Point2D<T> point);
++    public Point2D<T> ClosestPoint(Point2D<T> point);
++    public bool Intersects(Segment2D<T> other);
 +}
 +
 +public readonly struct Segment3D<T> where T : unmanaged, IFloatingPointIeee754<T>
 +{
 +    public Segment3D(Point3D<T> start, Point3D<T> end);
 +    public T DistanceTo(Point3D<T> point);
++    public Point3D<T> ClosestPoint(Point3D<T> point);
 +}
 +
 +public readonly struct Rect2D<T> where T : unmanaged, IFloatingPointIeee754<T>
@@ -128,6 +114,8 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 +    // X・Y が最小側、Width・Height が非負の長さ。最大側も有限であること。
 +    public Rect2D(T x, T y, T width, T height);
 +    public bool Contains(Point2D<T> point);
++    // 最大側を除外し、幅・高さゼロは空集合として扱う。
++    public bool ContainsHalfOpen(Point2D<T> point);
 +}
 +
 +public readonly struct AxisAlignedBox3D<T> where T : unmanaged, IFloatingPointIeee754<T>
@@ -146,6 +134,51 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 +{
 +    public Sphere3D(Point3D<T> center, T radius);
 +    public bool Contains(Point3D<T> point);
++}
++
++public readonly record struct RoundedRect2D<T> where T : unmanaged, IFloatingPointIeee754<T>
++{
++    // 半径は非負。短辺の半分へ制限する。
++    public RoundedRect2D(Rect2D<T> bounds, T radius);
++    public bool Contains(Point2D<T> point);
++}
++
++public readonly record struct Ellipse2D<T> where T : unmanaged, IFloatingPointIeee754<T>
++{
++    public Ellipse2D(Point2D<T> center, T radiusX, T radiusY);
++    public bool Contains(Point2D<T> point);
++}
++
++public static class NumericsGeometry
++{
++    // BCL の float 座標とアフィン行列を使う。四隅を変換し、割り当てずに縮約する。
++    public static void GetTransformedBounds(Vector2 minimum, Vector2 maximum,
++        Matrix3x2 transform, out Vector2 transformedMinimum, out Vector2 transformedMaximum);
++}
++
++public static class Polygon2D
++{
++    // 輪郭を閉じ、境界を含む。空輪郭は false。
++    public static bool Contains<T>(ReadOnlySpan<Point2D<T>> vertices, Point2D<T> point)
++        where T : unmanaged, IFloatingPointIeee754<T>;
++    public static bool ContainsEvenOdd<T>(ReadOnlySpan<Point2D<T>> vertices, Point2D<T> point)
++        where T : unmanaged, IFloatingPointIeee754<T>;
++}
++
++public static class Bezier2D
++{
++    // amount は有限な閉区間 [0, 1]。
++    public static Point2D<T> Quadratic<T>(Point2D<T> start, Point2D<T> control,
++        Point2D<T> end, T amount) where T : unmanaged, IFloatingPointIeee754<T>;
++    public static Point2D<T> Cubic<T>(Point2D<T> start, Point2D<T> control1,
++        Point2D<T> control2, Point2D<T> end, T amount) where T : unmanaged, IFloatingPointIeee754<T>;
++    // 正の有限 tolerance、深さ 0..30、追加点数 2 以上。予算超過は false、出力を維持する。
++    public static bool TryFlattenQuadratic<T>(Point2D<T> start, Point2D<T> control,
++        Point2D<T> end, T tolerance, List<Point2D<T>> destination, int maxDepth, int maxPoints)
++        where T : unmanaged, IFloatingPointIeee754<T>;
++    public static bool TryFlattenCubic<T>(Point2D<T> start, Point2D<T> control1,
++        Point2D<T> control2, Point2D<T> end, T tolerance, List<Point2D<T>> destination,
++        int maxDepth, int maxPoints) where T : unmanaged, IFloatingPointIeee754<T>;
 +}
 ```
 
@@ -166,4 +199,4 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 
 受け入れ条件は、Half・float・double での構築、境界を含む内外判定、2D・3D の距離と線分への射影、退化形状、default、正負のゼロの等値・ハッシュを検証することである。NaN・無限大・負の寸法・逆転した境界の拒否、表現限界付近の距離、算術結果のオーバーフロー、精度ごとの丸め差も確認する。double の値が float に狭められていないことは、float では区別できない座標差を使って確認する。
 
-既存 Mathematics・Animation・Drawing2D のテストと公開宣言を照合し、幾何追加によって依存方向や既存 API の意味が変わらないことを確認する。この文書は設計提案であり、コンパイル・実行可能性や各受け入れ条件の達成は実装の検証を要する。
+既存 Mathematics・Animation・Drawing2D のテストと公開宣言を照合し、幾何追加によって依存方向や既存 API の意味が変わらないことを確認する。採用は実装・検証の完了を意味せず、これらの受け入れ条件はコードとテストで確認する。

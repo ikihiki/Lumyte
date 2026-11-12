@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -58,8 +59,10 @@ internal static class DrawingBounds2D
 
         void Intersect(Rect2D bounds, Matrix3x2 transform)
         {
-            Vector2[] corners = [new(bounds.X, bounds.Y), new(bounds.X + bounds.Width, bounds.Y), new(bounds.X, bounds.Y + bounds.Height), new(bounds.X + bounds.Width, bounds.Y + bounds.Height)];
-            Rect2D transformed = Points(corners.Select(p => Vector2.Transform(p, transform)));
+            NumericsGeometry.GetTransformedBounds(new(bounds.X, bounds.Y), new(bounds.X + bounds.Width, bounds.Y + bounds.Height), transform, out Vector2 lower, out Vector2 upper);
+
+            // Retain the previous extent reconstruction and its finite-range check.
+            Rect2D transformed = float.IsPositiveInfinity(lower.X) ? default : new(lower.X, lower.Y, upper.X - lower.X, upper.Y - lower.Y);
             if (!float.IsFinite(transformed.X) || !float.IsFinite(transformed.Y) || !float.IsFinite(transformed.Width) || !float.IsFinite(transformed.Height))
             {
                 throw new NotSupportedException("Transformed drawing bounds exceed the finite coordinate range.");
