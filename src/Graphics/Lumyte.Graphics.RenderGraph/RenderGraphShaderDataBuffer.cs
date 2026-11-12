@@ -21,6 +21,8 @@ public sealed class RenderGraphShaderDataBuffer<T> : RenderGraphResource
         (_artifact, _count) = (artifact, count);
     }
 
+    internal ulong Count => Allocation is IGraphicsShaderDataBuffer<T> buffer ? buffer.Count : _count;
+
     internal override string Kind => "ShaderDataBuffer";
 
     internal override IDisposable Create(IGraphicDevice device) => device.CreateShaderDataBuffer<T>(_artifact!, _count);

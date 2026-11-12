@@ -4,12 +4,12 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.RenderGraph;
 
 /// <summary>Collects the logical resources for one indivisible graph shader operation.</summary>
-public sealed class RenderGraphShaderResources
+internal sealed class GraphBindingLookup
 {
     private readonly GraphShaderResourceOwner _owner;
     private readonly Dictionary<ResourceKey, object?> _references = new(new ResourceKeyComparer());
 
-    internal RenderGraphShaderResources(GraphShaderResourceOwner owner, ShaderResources resources)
+    internal GraphBindingLookup(GraphShaderResourceOwner owner, ShaderResources resources)
     {
         _owner = owner;
         Core = resources;
@@ -21,7 +21,7 @@ public sealed class RenderGraphShaderResources
     /// <param name="texture">The logical image.</param>
     /// <param name="desc">The exact view description, or its default.</param>
     /// <returns>This resource group.</returns>
-    public RenderGraphShaderResources ReadTexture(RenderGraphTexture texture, TextureViewDesc? desc = null)
+    internal GraphBindingLookup ReadTexture(RenderGraphTexture texture, TextureViewDesc? desc = null)
     {
         var key = new ResourceKey(texture, desc ?? new TextureViewDesc(), 0, 0, ArgumentBufferAccess.Read);
         if (Add(key))
@@ -32,30 +32,23 @@ public sealed class RenderGraphShaderResources
         return this;
     }
 
-    /// <summary>Declares a graph-owned immutable sampler.</summary>
-    /// <param name="desc">The sampler description used again for lookup.</param>
-    /// <returns>This resource group.</returns>
-    public RenderGraphShaderResources Sampler(SamplerDesc desc)
+    internal GraphBindingLookup Sampler(RenderGraphSampler sampler)
     {
-        var key = new ResourceKey(desc, null, 0, 0, ArgumentBufferAccess.Read);
+        var key = new ResourceKey(sampler, null, 0, 0, ArgumentBufferAccess.Read);
         if (Add(key))
         {
-            Core.RegisterSampler(_owner.Sampler(desc), reference => Publish(key, reference));
+            Core.RegisterSampler(_owner.Sampler(Core, sampler), reference => Publish(key, reference));
         }
 
         return this;
     }
 
-    /// <summary>Declares a borrowed immutable sampler by object identity.</summary>
-    /// <param name="sampler">The borrowed sampler.</param>
-    /// <returns>This resource group.</returns>
-    public RenderGraphShaderResources Sampler(IGraphicsSampler sampler)
+    internal GraphBindingLookup ReadNativeTexture(RenderGraphTexture texture, IGraphicsTextureView view)
     {
-        ArgumentNullException.ThrowIfNull(sampler);
-        var key = new ResourceKey(sampler, null, 0, 0, ArgumentBufferAccess.Read);
+        var key = new ResourceKey(view, null, 0, 0, ArgumentBufferAccess.Read);
         if (Add(key))
         {
-            Core.RegisterSampler(sampler, reference => Publish(key, reference));
+            Core.RegisterTexture(() => _owner.BorrowedView(Core, texture, view), reference => Publish(key, reference));
         }
 
         return this;
@@ -68,7 +61,7 @@ public sealed class RenderGraphShaderResources
     /// <param name="count">The positive element count.</param>
     /// <param name="access">The actual shader access.</param>
     /// <returns>This resource group.</returns>
-    public RenderGraphShaderResources ReadBuffer<T>(RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+    internal GraphBindingLookup ReadBuffer<T>(RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
         where T : unmanaged
     {
         ArgumentOutOfRangeException.ThrowIfZero(count);
@@ -87,7 +80,7 @@ public sealed class RenderGraphShaderResources
     /// <param name="offset">The element offset.</param>
     /// <param name="count">The positive element count.</param>
     /// <returns>This resource group.</returns>
-    public RenderGraphShaderResources ReadBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
+    internal GraphBindingLookup ReadBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
         where T : struct, IShaderData
     {
         ArgumentOutOfRangeException.ThrowIfZero(count);
@@ -103,17 +96,36 @@ public sealed class RenderGraphShaderResources
     internal IGpuRef<IGraphicsTextureView> Resolve(RenderGraphContext context, RenderGraphTexture texture, TextureViewDesc? desc)
         => Resolve<IGraphicsTextureView>(context, new(texture, desc ?? new TextureViewDesc(), 0, 0, ArgumentBufferAccess.Read));
 
-    internal IGpuRef<IGraphicsSampler> Resolve(RenderGraphContext context, SamplerDesc desc)
-        => Resolve<IGraphicsSampler>(context, new(desc, null, 0, 0, ArgumentBufferAccess.Read));
+    internal IGpuRef<IGraphicsSampler> ResolveSampler(RenderGraphContext context, object key)
+    {
+        context.EnsureActive();
+        _owner.ValidateLookup(Core, context.Pass);
+        foreach ((ResourceKey declared, object? reference) in _references)
+        {
+            if (declared.Resource is RenderGraphSampler sampler &&
+                (sampler.Key is SamplerDesc desc ? desc.Equals(key) : ReferenceEquals(sampler.Key, key)))
+            {
+                return (IGpuRef<IGraphicsSampler>)reference!;
+            }
+        }
 
-    internal IGpuRef<IGraphicsSampler> Resolve(RenderGraphContext context, IGraphicsSampler sampler)
-        => Resolve<IGraphicsSampler>(context, new(sampler, null, 0, 0, ArgumentBufferAccess.Read));
+        throw new ArgumentException("Declare this sampler on the pass before recording.");
+    }
 
-    internal IGpuRef<T> Resolve<T>(RenderGraphContext context, RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access)
-        where T : unmanaged => Resolve<T>(context, new(buffer, null, offset, count, access));
+    internal IGpuRef<T> ResolveBuffer<T>(RenderGraphContext context, RenderGraphResource buffer, ulong offset, ulong count)
+    {
+        context.EnsureActive();
+        _owner.ValidateLookup(Core, context.Pass);
+        foreach ((ResourceKey key, object? reference) in _references)
+        {
+            if (ReferenceEquals(key.Resource, buffer) && key.Offset == offset && key.Count == count && reference is IGpuRef<T> typed)
+            {
+                return typed;
+            }
+        }
 
-    internal IGpuRef<T> Resolve<T>(RenderGraphContext context, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
-        where T : struct, IShaderData => Resolve<T>(context, new(buffer, null, offset, count, ArgumentBufferAccess.Read));
+        throw new ArgumentException("Declare this exact typed buffer range and shader access on the pass.");
+    }
 
     private bool Add(ResourceKey key)
     {

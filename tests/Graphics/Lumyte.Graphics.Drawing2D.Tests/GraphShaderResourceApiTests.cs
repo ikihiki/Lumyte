@@ -96,17 +96,15 @@ public sealed class GraphShaderResourceApiTests
     [Fact]
     public void LogicalGraphInputsAndEncodersHaveNoNativeEscape()
     {
-        Type inputs = typeof(RenderGraphShaderResources);
-        Assert.Equal(typeof(object), inputs.BaseType);
-        foreach (MethodInfo method in inputs.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        Type[] exports = typeof(RenderGraphContext).Assembly.GetExportedTypes();
+        Assert.DoesNotContain(exports, type => type.Name is "RenderGraphShaderResources" or "PassResources" or "PassShaderResources");
+        foreach (Type type in exports)
         {
-            Assert.DoesNotContain(method.Name, new[] { "Draw", "DrawIndexed", "Dispatch", "RegisterTexture", "RegisterBuffer", "RegisterSampler", "RegisterShaderData", "Snapshot", "Core", "Reference" });
-            Assert.Equal(typeof(RenderGraphShaderResources), method.ReturnType);
-            foreach (ParameterInfo parameter in method.GetParameters())
-            {
-                Assert.False(parameter.ParameterType.Name.StartsWith("IGpuRef", StringComparison.Ordinal));
-            }
+            Assert.DoesNotContain(type.GetMethods(), method => method.Name is "CreateShaderResources" or "UseShaderResources" or "CreateModuleShaderResources" or "DescribeModuleShaderResources" or "RegisterModuleTexture" or "RegisterModuleBuffer");
         }
+
+        Assert.All(typeof(DrawingArgumentPlan2D).GetConstructors(), constructor =>
+            Assert.DoesNotContain(constructor.GetParameters(), parameter => parameter.Name is "resourceFactory" or "graphFallback" or "samplerFactory"));
 
         foreach (Type encoder in typeof(RenderGraphContext).Assembly.GetExportedTypes().Where(type => type.Name is "RenderGraphRenderEncoder" or "RenderGraphComputeEncoder"))
         {

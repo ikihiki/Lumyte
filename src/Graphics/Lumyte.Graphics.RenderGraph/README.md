@@ -130,20 +130,17 @@ ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の�
 
 ## Shader inputs and execution
 
-Graph consumers predeclare logical resource groups and resolve their actual references through the pass callback context. Dedicated graph encoders accept the same existing application argument types and codecs as ordinary encoders; callers do not allocate, size, seal or bind argument tables.
+The pass itself owns its declared inputs. UseTexture, UseBuffer, UseShaderDataBuffer and UseSampler are the only declaration source; there is no resource-set factory, attachment step, member-name value bag or required artifact/root pin. Resolve actual IGpuRef values inside the AddPass callback and reuse the ordinary IShaderArguments type and codec.
 
-This example uses the existing `EffectArguments` root in `Lumyte.Graphics.ImageEffects/Shaders/effects.slang` for an opacity operation. The caller supplies the existing effect `pipeline`, matching `sampleRead`/`colorWrite` barrier scopes, declared `source` and `target` textures, `samplerDesc`, `width`/`height`, `Vector4 bounds = new(0, 0, width, height)`, and `float opacity`. Import/creation, using directives (including System.Numerics), export, Submit/Wait and failure cleanup are omitted; retain the compiled plan and borrowed pipeline until GPU completion as described above.
+The following example is inside ImageEffects and reuses its existing internal EffectArguments. Applications likewise reuse their own ordinary argument types. The caller supplies the matching pipeline, source/target, samplerDesc, bounds, opacity, width/height and sampleRead/colorWrite scopes. Creation/import, using directives including System.Numerics, export, Submit/Wait and failure cleanup are omitted. Retain the compiled plan and borrowed resources through GPU completion.
 
 ```csharp
-RenderGraphShaderResources inputs = graph.CreateShaderResources()
-    .ReadTexture(source)
-    .Sampler(samplerDesc);
 graph.AddPass("sample", context =>
 {
     var arguments = new EffectArguments(
-        context.GetGpuRef(inputs, source),
-        context.GetGpuRef(inputs, source),
-        context.GetGpuRef(inputs, samplerDesc),
+        context.GetGpuRef(source),
+        context.GetGpuRef(source),
+        context.GetGpuRef(samplerDesc),
         bounds, bounds, bounds, new Vector4(3, 0, 0, opacity),
         Vector4.Zero, Vector4.Zero, Vector4.Zero, Vector4.Zero, Vector4.Zero);
     using RenderGraphRenderEncoder render = context.BeginRenderPass(new()
@@ -165,17 +162,20 @@ graph.AddPass("sample", context =>
     render.Draw(3);
 }).UseTexture(source, TextureState.Sampled, sampleRead)
   .UseTexture(target, TextureState.ColorAttachment, colorWrite)
-  .UseShaderResources(inputs, target);
+  .UseSampler(samplerDesc);
 ```
 
-`CreateShaderResources()` collects only logical resource keys: no artifact pin, root name, string member paths or numeric value bag. This example is inside ImageEffects and reuses its existing `EffectArguments`; application code likewise reuses its ordinary `IShaderArguments` type and codec. `context.GetGpuRef(inputs, key)` returns an actual native reference only inside the declaring pass callback. Lookup requires the registered view, exact typed range/access or sampler key and cannot allocate new slots.
+**The capacity unit is the entire pass's declared shader inputs, not each individual Draw.** If their aggregate exceeds effective native slot/binding/range/remap limits, split AddPass. Admission fails before callbacks or native table writes. Built-in Drawing2D prepares bounded pass segments at known command boundaries; arbitrary custom Record callbacks are never replayed or transparently split.
 
-`render.SetArguments(in arguments)` captures the ordinary codec once. Numeric bytes are frozen until another successful SetArguments. Failed replacement preserves the last valid selection. Switching to another argument-bearing pipeline requires another SetArguments; switching back before another successful selection may reuse the one last selection, not a per-pipeline cache. Programs with no arguments need no selection.
+- Sampled shader-read UseTexture admits the default view. UseTexture(texture, viewDesc, TextureState.Sampled, scope) admits an exact view. Attachment/copy-only declarations do not create sampled bindings.
+- Whole-buffer shader declarations admit the whole range. UseBuffer(buffer, offset, count, scope) and UseShaderDataBuffer(buffer, offset, count, scope) admit exact element ranges. Shader read/write permission comes from scope, not a duplicate registration argument. Copy-only/upload uses do not consume shader bindings.
+- UseSampler(desc) declares a graph-owned immutable sampler; UseSampler(sampler) declares a borrowed identity. Samplers create neither GPU barriers nor write roots. GetGpuRef accepts the same desc or object key.
+- Distinct views/ranges retain their exact identities, while hazards and culling remain conservatively allocation-wide. GetGpuRef only looks up admitted keys during the declaring callback; it cannot append slots or widen access.
 
-Root references privately identify candidate predeclared resource groups for this pass. Every command revalidates the selected groups and native table. After the ordinary native command-local transfer snapshot collects all root and transitive references, one whole declared group must cover them; resources from multiple groups cannot be combined merely because they share a physical table. No SetResources/SetArgumentTable operation or global reference registry is required. Compatible pipeline artifacts use the normal root schema contract instead of object identity pinning.
+SetArguments(in arguments) snapshots the ordinary codec once. Numeric bytes remain frozen until another successful selection. Failed capture/schema/native replacement preserves the previous selection. Switching pipelines requires a new selection unless switching back before another successful SetArguments; there is one last selection, not a per-pipeline cache. Numeric-only arguments and argument-free programs need no dummy resource declaration.
 
-Declare actual color outputs with `UseShaderResources(inputs, target)` and matching pass state/access. Depth-only graphics has a declared depth attachment; compute has no render attachments. Compute uses `compute.SetArguments(in arguments); compute.Dispatch(x, y, z);`. All Draw/Dispatch execution signatures, names and defaults match the ordinary interfaces. Callback/End guards and caller-owned Submit/Wait responsibilities remain unchanged.
+Every execution validates the pass generation, native table and complete root/transitive reference set. Shader-data producer/copy/consumer ranges keep encoded table identities coherent without moving native capture earlier than ordinary command-local transfer semantics. Each pass's own binding budget remains independent; connected data that cannot share a representable slot/remap table is rejected rather than silently repacked. External already-encoded table references are not automatically migrated.
 
-Independently prepared modules use the separate `CreateModuleShaderResources()` bridge, returning an opaque Abstractions `ShaderResources` with no Table accessor. `RegisterModuleTexture(resources, handle, callback)` and typed `RegisterModuleBuffer` deliver real references during preparation. `DescribeModuleShaderResources(module)` describes that same indivisible cohort for nested metadata/composite execution; it does not create an independent reservation. Ordinary graph consumers do not need this bridge. Low-level non-graph `IShaderArguments` and static codecs remain available; native `SetArguments(ShaderValueSnapshot)` is a defensive-copy interop overload.
+Actual BeginRenderPass attachments must match declared roles/access and cannot contain duplicates. Capacity preflight conservatively reserves all color attachments declared by the pass. Draw, DrawIndexed, both indirect variants and compute Dispatch/DispatchIndirect retain ordinary interface signatures and defaults. End/callback guards and caller-owned submission/completion are unchanged.
 
-`UseLocalBuffer` and `UseLocalShaderDataBuffer` describe borrowed storage whose effects are confined to one pass. They retain actual resource validation and synchronization declarations, cannot be exported or promoted to outputs, and cannot be used by another pass. Existing global imports keep their original observability. Locality does not transfer allocation ownership or remove the caller completion requirement.
+Built-in payload mapping/finalization uses an assembly-private bridge driven by the same exact view/range/sampler declarations. No additional module resource factory is part of the public Graph API. Direct Canvas remains graph-independent. Existing raw Commands remain the low-level interoperability escape; do not mix raw passes with an open dedicated graph encoder.

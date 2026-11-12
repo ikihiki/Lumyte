@@ -10,6 +10,8 @@ internal sealed class PublicGraphConsumerTable(ArgumentTableDesc desc) : IArgume
 
     public uint BufferCapacity => desc.BufferCapacity;
 
+    internal bool Disposed { get; private set; }
+
     public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view) => new PublicGraphConsumerRef<IGraphicsTextureView>(this, view, slot, 1);
 
     public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => new PublicGraphConsumerRef<IGraphicsSampler>(this, sampler, slot, 1);
@@ -32,7 +34,5 @@ internal sealed class PublicGraphConsumerTable(ArgumentTableDesc desc) : IArgume
     {
     }
 
-    public void Dispose()
-    {
-    }
+    public void Dispose() => Disposed = true;
 }

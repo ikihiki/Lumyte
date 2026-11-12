@@ -14,7 +14,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void PublicSurfaceIsSealedCompositionWithoutNativeEscape()
     {
-        foreach (Type type in new[] { typeof(RenderGraphShaderResources), typeof(RenderGraphRenderEncoder), typeof(RenderGraphComputeEncoder) })
+        foreach (Type type in new[] { typeof(RenderGraphRenderEncoder), typeof(RenderGraphComputeEncoder) })
         {
             Assert.True(type.IsSealed);
             Assert.Equal(typeof(object), type.BaseType);
@@ -135,18 +135,16 @@ public sealed partial class PublicGraphEncoderConsumerTests
         Assert.Throws<InvalidOperationException>(() => escaped!.Dispatch(1));
     }
 
-    /// <summary>A logical resource set cannot be connected to another graph or two consumers.</summary>
+    /// <summary>A resource from another graph cannot be added to this pass.</summary>
     [Fact]
-    public void ForeignGraphAndDuplicateConsumerAreRejected()
+    public void ForeignGraphDeclarationIsRejected()
     {
         var device = new PublicGraphConsumerDevice();
         using var first = new RenderGraph(device);
         using var second = new RenderGraph(device);
-        RenderGraphShaderResources logical = first.CreateShaderResources();
-        RenderGraphPass foreign = second.AddPass("foreign", _ => { });
-        Assert.Throws<ArgumentException>(() => foreign.UseShaderResources(logical));
-        first.AddPass("owner", _ => { }).UseShaderResources(logical);
-        Assert.Throws<ArgumentException>(() => first.AddPass("duplicate", _ => { }).UseShaderResources(logical));
+        using var image = new TestTexture();
+        RenderGraphTexture foreign = first.ImportTexture(image, TextureState.Sampled, default);
+        Assert.Throws<ArgumentException>(() => second.AddPass("foreign", _ => { }).UseTexture(foreign, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead)));
     }
 
     /// <summary>A group connected to another pass cannot resolve references during a callback.</summary>
@@ -156,9 +154,8 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
         using var image = new TestTexture();
         RenderGraphTexture source = graph.ImportTexture(image, TextureState.Sampled, default);
-        RenderGraphShaderResources resources = graph.CreateShaderResources().ReadTexture(source);
-        graph.AddPass("owner", _ => { }).UseTexture(source, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).UseShaderResources(resources).KeepAlive();
-        graph.AddPass("wrong", context => Assert.Throws<ArgumentException>(() => context.GetGpuRef(resources, source))).KeepAlive();
+        graph.AddPass("owner", _ => { }).UseTexture(source, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        graph.AddPass("wrong", context => Assert.Throws<ArgumentException>(() => context.GetGpuRef(source))).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);

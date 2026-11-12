@@ -8,6 +8,7 @@ namespace Lumyte.Graphics.RenderGraph;
 public sealed class CompiledRenderGraph : IDisposable
 {
     private readonly RenderGraph _owner;
+    private readonly GraphShaderResourceOwner? _shaderResourceOwner;
     private readonly Guid _profileRunId;
     private readonly long _profileFrameId;
     private readonly Dictionary<RenderGraphResource, (TextureState State, BarrierScope Scope)> _states = [];
@@ -102,6 +103,12 @@ public sealed class CompiledRenderGraph : IDisposable
 
         PassNames = Array.AsReadOnly(live.Select(pass => pass.Name).ToArray());
         CulledPassNames = Array.AsReadOnly(declared.Where((_, index) => !execution.ContainsKey(index)).Select(pass => pass.Name).ToArray());
+        _shaderResourceOwner = owner.ShaderResourceOwner;
+        if (_shaderResourceOwner is null && owner.Device is not null && _passes.Any(pass => pass.Uses.Any(use => (use.Bindings ?? []).Any(binding => binding.Register is not null))))
+        {
+            _shaderResourceOwner = new(owner);
+            Retain(_shaderResourceOwner);
+        }
     }
 
     /// <summary>Gets pass names in live execution order.</summary>
@@ -118,6 +125,8 @@ public sealed class CompiledRenderGraph : IDisposable
 
     /// <summary>Gets requested detached descriptions, or null when not requested or over the capture byte limit.</summary>
     public RenderGraphSnapshot? Snapshot { get; }
+
+    internal GraphShaderResourceOwner? ShaderResourceOwner => _shaderResourceOwner;
 
     /// <summary>Gets the planned final texture state without querying the GPU.</summary>
     /// <param name="texture">A handle present at compilation.</param>

@@ -49,6 +49,8 @@ public sealed class RenderGraph : IDisposable
     /// <summary>Gets a value indicating whether this graph accepts preparation, ownership and pass declarations.</summary>
     public bool IsBuilding => !_closed && !_faulted && !_compiling;
 
+    internal GraphShaderResourceOwner? ShaderResourceOwner { get; set; }
+
     internal IRenderGraphObserver? Observer { get; }
 
     /// <summary>Gets the cached state created by an explicitly registered extension factory.</summary>
@@ -416,6 +418,36 @@ public sealed class RenderGraph : IDisposable
 
     internal RenderGraphShaderDataBuffer<T> LocalShaderData<T>(RenderGraphPass pass, IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
         where T : struct, IShaderData => LocalResource(pass, buffer, scope, () => new RenderGraphShaderDataBuffer<T>(this, buffer, default, "pass-local-shader-data"));
+
+    internal RenderGraphSampler GetSamplerResource(IGraphicsSampler sampler)
+    {
+        EnsureBuilding();
+        ArgumentNullException.ThrowIfNull(sampler);
+        RenderGraphSampler? existing = _resources.OfType<RenderGraphSampler>().FirstOrDefault(resource => ReferenceEquals(resource.Key, sampler));
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var created = new RenderGraphSampler(this, sampler);
+        _resources.Add(created);
+        return created;
+    }
+
+    internal RenderGraphSampler GetSamplerResource(SamplerDesc desc)
+    {
+        EnsureBuilding();
+        ArgumentNullException.ThrowIfNull(desc);
+        RenderGraphSampler? existing = _resources.OfType<RenderGraphSampler>().FirstOrDefault(resource => resource.Key is SamplerDesc value && value == desc);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var created = new RenderGraphSampler(this, desc);
+        _resources.Add(created);
+        return created;
+    }
 
     private static void ValidateName(string name)
     {

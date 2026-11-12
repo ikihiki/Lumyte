@@ -51,9 +51,15 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
     {
         ArgumentNullException.ThrowIfNull(resources);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        foreach (IGraphicsTexture texture in _commands.SelectMany(command => command.Program.Textures).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsTexture>())
+        foreach (IGraphicsTextureView view in _commands.SelectMany(command => command.Program.Views).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsTextureView>())
         {
-            resources.UseTexture(texture, TextureState.Sampled, _fragmentRead);
+            resources.UseTextureView(view, _fragmentRead);
+        }
+
+        resources.UseSampler(_sampler);
+        foreach (IGraphicsSampler sampler in _commands.SelectMany(command => command.Program.Samplers).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsSampler>())
+        {
+            resources.UseSampler(sampler);
         }
     }
 
@@ -192,8 +198,8 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         IGraphicsBuffer<Vector4> data = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = (ulong)program.Data.Count, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
         IGraphicsBuffer<Vector4> geometry = Own(_context.Device.CreateBuffer<Vector4>(new() { Count = data.Count, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
         BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
-        plan.MarkPreparedShaderData(reservation, instructions, prepared);
-        plan.MarkPreparedBuffer(reservation, geometry, prepared);
+        plan.MarkPreparedShaderData(reservation, instructions.SliceElements(0, instructions.Count), prepared);
+        plan.MarkPreparedBuffer(reservation, geometry.SliceElements(0, geometry.Count), prepared);
         ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
         var preparedCommand = new PreparedCommand(program, reservation, instructions, upload, data, geometry, root, scissor);
         reservation.RegisterSampler(_sampler, reference => preparedCommand.ResolvedSampler = reference);

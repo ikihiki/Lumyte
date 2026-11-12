@@ -273,7 +273,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 ShaderResources reservation = context.ArgumentPlan.Reserve();
                 batch._reservation = reservation;
                 reservation.RegisterBuffer(batch._entry.Data.SliceElements(0, (ulong)capacity), reference => batch._dataRef = reference);
-                context.ArgumentPlan.MarkPreparedBuffer(reservation, batch._entry.Data, new(PipelineStage.Copy | PipelineStage.VertexShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
+                context.ArgumentPlan.MarkPreparedBuffer(reservation, batch._entry.Data.SliceElements(0, (ulong)capacity), new(PipelineStage.Copy | PipelineStage.VertexShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
                 context.ArgumentPlan.DeferUpload(
                     reservation,
                     async token =>

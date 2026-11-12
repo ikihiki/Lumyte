@@ -40,7 +40,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     {
         Type[] exported = typeof(RenderGraphContext).Assembly.GetExportedTypes();
         Assert.DoesNotContain(exported, type => type.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
-        foreach (Type type in exported.Where(type => type == typeof(RenderGraphShaderResources) || type == typeof(RenderGraphRenderEncoder) || type == typeof(RenderGraphComputeEncoder)))
+        foreach (Type type in exported.Where(type => type == typeof(RenderGraphRenderEncoder) || type == typeof(RenderGraphComputeEncoder)))
         {
             foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
             {

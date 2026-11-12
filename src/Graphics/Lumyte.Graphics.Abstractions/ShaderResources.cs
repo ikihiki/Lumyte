@@ -314,6 +314,18 @@ public class ShaderResources
         }
     }
 
+    /// <summary>Checks resolved resource ranges before any native table allocation.</summary>
+    /// <param name="inspect">The host's declaration validation callback.</param>
+    protected void InspectBindingRanges(Action<object, ulong, ulong, ArgumentBufferAccess> inspect) => _reservation.InspectBindingRanges(inspect);
+
+    /// <summary>Admits two internal payload reservations as one indivisible operation.</summary>
+    /// <param name="other">The operation's private reservation.</param>
+    protected void JoinOperation(ShaderResources other) => _reservation.JoinOperation(other._reservation);
+
+    /// <summary>Keeps already encoded indirect references coherent across producer and consumer operations.</summary>
+    /// <param name="other">An operation sharing transferred shader-data references.</param>
+    protected void JoinTable(ShaderResources other) => _reservation.JoinTable(other._reservation);
+
     /// <summary>Checks whether a root or derived reference is part of this indivisible reservation.</summary>
     /// <param name="reference">The native reference to check.</param>
     /// <returns>Whether its registered range belongs to this reservation.</returns>

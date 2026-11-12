@@ -12,6 +12,10 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     internal List<ShaderValueSnapshot> Executions { get; } = [];
 
+    internal List<ShaderBindingSnapshot> Bindings { get; } = [];
+
+    internal Func<IShaderDataSource, ulong, ShaderValueSnapshot>? ReadShaderData { get; set; }
+
     internal int Draws { get; private set; }
 
     internal int IndexedDraws { get; private set; }
@@ -125,7 +129,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         if (Snapshots.Count != 0)
         {
-            _ = ShaderBindingSnapshot.Capture(Snapshots.Last(), _table);
+            Bindings.Add(ShaderBindingSnapshot.Capture(Snapshots.Last(), _table, ReadShaderData));
             Executions.Add(Snapshots.Last());
         }
     }

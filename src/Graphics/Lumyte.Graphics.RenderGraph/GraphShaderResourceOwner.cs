@@ -6,22 +6,24 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
 {
     private readonly RenderGraph _graph;
     private readonly ArgumentTablePlan _registrations;
-    private readonly Dictionary<RenderGraphPass, List<ShaderResources>> _byPass = [];
+    private readonly Dictionary<RenderGraphPass, GraphBindingLookup> _lookups = [];
     private readonly Dictionary<ShaderResources, RenderGraphPass> _byResources = [];
+    private readonly Dictionary<RenderGraphPass, List<ShaderResources>> _modules = [];
+    private readonly HashSet<ShaderResources> _moduleScopes = [];
+    private readonly Dictionary<RenderGraphPass, IReadOnlyList<RenderGraphUse>> _uses = [];
+    private readonly Dictionary<RenderGraphPass, List<(object Resource, ulong Offset, ulong Size, ArgumentBufferAccess Access)>> _allowed = [];
     private readonly Dictionary<SamplerDesc, IGraphicsSampler> _samplers = [];
-    private readonly Dictionary<ShaderResources, (RenderGraphTexture[] Outputs, bool Graphics)> _execution = [];
     private readonly List<IDisposable> _owned = [];
     private RenderGraphPreparationContext? _preparation;
     private bool _disposed;
     private bool _prepared;
+    private bool _collectingDeclarations;
 
-    private GraphShaderResourceOwner(RenderGraph graph)
+    internal GraphShaderResourceOwner(RenderGraph graph)
     {
         _graph = graph;
-        _registrations = new(graph.Device ?? throw new InvalidOperationException("Shader resources require a physical device."));
+        _registrations = new(graph.Device ?? throw new InvalidOperationException("Shader references require a graph device."));
     }
-
-    internal ShaderTarget Target => _registrations.Device.Caps.ShaderTarget;
 
     public void Validate() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -30,25 +32,77 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         Validate();
         if (_prepared)
         {
-            throw new InvalidOperationException("Graph shader resources prepare once.");
+            throw new InvalidOperationException("Pass references prepare once per compiled generation.");
         }
 
         _prepared = true;
         _preparation = context;
+        _collectingDeclarations = true;
         try
         {
-            foreach (ShaderResources canceled in _byResources.Keys.Where(resources => !_registrations.Owns(resources)).ToArray())
+            foreach (ShaderResources scope in _moduleScopes.Where(_registrations.Owns))
             {
-                _byPass[_byResources[canceled]].Remove(canceled);
-                _byResources.Remove(canceled);
+                if (!_byResources.ContainsKey(scope))
+                {
+                    throw new InvalidOperationException("A prepared payload has no consuming pass.");
+                }
             }
 
-            if (_registrations.Reservations.Count != _byResources.Count)
+            var active = new List<ShaderResources>();
+            foreach (RenderGraphPass pass in context.LivePasses)
             {
-                throw new InvalidOperationException("Every shader resource set must belong to exactly one pass.");
+                IReadOnlyList<RenderGraphUse> uses = context.GetUses(pass);
+                _uses.Add(pass, uses);
+                var core = new ModuleResources(this, _registrations.CreateShaderResources());
+                _byResources.Add(core, pass);
+                _allowed.Add(pass, []);
+                core.Inspect((resource, offset, size, access) => _allowed[pass].Add((resource, offset, size, access)));
+                var lookup = new GraphBindingLookup(this, core);
+                _lookups.Add(pass, lookup);
+                bool graphics = uses.Any(use => use.State is TextureState.ColorAttachment or TextureState.DepthStencilAttachment);
+                uint colors = checked((uint)uses.Count(use => use.State == TextureState.ColorAttachment));
+                _registrations.ConfigureExecution(core, colors, graphics);
+                foreach (GraphShaderBinding binding in uses.SelectMany(use => use.Bindings ?? []))
+                {
+                    binding.Register?.Invoke(lookup);
+                }
+
+                active.Add(core);
+                foreach (ShaderResources module in _modules.GetValueOrDefault(pass) ?? [])
+                {
+                    if (!_registrations.Owns(module))
+                    {
+                        continue;
+                    }
+
+                    _registrations.ConfigureExecution(module, colors, graphics);
+                    ((ModuleResources)module).CoRecord(core);
+                    ((ModuleResources)module).Inspect((resource, offset, size, access) => CheckAllowed(pass, resource, offset, size, access));
+                    active.Add(module);
+                }
             }
 
-            ShaderResources[] active = context.LivePasses.SelectMany(pass => _byPass.TryGetValue(pass, out List<ShaderResources>? resources) ? resources : []).ToArray();
+            // Shader-data copies retain encoded native table identities. Connect overlapping producer/consumer ranges,
+            // including copy-only passes, without executing callbacks or inspecting their closures.
+            var ranges = new List<(RenderGraphPass Pass, GraphShaderBinding Binding)>();
+            foreach (RenderGraphPass pass in context.LivePasses)
+            {
+                GraphShaderBinding[] data = _uses[pass].SelectMany(use => use.Bindings ?? []).Where(binding => binding.ShaderData).ToArray();
+                foreach (GraphShaderBinding binding in data)
+                {
+                    foreach ((RenderGraphPass previous, GraphShaderBinding other) in ranges)
+                    {
+                        if (ReferenceEquals(binding.Resource, other.Resource) && binding.Offset < other.Offset + other.Count && other.Offset < binding.Offset + binding.Count)
+                        {
+                            ((ModuleResources)_lookups[pass].Core).SameTable(_lookups[previous].Core);
+                        }
+                    }
+
+                    ranges.Add((pass, binding));
+                }
+            }
+
+            _collectingDeclarations = false;
             _registrations.MaterializeResources(active);
         }
         catch
@@ -58,6 +112,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
         finally
         {
+            _collectingDeclarations = false;
             _preparation = null;
         }
     }
@@ -72,29 +127,34 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
 
         _samplers.Clear();
-        _byPass.Clear();
+        _lookups.Clear();
+        _allowed.Clear();
+        _uses.Clear();
         _byResources.Clear();
+        _modules.Clear();
+        _moduleScopes.Clear();
         _disposed = true;
     }
 
     internal static GraphShaderResourceOwner Get(RenderGraph graph) => graph.GetOrAddExtension(owner =>
     {
         var resources = new GraphShaderResourceOwner(owner);
+        owner.ShaderResourceOwner = resources;
         owner.Retain(resources);
         return resources;
     });
+
+    internal GraphBindingLookup Lookup(RenderGraphPass pass)
+    {
+        Validate();
+        return _lookups.GetValueOrDefault(pass) ?? throw new ArgumentException("This pass has no prepared shader declarations.");
+    }
 
     internal ShaderValueSnapshot Constrain(IReadOnlyList<ShaderResources> resources, ShaderValueSnapshot arguments) => ((ModuleResources)resources[0]).Constrain(arguments, resources);
 
     internal void Bind(ShaderResources resources, IRenderEncoder encoder) => ((ModuleResources)resources).BindRender(encoder);
 
     internal void Bind(ShaderResources resources, IComputeEncoder encoder) => ((ModuleResources)resources).BindCompute(encoder);
-
-    internal RenderGraphShaderResources Create()
-    {
-        ValidateBuilding();
-        return new(this, CreateModule());
-    }
 
     internal void ValidateResource(RenderGraphResource resource)
     {
@@ -109,99 +169,56 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         Validate();
         if (!_byResources.TryGetValue(resources, out RenderGraphPass? consumer) || !ReferenceEquals(consumer, pass))
         {
-            throw new ArgumentException("Shader resources belong to another graph or pass.");
+            throw new ArgumentException("Shader references belong to another graph or pass.");
         }
 
         if (!resources.IsReady)
         {
-            throw new InvalidOperationException("The shader resource group is not ready for recording.");
+            throw new InvalidOperationException("The pass references are not ready for recording.");
         }
     }
 
     internal IReadOnlyList<ShaderResources> SelectArguments(ShaderValueSnapshot snapshot, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
-        Validate();
-        IShaderReference[] references = snapshot.Values.Where(value => value.IsReference).Select(value => value.Reference as IShaderReference
-            ?? throw new ArgumentException("Root references must resolve from a declared graph resource group.")).ToArray();
-        var candidates = new List<ShaderResources>();
-        foreach (ShaderResources resources in _byPass.GetValueOrDefault(pass) ?? [])
+        ShaderResources core = Lookup(pass).Core;
+        ValidateExecution(core, pass, outputs, graphics);
+        ValidateLookup(core, pass);
+        foreach (ShaderValue value in snapshot.Values.Where(value => value.IsReference))
         {
-            if (!_execution.TryGetValue(resources, out (RenderGraphTexture[] Outputs, bool Graphics) shape) || shape.Graphics != graphics || !shape.Outputs.SequenceEqual(outputs) ||
-                !references.All(reference => ((ModuleResources)resources).Accepts(reference)))
+            if (value.Reference is not IShaderReference reference || !((ModuleResources)core).Accepts(reference))
             {
-                continue;
+                throw new ArgumentException("Root references must originate from this pass's shader declarations.");
             }
-
-            ValidateExecution(resources, pass, outputs, graphics);
-            ValidateLookup(resources, pass);
-            candidates.Add(resources);
         }
 
-        if (candidates.Count != 0)
-        {
-            return candidates.AsReadOnly();
-        }
-
-        throw new ArgumentException("All root references must belong to one declared resource group; mixed or foreign groups are not executable.");
+        return [core];
     }
 
     internal ShaderResources CreateModule()
     {
         ValidateBuilding();
-        return new ModuleResources(this, _registrations.CreateShaderResources());
+        var core = new ModuleResources(this, _registrations.CreateShaderResources());
+        _moduleScopes.Add(core);
+        return core;
     }
 
-    internal void Use(RenderGraphPass pass, ShaderResources resources, IReadOnlyList<RenderGraphTexture> attachments, bool? graphics = null)
+    internal void Attach(RenderGraphPass pass, ShaderResources resources)
     {
         ValidateBuilding();
-        ArgumentNullException.ThrowIfNull(pass);
-        ArgumentNullException.ThrowIfNull(resources);
-        ArgumentNullException.ThrowIfNull(attachments);
-        if (!ReferenceEquals(pass.Owner, _graph) || !_registrations.Owns(resources) || _byResources.ContainsKey(resources))
+        ValidateModule(resources);
+        if (!ReferenceEquals(pass.Owner, _graph) || _byResources.ContainsKey(resources))
         {
-            throw new ArgumentException("Shader resources must belong to this graph and exactly one consuming pass.", nameof(resources));
+            throw new ArgumentException("Prepared payloads belong to one declaring pass.");
         }
 
-        if (attachments.Distinct().Count() != attachments.Count || attachments.Any(texture => !pass.Uses.Any(use => ReferenceEquals(use.Resource, texture) && use.State == TextureState.ColorAttachment && (use.Scope.Access & ResourceAccess.ColorWrite) != 0)))
-        {
-            throw new ArgumentException("Declare each actual color output exactly once before connecting shader resources.", nameof(attachments));
-        }
-
-        bool render = graphics ?? (attachments.Count != 0 || pass.Uses.Any(use => use.State == TextureState.DepthStencilAttachment));
-        if (!render && attachments.Count != 0)
-        {
-            throw new ArgumentException("Compute resources cannot have color outputs.", nameof(attachments));
-        }
-
-        _registrations.ConfigureExecution(resources, checked((uint)attachments.Count), render);
-        _execution.Add(resources, (attachments.ToArray(), render));
-        if (!_byPass.TryGetValue(pass, out List<ShaderResources>? list))
-        {
-            list = [];
-            _byPass.Add(pass, list);
-        }
-
-        pass.ShaderResourcesOwner = this;
         _byResources.Add(resources, pass);
-        list.Add(resources);
-        resources.InspectResources((resource, access) =>
+        if (!_modules.TryGetValue(pass, out List<ShaderResources>? modules))
         {
-            RenderGraphPreparationContext context = Preparation();
-            if (resource is IGraphicsSampler)
-            {
-                return;
-            }
+            modules = [];
+            _modules.Add(pass, modules);
+        }
 
-            if (resource is IGraphicsTextureView view)
-            {
-                context.CheckAllocation(pass, view.Texture, ResourceAccess.ShaderRead, sampled: true);
-            }
-            else
-            {
-                ResourceAccess required = ((access & ArgumentBufferAccess.Read) != 0 ? ResourceAccess.ShaderRead : 0) | ((access & ArgumentBufferAccess.Write) != 0 ? ResourceAccess.ShaderWrite : 0);
-                context.CheckAllocation(pass, resource, required, sampled: false);
-            }
-        });
+        modules.Add(resources);
     }
 
     internal void ValidateModule(ShaderResources resources)
@@ -209,26 +226,40 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         ValidateBuilding();
         if (!_registrations.Owns(resources))
         {
-            throw new ArgumentException("The prepared module resources belong to another graph.", nameof(resources));
+            throw new ArgumentException("The prepared payload belongs to another graph.");
         }
     }
 
     internal void ValidateExecution(ShaderResources resources, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
-        Validate();
-        if (!_byResources.TryGetValue(resources, out RenderGraphPass? consumer) || !ReferenceEquals(consumer, pass) || !_execution.TryGetValue(resources, out (RenderGraphTexture[] Outputs, bool Graphics) shape) || shape.Graphics != graphics || !shape.Outputs.SequenceEqual(outputs))
+        ValidateLookup(resources, pass);
+        IReadOnlyList<RenderGraphUse> uses = _uses[pass];
+        bool declaredGraphics = uses.Any(use => use.State is TextureState.ColorAttachment or TextureState.DepthStencilAttachment);
+        if (declaredGraphics != graphics || outputs.Any(output => !uses.Any(use => ReferenceEquals(use.Resource, output) && use.State == TextureState.ColorAttachment)))
         {
-            throw new ArgumentException("Shader inputs belong to another pass, graph, or execution shape.", nameof(resources));
+            throw new ArgumentException("The execution attachments or shader role differ from the pass declarations.");
         }
     }
 
     internal IGraphicsTextureView Texture(ShaderResources resources, RenderGraphTexture texture, TextureViewDesc? desc) => Preparation().CreateTextureView(Pass(resources), texture, desc);
+
+    internal IGraphicsTextureView BorrowedView(ShaderResources resources, RenderGraphTexture texture, IGraphicsTextureView view)
+    {
+        if (!ReferenceEquals(Preparation().GetTexture(Pass(resources), texture), view.Texture))
+        {
+            throw new ArgumentException("The borrowed view does not refer to the declared image.");
+        }
+
+        return view;
+    }
 
     internal IGraphicsBuffer<T> Buffer<T>(ShaderResources resources, RenderGraphBuffer<T> buffer, ArgumentBufferAccess access)
         where T : unmanaged => Preparation().GetBuffer(Pass(resources), buffer, access);
 
     internal IGraphicsShaderDataBuffer<T> Buffer<T>(ShaderResources resources, RenderGraphShaderDataBuffer<T> buffer)
         where T : struct, IShaderData => Preparation().GetShaderDataBuffer(Pass(resources), buffer);
+
+    internal IGraphicsSampler Sampler(ShaderResources resources, RenderGraphSampler sampler) => Preparation().GetSampler(Pass(resources), sampler);
 
     internal IGraphicsSampler Sampler(SamplerDesc desc)
     {
@@ -246,15 +277,23 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
     internal void ValidateBuilding()
     {
         Validate();
-        if (!_graph.IsBuilding || _prepared)
+        if (!_collectingDeclarations && (!_graph.IsBuilding || _prepared))
         {
-            throw new InvalidOperationException("Graph shader resource collection is closed.");
+            throw new InvalidOperationException("Pass shader declarations are closed.");
         }
     }
 
-    private RenderGraphPass Pass(ShaderResources resources) => _byResources.TryGetValue(resources, out RenderGraphPass? pass) ? pass : throw new InvalidOperationException("Connect shader resources to their consuming pass before compilation.");
+    private void CheckAllowed(RenderGraphPass pass, object resource, ulong offset, ulong size, ArgumentBufferAccess access)
+    {
+        if (!_allowed[pass].Any(value => ReferenceEquals(value.Resource, resource) && offset >= value.Offset && offset - value.Offset <= value.Size && size <= value.Size - (offset - value.Offset) && (access & ~value.Access) == 0))
+        {
+            throw new ArgumentException("A prepared payload uses a view, sampler, range or access absent from its standard pass declarations.");
+        }
+    }
 
-    private RenderGraphPreparationContext Preparation() => _preparation ?? throw new InvalidOperationException("Graph shader resources resolve only during preparation.");
+    private RenderGraphPass Pass(ShaderResources resources) => _byResources.GetValueOrDefault(resources) ?? throw new InvalidOperationException("The prepared payload has no pass.");
+
+    private RenderGraphPreparationContext Preparation() => _preparation ?? throw new InvalidOperationException("Graph allocations resolve only during preparation.");
 
     private sealed class ModuleResources : ShaderResources
     {
@@ -270,6 +309,12 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         public override ShaderResources CreateSibling() => _owner.CreateModule();
 
         internal bool Accepts(IShaderReference reference) => ContainsReference(reference);
+
+        internal void Inspect(Action<object, ulong, ulong, ArgumentBufferAccess> inspect) => InspectBindingRanges(inspect);
+
+        internal void CoRecord(ShaderResources other) => JoinOperation(other);
+
+        internal void SameTable(ShaderResources other) => JoinTable(other);
 
         internal ShaderValueSnapshot Constrain(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates) => ConstrainArguments(arguments, candidates);
 

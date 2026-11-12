@@ -8,8 +8,11 @@ public sealed class ArgumentTableReservation
     private readonly List<Action> _collectionGuards = [];
     private readonly List<Action<object, ArgumentBufferAccess>> _inspectors = [];
     private readonly List<Action> _finalizers = [];
+    private readonly List<Action<object, ulong, ulong, ArgumentBufferAccess>> _bindingInspectors = [];
     private IShaderReference[] _references = [];
     private ArgumentPartition? _partition;
+    private ArgumentTableReservation? _operation;
+    private ArgumentTableReservation? _tableGroup;
     private bool _materialized;
 
     internal ArgumentTableReservation(ArgumentTablePlan owner, uint colorAttachments)
@@ -40,6 +43,10 @@ public sealed class ArgumentTableReservation
     internal IReadOnlyList<ArgumentRequest> Requests => _requests;
 
     internal ArgumentTablePlan Owner => _owner;
+
+    internal ArgumentTableReservation Operation => _operation?.Operation ?? this;
+
+    internal ArgumentTableReservation TableGroup => _tableGroup?.TableGroup ?? this;
 
     /// <summary>Requests this exact immutable view object, without merging distinct caller-owned views.</summary>
     /// <param name="view">The borrowed sampled view.</param>
@@ -168,6 +175,30 @@ public sealed class ArgumentTableReservation
         _owner.ValidateScope(this);
     }
 
+    internal void JoinOperation(ArgumentTableReservation other)
+    {
+        JoinTable(other);
+        if (!ReferenceEquals(Operation, other.Operation))
+        {
+            Operation._operation = other.Operation;
+        }
+    }
+
+    internal void JoinTable(ArgumentTableReservation other)
+    {
+        ValidateCollecting();
+        other.ValidateCollecting();
+        if (!ReferenceEquals(_owner, other._owner))
+        {
+            throw new ArgumentException("Execution coherence requires the same allocator.");
+        }
+
+        if (!ReferenceEquals(TableGroup, other.TableGroup))
+        {
+            TableGroup._tableGroup = other.TableGroup;
+        }
+    }
+
     internal bool ContainsReference(IShaderReference reference)
     {
         ValidateMaterialized();
@@ -192,8 +223,15 @@ public sealed class ArgumentTableReservation
         return _partition?.Table;
     }
 
+    internal void InspectBindingRanges(Action<object, ulong, ulong, ArgumentBufferAccess> inspect) => _bindingInspectors.Add(inspect);
+
     internal void Inspect(ArgumentKey key)
     {
+        foreach (Action<object, ulong, ulong, ArgumentBufferAccess> inspect in _bindingInspectors)
+        {
+            inspect(key.Resource, key.Offset, key.Size, key.Access);
+        }
+
         foreach (Action<object, ArgumentBufferAccess> inspector in _inspectors)
         {
             inspector(key.Resource, key.Access);
@@ -221,6 +259,7 @@ public sealed class ArgumentTableReservation
     {
         _requests.Clear();
         _inspectors.Clear();
+        _bindingInspectors.Clear();
         _finalizers.Clear();
     }
 

@@ -6,26 +6,23 @@
 
 ## 背景
 
-異なる図形・クリップ・エフェクトを続けて描く利用者は、同じ画像やサンプラーの登録を有効な範囲で共有したい。基準コードでは一般描画の命令や effect pass ごとに表を作り、graph の一時資源は pass 実行時に固定 slot へ登録するため、共有と所有期間を一つの準備単位で決められない。
+異なる図形・クリップ・エフェクトを続けて描く利用者は、同じ画像やサンプラーの登録を共有したい。基準コードは命令や effect pass ごとに表を作り、graph の一時資源を pass 実行時に固定 slot へ登録するため、共有・容量・所有期間を一つの準備処理で決められない。
 
-[引数への接続](GRAPHICS-0009-shader-argument-binding.md#drawdispatchでの解決)では論理登録容量と一 draw の物理 binding 上限を分けている。一方、基準の Vulkan と DXIL helper は slot を wire に直接格納し、Vulkan の layout は到達する最大 slot + 1 を使う。WGSL は到達資源を compact するが、slot span に応じた remap buffer のサイズに上限がある。基準 SHA の `VulkanShaderReferenceEncoding`、`VulkanShaderBinding`、`Direct3D12ShaderBinding`、`Shared/ShaderBindingData` が根拠である。
+[引数への接続](GRAPHICS-0009-shader-argument-binding.md#drawdispatchでの解決)は論理登録容量と一 draw の物理 binding 上限を分けている。一方、基準の Vulkan/DXIL wire は slot を直接格納し、WGSL の compact binding も到達する slot span に応じた remap buffer を必要とする。基準 SHA の `VulkanShaderReferenceEncoding`、`Direct3D12ShaderBinding`、`Shared/ShaderBindingData` が根拠である。間接 shader-data の upload 済み wire を、root の変更だけで別 table へ読み替えることはできない。
 
 ## 決定
 
-一 draw に必要な直接・間接参照を不可分の予約にまとめ、実行順に現在の登録表へ加える。実際の backend の slot span や descriptor budget に次の draw 全体が収まらない場合だけ次の表へ移り、各表の論理容量はその表に必要な種類別の実登録数から決める。
+直接描画では一 draw、RenderGraph では **一 pass の shader 資源宣言全体**を不可分な容量単位とし、実行順に登録表を共有する。次の単位全体が実効 GPU 上限に収まらなければ次の表へ移る。Graph 利用者は資源セットを作らず、標準の Use 宣言と callback の context だけを使う。
 
 ### 利用者の変更前・変更後
 
-標準の直接描画は、どちらも `await renderer.PrepareAsync(drawing, target)`、`Record`、GPU 完了と command disposal 後の解放を使う。Canvas に RenderGraph を必須化せず、型・クリップ・pipeline だけを理由に表を分割しない。buffer の統合、draw の並べ替え、一 draw の暗黙分割も行わない。
+標準の直接描画は引き続き `await renderer.PrepareAsync(drawing, target)`、`Record`、GPU 完了と command disposal 後の解放を使う。Canvas に Graph を必須化せず、painter order、clip、pipeline だけを理由に表を分割しない。
 
-Graph の独自描画では、利用者は論理資源の集合と実際の描画先を宣言し、AddPass の context から実際の IGpuRef を取得する。既存の引数型と codec を使い、専用 encoder の SetArguments と Draw/Dispatch を通常と同じ形で呼ぶ。表の存在、slot、容量、partition、seal/materialize は graph の公開 API に出さない。既存の raw Commands は backend 相互接続の入口として維持する。
-
-変更前の graph には論理入力から root を構成する入口がなく、基準 SHA の `src/Graphics/Lumyte.Graphics.ImageEffects/EffectGpuPass.cs` は table を作成し、pass 内で texture を登録して内部の `EffectArguments` を渡す。次は opacity 操作に絞った呼出しの抜粋であり、pipeline/state 設定、資源生成と Submit/Wait は省略する。bounds は画像範囲の Vector4 とする。
+基準 SHA の `src/Graphics/Lumyte.Graphics.ImageEffects/EffectGpuPass.cs` は table を作り、pass 内で texture を登録し、既存の内部 `EffectArguments` を渡す。次は同じ opacity 操作の抜粋である。pipeline/state 設定、資源生成、using 指示、Submit/Wait と owner の失敗時解放は省略する。
 
 ```csharp
 IArgumentTable table = owner.Add(device.CreateArgumentTable(new() { TextureCapacity = 2, SamplerCapacity = 1 }));
 IGpuRef<IGraphicsSampler> samplerReference = table.WriteSampler(0, sampler);
-// pass callback 内。基準実装内部の引数型と static codec を利用する。
 IGpuRef<IGraphicsTextureView> inputReference = table.WriteTexture(0, context.CreateTextureView(input.Texture));
 IGpuRef<IGraphicsTextureView> backdropReference = table.WriteTexture(1, context.CreateTextureView(backdrop.Texture));
 var arguments = new EffectArguments(inputReference, backdropReference, samplerReference,
@@ -43,18 +40,15 @@ render.End();
 // owner は table と sampler を GPU 完了と command disposal 後まで保持する。
 ```
 
-変更後は、論理資源を graph の公開 handle で収集し、pass callback 内で context が実際の IGpuRef に変換する。次は ImageEffects 内部の同じ既存 `EffectArguments` を使う例であり、Graph 専用の引数型を追加しない。一般の利用者も直接描画で使う自分の IShaderArguments 型を再利用できる。pipeline は同じ shader を含み、source は宣言済み画像、target は描画先、bounds は画像範囲、samplerDesc は画像用設定、sampleRead/colorWrite は対応する BarrierScope とする。資源生成、using 指示、Submit/Wait と失敗時の owner 解放は省略する。
+変更後は pass が Use 宣言から必要な shader 資源を認識し、callback の context が実際の IGpuRef を返す。次は同じ ImageEffects 内部の既存 EffectArguments を再利用する例である。一般の利用者も直接描画で使う自分の IShaderArguments 型と生成 codec をそのまま使える。pipeline、宣言済み source/target、samplerDesc、画像範囲の bounds、opacity と BarrierScope は呼出し側から与える。
 
 ```csharp
-RenderGraphShaderResources inputs = graph.CreateShaderResources()
-    .ReadTexture(source)
-    .Sampler(samplerDesc);
 graph.AddPass("sample", context =>
 {
     var arguments = new EffectArguments(
-        context.GetGpuRef(inputs, source),
-        context.GetGpuRef(inputs, source),
-        context.GetGpuRef(inputs, samplerDesc),
+        context.GetGpuRef(source),
+        context.GetGpuRef(source),
+        context.GetGpuRef(samplerDesc),
         bounds, bounds, bounds, new Vector4(3, 0, 0, opacity),
         Vector4.Zero, Vector4.Zero, Vector4.Zero, Vector4.Zero, Vector4.Zero);
     using RenderGraphRenderEncoder render = context.BeginRenderPass(new()
@@ -76,68 +70,56 @@ graph.AddPass("sample", context =>
     render.Draw(3);
 }).UseTexture(source, TextureState.Sampled, sampleRead)
   .UseTexture(target, TextureState.ColorAttachment, colorWrite)
-  .UseShaderResources(inputs, target);
+  .UseSampler(samplerDesc);
 ```
 
-一つの資源集合は一 pass の不可分な実行単位に接続する。別の単位は `CreateShaderResources` で作る。収集時の fluent メソッドは同じ集合を返す。IGpuRef は callback 内の GetGpuRef からだけ取得し、pending registration 型を追加しない。標準の低レベル IShaderArguments と static codec は graph 外の直接描画で維持する。基準 SHA の `src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/DrawingArguments.cs` も内部型であり、graph 利用者が実装する契約ではない。
+資源セットの factory・接続・別名 wrapper、member 名による numeric bag、artifact/root の別途指定は設けない。Graph 専用の ImageArguments や pending registration 型も作らない。引数に参照がなければ、資源の dummy 宣言は不要である。
 
-### 論理入力と専用 encoder の契約
+### Pass 宣言、容量、参照の契約
 
-資源集合は artifact や root member 名を持たず、texture/view、sampler、型付き buffer の exact range/access を収集する。GetGpuRef は callback の有効期間内だけ使え、同じ graph/pass に事前登録された完全一致の key を解決する。callback 内で新しい登録や slot/capacity の変更を行わない。未知の key、別 graph/pass、未宣言の資源や過大な range は実行前に拒否する。
+**各 draw が単独で収まっても、同じ pass の shader 宣言の合計が上限を超えれば、その pass を拒否する。利用者は AddPass を分割する。** callback を再実行して引数を調べたり、closure を解析したり、draw を暗黙に並べ替えたりしない。組込み Drawing2D は、準備時に分かる命令境界と保守的な資源上限から複数 pass を作る。任意の custom batch の Record を内部で分割できるとは保証しない。
 
-`SetArguments<T>(in T)` は通常の IShaderArguments codec を一度実行し、数値 bytes をコピーする。selected pipeline の compiled root schema で root/type/member/reference kind を検査し、失敗した設定は最後の有効な選択を保持する。繰返し Draw/Dispatch は同じ数値 snapshot を使う。別 pipeline に切り替える場合は再設定し、別の設定が成功する前に元の pipeline へ戻した場合だけ最後の選択を使える。pipeline 別の cache は作らない。引数のない program は設定不要である。
+UseTexture の Sampled/ShaderRead から、既定または明示した exact view を登録する。attachment/copy-only 宣言から sampled binding を作らない。UseBuffer/UseShaderDataBuffer は shader access を含む場合だけ whole buffer または明示した element range を登録し、read/write は scope から決める。sampler は UseSampler の値または借用 object identity で宣言し、barrier や write root を作らない。
 
-Graph は root 内の実参照から、当該 pass に宣言された候補集合を非公開に推定する。各実行で集合と lifetime を検査して同じ native table を選ぶ。native が command-local transfer metadata を読む通常の時点で、root と間接参照の全体が一つの事前予約集合に含まれることを検査する。同じ物理 table を共有していても、別集合の部分だけを足し合わせた一命令は拒否する。共通 root の重複除去で候補が複数残る場合も、命令全体を覆う一集合が必要である。全体に参照がなければ table を推定する必要はない。アプリに SetResources や SetArgumentTable を要求せず、global な参照 registry、実行時 reflection、新しい friend 宣言を追加しない。
+異なる view/range は同じ allocation に対して宣言できる。binding は個別に保持し、hazard・culling・lifetime は allocation 単位で保守的に集約する。同じ exact range の shader access は一つの scope にまとめる。これは subresource hazard の最適化ではない。
 
-UseShaderResources の出力は実際の color attachment と一致させ、同じ pass に state/access を宣言する。色出力がなくても、宣言済み depth attachment を持つ pass は graphics と判定する。compute の資源集合には render attachment を宣言しない。render は通常 IRenderEncoder と同じ Draw/DrawIndexed/indirect signature、compute は通常 IComputeEncoder と同じ Dispatch/DispatchIndirect signature を持つ。
+GetGpuRef は callback の有効期間内だけ使え、frozen pass 宣言に対応する既存参照を解決する。未知の view/range/sampler、別 graph、未宣言資源、copy/attachment-only の shader 利用を拒否する。lookup は新しい slot/table を作らず、公開 API に容量・partition・table を出さない。BeginRenderPass は実際の attachment の state/access、個数、重複を検査する。容量準備の color 予約は pass の attachment 宣言の全個数を保守的な上限とする。
 
-専用 encoder は native encoder を非公開に保持し、取り出す API を設けない。pipeline、render state、viewport、scissor、blend、stencil、index を設定できる。context では同時に一つだけ開き、End は一度、Dispose は終了済みなら何もしない。callback 後の操作を拒否し、context の Close は残った encoder を終了する。callback と cleanup がともに失敗した場合も元の例外を主例外として保持する。raw Commands は相互接続用に残すが、開いている専用 encoder と混在させない。
+物理上限は logical capacity と区別する。Vulkan/DXIL の直接 slot span、WGSL の compact resource 数と remap span、stage/set/combined、root/remap/floor/attachment の予約、range alignment/size を検査する。Vulkan の sampler と device-address buffer は maxPerStageResources に加算しない。登録数ちょうどの ArgumentTableDesc を使い、未使用の種類の容量は 0 とする。
 
-独自 Drawing2D renderer は context.ArgumentPlan で不透明な ShaderResources を作る。独立した module だけが別入口 CreateModuleShaderResources を使い、RegisterModuleTexture/Buffer の型付き callback で実参照を受け取る。DescribeModuleShaderResources は既存の同じ予約集合を key で記述するため、composite の nested metadata と root を別の表へ分離しない。module の公開集合にも Table は出さない。実際に module が所有する GPU root buffer だけを型付きで宣言し、任意の外部 buffer は既存の bindings と宣言を必要とする。
+重複除去は同じ表の中だけで行う。texture view と借用 sampler は object identity、buffer は resource・型・raw/shader-data・用途・exact base/range/count/stride を key にする。重なるだけの range や、値が等しい別の借用 view は同一化しない。
 
-### 容量と予約の契約
+### 引数選択と専用 encoder
 
-予約は一 draw/dispatch の全 root buffer、shader data 内の参照、texture、sampler を含む。一つの予約を二つの表に割り当てない。現在の表に加えると backend の直接 slot span、remap サイズ、種類別・combined binding budget を超える場合は、予約全体を空の次の表へ移す。一予約が単独でも収まらない場合は、native table の作成や payload 公開前に NotSupportedException とし、描画を勝手に分けない。
+SetArguments の通常 codec を一度実行し、numeric bytes を固定する。selected pipeline の compiled root schema で root/type/member/reference kind を検査し、失敗した設定は最後の有効な選択を保持する。繰返し Draw/Dispatch は再 capture しない。別 pipeline への切替は再設定が必要で、別の設定が成功する前に元へ戻した場合だけ最後の選択を再利用できる。pipeline 別の cache は作らない。
 
-各表は種類別の登録数ちょうどの ArgumentTableDesc を使う。未使用の種類は容量 0 とし、fallback や sampler の固定空き slot を予約しない。BufferCapacity は exact range の論理登録数であり、IGpuRef の要素参照数や VRAM、device-address buffer の descriptor 数ではない。
+各命令で、pass 所有の参照・table・generation の有効性を検査する。間接 shader-data は通常 native と同じ command-local transfer snapshot の時点で収集し、全 root/間接参照が当該 pass の宣言で覆われることを検査する。標準 Pack の custom reference encoder の契約を狭めず、strict な snapshot/reference 検査は native admission に残す。
 
-重複除去は選ばれた表の中だけで行う。texture view と caller-owned sampler は object identity、buffer は resource、型、raw/shader-data の別、read/write 用途、正確な基点・範囲・count・stride を key にする。重なるだけの range を統合しない。別表でも同じ資源が必要なら新しい opaque reference を作り、その予約の Table に属させる。
+shader-data の producer/copy/consumer は、宣言済みの重なる element range から非公開の table coherence を計画する。同じ wire を読む間に table identity を変えず、各 pass の binding budget を個別に検査する。接続全体が表の slot/remap 範囲に収まらない場合は、native Write 前に拒否する。外部 table の参照を既に含む buffer を新しい table へ自動で repack/rebase する保証は追加しない。間接参照先も pass の標準宣言を必要とする。
 
-DeviceCaps の ArgumentTableBindingLimits は論理 capacity ではなく、backend が有効にした helper の制約を報告する。Vulkan は stage/set の sampled image・sampler 上限、最低一個の texture/sampler layout、root uniform と color attachment の combined 消費を含める。sampler と device-address buffer は Vulkan の maxPerStageResources に加算しない。DXIL は native helper の種類別 slot span を報告する。WGSL は compact する draw 単位の資源数と、root/remap の予約、group entry 数、range alignment/size、remap の slot span を別々に報告する。WGSL の logical table を per-draw resource 数へ切り詰めない。
+専用 encoder は native encoder を非公開に保持し、SetArguments と実行を分離する。Draw/DrawIndexed/indirect と Dispatch/DispatchIndirect の型・順序・名前・既定値は通常 interface と同じである。context ごとに同時に一つだけ開き、End は一度、Dispose は終了済みなら何もしない。callback/End 後の操作を拒否し、cleanup failure は元 callback exception を置換しない。既存 raw Commands は相互接続用の低レベル入口として維持し、専用 encoder と混在させない。
 
-### Materialize と所有
+### Materialize、module、所有期間
 
-すべての active 予約を解決・検査してから、greedy partition の全 native table を作り、全 Write 成功後に全予約の内部参照を先に設置する。内部の参照読取可能状態（state 2）へ進めてから、全 resolution callback、全 finalizer の順に実行し、その全成功後だけ recording ready に進める。callback は void 登録の `Action<IGpuRef<T>>` で実参照を受け取り、finalizer が payload を pack/upload する。失敗・取消では新規 generation 全体を無効化し、途中の native table と owner の cleanup retry を保持する。古い登録の上書き・Release、seal 後の append、他 generation の参照への読み替えはしない。
+Record は live allocation を解決し、frozen な Use 宣言から全 live pass の登録と容量を準備してから、従来の barrier/callback sweep を行う。全単位の admission が成功するまで native table を作らない。全 Write 成功後に全内部参照を install し、参照読取可能な状態へ進め、全 resolution callback、全 finalizer の順に実行する。その全成功後だけ recording ready とし、失敗・取消では新規 generation 全体を無効化する。
 
-表の lease は登録資源を所有しない。[利用者が管理する寿命](GRAPHICS-0014-caller-managed-resource-validation.md#利用者が保証する条件)と同期を維持し、stale reference の検出を新たに保証しない。[保持描画](GRAPHICS-0025-retained-drawing-content.md#device-資産と-frame-の所有権)の cached asset は元の表と payload を保持し、新しい準備で再割当てしない。新規資産だけを実行順に予約する。
+直接描画と retained は同じ graph 非依存 allocator を使う。既に seal 済みの cached asset を新しい準備へ再登録せず、元の table/payload を保持する。fallback は新規 plan の初回 record で一度だけ初期化し、使用中の sibling 再利用で上書きしない。buffer の統合、run の暗黙分割、clip/pipeline だけを理由とする partition は行わない。
 
-Direct/retained の fallback は同じ新規 plan の初回 record で一度だけ clear し、その frame 全体の GPU 完了と command disposal 後にだけ資産を resident/idle に返す。以後の独立した sibling 再利用では書き換えない。矩形の buffer pool、資格判定、1024個の run 境界と専用 shader を維持する。表は pooled buffer と別の使用権として管理する。
+Graph の table は compiled plan が所有し、GPU 完了または command 破棄前の Dispose を拒否する。通常 pass の自動計画は compiled generation に属し、借用だけの builder の既存再 Compile 契約を不必要に変更しない。culled pass の view/range resolver・finalizer・table allocation は行わない。table の全内容を全 pass の依存へ追加しない。
 
-### RenderGraph の所有と遅延資源
+Drawing2D の内部 payload 接続は公開 factory ではなく、標準の view/range/sampler 宣言に従う assembly-private bridge とする。Graph から Drawing2D.RenderGraph/ImageEffects へ限定した friend access を設ける。fault injection 用の Drawing2D.Tests は別の friend とし、独立 consumer の RenderGraph.Tests には付与しない。module の登録は宣言済み view/sampler/range/access と照合してから materialize し、未宣言 binding を追加する入口にはしない。
 
-非公開の graph coordinator は既存 GetOrAddExtension と Retain で graph-local に一つ作り、成功した Compile で CompiledRenderGraph に所有を移す。caller が Submit/Wait を行う契約と、完了・破棄した command に対する既存 Dispose guard は変更しない。global table pool や別 session、cross-frame mutable cache は追加しない。
+同期 Record を維持するため、staging の MapAsync は AppendAsync 中に await し、finalizer は同期 Fill/CopyFrom/Unmap だけを行う。普通描画・composite・ImageEffects の root と間接 metadata を同じ所有表に所属させる。composite の GPU instruction/geometry は明示 copy producer の後で shader が読む。module 所有の私的 storage の copy-write を graph 出力の副作用にせず、既存 pass-local affinity と borrowed/transient の区別を維持する。
 
-Record は cull 後の live pass が使う一時資源をまず割り当て、IRenderGraphPreparation を実行してから従来の barrier/pass sweep へ進む。hook は Commands を公開せず、固定された live execution identity と、そのコンパイルで当該 pass が実際に宣言した資源だけを解決できる。宣言検査は view cache lookup より前に行い、未宣言・foreign・culled pass の解決を拒否する。
-
-Graph の logical handle と normalized view desc から作る view は plan 所有として共用する。caller が別々に作った view を descriptor の値だけで同一化しない。graph 予約は実際の live pass 順と pass 内の draw 順へ並べ、culled 予約の resolver・登録・finalizer は実行しない。表の全内容を全 pass の依存へ追加せず、sampled source/original/geometry/instruction など当該 pass が使う資源だけを宣言する。opaque Drawing2D batch の GPU root buffer は batch が所有し、実際の copy-write と shader-read を pass-local access として宣言する。borrowed allocation と一時 allocation の所有区分を変えず、pass-local の書込みだけを graph 出力の副作用として扱わない。別 pass の使用、export、出力への昇格を拒否し、既存の global import を local に変換しない。内部 copy/barrier と初期化の責任は batch に残り、宣言検査を省略しない。
-
-composite の GPU instruction と geometry は graph 一時資源とし、明示 copy-write producer の後で draw が読む。新しい CreateShaderDataBuffer は artifact/count/Automatic を保持し、事前 Validate で未割当て object を参照せず、最初の read に producer を要求する。普通の描画、layer/composite と ImageEffects は同じ graph allocator の予約を使う。fallback も graph transient texture とし、clear producer と sampled consumer の宣言で同期・culling する。
-
-同期 Record を維持するため、staging の MapAsync は AppendAsync 中に await し、まだ payload を書かず owner を保持する。materialize 後の WhenReady は同期の Fill/CopyFrom/Unmap のみを行う。すべての live callback を同じ generation の失敗境界内で実行し、一つでも失敗すれば全新規参照を無効化する。packing 中は参照を読めるが、全 callback の成功前に Draw/Dispatch は実行できない。Browser/UI thread で未完了の非同期 map を GetResult しない。未記録・culled・部分失敗時の mapped owner も cleanup する。
+[利用者が管理する寿命](GRAPHICS-0014-caller-managed-resource-validation.md#利用者が保証する条件)を維持し、新しい stale-reference 検出や Submit 時の再検証を保証しない。表の lease は登録資源を所有しない。失敗時の unmap/disposal は retry 可能な owner に残す。
 
 ### API 差分
 
-基準 SHA に対する判断対象の追加を抜粋する。既存の直接描画・graph Record/Submit/Wait は維持する。公開の `ArgumentRegistration<T>` と `DrawingArgumentRegistration2D<T>` は設けず、登録は void と型付き callback にする。backend に元からある非 generic の内部 registration 表現は引き続き内部契約である。
+基準 SHA に対する判断対象の追加を抜粋する。直接/backend の IShaderArguments と既存 codec は維持し、Graph の資源セット API は追加しない。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
  {
-     public sealed record ShaderValueSnapshot(string RootParameter, string ShaderTypeName, IReadOnlyList<ShaderValue> Values)
-     {
-+        // native command-local capture が全 root/間接参照を収集した後に host 制約を適用する。
-+        // 通常 snapshot は追加制約なし。Copy は内部制約も保持し、Pack callback は呼び出さない。
-+        public void ValidateExecutionReferences(IReadOnlyCollection<IShaderReference> references);
-     }
      public sealed record DeviceCaps
      {
 +        public ArgumentTableBindingLimits ArgumentTableBindingLimits { get; init; }
@@ -146,67 +128,58 @@ composite の GPU instruction と geometry は graph 一時資源とし、明示
 +    {
 +        public ArgumentTablePlan(IGraphicDevice device);
 +        public ArgumentTableReservation Reserve(uint colorAttachments = 1);
-+        // 全 native Write → 全内部参照設置 → 全 resolution callback → 全 finalizer。
-+        // 全成功後だけ記録可能。失敗は generation 全体を無効化する。
 +        public void Materialize(IReadOnlyList<ArgumentTableReservation>? execution = null, CancellationToken cancellationToken = default);
 +        public IDisposable Retain();
 +        public void Dispose();
 +    }
-+    public sealed class ArgumentTableReservation
-+    {
-+        public IArgumentTable Table { get; }
-+        public void RegisterTexture(IGraphicsTextureView view, Action<IGpuRef<IGraphicsTextureView>> resolved);
-+        public void RegisterTexture(Func<IGraphicsTextureView> resolve, Action<IGpuRef<IGraphicsTextureView>> resolved);
-+        public void RegisterSampler(IGraphicsSampler sampler, Action<IGpuRef<IGraphicsSampler>> resolved);
-+        public void RegisterBuffer<T>(BufferSlice<T> range, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read) where T : unmanaged;
-+        public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved) where T : struct, IShaderData;
-+    }
-+    // module 用の不透明な集合。Table は公開しない。
-+    public class ShaderResources
-+    {
-+        protected ShaderResources(ShaderResources resources);
-+        // module 内部の実行制約。Graph consumer には公開しない。
-+        protected bool ContainsReference(IShaderReference reference);
-+        protected ShaderValueSnapshot ConstrainArguments(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates);
-+        public virtual ShaderResources CreateSibling();
-+        public bool IsReady { get; }
-+        public void RegisterTexture(IGraphicsTextureView view, Action<IGpuRef<IGraphicsTextureView>> resolved);
-+        public void RegisterSampler(IGraphicsSampler sampler, Action<IGpuRef<IGraphicsSampler>> resolved);
-+        public void RegisterBuffer<T>(BufferSlice<T> range, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read) where T : unmanaged;
-+        public void WhenReady(Action finalize);
-+        public IDisposable Retain();
-+        public void Cancel();
-+    }
      public interface IRenderEncoder
      {
-         void SetArguments<T>(in T arguments) where T : struct, IShaderArguments;
-+        // 低レベル相互接続用。呼出し時に防御的コピーを行う。
++        // 低レベル相互接続用。numeric bytes と内部 execution 制約を防御的にコピー。
 +        void SetArguments(ShaderValueSnapshot arguments);
      }
      public interface IComputeEncoder
      {
-+        // 低レベル相互接続用。同じ防御的コピー契約。
 +        void SetArguments(ShaderValueSnapshot arguments);
+     }
+     public sealed record ShaderValueSnapshot
+     {
++        // native command-local capture 完了後だけ host 制約を適用。通常 snapshot は追加制約なし。
++        public void ValidateExecutionReferences(IReadOnlyCollection<IShaderReference> references);
      }
  }
  namespace Lumyte.Graphics.Drawing2D
  {
-     public sealed class RenderPreparationContext2D
++    public sealed class DrawingArgumentPlan2D : IDisposable
++    {
++        // Direct/backend module 向け。Graph-only factory callback は公開しない。
++        public DrawingArgumentPlan2D(IGraphicDevice device, ArgumentTablePlan? registrations = null);
++    }
+     public interface IDrawingResourceDeclarations2D
      {
-+        public DrawingArgumentPlan2D ArgumentPlan { get; }
-+        // device の不一致は ArgumentException。target と resource owner を維持。
-+        public RenderPreparationContext2D WithArgumentPlan(DrawingArgumentPlan2D argumentPlan);
++        void UseTextureView(IGraphicsTextureView view, BarrierScope scope);
++        void UseSampler(IGraphicsSampler sampler);
++        void UseBuffer<T>(BufferSlice<T> range, BarrierScope scope) where T : unmanaged;
++        void UseShaderDataBuffer<T>(ShaderDataSlice<T> range, BarrierScope scope) where T : struct, IShaderData;
      }
  }
  namespace Lumyte.Graphics.RenderGraph
  {
-+    public interface IRenderGraphPreparation : IRenderGraphLifetime
-+    {
-+        void Prepare(RenderGraphPreparationContext context);
-+    }
      public sealed class RenderGraphPass
      {
-+        // 借用 storage の作用はこの pass に限定。別 pass・export・出力化を拒否。
+-        // allocation の state/access 宣言。
++        // sampled shader-read の既定 view も pass の容量単位へ含める。
+         public RenderGraphPass UseTexture(RenderGraphTexture texture, TextureState state, BarrierScope scope, bool discard = false);
+-        // whole-buffer の state/access 宣言。
++        // shader access を含む場合は whole range を admit。copy-only は binding を作らない。
+         public RenderGraphPass UseBuffer<T>(RenderGraphBuffer<T> buffer, BarrierScope scope, bool discard = false) where T : unmanaged;
++        // 同じ shader/copy 分類。producer/copy/consumer の metadata coherence も保持する。
+         public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope, bool discard = false) where T : struct, IShaderData;
++        // 色出力を除く shader 宣言全体が一つの容量単位。超過時は AddPass を分割する。
++        public RenderGraphPass UseTexture(RenderGraphTexture texture, TextureViewDesc view, TextureState state, BarrierScope scope);
++        public RenderGraphPass UseBuffer<T>(RenderGraphBuffer<T> buffer, ulong offset, ulong count, BarrierScope scope) where T : unmanaged;
++        public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count, BarrierScope scope) where T : struct, IShaderData;
++        public RenderGraphPass UseSampler(IGraphicsSampler sampler);
++        public RenderGraphPass UseSampler(SamplerDesc desc);
 +        public RenderGraphPass UseLocalBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope scope) where T : unmanaged;
 +        public RenderGraphPass UseLocalShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope) where T : struct, IShaderData;
      }
@@ -214,77 +187,22 @@ composite の GPU instruction と geometry は graph 一時資源とし、明示
      {
 +        public RenderGraphShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, string? name = null) where T : struct, IShaderData;
      }
-+    public static class RenderGraphShaderResourceExtensions
-+    {
-+        public static RenderGraphShaderResources CreateShaderResources(this RenderGraph graph);
-+        // actual color outputs。none は pass の attachment 宣言により compute/depth-only graphics。
-+        public static RenderGraphPass UseShaderResources(this RenderGraphPass pass, RenderGraphShaderResources resources, params RenderGraphTexture[] colorAttachments);
-+        // 独立した module 向け。一般の graph 利用例では不要。
-+        public static ShaderResources CreateModuleShaderResources(this RenderGraph graph);
-+        public static void RegisterModuleTexture(this RenderGraph graph, ShaderResources resources, RenderGraphTexture texture, Action<IGpuRef<IGraphicsTextureView>> resolved, TextureViewDesc? desc = null);
-+        public static void RegisterModuleBuffer<T>(this RenderGraph graph, ShaderResources resources, RenderGraphBuffer<T> buffer, ulong offset, ulong count, Action<IGpuRef<T>> resolved, ArgumentBufferAccess access = ArgumentBufferAccess.Read) where T : unmanaged;
-+        public static void RegisterModuleBuffer<T>(this RenderGraph graph, ShaderResources resources, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count, Action<IGpuRef<T>> resolved) where T : struct, IShaderData;
-+        // resources と同じ不可分な予約集合を記述する。
-+        public static RenderGraphShaderResources DescribeModuleShaderResources(this RenderGraph graph, ShaderResources resources);
-+        public static RenderGraphPass UseShaderResources(this RenderGraphPass pass, ShaderResources resources, params RenderGraphTexture[] colorAttachments);
-+    }
-+    // sealed な composition。ShaderResources の派生型ではない。
-+    public sealed class RenderGraphShaderResources
-+    {
-+        public RenderGraphShaderResources ReadTexture(RenderGraphTexture texture, TextureViewDesc? desc = null);
-+        public RenderGraphShaderResources Sampler(SamplerDesc desc);
-+        public RenderGraphShaderResources Sampler(IGraphicsSampler sampler);
-+        public RenderGraphShaderResources ReadBuffer<T>(RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read) where T : unmanaged;
-+        public RenderGraphShaderResources ReadBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count) where T : struct, IShaderData;
-+    }
      public sealed class RenderGraphContext
      {
 +        public RenderGraphRenderEncoder BeginRenderPass(RenderGraphRenderPassDesc desc);
 +        public RenderGraphComputeEncoder BeginComputePass(string? label = null);
-+        // callback 内だけ。事前登録済みの exact key を解決し、容量を変更しない。
-+        public IGpuRef<IGraphicsTextureView> GetGpuRef(RenderGraphShaderResources resources, RenderGraphTexture texture, TextureViewDesc? desc = null);
-+        public IGpuRef<IGraphicsSampler> GetGpuRef(RenderGraphShaderResources resources, SamplerDesc desc);
-+        public IGpuRef<IGraphicsSampler> GetGpuRef(RenderGraphShaderResources resources, IGraphicsSampler sampler);
-+        public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderResources resources, RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read) where T : unmanaged;
-+        public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderResources resources, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count) where T : struct, IShaderData;
++        // callback 内だけ、事前宣言の既存参照を返す。lookup で登録・容量を変更しない。
++        public IGpuRef<IGraphicsTextureView> GetGpuRef(RenderGraphTexture texture, TextureViewDesc? desc = null);
++        public IGpuRef<IGraphicsSampler> GetGpuRef(SamplerDesc desc);
++        public IGpuRef<IGraphicsSampler> GetGpuRef(IGraphicsSampler sampler);
++        public IGpuRef<T> GetGpuRef<T>(RenderGraphBuffer<T> buffer, ulong offset = 0, ulong? count = null) where T : unmanaged;
++        public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset = 0, ulong? count = null) where T : struct, IShaderData;
      }
-+    public sealed record RenderGraphRenderPassDesc
-+    {
-+        public string? Label { get; init; }
-+        public IReadOnlyList<RenderGraphColorAttachmentDesc> ColorAttachments { get; init; } = [];
-+        public RenderGraphDepthStencilAttachmentDesc? DepthStencilAttachment { get; init; }
-+    }
-+    public sealed record RenderGraphColorAttachmentDesc
-+    {
-+        public required RenderGraphTexture Texture { get; init; }
-+        public TextureViewDesc? ViewDesc { get; init; }
-+        public required AttachmentLoadOp LoadOp { get; init; }
-+        public required AttachmentStoreOp StoreOp { get; init; }
-+        public ClearColor ClearValue { get; init; }
-+    }
-+    public sealed record RenderGraphDepthStencilAttachmentDesc
-+    {
-+        public required RenderGraphTexture Texture { get; init; }
-+        public TextureViewDesc? ViewDesc { get; init; }
-+        public AttachmentLoadOp DepthLoadOp { get; init; } = AttachmentLoadOp.Clear;
-+        public AttachmentStoreOp DepthStoreOp { get; init; } = AttachmentStoreOp.Store;
-+        public float DepthClearValue { get; init; } = 1;
-+        public AttachmentLoadOp StencilLoadOp { get; init; } = AttachmentLoadOp.Clear;
-+        public AttachmentStoreOp StencilStoreOp { get; init; } = AttachmentStoreOp.Store;
-+        public uint StencilClearValue { get; init; }
-+    }
 +    public sealed class RenderGraphRenderEncoder : IDisposable
 +    {
-+        // 数値を一度 capture。失敗時は以前の選択を保持する。
++        // selected pipeline の通常 codec を一度 snapshot。失敗時は以前の選択を保持。
 +        public void SetArguments<T>(in T arguments) where T : struct, IShaderArguments;
 +        public void SetPipeline(IGraphicsPipeline pipeline);
-+        public void SetRenderState(GraphicsRenderStateDesc state);
-+        public void SetViewport(Viewport viewport);
-+        public void SetScissor(ScissorRect scissor);
-+        public void SetBlendConstant(BlendConstant value);
-+        public void SetStencilReference(uint reference);
-+        public void SetIndexBuffer(BufferSlice<ushort> indices);
-+        public void SetIndexBuffer(BufferSlice<uint> indices);
 +        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0);
 +        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
 +        public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments);
@@ -304,18 +222,20 @@ composite の GPU instruction と geometry は graph 一時資源とし、明示
  }
 ```
 
+render pass/attachment desc と dynamic/index state の設定は通常 backend の役割を保つ。専用 encoder に native/table getter や手動 SetResources を設けない。
+
 ## 検討した代替案
 
-- 表の容量を device の per-draw 上限へ一律固定する: 論理容量と物理 binding、device address と descriptor を混同し、WGSL の有効な大きい論理表も分割してしまう。
-- Vulkan の全 wire を draw-local remap に置き換える: 一表の論理範囲を広げられるが、間接 shader-data の ABI と native binding を同時に変更する。既存 ABI が使える範囲での表分割を選ぶ。
-- clip・型・pipeline ごとに表を分ける: 必要な device/ownership 境界より細かくなり、異種描画の共有を妨げる。
-- pass callback で空き slot をその都度上書きする: 過去の参照を保持する metadata と衝突し、準備途中の失敗も atomic にできない。
-- table 全登録を全 pass の依存へ加える: 未使用資源の false hazard と culling 抑止を起こす。
+- 利用者に資源セットを作らせる: 一命令の容量単位を明示できるが、pass の Use 宣言と二重管理になる。Graph の公開契約から除き、pass 自身を容量単位にする。
+- callback を試行実行して draw ごとの入力を学習する: 任意の副作用、once-only recording と失敗契約を維持できない。
+- root だけ別 table へ rebase する: upload 済みの間接 wire と table identity が一致しない。ABI と shader indirection の変更ではなく、宣言済み pass の事前 admission を選ぶ。
+- table 容量を per-draw 上限へ一律固定する: WGSL の有効な大きい logical table まで分割し、device-address buffer と descriptor 数も混同する。
+- 全 table 内容を全 pass の依存にする: false hazard と culling 抑止を起こす。依存は当該 pass の Use 宣言だけにする。
 
 ## 結果と影響
 
-標準描画と明示参加する renderer は、painter order と root/間接参照の所属を保ちながら、実際の上限まで異種命令の登録を共有できる。必要な native buffer 数や draw 数、時間短縮はこの判断だけでは保証しない。型付き resolution callback、二段階の CPU metadata、owner の使用権が必要となる。
+利用者は Use 宣言だけで参照を取得し、既存引数型の SetArguments と通常の Draw/Dispatch を使える。表の共有は painter order と root/間接参照の所属を保つが、native buffer 数・draw 数や時間短縮をこの判断だけでは保証しない。
 
-境界は device、既に seal 済みの owner generation、独立した送信/退役、実際の helper slot/binding/range 上限である。graph は遅延資源を正常な materialization 時点で接続するが、Submit/wait を代行しない。型・clip・pipeline の切替だけでは境界にならない。
+Graph では pass の宣言合計が容量単位となるため、個々の draw が収まっても pass 分割が必要になる。型付き view/range/sampler 宣言、coherent な shader-data producer/copy/consumer、completion-safe ownership が必要である。Direct/retained の単位は引き続き一 draw であり、既存資産と新規 generation の境界を混ぜない。
 
-検証は exact/+1、種類別上限、combined/helper reserve、WGSL の大きい論理表、単独過大 draw の事前拒否、partition rollback、異種画像・sampler・typed range、table identity と painter order を含む。graph の undeclared/foreign 拒否、culling、transient shader-data の producer、普通描画と composite/effect の共用、view identity、未記録/未提出/完了後の cleanup retry を確認する。
+検証は容量 0/exact/+1、種類別・combined/root/remap/floor/attachment 上限、WGSL logical span、native Write 前の全体拒否、失敗 rollback、pass 分割と shader-data coherence、frozen 宣言・undeclared/foreign/range/view/sampler 拒否、culling、once-only callback、typed snapshot と失敗後の旧選択、GPU pixel、in-flight/未提出/完了後の cleanup retry を含む。Windows/D3D12 と Browser は compile と実行を区別する。

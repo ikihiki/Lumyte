@@ -3,7 +3,7 @@ using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 1) : IGraphicsShaderDataBuffer<ConsumerLink>, IShaderDataSource
+internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 1, MemoryPreference memory = MemoryPreference.Automatic) : IGraphicsShaderDataBuffer<ConsumerLink>, IShaderDataSource
 {
     private readonly ShaderValueSnapshot?[] _values = new ShaderValueSnapshot?[checked((int)count)];
     private bool _disposed;
@@ -14,7 +14,7 @@ internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 
 
     public ulong ShaderElementStrideInBytes => 16;
 
-    public MemoryPreference Memory => MemoryPreference.Automatic;
+    public MemoryPreference Memory => memory;
 
     public bool IsMapped => false;
 

@@ -29,7 +29,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             DrawingResources2D resources = context.Resources;
             _artifact = resources.Pipeline.Desc.FragmentShader?.Artifact ?? throw new ArgumentException("Drawing requires a fragment shader.");
             _pipeline = resources.Pipeline;
-            _sampler = resources.Sampler ?? context.Graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
+            _sampler = resources.Sampler ?? context.Graph.GetPreparedSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
         }
         catch (Exception error)
         {
@@ -97,7 +97,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
 
     private async ValueTask AddAsync(DrawingState2D clip, GraphImageSource2D source, GraphImageSource2D? original, float opacity, bool replace, CancellationToken cancellationToken)
     {
-        ShaderResources resources = _context.Graph.CreateModuleShaderResources();
+        ShaderResources resources = _context.Graph.CreatePreparedPayload();
         var program = new DrawingProgram2D(resources, _context.Target);
         uint root = program.CompileClip(clip);
         program.ValidateFiniteData();
@@ -132,12 +132,6 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         .UseBuffer(dataUpload, new(PipelineStage.Copy, ResourceAccess.CopyRead))
         .UseBuffer(data, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
 
-        RenderGraphShaderResources inputs = graph.DescribeModuleShaderResources(command.Resources)
-            .ReadBuffer(instructions, 0, command.Upload.Count)
-            .ReadBuffer(data, 0, command.Data.Count)
-            .ReadTexture(command.Source.Texture)
-            .ReadTexture(command.Original?.Texture ?? _shared.Fallback)
-            .Sampler(_sampler);
         RenderGraphPass pass = graph.AddPass("Draw 2D command", context =>
         {
             if (command.Scissor.Width == 0 || command.Scissor.Height == 0)
@@ -157,8 +151,8 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
             var arguments = new DrawingArguments(
-                context.GetGpuRef(inputs, instructions, 0, command.Upload.Count),
-                context.GetGpuRef(inputs, data, 0, command.Data.Count),
+                context.GetGpuRef(instructions, 0, command.Upload.Count),
+                context.GetGpuRef(data, 0, command.Data.Count),
                 (uint)command.Program.Instructions.Count,
                 command.Root,
                 command.Original is null ? 1u : 2u,
@@ -166,15 +160,15 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
                 Bounds(command.Source),
                 Bounds(command.Original),
                 new Vector4(target.PixelOrigin, 0, 0),
-                context.GetGpuRef(inputs, command.Source.Texture),
-                context.GetGpuRef(inputs, command.Original?.Texture ?? _shared.Fallback),
-                context.GetGpuRef(inputs, _sampler));
+                context.GetGpuRef(command.Source.Texture),
+                context.GetGpuRef(command.Original?.Texture ?? _shared.Fallback),
+                context.GetGpuRef(_sampler));
             render.SetArguments(in arguments);
             render.Draw(3);
         })
         .UseTexture(target.Texture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite))
-        .UseShaderDataBuffer(instructions, _fragmentRead)
-        .UseBuffer(data, _fragmentRead);
+        .UseShaderDataBuffer(instructions, 0, command.Upload.Count, _fragmentRead)
+        .UseBuffer(data, 0, command.Data.Count, _fragmentRead);
 
         HashSet<RenderGraphTexture> sampled = [_shared.Fallback, command.Source.Texture];
         if (command.Original is not null)
@@ -192,7 +186,18 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             pass.UseTexture(texture, TextureState.Sampled, _fragmentRead);
         }
 
-        pass.UseShaderResources(inputs, target.Texture);
+        foreach (IGraphicsTextureView view in command.Program.Views)
+        {
+            pass.UseNativeView(_context.Bindings.GetTexture(view.Texture), view, _fragmentRead);
+        }
+
+        foreach (IGraphicsSampler sampler in command.Program.Samplers)
+        {
+            pass.UseSampler(sampler);
+        }
+
+        pass.UseSampler(_sampler);
+        pass.AttachPreparedPayload(command.Resources);
         command.Resources.WhenReady(() =>
         {
             if (!command.Upload.IsMapped || !command.Data.IsMapped)
@@ -249,7 +254,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         internal void RegisterReferences(RenderGraphBuilder graph, IGraphicsSampler sampler, RenderGraphTexture fallback)
         {
             Resources.RegisterSampler(sampler, value => _sampler = value);
-            graph.RegisterModuleTexture(Resources, fallback, value => _fallback = value);
+            graph.ConnectPreparedTexture(Resources, fallback, value => _fallback = value);
         }
 
         internal void ResolveReferences()

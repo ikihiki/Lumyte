@@ -164,34 +164,70 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
                     requests.Add((request, value));
                 }
 
-                // Test a complete draw in an empty partition before any native allocation.
-                var probe = new ArgumentPartition(Device.ArgumentLimits());
-                if (requests.Count != 0 && !probe.Fits(requests.Select(r => r.Value), scope.ColorAttachments))
-                {
-                    throw new NotSupportedException("One draw exceeds the enabled argument slot, binding, range, or combined descriptor limits.");
-                }
-
                 resolved.Add((scope, requests));
             }
 
             ArgumentPartition? current = null;
             var selected = new List<(ArgumentTableReservation Scope, ArgumentPartition? Partition, List<(ArgumentRequest Request, ResolvedArgument Value)> Requests)>();
-            foreach ((ArgumentTableReservation scope, List<(ArgumentRequest Request, ResolvedArgument Value)> requests) in resolved)
+            var operations = resolved.GroupBy(item => item.Scope.Operation).Select(group => new
             {
-                if (requests.Count == 0)
+                Owner = group.Key,
+                Scopes = group.ToArray(),
+                Values = group.SelectMany(item => item.Requests.Select(request => request.Value)).ToArray(),
+                Colors = group.Max(item => item.Scope.ColorAttachments),
+            }).ToArray();
+            foreach (var operation in operations)
+            {
+                var probe = new ArgumentPartition(Device.ArgumentLimits());
+                if (operation.Values.Length != 0 && !probe.Fits(operation.Values, operation.Colors))
                 {
-                    selected.Add((scope, null, requests));
+                    throw new NotSupportedException("One operation exceeds the enabled argument limits; split a graph pass before recording.");
+                }
+            }
+
+            foreach (var island in operations.GroupBy(operation => operation.Owner.TableGroup))
+            {
+                ResolvedArgument[] values = island.SelectMany(operation => operation.Values).ToArray();
+                if (values.Length == 0)
+                {
+                    foreach (var operation in island)
+                    {
+                        selected.AddRange(operation.Scopes.Select(item => (item.Scope, (ArgumentPartition?)null, item.Requests)));
+                    }
+
                     continue;
                 }
 
-                if (current is null || !current.Fits(requests.Select(r => r.Value), scope.ColorAttachments))
+                var trial = new ArgumentPartition(Device.ArgumentLimits());
+                if (current is not null)
+                {
+                    trial.Append(current.PlanningValues);
+                }
+
+                trial.Append(values);
+                if (island.Any(operation => !trial.Fits(operation.Values, operation.Colors)))
+                {
+                    trial = new ArgumentPartition(Device.ArgumentLimits());
+                    trial.Append(values);
+                    if (island.Any(operation => !trial.Fits(operation.Values, operation.Colors)))
+                    {
+                        throw new NotSupportedException("Transferred shader-data references cannot share an admitted native table.");
+                    }
+
+                    current = null;
+                }
+
+                if (current is null)
                 {
                     current = new(Device.ArgumentLimits());
                     _partitions.Add(current);
                 }
 
-                current.Append(requests.Select(r => r.Value));
-                selected.Add((scope, current, requests));
+                current.Append(values);
+                foreach (var operation in island)
+                {
+                    selected.AddRange(operation.Scopes.Select(item => (item.Scope, (ArgumentPartition?)current, item.Requests)));
+                }
             }
 
             long textures = 0;

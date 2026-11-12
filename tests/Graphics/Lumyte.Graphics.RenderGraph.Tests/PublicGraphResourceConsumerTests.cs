@@ -6,26 +6,28 @@ using Xunit;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-/// <summary>Compiles typed application argument and callback resolution examples without friend access.</summary>
+/// <summary>Exercises standard pass declarations and ordinary argument codecs without friend access.</summary>
 public sealed partial class PublicGraphEncoderConsumerTests
 {
-    /// <summary>Logical groups and their factories have no string-member or artifact-root bag API.</summary>
+    /// <summary>No public resource-set factory, wrapper, registration path or alternate group alias remains.</summary>
     [Fact]
-    public void TypedResourceSurfaceHasNoNamedMemberBag()
+    public void PublicPassSurfaceHasNoResourceSetConcept()
     {
-        Assert.DoesNotContain(typeof(RenderGraphShaderResources).GetMethods(), method => method.Name is "Value" or "Snapshot");
-        foreach (MethodInfo method in typeof(RenderGraphShaderResources).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        Type[] exports = typeof(RenderGraphContext).Assembly.GetExportedTypes();
+        Assert.DoesNotContain(exports, type => type.Name is "RenderGraphShaderResources" or "PassResources" or "PassShaderResources" || type.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
+        foreach (Type type in exports)
         {
-            Assert.DoesNotContain(method.GetParameters(), parameter => parameter.ParameterType == typeof(string) || parameter.ParameterType == typeof(ShaderArtifact));
+            foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            {
+                Assert.DoesNotContain(method.Name, new[] { "CreateShaderResources", "UseShaderResources", "CreateModuleShaderResources", "DescribeModuleShaderResources", "RegisterModuleTexture", "RegisterModuleBuffer", "SetResources", "SetArgumentTable" });
+                Assert.DoesNotContain(method.GetParameters(), parameter => parameter.ParameterType.Name.Contains("ShaderResources", StringComparison.Ordinal));
+            }
         }
-
-        Assert.Equal(typeof(RenderGraph), Assert.Single(typeof(RenderGraphShaderResourceExtensions).GetMethod("CreateShaderResources")!.GetParameters()).ParameterType);
-        Assert.DoesNotContain(typeof(RenderGraphContext).Assembly.GetExportedTypes(), type => type.Name.Contains("ImageArguments", StringComparison.Ordinal) || type.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
     }
 
-    /// <summary>Callbacks resolve existing native references while ordinary argument values snapshot only at SetArguments.</summary>
+    /// <summary>UseTexture alone admits a default view and numeric bytes freeze at typed SetArguments.</summary>
     [Fact]
-    public void ContextResolvesNativeReferencesAndReusesTypedArguments()
+    public void PassDeclarationsResolveReferencesAndReuseTypedArguments()
     {
         var device = new PublicGraphConsumerDevice();
         using var graph = new RenderGraph(device);
@@ -33,17 +35,15 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using var targetImage = new TestTexture();
         RenderGraphTexture source = graph.ImportTexture(sourceImage, TextureState.Sampled, default);
         RenderGraphTexture target = graph.ImportTexture(targetImage, TextureState.Undefined, default);
-        RenderGraphShaderResources inputs = graph.CreateShaderResources().ReadTexture(source).ReadTexture(source);
         using var pipeline = new PublicGraphConsumerPipeline(TextureArtifact(ShaderStage.Vertex));
         RenderGraphContext? escaped = null;
-        graph.AddPass("typed consumer", context =>
+        graph.AddPass("typed pass", context =>
         {
             escaped = context;
-            IGpuRef<IGraphicsTextureView> input = context.GetGpuRef(inputs, source);
-            Assert.Same(input, context.GetGpuRef(inputs, source));
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, target));
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, source, new() { BaseMipLevel = 1 }));
-            Assert.Throws<InvalidOperationException>(() => inputs.ReadTexture(source));
+            IGpuRef<IGraphicsTextureView> input = context.GetGpuRef(source);
+            Assert.Same(input, context.GetGpuRef(source));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(target));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(source, new() { BaseMipLevel = 1 }));
             var arguments = new ConsumerTextureArguments(input, input.GetElement(0), 1f);
             using RenderGraphRenderEncoder render = context.BeginRenderPass(Attachments(target));
             render.SetPipeline(pipeline);
@@ -57,104 +57,184 @@ public sealed partial class PublicGraphEncoderConsumerTests
             using var indexed = new TestTypedBuffer<DrawIndexedIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
             render.DrawIndexedIndirect(indexed.SliceElements(0, 1));
         }).UseTexture(source, TextureState.Sampled, new(PipelineStage.VertexShader, ResourceAccess.ShaderRead))
-          .UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite))
-          .UseShaderResources(inputs, target).KeepAlive();
+          .UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite)).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
         Assert.Equal(new[] { 1f, 1f, 2f, 2f }, commands.Encoder.Executions.Select(ReadFloat));
         Assert.Equal(1u, Assert.Single(device.Tables).TextureCapacity);
-        Assert.Throws<InvalidOperationException>(() => escaped!.GetGpuRef(inputs, source));
+        Assert.Throws<InvalidOperationException>(() => escaped!.GetGpuRef(source));
     }
 
-    /// <summary>One command cannot combine separately declared cohorts even when they share a physical table.</summary>
-    /// <param name="separateTables">Whether the slot budget also forces separate physical partitions.</param>
+    /// <summary>Each pass is an admitted capacity unit, even if its individual draws would fit separately.</summary>
+    /// <param name="declared">The number of shader-declared images.</param>
+    /// <param name="capacity">The admitted image slot limit.</param>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void MixedResourceGroupsAreRejectedWithoutReplacingPreviousArguments(bool separateTables)
+    [InlineData(0, 0u)]
+    [InlineData(1, 0u)]
+    [InlineData(1, 1u)]
+    [InlineData(2, 1u)]
+    public void PassAggregateLimitIsCheckedBeforeCallbacksOrNativeWrites(int declared, uint capacity)
     {
-        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = separateTables ? 1u : uint.MaxValue } };
+        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = capacity } };
         using var graph = new RenderGraph(device);
         using var firstImage = new TestTexture();
         using var secondImage = new TestTexture();
-        RenderGraphTexture first = graph.ImportTexture(firstImage, TextureState.Sampled, default);
-        RenderGraphTexture second = graph.ImportTexture(secondImage, TextureState.Sampled, default);
-        RenderGraphShaderResources firstGroup = graph.CreateShaderResources().ReadTexture(first);
-        RenderGraphShaderResources secondGroup = graph.CreateShaderResources().ReadTexture(second);
-        using var pipeline = new PublicGraphConsumerComputePipeline(TextureArtifact(ShaderStage.Compute));
-        graph.AddPass("cohort", context =>
+        using var targetImage = new TestTexture();
+        RenderGraphTexture[] sources = [graph.ImportTexture(firstImage, TextureState.Sampled, default), graph.ImportTexture(secondImage, TextureState.Sampled, default)];
+        RenderGraphTexture target = graph.ImportTexture(targetImage, TextureState.Undefined, default);
+        bool recorded = false;
+        RenderGraphPass pass = graph.AddPass("admission", context =>
         {
-            IGpuRef<IGraphicsTextureView> a = context.GetGpuRef(firstGroup, first);
-            IGpuRef<IGraphicsTextureView> b = context.GetGpuRef(secondGroup, second);
-            var valid = new ConsumerTextureArguments(a, a, 1);
-            var mixed = new ConsumerTextureArguments(a, b, 2);
-            using RenderGraphComputeEncoder compute = context.BeginComputePass();
-            compute.SetPipeline(pipeline);
-            compute.SetArguments(in valid);
-            Assert.Throws<ArgumentException>(() => compute.SetArguments(in mixed));
-            compute.Dispatch(1);
-            using var indirect = new TestTypedBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
-            compute.DispatchIndirect(indirect.SliceElements(0, 1));
-        }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseTexture(second, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseShaderResources(firstGroup).UseShaderResources(secondGroup).KeepAlive();
+            recorded = true;
+            if (declared != 0)
+            {
+                using var pipeline = new PublicGraphConsumerPipeline(TextureArtifact(ShaderStage.Vertex));
+                IGpuRef<IGraphicsTextureView> reference = context.GetGpuRef(sources[0]);
+                var arguments = new ConsumerTextureArguments(reference, reference, 1f);
+                using RenderGraphRenderEncoder render = context.BeginRenderPass(Attachments(target));
+                render.SetPipeline(pipeline);
+                render.SetArguments(in arguments);
+                render.Draw(3);
+                render.Draw(3);
+            }
+        }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite)).KeepAlive();
+        foreach (RenderGraphTexture texture in sources.Take(declared))
+        {
+            pass.UseTexture(texture, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
+        }
+
+        using CompiledRenderGraph plan = graph.Compile();
+        using var commands = new PublicGraphConsumerCommands();
+        if ((uint)declared > capacity)
+        {
+            Assert.Throws<NotSupportedException>(() => plan.Record(commands));
+            Assert.False(recorded);
+            Assert.Empty(device.Tables);
+            Assert.Empty(commands.Encoder.Snapshots);
+        }
+        else
+        {
+            plan.Record(commands);
+            Assert.True(recorded);
+            Assert.Equal(declared, device.Tables.Count);
+        }
+    }
+
+    /// <summary>Independent passes are automatically partitioned without a consumer resource-set object.</summary>
+    [Fact]
+    public void SeparatePassesPartitionAtTheExactLimit()
+    {
+        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 1 } };
+        using var graph = new RenderGraph(device);
+        using var firstImage = new TestTexture();
+        using var secondImage = new TestTexture();
+        RenderGraphTexture[] sources = [graph.ImportTexture(firstImage, TextureState.Sampled, default), graph.ImportTexture(secondImage, TextureState.Sampled, default)];
+        var references = new List<IShaderReference>();
+        foreach (RenderGraphTexture source in sources)
+        {
+            graph.AddPass("one image", context => references.Add((IShaderReference)context.GetGpuRef(source)))
+                .UseTexture(source, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        }
+
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
-        Assert.Equal(separateTables ? 2 : 1, device.Tables.Count);
-        Assert.Equal(new[] { 1f, 1f }, commands.Encoder.Executions.Select(ReadFloat));
+        Assert.Equal(2, device.Tables.Count);
+        Assert.NotSame(references[0].Table, references[1].Table);
+        Assert.All(device.Tables, table => Assert.Equal(1u, table.TextureCapacity));
     }
 
-    /// <summary>Buffer lookups are exact declarations, not callback-time registration or silent subrange creation.</summary>
+    /// <summary>Exact view/range declarations can share allocation-wide hazard state without admitting undeclared keys.</summary>
     [Fact]
-    public void TypedRangeLookupRejectsUnregisteredKeysAndForeignResources()
+    public void ExactBindingViewsRangesAndShaderRolesStayValidated()
     {
         var device = new PublicGraphConsumerDevice();
         using var graph = new RenderGraph(device);
         using var foreign = new RenderGraph(device);
+        using var image = new TestTexture();
         using var buffer = new TestTypedBuffer<int>(new() { Count = 4, Usage = BufferUsage.ShaderRead }, []);
+        using var copyOnly = new TestTypedBuffer<int>(new() { Count = 4, Usage = BufferUsage.CopySource }, []);
+        RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
         RenderGraphBuffer<int> handle = graph.ImportBuffer(buffer, default);
+        RenderGraphBuffer<int> copied = graph.ImportBuffer(copyOnly, default);
         RenderGraphBuffer<int> other = foreign.ImportBuffer(buffer, default);
-        RenderGraphShaderResources inputs = graph.CreateShaderResources().ReadBuffer(handle, 1, 3);
-        Assert.Throws<ArgumentException>(() => inputs.ReadBuffer(other, 0, 1));
-        graph.AddPass("range", context =>
+        var view = new TextureViewDesc { BaseMipLevel = 1, MipLevelCount = 1 };
+        graph.AddPass("exact keys", context =>
         {
-            IGpuRef<int> reference = context.GetGpuRef(inputs, handle, 1, 3);
-            Assert.Equal(3ul, reference.Count);
-            Assert.Equal(1ul, reference.GetElement(1).Count);
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, handle, 0, 3));
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, handle, 1, 4));
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, other, 1, 3));
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, new SamplerDesc()));
-        }).UseBuffer(handle, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).UseShaderResources(inputs).KeepAlive();
+            Assert.Equal(3ul, context.GetGpuRef(handle, 1, 3).Count);
+            Assert.Equal(1ul, context.GetGpuRef(handle, 1, 3).GetElement(1).Count);
+            Assert.NotNull(context.GetGpuRef(texture, view));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(texture));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(handle, 0, 3));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(handle, 1, 4));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(other, 1, 3));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(copied));
+        }).UseTexture(texture, view, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseBuffer(handle, 1, 3, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseBuffer(copied, new(PipelineStage.Copy, ResourceAccess.CopyRead)).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
+        Assert.Equal(1u, Assert.Single(device.Tables).BufferCapacity);
     }
 
-    /// <summary>Undeclared logical resources fail before callback execution or native table publication.</summary>
+    /// <summary>Distinct exact declarations share allocation hazards without losing native view/range identities.</summary>
     [Fact]
-    public void MissingPassDeclarationIsRejectedBeforeTypedLookup()
+    public void MultipleViewsAndRangesAreAllAdmittedFromOnePass()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
-        using var source = new TestTexture();
-        RenderGraphTexture handle = graph.ImportTexture(source, TextureState.Sampled, default);
-        RenderGraphShaderResources inputs = graph.CreateShaderResources().ReadTexture(handle);
-        bool recorded = false;
-        graph.AddPass("undeclared", _ => recorded = true).UseShaderResources(inputs).KeepAlive();
+        var device = new PublicGraphConsumerDevice();
+        using var graph = new RenderGraph(device);
+        using var image = new TestTexture();
+        using var buffer = new TestTypedBuffer<int>(new() { Count = 4, Usage = BufferUsage.ShaderRead }, []);
+        RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
+        RenderGraphBuffer<int> data = graph.ImportBuffer(buffer, default);
+        var firstView = new TextureViewDesc { MipLevelCount = 1 };
+        var secondView = new TextureViewDesc { BaseMipLevel = 1, MipLevelCount = 1 };
+        BarrierScope scope = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
+        graph.AddPass("multiple exact declarations", context =>
+        {
+            Assert.NotSame(context.GetGpuRef(texture, firstView), context.GetGpuRef(texture, secondView));
+            Assert.NotSame(context.GetGpuRef(data, 0, 1), context.GetGpuRef(data, 2, 1));
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(data));
+        }).UseTexture(texture, firstView, TextureState.Sampled, scope)
+          .UseTexture(texture, secondView, TextureState.Sampled, scope)
+          .UseBuffer(data, 0, 1, scope).UseBuffer(data, 2, 1, scope).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
-        Assert.Throws<ArgumentException>(() => plan.Record(commands));
-        Assert.False(recorded);
+        plan.Record(commands);
+        IArgumentTable table = Assert.Single(device.Tables);
+        Assert.Equal(2u, table.TextureCapacity);
+        Assert.Equal(2u, table.BufferCapacity);
     }
 
-    /// <summary>Numeric selection does not freeze indirect metadata or bypass per-execution provenance and lifetime checks.</summary>
-    /// <param name="indirect">Whether execution uses GPU-sourced dispatch counts.</param>
+    /// <summary>Only pass-declared sampler keys resolve; immutable samplers create no write roots.</summary>
+    [Fact]
+    public void SamplersUseNaturalPassDeclarations()
+    {
+        var device = new PublicGraphConsumerDevice();
+        using var graph = new RenderGraph(device);
+        var desc = new SamplerDesc();
+        using IGraphicsSampler borrowed = device.CreateSampler(desc);
+        using IGraphicsSampler unknown = device.CreateSampler(desc);
+        graph.AddPass("samplers", context =>
+        {
+            Assert.Same(context.GetGpuRef(desc), context.GetGpuRef(new SamplerDesc()));
+            Assert.Same(borrowed, ((IShaderReference)context.GetGpuRef(borrowed)).Resource);
+            Assert.Throws<ArgumentException>(() => context.GetGpuRef(unknown));
+        }).UseSampler(desc).UseSampler(borrowed).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using var commands = new PublicGraphConsumerCommands();
+        plan.Record(commands);
+        Assert.Equal(2u, Assert.Single(device.Tables).SamplerCapacity);
+    }
+
+    /// <summary>Undeclared transitive references fail at each native capture, even if another pass shares the physical table.</summary>
+    /// <param name="indirect">Whether dispatch counts are GPU-sourced.</param>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void TransitiveReferencesAreValidatedAtEachCommandCapture(bool indirect)
+    public void TransitiveMetadataScopeLifetimeAndRecoveryAreCheckedPerCommand(bool indirect)
     {
         var device = new PublicGraphConsumerDevice();
         using var graph = new RenderGraph(device);
@@ -164,23 +244,24 @@ public sealed partial class PublicGraphEncoderConsumerTests
         RenderGraphTexture first = graph.ImportTexture(firstImage, TextureState.Sampled, default);
         RenderGraphTexture second = graph.ImportTexture(secondImage, TextureState.Sampled, default);
         RenderGraphShaderDataBuffer<ConsumerLink> buffer = graph.ImportShaderDataBuffer(data, default);
-        RenderGraphShaderResources selected = graph.CreateShaderResources().ReadTexture(first).ReadBuffer(buffer, 0, 1);
-        RenderGraphShaderResources other = graph.CreateShaderResources().ReadTexture(second);
+        IGpuRef<IGraphicsTextureView>? otherReference = null;
+        RenderGraphPass producer = graph.AddPass("other pass", context => otherReference = context.GetGpuRef(second))
+            .UseTexture(second, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
         using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
         graph.AddPass("transitive capture", context =>
         {
-            var firstLink = new ConsumerLink(context.GetGpuRef(selected, first));
-            var otherLink = new ConsumerLink(context.GetGpuRef(other, second));
-            data.SetTransferredValue(0, IShaderArguments.Capture(in firstLink));
-            var arguments = new ConsumerLinkArguments(context.GetGpuRef(selected, buffer, 0, 1), 1f);
+            var valid = new ConsumerLink(context.GetGpuRef(first));
+            var foreignLink = new ConsumerLink(otherReference!);
+            data.SetTransferredValue(0, IShaderArguments.Capture(in valid));
+            var arguments = new ConsumerLinkArguments(context.GetGpuRef(buffer), 1f);
             using var counts = new TestTypedBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
             using RenderGraphComputeEncoder compute = context.BeginComputePass();
             compute.SetPipeline(pipeline);
             compute.SetArguments(in arguments);
             Execute();
-            data.SetTransferredValue(0, IShaderArguments.Capture(in otherLink));
+            data.SetTransferredValue(0, IShaderArguments.Capture(in foreignLink));
             Assert.Throws<ArgumentException>(Execute);
-            data.SetTransferredValue(0, IShaderArguments.Capture(in firstLink));
+            data.SetTransferredValue(0, IShaderArguments.Capture(in valid));
             Execute();
             data.Dispose();
             Assert.Throws<ObjectDisposedException>(Execute);
@@ -197,9 +278,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
                 }
             }
         }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseTexture(second, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseShaderDataBuffer(buffer, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseShaderResources(selected).UseShaderResources(other).KeepAlive();
+          .UseShaderDataBuffer(buffer, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).DependsOn(producer).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
@@ -208,112 +287,151 @@ public sealed partial class PublicGraphEncoderConsumerTests
         Assert.Single(commands.Encoder.Snapshots);
     }
 
-    /// <summary>Sampler lookup distinguishes graph-owned value keys from borrowed object identities.</summary>
+    /// <summary>Shader-data producer/consumer identities remain coherent despite an intervening independent partition.</summary>
     [Fact]
-    public void SamplerLookupRequiresItsExactPredeclaredKey()
-    {
-        var device = new PublicGraphConsumerDevice();
-        using var graph = new RenderGraph(device);
-        var desc = new SamplerDesc();
-        using IGraphicsSampler borrowed = device.CreateSampler(desc);
-        using IGraphicsSampler unknown = device.CreateSampler(desc);
-        RenderGraphShaderResources inputs = graph.CreateShaderResources().Sampler(desc).Sampler(borrowed);
-        graph.AddPass("samplers", context =>
-        {
-            Assert.Same(context.GetGpuRef(inputs, desc), context.GetGpuRef(inputs, new SamplerDesc()));
-            Assert.Same(borrowed, ((IShaderReference)context.GetGpuRef(inputs, borrowed)).Resource);
-            Assert.Throws<ArgumentException>(() => context.GetGpuRef(inputs, unknown));
-        }).UseShaderResources(inputs).KeepAlive();
-        using CompiledRenderGraph plan = graph.Compile();
-        using var commands = new PublicGraphConsumerCommands();
-        plan.Record(commands);
-        Assert.Equal(2u, Assert.Single(device.Tables).SamplerCapacity);
-    }
-
-    /// <summary>Common roots permit independently sufficient candidates, but never the union of their transitive resources.</summary>
-    [Fact]
-    public void DeduplicatedCommonRootRequiresOneWholeCandidate()
-    {
-        var device = new PublicGraphConsumerDevice();
-        using var graph = new RenderGraph(device);
-        using var firstImage = new TestTexture();
-        using var secondImage = new TestTexture();
-        using var data = new ConsumerLinkBuffer(LinkArtifact(element: true), 2);
-        RenderGraphTexture first = graph.ImportTexture(firstImage, TextureState.Sampled, default);
-        RenderGraphTexture second = graph.ImportTexture(secondImage, TextureState.Sampled, default);
-        RenderGraphShaderDataBuffer<ConsumerLink> buffer = graph.ImportShaderDataBuffer(data, default);
-        RenderGraphShaderResources a = graph.CreateShaderResources().ReadTexture(first).ReadBuffer(buffer, 0, 2);
-        RenderGraphShaderResources b = graph.CreateShaderResources().ReadTexture(second).ReadBuffer(buffer, 0, 2);
-        using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
-        graph.AddPass("common root", context =>
-        {
-            var firstLink = new ConsumerLink(context.GetGpuRef(a, first));
-            var secondLink = new ConsumerLink(context.GetGpuRef(b, second));
-            IGpuRef<ConsumerLink> root = context.GetGpuRef(a, buffer, 0, 2);
-            Assert.Same(root, context.GetGpuRef(b, buffer, 0, 2));
-            var arguments = new ConsumerLinkArguments(root, 1f);
-            using RenderGraphComputeEncoder compute = context.BeginComputePass();
-            compute.SetPipeline(pipeline);
-            compute.SetArguments(in arguments);
-            data.SetTransferredValue(0, IShaderArguments.Capture(in firstLink));
-            data.SetTransferredValue(1, IShaderArguments.Capture(in firstLink));
-            compute.Dispatch(1);
-            data.SetTransferredValue(0, IShaderArguments.Capture(in secondLink));
-            data.SetTransferredValue(1, IShaderArguments.Capture(in secondLink));
-            compute.Dispatch(1);
-            data.SetTransferredValue(0, IShaderArguments.Capture(in firstLink));
-            Assert.Throws<ArgumentException>(() => compute.Dispatch(1));
-            data.SetTransferredValue(1, IShaderArguments.Capture(in firstLink));
-            compute.Dispatch(1);
-        }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseTexture(second, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseShaderDataBuffer(buffer, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseShaderResources(a).UseShaderResources(b).KeepAlive();
-        using CompiledRenderGraph plan = graph.Compile();
-        using var commands = new PublicGraphConsumerCommands();
-        plan.Record(commands);
-        Assert.Single(device.Tables);
-        Assert.Equal(3, commands.Encoder.Executions.Count);
-        Assert.Single(commands.Encoder.Snapshots);
-    }
-
-    /// <summary>A native rejection between nonempty partitions leaves the old snapshot and binding cohort selected.</summary>
-    [Fact]
-    public void FailedNativeReplacementPreservesNonemptyPartitionSelection()
+    public void ShaderDataTransferDependencyKeepsStableNativeReferenceIdentity()
     {
         var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 1 } };
         using var graph = new RenderGraph(device);
         using var firstImage = new TestTexture();
         using var secondImage = new TestTexture();
+        using var data = new ConsumerLinkBuffer(LinkArtifact(element: true));
         RenderGraphTexture first = graph.ImportTexture(firstImage, TextureState.Sampled, default);
         RenderGraphTexture second = graph.ImportTexture(secondImage, TextureState.Sampled, default);
-        RenderGraphShaderResources a = graph.CreateShaderResources().ReadTexture(first);
-        RenderGraphShaderResources b = graph.CreateShaderResources().ReadTexture(second);
-        using var pipeline = new PublicGraphConsumerComputePipeline(TextureArtifact(ShaderStage.Compute));
-        var native = new PublicGraphConsumerEncoder();
-        graph.AddPass("failed partition replacement", context =>
+        RenderGraphShaderDataBuffer<ConsumerLink> buffer = graph.ImportShaderDataBuffer(data, default);
+        graph.AddPass("publish metadata", context =>
         {
-            IGpuRef<IGraphicsTextureView> oldReference = context.GetGpuRef(a, first);
-            IGpuRef<IGraphicsTextureView> newReference = context.GetGpuRef(b, second);
-            var oldArguments = new ConsumerTextureArguments(oldReference, oldReference, 1f);
-            var newArguments = new ConsumerTextureArguments(newReference, newReference, 2f);
+            var value = new ConsumerLink(context.GetGpuRef(first));
+            data.SetTransferredValue(0, IShaderArguments.Capture(in value));
+        }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseShaderDataBuffer(buffer, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).KeepAlive();
+        graph.AddPass("unrelated", context => Assert.NotNull(context.GetGpuRef(second)))
+            .UseTexture(second, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
+        graph.AddPass("consume metadata", context =>
+        {
+            var arguments = new ConsumerLinkArguments(context.GetGpuRef(buffer), 1f);
             using RenderGraphComputeEncoder compute = context.BeginComputePass();
             compute.SetPipeline(pipeline);
-            compute.SetArguments(in oldArguments);
-            compute.Dispatch(1);
-            native.SetArgumentsException = new ArgumentException("native schema rejection");
-            Assert.Throws<ArgumentException>(() => compute.SetArguments(in newArguments));
-            native.SetArgumentsException = null;
+            compute.SetArguments(in arguments);
             compute.Dispatch(1);
         }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseTexture(second, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
-          .UseShaderResources(a).UseShaderResources(b).KeepAlive();
+          .UseShaderDataBuffer(buffer, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
-        using var commands = new PublicGraphConsumerCommands { Encoder = native };
+        using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
         Assert.Equal(2, device.Tables.Count);
-        Assert.Equal(new[] { 1f, 1f }, native.Executions.Select(ReadFloat));
-        Assert.Single(native.Snapshots);
+        Assert.Single(commands.Encoder.Executions);
+    }
+
+    /// <summary>Culled invalid views are never resolved, while live invalid views fail before callbacks and table creation.</summary>
+    /// <param name="live">Whether the invalid declaration is observable.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CullingAndPreflightRespectFrozenViewDeclarations(bool live)
+    {
+        var device = new PublicGraphConsumerDevice();
+        using var graph = new RenderGraph(device);
+        using var image = new TestTexture();
+        RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
+        bool recorded = false;
+        RenderGraphPass pass = graph.AddPass("invalid view", _ => recorded = true)
+            .UseTexture(texture, new() { BaseMipLevel = 100 }, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
+        if (live)
+        {
+            pass.KeepAlive();
+        }
+
+        using CompiledRenderGraph plan = graph.Compile();
+        using var commands = new PublicGraphConsumerCommands();
+        if (live)
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => plan.Record(commands));
+        }
+        else
+        {
+            plan.Record(commands);
+        }
+
+        Assert.False(recorded);
+        Assert.Empty(device.Tables);
+    }
+
+    /// <summary>Automatic pass ownership belongs to each compiled generation, not to a mutable borrowed builder.</summary>
+    [Fact]
+    public void RepeatedCompilationKeepsIndependentIntrinsicOwners()
+    {
+        var device = new PublicGraphConsumerDevice();
+        using var graph = new RenderGraph(device);
+        using var image = new TestTexture();
+        RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
+        var references = new List<IShaderReference>();
+        graph.AddPass("borrowed", context => references.Add((IShaderReference)context.GetGpuRef(texture)))
+            .UseTexture(texture, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead)).KeepAlive();
+        using CompiledRenderGraph first = graph.Compile();
+        using CompiledRenderGraph second = graph.Compile();
+        graph.Dispose();
+        using var a = new PublicGraphConsumerCommands();
+        using var b = new PublicGraphConsumerCommands();
+        first.Record(a);
+        second.Record(b);
+        Assert.NotSame(references[0].Table, references[1].Table);
+        PublicGraphConsumerTable firstTable = Assert.IsType<PublicGraphConsumerTable>(references[0].Table);
+        PublicGraphConsumerTable secondTable = Assert.IsType<PublicGraphConsumerTable>(references[1].Table);
+        a.Dispose();
+        first.Dispose();
+        Assert.True(firstTable.Disposed);
+        Assert.False(secondTable.Disposed);
+        b.Dispose();
+        second.Dispose();
+        Assert.True(secondTable.Disposed);
+    }
+
+    /// <summary>Copy-only ranges bridge encoded identities while capture reads the command-local overlay, not committed metadata.</summary>
+    [Fact]
+    public void CopyOnlyShaderDataBridgePreservesRangeAndCommandLocalMetadata()
+    {
+        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 1 } };
+        using var graph = new RenderGraph(device);
+        using var image = new TestTexture();
+        using var unrelatedImage = new TestTexture();
+        using var upload = new ConsumerLinkBuffer(LinkArtifact(element: true), 2, MemoryPreference.Upload);
+        using var storage = new ConsumerLinkBuffer(LinkArtifact(element: true), 2);
+        RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
+        RenderGraphTexture unrelated = graph.ImportTexture(unrelatedImage, TextureState.Sampled, default);
+        RenderGraphShaderDataBuffer<ConsumerLink> source = graph.ImportShaderDataBuffer(upload, default);
+        RenderGraphShaderDataBuffer<ConsumerLink> destination = graph.ImportShaderDataBuffer(storage, default);
+        RenderGraphPass producer = graph.AddPass("metadata producer", context =>
+        {
+            var value = new ConsumerLink(context.GetGpuRef(texture));
+            upload.SetTransferredValue(0, IShaderArguments.Capture(in value));
+        }).UseTexture(texture, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Host, ResourceAccess.HostWrite)).KeepAlive();
+        graph.AddPass("intervening partition", context => Assert.NotNull(context.GetGpuRef(unrelated)))
+            .UseTexture(unrelated, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).DependsOn(producer).KeepAlive();
+        RenderGraphPass copy = graph.AddPass("metadata copy", context => context.Commands.CopyBuffer(context.GetShaderDataBuffer(source).SliceElements(0, 1), context.GetShaderDataBuffer(destination).SliceElements(1, 1)))
+            .UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Copy, ResourceAccess.CopyRead))
+            .UseShaderDataBuffer(destination, 1, 1, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).DependsOn(producer);
+        using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
+        graph.AddPass("metadata consumer", context =>
+        {
+            var arguments = new ConsumerLinkArguments(context.GetGpuRef(destination, 1, 1), 1f);
+            using RenderGraphComputeEncoder compute = context.BeginComputePass();
+            compute.SetPipeline(pipeline);
+            compute.SetArguments(in arguments);
+            compute.Dispatch(1);
+        }).UseTexture(texture, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseShaderDataBuffer(destination, 1, 1, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).DependsOn(copy).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using var commands = new PublicGraphConsumerCommands();
+        plan.Record(commands);
+        Assert.Equal(2, device.Tables.Count);
+        Assert.Contains("shader-copy", commands.Events);
+        Assert.Empty(storage.Read(1).Values);
+        Lumyte.Graphics.Shared.ShaderBindingSnapshot capture = Assert.Single(commands.Encoder.Bindings);
+        Assert.Same(image, Assert.IsAssignableFrom<IGraphicsTextureView>(Assert.Single(capture.References, reference => reference.Resource is IGraphicsTextureView).Resource).Texture);
+        Assert.Equal(1ul, Assert.Single(capture.Elements).Key.Element);
     }
 
     private static ShaderArtifact LinkArtifact(bool element)

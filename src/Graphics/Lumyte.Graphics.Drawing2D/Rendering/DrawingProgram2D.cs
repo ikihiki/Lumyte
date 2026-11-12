@@ -22,6 +22,10 @@ internal sealed class DrawingProgram2D
 
     internal List<Vector4> Data { get; } = [];
 
+    internal HashSet<IGraphicsTextureView> Views { get; } = new(ReferenceEqualityComparer.Instance);
+
+    internal HashSet<IGraphicsSampler> Samplers { get; } = new(ReferenceEqualityComparer.Instance);
+
     internal HashSet<IGraphicsTexture> Textures { get; } = new(ReferenceEqualityComparer.Instance);
 
     internal static Vector4 Linear(Color2D color)
@@ -413,6 +417,7 @@ internal sealed class DrawingProgram2D
     private int Request(IGraphicsTextureView view)
     {
         Textures.Add(view.Texture);
+        Views.Add(view);
         int index = _textures.Count;
         _textures.Add(null);
         _plan.RegisterTexture(view, reference => _textures[index] = reference);
@@ -421,6 +426,7 @@ internal sealed class DrawingProgram2D
 
     private int Request(IGraphicsSampler sampler)
     {
+        Samplers.Add(sampler);
         int index = _samplers.Count;
         _samplers.Add(null);
         _plan.RegisterSampler(sampler, reference => _samplers[index] = reference);

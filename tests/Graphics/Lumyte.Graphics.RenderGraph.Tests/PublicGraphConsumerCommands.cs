@@ -1,9 +1,12 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
 {
+    private readonly ShaderDataTransferState _transfers = new();
+
     public CommandBufferState State
     {
         get; private set;
@@ -30,7 +33,7 @@ internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
         where TDestination : unmanaged => Events.Add("copy");
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData => throw new NotSupportedException();
+        where T : struct, IShaderData => _transfers.Record((IShaderDataSource)source.Buffer, source.Offset, (IShaderDataSource)destination.Buffer, destination.Offset, source.Count, () => Events.Add("shader-copy"));
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 
@@ -38,9 +41,17 @@ internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
 
     public void CopyTextureToBuffer(TextureCopyRegion source, BufferTextureCopyLayout destination) => throw new NotSupportedException();
 
-    public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => Encoder;
+    public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
+    {
+        Encoder.ReadShaderData = _transfers.Read;
+        return Encoder;
+    }
 
-    public IComputeEncoder BeginComputePass(ComputePassDesc desc) => Encoder;
+    public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+    {
+        Encoder.ReadShaderData = _transfers.Read;
+        return Encoder;
+    }
 
     public void Finish() => State = CommandBufferState.Executable;
 

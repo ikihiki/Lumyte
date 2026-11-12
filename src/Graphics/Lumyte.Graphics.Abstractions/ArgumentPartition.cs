@@ -13,6 +13,8 @@ internal sealed class ArgumentPartition(ArgumentTableBindingLimits limits) : IDi
 
     internal int BufferCount => _counts[2];
 
+    internal IEnumerable<ResolvedArgument> PlanningValues => _entries.Values.Select(entry => entry.Value);
+
     public void Dispose()
     {
         Table?.Dispose();

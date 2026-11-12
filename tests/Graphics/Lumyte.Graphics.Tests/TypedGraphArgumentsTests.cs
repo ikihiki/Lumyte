@@ -53,10 +53,9 @@ public sealed class TypedGraphArgumentsTests
         using var graph = new Graph(device);
         RenderGraphBuffer<uint> destination = graph.ImportBuffer(output, default);
         RenderGraphBuffer<uint> result = graph.ImportBuffer(readback, default);
-        RenderGraphShaderResources resources = graph.CreateShaderResources().ReadBuffer(destination, 0, 2, ArgumentBufferAccess.Write);
         graph.AddPass("typed compute", context =>
         {
-            var arguments = new NativeGraphArguments(context.GetGpuRef(resources, destination, 0, 2, ArgumentBufferAccess.Write), 0, 7);
+            var arguments = new NativeGraphArguments(context.GetGpuRef(destination, 0, 2), 0, 7);
             using RenderGraphComputeEncoder compute = context.BeginComputePass();
             compute.SetPipeline(pipeline);
             compute.SetArguments(in arguments);
@@ -67,7 +66,7 @@ public sealed class TypedGraphArgumentsTests
             compute.SetArguments(in arguments);
             arguments = arguments with { Value = 99 };
             compute.Dispatch(1);
-        }).UseBuffer(destination, new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite)).UseShaderResources(resources);
+        }).UseBuffer(destination, new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite));
         graph.AddPass("read typed values", context => context.Commands.CopyBuffer(context.GetBuffer(destination).SliceElements(0, 2), context.GetBuffer(result).SliceElements(0, 2)))
             .UseBuffer(destination, new(PipelineStage.Copy, ResourceAccess.CopyRead))
             .UseBuffer(result, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
@@ -91,16 +90,15 @@ public sealed class TypedGraphArgumentsTests
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
         using var graph = new Graph(device);
         RenderGraphBuffer<uint> destination = graph.ImportBuffer(output, default);
-        RenderGraphShaderResources resources = graph.CreateShaderResources().ReadBuffer(destination, 0, 2, ArgumentBufferAccess.Write);
         graph.AddPass("disposed program", context =>
         {
-            var arguments = new NativeGraphArguments(context.GetGpuRef(resources, destination, 0, 2, ArgumentBufferAccess.Write), 0, 1);
+            var arguments = new NativeGraphArguments(context.GetGpuRef(destination, 0, 2), 0, 1);
             using RenderGraphComputeEncoder compute = context.BeginComputePass();
             compute.SetPipeline(pipeline);
             compute.SetArguments(in arguments);
             pipeline.Dispose();
             Assert.Throws<ObjectDisposedException>(() => compute.Dispatch(1));
-        }).UseBuffer(destination, new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite)).UseShaderResources(resources).KeepAlive();
+        }).UseBuffer(destination, new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite)).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         plan.Record(commands);

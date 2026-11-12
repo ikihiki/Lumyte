@@ -35,11 +35,8 @@ internal static class EffectGpuPass
         IGraphicsShader vertex = shaders.FullscreenShader ?? owner.Add(device.CreateShader(shaders.Fullscreen));
         IGraphicsShader fragment = shaders.EffectsShader ?? owner.Add(device.CreateShader(shaders.Effects));
         IGraphicsPipeline pipeline = shaders.Pipeline ?? owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
-        IGraphicsSampler sampler = shaders.Sampler ?? graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
-        RenderGraphShaderResources resources = graph.CreateShaderResources()
-            .ReadTexture(input.Texture)
-            .ReadTexture(backdrop.Texture)
-            .Sampler(sampler);
+        SamplerDesc samplerDesc = new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 };
+        IGraphicsSampler sampler = shaders.Sampler ?? graph.GetPreparedSampler(samplerDesc);
         int recorded = 0;
         RenderGraphPass pass = graph.AddPass("image-effect", context =>
         {
@@ -62,9 +59,9 @@ internal static class EffectGpuPass
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
             var arguments = new EffectArguments(
-                context.GetGpuRef(resources, input.Texture),
-                context.GetGpuRef(resources, backdrop.Texture),
-                context.GetGpuRef(resources, sampler),
+                context.GetGpuRef(input.Texture),
+                context.GetGpuRef(backdrop.Texture),
+                context.GetGpuRef(sampler),
                 RelativeBounds(input.Bounds.Offset(offsetX, offsetY), outputBounds),
                 RelativeBounds(backdrop.Bounds, outputBounds),
                 new Vector4(0, 0, outputBounds.Width, outputBounds.Height),
@@ -84,7 +81,7 @@ internal static class EffectGpuPass
         }
 
         pass.UseTexture(output, TextureState.ColorAttachment, _write);
-        pass.UseShaderResources(resources, output);
+        pass.UseSampler(sampler);
         return new(output, outputBounds, outputSemantic ?? input.ColorSemantic);
     }
 

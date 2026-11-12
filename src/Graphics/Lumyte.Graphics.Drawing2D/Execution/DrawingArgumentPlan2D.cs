@@ -27,6 +27,14 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private bool _fallbackRecorded;
     private bool _closed;
 
+    /// <summary>Initializes a new instance of the <see cref="DrawingArgumentPlan2D"/> class for graph-independent preparation.</summary>
+    /// <param name="device">The borrowed physical device.</param>
+    /// <param name="registrations">An optional borrowed direct allocator.</param>
+    public DrawingArgumentPlan2D(IGraphicDevice device, ArgumentTablePlan? registrations = null)
+        : this(device, registrations, graphFallback: null)
+    {
+    }
+
     /// <summary>Initializes a new instance of the <see cref="DrawingArgumentPlan2D"/> class.</summary>
     /// <param name="device">The borrowed physical device.</param>
     /// <param name="registrations">An optional borrowed direct allocator.</param>
@@ -35,7 +43,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     /// <param name="samplerFactory">An optional lazy graph-owned sampler factory.</param>
     /// <param name="registrationFactory">An optional lazy direct allocator, created only if preparation participates.</param>
     /// <param name="resourceFactory">An optional opaque graph-owned resource-set factory.</param>
-    public DrawingArgumentPlan2D(IGraphicDevice device, ArgumentTablePlan? registrations = null, Action<ShaderResources, Action<IGpuRef<IGraphicsTextureView>>>? graphFallback = null, IGraphicsSampler? sharedSampler = null, Func<IGraphicsSampler>? samplerFactory = null, Func<ArgumentTablePlan>? registrationFactory = null, Func<ShaderResources>? resourceFactory = null)
+    internal DrawingArgumentPlan2D(IGraphicDevice device, ArgumentTablePlan? registrations, Action<ShaderResources, Action<IGpuRef<IGraphicsTextureView>>>? graphFallback, IGraphicsSampler? sharedSampler = null, Func<IGraphicsSampler>? samplerFactory = null, Func<ArgumentTablePlan>? registrationFactory = null, Func<ShaderResources>? resourceFactory = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         if (registrations is not null && !ReferenceEquals(registrations.Device, device))
@@ -81,14 +89,14 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         }
     }
 
-    /// <summary>Gets opaque draw resource sets created through this preparation wrapper.</summary>
-    public IReadOnlyList<ShaderResources> Reservations => _scopes.AsReadOnly();
-
     /// <summary>Gets a value indicating whether payload maps are prepared before graph materialization.</summary>
     public bool DeferredMaterialization => _resourceFactory is not null || _graphFallback is not null;
 
     /// <summary>Gets the single table for legacy single-reservation consumers; multiple partitions are deliberately ambiguous.</summary>
     public IArgumentTable Table => Registrations.Tables.Count == 1 ? Registrations.Tables[0] : throw new InvalidOperationException("Bind the draw reservation's table.");
+
+    /// <summary>Gets opaque draw resource sets created through this preparation wrapper.</summary>
+    internal IReadOnlyList<ShaderResources> Reservations => _scopes.AsReadOnly();
 
     internal long EstimatedBytes => _resourceFactory is not null || _registrations is null
         ? checked(256 + ((long)_scopes.Count * 256))
@@ -285,10 +293,23 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         }
     }
 
+    /// <summary>Returns the owner token; native cleanup failures remain retryable.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (!_returned)
+            {
+                Release();
+                _returned = true;
+            }
+        }
+    }
+
     /// <summary>Declares only builtin GPU roots allocated for the selected prepared draws.</summary>
     /// <param name="resources">The draw-local opaque sets used by this batch.</param>
     /// <param name="declarations">The module-owned resource declaration visitor.</param>
-    public void DeclarePreparedResources(IReadOnlyList<ShaderResources> resources, IDrawingResourceDeclarations2D declarations)
+    internal void DeclarePreparedResources(IReadOnlyList<ShaderResources> resources, IDrawingResourceDeclarations2D declarations)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(declarations);
@@ -302,19 +323,6 @@ public sealed class DrawingArgumentPlan2D : IDisposable
                 {
                     declare(declarations);
                 }
-            }
-        }
-    }
-
-    /// <summary>Returns the owner token; native cleanup failures remain retryable.</summary>
-    public void Dispose()
-    {
-        lock (_gate)
-        {
-            if (!_returned)
-            {
-                Release();
-                _returned = true;
             }
         }
     }
@@ -333,11 +341,11 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         _uploads.RemoveRange(checkpoint.Uploads, _uploads.Count - checkpoint.Uploads);
     }
 
-    internal void MarkPreparedBuffer<T>(ShaderResources resources, IGraphicsBuffer<T> buffer, BarrierScope scope)
-        where T : unmanaged => PreparedMarks(resources).Add(declarations => declarations.UseBuffer(buffer, scope));
+    internal void MarkPreparedBuffer<T>(ShaderResources resources, BufferSlice<T> range, BarrierScope scope)
+        where T : unmanaged => PreparedMarks(resources).Add(declarations => declarations.UseBuffer(range, scope));
 
-    internal void MarkPreparedShaderData<T>(ShaderResources resources, IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : struct, IShaderData => PreparedMarks(resources).Add(declarations => declarations.UseShaderDataBuffer(buffer, scope));
+    internal void MarkPreparedShaderData<T>(ShaderResources resources, ShaderDataSlice<T> range, BarrierScope scope)
+        where T : struct, IShaderData => PreparedMarks(resources).Add(declarations => declarations.UseShaderDataBuffer(range, scope));
 
     internal IGraphicsSampler Sampler(DrawingResources2D resources) => _sampler ??= resources.Sampler ?? _sharedSampler ?? _samplerFactory?.Invoke() ?? Own(Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
 

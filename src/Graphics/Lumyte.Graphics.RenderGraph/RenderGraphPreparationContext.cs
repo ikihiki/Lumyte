@@ -75,6 +75,15 @@ public sealed class RenderGraphPreparationContext
         return (IGraphicsShaderDataBuffer<T>)_plan.Resolve(buffer);
     }
 
+    internal IReadOnlyList<RenderGraphUse> GetUses(RenderGraphPass pass)
+        => _active && _uses.TryGetValue(pass, out RenderGraphUse[]? uses) ? Array.AsReadOnly(uses) : throw new InvalidOperationException("Pass declarations are unavailable.");
+
+    internal IGraphicsSampler GetSampler(RenderGraphPass pass, RenderGraphSampler sampler)
+    {
+        Check(pass, sampler, ResourceAccess.ShaderRead);
+        return (IGraphicsSampler)_plan.Resolve(sampler);
+    }
+
     internal bool IsGraphAllocation(object allocation) => _plan.ContainsAllocation(allocation);
 
     internal void CheckAllocation(RenderGraphPass pass, object allocation, ResourceAccess required, bool sampled)

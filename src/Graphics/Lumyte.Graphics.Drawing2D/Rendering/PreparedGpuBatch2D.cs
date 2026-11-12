@@ -50,9 +50,15 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
     {
         ArgumentNullException.ThrowIfNull(resources);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        foreach (IGraphicsTexture texture in _commands.SelectMany(command => command.Program.Textures).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsTexture>())
+        foreach (IGraphicsTextureView view in _commands.SelectMany(command => command.Program.Views).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsTextureView>())
         {
-            resources.UseTexture(texture, TextureState.Sampled, _fragmentRead);
+            resources.UseTextureView(view, _fragmentRead);
+        }
+
+        resources.UseSampler(_sampler);
+        foreach (IGraphicsSampler sampler in _commands.SelectMany(command => command.Program.Samplers).Distinct(ReferenceEqualityComparer.Instance).Cast<IGraphicsSampler>())
+        {
+            resources.UseSampler(sampler);
         }
     }
 
@@ -271,8 +277,8 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
             command.Reservation.RegisterBuffer(_instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count), reference => command.ResolvedInstructions = reference);
             command.Reservation.RegisterBuffer(_geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count), reference => command.ResolvedData = reference);
             BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
-            _context.ArgumentPlan.MarkPreparedShaderData(command.Reservation, _instructions, prepared);
-            _context.ArgumentPlan.MarkPreparedBuffer(command.Reservation, _geometry, prepared);
+            _context.ArgumentPlan.MarkPreparedShaderData(command.Reservation, _instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count), prepared);
+            _context.ArgumentPlan.MarkPreparedBuffer(command.Reservation, _geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count), prepared);
             instructionOffset += (ulong)command.Program.Instructions.Count;
             dataOffset += (ulong)command.Program.Data.Count;
         }

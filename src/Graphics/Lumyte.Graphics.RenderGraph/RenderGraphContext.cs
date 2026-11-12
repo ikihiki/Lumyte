@@ -34,69 +34,62 @@ public sealed class RenderGraphContext
 
     internal ShaderTarget? DeviceTarget => Pass.Owner.Device?.Caps.ShaderTarget;
 
-    /// <summary>Resolves a predeclared logical image view to its existing native shader reference.</summary>
-    /// <param name="resources">The resource group declared for this pass.</param>
-    /// <param name="texture">The registered logical image.</param>
-    /// <param name="desc">The exact registered view description.</param>
-    /// <returns>The materialized reference; no registration or table mutation occurs.</returns>
-    public IGpuRef<IGraphicsTextureView> GetGpuRef(RenderGraphShaderResources resources, RenderGraphTexture texture, TextureViewDesc? desc = null)
+    /// <summary>Resolves the pass's predeclared sampled image view without changing its registration plan.</summary>
+    /// <param name="texture">The pass-declared logical image.</param>
+    /// <param name="desc">The exact declared sampled view, or its default.</param>
+    /// <returns>The existing native shader reference for this pass.</returns>
+    public IGpuRef<IGraphicsTextureView> GetGpuRef(RenderGraphTexture texture, TextureViewDesc? desc = null)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(resources);
-        return resources.Resolve(this, texture, desc);
+        return ShaderLookup().Resolve(this, texture, desc);
     }
 
-    /// <summary>Resolves a predeclared graph-owned sampler.</summary>
-    /// <param name="resources">The resource group declared for this pass.</param>
-    /// <param name="desc">The registered sampler description.</param>
-    /// <returns>The materialized sampler reference.</returns>
-    public IGpuRef<IGraphicsSampler> GetGpuRef(RenderGraphShaderResources resources, SamplerDesc desc)
+    /// <summary>Resolves a pass-declared graph-owned sampler by value.</summary>
+    /// <param name="desc">The sampler description declared with UseSampler.</param>
+    /// <returns>The existing native sampler reference.</returns>
+    public IGpuRef<IGraphicsSampler> GetGpuRef(SamplerDesc desc)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(resources);
-        return resources.Resolve(this, desc);
+        ArgumentNullException.ThrowIfNull(desc);
+        return ShaderLookup().ResolveSampler(this, desc);
     }
 
-    /// <summary>Resolves a predeclared borrowed sampler by identity.</summary>
-    /// <param name="resources">The resource group declared for this pass.</param>
-    /// <param name="sampler">The registered sampler object.</param>
-    /// <returns>The materialized sampler reference.</returns>
-    public IGpuRef<IGraphicsSampler> GetGpuRef(RenderGraphShaderResources resources, IGraphicsSampler sampler)
+    /// <summary>Resolves a pass-declared borrowed sampler by identity.</summary>
+    /// <param name="sampler">The sampler declared with UseSampler.</param>
+    /// <returns>The existing native sampler reference.</returns>
+    public IGpuRef<IGraphicsSampler> GetGpuRef(IGraphicsSampler sampler)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(resources);
-        return resources.Resolve(this, sampler);
+        ArgumentNullException.ThrowIfNull(sampler);
+        return ShaderLookup().ResolveSampler(this, sampler);
     }
 
-    /// <summary>Resolves an exact predeclared typed logical buffer range.</summary>
+    /// <summary>Resolves an exact typed range declared for shader access on this pass.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
-    /// <param name="resources">The resource group declared for this pass.</param>
-    /// <param name="buffer">The registered logical buffer.</param>
-    /// <param name="offset">The registered element offset.</param>
-    /// <param name="count">The registered element count.</param>
-    /// <param name="access">The registered shader access.</param>
-    /// <returns>The materialized buffer reference, supporting ordinary GetElement operations.</returns>
-    public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderResources resources, RenderGraphBuffer<T> buffer, ulong offset, ulong count, ArgumentBufferAccess access = ArgumentBufferAccess.Read)
+    /// <param name="buffer">The pass-declared logical buffer.</param>
+    /// <param name="offset">The declared element offset.</param>
+    /// <param name="count">The declared element count; null requests the whole buffer.</param>
+    /// <returns>The existing native range reference with declaration-derived access.</returns>
+    public IGpuRef<T> GetGpuRef<T>(RenderGraphBuffer<T> buffer, ulong offset = 0, ulong? count = null)
         where T : unmanaged
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(resources);
-        return resources.Resolve(this, buffer, offset, count, access);
+        ArgumentNullException.ThrowIfNull(buffer);
+        return ShaderLookup().ResolveBuffer<T>(this, buffer, offset, count ?? buffer.Count);
     }
 
-    /// <summary>Resolves an exact predeclared logical shader-data range.</summary>
+    /// <summary>Resolves an exact declared shader-data range without recapturing transferred metadata.</summary>
     /// <typeparam name="T">The shader-data element type.</typeparam>
-    /// <param name="resources">The resource group declared for this pass.</param>
-    /// <param name="buffer">The registered logical shader-data buffer.</param>
-    /// <param name="offset">The registered element offset.</param>
-    /// <param name="count">The registered element count.</param>
-    /// <returns>The materialized shader-data reference.</returns>
-    public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderResources resources, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
+    /// <param name="buffer">The pass-declared logical shader-data buffer.</param>
+    /// <param name="offset">The declared element offset.</param>
+    /// <param name="count">The declared element count; null requests the whole buffer.</param>
+    /// <returns>The existing native range reference.</returns>
+    public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset = 0, ulong? count = null)
         where T : struct, IShaderData
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(resources);
-        return resources.Resolve(this, buffer, offset, count);
+        ArgumentNullException.ThrowIfNull(buffer);
+        return ShaderLookup().ResolveBuffer<T>(this, buffer, offset, count ?? buffer.Count);
     }
 
     /// <summary>Resolves a texture declared by this pass.</summary>
@@ -150,7 +143,8 @@ public sealed class RenderGraphContext
         ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
         RenderGraphColorAttachmentDesc[] colors = desc.ColorAttachments.ToArray();
         RenderGraphDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
-        if ((colors.Length == 0 && depth is null) ||
+        if (colors.Select(color => color?.Texture).Distinct().Count() != colors.Length ||
+            (colors.Length == 0 && depth is null) ||
             (Pass.Owner.Device is { } device && (uint)colors.Length > device.Caps.MaxColorAttachments))
         {
             throw new ArgumentException("Invalid graph render attachment count.", nameof(desc));
@@ -270,7 +264,7 @@ public sealed class RenderGraphContext
             return (null, snapshot);
         }
 
-        GraphShaderResourceOwner owner = Pass.ShaderResourcesOwner ?? throw new ArgumentException("Declare a resource group for this pass before resolving root references.");
+        GraphShaderResourceOwner owner = _plan.ShaderResourceOwner ?? throw new ArgumentException("Declare shader resources on this pass before resolving references.");
         IReadOnlyList<ShaderResources> resources = owner.SelectArguments(snapshot, Pass, outputs, graphics);
         return (resources, owner.Constrain(resources, snapshot));
     }
@@ -278,7 +272,7 @@ public sealed class RenderGraphContext
     internal void BindResources(IReadOnlyList<ShaderResources> resources, IRenderEncoder encoder, IReadOnlyList<RenderGraphTexture> outputs)
     {
         EnsureActive();
-        GraphShaderResourceOwner owner = Pass.ShaderResourcesOwner!;
+        GraphShaderResourceOwner owner = _plan.ShaderResourceOwner!;
         foreach (ShaderResources candidate in resources)
         {
             owner.ValidateExecution(candidate, Pass, outputs, graphics: true);
@@ -291,7 +285,7 @@ public sealed class RenderGraphContext
     internal void BindResources(IReadOnlyList<ShaderResources> resources, IComputeEncoder encoder)
     {
         EnsureActive();
-        GraphShaderResourceOwner owner = Pass.ShaderResourcesOwner!;
+        GraphShaderResourceOwner owner = _plan.ShaderResourceOwner!;
         foreach (ShaderResources candidate in resources)
         {
             owner.ValidateExecution(candidate, Pass, [], graphics: false);
@@ -308,6 +302,9 @@ public sealed class RenderGraphContext
             throw new InvalidOperationException("Pass context is closed or its encoder cleanup failed.");
         }
     }
+
+    private GraphBindingLookup ShaderLookup()
+        => (_plan.ShaderResourceOwner ?? throw new ArgumentException("This compiled pass has no shader declarations or device.")).Lookup(Pass);
 
     private void EnsureCanBegin()
     {
