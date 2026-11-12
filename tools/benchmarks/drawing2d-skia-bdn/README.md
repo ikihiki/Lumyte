@@ -1,14 +1,15 @@
 # Drawing2D / Skia GPU — BenchmarkDotNet
 
-The completed clip-normalization comparison uses the additional
-[ClipFrameBenchmarks runner](CLIP-NORMALIZATION.md). The authoring-only status below
-refers to the original six-case Skia comparison, not that separately executed runner.
+The completed clip-normalization comparison is documented in
+[ADR-GRAPHICS-0033](../../../docs/adr/graphics/GRAPHICS-0033-drawing2d-normalized-clips.md).
+The authoring-only status below refers to the original six-case Skia comparison,
+not the separately executed `ClipFrameBenchmarks` runner.
 
 Independent BenchmarkDotNet 0.15.8 executable, not a launcher for another campaign.
 No historical-data reader, legacy JSON schema, paired-loop engine, frame-count engine,
 or old positional CLI compatibility is provided. Existing harness files are neither
 compiled nor executed. Trace/EGL/Skia conversion and Radeon identity checks were copied
-as source, then adapted here. Production APIs and ADRs are untouched.
+as source, then adapted here. The original six-case runner does not change production APIs.
 
 **Authoring status: source/API inspection only. No build, test, GPU initialization,
 quality verification or benchmark was run.** The production allocator/graph policy
