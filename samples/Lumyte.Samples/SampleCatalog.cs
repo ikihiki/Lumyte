@@ -7,6 +7,7 @@ internal static class SampleCatalog
     internal static IReadOnlyList<SampleDefinition> All { get; } =
     [
         Managed("signals", "基礎: 値の購読と寿命", "Signals"),
+        Managed("mathematics", "基礎: 数値型を選べる2D・3D幾何", "Mathematics"),
         Managed("composition", "基礎: 宣言からオブジェクトを構築", "Composition"),
         Managed("state-machines", "基礎: ガードと型付き遷移", "StateMachines"),
         Managed("animation", "基礎: 時計と Timeline", "Animation"),
