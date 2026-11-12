@@ -177,7 +177,8 @@ Lumyte の呼出しは実 GPU 完了を await し、command memory、prepared re
 
 `RecordFrameBenchmarks` is a separate selectable matrix using the same BDN
 framework. It retains the existing known 1,000-rectangle and 200-path fixtures,
-adds 341/342 boundaries and a 200-command mixed-kind fixture, and separates
+adds 341/342 count controls (not allocation or draw boundaries) and a
+200-command mixed-kind fixture, and separates
 completion-published prepared reuse from dynamic recording and preparation.
 The mixed fixture has a shared analytic gradient, a nonrectangular clip and a
 fractional rectangular clip. Its mask extent keeps both variants within the
@@ -189,7 +190,8 @@ The adaptive job has 6–10 automatic warmup iterations and 15–30 automatic ac
 iterations, standard pilot/iteration-time policy, retained outliers,
 MemoryDiagnoser, median/P95 and full JSON. P95 describes normalized iteration
 estimates, not individual-frame latency percentiles. Independent matrix launches
-must run serially in the predeclared A1/B1/B2/A2 order with identical harness
+must run serially in the predeclared A1/B1/B2/A2 order with identical executable
+harness sources
 sources and no concurrent build/test/GPU workloads.
 
 ```sh
