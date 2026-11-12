@@ -40,6 +40,16 @@ public sealed partial class Drawing2DTests
             return path.Build();
         }
 
+        foreach (float edge in new[] { 0.125f, MathF.BitIncrement(0.125f) })
+        {
+            Vector4[] boundary = await RenderAsync(device, 1, 1, canvas =>
+            {
+                canvas.ClipRect(new(edge, 0, 1, 1));
+                canvas.FillCircle(new(0.5f), 2, _white);
+            });
+            Assert.Equal(new Vector4(edge == 0.125f ? 1 : 0.75f), Assert.Single(boundary));
+        }
+
         Path2D triangle = Triangle(4);
         foreach (bool instanced in new[] { false, true })
         {

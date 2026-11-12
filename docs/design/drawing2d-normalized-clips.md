@@ -48,4 +48,4 @@ transmission and independent geometry/paint correlation tests remain required.
 
 ## Qualification gate
 
-Design review must resolve CPU/GPU boundary equivalence and bounded representation before implementation. Then exact CPU/hardware/software RGBA, scope/lifetime/Graph tests precede a frozen BenchmarkDotNet whole-completed-frame A/B. No quality reduction, changed assertions, favorable pilot substitution or non-BDN headline measurement is acceptable.
+Design review must resolve CPU/GPU boundary equivalence and bounded representation before implementation. Then exact CPU/hardware/software RGBA, scope/lifetime/Graph tests precede a frozen BenchmarkDotNet whole-completed-frame A/B. No quality reduction, weakened feature assertions, favorable pilot substitution or non-BDN headline measurement is acceptable.
