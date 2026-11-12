@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Lumyte.Mathematics.Benchmarks/Lumyte.Mathematics.Benchmarks.csproj" />
     <Project Path="benchmarks/Lumyte.Signals.Benchmarks/Lumyte.Signals.Benchmarks.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />
     <Project Path="samples/Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />

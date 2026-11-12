@@ -4,6 +4,7 @@ using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Hosting;
 using Lumyte.Input;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.TextInput.Abstractions;
 using Lumyte.UI.Windowing;
@@ -396,11 +397,8 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                 {
                     Rect2D bounds = snapshot.BoundsInPresentation;
                     Rect2D clip = snapshot.ClipInPresentation;
-                    float left = Math.Max(bounds.X, clip.X);
-                    float top = Math.Max(bounds.Y, clip.Y);
-                    float right = Math.Min(bounds.X + bounds.Width, clip.X + clip.Width);
-                    float bottom = Math.Min(bounds.Y + bounds.Height, clip.Y + clip.Height);
-                    crops.Add(capture, new(left * snapshot.Scale.X, top * snapshot.Scale.Y, Math.Max(0, right - left) * snapshot.Scale.X, Math.Max(0, bottom - top) * snapshot.Scale.Y));
+                    Bounds2D<float> cropped = Bounds2D<float>.FromOriginSize(bounds.X, bounds.Y, bounds.Width, bounds.Height).Intersect(Bounds2D<float>.FromOriginSize(clip.X, clip.Y, clip.Width, clip.Height));
+                    crops.Add(capture, new(cropped.Left * snapshot.Scale.X, cropped.Top * snapshot.Scale.Y, cropped.Width * snapshot.Scale.X, cropped.Height * snapshot.Scale.Y));
                 }
                 else
                 {

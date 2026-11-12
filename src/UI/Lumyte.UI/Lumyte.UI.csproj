@@ -7,6 +7,7 @@
     <Description>Retained UI ownership, layout, drawing, generic input routing and keyboard focus with generated Composition callbacks.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../../Core/Lumyte.Composition/Lumyte.Composition.csproj" />
     <ProjectReference Include="../../Core/Lumyte.Signals/Lumyte.Signals.csproj" />

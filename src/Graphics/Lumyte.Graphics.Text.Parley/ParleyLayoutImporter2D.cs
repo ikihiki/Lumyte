@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text.Parley.Interop;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Graphics.Text.Parley;
 
@@ -99,8 +100,7 @@ internal static unsafe class ParleyLayoutImporter2D
         Vector2 Point(float x, float y)
         {
             var result = Vector2.Transform(new Vector2(x, y), transform);
-            minimum = Vector2.Min(minimum, result);
-            maximum = Vector2.Max(maximum, result);
+            Geometry2D.IncludeInBoundsBcl(result, ref minimum, ref maximum);
             return result;
         }
 
@@ -144,8 +144,7 @@ internal static unsafe class ParleyLayoutImporter2D
         builder.LineTo(p2);
         builder.LineTo(p3);
         builder.Close();
-        var minimum = Vector2.Min(Vector2.Min(p0, p1), Vector2.Min(p2, p3));
-        var maximum = Vector2.Max(Vector2.Max(p0, p1), Vector2.Max(p2, p3));
+        Geometry2D.GetBoundsBcl(p0, p1, p2, p3, out Vector2 minimum, out Vector2 maximum);
         return (builder.Build(), new Rect2D(minimum.X, minimum.Y, maximum.X - minimum.X, maximum.Y - minimum.Y));
     }
 
@@ -156,19 +155,8 @@ internal static unsafe class ParleyLayoutImporter2D
             return second;
         }
 
-        if (a.Width == 0 || a.Height == 0)
-        {
-            return second;
-        }
-
-        if (second.Width == 0 || second.Height == 0)
-        {
-            return a;
-        }
-
-        float x = MathF.Min(a.X, second.X);
-        float y = MathF.Min(a.Y, second.Y);
-        return new Rect2D(x, y, MathF.Max(a.X + a.Width, second.X + second.Width) - x, MathF.Max(a.Y + a.Height, second.Y + second.Height) - y);
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.UnionBoundsIgnoringZeroArea((a.X, a.Y, a.Width, a.Height), (second.X, second.Y, second.Width, second.Height));
+        return new Rect2D(bounds.X, bounds.Y, bounds.Width, bounds.Height);
     }
 
     public static Rect2D? Intersect(Rect2D? first, Rect2D? second)
@@ -183,9 +171,8 @@ internal static unsafe class ParleyLayoutImporter2D
             return first;
         }
 
-        float x = MathF.Max(a.X, b.X);
-        float y = MathF.Max(a.Y, b.Y);
-        return new Rect2D(x, y, MathF.Max(0, MathF.Min(a.X + a.Width, b.X + b.Width) - x), MathF.Max(0, MathF.Min(a.Y + a.Height, b.Y + b.Height) - y));
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.IntersectBoundsClamped((a.X, a.Y, a.Width, a.Height), (b.X, b.Y, b.Width, b.Height));
+        return new Rect2D(bounds.X, bounds.Y, bounds.Width, bounds.Height);
     }
 
     private static PaintGraph2D Brush(IReadOnlyList<PaintGraph2D> paints, uint index)

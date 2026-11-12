@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Core.Time;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.UI;
 
@@ -250,9 +251,8 @@ public sealed partial class UiSurface
 
     private static Rect2D IntersectVisual(Rect2D first, Rect2D second)
     {
-        float x = Math.Max(first.X, second.X);
-        float y = Math.Max(first.Y, second.Y);
-        return new(x, y, Math.Max(0, Math.Min(first.X + first.Width, second.X + second.Width) - x), Math.Max(0, Math.Min(first.Y + first.Height, second.Y + second.Height) - y));
+        Bounds2D<float> bounds = Bounds2D<float>.FromOriginSize(first.X, first.Y, first.Width, first.Height).Intersect(Bounds2D<float>.FromOriginSize(second.X, second.Y, second.Width, second.Height));
+        return new(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
     }
 
     private void ReconcileVisuals()

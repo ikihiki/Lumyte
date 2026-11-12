@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.TextEditing;
 
 namespace Lumyte.UI.TextEditing;
@@ -176,7 +177,7 @@ public class ImeCandidateViewElement : UiElement<Compose.Definitions.ImeCandidat
             return null;
         }
 
-        Row? row = _rows.FirstOrDefault(r => point.X >= r.Bounds.X && point.X < r.Bounds.X + r.Bounds.Width && point.Y >= r.Bounds.Y && point.Y < r.Bounds.Y + r.Bounds.Height);
+        Row? row = _rows.FirstOrDefault(r => Bounds2D<float>.FromOriginSize(r.Bounds.X, r.Bounds.Y, r.Bounds.Width, r.Bounds.Height).Contains(point.X, point.Y));
         if (row is null)
         {
             return null;

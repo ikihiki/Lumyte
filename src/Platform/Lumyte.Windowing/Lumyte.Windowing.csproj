@@ -5,6 +5,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <ProjectReference Include="../Lumyte.Windowing.Abstractions/Lumyte.Windowing.Abstractions.csproj" />
     <ProjectReference Include="../Lumyte.Platform.Abstractions/Lumyte.Platform.Abstractions.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />

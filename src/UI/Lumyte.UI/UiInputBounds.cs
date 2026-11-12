@@ -1,15 +1,23 @@
 using System.Numerics;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.UI;
 
 internal readonly record struct UiInputBounds(double Left, double Top, double Right, double Bottom)
 {
-    internal static UiInputBounds From(Vector2 origin, Vector2 size) => new(origin.X, origin.Y, (double)origin.X + size.X, (double)origin.Y + size.Y);
+    internal double Width => Coordinates.Width;
 
-    internal UiInputBounds Intersect(UiInputBounds other) => new(Math.Max(Left, other.Left), Math.Max(Top, other.Top), Math.Min(Right, other.Right), Math.Min(Bottom, other.Bottom));
+    internal double Height => Coordinates.Height;
+
+    private Bounds2D<double> Coordinates => new(Left, Top, Right, Bottom);
+
+    internal static UiInputBounds From(Vector2 origin, Vector2 size) => From(Bounds2D<double>.FromOriginSize(origin.X, origin.Y, size.X, size.Y));
+
+    internal UiInputBounds Intersect(UiInputBounds other) => From(Coordinates.Intersect(other.Coordinates));
 
     internal UiInputBounds Union(UiInputBounds other)
     {
+        // Preserve the original >= empty policy: NaN edges must reach the raw enclosing arithmetic.
         if (Left >= Right || Top >= Bottom)
         {
             return other;
@@ -20,8 +28,11 @@ internal readonly record struct UiInputBounds(double Left, double Top, double Ri
             return this;
         }
 
-        return new(Math.Min(Left, other.Left), Math.Min(Top, other.Top), Math.Max(Right, other.Right), Math.Max(Bottom, other.Bottom));
+        (double Left, double Top, double Right, double Bottom) edges = Geometry2D.EncloseBoundsEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
+        return new(edges.Left, edges.Top, edges.Right, edges.Bottom);
     }
 
-    internal bool Contains(Vector2 position) => position.X >= Left && position.Y >= Top && position.X < Right && position.Y < Bottom;
+    internal bool Contains(Vector2 position) => Coordinates.Contains(position.X, position.Y);
+
+    private static UiInputBounds From(Bounds2D<double> bounds) => new(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
 }

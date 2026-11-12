@@ -182,6 +182,37 @@ public sealed unsafe class TextStoreTests
         Assert.Equal(0, result);
     }
 
+    /// <summary>Checks clipping retains degenerate caret bounds and reports disjoint range clipping.</summary>
+    [Fact]
+    public void TextExtClipsRangesAndPreservesZeroWidthCarets()
+    {
+        var sink = new Sink();
+        var document = new TextDocument("A");
+        var store = new TsfTextStore(document, rect => new() { left = (int)rect.X, top = (int)rect.Y, right = (int)(rect.X + rect.Width), bottom = (int)(rect.Y + rect.Height) }, () => 1, sink);
+        using var lifetime = new StoreLifetime(store);
+        store.UpdateGeometry(new(0, 1, new(0, 0, 20, 20), new(10, 0, 0, 20), [new(new(0, 1), new(30, 4, 10, 10))], [new(0, TextCaretAffinity.Leading, new(10, 0, 0, 20))]));
+        sink.Lock = _ =>
+        {
+            TsfRect rectangle;
+            int clipped;
+            Assert.Equal(0, store.GetTextExt(1, 0, 0, &rectangle, &clipped));
+            Assert.Equal(0, clipped);
+            Assert.Equal(10, rectangle.left);
+            Assert.Equal(10, rectangle.right);
+            Assert.Equal(20, rectangle.bottom);
+            Assert.Equal(0, store.GetTextExt(1, 0, 1, &rectangle, &clipped));
+            Assert.Equal(1, clipped);
+            Assert.Equal(30, rectangle.left);
+            Assert.Equal(30, rectangle.right);
+            Assert.Equal(4, rectangle.top);
+            Assert.Equal(14, rectangle.bottom);
+            return 0;
+        };
+        int result;
+        store.RequestLock(3, &result);
+        Assert.Equal(0, result);
+    }
+
     /// <summary>Checks application cancellation notifies the native text store after callbacks and before release.</summary>
     [Fact]
     public void CancellationRestoresCheckpointAndDefersNativeNotification()

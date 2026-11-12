@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.UI.Automation;
 
@@ -11,7 +12,7 @@ public sealed partial class UiLocator
 
     private static bool SameGeometry(UiAutomationNode first, UiAutomationNode second) => first.Id == second.Id && first.Bounds == second.Bounds && first.ClippedBounds == second.ClippedBounds && first.ContentBounds == second.ContentBounds && first.ActionableBounds == second.ActionableBounds;
 
-    private static bool Contains(Rect2D rectangle, Vector2 position) => rectangle.Width > 0 && rectangle.Height > 0 && position.X >= rectangle.X && position.Y >= rectangle.Y && position.X < (double)rectangle.X + rectangle.Width && position.Y < (double)rectangle.Y + rectangle.Height;
+    private static bool Contains(Rect2D rectangle, Vector2 position) => Bounds2D<double>.FromOriginSize(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height).Contains(position.X, position.Y);
 
     private static bool Actionable(UiAutomationNode node, UiClickOptions? options, out Vector2 point)
     {
