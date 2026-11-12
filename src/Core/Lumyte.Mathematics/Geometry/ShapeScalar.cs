@@ -82,6 +82,34 @@ internal static class ShapeScalar<T>
         return checked(checked(u * u * ry * ry) + checked(v * v * rx * rx)) <= checked(rx * rx * ry * ry);
     }
 
+    // Rounded corners alone permit downward approximation of builtin IEEE halves.
+    // Center factories continue to require HalfExact, including for IEEE scalars.
+    internal static T HalfDownIeee(T value)
+    {
+        if (typeof(T) == typeof(double))
+        {
+            double extent = (double)(object)value;
+            double half = extent / 2;
+            return (T)(object)(half > extent - half ? double.BitDecrement(half) : half);
+        }
+
+        if (typeof(T) == typeof(float))
+        {
+            float extent = (float)(object)value;
+            float half = extent / 2;
+            return (T)(object)(half > extent - half ? float.BitDecrement(half) : half);
+        }
+
+        if (typeof(T) == typeof(Half))
+        {
+            var extent = (Half)(object)value;
+            Half half = extent / (Half)2;
+            return (T)(object)(half > extent - half ? Half.BitDecrement(half) : half);
+        }
+
+        return HalfExact(value);
+    }
+
     internal static T HalfExact(T value)
     {
         T two = T.One + T.One;

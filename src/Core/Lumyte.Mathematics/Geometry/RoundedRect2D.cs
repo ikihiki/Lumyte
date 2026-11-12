@@ -10,8 +10,9 @@ public readonly record struct RoundedRect2D<T>
     /// <summary>Initializes a new instance of the <see cref="RoundedRect2D{T}"/> struct.</summary>
     /// <param name="bounds">The outer bounds.</param>
     /// <param name="radius">The requested finite nonnegative corner radius.</param>
+    /// <remarks>For builtin IEEE scalars, a nonrepresentable half extent is rounded downward for radius clamping; other scalars require an exact half.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">The radius is nonfinite or negative.</exception>
-    /// <exception cref="ArgumentException">Clamping requires a half extent not representable by the scalar.</exception>
+    /// <exception cref="ArgumentException">Clamping requires an unrepresentable half extent for a non-IEEE scalar.</exception>
     public RoundedRect2D(Rect2D<T> bounds, T radius)
     {
         GeometryScalar<T>.NonNegative(radius, nameof(radius));
@@ -22,7 +23,10 @@ public readonly record struct RoundedRect2D<T>
         bool fits = ShapeScalar<T>.IsExact
             ? (2 * ShapeScalar<T>.Exact(radius)) <= ShapeScalar<T>.Exact(extent)
             : radius <= extent - T.Min(radius, extent);
-        Radius = fits ? radius : ShapeScalar<T>.HalfExact(extent);
+
+        // Builtin IEEE halves round down if necessary, never enlarging the true half.
+        // Discrete, decimal, and custom numbers retain exact-half rejection.
+        Radius = fits ? radius : ShapeScalar<T>.HalfDownIeee(extent);
     }
 
     /// <summary>Gets the outer rectangle.</summary>

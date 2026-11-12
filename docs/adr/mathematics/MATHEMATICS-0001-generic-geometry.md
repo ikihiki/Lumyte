@@ -69,9 +69,11 @@ double distance3D = Geometry3D.Distance<int, double>(new(0, 0, 0), new(2, 3, 6))
 
 **半開の座標境界**は `Bounds2D<T>` と `Geometry2D` の境界操作に分離する。raw edge は逆転した空境界や NaN を保持し、上限の加算精度は呼び出し側の T に従う。`Bounds2D<T>` の Contains は最大側を除外し、逆転・零面積・NaN は空とする。Empty は IEEE 型では逆転した無限辺、その他では零面積の default とし、無限大のない型で `TryGetUnbounded` は false、Unbounded は `NotSupportedException` とする。既存 UI が必要とする NaN の union 規則は薄いアダプターで維持する。
 
-構築名は `FromMinMax`・`FromCenterSize`・`FromPoints` とし、検証失敗を分岐にする場合は `TryCreate`・`TryFromPoints` を使う。min/max の逆順を暗黙に整列せず、空の点列は From factory で `ArgumentException`、Try factory で false とする。角丸半径は短辺の半分へ clamp する。中心からの半寸法や角丸半径の制限値が T で表現できない場合は `ArgumentException`、対応する Try factory は false とし、整数の半分を切り捨てない。
+構築名は `FromMinMax`・`FromCenterSize`・`FromPoints` とし、検証失敗を分岐にする場合は `TryCreate`・`TryFromPoints` を使う。min/max の逆順を暗黙に整列せず、空の点列は From factory で `ArgumentException`、Try factory で false とする。角丸半径は短辺の半分へ clamp する。Half・float・double の角丸半径は必要ならその半分以下の最大の表現可能値へ下向きに丸め、半径が逆側の角の開始位置を超えないようにする。中心からの半寸法、または非 IEEE 型の角丸半径の制限値が T で表現できない場合は `ArgumentException`、対応する Try factory は false とし、整数の半分を切り捨てない。
 
 点は Origin、座標 span の構築・コピー・deconstruction を提供する。BigInteger や参照を含む独自型のメモリ配置は仮定しない。組み込み型の default はゼロとして有効だが、独自型の default はその型に従う。同値性・ハッシュは成分の数値等値とし、正負のゼロを等しく扱い、許容誤差は混ぜない。
+
+`FromMinMax`・`FromPoints`・`Union` は、保存した幅・高さを原点へ足し戻しても指定した最大辺を含むことを保証する。丸めで内側へ戻る場合だけ extent を外向きに調整し、既に包含する値は広げない。IEEE は直後の表現可能 extent を一度だけ試し、decimal は有限桁の範囲で次の表現可能値を構築する。extent または再構成した辺が有限に表せない場合は `OverflowException` とし、Try factory は false を返す。Outset も要求した最大辺を失う場合に同じ補正を行う。交差と center/size のような別の集合・寸法契約へ外向き補正を一律適用しない。
 
 ### 共通計算と利用側の責務
 
@@ -85,7 +87,7 @@ double distance3D = Geometry3D.Distance<int, double>(new(0, 0, 0), new(2, 3, 6))
 
 `Lumyte.Graphics.Drawing2D.Rect2D` は未検証のコマンド宣言、`EffectPixelRect` は整数 pixel の単位と半開 empty 規則を持つため公開境界として維持する。後者は保存・計算を `Rect2D<int>` に委譲し、空の union・outset の判定だけをアダプターに残す。OS window・caret・診断 wire・native ABI・GPU shader と外部ライブラリの形状表現も、その単位・配置・互換性を保持する。
 
-描画側は stroke cap・join の三角形化、曲線誤差・分割予算、GPU coverage、整数 scissor の丸めと余白を担当する。汎用 Bezier は有限な amount の閉区間 [0, 1]、正の有限 tolerance、深さ 0..30、追加点数 2 以上を要求する。平坦化は予算超過時に false を返して出力を維持し、描画用 streaming 分割は sink 失敗時に追加済み点を保持する。この差を共通化のために消さない。既存補間 API と描画公開 API の意味は変更しない。
+描画側は stroke cap・join の三角形化、曲線誤差・分割予算、GPU coverage、整数 scissor の丸めと余白を担当する。汎用 Bezier の補間は非ゼロの定数成分を保ち、IEEE の積が subnormal またはゼロへ underflow する場合は厳密な加重和から一度で丸める。通常の IEEE 加重演算と signed zero の規則、decimal の厳密な中間計算を維持する。汎用 Bezier は有限な amount の閉区間 [0, 1]、正の有限 tolerance、深さ 0..30、追加点数 2 以上を要求する。平坦化は予算超過時に false を返して出力を維持し、描画用 streaming 分割は sink 失敗時に追加済み点を保持する。この差を共通化のために消さない。既存補間 API と描画公開 API の意味は変更しない。
 
 ### SIMD と一括処理
 

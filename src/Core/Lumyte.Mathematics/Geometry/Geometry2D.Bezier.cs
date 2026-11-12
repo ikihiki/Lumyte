@@ -233,7 +233,33 @@ public static partial class Geometry2D
         }
 
         T complement = T.One - amount;
-        return new Point2D<T>(checked((start.X * complement) + (end.X * amount)), checked((start.Y * complement) + (end.Y * amount)));
+        return new Point2D<T>(InterpolateCoordinate(start.X, end.X, amount, complement), InterpolateCoordinate(start.Y, end.Y, amount, complement));
+    }
+
+    private static T InterpolateCoordinate<T>(T start, T end, T amount, T complement)
+        where T : INumber<T>
+    {
+        if (start == end && start != T.Zero)
+        {
+            return start;
+        }
+
+        T first = checked(start * complement);
+        T second = checked(end * amount);
+        if (GeometryScalar<T>.IsIeee
+            && (T.IsSubnormal(first) || T.IsSubnormal(second)
+                || (first == T.Zero && start != T.Zero) || (second == T.Zero && end != T.Zero))
+            && T.IsFinite(start) && T.IsFinite(end))
+        {
+            // Subnormal products can round before their sum, losing a representable
+            // coordinate. Round the exact convex combination once in this rare case.
+            // Do not use end - start: opposite finite extremes can overflow there.
+            var parameter = GeometryRational.From(amount);
+            GeometryRational inverse = GeometryRational.From(T.One) - parameter;
+            return ((GeometryRational.From(start) * inverse) + (GeometryRational.From(end) * parameter)).To<T>();
+        }
+
+        return checked(first + second);
     }
 
     private static bool WithinTolerance<T>(Point2D<T> start, Point2D<T> end, Point2D<T> control, T tolerance)

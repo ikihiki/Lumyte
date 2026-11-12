@@ -85,20 +85,39 @@ public readonly record struct Rect2D<T>
     {
         GeometryScalar<T>.NonNegative(x, nameof(x));
         GeometryScalar<T>.NonNegative(y, nameof(y));
-        return new(GeometryScalar<T>.Checked(checked(X - x)), GeometryScalar<T>.Checked(checked(Y - y)), GeometryScalar<T>.Checked(checked(Width + ((T.One + T.One) * x))), GeometryScalar<T>.Checked(checked(Height + ((T.One + T.One) * y))));
+        T left = GeometryScalar<T>.Checked(checked(X - x));
+        T top = GeometryScalar<T>.Checked(checked(Y - y));
+        T width = GeometryScalar<T>.Checked(checked(Width + ((T.One + T.One) * x)));
+        T height = GeometryScalar<T>.Checked(checked(Height + ((T.One + T.One) * y)));
+        T right = GeometryScalar<T>.Checked(checked(Right + x));
+        T bottom = GeometryScalar<T>.Checked(checked(Bottom + y));
+
+        // Preserve the existing size arithmetic unless it would lose an edge.
+        if (GeometryScalar<T>.Checked(checked(left + width)) < right)
+        {
+            width = RectangleRounding<T>.EnclosingExtent(left, right);
+        }
+
+        if (GeometryScalar<T>.Checked(checked(top + height)) < bottom)
+        {
+            height = RectangleRounding<T>.EnclosingExtent(top, bottom);
+        }
+
+        return new(left, top, width, height);
     }
 
     /// <summary>Computes a checked closed enclosure, including degenerate rectangles.</summary>
     /// <param name="other">The other rectangle.</param>
-    /// <returns>The smallest rectangle enclosing both inputs.</returns>
+    /// <returns>A representable rectangle enclosing both inputs.</returns>
+    /// <remarks>Extents are adjusted outward only when reconstructing an upper edge would otherwise exclude an input.</remarks>
     public Rect2D<T> Union(Rect2D<T> other)
     {
         // Compute both lower edges first, then each checked axis in the original overflow order.
         (T Left, T Top, T Right, T Bottom) lower = Geometry2D.EncloseBoundsEdges((X, Y, T.Zero, T.Zero), (other.X, other.Y, T.Zero, T.Zero));
         (T Left, T Top, T Right, T Bottom) horizontal = Geometry2D.EncloseBoundsEdges((T.Zero, T.Zero, checked(X + Width), T.Zero), (T.Zero, T.Zero, checked(other.X + other.Width), T.Zero));
-        T width = GeometryScalar<T>.Checked(checked(horizontal.Right - lower.Left));
+        T width = RectangleRounding<T>.EnclosingExtent(lower.Left, horizontal.Right);
         (T Left, T Top, T Right, T Bottom) vertical = Geometry2D.EncloseBoundsEdges((T.Zero, T.Zero, T.Zero, checked(Y + Height)), (T.Zero, T.Zero, T.Zero, checked(other.Y + other.Height)));
-        T height = GeometryScalar<T>.Checked(checked(vertical.Bottom - lower.Top));
+        T height = RectangleRounding<T>.EnclosingExtent(lower.Top, vertical.Bottom);
         return new(lower.Left, lower.Top, width, height);
     }
 
@@ -152,11 +171,13 @@ public readonly record struct Rect2D<T>
         }
     }
 
-    /// <summary>Creates a rectangle from ordered corners with checked extents.</summary>
+    /// <summary>Creates a rectangle from ordered corners with checked, enclosing extents.</summary>
     /// <param name="min">The minimum corner.</param>
     /// <param name="max">The maximum corner.</param>
-    /// <returns>The rectangle.</returns>
-    public static Rect2D<T> FromMinMax(Point2D<T> min, Point2D<T> max) => new(min.X, min.Y, GeometryScalar<T>.Checked(checked(max.X - min.X)), GeometryScalar<T>.Checked(checked(max.Y - min.Y)));
+    /// <returns>The rectangle, including both supplied corners after extent reconstruction.</returns>
+    /// <remarks>Rounded extents are adjusted outward only when necessary; exact enclosures are not expanded.</remarks>
+    /// <exception cref="OverflowException">An enclosing extent or reconstructed upper edge is not finite and representable.</exception>
+    public static Rect2D<T> FromMinMax(Point2D<T> min, Point2D<T> max) => new(min.X, min.Y, RectangleRounding<T>.EnclosingExtent(min.X, max.X), RectangleRounding<T>.EnclosingExtent(min.Y, max.Y));
 
     /// <summary>Creates centered bounds; throws when a half extent is not representable.</summary>
     /// <param name="center">The center.</param>
