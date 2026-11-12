@@ -72,7 +72,10 @@ public sealed class PathFillTests
         Assert.Equal(new Vector4(0, 0.5f, -20, 0), outline.T1);
         Assert.Equal(new Vector4(0.5f, 0, 0, 0.5f), program.Instructions[1].A);
         Assert.Equal(11u, program.Instructions[(int)root].Kind);
-        Assert.Equal(2, program.Instructions.Count(instruction => instruction.Kind == 4));
+        Assert.Single(program.Instructions, instruction => instruction.Kind == 4);
+        Assert.Equal(NormalizedClipKind2D.Scissor, program.Clip!.Kind);
+        Assert.Equal(new ScissorRect(0, 0, 80, 80), program.Clip.Bounds);
+        Assert.DoesNotContain(program.Instructions, instruction => instruction.Kind is 16 or 17);
 
         ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
         Assert.Equal(new ScissorRect(21, 43, 42, 38), scissor);

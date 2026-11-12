@@ -10,15 +10,19 @@ internal sealed class DrawingProgram2D
     private readonly List<IGpuRef<IGraphicsTextureView>?> _textures = [];
     private readonly List<IGpuRef<IGraphicsSampler>?> _samplers = [];
     private readonly Matrix3x2 _pixelTransform;
+    private readonly ClipNormalizationCache2D _clips;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
 
-    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target)
+    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target, ClipNormalizationCache2D? clips = null)
     {
         _plan = plan ?? throw new ArgumentNullException(nameof(plan));
+        _clips = clips ?? new(target);
         _pixelTransform = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
     }
 
     internal List<DrawingInstruction> Instructions { get; } = [];
+
+    internal NormalizedClip2D? Clip { get; private set; }
 
     internal List<Vector4> Data { get; } = [];
 
@@ -91,6 +95,13 @@ internal sealed class DrawingProgram2D
 
     internal uint Compile(DrawingCommand2D command)
     {
+        NormalizedClip2D clip = _clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
+        Clip = clip.Mask.Length == 0 ? clip : clip with { Mask = [] };
+        if (Clip.Kind == NormalizedClipKind2D.Empty)
+        {
+            return Solid(default);
+        }
+
         Matrix3x2 transform = command.State.Transform * _pixelTransform;
         if (!Invertible(transform))
         {
@@ -173,10 +184,16 @@ internal sealed class DrawingProgram2D
         }
 
         uint result = Multiply(shape, paint);
-        return ApplyClip(result, command.State);
+
+        return ApplyNormalizedClip(result, clip, scissorInstalled: true);
     }
 
-    internal uint CompileClip(DrawingState2D state) => ApplyClip(Solid(Vector4.One), state);
+    internal uint CompileClip(DrawingState2D state)
+    {
+        NormalizedClip2D clip = _clips.Get(state.Clip, Matrix3x2.Identity, state.Clip.Elements);
+        Clip = clip.Mask.Length == 0 ? clip : clip with { Mask = [] };
+        return ApplyNormalizedClip(Solid(Vector4.One), clip, scissorInstalled: true);
+    }
 
     internal void ValidateFiniteData()
     {
@@ -234,15 +251,34 @@ internal sealed class DrawingProgram2D
 
     private static bool Invertible(Matrix3x2 transform) => Matrix3x2.Invert(transform, out Matrix3x2 inverse) && float.IsFinite(inverse.M11) && float.IsFinite(inverse.M12) && float.IsFinite(inverse.M21) && float.IsFinite(inverse.M22) && float.IsFinite(inverse.M31) && float.IsFinite(inverse.M32);
 
-    private uint ApplyClip(uint result, DrawingState2D state)
+    private uint ApplyNormalizedClip(uint result, NormalizedClip2D clip, bool scissorInstalled)
     {
-        // Target nested UI clipping; leave standalone path/paint compilation unchanged.
-        foreach (ClipElement2D clip in state.Clip.Elements)
+        if (clip.Kind == NormalizedClipKind2D.Empty)
         {
-            result = Multiply(result, Path(clip.Path, clip.Rule, clip.Transform * _pixelTransform, rectangularClip: state.Clip.Elements.Count > 1));
+            return Solid(default);
         }
 
-        return result;
+        if (clip.Kind == NormalizedClipKind2D.None || (scissorInstalled && clip.Kind == NormalizedClipKind2D.Scissor))
+        {
+            return result;
+        }
+
+        if (clip.Kind == NormalizedClipKind2D.SampleMask)
+        {
+            uint first = (uint)Data.Count;
+            if (Data.Count + clip.Mask.Length > 262144)
+            {
+                throw new NotSupportedException("Normalized clip and geometry exceed the 262144 vector payload budget.");
+            }
+
+            Data.AddRange(clip.Mask);
+            return Add(Node(17, Matrix3x2.Identity) with { First = result, Count = first, A = new(clip.Bounds.X, clip.Bounds.Y, clip.Bounds.Width, clip.Bounds.Height) });
+        }
+
+        Vector4 samples = clip.Kind == NormalizedClipKind2D.Scissor
+            ? new(clip.Bounds.X * 4, clip.Bounds.Y * 4, (clip.Bounds.X + clip.Bounds.Width) * 4, (clip.Bounds.Y + clip.Bounds.Height) * 4)
+            : clip.Samples;
+        return Add(Node(16, Matrix3x2.Identity) with { First = result, A = samples });
     }
 
     private uint Paint(PaintNode2D paint, Matrix3x2 transform, int depth = 0)
@@ -300,7 +336,37 @@ internal sealed class DrawingProgram2D
             case OpacityPaintNode2D node:
                 return Add(Node(10, Matrix3x2.Identity) with { First = Paint(node.Child, transform, depth + 1), A = new(node.Opacity) });
             case ClipPaintNode2D node:
-                return Multiply(Path(node.Path, node.Rule, transform), Paint(node.Child, transform, depth + 1));
+                List<ClipElement2D> elements = [];
+                PaintNode2D childPaint = node;
+                Matrix3x2 captured = transform;
+                int clipDepth = depth;
+                while (childPaint is ClipPaintNode2D or TransformPaintNode2D)
+                {
+                    if (++clipDepth > 64)
+                    {
+                        throw new NotSupportedException("Paint graph exceeds the 64 level evaluation budget.");
+                    }
+
+                    if (childPaint is ClipPaintNode2D nested)
+                    {
+                        elements.Add(new(nested.Path, captured, nested.Rule));
+                        childPaint = nested.Child;
+                    }
+                    else if (childPaint is TransformPaintNode2D transformed)
+                    {
+                        captured = transformed.Transform * captured;
+                        if (!Invertible(captured))
+                        {
+                            return Solid(default);
+                        }
+
+                        childPaint = transformed.Child;
+                    }
+                }
+
+                NormalizedClip2D normalized = _clips.Get(node, transform, elements, pixelSpace: true);
+                return normalized.Kind == NormalizedClipKind2D.Empty ? Solid(default)
+                    : ApplyNormalizedClip(Paint(childPaint, captured, clipDepth), normalized, scissorInstalled: false);
             case TransformPaintNode2D node:
                 return Paint(node.Child, node.Transform * transform, depth + 1);
             case LayersPaintNode2D node:

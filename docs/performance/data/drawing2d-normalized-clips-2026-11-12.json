@@ -1,0 +1,319 @@
+{
+  "runs": [
+    {
+      "name": "final-base-a",
+      "cases": [
+        {
+          "case": "mask-cached",
+          "medianMs": 7.721761538461538,
+          "p95Ms": 8.027742226923076,
+          "allocatedBytes": 1081913,
+          "iterationEstimates": [
+            6.9265261538461536,
+            7.261028461538462,
+            7.660742615384615,
+            8.050314076923078,
+            7.783975923076923,
+            7.782780461538462,
+            7.985823076923077,
+            7.084359230769231
+          ],
+          "operationsPerMeasuredIteration": [
+            13
+          ]
+        },
+        {
+          "case": "mask-dynamic",
+          "medianMs": 19.874372875,
+          "p95Ms": 20.215779674999997,
+          "allocatedBytes": 9411856,
+          "iterationEstimates": [
+            20.258259,
+            19.72194825,
+            19.84088025,
+            19.99268625,
+            20.1368895,
+            19.708655,
+            19.9078655,
+            19.3364405
+          ],
+          "operationsPerMeasuredIteration": [
+            4
+          ]
+        },
+        {
+          "case": "rect-control",
+          "medianMs": 0.44238909114583336,
+          "p95Ms": 0.4640866549479167,
+          "allocatedBytes": 263635,
+          "iterationEstimates": [
+            0.4541344947916667,
+            0.4694455104166667,
+            0.4486471458333333,
+            0.4365412552083333,
+            0.4432432916666667,
+            0.441534890625,
+            0.4174050364583333,
+            0.4038492447916667
+          ],
+          "operationsPerMeasuredIteration": [
+            192
+          ]
+        }
+      ]
+    },
+    {
+      "name": "final-candidate-a",
+      "cases": [
+        {
+          "case": "mask-cached",
+          "medianMs": 0.14219174932065215,
+          "p95Ms": 0.15346714463315217,
+          "allocatedBytes": 10452,
+          "iterationEstimates": [
+            0.14545122554347828,
+            0.15700699184782607,
+            0.14435822010869565,
+            0.14689314266304349,
+            0.13134329347826088,
+            0.12101946603260869,
+            0.1400252785326087,
+            0.12224895652173913
+          ],
+          "operationsPerMeasuredIteration": [
+            736
+          ]
+        },
+        {
+          "case": "mask-dynamic",
+          "medianMs": 3.5425535,
+          "p95Ms": 3.78698975,
+          "allocatedBytes": 189528,
+          "iterationEstimates": [
+            3.706185,
+            3.480046,
+            3.421264,
+            3.8305,
+            3.627352,
+            3.451006,
+            3.540589,
+            3.544518
+          ],
+          "operationsPerMeasuredIteration": [
+            1
+          ]
+        },
+        {
+          "case": "rect-control",
+          "medianMs": 0.494882875,
+          "p95Ms": 0.5210348510416667,
+          "allocatedBytes": 264203,
+          "iterationEstimates": [
+            0.5088460555555555,
+            0.4970232986111111,
+            0.49454327777777773,
+            0.46524594444444445,
+            0.49522247222222227,
+            0.4927790416666667,
+            0.5275980486111111,
+            0.482869625
+          ],
+          "operationsPerMeasuredIteration": [
+            144
+          ]
+        }
+      ]
+    },
+    {
+      "name": "final-candidate-b",
+      "cases": [
+        {
+          "case": "mask-cached",
+          "medianMs": 0.1589777018581081,
+          "p95Ms": 0.164860760472973,
+          "allocatedBytes": 10525,
+          "iterationEstimates": [
+            0.15877359797297297,
+            0.16043594256756757,
+            0.16724335472972973,
+            0.1599020185810811,
+            0.15918180574324325,
+            0.15324233445945948,
+            0.1455532652027027,
+            0.14375054222972974
+          ],
+          "operationsPerMeasuredIteration": [
+            592
+          ]
+        },
+        {
+          "case": "mask-dynamic",
+          "medianMs": 3.440409,
+          "p95Ms": 3.8859006,
+          "allocatedBytes": 189528,
+          "iterationEstimates": [
+            3.437844,
+            3.507897,
+            3.482667,
+            3.427495,
+            3.442974,
+            3.434474,
+            3.434705,
+            4.089441
+          ],
+          "operationsPerMeasuredIteration": [
+            1
+          ]
+        },
+        {
+          "case": "rect-control",
+          "medianMs": 0.4810756302083334,
+          "p95Ms": 0.5037873619791666,
+          "allocatedBytes": 263979,
+          "iterationEstimates": [
+            0.5084489427083333,
+            0.481049484375,
+            0.477086515625,
+            0.49330756770833334,
+            0.495130140625,
+            0.4811017760416667,
+            0.4808397864583333,
+            0.442775484375
+          ],
+          "operationsPerMeasuredIteration": [
+            192
+          ]
+        }
+      ]
+    },
+    {
+      "name": "final-base-b",
+      "cases": [
+        {
+          "case": "mask-cached",
+          "medianMs": 7.500288653846154,
+          "p95Ms": 7.860633269230769,
+          "allocatedBytes": 1081913,
+          "iterationEstimates": [
+            7.317606076923077,
+            7.202220846153846,
+            7.685816692307692,
+            7.758208769230769,
+            7.682971230769231,
+            7.915784923076923,
+            7.283550923076923,
+            6.615885538461538
+          ],
+          "operationsPerMeasuredIteration": [
+            13
+          ]
+        },
+        {
+          "case": "mask-dynamic",
+          "medianMs": 20.588668833333333,
+          "p95Ms": 22.193188475,
+          "allocatedBytes": 9411577,
+          "iterationEstimates": [
+            18.18066783333333,
+            19.242872666666667,
+            19.727888333333333,
+            22.62338683333333,
+            21.39424866666667,
+            21.2259255,
+            21.041709833333332,
+            20.13562783333333
+          ],
+          "operationsPerMeasuredIteration": [
+            6
+          ]
+        },
+        {
+          "case": "rect-control",
+          "medianMs": 0.45491086298076927,
+          "p95Ms": 0.4676701487980769,
+          "allocatedBytes": 263630,
+          "iterationEstimates": [
+            0.45252867788461537,
+            0.458469875,
+            0.4602447019230769,
+            0.4414038653846154,
+            0.45729304807692306,
+            0.4716684663461539,
+            0.42397948557692305,
+            0.41226325
+          ],
+          "operationsPerMeasuredIteration": [
+            208
+          ]
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "case": "mask-cached",
+      "pairs": [
+        {
+          "baseline": "final-base-a",
+          "candidate": "final-candidate-a",
+          "medianDeltaMs": -7.579569789140886,
+          "medianChangePercent": -98.15855813971456,
+          "allocationChangePercent": -99.03393341239082
+        },
+        {
+          "baseline": "final-base-b",
+          "candidate": "final-candidate-b",
+          "medianDeltaMs": -7.341310951988047,
+          "medianChangePercent": -97.88037888679679,
+          "allocationChangePercent": -99.02718610461285
+        }
+      ]
+    },
+    {
+      "case": "mask-dynamic",
+      "pairs": [
+        {
+          "baseline": "final-base-a",
+          "candidate": "final-candidate-a",
+          "medianDeltaMs": -16.331819375,
+          "medianChangePercent": -82.17526901462043,
+          "allocationChangePercent": -97.98628453304002
+        },
+        {
+          "baseline": "final-base-b",
+          "candidate": "final-candidate-b",
+          "medianDeltaMs": -17.148259833333334,
+          "medianChangePercent": -83.28979387715474,
+          "allocationChangePercent": -97.9862248377716
+        }
+      ]
+    },
+    {
+      "case": "rect-control",
+      "pairs": [
+        {
+          "baseline": "final-base-a",
+          "candidate": "final-candidate-a",
+          "medianDeltaMs": 0.05249378385416664,
+          "medianChangePercent": 11.865976106734987,
+          "allocationChangePercent": 0.21544939025546217
+        },
+        {
+          "baseline": "final-base-b",
+          "candidate": "final-candidate-b",
+          "medianDeltaMs": 0.026164767227564112,
+          "medianChangePercent": 5.75162506696838,
+          "allocationChangePercent": 0.13238250578462285
+        }
+      ]
+    }
+  ],
+  "qualification": "Bounded engineering comparison; P95 iteration estimates, outliers retained; dynamic candidate has one operation per measurement iteration; no GPU timestamp attribution",
+  "source": {
+    "baseline": "c2b941cc767f06cbfbd92b77e6cef2a9fad5a221",
+    "candidate": "87b6acaa0ea6752a7081d503c4ad868ac050d877",
+    "harnessSha256": "580b664e28a4eb3464775f94bcfa629ced905fbb10247483ba46c91b824b4354  tools/benchmarks/drawing2d-skia-bdn/ClipFrameBenchmarks.cs\n551fc60274019c820cad7f4ea1c439e4876bf95b4e0d671f1d13a9528d9c963d  tools/benchmarks/drawing2d-skia-bdn/Egl.cs\n7b3b12a2908187d3cbda461dfce5f2bd6ee0dd00d2c30868cd68ccd43c5aa082  tools/benchmarks/drawing2d-skia-bdn/FrameBenchmarks.cs\n8b06b4475c4894819a77970dac3c5d2d55d134c6caca7cfb33a5cd3b07093618  tools/benchmarks/drawing2d-skia-bdn/HardwareIdentity.cs\nd211860026e8628bbc43ac6c649c6855088194bfd3e35e1812888b5b37c99599  tools/benchmarks/drawing2d-skia-bdn/LumyteAdapter.cs\na9e76e88f3bb89c4db20d1dc43ab23c5c18051e2e14d4c8fafa5e5b4ab18cb71  tools/benchmarks/drawing2d-skia-bdn/Program.cs\ne52adbe1cc2e04e1bf65a0f7b1d73226a70ab60d477edc77cc82bb5a2b25fe55  tools/benchmarks/drawing2d-skia-bdn/QualityVerification.cs\n3e953becb51c288e12c2919eec50cb8408ce58b17f6dd3a50de2ab723139f97c  tools/benchmarks/drawing2d-skia-bdn/SkiaAdapter.cs\n928c224581bfaef5644d85cc9e0281ebbd70b681ffe45f6857ff37380f598744  tools/benchmarks/drawing2d-skia-bdn/Trace.cs\na2a5180342594369b9bef27d9de4f2743fb41089df596bbaa5df9d3f7a4940d6  tools/benchmarks/drawing2d-skia-bdn/Drawing2DSkiaBdn.csproj\n",
+    "baselineBinarySha256": "fb103c96aab3255b1f2858d2470f54a698ffa6df30e09ac83baef535df5e777e  tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll\n0481358941022d7e882502a5ded7c6d17c9923beda4a665e6e63fe40ff3de806  tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.dll\n",
+    "candidateBinarySha256": "3182b8dc5e0852d2cf39ed49ff62d3a792d44a04afb3a4e2abb7df624e578ba5  tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll\ne325775d66dedd173afb720da09ae220ec6d2025b21ec95627cc96ec14ff85b9  tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.dll\n"
+  }
+}

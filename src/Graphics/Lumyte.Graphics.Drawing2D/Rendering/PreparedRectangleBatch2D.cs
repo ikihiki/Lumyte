@@ -89,9 +89,16 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 int start = 0;
                 while (start < commands.Length)
                 {
+                    if (context.Clips.Get(commands.Span[start].State.Clip, Matrix3x2.Identity, commands.Span[start].State.Clip.Elements).Kind == NormalizedClipKind2D.Empty)
+                    {
+                        start++;
+                        continue;
+                    }
+
                     bool fast = Eligible(commands.Span[start], context.Target);
                     int end = start + 1;
-                    while (end < commands.Length && end - start < MaximumRectangles && Eligible(commands.Span[end], context.Target) == fast)
+                    while (end < commands.Length && end - start < MaximumRectangles && Eligible(commands.Span[end], context.Target) == fast
+                        && context.Clips.Get(commands.Span[end].State.Clip, Matrix3x2.Identity, commands.Span[end].State.Clip.Elements).Kind != NormalizedClipKind2D.Empty)
                     {
                         end++;
                     }
@@ -126,19 +133,9 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
     private static bool Eligible(FillRectCommand2D command, DrawingTargetInfo2D target)
     {
-        if (command.Paint.Root is not SolidPaintNode2D || command.State.Clip.Elements.Count > 8 || !Inverse(command.State.Transform, target, out _))
+        if (command.Paint.Root is not SolidPaintNode2D || !Inverse(command.State.Transform, target, out _))
         {
             return false;
-        }
-
-        IReadOnlyList<ClipElement2D> clips = command.State.Clip.Elements;
-        for (int i = 0; i < clips.Count; i++)
-        {
-            ClipElement2D clip = clips[i];
-            if (!Rectangle(clip.Path, out _) || !Inverse(clip.Transform, target, out _))
-            {
-                return false;
-            }
         }
 
         return true;
@@ -262,9 +259,19 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 {
                     if (!ReferenceEquals(previous, command.State.Clip))
                     {
-                        capacity = checked(capacity + (command.State.Clip.Elements.Count * 3));
+                        NormalizedClip2D clip = context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
+                        if (clip.Kind is NormalizedClipKind2D.Analytic or NormalizedClipKind2D.SampleMask)
+                        {
+                            capacity = checked(capacity + 2 + clip.Mask.Length);
+                        }
+
                         previous = command.State.Clip;
                     }
+                }
+
+                if (capacity > 2097152)
+                {
+                    throw new NotSupportedException("Normalized rectangle payload exceeds the 32 MiB batch budget.");
                 }
 
                 batch._instances = commands.Length;
@@ -298,7 +305,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                         }
 
                         values = ArrayPool<Vector4>.Shared.Rent(capacity);
-                        int count = Fill(context.Target, commands.Span, values);
+                        int count = Fill(context, commands.Span, values);
                         if (count != capacity)
                         {
                             throw new InvalidOperationException("Rectangle preflight and payload sizes differ.");
@@ -353,8 +360,9 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
             }
         }
 
-        private static int Fill(DrawingTargetInfo2D target, ReadOnlySpan<FillRectCommand2D> commands, Span<Vector4> values)
+        private static int Fill(RenderPreparationContext2D context, ReadOnlySpan<FillRectCommand2D> commands, Span<Vector4> values)
         {
+            DrawingTargetInfo2D target = context.Target;
             int cursor = commands.Length * 6;
             ClipStack2D? previous = null;
             int clips = cursor;
@@ -369,34 +377,32 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 Intersect(ref minimum, ref maximum, command.Rect, command.State.Transform * pixels);
                 Write(values, offset + 1, command.Rect, command.State.Transform * pixels);
                 values[offset + 4] = DrawingProgram2D.Linear(((SolidPaintNode2D)command.Paint.Root).Color);
+                NormalizedClip2D normalized = context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
                 if (!ReferenceEquals(previous, command.State.Clip))
                 {
                     clips = cursor;
-                    for (int j = 0; j < command.State.Clip.Elements.Count; j++)
+                    if (normalized.Kind is NormalizedClipKind2D.Analytic or NormalizedClipKind2D.SampleMask)
                     {
-                        ClipElement2D clip = command.State.Clip.Elements[j];
-                        _ = Rectangle(clip.Path, out Rect2D rect);
-                        Write(values, cursor, rect, clip.Transform * pixels);
-                        cursor += 3;
+                        values[cursor] = normalized.Kind == NormalizedClipKind2D.Analytic ? normalized.Samples
+                            : new(normalized.Bounds.X, normalized.Bounds.Y, normalized.Bounds.Width, normalized.Bounds.Height);
+                        values[cursor + 1] = new(cursor + 2, 0, 0, 0);
+                        cursor += 2;
+                        normalized.Mask.CopyTo(values[cursor..]);
+                        cursor += normalized.Mask.Length;
                     }
 
                     previous = command.State.Clip;
                 }
 
-                for (int j = 0; j < command.State.Clip.Elements.Count; j++)
-                {
-                    ClipElement2D clip = command.State.Clip.Elements[j];
-                    _ = Rectangle(clip.Path, out Rect2D rect);
-                    Intersect(ref minimum, ref maximum, rect, clip.Transform * pixels);
-                    aligned &= clip.Transform.M12 == 0 && clip.Transform.M21 == 0;
-                }
+                minimum = Vector2.Max(minimum, new(normalized.Bounds.X, normalized.Bounds.Y));
+                maximum = Vector2.Min(maximum, new(normalized.Bounds.X + normalized.Bounds.Width, normalized.Bounds.Y + normalized.Bounds.Height));
 
                 float x = Math.Clamp(MathF.Floor(minimum.X), 0, target.Description.Width);
                 float y = Math.Clamp(MathF.Floor(minimum.Y), 0, target.Description.Height);
                 float right = Math.Clamp(MathF.Ceiling(maximum.X), x, target.Description.Width);
                 float bottom = Math.Clamp(MathF.Ceiling(maximum.Y), y, target.Description.Height);
                 values[offset] = new(x, y, right - x, bottom - y);
-                values[offset + 5] = new(clips, command.State.Clip.Elements.Count, aligned ? 1 : 0, 0);
+                values[offset + 5] = new(clips, (int)normalized.Kind, aligned ? 1 : 0, 0);
             }
 
             return cursor;

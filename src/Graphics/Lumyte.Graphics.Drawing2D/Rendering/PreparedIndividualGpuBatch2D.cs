@@ -177,9 +177,14 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
 
     private ValueTask AddAsync(DrawingCommand2D command, CancellationToken cancellationToken, bool profiling)
     {
+        if (_context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements).Kind == NormalizedClipKind2D.Empty)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         DrawingArgumentPlan2D plan = _context.ArgumentPlan;
         ShaderResources reservation = plan.Reserve();
-        var program = new DrawingProgram2D(reservation, _context.Target);
+        var program = new DrawingProgram2D(reservation, _context.Target, _context.Clips);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
         if (program.Data.Count == 0)
@@ -200,7 +205,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
         plan.MarkPreparedShaderData(reservation, instructions.SliceElements(0, instructions.Count), prepared);
         plan.MarkPreparedBuffer(reservation, geometry.SliceElements(0, geometry.Count), prepared);
-        ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false);
+        ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, _context.Target, null, false, false, program.Clip?.Bounds);
         var preparedCommand = new PreparedCommand(program, reservation, instructions, upload, data, geometry, root, scissor);
         reservation.RegisterSampler(_sampler, reference => preparedCommand.ResolvedSampler = reference);
         plan.Fallback(reservation, reference => preparedCommand.ResolvedFallback = reference);

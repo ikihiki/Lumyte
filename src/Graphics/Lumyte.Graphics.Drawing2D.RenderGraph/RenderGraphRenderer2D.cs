@@ -102,6 +102,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         }
         catch (Exception error)
         {
+            argumentPlan.ReleasePreparationCaches();
             _resources.CleanupAfterFailure(owner, error);
             throw;
         }
