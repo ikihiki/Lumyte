@@ -33,3 +33,5 @@ bool contains = circle.Contains(new(3, 4)); // true
 ```
 
 `Bezier2D` は曲線の評価と、許容誤差・最大深さ・最大点数を明示する平坦化を提供します。予算超過時は `false` を返し、出力リストを変更しません。`Polygon2D` は閉輪郭の nonzero winding／even-odd 判定です。`NumericsGeometry.GetTransformedBounds` は BCL の `Vector2` と `Matrix3x2` に委譲する割り当て不要の float 境界計算で、BCL と同じ非有限値の挙動を保持します。汎用ベクトル・行列・Quaternion は再実装しません。描画の scissor、stroke、GPU coverage の方針は描画側に残します。
+
+`Bounds2D<T>` と `CoordinateGeometry` は半開の raw edge、空・逆転・無限境界を必要とする UI／window／text のアダプター向けです。`IntegerRect2D<T>` は checked 整数 pixel 矩形の保存・移動・拡張・union を共有します。`DrawingGeometry` は BCL float 演算順を保つ streaming 曲線と距離・境界縮約、`AffineGeometry2D`／`WindingGeometry2D` は FMA による座標変換と半開 Y 遷移を提供します。これらは検証付き閉形状とは異なる契約を明示し、描画・入力・OS・wire の単位や予算は利用側に残します。

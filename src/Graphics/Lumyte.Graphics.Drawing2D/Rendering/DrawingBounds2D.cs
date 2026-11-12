@@ -19,13 +19,13 @@ internal static class DrawingBounds2D
                 FillRectCommand2D c => c.Rect,
                 FillRoundedRectCommand2D c => c.Rect,
                 FillCircleCommand2D c => new(c.Center.X - c.Radius, c.Center.Y - c.Radius, c.Radius * 2, c.Radius * 2),
-                DrawLineCommand2D c => Outset(Points([c.Start, c.End]), c.Style.Width * (c.Style.Cap == LineCap2D.Square ? 0.707107f : 0.5f)),
+                DrawLineCommand2D c => Outset(LineBounds(c.Start, c.End), c.Style.Width * (c.Style.Cap == LineCap2D.Square ? 0.707107f : 0.5f)),
                 FillPathCommand2D c => PathBounds(c.Path),
                 StrokePathCommand2D c => Outset(PathBounds(c.Path), c.Style.Width * MathF.Max(c.Style.Cap == LineCap2D.Square ? 1.414214f : 1, c.Style.MiterLimit) * 0.5f),
                 DrawImageCommand2D c => c.Destination,
                 DrawCoverageMaskCommand2D c => c.Destination,
                 DrawDistanceFieldCommand2D c => c.Destination,
-                DrawMeshCommand2D c => Points(c.Mesh.Vertices.Select(v => v.Position)),
+                DrawMeshCommand2D c => MeshBounds(c.Mesh),
                 _ => null,
             };
             if (bounds is not null)
@@ -75,40 +75,52 @@ internal static class DrawingBounds2D
 
     private static Rect2D PathBounds(Path2D path)
     {
-        List<Vector2> points = [];
-        foreach (PathSegment2D segment in path.Segments)
+        Vector2 minimum = new(float.PositiveInfinity);
+        Vector2 maximum = new(float.NegativeInfinity);
+        for (int i = 0; i < path.Segments.Count; i++)
         {
+            PathSegment2D segment = path.Segments[i];
             if (segment.Verb != PathVerb2D.Close)
             {
-                points.Add(segment.P0);
+                DrawingGeometry.IncludeInBounds(segment.P0, ref minimum, ref maximum);
             }
 
             if (segment.Verb is PathVerb2D.Quadratic or PathVerb2D.Cubic)
             {
-                points.Add(segment.P1);
+                DrawingGeometry.IncludeInBounds(segment.P1, ref minimum, ref maximum);
             }
 
             if (segment.Verb == PathVerb2D.Cubic)
             {
-                points.Add(segment.P2);
+                DrawingGeometry.IncludeInBounds(segment.P2, ref minimum, ref maximum);
             }
         }
 
-        return Points(points);
+        return Bounds(minimum, maximum);
     }
 
-    private static Rect2D Points(IEnumerable<Vector2> points)
+    private static Rect2D MeshBounds(Mesh2D mesh)
     {
         Vector2 minimum = new(float.PositiveInfinity);
         Vector2 maximum = new(float.NegativeInfinity);
-        foreach (Vector2 point in points)
+        for (int i = 0; i < mesh.Vertices.Count; i++)
         {
-            minimum = Vector2.Min(minimum, point);
-            maximum = Vector2.Max(maximum, point);
+            DrawingGeometry.IncludeInBounds(mesh.Vertices[i].Position, ref minimum, ref maximum);
         }
 
-        return float.IsPositiveInfinity(minimum.X) ? default : new(minimum.X, minimum.Y, maximum.X - minimum.X, maximum.Y - minimum.Y);
+        return Bounds(minimum, maximum);
     }
+
+    private static Rect2D LineBounds(Vector2 start, Vector2 end)
+    {
+        Vector2 minimum = new(float.PositiveInfinity);
+        Vector2 maximum = new(float.NegativeInfinity);
+        DrawingGeometry.IncludeInBounds(start, ref minimum, ref maximum);
+        DrawingGeometry.IncludeInBounds(end, ref minimum, ref maximum);
+        return Bounds(minimum, maximum);
+    }
+
+    private static Rect2D Bounds(Vector2 minimum, Vector2 maximum) => float.IsPositiveInfinity(minimum.X) ? default : new(minimum.X, minimum.Y, maximum.X - minimum.X, maximum.Y - minimum.Y);
 
     private static Rect2D Outset(Rect2D rect, float amount) => new(rect.X - amount, rect.Y - amount, rect.Width + (amount * 2), rect.Height + (amount * 2));
 }

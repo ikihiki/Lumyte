@@ -75,6 +75,16 @@ public sealed class WindowSystemTests
         system.Update();
         Assert.Equal(new[] { child, popup }, root.GetHostedOrder());
         Assert.Equal(popup, root.HitTest(new Vector2(90, 90)));
+        Assert.Equal(child, root.HitTest(new Vector2(80, 80)));
+        Assert.Equal(popup, root.HitTest(new Vector2(85, 85)));
+        Assert.Null(root.HitTest(new Vector2(100, 90)));
+        Assert.Null(root.HitTest(new Vector2(90, 100)));
+        Assert.Throws<ArgumentException>(() => root.HitTest(new Vector2(float.NaN, 90)));
+        child.SetHostedBounds(new WindowRect(120, 120, 10, 10));
+        system.Update();
+        Assert.Equal(root, root.HitTest(new Vector2(90, 90)));
+        child.SetHostedBounds(new WindowRect(80, 80, 50, 50));
+        system.Update();
         Assert.Null(root.HitTest(new Vector2(110, 110)));
         Assert.Equal(root, system.KeyboardTarget);
         child.Activate();

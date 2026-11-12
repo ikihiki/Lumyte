@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.UI.Windowing;
 
@@ -412,9 +413,13 @@ internal sealed partial class UiWindowManagerCore(TimeProvider clock, IUiNativeW
         _disposed = true;
     }
 
-    internal static Rect2D Intersect(Rect2D a, Rect2D b) => new(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y), Math.Max(0, Math.Min(a.X + a.Width, b.X + b.Width) - Math.Max(a.X, b.X)), Math.Max(0, Math.Min(a.Y + a.Height, b.Y + b.Height) - Math.Max(a.Y, b.Y)));
+    internal static Rect2D Intersect(Rect2D a, Rect2D b)
+    {
+        Bounds2D<float> bounds = Bounds2D<float>.FromOriginSize(a.X, a.Y, a.Width, a.Height).Intersect(Bounds2D<float>.FromOriginSize(b.X, b.Y, b.Width, b.Height));
+        return new(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+    }
 
-    internal static bool Contains(Rect2D r, Vector2 p) => r.Width > 0 && r.Height > 0 && p.X >= r.X && p.Y >= r.Y && p.X < (double)r.X + r.Width && p.Y < (double)r.Y + r.Height;
+    internal static bool Contains(Rect2D r, Vector2 p) => Bounds2D<double>.FromOriginSize(r.X, r.Y, r.Width, r.Height).Contains(p.X, p.Y);
 
     private static void Commit(Node node)
     {

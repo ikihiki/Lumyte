@@ -34,6 +34,54 @@ public sealed class ImageEffectTests
         Assert.Equal(0, new EffectPixelRect(-5, -5, 0, 0).Width);
     }
 
+    /// <summary>Checks widened unions preserve exact pixel coordinates, empty identity and checked extents.</summary>
+    [Fact]
+    public void PixelUnionPreservesIntegerPrecisionAndOverflow()
+    {
+        var first = new EffectPixelRect(16777217, -3, 1, 2);
+        var second = new EffectPixelRect(16777220, -1, 2, 4);
+        Assert.Equal(new EffectPixelRect(16777217, -3, 5, 6), first.Union(second));
+        Assert.Equal(first, first.Union(new EffectPixelRect(int.MinValue, 0, 0, 1)));
+        Assert.Equal(first, new EffectPixelRect(0, 0, 1, 0).Union(first));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(int.MinValue, 0, 1, 1).Union(new EffectPixelRect(0, 0, 1, 1)));
+    }
+
+    /// <summary>Checks translations retain integer precision and validate translated upper edges.</summary>
+    [Fact]
+    public void PixelOffsetsPreserveCheckedIntegerContract()
+    {
+        var bounds = new EffectPixelRect(16777217, -3, 2, 4);
+        Assert.Equal(new EffectPixelRect(16777218, -5, 2, 4), bounds.Offset(1, -2));
+        Assert.Equal(bounds, bounds.Offset(1, -2).OffsetInverse(1, -2));
+        Assert.Equal(new EffectPixelRect(0, 0, 1, 1), new EffectPixelRect(int.MinValue, int.MinValue, 1, 1).OffsetInverse(int.MinValue, int.MinValue));
+        Assert.Throws<OverflowException>(() => bounds.Offset(int.MaxValue, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(int.MaxValue - 1, 0, 1, 1).Offset(1, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(0, 0, 1, 1).OffsetInverse(int.MinValue, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(int.MinValue, 0, 0, 1).Offset(-1, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(0, int.MaxValue - 1, 1, 1).OffsetInverse(0, -1));
+    }
+
+    /// <summary>Checks outset validation, intermediate multiplication overflow and unchanged empty anchors.</summary>
+    [Fact]
+    public void PixelOutsetsPreserveCheckedIntegerContract()
+    {
+        var bounds = new EffectPixelRect(10, -5, 3, 4);
+        Assert.Equal(new EffectPixelRect(8, -8, 7, 10), bounds.Outset(2, 3));
+        Assert.Equal("x", Assert.Throws<ArgumentOutOfRangeException>(() => bounds.Outset(-1, 0)).ParamName);
+        Assert.Equal("y", Assert.Throws<ArgumentOutOfRangeException>(() => default(EffectPixelRect).Outset(0, -1)).ParamName);
+        Assert.Throws<OverflowException>(() => bounds.Outset(1073741824, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(0, 0, int.MaxValue, 1).Outset(1, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(int.MinValue, 0, 1, 1).Outset(1, 0));
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(int.MaxValue - 1, 0, 1, 1).Outset(1, 0));
+        Assert.Throws<OverflowException>(() => bounds.Outset(0, 1073741824));
+        var empty = new EffectPixelRect(int.MinValue, int.MaxValue, 1, 0);
+        Assert.Equal(empty, empty.Outset(int.MaxValue, int.MaxValue));
+        Assert.Equal(default, default(EffectPixelRect));
+        Assert.Equal(empty, default(EffectPixelRect).Union(empty));
+        Assert.Equal("width", Assert.Throws<ArgumentOutOfRangeException>(() => new EffectPixelRect(int.MaxValue, 0, -1, -1)).ParamName);
+        Assert.Throws<OverflowException>(() => new EffectPixelRect(0, int.MaxValue, 0, 1));
+    }
+
     /// <summary>Checks finite sigma, opacity and enum restrictions at graph construction.</summary>
     [Fact]
     public void GraphFactoriesRejectInvalidParameters()

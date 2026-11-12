@@ -43,9 +43,15 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 
 型引数が変われば丸め誤差と表現範囲も変わる。上の小整数の例は結果を共有するが、任意の入力で異なる精度の判定が一致する保証はしない。
 
+### プロジェクト全体の統合
+
+管理コードの汎用幾何計算は Mathematics または BCL に集約する。Drawing2D の曲線・距離・境界集約、clip の倍精度変換・winding、UI の半開境界、入力・診断の距離と矩形処理も同じ計算を共有する。既存の公開呼び出し側の記述は維持し、内部の重複計算を共通 API への呼び出しへ置き換える。
+
+単位・半開区間・空集合・無限境界・検証方法の異なる型は薄い境界として維持する。GPU shader、native ABI、整数 pixel scissor、OS window、text caret、診断 wire の形状表現は、その境界の配置・精度・互換性を保持し、管理側の共有できる計算だけを委譲する。clip の FMA による倍精度演算、水平辺の半開遷移、描画の余白と subdivision budget は観測可能な契約として維持する。
+
 ### 次元・精度と依存境界
 
-ジェネリック幾何値型は `where T : unmanaged, IFloatingPointIeee754<T>` を使う。対応する組み込み型は `Half`・`float`・`double` とし、受け入れ検証では三つを区別する。int・decimal はこの制約に含めず、整数格子や十進演算は今回の対象外とする。制約を満たす独自型は同じ契約を満たす必要があり、個別の性能や精度は保証しない。
+有限な浮動小数点形状は `where T : unmanaged, IFloatingPointIeee754<T>` を使う。対応する組み込み型は `Half`・`float`・`double` とし、受け入れ検証では三つを区別する。int・decimal はこの制約に含めない。整数 pixel の共通計算は別の `IntegerRect2D<T>`（`IBinaryInteger<T>`）へ集約し、十進形状は追加しない。制約を満たす独自型は同じ契約を満たす必要があり、個別の性能や精度は保証しない。
 
 保存する成分、距離や半径の戻り値、算術の仮数は T とし、実装都合で float・double へ暗黙に変換しない。精度を上げる場合も呼び出し側が成分を明示変換して構築する。指数は整数で別に保持できる。Half の指数取得だけは値を厳密に表現できる float へ拡張し、成分の算術は Half のまま行う。異なる T の暗黙変換や混合演算は追加しない。これは浮動小数点型の選択であり、任意精度や厳密な幾何判定を保証する仕組みではない。
 
@@ -57,7 +63,7 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 
 範囲は点、線分、軸平行矩形・箱、円・球、楕円、角丸矩形、Bezier 曲線の評価・平坦化、線分交差、閉輪郭の winding 判定とする。描画の曲線許容誤差、分割予算、stroke cap・join の三角形化、GPU coverage、整数 scissor の丸めと余白は Drawing2D が保持する。数学側はそれらに使う距離、境界の集約、変換後境界を提供し、レンダラーを複製しない。
 
-- 成分は有限値を要求する。コンストラクターと演算の引数に NaN・無限大があれば `ArgumentOutOfRangeException` とする。半径・幅・高さが負、または箱の各軸で Min が Max より大きい場合も同様とする。
+- 有限な浮動小数点形状の成分は有限値を要求する。コンストラクターと演算の引数に NaN・無限大があれば `ArgumentOutOfRangeException` とする。半径・幅・高さが負、または箱の各軸で Min が Max より大きい場合も同様とする。
 - `default` は各成分ゼロの有効値である。半径ゼロ、幅・高さゼロ、Min と Max が同じ箱、始点と終点が同じ線分を許す。これらは空集合ではなく、点や線へ退化した閉集合として扱う。
 - `Contains` は境界を含む。矩形・箱は各軸の閉区間、円・球は中心からの距離が半径以下の領域とする。ゼロ半径の円・球は中心だけを含む。距離はユークリッド距離で、点から線分への距離は射影を端点で制限し、ゼロ長線分では端点への距離を返す。
 - 同値性は成分ごとの T の数値等値とし、許容誤差を混ぜない。正負のゼロは等値として同じハッシュを返す。近似比較や許容誤差付き判定の API は今回追加しない。
@@ -70,7 +76,7 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 
 ### 公開 API 差分
 
-基準コードに対する追加の主要宣言を以下に示す。宣言は判断対象の抜粋であり、実装コードではない。省略した各型の読み取り専用プロパティはコンストラクター引数の先頭を大文字にした同名・同型とし、全型で成分の値等値を提供する。引数の有限性、退化形状、算術失敗は「形状と数値の契約」に従う。
+基準コードに対する追加の主要宣言を以下に示す。宣言は判断対象の抜粋であり、実装コードではない。省略した各型の読み取り専用プロパティはコンストラクター引数の先頭を大文字にした同名・同型とし、幾何値型で成分の値等値を提供する。引数の有限性、退化形状、算術失敗は「形状と数値の契約」に従う。
 
 ```diff
 +using System.Numerics;
@@ -154,6 +160,11 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 +    // BCL の float 座標とアフィン行列を使う。四隅を変換し、割り当てずに縮約する。
 +    public static void GetTransformedBounds(Vector2 minimum, Vector2 maximum,
 +        Matrix3x2 transform, out Vector2 transformedMinimum, out Vector2 transformedMaximum);
++    // 行列への scale の合成と異なり、各点を変換後に乗算して丸めを維持する。
++    public static void GetTransformedBounds(Vector2 minimum, Vector2 maximum,
++        Matrix3x2 transform, float scale, out Vector2 transformedMinimum, out Vector2 transformedMaximum);
++    public static void GetBounds(Vector2 a, Vector2 b, Vector2 c, Vector2 d,
++        out Vector2 minimum, out Vector2 maximum);
 +}
 +
 +public static class Polygon2D
@@ -184,13 +195,85 @@ bool inside3D = sphere.Contains(new Point3D<double>(0, 3, 4)); // true
 
 `Rect2D<T>` の x + width、y + height が有限に収まらない場合、構築時に `OverflowException` とする。`Sphere3D<T>` は球であり、3D 空間内に置いた円を意味する `Circle3D<T>` と混同しない。軸平行を表す型名は、回転可能な箱と区別できる `AxisAlignedBox3D<T>` とする。
 
-既存 `Lumyte.Graphics.Drawing2D.Rect2D` の名前空間、float 成分、コンストラクターは維持する。数学側へ描画型を参照させず、利用側は成分を取り出して描画型を構築する。double などから float へ落とす際は利用側が範囲・丸めを確認し、変換結果が有限かを検証する。補間 API のジェネリック化、描画 API の置換、暗黙の相互変換は含めない。
+既存 `Lumyte.Graphics.Drawing2D.Rect2D` の名前空間、float 成分、コンストラクターは維持する。数学側へ描画型を参照させず、利用側は成分を取り出して描画型を構築する。double などから float へ落とす際は利用側が範囲・丸めを確認し、変換結果が有限かを検証する。補間 API のジェネリック化、描画 API の一括置換、暗黙の相互変換は含めない。`EffectPixelRect` は整数 pixel の単位を表す公開境界として残し、保存と全幾何計算を `IntegerRect2D<int>` に委譲する。`Rect2D` は未検証のコマンド宣言であり、有限・閉集合の数学 `Rect2D<float>` と検証時点が異なるため別の境界とする。
+
+### 境界方針と追加 API
+
+閉形状の `Rect2D<T>` と、半開・空・無限境界を表す `Bounds2D<T>` は異なる集合契約を持つ。後者の raw edge は逆転をそのまま保持し、幅・高さの変換時だけゼロへ制限する。UI が既存の NaN の比較規則を必要とする箇所では、その規則を薄いアダプターに残す。原点・寸法から上限を作る精度は呼び出し側の T で指定し、float の和と double の和を取り違えない。
+
+clip は FMA の演算順を指定する `AffineGeometry2D`・`WindingGeometry2D` を使う。これは境界を含む堅牢な `Polygon2D` と異なり、半開 Y 遷移と厳密な符号比較を維持する低水準の演算である。float の streaming 曲線は既存の BCL 評価順を保つ `DrawingGeometry` を使い、validated generic 曲線へ変換して丸めを変えない。sink の失敗時は追加済み点を保持し、renderer が全体の edge budget を管理する。
+
+以下も基準コミットに対する追加宣言の抜粋である。既存公開型の引数・戻り値と例外契約は維持し、内部委譲だけを変える。
+
+```diff
++public readonly record struct Bounds2D<T>(T Left, T Top, T Right, T Bottom)
++    where T : unmanaged, IFloatingPointIeee754<T>
++{
++    // 半開・未検証。逆転・ゼロ面積・NaN は空、無限辺を許す。
++    public static Bounds2D<T> Empty { get; }
++    public static Bounds2D<T> Unbounded { get; }
++    public bool Contains(T x, T y);
++    public Bounds2D<T> Intersect(Bounds2D<T> other);
++    public Bounds2D<T> Union(Bounds2D<T> other);
++}
++
++public readonly record struct IntegerRect2D<T> where T : IBinaryInteger<T>
++{
++    // 非負寸法、全辺と演算の中間値を checked で検証する。
++    public IntegerRect2D(T x, T y, T width, T height);
++    public IntegerRect2D<T> Offset(T x, T y);
++    public IntegerRect2D<T> OffsetInverse(T x, T y);
++    public IntegerRect2D<T> Outset(T x, T y);
++    public IntegerRect2D<T> Union(IntegerRect2D<T> other);
++}
++
++public static class CoordinateGeometry
++{
++    // 検証は呼び出し側。raw edge の共通演算と origin-size の明示変換。
++    public static bool ContainsHalfOpenEdges<T>((T Left, T Top, T Right, T Bottom) edges,
++        T pointX, T pointY) where T : INumber<T>;
++    public static (T Left, T Top, T Right, T Bottom) IntersectRawEdges<T>(
++        (T Left, T Top, T Right, T Bottom) first,
++        (T Left, T Top, T Right, T Bottom) second) where T : INumber<T>;
++    public static (T Left, T Top, T Right, T Bottom) EncloseRawEdges<T>(
++        (T Left, T Top, T Right, T Bottom) first,
++        (T Left, T Top, T Right, T Bottom) second) where T : INumber<T>;
++}
++
++public static class AffineGeometry2D
++{
++    // BCL 行列の係数を T へ明示変換し、入れ子の FMA を評価する。
++    public static Point2D<T> Transform<T>(Point2D<T> point, Matrix3x2 transform)
++        where T : unmanaged, IFloatingPointIeee754<T>;
++}
++
++public static class WindingGeometry2D
++{
++    public static int Contribution<T>(T startX, T startY, T endX, T endY, T pointX, T pointY)
++        where T : unmanaged, IFloatingPointIeee754<T>;
++    public static int Accumulate<T>(ReadOnlySpan<Segment2D<T>> edges, Point2D<T> point)
++        where T : unmanaged, IFloatingPointIeee754<T>;
++}
++
++public static class DrawingGeometry
++{
++    public interface IPointSink { void Append(Vector2 point); }
++    public static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end);
++    public static void IncludeInBounds(Vector2 point, ref Vector2 minimum, ref Vector2 maximum);
++    // streaming。深さ 0..30、callback/sink 失敗では追加済み点を保持する。
++    public static void AppendFlattenedQuadratic<TSink>(Vector2 start, Vector2 control,
++        Vector2 end, float tolerance, ref TSink sink, int maxDepth) where TSink : struct, IPointSink;
++    public static void AppendFlattenedCubic<TSink>(Vector2 start, Vector2 control1,
++        Vector2 control2, Vector2 end, float tolerance, ref TSink sink, int maxDepth)
++        where TSink : struct, IPointSink;
++}
+```
 
 ## 検討した代替案
 
 - `Circle2F`・`Circle2D` のように精度別の型名を用意する: 各型を最適化しやすいが、次元と精度の D が紛らわしく、同じ処理の宣言と検証が増える。次元は名前、精度は型引数へ分離する。
 - `Geometry2D.Circle<T>`・`Geometry3D.Sphere<T>` と次元別に配置する: 型名は短くなるが、両次元を使う処理で修飾や別名が増える。共通名前空間と次元接尾辞を選ぶ。
-- `INumber<T>` 制約で整数・decimal も一括対応する: 保存型を広げられるが、距離の平方根、丸め、オーバーフローの契約が数値体系ごとに異なる。今回は IEEE 浮動小数点に絞る。
+- すべての形状を `INumber<T>` 制約で整数・decimal に一括対応する: 保存型を広げられるが、距離の平方根、丸め、オーバーフローの契約が数値体系ごとに異なる。浮動小数点形状と checked 整数矩形を分け、共通の raw edge 演算だけを共有する。
 - すべて double、または既存の float ベクトルへ統一する: 宣言は簡単だが、利用者が成分型と計算精度を選べない。保存だけ T にして内部を double へ固定する案も採らない。
 
 ## 結果と影響

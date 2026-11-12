@@ -60,5 +60,5 @@ public readonly record struct Rect2D<T>
     /// <summary>Tests containment excluding the maximum sides; zero dimensions contain no points.</summary>
     /// <param name="point">The query point.</param>
     /// <returns>Whether the point belongs to the half-open rectangle.</returns>
-    public bool ContainsHalfOpen(Point2D<T> point) => point.X >= X && point.X < Right && point.Y >= Y && point.Y < Bottom;
+    public bool ContainsHalfOpen(Point2D<T> point) => CoordinateGeometry.ContainsHalfOpenEdges((X, Y, Right, Bottom), point.X, point.Y);
 }

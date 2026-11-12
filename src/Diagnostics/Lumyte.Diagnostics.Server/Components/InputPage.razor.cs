@@ -182,7 +182,7 @@ public partial class InputPage
 
     private static double StickY(PointModel value) => 50 - (Math.Clamp(value.Y, -1, 1) * 40);
 
-    private static string Strength(PointModel value) => (Math.Clamp(Math.Sqrt((value.X * value.X) + (value.Y * value.Y)), 0, 1) * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    private static string Strength(PointModel value) => (Math.Clamp(double.Hypot(value.X, value.Y), 0, 1) * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
 
     private sealed record SnapshotModel(long Revision, InputSystemModel[] Inputs, ActionSystemModel[] Actions);
 

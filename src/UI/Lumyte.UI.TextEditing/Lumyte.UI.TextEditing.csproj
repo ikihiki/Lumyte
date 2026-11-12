@@ -5,6 +5,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../Lumyte.UI/Lumyte.UI.csproj" />
     <ProjectReference Include="../../Core/Lumyte.TextEditing/Lumyte.TextEditing.csproj" />

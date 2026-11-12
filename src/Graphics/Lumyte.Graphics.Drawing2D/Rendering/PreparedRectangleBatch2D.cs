@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -418,12 +419,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
         private static void Intersect(ref Vector2 minimum, ref Vector2 maximum, Rect2D rect, Matrix3x2 transform)
         {
-            var a = Vector2.Transform(new(rect.X, rect.Y), transform);
-            var b = Vector2.Transform(new(rect.X + rect.Width, rect.Y), transform);
-            var c = Vector2.Transform(new(rect.X, rect.Y + rect.Height), transform);
-            var d = Vector2.Transform(new(rect.X + rect.Width, rect.Y + rect.Height), transform);
-            var low = Vector2.Min(Vector2.Min(a, b), Vector2.Min(c, d));
-            var high = Vector2.Max(Vector2.Max(a, b), Vector2.Max(c, d));
+            NumericsGeometry.GetTransformedBounds(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, out Vector2 low, out Vector2 high);
             if (!float.IsFinite(low.X) || !float.IsFinite(low.Y) || !float.IsFinite(high.X) || !float.IsFinite(high.Y))
             {
                 throw new NotSupportedException("Transformed drawing bounds exceed the finite coordinate range.");

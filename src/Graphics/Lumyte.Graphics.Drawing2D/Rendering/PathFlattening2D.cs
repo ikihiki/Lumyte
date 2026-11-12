@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -9,39 +10,37 @@ internal static class PathFlattening2D
     internal static List<Contour> Flatten(Path2D path, Matrix3x2 transform)
     {
         List<Contour> result = [];
-        Contour? current = null;
-        Vector2 position = default;
+        ContourSink sink = default;
         float scale = MaximumScale(transform);
         float tolerance = 0.125f / MathF.Max(scale, 0.0001f);
-        int count = 0;
         foreach (PathSegment2D segment in path.Segments)
         {
-            if (current is { Closed: true } && segment.Verb is not PathVerb2D.Move and not PathVerb2D.Close)
+            if (sink.Current is { Closed: true } && segment.Verb is not PathVerb2D.Move and not PathVerb2D.Close)
             {
-                current = new Contour();
-                result.Add(current);
-                Add(position);
+                sink.Current = new Contour();
+                result.Add(sink.Current);
+                sink.Append(sink.Position);
             }
 
             switch (segment.Verb)
             {
                 case PathVerb2D.Move:
-                    current = new Contour();
-                    result.Add(current);
-                    Add(segment.P0);
+                    sink.Current = new Contour();
+                    result.Add(sink.Current);
+                    sink.Append(segment.P0);
                     break;
                 case PathVerb2D.Line:
-                    Add(segment.P0);
+                    sink.Append(segment.P0);
                     break;
                 case PathVerb2D.Quadratic:
-                    Quadratic(position, segment.P0, segment.P1, 0);
+                    DrawingGeometry.AppendFlattenedQuadratic(sink.Position, segment.P0, segment.P1, tolerance, ref sink, 24);
                     break;
                 case PathVerb2D.Cubic:
-                    Cubic(position, segment.P0, segment.P1, segment.P2, 0);
+                    DrawingGeometry.AppendFlattenedCubic(sink.Position, segment.P0, segment.P1, segment.P2, tolerance, ref sink, 24);
                     break;
                 case PathVerb2D.Close:
-                    current!.Closed = true;
-                    position = current.Points[0];
+                    sink.Current!.Closed = true;
+                    sink.Position = sink.Current.Points[0];
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(path));
@@ -49,60 +48,6 @@ internal static class PathFlattening2D
         }
 
         return result;
-
-        void Add(Vector2 point)
-        {
-            if (++count > MaximumEdges)
-            {
-                throw new NotSupportedException("Path flattening exceeds the 65536 edge budget.");
-            }
-
-            current!.Points.Add(point);
-            position = point;
-        }
-
-        void Quadratic(Vector2 p0, Vector2 p1, Vector2 p2, int depth)
-        {
-            if (Distance(p1, p0, p2) <= tolerance)
-            {
-                Add(p2);
-                return;
-            }
-
-            if (depth >= 24)
-            {
-                throw new NotSupportedException("Curve subdivision exceeds the precision budget.");
-            }
-
-            Vector2 a = (p0 + p1) * 0.5f;
-            Vector2 b = (p1 + p2) * 0.5f;
-            Vector2 midpoint = (a + b) * 0.5f;
-            Quadratic(p0, a, midpoint, depth + 1);
-            Quadratic(midpoint, b, p2, depth + 1);
-        }
-
-        void Cubic(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, int depth)
-        {
-            if (MathF.Max(Distance(p1, p0, p3), Distance(p2, p0, p3)) <= tolerance)
-            {
-                Add(p3);
-                return;
-            }
-
-            if (depth >= 24)
-            {
-                throw new NotSupportedException("Curve subdivision exceeds the precision budget.");
-            }
-
-            Vector2 a = (p0 + p1) * 0.5f;
-            Vector2 b = (p1 + p2) * 0.5f;
-            Vector2 c = (p2 + p3) * 0.5f;
-            Vector2 d = (a + b) * 0.5f;
-            Vector2 e = (b + c) * 0.5f;
-            Vector2 f = (d + e) * 0.5f;
-            Cubic(p0, a, d, f, depth + 1);
-            Cubic(f, e, c, p3, depth + 1);
-        }
     }
 
     internal static List<Vector4> Stroke(List<Contour> contours, StrokeStyle2D style, Matrix3x2 transform)
@@ -254,17 +199,24 @@ internal static class PathFlattening2D
 
     private static float Cross(Vector2 a, Vector2 b) => Vector2.Cross(a, b);
 
-    private static float Distance(Vector2 point, Vector2 start, Vector2 end)
+    private struct ContourSink : DrawingGeometry.IPointSink
     {
-        Vector2 delta = end - start;
-        float lengthSquared = delta.LengthSquared();
-        if (lengthSquared == 0)
-        {
-            return Vector2.Distance(point, start);
-        }
+        private int _count;
 
-        float projection = Math.Clamp(Vector2.Dot(point - start, delta) / lengthSquared, 0, 1);
-        return Vector2.Distance(point, start + (projection * delta));
+        internal Contour? Current { get; set; }
+
+        internal Vector2 Position { get; set; }
+
+        public void Append(Vector2 point)
+        {
+            if (++_count > MaximumEdges)
+            {
+                throw new NotSupportedException("Path flattening exceeds the 65536 edge budget.");
+            }
+
+            Current!.Points.Add(point);
+            Position = point;
+        }
     }
 
     internal sealed class Contour

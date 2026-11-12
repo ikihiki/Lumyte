@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.Platform.TextInput.Abstractions;
 using Lumyte.Platform.Windows.TextInput.Interop;
 using Lumyte.TextEditing;
@@ -501,12 +502,12 @@ internal sealed unsafe partial class TsfTextStore : ITextStoreACP.Interface, ITf
         float right = ranges.Max(r => r.X + r.Width);
         float bottom = ranges.Max(r => r.Y + r.Height);
         WindowRect viewport = _geometry!.Viewport;
-        float a = MathF.Max(x, viewport.X);
-        float b = MathF.Max(y, viewport.Y);
-        float c = MathF.Min(right, viewport.X + viewport.Width);
-        float d = MathF.Min(bottom, viewport.Y + viewport.Height);
-        *clipped = a != x || b != y || c != right || d != bottom ? 1 : 0;
-        *rectangle = _toScreen(new(a, b, MathF.Max(0, c - a), MathF.Max(0, d - b)));
+        (float X, float Y, float Width, float Height) bounds = CoordinateGeometry.IntersectEdges((x, y, right, bottom), (viewport.X, viewport.Y, viewport.X + viewport.Width, viewport.Y + viewport.Height));
+
+        // Compare the original edges, not the clamped intersection: disjoint and
+        // zero-width caret envelopes must still report TSF clipping accurately.
+        *clipped = x < viewport.X || y < viewport.Y || right > viewport.X + viewport.Width || bottom > viewport.Y + viewport.Height ? 1 : 0;
+        *rectangle = _toScreen(new(bounds.X, bounds.Y, bounds.Width, bounds.Height));
         return 0;
     });
 
