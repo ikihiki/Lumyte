@@ -45,8 +45,10 @@ internal static class DrawingBounds2D
         }
         else if (state is not null)
         {
-            foreach (ClipElement2D element in state.Clip.Elements)
+            IReadOnlyList<ClipElement2D> elements = state.Clip.Elements;
+            for (int i = 0; i < elements.Count; i++)
             {
+                ClipElement2D element = elements[i];
                 Intersect(PathBounds(element.Path), element.Transform * pixels);
             }
         }

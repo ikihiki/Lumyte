@@ -7,6 +7,7 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 
 /// <summary>Checks consolidation against the pre-consolidation single-precision renderer.</summary>
 /// <param name="output">Receives allocation comparison measurements.</param>
+[Collection("Drawing profiling")]
 public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     /// <summary>Random curves and transforms produce bit-identical ordered points and stroke triangles.</summary>
@@ -68,13 +69,17 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
             Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
         }
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        using (new DrawingAllocationScope())
         {
-            Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
+            {
+                Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
+            }
+
+            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
         var failure = new InvalidOperationException();
         Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, _ => throw failure, 24)));
         Assert.Throws<NotSupportedException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, append, 0));
@@ -99,14 +104,26 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
                 _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
             }
 
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 1000; i++)
+            long allocated;
+            int threadBefore;
+            int threadAfter;
+            using (new DrawingAllocationScope())
             {
-                _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
+                threadBefore = Environment.CurrentManagedThreadId;
+                long start = GC.GetAllocatedBytesForCurrentThread();
+                for (int i = 0; i < 1000; i++)
+                {
+                    _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
+                }
+
+                allocated = GC.GetAllocatedBytesForCurrentThread() - start;
+                threadAfter = Environment.CurrentManagedThreadId;
             }
 
-            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
-            before = GC.GetAllocatedBytesForCurrentThread();
+            output.WriteLine($"GetScissor {command.GetType().Name}: bytes={allocated}, calls=1000, clips={command.State.Clip.Elements.Count}, thread={threadBefore}/{threadAfter}, architecture={System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
+            Assert.Equal(threadBefore, threadAfter);
+            Assert.Equal(0, allocated);
+            long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 1000; i++)
             {
                 _ = LegacyDrawingBoundsOracle.GetScissor(command, null, target, null, false, false);
@@ -169,6 +186,7 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
             _ = LegacyDrawingGeometryOracle.Flatten(path, Matrix3x2.Identity);
         }
 
+        using var measurement = new DrawingAllocationScope();
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1000; i++)
         {

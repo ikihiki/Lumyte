@@ -16,3 +16,9 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" \
 
 通常CanvasとレイヤーCanvasの型・assembly依存を分離し、RenderGraph非依存の直接記録、
 親graphへのAppend2D、Effectsコールバックの遅延呼び出しと失敗時解放を検証します。
+
+## Exact allocation guards
+
+Scissor/streaming allocation guards run in the existing nonparallel Drawing profiling collection. The measured workload and exact zero-byte assertion are retained. Each counter interval reserves a bounded no-GC region and asserts reservation success; disposal always ends the region. The reservation is not a byte tolerance. An escaping, non-inlined positive allocation control verifies that actual allocations remain visible.
+
+This isolates the counter from demonstrated .NET background-GC allocation-context tail bookkeeping. It does not establish that every earlier platform failure had that cause. Nonempty clip traversal uses ordered indexing rather than an allocating interface enumerator. Diagnostics label command/clip branch, thread and architecture outside the measured interval.
