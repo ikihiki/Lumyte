@@ -6,16 +6,13 @@ namespace Lumyte.Graphics.Drawing2D;
 internal sealed class DrawingProgram2D
 {
     internal const int MaximumInstructions = 256;
-    private readonly IArgumentTable _table;
-    private readonly IGpuRef<IGraphicsSampler> _nearest;
+    private readonly ArgumentTableReservation _plan;
     private readonly Matrix3x2 _pixelTransform;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
-    private uint _textureSlot;
 
-    internal DrawingProgram2D(IArgumentTable table, IGpuRef<IGraphicsSampler> nearest, DrawingTargetInfo2D target)
+    internal DrawingProgram2D(ArgumentTableReservation plan, DrawingTargetInfo2D target)
     {
-        _table = table;
-        _nearest = nearest;
+        _plan = plan ?? throw new ArgumentNullException(nameof(plan));
         _pixelTransform = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
     }
 
@@ -64,6 +61,21 @@ internal sealed class DrawingProgram2D
 
         rectangle = new(a.X, a.Y, width, height);
         return true;
+    }
+
+    internal void ResolveReferences(IGpuRef<IGraphicsTextureView> fallback, IGpuRef<IGraphicsSampler> nearest)
+    {
+        for (int i = 0; i < Instructions.Count; i++)
+        {
+            DrawingInstruction instruction = Instructions[i];
+            Instructions[i] = instruction with
+            {
+                Texture = instruction.PendingTexture?.Reference ?? instruction.Texture ?? fallback,
+                Sampler = instruction.PendingSampler?.Reference ?? instruction.Sampler ?? nearest,
+                PendingTexture = null,
+                PendingSampler = null,
+            };
+        }
     }
 
     internal uint Compile(DrawingCommand2D command)
@@ -359,8 +371,9 @@ internal sealed class DrawingProgram2D
             A = Vector(source),
             B = new(width, height, (float)tileX, (float)tileY),
             C = new((float)filter, (float)alpha, 0, 0),
-            Texture = Register(view),
-            Sampler = _nearest,
+            Texture = null!,
+            Sampler = null!,
+            PendingTexture = Request(view),
         };
     }
 
@@ -377,27 +390,23 @@ internal sealed class DrawingProgram2D
         }
 
         (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
-        uint samplerSlot = _textureSlot + 1;
         return Add(Node(kind, transform) with
         {
             A = Vector(destination),
             B = Vector(source),
             C = new(width, height, range, 0),
             Mode = mode,
-            Texture = Register(view),
-            Sampler = _table.WriteSampler(samplerSlot, sampler),
+            Texture = null!,
+            Sampler = null!,
+            PendingTexture = Request(view),
+            PendingSampler = _plan.RegisterSampler(sampler),
         });
     }
 
-    private IGpuRef<IGraphicsTextureView> Register(IGraphicsTextureView view)
+    private ArgumentRegistration<IGraphicsTextureView> Request(IGraphicsTextureView view)
     {
-        if (_textureSlot >= MaximumInstructions)
-        {
-            throw new NotSupportedException("Paint graph exceeds its texture binding budget.");
-        }
-
         Textures.Add(view.Texture);
-        return _table.WriteTexture(_textureSlot++, view);
+        return _plan.RegisterTexture(view);
     }
 
     private uint Add(DrawingInstruction instruction)

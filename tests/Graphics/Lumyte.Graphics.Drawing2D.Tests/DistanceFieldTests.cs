@@ -80,8 +80,11 @@ public sealed class DistanceFieldTests
             PixelOrigin = new Vector2(3, 4),
         };
         using var table = new RecordingTable();
-        var program = new DrawingProgram2D(table, new ResourceReference<IGraphicsSampler>(), target);
+        using var registrations = new ArgumentTablePlan(new ProfilingDevice { TableFactory = _ => table });
+        var program = new DrawingProgram2D(registrations.Reserve(), target);
         program.Compile(command);
+        registrations.Materialize();
+        program.ResolveReferences(null!, new ResourceReference<IGraphicsSampler>());
         program.ValidateFiniteData();
 
         Assert.Same(view, Assert.Single(table.Views));

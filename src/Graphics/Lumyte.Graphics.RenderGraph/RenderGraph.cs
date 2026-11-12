@@ -157,6 +157,23 @@ public sealed class RenderGraph : IDisposable
         return resource;
     }
 
+    /// <summary>Declares graph-owned, uninitialized Automatic shader data, allocated only for live uses.</summary>
+    /// <typeparam name="T">The logical shader data type.</typeparam>
+    /// <param name="artifact">The target ABI and element schema.</param>
+    /// <param name="count">The positive logical element count.</param>
+    /// <param name="name">The optional diagnostic name.</param>
+    /// <returns>A temporary whose first read requires an explicit graph copy-write producer.</returns>
+    public RenderGraphShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, string? name = null)
+        where T : struct, IShaderData
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        ArgumentOutOfRangeException.ThrowIfZero(count);
+        RequireDevice();
+        var resource = new RenderGraphShaderDataBuffer<T>(this, artifact, count, ResourceName(name));
+        Register(resource);
+        return resource;
+    }
+
     /// <summary>Retains the last producer of a resource as an observable graph output.</summary>
     /// <param name="resource">The graph-local resource.</param>
     /// <returns>This graph.</returns>
@@ -607,13 +624,21 @@ public sealed class RenderGraph : IDisposable
         }
     }
 
-    private sealed class LifetimeGroup(List<IRenderGraphLifetime> lifetimes) : IRenderGraphLifetime
+    private sealed class LifetimeGroup(List<IRenderGraphLifetime> lifetimes) : IRenderGraphPreparation
     {
         public void Validate()
         {
             foreach (IRenderGraphLifetime lifetime in lifetimes)
             {
                 lifetime.Validate();
+            }
+        }
+
+        public void Prepare(RenderGraphPreparationContext context)
+        {
+            foreach (IRenderGraphPreparation preparation in lifetimes.OfType<IRenderGraphPreparation>())
+            {
+                preparation.Prepare(context);
             }
         }
 

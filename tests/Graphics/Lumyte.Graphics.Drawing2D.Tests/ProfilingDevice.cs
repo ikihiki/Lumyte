@@ -23,6 +23,22 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     public IGraphicsQueue Queue => throw new InvalidOperationException("Drawing preparation must not access the queue.");
 
+    internal List<ArgumentTableDesc> Tables { get; } = [];
+
+    internal Func<ArgumentTableDesc, IArgumentTable>? TableFactory { get; init; }
+
+    internal List<DrawingInstruction> Instructions { get; } = [];
+
+    internal int ActiveTables { get; private set; }
+
+    internal int Writes { get; private set; }
+
+    internal int FailWrite { get; init; }
+
+    internal bool FailTableDisposeOnce { get; init; }
+
+    internal int NativeBuffers { get; private set; }
+
     internal int Copies { get; private set; }
 
     internal int FailCopy { get; init; }
@@ -35,13 +51,27 @@ internal sealed class ProfilingDevice : IGraphicDevice
         where T : unmanaged => new((ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>(), (ulong)System.Runtime.CompilerServices.Unsafe.SizeOf<T>(), 1, 1);
 
     public IGraphicsBuffer<T> CreateBuffer<T>(BufferDesc<T> desc)
-        where T : unmanaged => new Buffer<T>(this, desc);
+        where T : unmanaged
+    {
+        NativeBuffers++;
+        return new Buffer<T>(this, desc);
+    }
 
-    public IGraphicsTexture CreateTexture(TextureDesc desc) => new DispatchTexture();
+    public IGraphicsTexture CreateTexture(TextureDesc desc) => new DispatchTexture { Width = desc.Width, Height = desc.Height, MipLevels = desc.MipLevels, ArrayLayers = desc.ArrayLayers, Format = desc.Format, Usage = desc.Usage };
 
     public IGraphicsSampler CreateSampler(SamplerDesc desc) => new DispatchSampler();
 
-    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => new Table();
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc)
+    {
+        Tables.Add(desc);
+        if (TableFactory is not null)
+        {
+            return TableFactory(desc);
+        }
+
+        ActiveTables++;
+        return new Table(this, desc);
+    }
 
     public IGraphicsShader CreateShader(ShaderArtifact artifact) => new Shader(artifact);
 
@@ -56,7 +86,13 @@ internal sealed class ProfilingDevice : IGraphicDevice
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData => new ShaderBuffer<T>(this, count, memory);
+        where T : struct, IShaderData
+    {
+        NativeBuffers++;
+        return new ShaderBuffer<T>(this, count, memory);
+    }
+
+    internal static IArgumentTable Owner<T>(IGpuRef<T> reference) => ((Reference<T>)reference).Owner;
 
     private static async ValueTask MapAsync(CancellationToken cancellationToken)
     {
@@ -93,30 +129,35 @@ internal sealed class ProfilingDevice : IGraphicDevice
         }
     }
 
-    private sealed class Reference<T>(ulong count) : IGpuRef<T>
+    private sealed class Reference<T>(IArgumentTable owner, ulong count) : IGpuRef<T>
     {
+        public IArgumentTable Owner => owner;
+
         public ulong Count => count;
 
-        public IGpuRef<T> GetElement(ulong index) => new Reference<T>(1);
+        public IGpuRef<T> GetElement(ulong index) => new Reference<T>(owner, 1);
     }
 
-    private sealed class Table : IArgumentTable
+    private sealed class Table(ProfilingDevice device, ArgumentTableDesc desc) : IArgumentTable
     {
-        public uint TextureCapacity => 2048;
+        private bool _disposed;
+        private bool _failedDispose;
 
-        public uint SamplerCapacity => 2048;
+        public uint TextureCapacity => desc.TextureCapacity;
 
-        public uint BufferCapacity => 2;
+        public uint SamplerCapacity => desc.SamplerCapacity;
 
-        public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view) => new Reference<IGraphicsTextureView>(1);
+        public uint BufferCapacity => desc.BufferCapacity;
 
-        public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => new Reference<IGraphicsSampler>(1);
+        public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view) => Write<IGraphicsTextureView>(slot, TextureCapacity, 1);
+
+        public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => Write<IGraphicsSampler>(slot, SamplerCapacity, 1);
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
-            where T : unmanaged => new Reference<T>(range.Count);
+            where T : unmanaged => Write<T>(slot, BufferCapacity, range.Count);
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : struct, IShaderData => new Reference<T>(range.Count);
+            where T : struct, IShaderData => Write<T>(slot, BufferCapacity, range.Count);
 
         public void ReleaseTexture(uint slot)
         {
@@ -132,6 +173,36 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public void Dispose()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (device.FailTableDisposeOnce && !_failedDispose)
+            {
+                _failedDispose = true;
+                throw new InvalidOperationException("Injected table disposal failure.");
+            }
+
+            _disposed = true;
+            device.ActiveTables--;
+        }
+
+        private IGpuRef<T> Write<T>(uint slot, uint capacity, ulong count)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (slot >= capacity)
+            {
+                throw new ArgumentOutOfRangeException(nameof(slot));
+            }
+
+            device.Writes++;
+            if (device.Writes == device.FailWrite)
+            {
+                throw new InvalidOperationException("Injected registration failure.");
+            }
+
+            return new Reference<T>(this, count);
         }
     }
 
@@ -195,7 +266,17 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public bool IsMapped { get; private set; }
 
-        public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0) => device.Copy(source.Length * 144L);
+        public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
+        {
+            device.Copy(source.Length * 144L);
+            foreach (T item in source)
+            {
+                if (item is DrawingInstruction instruction)
+                {
+                    device.Instructions.Add(instruction);
+                }
+            }
+        }
 
         public ValueTask MapAsync(CancellationToken cancellationToken = default)
         {

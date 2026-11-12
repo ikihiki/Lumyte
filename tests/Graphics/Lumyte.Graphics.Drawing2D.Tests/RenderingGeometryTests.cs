@@ -197,7 +197,7 @@ public sealed class RenderingGeometryTests
         canvas.DrawPaintGraph(paint);
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         using var table = new RejectingArgumentTable();
-        var compiler = new DrawingProgram2D(table, new UnusedSamplerReference(), Target());
+        var compiler = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice { TableFactory = _ => table }).Reserve(), Target());
         Assert.Throws<NotSupportedException>(() => compiler.Compile(command));
         Assert.InRange(compiler.Instructions.Count, 1, DrawingProgram2D.MaximumInstructions);
     }

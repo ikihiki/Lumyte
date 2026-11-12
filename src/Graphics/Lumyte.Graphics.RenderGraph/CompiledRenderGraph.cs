@@ -15,6 +15,7 @@ public sealed class CompiledRenderGraph : IDisposable
     private readonly HashSet<RenderGraphResource> _outputs;
     private readonly List<IDisposable> _owned = [];
     private readonly List<IGraphicsTextureView> _views = [];
+    private readonly Dictionary<(RenderGraphTexture Texture, TextureViewDesc Description), IGraphicsTextureView> _viewCache = [];
     private readonly List<CompiledPass> _passes = [];
     private readonly List<PlannedBarrier> _exports = [];
     private List<IRenderGraphLifetime>? _lifetimes;
@@ -63,7 +64,7 @@ public sealed class CompiledRenderGraph : IDisposable
                 PlanBarrier(use, after, barriers);
             }
 
-            _passes.Add(new CompiledPass(pass.Record, uses, barriers));
+            _passes.Add(new CompiledPass(pass, pass.Record, uses, barriers));
         }
 
         foreach (RenderGraphUse export in exports)
@@ -201,6 +202,27 @@ public sealed class CompiledRenderGraph : IDisposable
         int operationOutcome = 2;
         try
         {
+            foreach (RenderGraphResource resource in _passes.SelectMany(pass => pass.Uses).Select(use => use.Resource).Distinct())
+            {
+                EnsureAllocation(resource);
+            }
+
+            var preparation = new RenderGraphPreparationContext(this, Array.AsReadOnly(_passes.Select(pass => pass.Identity).ToArray()), _passes.ToDictionary(pass => pass.Identity, pass => pass.Uses));
+            try
+            {
+                if (_lifetimes is { } retained)
+                {
+                    foreach (IRenderGraphPreparation initializer in retained.OfType<IRenderGraphPreparation>())
+                    {
+                        initializer.Prepare(preparation);
+                    }
+                }
+            }
+            finally
+            {
+                preparation.Close();
+            }
+
             int executionIndex = 0;
             foreach (CompiledPass pass in _passes)
             {
@@ -308,6 +330,7 @@ public sealed class CompiledRenderGraph : IDisposable
             }
 
             _allocations.Clear();
+            _viewCache.Clear();
             _disposed = true;
             profile?.Complete();
         }
@@ -326,6 +349,8 @@ public sealed class CompiledRenderGraph : IDisposable
         }
     }
 
+    internal bool ContainsAllocation(object allocation) => _allocations.Values.Any(value => ReferenceEquals(value, allocation));
+
     internal object Resolve(RenderGraphResource resource)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -335,8 +360,26 @@ public sealed class CompiledRenderGraph : IDisposable
     internal IGraphicsTextureView CreateView(RenderGraphTexture resource, TextureViewDesc? desc)
     {
         var texture = (IGraphicsTexture)Resolve(resource);
-        IGraphicsTextureView view = texture.CreateView(desc);
+        desc ??= new();
+        if (desc.BaseMipLevel >= texture.MipLevels || desc.BaseArrayLayer >= texture.ArrayLayers)
+        {
+            throw new ArgumentOutOfRangeException(nameof(desc));
+        }
+
+        TextureViewDesc normalized = desc with
+        {
+            MipLevelCount = desc.MipLevelCount ?? (texture.MipLevels - desc.BaseMipLevel),
+            ArrayLayerCount = desc.ArrayLayerCount ?? (desc.Dimension == TextureViewDimension.D2 ? 1u : desc.Dimension == TextureViewDimension.Cube ? 6u : texture.ArrayLayers - desc.BaseArrayLayer),
+        };
+        (RenderGraphTexture Texture, TextureViewDesc Description) key = (resource, normalized);
+        if (_viewCache.TryGetValue(key, out IGraphicsTextureView? existing))
+        {
+            return existing;
+        }
+
+        IGraphicsTextureView view = texture.CreateView(normalized);
         _views.Add(view);
+        _viewCache.Add(key, view);
         return view;
     }
 
@@ -511,5 +554,5 @@ public sealed class CompiledRenderGraph : IDisposable
 
     private sealed record PlannedBarrier(RenderGraphResource Resource, TextureState BeforeState, TextureState AfterState, BarrierScope Before, BarrierScope After);
 
-    private sealed record CompiledPass(Action<RenderGraphContext> Callback, RenderGraphUse[] Uses, List<PlannedBarrier> Barriers);
+    private sealed record CompiledPass(RenderGraphPass Identity, Action<RenderGraphContext> Callback, RenderGraphUse[] Uses, List<PlannedBarrier> Barriers);
 }

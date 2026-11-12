@@ -47,6 +47,14 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
+    internal void RetryCleanup()
+    {
+        lock (_gate)
+        {
+            DisposeRetiring();
+        }
+    }
+
     internal void CountCompilation() => Interlocked.Increment(ref _compiled);
 
     internal FrameLease AcquireFrame()

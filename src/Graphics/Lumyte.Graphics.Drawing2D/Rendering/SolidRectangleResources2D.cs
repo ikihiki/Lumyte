@@ -117,7 +117,6 @@ internal sealed class SolidRectangleResources2D : IDisposable
             {
                 Upload = Own(device.CreateBuffer<Vector4>(new() { Count = capacity, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
                 Data = Own(device.CreateBuffer<Vector4>(new() { Count = capacity, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
-                Table = Own(device.CreateArgumentTable(new() { BufferCapacity = 1 }));
             }
             catch
             {
@@ -133,8 +132,6 @@ internal sealed class SolidRectangleResources2D : IDisposable
         internal IGraphicsBuffer<Vector4> Upload { get; }
 
         internal IGraphicsBuffer<Vector4> Data { get; }
-
-        internal IArgumentTable Table { get; }
 
         internal bool Used { get; set; }
 

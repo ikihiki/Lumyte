@@ -7,19 +7,28 @@ namespace Lumyte.Graphics.RenderGraph;
 public sealed class RenderGraphShaderDataBuffer<T> : RenderGraphResource
     where T : struct, IShaderData
 {
+    private readonly ShaderArtifact? _artifact;
+    private readonly ulong _count;
+
     internal RenderGraphShaderDataBuffer(RenderGraph owner, IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope, string name)
         : base(owner, buffer, TextureState.Undefined, scope, name)
     {
     }
 
+    internal RenderGraphShaderDataBuffer(RenderGraph owner, ShaderArtifact artifact, ulong count, string name)
+        : base(owner, null, TextureState.Undefined, default, name)
+    {
+        (_artifact, _count) = (artifact, count);
+    }
+
     internal override string Kind => "ShaderDataBuffer";
 
-    internal override IDisposable Create(IGraphicDevice device) => throw new InvalidOperationException("Shader data is imported.");
+    internal override IDisposable Create(IGraphicDevice device) => device.CreateShaderDataBuffer<T>(_artifact!, _count);
 
     internal override void Validate(TextureState state, BarrierScope scope)
     {
-        var buffer = (IGraphicsShaderDataBuffer<T>)Allocation!;
-        ResourceAccess allowed = buffer.Memory == MemoryPreference.Upload
+        MemoryPreference memory = Allocation is IGraphicsShaderDataBuffer<T> buffer ? buffer.Memory : MemoryPreference.Automatic;
+        ResourceAccess allowed = memory == MemoryPreference.Upload
             ? ResourceAccess.HostWrite | ResourceAccess.CopyRead
             : ResourceAccess.CopyWrite | ResourceAccess.ShaderRead;
         if ((scope.Access & ~allowed) != 0)
