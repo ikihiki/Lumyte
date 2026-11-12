@@ -76,12 +76,16 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             graph.Device,
             graphFallback: scope => Shared().RegisterFallback(scope),
             samplerFactory: () => Shared().Sampler(),
-            registrationFactory: () =>
+            resourceFactory: () =>
             {
                 GraphDrawingArguments2D shared = Shared();
-                shared.Own(pendingPlan!);
-                graphOwnsPlan = true;
-                return shared.Arguments.Registrations;
+                if (!graphOwnsPlan)
+                {
+                    shared.Own(pendingPlan!);
+                    graphOwnsPlan = true;
+                }
+
+                return shared.CreateResources();
             });
         DrawingArgumentPlan2D argumentPlan = pendingPlan;
         GraphDrawingArguments2D Shared() => sharedArguments ??= GraphDrawingArguments2D.Get(graph);
@@ -358,11 +362,14 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         return output;
     }
 
-    private static void AppendBatch(RenderGraphBuilder graph, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IPreparedCommandBatch2D batch, IReadOnlyList<ArgumentTableReservation> reservations)
+    private static void AppendBatch(RenderGraphBuilder graph, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, IPreparedCommandBatch2D batch, IReadOnlyList<ShaderResources> reservations, DrawingArgumentPlan2D argumentPlan)
     {
         RenderGraphPass pass = graph.AddPass("drawing2d.batch", context => batch.Record(context.Commands, context.CreateTextureView(target.Texture)))
             .UseTexture(target.Texture, TextureState.ColorAttachment, _attachmentScope);
-        batch.DeclareResources(new DrawingResourceDeclarations2D(pass, target, bindings));
+        var declarations = new DrawingResourceDeclarations2D(pass, target, bindings);
+        batch.DeclareResources(declarations);
+        argumentPlan.DeclarePreparedResources(reservations, declarations.Prepared);
+        declarations.Apply();
         if (reservations.Count != 0)
         {
             var shared = GraphDrawingArguments2D.Get(graph);
@@ -371,7 +378,10 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
                 pass.UseTexture(shared.Fallback, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
             }
 
-            shared.Arguments.Attach(pass, reservations, privateBuffers: true);
+            foreach (ShaderResources resources in reservations)
+            {
+                pass.UseShaderResources(resources, target.Texture);
+            }
         }
     }
 
@@ -417,7 +427,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             ArgumentNullException.ThrowIfNull(batch);
             owner.Own(batch);
             cancellationToken.ThrowIfCancellationRequested();
-            AppendBatch(graph, target, bindings, batch, argumentPlan.Reservations.Skip(firstReservation).ToArray());
+            AppendBatch(graph, target, bindings, batch, argumentPlan.Reservations.Skip(firstReservation).ToArray(), argumentPlan);
         }
     }
 

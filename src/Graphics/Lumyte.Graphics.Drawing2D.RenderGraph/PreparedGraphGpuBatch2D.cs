@@ -29,7 +29,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             DrawingResources2D resources = context.Resources;
             _artifact = resources.Pipeline.Desc.FragmentShader?.Artifact ?? throw new ArgumentException("Drawing requires a fragment shader.");
             _pipeline = resources.Pipeline;
-            _sampler = resources.Sampler ?? _shared.Arguments.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
+            _sampler = resources.Sampler ?? context.Graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
         }
         catch (Exception error)
         {
@@ -97,9 +97,9 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
 
     private async ValueTask AddAsync(DrawingState2D clip, GraphImageSource2D source, GraphImageSource2D? original, float opacity, bool replace, CancellationToken cancellationToken)
     {
-        ArgumentTableReservation reservation = _shared.Arguments.Registrations.Reserve();
+        ShaderResources reservation = _context.Graph.CreateShaderResources();
         ArgumentRegistration<IGraphicsSampler> sampler = reservation.RegisterSampler(_sampler);
-        ArgumentRegistration<IGraphicsTextureView> fallback = _shared.Arguments.RegisterTexture(reservation, _shared.Fallback);
+        ArgumentRegistration<IGraphicsTextureView> fallback = ((RenderGraphShaderResources)reservation).ReadTexture(_shared.Fallback);
         var program = new DrawingProgram2D(reservation, _context.Target);
         uint root = program.CompileClip(clip);
         program.ValidateFiniteData();
@@ -147,7 +147,6 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             var arguments = new DrawingArguments(instructionRef!.Reference, dataRef!.Reference, (uint)command.Program.Instructions.Count, command.Root, command.Original is null ? 1u : 2u, command.Opacity, Bounds(command.Source), Bounds(command.Original), new(target.PixelOrigin, 0, 0), sourceRef!.Reference, originalRef!.Reference, command.Sampler.Reference);
             IRenderEncoder render = context.Commands.BeginRenderPass(new() { ColorAttachments = [new() { View = context.CreateTextureView(target.Texture), LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
             render.SetPipeline(_pipeline);
-            render.SetArgumentTable(command.Reservation.Table);
             render.SetRenderState(new()
             {
                 Rasterization = new() { Cull = CullMode.None },
@@ -157,8 +156,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             render.SetScissor(command.Scissor);
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
-            render.SetArguments(in arguments);
-            render.Draw(3);
+            command.Reservation.Draw(render, in arguments, 3);
             render.End();
         })
         .UseTexture(target.Texture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite))
@@ -181,12 +179,12 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
             pass.UseTexture(texture, TextureState.Sampled, _fragmentRead);
         }
 
-        _shared.Arguments.Attach(pass, [command.Reservation]);
-        instructionRef = _shared.Arguments.RegisterBuffer(command.Reservation, instructions, 0, command.Upload.Count);
-        dataRef = _shared.Arguments.RegisterBuffer(command.Reservation, data, 0, command.Data.Count);
-        sourceRef = _shared.Arguments.RegisterTexture(command.Reservation, command.Source.Texture);
-        originalRef = command.Original is null ? command.Fallback : _shared.Arguments.RegisterTexture(command.Reservation, command.Original.Texture);
-        _shared.Arguments.OnMaterialized(command.Reservation, () =>
+        pass.UseShaderResources(command.Reservation, target.Texture);
+        instructionRef = ((RenderGraphShaderResources)command.Reservation).ReadBuffer(instructions, 0, command.Upload.Count);
+        dataRef = ((RenderGraphShaderResources)command.Reservation).ReadBuffer(data, 0, command.Data.Count);
+        sourceRef = ((RenderGraphShaderResources)command.Reservation).ReadTexture(command.Source.Texture);
+        originalRef = command.Original is null ? command.Fallback : ((RenderGraphShaderResources)command.Reservation).ReadTexture(command.Original.Texture);
+        command.Reservation.WhenReady(() =>
         {
             if (!command.Upload.IsMapped || !command.Data.IsMapped)
             {
@@ -214,7 +212,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         return resource;
     }
 
-    private sealed record PreparedCommand(DrawingProgram2D Program, ArgumentTableReservation Reservation, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, ArgumentRegistration<IGraphicsSampler> Sampler, ArgumentRegistration<IGraphicsTextureView> Fallback, uint Root, GraphImageSource2D Source, GraphImageSource2D? Original, float Opacity, bool Replace, ScissorRect Scissor);
+    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, IGraphicsShaderDataBuffer<DrawingInstruction> Upload, IGraphicsBuffer<Vector4> Data, ArgumentRegistration<IGraphicsSampler> Sampler, ArgumentRegistration<IGraphicsTextureView> Fallback, uint Root, GraphImageSource2D Source, GraphImageSource2D? Original, float Opacity, bool Replace, ScissorRect Scissor);
 
     private sealed class ResourceValidation(DrawingResourceState2D resources) : IRenderGraphLifetime
     {

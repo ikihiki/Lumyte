@@ -81,7 +81,7 @@ public sealed class DistanceFieldTests
         };
         using var table = new RecordingTable();
         using var registrations = new ArgumentTablePlan(new ProfilingDevice { TableFactory = _ => table });
-        var program = new DrawingProgram2D(registrations.Reserve(), target);
+        var program = new DrawingProgram2D(registrations.CreateShaderResources(), target);
         program.Compile(command);
         registrations.Materialize();
         program.ResolveReferences(null!, new ResourceReference<IGraphicsSampler>());

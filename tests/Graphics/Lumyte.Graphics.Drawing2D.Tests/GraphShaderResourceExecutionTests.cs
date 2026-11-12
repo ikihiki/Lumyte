@@ -1,0 +1,331 @@
+using System.Numerics;
+using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.RenderGraph;
+using Xunit;
+using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
+
+namespace Lumyte.Graphics.Drawing2D.Tests;
+
+/// <summary>Exercises logical graph operations with generated typed roots and native reference identities.</summary>
+public sealed class GraphShaderResourceExecutionTests
+{
+    private static BarrierScope ShaderRead => new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
+
+    private static BarrierScope ColorWrite => new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
+
+    /// <summary>Each operation binds its table and typed roots atomically before its requested command.</summary>
+    /// <param name="operation">Zero for draw, one for indexed draw, two for compute.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void TypedOperationsBindRootsAndPreserveNestedOwners(int operation)
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        using IGraphicsShaderDataBuffer<DrawingInstruction> instructions = device.CreateShaderDataBuffer<DrawingInstruction>(DrawingShaders2D.Vertex, 1);
+        using IGraphicsBuffer<Vector4> data = device.CreateBuffer<Vector4>(new() { Count = 1, Usage = BufferUsage.ShaderRead });
+        using IGraphicsBuffer<ushort> indices = device.CreateBuffer<ushort>(new() { Count = 8, Usage = BufferUsage.Index });
+        using var texture = new DispatchTexture();
+        using var targetTexture = new DispatchTexture();
+        RenderGraphShaderDataBuffer<DrawingInstruction> logicalInstructions = graph.ImportShaderDataBuffer(instructions, ShaderRead);
+        RenderGraphBuffer<Vector4> logicalData = graph.ImportBuffer(data, ShaderRead);
+        RenderGraphTexture image = graph.ImportTexture(texture, TextureState.Sampled, ShaderRead);
+        RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, ColorWrite);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        ArgumentRegistration<DrawingInstruction> rootInstructions = resources.ReadBuffer(logicalInstructions, 0, 1);
+        ArgumentRegistration<Vector4> rootData = resources.ReadBuffer(logicalData, 0, 1);
+        ArgumentRegistration<IGraphicsTextureView> nestedTexture = resources.ReadTexture(image);
+        ArgumentRegistration<IGraphicsSampler> nestedSampler = resources.Sampler(new());
+        DrawingInstruction instruction = default;
+        resources.WhenReady(() =>
+        {
+            instruction = instruction with { Texture = nestedTexture.Reference, Sampler = nestedSampler.Reference };
+            instructions.CopyFrom(new[] { instruction });
+        });
+        RenderGraphPass pass = graph.AddPass("typed", context =>
+        {
+            var arguments = new DrawingArguments(rootInstructions.Reference, rootData.Reference, 1, 0, 0, 1, default, default, default, nestedTexture.Reference, nestedTexture.Reference, nestedSampler.Reference);
+            if (operation == 2)
+            {
+                IComputeEncoder encoder = context.Commands.BeginComputePass(new());
+                resources.Dispatch(encoder, in arguments, 2, 3, 4);
+                encoder.End();
+            }
+            else
+            {
+                using IGraphicsTextureView targetView = context.GetTexture(target).CreateView();
+                IRenderEncoder encoder = context.Commands.BeginRenderPass(new() { ColorAttachments = [new() { View = targetView, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
+                if (operation == 0)
+                {
+                    resources.Draw(encoder, in arguments, 3, 2);
+                }
+                else
+                {
+                    encoder.SetIndexBuffer(indices.SliceElements(0, 8));
+                    resources.DrawIndexed(encoder, in arguments, 6, 2, 1, -1, 3);
+                }
+
+                encoder.End();
+            }
+        }).UseShaderDataBuffer(logicalInstructions, ShaderRead).UseBuffer(logicalData, ShaderRead).UseTexture(image, TextureState.Sampled, ShaderRead).KeepAlive();
+        if (operation != 2)
+        {
+            pass.UseTexture(target, TextureState.ColorAttachment, ColorWrite);
+        }
+
+        pass.UseShaderResources(resources, operation == 2 ? [] : [target]);
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        compiled.Record(commands);
+        IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>());
+        DrawingArguments recorded = Assert.Single(commands.Events.OfType<DrawingArguments>());
+        Assert.Same(table, ProfilingDevice.Owner(recorded.Instructions));
+        Assert.Same(table, ProfilingDevice.Owner(recorded.Data));
+        Assert.Same(table, ProfilingDevice.Owner(recorded.SourceTexture));
+        Assert.Same(table, ProfilingDevice.Owner(recorded.GraphSampler));
+        DrawingInstruction packed = Assert.Single(device.Instructions);
+        Assert.Same(table, ProfilingDevice.Owner(packed.Texture));
+        Assert.Same(table, ProfilingDevice.Owner(packed.Sampler));
+        int binding = commands.Events.IndexOf(table);
+        Assert.IsType<DrawingArguments>(commands.Events[binding + 1]);
+        Assert.Equal(operation switch { 0 => (object)(3u, 2u), 1 => ("indexed", 6u, 2u, 1u, -1, 3u), _ => ("dispatch", 2u, 3u, 4u) }, commands.Events[binding + 2]);
+        commands.Dispose();
+    }
+
+    /// <summary>Render and compute shapes cannot be interchanged even with valid generated argument types.</summary>
+    /// <param name="graphics">Whether this operation declares a color output.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExecutionRejectsMismatchedShape(bool graphics)
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        using var targetTexture = new DispatchTexture();
+        RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, ColorWrite);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        resources.Sampler(new());
+        RenderGraphPass pass = graph.AddPass("shape", _ => { }).KeepAlive();
+        if (graphics)
+        {
+            pass.UseTexture(target, TextureState.ColorAttachment, ColorWrite);
+        }
+
+        pass.UseShaderResources(resources, graphics ? [target] : []);
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        compiled.Record(commands);
+        var arguments = default(DrawingArguments);
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            if (graphics)
+            {
+                resources.Dispatch(commands.BeginComputePass(new()), in arguments, 1);
+            }
+            else
+            {
+                resources.Draw(commands.BeginRenderPass(new()), in arguments, 3);
+            }
+        });
+        if (!graphics)
+        {
+            Assert.Throws<InvalidOperationException>(() => resources.DrawIndexed(commands.BeginRenderPass(new()), in arguments, 3));
+        }
+
+        Assert.All(commands.Events, item => Assert.IsType<TextureBarrierDesc>(item));
+        commands.Dispose();
+    }
+
+    /// <summary>All live references publish before callbacks, but no operation records until every callback succeeds.</summary>
+    [Fact]
+    public void CallbackFailureInvalidatesEarlierCallbackReferencesGlobally()
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        RenderGraphShaderResources first = graph.CreateShaderResources();
+        RenderGraphShaderResources later = first.CreateSibling();
+        ArgumentRegistration<IGraphicsSampler> firstHandle = first.Sampler(new());
+        ArgumentRegistration<IGraphicsSampler> laterHandle = later.Sampler(new());
+        graph.AddPass("first", _ => throw new InvalidOperationException("Must not record")).KeepAlive().UseShaderResources(first);
+        graph.AddPass("later", _ => throw new InvalidOperationException("Must not record")).KeepAlive().UseShaderResources(later);
+        using var callbackCommands = new ProfilingCommands();
+        bool earlierRan = false;
+        first.WhenReady(() =>
+        {
+            Assert.True(first.IsReady);
+            Assert.True(later.IsReady);
+            Assert.Same(ProfilingDevice.Owner(firstHandle.Reference), ProfilingDevice.Owner(laterHandle.Reference));
+            var arguments = default(DrawingArguments);
+            Assert.Throws<InvalidOperationException>(() => first.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
+            Assert.Throws<InvalidOperationException>(() => first.Draw(callbackCommands.BeginRenderPass(new()), in arguments, 3));
+            earlierRan = true;
+        });
+        later.WhenReady(() => throw new InvalidOperationException("Injected finalizer failure"));
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() => compiled.Record(commands));
+        Assert.Equal("Injected finalizer failure", failure.Message);
+        Assert.True(earlierRan);
+        Assert.False(first.IsReady);
+        Assert.False(later.IsReady);
+        Assert.Throws<InvalidOperationException>(() => firstHandle.Reference);
+        Assert.Throws<InvalidOperationException>(() => laterHandle.Reference);
+        Assert.Empty(commands.Events);
+        Assert.Empty(callbackCommands.Events);
+        commands.Dispose();
+    }
+
+    /// <summary>A base-typed sibling keeps graph validation and cannot register undeclared native storage.</summary>
+    [Fact]
+    public void BaseTypedSiblingStillRejectsUndeclaredNativeBuffer()
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        using IGraphicsBuffer<uint> native = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead });
+        ShaderResources original = graph.CreateShaderResources();
+        ShaderResources sibling = original.CreateSibling();
+        Assert.IsType<RenderGraphShaderResources>(sibling);
+        original.Cancel();
+        ArgumentRegistration<uint> handle = sibling.RegisterBuffer(native.SliceElements(0, 1));
+        graph.AddPass("sibling", _ => { }).KeepAlive().UseShaderResources(sibling);
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        Assert.Throws<ArgumentException>(() => compiled.Record(commands));
+        Assert.Throws<InvalidOperationException>(() => handle.Reference);
+        Assert.Empty(device.Tables);
+        Assert.Empty(commands.Events);
+        commands.Dispose();
+    }
+
+    /// <summary>Selective cancellation does not discard an intervening module's resource group or lifetime lease.</summary>
+    [Fact]
+    public void CancelPreservesInterveningGroupAndRetainedLifetime()
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        RenderGraphShaderResources canceled = graph.CreateShaderResources();
+        ArgumentRegistration<IGraphicsSampler> discarded = canceled.Sampler(new());
+        RenderGraphShaderResources survivor = graph.CreateShaderResources();
+        ArgumentRegistration<IGraphicsSampler> live = survivor.Sampler(new());
+        IDisposable lease = survivor.Retain();
+        canceled.Cancel();
+        graph.AddPass("survivor", _ => { }).KeepAlive().UseShaderResources(survivor);
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        compiled.Record(commands);
+        Assert.True(survivor.IsReady);
+        Assert.Throws<InvalidOperationException>(() => discarded.Reference);
+        Assert.Single(device.Tables);
+        IArgumentTable owner = ProfilingDevice.Owner(live.Reference);
+        commands.Dispose();
+        compiled.Dispose();
+        graph.Dispose();
+        Assert.Equal(1, device.ActiveTables);
+        Assert.Same(owner, ProfilingDevice.Owner(live.Reference));
+        lease.Dispose();
+        lease.Dispose();
+        Assert.Equal(0, device.ActiveTables);
+        Assert.Throws<InvalidOperationException>(() => live.Reference);
+    }
+
+    /// <summary>Two actual color outputs consume their exact budget; compute reserves none.</summary>
+    /// <param name="graphics">Whether two color outputs are used.</param>
+    /// <param name="budget">The finite native combined binding limit.</param>
+    /// <param name="succeeds">Whether the whole operation fits.</param>
+    [Theory]
+    [InlineData(false, 1u, true)]
+    [InlineData(true, 2u, false)]
+    [InlineData(true, 3u, true)]
+    public void ActualAttachmentsDetermineFiniteBindingBudget(bool graphics, uint budget, bool succeeds)
+    {
+        var device = new ProfilingDevice
+        {
+            Caps = new() { ArgumentTableBindingLimits = new() { CombinedBindings = budget, ColorAttachmentBindingWeight = 1 } },
+        };
+        using var graph = new Graph(device);
+        using var firstTexture = new DispatchTexture();
+        using var secondTexture = new DispatchTexture();
+        RenderGraphTexture first = graph.ImportTexture(firstTexture, TextureState.ColorAttachment, ColorWrite);
+        RenderGraphTexture second = graph.ImportTexture(secondTexture, TextureState.ColorAttachment, ColorWrite);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        ArgumentRegistration<IGraphicsSampler> sampler = resources.Sampler(new());
+        RenderGraphPass pass = graph.AddPass("budget", _ => { }).KeepAlive();
+        if (graphics)
+        {
+            pass.UseTexture(first, TextureState.ColorAttachment, ColorWrite).UseTexture(second, TextureState.ColorAttachment, ColorWrite);
+        }
+
+        pass.UseShaderResources(resources, graphics ? [first, second] : []);
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        if (succeeds)
+        {
+            compiled.Record(commands);
+            Assert.Single(device.Tables);
+            Assert.Equal(1u, device.Tables[0].SamplerCapacity);
+            Assert.NotNull(ProfilingDevice.Owner(sampler.Reference));
+        }
+        else
+        {
+            Assert.Throws<NotSupportedException>(() => compiled.Record(commands));
+            Assert.Empty(device.Tables);
+            Assert.Throws<InvalidOperationException>(() => sampler.Reference);
+        }
+
+        Assert.All(commands.Events, item => Assert.IsType<TextureBarrierDesc>(item));
+        commands.Dispose();
+    }
+
+    /// <summary>Actual outputs must be unique, local, and already declared as color writes.</summary>
+    /// <param name="invalidKind">Undeclared, duplicate, or foreign output.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void AttachmentsRequireTruthfulPassDeclarations(int invalidKind)
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        using var foreign = new Graph(device);
+        using var native = new DispatchTexture();
+        using var foreignNative = new DispatchTexture();
+        RenderGraphTexture target = graph.ImportTexture(native, TextureState.ColorAttachment, ColorWrite);
+        RenderGraphTexture other = foreign.ImportTexture(foreignNative, TextureState.ColorAttachment, ColorWrite);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        RenderGraphPass pass = graph.AddPass("invalid-output", _ => { }).KeepAlive();
+        if (invalidKind == 1)
+        {
+            pass.UseTexture(target, TextureState.ColorAttachment, ColorWrite);
+        }
+
+        Assert.Throws<ArgumentException>(() => pass.UseShaderResources(resources, invalidKind switch { 0 => [target], 1 => [target, target], _ => [other] }));
+        resources.Cancel();
+        Assert.Empty(device.Tables);
+    }
+
+    /// <summary>Base casts cannot attach a sibling to a foreign graph or attach it more than once.</summary>
+    [Fact]
+    public void BaseTypedSiblingRetainsForeignAndDuplicateAttachmentGuards()
+    {
+        var device = new ProfilingDevice();
+        using var graph = new Graph(device);
+        using var foreign = new Graph(device);
+        ShaderResources original = graph.CreateShaderResources();
+        ShaderResources sibling = original.CreateSibling();
+        original.Cancel();
+        using var sampler = new DispatchSampler();
+        sibling.RegisterSampler(sampler);
+        RenderGraphPass foreignPass = foreign.AddPass("foreign", _ => { }).KeepAlive();
+        Assert.Throws<ArgumentException>(() => foreignPass.UseShaderResources(sibling));
+        RenderGraphPass pass = graph.AddPass("local", _ => { }).KeepAlive();
+        pass.UseShaderResources(sibling);
+        Assert.Throws<ArgumentException>(() => pass.UseShaderResources(sibling));
+        using CompiledRenderGraph compiled = graph.Compile();
+        using var commands = new ProfilingCommands();
+        compiled.Record(commands);
+        Assert.True(sibling.IsReady);
+        Assert.Single(device.Tables);
+        commands.Dispose();
+    }
+}

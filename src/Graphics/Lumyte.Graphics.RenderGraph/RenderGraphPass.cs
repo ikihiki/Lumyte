@@ -18,7 +18,7 @@ public sealed class RenderGraphPass
     /// <summary>Gets the diagnostic pass name.</summary>
     public string Name { get; }
 
-    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && RenderGraphValidation.IsWrite(use.Scope));
+    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && use.Resource.LocalPassOwner is null && RenderGraphValidation.IsWrite(use.Scope));
 
     internal bool HasSideEffects { get; private set; }
 
@@ -73,6 +73,30 @@ public sealed class RenderGraphPass
         return this;
     }
 
+    /// <summary>Declares borrowed storage whose writes are confined to this pass, without making an otherwise dead pass observable.</summary>
+    /// <typeparam name="T">The unmanaged storage element.</typeparam>
+    /// <param name="buffer">The pass-owned allocation, retained by its owner through completion.</param>
+    /// <param name="scope">All actual intra-pass accesses, including copies and shader reads.</param>
+    /// <returns>This pass; an existing global import retains its global observability.</returns>
+    public RenderGraphPass UseLocalBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope scope)
+        where T : unmanaged
+    {
+        AddUse(Owner.LocalBuffer(this, buffer, scope), TextureState.Undefined, scope, discard: false);
+        return this;
+    }
+
+    /// <summary>Declares pass-confined borrowed shader data while preserving transfer metadata and validation.</summary>
+    /// <typeparam name="T">The shader-data element.</typeparam>
+    /// <param name="buffer">The pass-owned allocation.</param>
+    /// <param name="scope">All actual intra-pass accesses.</param>
+    /// <returns>This pass; the caller still owns the allocation.</returns>
+    public RenderGraphPass UseLocalShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
+        where T : struct, IShaderData
+    {
+        AddUse(Owner.LocalShaderData(this, buffer, scope), TextureState.Undefined, scope, discard: false);
+        return this;
+    }
+
     /// <summary>Retains this pass for side effects not expressed as imported resource writes.</summary>
     /// <returns>This pass.</returns>
     public RenderGraphPass KeepAlive()
@@ -105,6 +129,11 @@ public sealed class RenderGraphPass
         if (resource.Owner != Owner)
         {
             throw new ArgumentException("Resource belongs to another graph.", nameof(resource));
+        }
+
+        if (resource.LocalPassOwner is not null && !ReferenceEquals(resource.LocalPassOwner, this))
+        {
+            throw new ArgumentException("Pass-local storage cannot be accessed by another pass.", nameof(resource));
         }
 
         RenderGraphValidation.Scope(scope, required: true);

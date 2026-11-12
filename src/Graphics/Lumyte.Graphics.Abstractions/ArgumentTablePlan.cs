@@ -11,6 +11,7 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
     private int _state;
     private int _users = 1;
     private bool _returned;
+    private bool _recordingReady;
 
     /// <summary>Gets the borrowed owning device.</summary>
     public IGraphicDevice Device { get; } = device ?? throw new ArgumentNullException(nameof(device));
@@ -45,6 +46,38 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
         var reservation = new ArgumentTableReservation(this, colorAttachments);
         _reservations.Add(reservation);
         return reservation;
+    }
+
+    /// <summary>Creates an opaque resource set for one indivisible draw or dispatch.</summary>
+    /// <returns>A resource set belonging to this generation.</returns>
+    public ShaderResources CreateShaderResources() => new(Reserve());
+
+    /// <summary>Gets whether a resource set still belongs to this generation.</summary>
+    /// <param name="resources">The opaque resource set.</param>
+    /// <returns>True for a current, owned resource set; otherwise false.</returns>
+    public bool Owns(ShaderResources resources)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        return _reservations.Any(resources.Uses);
+    }
+
+    /// <summary>Configures the actual semantic output count before collection closes.</summary>
+    /// <param name="resources">The current resource set.</param>
+    /// <param name="colorAttachments">The actual color output count, or zero for compute.</param>
+    public void ConfigureExecution(ShaderResources resources, uint colorAttachments)
+    {
+        ValidateCollecting();
+        FindScope(resources).ConfigureColorAttachments(colorAttachments);
+    }
+
+    /// <summary>Materializes live opaque resource sets in their actual execution order.</summary>
+    /// <param name="execution">Distinct, current resource sets owned by this generation.</param>
+    /// <param name="cancellationToken">Cancels preparation without publishing partial resources.</param>
+    public void MaterializeResources(IReadOnlyList<ShaderResources> execution, CancellationToken cancellationToken = default)
+    {
+        ValidateCollecting();
+        ArgumentNullException.ThrowIfNull(execution);
+        Materialize(execution.Select(FindScope).ToArray(), cancellationToken);
     }
 
     /// <summary>Captures an unpublished collection boundary for an allocation-strategy rollback.</summary>
@@ -185,10 +218,19 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
                 Rollovers = Math.Max(0, _partitions.Count - 1),
             };
             _state = 2;
+            foreach (ArgumentTableReservation scope in selected.Select(selection => selection.Scope))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                scope.FinalizeResources();
+                ValidateReferences();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            _recordingReady = true;
         }
         catch
         {
-            _state = 3;
+            Invalidate();
             throw;
         }
         finally
@@ -221,8 +263,12 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
         }
     }
 
-    /// <summary>Invalidates all unpublished handles after host payload finalization fails; ownership remains available for cleanup.</summary>
-    public void Invalidate() => _state = 3;
+    /// <summary>Invalidates this generation's references and recording after preparation fails; ownership remains available for cleanup.</summary>
+    public void Invalidate()
+    {
+        _recordingReady = false;
+        _state = 3;
+    }
 
     /// <summary>Returns the owner token; failed native disposal remains owned and can be retried.</summary>
     public void Dispose()
@@ -251,6 +297,30 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
         {
             throw new InvalidOperationException("References require a live, successfully materialized argument generation.");
         }
+    }
+
+    internal void ValidateRecording()
+    {
+        ValidateReferences();
+        if (!_recordingReady)
+        {
+            throw new InvalidOperationException("Recording requires every resource finalizer to complete successfully.");
+        }
+    }
+
+    internal void ValidateScope(ArgumentTableReservation scope)
+    {
+        if (!ReferenceEquals(scope.Owner, this) || !_reservations.Contains(scope))
+        {
+            throw new InvalidOperationException("The resource set was discarded or rolled back.");
+        }
+    }
+
+    private ArgumentTableReservation FindScope(ShaderResources resources)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        return _reservations.FirstOrDefault(resources.Uses)
+            ?? throw new ArgumentException("The resource set is foreign, discarded, or rolled back.", nameof(resources));
     }
 
     private void ValidateRange(ArgumentKey key)

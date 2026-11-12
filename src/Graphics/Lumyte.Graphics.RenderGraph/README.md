@@ -127,3 +127,25 @@ factoryが返す状態やimportsは借用ビューであり、型がIDisposable�
 `Validate`はRetain時、Compileの移譲時、Record前に呼ばれます。所有権は登録の逆順で返し、依存先より利用側を後から登録します。解放が失敗したらそこで停止し、未解放部分と依存先を保持して同じ所有者のDisposeで再試行します。Compileの検証失敗ではgraph側に所有権が残ります。既存のraw import APIは借用のまま使え、構築済みplanへの低水準の`CompiledRenderGraph.Retain`も利用できます。
 
 ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の拡張が担当します。RenderGraph本体はその型やパッケージを参照しません。
+
+## Shader inputs and execution
+
+Graph consumers describe logical resources and issue an opaque shader operation. The graph owns registration and backend binding selection; callers do not allocate, size, seal or bind argument tables. Existing raw `RenderGraphContext.Commands` remains available for deliberate backend interoperability.
+
+```csharp
+RenderGraphShaderResources inputs = graph.CreateShaderResources();
+var image = inputs.ReadTexture(source);
+graph.AddPass("sample", context =>
+{
+    IRenderEncoder render = BeginDraw(context); // Application helper: attachment, pipeline and state.
+    var args = new ImageArguments(image.Reference); // Application IShaderArguments.
+    inputs.Draw(render, in args, 3);
+    render.End();
+}).UseTexture(source, TextureState.Sampled, sampleRead)
+  .UseTexture(target, TextureState.ColorAttachment, colorWrite)
+  .UseShaderResources(inputs, target);
+```
+
+Declare the actual color outputs in `UseShaderResources`. Omitting color outputs selects compute and the operation uses `inputs.Dispatch(computeEncoder, in args, x, y, z)`. Graphics operations use `Draw` or `DrawIndexed`. Inputs belong to exactly one pass; use `CreateSibling()` for another independently declared operation. Packing callbacks use `WhenReady`, and execution remains unavailable until every live callback succeeds.
+
+`UseLocalBuffer` and `UseLocalShaderDataBuffer` describe borrowed storage whose effects are confined to one pass. They retain actual resource validation and synchronization declarations, cannot be exported or promoted to outputs, and cannot be used by another pass. Existing global imports keep their original observability. Locality does not transfer allocation ownership or remove the caller completion requirement.

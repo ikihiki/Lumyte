@@ -183,7 +183,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
         private readonly IDisposable _tableLease;
         private SolidRectangleResources2D.Entry? _entry;
         private SolidRectangleArguments2D _arguments;
-        private ArgumentTableReservation? _reservation;
+        private ShaderResources? _reservation;
         private int _vectors;
         private int _instances;
         private bool _recorded;
@@ -269,9 +269,10 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 batch._instances = commands.Length;
                 batch._vectors = capacity;
                 batch._entry = resources.Rent(capacity);
-                ArgumentTableReservation reservation = context.ArgumentPlan.Reserve();
+                ShaderResources reservation = context.ArgumentPlan.Reserve();
                 batch._reservation = reservation;
                 ArgumentRegistration<Vector4> data = reservation.RegisterBuffer(batch._entry.Data.SliceElements(0, (ulong)capacity));
+                context.ArgumentPlan.MarkPreparedBuffer(reservation, batch._entry.Data, new(PipelineStage.Copy | PipelineStage.VertexShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
                 context.ArgumentPlan.DeferUpload(
                     reservation,
                     async token =>
@@ -440,7 +441,6 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
             try
             {
                 render.SetPipeline(_resources.Pipeline);
-                render.SetArgumentTable(_reservation!.Table);
                 render.SetRenderState(new()
                 {
                     Rasterization = new() { Cull = CullMode.None },
@@ -450,8 +450,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 render.SetScissor(new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height));
                 render.SetBlendConstant(new(0, 0, 0, 0));
                 render.SetStencilReference(0);
-                render.SetArguments(in _arguments);
-                render.Draw(6, (uint)_instances);
+                _reservation!.Draw(render, in _arguments, 6, (uint)_instances);
             }
             finally
             {

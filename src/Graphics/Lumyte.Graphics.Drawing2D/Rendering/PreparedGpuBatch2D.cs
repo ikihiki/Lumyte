@@ -217,7 +217,7 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
 
         foreach (PreparedCommand command in _commands)
         {
-            // SetArgumentTable/Draw resolve the existing registrations and validate sampled
+            // Opaque draws resolve the existing registrations and validate sampled
             // resource lifetimes on every record, including resident draws.
             RecordCommand(commands, target, command);
         }
@@ -226,7 +226,7 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
     private void Add(DrawingCommand2D command)
     {
         DrawingArgumentPlan2D plan = _context.ArgumentPlan;
-        ArgumentTableReservation reservation = plan.Reserve();
+        ShaderResources reservation = plan.Reserve();
         ArgumentRegistration<IGraphicsSampler> sampler = reservation.RegisterSampler(_sampler);
         ArgumentRegistration<IGraphicsTextureView> fallbackRef = plan.Fallback(reservation);
         var program = new DrawingProgram2D(reservation, _context.Target);
@@ -269,6 +269,9 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         {
             command.InstructionRegistration = command.Reservation.RegisterBuffer(_instructions.SliceElements(instructionOffset, (ulong)command.Program.Instructions.Count));
             command.DataRegistration = command.Reservation.RegisterBuffer(_geometry.SliceElements(dataOffset, (ulong)command.Program.Data.Count));
+            BarrierScope prepared = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead);
+            _context.ArgumentPlan.MarkPreparedShaderData(command.Reservation, _instructions, prepared);
+            _context.ArgumentPlan.MarkPreparedBuffer(command.Reservation, _geometry, prepared);
             instructionOffset += (ulong)command.Program.Instructions.Count;
             dataOffset += (ulong)command.Program.Data.Count;
         }
@@ -332,7 +335,7 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
             foreach (PreparedCommand command in _commands)
             {
                 // One opaque batch belongs to one graph pass, so all its command scopes are live or culled together.
-                if (command.Reservation.IsMaterialized)
+                if (command.Reservation.IsReady)
                 {
                     command.Program.ResolveReferences(command.Fallback, command.Sampler);
                     _upload.CopyFrom(CollectionsMarshal.AsSpan(command.Program.Instructions), instructionOffset);
@@ -379,7 +382,6 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         var arguments = new DrawingArguments(command.InstructionRef, command.DataRef, (uint)command.Program.Instructions.Count, command.Root, 0, 1, default, default, new(target.PixelOrigin, 0, 0), command.Fallback, command.Fallback, command.Sampler);
         IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
         render.SetPipeline(_pipeline);
-        render.SetArgumentTable(command.Table);
         render.SetRenderState(new()
         {
             Rasterization = new() { Cull = CullMode.None },
@@ -389,8 +391,7 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         render.SetScissor(command.Scissor);
         render.SetBlendConstant(new(0, 0, 0, 0));
         render.SetStencilReference(0);
-        render.SetArguments(in arguments);
-        render.Draw(3);
+        command.Reservation.Draw(render, in arguments, 3);
         render.End();
         var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
         commands.Barrier(new TextureBarrierDesc { Texture = view.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
@@ -403,10 +404,8 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         return resource;
     }
 
-    private sealed record PreparedCommand(DrawingProgram2D Program, ArgumentTableReservation Reservation, ArgumentRegistration<IGraphicsSampler> SamplerRegistration, ArgumentRegistration<IGraphicsTextureView> FallbackRegistration, uint Root, ScissorRect Scissor)
+    private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, ArgumentRegistration<IGraphicsSampler> SamplerRegistration, ArgumentRegistration<IGraphicsTextureView> FallbackRegistration, uint Root, ScissorRect Scissor)
     {
-        internal IArgumentTable Table => Reservation.Table;
-
         internal IGpuRef<IGraphicsSampler> Sampler => SamplerRegistration.Reference;
 
         internal IGpuRef<IGraphicsTextureView> Fallback => FallbackRegistration.Reference;

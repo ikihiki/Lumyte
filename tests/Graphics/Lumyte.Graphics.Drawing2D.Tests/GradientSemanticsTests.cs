@@ -87,7 +87,7 @@ public sealed class GradientSemanticsTests
         {
             Description = new TextureDesc { Width = 100, Height = 100, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment },
         };
-        var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).Reserve(), target);
+        var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         program.Compile(Assert.Single(canvas.End().Commands));
         program.ValidateFiniteData();
         return program;

@@ -35,8 +35,8 @@ internal static class EffectGpuPass
         IGraphicsShader vertex = shaders.FullscreenShader ?? owner.Add(device.CreateShader(shaders.Fullscreen));
         IGraphicsShader fragment = shaders.EffectsShader ?? owner.Add(device.CreateShader(shaders.Effects));
         IGraphicsPipeline pipeline = shaders.Pipeline ?? owner.Add(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment, Label = "image-effect" }));
-        RenderGraphArguments shared = graph.GetArguments();
-        IGraphicsSampler sampler = shaders.Sampler ?? shared.GetSampler(new()
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        IGraphicsSampler sampler = shaders.Sampler ?? graph.GetSampler(new()
         {
             MinFilter = FilterMode.Nearest,
             MagFilter = FilterMode.Nearest,
@@ -45,7 +45,6 @@ internal static class EffectGpuPass
             AddressV = AddressMode.ClampToEdge,
             LodMaxClamp = 0,
         });
-        ArgumentTableReservation? reservation = null;
         ArgumentRegistration<IGraphicsTextureView>? inputRegistration = null;
         ArgumentRegistration<IGraphicsTextureView>? backdropRegistration = null;
         ArgumentRegistration<IGraphicsSampler>? samplerRegistration = null;
@@ -69,14 +68,12 @@ internal static class EffectGpuPass
                 ColorAttachments = [new() { View = context.CreateTextureView(output), LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }],
             });
             render.SetPipeline(pipeline);
-            render.SetArgumentTable(reservation!.Table);
-            render.SetArguments(in arguments);
             render.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
             render.SetViewport(new(0, 0, descriptor.Width, descriptor.Height, 0, 1));
             render.SetScissor(new(0, 0, descriptor.Width, descriptor.Height));
             render.SetBlendConstant(new(0, 0, 0, 0));
             render.SetStencilReference(0);
-            render.Draw(3);
+            resources.Draw(render, in arguments, 3);
             render.End();
         }).UseTexture(input.Texture, TextureState.Sampled, _sample);
         if (backdrop.Texture != input.Texture)
@@ -85,10 +82,10 @@ internal static class EffectGpuPass
         }
 
         pass.UseTexture(output, TextureState.ColorAttachment, _write);
-        reservation = shared.Reserve(pass);
-        inputRegistration = shared.RegisterTexture(reservation, input.Texture);
-        backdropRegistration = shared.RegisterTexture(reservation, backdrop.Texture);
-        samplerRegistration = reservation.RegisterSampler(sampler);
+        pass.UseShaderResources(resources, output);
+        inputRegistration = resources.ReadTexture(input.Texture);
+        backdropRegistration = resources.ReadTexture(backdrop.Texture);
+        samplerRegistration = resources.RegisterSampler(sampler);
         return new(output, outputBounds, outputSemantic ?? input.ColorSemantic);
     }
 

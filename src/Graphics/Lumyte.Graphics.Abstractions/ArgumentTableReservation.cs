@@ -5,7 +5,9 @@ public sealed class ArgumentTableReservation
 {
     private readonly ArgumentTablePlan _owner;
     private readonly List<ArgumentRequest> _requests = [];
+    private readonly List<Action> _collectionGuards = [];
     private readonly List<Action<object, ArgumentBufferAccess>> _inspectors = [];
+    private readonly List<Action> _finalizers = [];
     private readonly Dictionary<ArgumentKey, object> _known = [];
     private ArgumentPartition? _partition;
     private bool _materialized;
@@ -30,7 +32,7 @@ public sealed class ArgumentTableReservation
     public bool IsMaterialized => _materialized && _owner.ReferencesAvailable;
 
     /// <summary>Gets the number of color attachments reserved by this draw's physical layout.</summary>
-    public uint ColorAttachments { get; }
+    public uint ColorAttachments { get; private set; }
 
     internal IReadOnlyList<ArgumentRequest> Requests => _requests;
 
@@ -126,9 +128,56 @@ public sealed class ArgumentTableReservation
     /// <param name="inspect">Validates resource identity and actual descriptor accesses without GPU commands.</param>
     public void InspectResources(Action<object, ArgumentBufferAccess> inspect)
     {
-        _owner.ValidateCollecting();
+        ValidateCollecting();
         ArgumentNullException.ThrowIfNull(inspect);
         _inspectors.Add(inspect);
+    }
+
+    internal void ConfigureColorAttachments(uint colorAttachments)
+    {
+        ValidateCollecting();
+        ColorAttachments = colorAttachments;
+    }
+
+    internal void WhenReady(Action finalize)
+    {
+        ValidateCollecting();
+        ArgumentNullException.ThrowIfNull(finalize);
+        _finalizers.Add(finalize);
+    }
+
+    internal void FinalizeResources()
+    {
+        foreach (Action finalize in _finalizers)
+        {
+            finalize();
+            _owner.ValidateReferences();
+        }
+    }
+
+    internal void AddCollectionGuard(Action validate) => _collectionGuards.Add(validate);
+
+    internal void ValidateCollecting()
+    {
+        foreach (Action validate in _collectionGuards)
+        {
+            validate();
+        }
+
+        _owner.ValidateCollecting();
+        _owner.ValidateScope(this);
+    }
+
+    internal IArgumentTable? RecordingTable(bool graphics)
+    {
+        ValidateMaterialized();
+        _owner.ValidateRecording();
+        if ((ColorAttachments > 0) != graphics)
+        {
+            throw new InvalidOperationException("The resource execution shape does not match this encoder.");
+        }
+
+        return _partition?.Table;
     }
 
     internal void Inspect(ArgumentKey key)
@@ -148,6 +197,7 @@ public sealed class ArgumentTableReservation
     internal void ValidateMaterialized()
     {
         _owner.ValidateReferences();
+        _owner.ValidateScope(this);
         if (!_materialized)
         {
             throw new InvalidOperationException("The reservation was culled or not materialized.");
@@ -159,6 +209,7 @@ public sealed class ArgumentTableReservation
         _requests.Clear();
         _known.Clear();
         _inspectors.Clear();
+        _finalizers.Clear();
     }
 
     private static ResolvedArgument Raw<T>(BufferSlice<T> range, ArgumentBufferAccess access)
@@ -196,7 +247,7 @@ public sealed class ArgumentTableReservation
 
     private ArgumentRegistration<T> Known<T>(ArgumentKey key, Func<ResolvedArgument> resolve)
     {
-        _owner.ValidateCollecting();
+        ValidateCollecting();
         if (_known.TryGetValue(key, out object? previous))
         {
             switch (key.Kind)
@@ -222,7 +273,7 @@ public sealed class ArgumentTableReservation
 
     private ArgumentRegistration<T> Deferred<T>(Func<ResolvedArgument> resolve)
     {
-        _owner.ValidateCollecting();
+        ValidateCollecting();
         var registration = new ArgumentRegistration<T>(this);
         _requests.Add(new(resolve, registration.Resolve));
         return registration;

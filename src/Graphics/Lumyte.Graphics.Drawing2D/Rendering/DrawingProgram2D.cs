@@ -6,11 +6,11 @@ namespace Lumyte.Graphics.Drawing2D;
 internal sealed class DrawingProgram2D
 {
     internal const int MaximumInstructions = 256;
-    private readonly ArgumentTableReservation _plan;
+    private readonly ShaderResources _plan;
     private readonly Matrix3x2 _pixelTransform;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
 
-    internal DrawingProgram2D(ArgumentTableReservation plan, DrawingTargetInfo2D target)
+    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target)
     {
         _plan = plan ?? throw new ArgumentNullException(nameof(plan));
         _pixelTransform = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);

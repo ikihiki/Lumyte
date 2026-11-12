@@ -26,6 +26,8 @@ public abstract class RenderGraphResource
 
     internal RenderGraph Owner { get; }
 
+    internal RenderGraphPass? LocalPassOwner { get; set; }
+
     internal object? Allocation { get; }
 
     internal TextureState InitialState { get; }

@@ -4,10 +4,10 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
-internal sealed class GraphDrawingArguments2D : IRenderGraphPreparation
+internal sealed class GraphDrawingArguments2D : IRenderGraphLifetime
 {
     private readonly List<DrawingArgumentPlan2D> _plans = [];
-    private readonly HashSet<ArgumentTableReservation> _fallbackScopes = [];
+    private readonly HashSet<ShaderResources> _fallbackScopes = [];
     private readonly RenderGraphBuilder _graph;
     private IGraphicsSampler? _sampler;
     private RenderGraphTexture? _fallback;
@@ -16,10 +16,7 @@ internal sealed class GraphDrawingArguments2D : IRenderGraphPreparation
     private GraphDrawingArguments2D(RenderGraphBuilder graph)
     {
         _graph = graph;
-        Arguments = graph.GetArguments();
     }
-
-    internal RenderGraphArguments Arguments { get; }
 
     internal RenderGraphTexture Fallback
     {
@@ -43,14 +40,6 @@ internal sealed class GraphDrawingArguments2D : IRenderGraphPreparation
 
     public void Validate() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    public void Prepare(RenderGraphPreparationContext context)
-    {
-        foreach (DrawingArgumentPlan2D plan in _plans)
-        {
-            plan.FinalizeMapped();
-        }
-    }
-
     public void Dispose()
     {
         while (_plans.Count != 0)
@@ -69,7 +58,7 @@ internal sealed class GraphDrawingArguments2D : IRenderGraphPreparation
         return state;
     });
 
-    internal bool RequiresFallback(IEnumerable<ArgumentTableReservation> scopes) => scopes.Any(_fallbackScopes.Contains);
+    internal bool RequiresFallback(IEnumerable<ShaderResources> scopes) => scopes.Any(_fallbackScopes.Contains);
 
     internal void Own(DrawingArgumentPlan2D plan)
     {
@@ -79,11 +68,13 @@ internal sealed class GraphDrawingArguments2D : IRenderGraphPreparation
 
     internal IGraphicsSampler Sampler() => DefaultSampler();
 
-    internal ArgumentRegistration<IGraphicsTextureView> RegisterFallback(ArgumentTableReservation scope)
+    internal ArgumentRegistration<IGraphicsTextureView> RegisterFallback(ShaderResources scope)
     {
         _fallbackScopes.Add(scope);
-        return Arguments.RegisterTexture(scope, Fallback);
+        return ((RenderGraphShaderResources)scope).ReadTexture(Fallback);
     }
 
-    private IGraphicsSampler DefaultSampler() => _sampler ??= Arguments.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
+    internal ShaderResources CreateResources() => _graph.CreateShaderResources();
+
+    private IGraphicsSampler DefaultSampler() => _sampler ??= _graph.GetSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 });
 }

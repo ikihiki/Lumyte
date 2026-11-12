@@ -20,18 +20,20 @@ public sealed class GraphArgumentOwnershipTests
         var device = new ProfilingDevice { FailTableDisposeOnce = true };
         using var graph = new Graph(device);
         using var sampler = new DispatchSampler();
-        RenderGraphArguments arguments = graph.GetArguments();
-        Assert.Same(arguments, graph.GetArguments());
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
         RenderGraphPass pass = graph.AddPass("draw", _ => { }).KeepAlive();
-        ArgumentTableReservation scope = arguments.Reserve(pass);
-        ArgumentRegistration<IGraphicsSampler> handle = scope.RegisterSampler(sampler);
+        pass.UseShaderResources(resources);
+        ArgumentRegistration<IGraphicsSampler> handle = resources.RegisterSampler(sampler);
+        RenderGraphShaderResources sibling = resources.CreateSibling();
+        ArgumentRegistration<IGraphicsSampler> siblingHandle = sibling.RegisterSampler(sampler);
+        pass.UseShaderResources(sibling);
         using CompiledRenderGraph compiled = graph.Compile();
         graph.Dispose();
         Assert.Empty(device.Tables);
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
         Assert.Equal(1, device.ActiveTables);
-        Assert.Same(scope.Table, ProfilingDevice.Owner(handle.Reference));
+        Assert.Same(ProfilingDevice.Owner(handle.Reference), ProfilingDevice.Owner(siblingHandle.Reference));
         commands.Finish();
         commands.Submit();
         Assert.Throws<InvalidOperationException>(compiled.Dispose);
@@ -67,8 +69,9 @@ public sealed class GraphArgumentOwnershipTests
             pass.UseTexture(local, TextureState.CopySource, new(PipelineStage.Copy, ResourceAccess.CopyRead));
         }
 
-        RenderGraphArguments arguments = graph.GetArguments();
-        ArgumentRegistration<IGraphicsTextureView> handle = arguments.RegisterTexture(arguments.Reserve(pass), invalidKind == 0 ? other : local);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        ArgumentRegistration<IGraphicsTextureView> handle = resources.ReadTexture(invalidKind == 0 ? other : local);
+        pass.UseShaderResources(resources);
         using CompiledRenderGraph compiled = graph.Compile();
         using var commands = new ProfilingCommands();
         Assert.Throws<ArgumentException>(() => compiled.Record(commands));
@@ -87,9 +90,10 @@ public sealed class GraphArgumentOwnershipTests
         using var graph = new Graph(device);
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
-        RenderGraphArguments arguments = graph.GetArguments();
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
         RenderGraphPass pass = graph.AddPass("direct", _ => throw new InvalidOperationException("Must not record")).KeepAlive();
-        arguments.Reserve(pass).RegisterTexture(view);
+        resources.RegisterTexture(view);
+        pass.UseShaderResources(resources);
         using CompiledRenderGraph compiled = graph.Compile();
         using var commands = new ProfilingCommands();
         Assert.Throws<ArgumentException>(() => compiled.Record(commands));
@@ -106,16 +110,16 @@ public sealed class GraphArgumentOwnershipTests
         using var graph = new Graph(device);
         RenderGraphBuffer<uint> transient = graph.CreateBuffer(new BufferDesc<uint> { Count = 4, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         RenderGraphPass dead = graph.AddPass("dead", _ => throw new InvalidOperationException("Culled callback")).UseBuffer(transient, CopyWrite);
-        RenderGraphArguments arguments = graph.GetArguments();
-        ArgumentTableReservation scope = arguments.Reserve(dead);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        dead.UseShaderResources(resources);
         int resolved = 0;
-        ArgumentRegistration<uint> handle = scope.RegisterBuffer<uint>(() =>
+        ArgumentRegistration<uint> handle = resources.RegisterBuffer<uint>(() =>
         {
             resolved++;
             throw new InvalidOperationException("Culled resolver");
         });
         bool finalized = false;
-        arguments.OnMaterialized(scope, () => finalized = true);
+        resources.WhenReady(() => finalized = true);
         using CompiledRenderGraph compiled = graph.Compile();
         Assert.Empty(compiled.PassNames);
         Assert.Equal(new[] { "dead" }, compiled.CulledPassNames);
@@ -123,7 +127,7 @@ public sealed class GraphArgumentOwnershipTests
         compiled.Record(commands);
         Assert.Equal(0, resolved);
         Assert.False(finalized);
-        Assert.False(scope.IsMaterialized);
+        Assert.False(resources.IsReady);
         Assert.Equal(0, device.NativeBuffers);
         Assert.Empty(device.Tables);
         Assert.Empty(commands.Events);
@@ -142,12 +146,12 @@ public sealed class GraphArgumentOwnershipTests
         using IGraphicsTextureView callerB = texture.CreateView();
         RenderGraphTexture resource = graph.ImportTexture(texture, TextureState.Sampled, ShaderRead);
         RenderGraphPass pass = graph.AddPass("views", _ => { }).UseTexture(resource, TextureState.Sampled, ShaderRead).KeepAlive();
-        RenderGraphArguments arguments = graph.GetArguments();
-        ArgumentTableReservation scope = arguments.Reserve(pass);
-        ArgumentRegistration<IGraphicsTextureView> defaultView = arguments.RegisterTexture(scope, resource);
-        ArgumentRegistration<IGraphicsTextureView> explicitView = arguments.RegisterTexture(scope, resource, new() { MipLevelCount = 1, ArrayLayerCount = 1 });
-        ArgumentRegistration<IGraphicsTextureView> firstCaller = scope.RegisterTexture(callerA);
-        ArgumentRegistration<IGraphicsTextureView> secondCaller = scope.RegisterTexture(callerB);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        pass.UseShaderResources(resources);
+        ArgumentRegistration<IGraphicsTextureView> defaultView = resources.ReadTexture(resource);
+        ArgumentRegistration<IGraphicsTextureView> explicitView = resources.ReadTexture(resource, new() { MipLevelCount = 1, ArrayLayerCount = 1 });
+        ArgumentRegistration<IGraphicsTextureView> firstCaller = resources.RegisterTexture(callerA);
+        ArgumentRegistration<IGraphicsTextureView> secondCaller = resources.RegisterTexture(callerB);
         using CompiledRenderGraph compiled = graph.Compile();
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
@@ -166,8 +170,9 @@ public sealed class GraphArgumentOwnershipTests
         using var graph = new Graph(device);
         RenderGraphShaderDataBuffer<DrawingInstruction> data = graph.CreateShaderDataBuffer<DrawingInstruction>(DrawingShaders2D.Vertex, 1);
         RenderGraphPass read = graph.AddPass("read", _ => { }).UseShaderDataBuffer(data, ShaderRead).KeepAlive();
-        RenderGraphArguments arguments = graph.GetArguments();
-        arguments.RegisterBuffer(arguments.Reserve(read), data, 0, 1);
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        resources.ReadBuffer(data, 0, 1);
+        read.UseShaderResources(resources);
         Assert.Throws<InvalidOperationException>(() => graph.Compile());
         Assert.Equal(0, device.NativeBuffers);
         Assert.Empty(device.Tables);
@@ -187,12 +192,13 @@ public sealed class GraphArgumentOwnershipTests
             .UseShaderDataBuffer(source, new(PipelineStage.Copy, ResourceAccess.CopyRead)).UseShaderDataBuffer(data, CopyWrite);
         bool readyBeforeRead = false;
         RenderGraphPass read = graph.AddPass("read", _ => Assert.True(readyBeforeRead)).UseShaderDataBuffer(data, ShaderRead).KeepAlive();
-        RenderGraphArguments arguments = graph.GetArguments();
-        ArgumentTableReservation scope = arguments.Reserve(read);
-        ArgumentRegistration<DrawingInstruction> handle = arguments.RegisterBuffer(scope, data, 0, 1);
-        arguments.OnMaterialized(scope, () =>
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        read.UseShaderResources(resources);
+        ArgumentRegistration<DrawingInstruction> handle = resources.ReadBuffer(data, 0, 1);
+        ArgumentRegistration<DrawingInstruction> siblingHandle = resources.ReadBuffer(data, 0, 1);
+        resources.WhenReady(() =>
         {
-            Assert.Same(scope.Table, ProfilingDevice.Owner(handle.Reference));
+            Assert.Same(ProfilingDevice.Owner(handle.Reference), ProfilingDevice.Owner(siblingHandle.Reference));
             readyBeforeRead = true;
         });
         using CompiledRenderGraph compiled = graph.Compile();
@@ -221,22 +227,25 @@ public sealed class GraphArgumentOwnershipTests
         RenderGraphPass first = graph.AddPass("first", _ => { }).UseTexture(resource, TextureState.Sampled, ShaderRead).KeepAlive();
         RenderGraphPass middle = graph.AddPass("middle", _ => { }).UseTexture(resource, TextureState.Sampled, ShaderRead).KeepAlive();
         RenderGraphPass last = graph.AddPass("last", _ => { }).UseTexture(resource, TextureState.Sampled, ShaderRead).KeepAlive();
-        RenderGraphArguments arguments = graph.GetArguments();
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
 
         // Collection order last/first/middle would place last and first together. Execution must not.
-        ArgumentTableReservation lastScope = arguments.Reserve(last);
-        lastScope.RegisterTexture(c);
-        ArgumentTableReservation firstScope = arguments.Reserve(first);
-        firstScope.RegisterTexture(a);
-        ArgumentTableReservation middleScope = arguments.Reserve(middle);
-        middleScope.RegisterTexture(b);
+        RenderGraphShaderResources lastResources = resources;
+        ArgumentRegistration<IGraphicsTextureView> lastHandle = lastResources.RegisterTexture(c);
+        last.UseShaderResources(lastResources);
+        RenderGraphShaderResources firstResources = resources.CreateSibling();
+        ArgumentRegistration<IGraphicsTextureView> firstHandle = firstResources.RegisterTexture(a);
+        first.UseShaderResources(firstResources);
+        RenderGraphShaderResources middleResources = resources.CreateSibling();
+        ArgumentRegistration<IGraphicsTextureView> middleHandle = middleResources.RegisterTexture(b);
+        middle.UseShaderResources(middleResources);
         using CompiledRenderGraph compiled = graph.Compile();
         Assert.Equal(new[] { "first", "middle", "last" }, compiled.PassNames);
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
         Assert.Equal(new uint[] { 2, 1 }, device.Tables.Select(desc => desc.TextureCapacity));
-        Assert.Same(firstScope.Table, middleScope.Table);
-        Assert.NotSame(firstScope.Table, lastScope.Table);
+        Assert.Same(ProfilingDevice.Owner(firstHandle.Reference), ProfilingDevice.Owner(middleHandle.Reference));
+        Assert.NotSame(ProfilingDevice.Owner(firstHandle.Reference), ProfilingDevice.Owner(lastHandle.Reference));
         commands.Dispose();
     }
 
@@ -303,19 +312,19 @@ public sealed class GraphArgumentOwnershipTests
         commands.Dispose();
     }
 
-    /// <summary>Opaque private buffers never exempt a registered graph allocation from its actual pass declaration.</summary>
+    /// <summary>Inherited registration never exempts a graph allocation from its actual pass declaration.</summary>
     [Fact]
-    public void PrivateBufferFlagCannotSmuggleAnUndeclaredGraphImport()
+    public void InheritedBufferRegistrationCannotSmuggleAnUndeclaredGraphImport()
     {
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
         using IGraphicsBuffer<uint> buffer = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead });
         graph.ImportBuffer(buffer, ShaderRead);
-        RenderGraphArguments arguments = graph.GetArguments();
-        ArgumentTableReservation reservation = arguments.Registrations.Reserve();
-        reservation.RegisterBuffer(buffer.SliceElements(0, 1));
+        RenderGraphShaderResources resources = graph.CreateShaderResources();
+        ShaderResources baseResources = resources;
+        baseResources.RegisterBuffer(buffer.SliceElements(0, 1));
         RenderGraphPass pass = graph.AddPass("private", _ => { }).KeepAlive();
-        arguments.Attach(pass, [reservation], privateBuffers: true);
+        pass.UseShaderResources(baseResources);
         using CompiledRenderGraph compiled = graph.Compile();
         using var commands = new ProfilingCommands();
         Assert.Throws<ArgumentException>(() => compiled.Record(commands));

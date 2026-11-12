@@ -33,7 +33,7 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
 
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new Encoder(this);
 
-    public IComputeEncoder BeginComputePass(ComputePassDesc desc) => throw new NotSupportedException();
+    public IComputeEncoder BeginComputePass(ComputePassDesc desc) => new ComputeEncoder(this);
 
     public void Finish() => State = CommandBufferState.Executable;
 
@@ -74,15 +74,37 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
 
         public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) => owner.Events.Add((vertexCount, instanceCount));
 
-        public void SetIndexBuffer(BufferSlice<ushort> indices) => throw new NotSupportedException();
+        public void SetIndexBuffer(BufferSlice<ushort> indices)
+        {
+        }
 
         public void SetIndexBuffer(BufferSlice<uint> indices) => throw new NotSupportedException();
 
-        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0) => throw new NotSupportedException();
+        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0) => owner.Events.Add(("indexed", indexCount, instanceCount, firstIndex, baseVertex, firstInstance));
 
         public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments) => throw new NotSupportedException();
 
         public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments) => throw new NotSupportedException();
+
+        public void End()
+        {
+        }
+    }
+
+    private sealed class ComputeEncoder(ProfilingCommands owner) : IComputeEncoder
+    {
+        public void SetArgumentTable(IArgumentTable table) => owner.Events.Add(table);
+
+        public void SetArguments<T>(in T arguments)
+            where T : struct, IShaderArguments => owner.Events.Add(arguments);
+
+        public void SetPipeline(IGraphicsComputePipeline pipeline)
+        {
+        }
+
+        public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1) => owner.Events.Add(("dispatch", groupCountX, groupCountY, groupCountZ));
+
+        public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments) => throw new NotSupportedException();
 
         public void End()
         {
