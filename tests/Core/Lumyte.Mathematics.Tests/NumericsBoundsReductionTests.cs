@@ -24,10 +24,10 @@ public sealed class NumericsBoundsReductionTests
             Vector2 d = Vector2.Transform(maximum, transform) * scale;
             var expectedMinimum = Vector2.Min(Vector2.Min(a, b), Vector2.Min(c, d));
             var expectedMaximum = Vector2.Max(Vector2.Max(a, b), Vector2.Max(c, d));
-            NumericsGeometry.GetTransformedBounds(minimum, maximum, transform, scale, out Vector2 low, out Vector2 high);
+            Geometry2D.GetTransformedBoundsBcl(minimum, maximum, transform, scale, out Vector2 low, out Vector2 high);
             Assert.Equal(expectedMinimum, low);
             Assert.Equal(expectedMaximum, high);
-            NumericsGeometry.GetBounds(a, b, c, d, out low, out high);
+            Geometry2D.GetBoundsBcl(a, b, c, d, out low, out high);
             Assert.Equal(expectedMinimum, low);
             Assert.Equal(expectedMaximum, high);
         }

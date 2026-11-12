@@ -502,7 +502,7 @@ internal sealed unsafe partial class TsfTextStore : ITextStoreACP.Interface, ITf
         float right = ranges.Max(r => r.X + r.Width);
         float bottom = ranges.Max(r => r.Y + r.Height);
         WindowRect viewport = _geometry!.Viewport;
-        (float X, float Y, float Width, float Height) bounds = CoordinateGeometry.IntersectEdges((x, y, right, bottom), (viewport.X, viewport.Y, viewport.X + viewport.Width, viewport.Y + viewport.Height));
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.IntersectBoundsClampedEdges((x, y, right, bottom), (viewport.X, viewport.Y, viewport.X + viewport.Width, viewport.Y + viewport.Height));
 
         // Compare the original edges, not the clamped intersection: disjoint and
         // zero-width caret envelopes must still report TSF clipping accurately.

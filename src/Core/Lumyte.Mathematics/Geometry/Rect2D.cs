@@ -63,7 +63,7 @@ public readonly record struct Rect2D<T>
     /// <summary>Tests containment excluding the maximum sides; zero dimensions contain no points.</summary>
     /// <param name="point">The query point.</param>
     /// <returns>Whether the point belongs to the half-open rectangle.</returns>
-    public bool ContainsHalfOpen(Point2D<T> point) => CoordinateGeometry.ContainsHalfOpenEdges((X, Y, Right, Bottom), point.X, point.Y);
+    public bool ContainsHalfOpen(Point2D<T> point) => Geometry2D.ContainsHalfOpenEdges((X, Y, Right, Bottom), point.X, point.Y);
 
     /// <summary>Translates the rectangle with checked coordinates and edges.</summary>
     /// <param name="x">The horizontal offset.</param>
@@ -94,10 +94,10 @@ public readonly record struct Rect2D<T>
     public Rect2D<T> Union(Rect2D<T> other)
     {
         // Compute both lower edges first, then each checked axis in the original overflow order.
-        (T Left, T Top, T Right, T Bottom) lower = CoordinateGeometry.EncloseRawEdges((X, Y, T.Zero, T.Zero), (other.X, other.Y, T.Zero, T.Zero));
-        (T Left, T Top, T Right, T Bottom) horizontal = CoordinateGeometry.EncloseRawEdges((T.Zero, T.Zero, checked(X + Width), T.Zero), (T.Zero, T.Zero, checked(other.X + other.Width), T.Zero));
+        (T Left, T Top, T Right, T Bottom) lower = Geometry2D.EncloseBoundsEdges((X, Y, T.Zero, T.Zero), (other.X, other.Y, T.Zero, T.Zero));
+        (T Left, T Top, T Right, T Bottom) horizontal = Geometry2D.EncloseBoundsEdges((T.Zero, T.Zero, checked(X + Width), T.Zero), (T.Zero, T.Zero, checked(other.X + other.Width), T.Zero));
         T width = GeometryScalar<T>.Checked(checked(horizontal.Right - lower.Left));
-        (T Left, T Top, T Right, T Bottom) vertical = CoordinateGeometry.EncloseRawEdges((T.Zero, T.Zero, T.Zero, checked(Y + Height)), (T.Zero, T.Zero, T.Zero, checked(other.Y + other.Height)));
+        (T Left, T Top, T Right, T Bottom) vertical = Geometry2D.EncloseBoundsEdges((T.Zero, T.Zero, T.Zero, checked(Y + Height)), (T.Zero, T.Zero, T.Zero, checked(other.Y + other.Height)));
         T height = GeometryScalar<T>.Checked(checked(vertical.Bottom - lower.Top));
         return new(lower.Left, lower.Top, width, height);
     }

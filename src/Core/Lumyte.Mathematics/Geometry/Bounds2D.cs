@@ -42,14 +42,14 @@ public readonly record struct Bounds2D<T>(T Left, T Top, T Right, T Bottom)
     /// <param name="x">The point x coordinate.</param>
     /// <param name="y">The point y coordinate.</param>
     /// <returns>Whether the point belongs to these bounds.</returns>
-    public bool Contains(T x, T y) => CoordinateGeometry.ContainsHalfOpenEdges((Left, Top, Right, Bottom), x, y);
+    public bool Contains(T x, T y) => Geometry2D.ContainsHalfOpenEdges((Left, Top, Right, Bottom), x, y);
 
     /// <summary>Intersects raw coordinate edges, retaining reversed empty results.</summary>
     /// <param name="other">The other bounds.</param>
     /// <returns>The intersection.</returns>
     public Bounds2D<T> Intersect(Bounds2D<T> other)
     {
-        (T Left, T Top, T Right, T Bottom) edges = CoordinateGeometry.IntersectRawEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
+        (T Left, T Top, T Right, T Bottom) edges = Geometry2D.IntersectBoundsEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
         return new(edges.Left, edges.Top, edges.Right, edges.Bottom);
     }
 
@@ -68,7 +68,7 @@ public readonly record struct Bounds2D<T>(T Left, T Top, T Right, T Bottom)
             return this;
         }
 
-        (T Left, T Top, T Right, T Bottom) edges = CoordinateGeometry.EncloseRawEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
+        (T Left, T Top, T Right, T Bottom) edges = Geometry2D.EncloseBoundsEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
         return new(edges.Left, edges.Top, edges.Right, edges.Bottom);
     }
 

@@ -100,7 +100,7 @@ internal static unsafe class ParleyLayoutImporter2D
         Vector2 Point(float x, float y)
         {
             var result = Vector2.Transform(new Vector2(x, y), transform);
-            DrawingGeometry.IncludeInBounds(result, ref minimum, ref maximum);
+            Geometry2D.IncludeInBoundsBcl(result, ref minimum, ref maximum);
             return result;
         }
 
@@ -144,7 +144,7 @@ internal static unsafe class ParleyLayoutImporter2D
         builder.LineTo(p2);
         builder.LineTo(p3);
         builder.Close();
-        NumericsGeometry.GetBounds(p0, p1, p2, p3, out Vector2 minimum, out Vector2 maximum);
+        Geometry2D.GetBoundsBcl(p0, p1, p2, p3, out Vector2 minimum, out Vector2 maximum);
         return (builder.Build(), new Rect2D(minimum.X, minimum.Y, maximum.X - minimum.X, maximum.Y - minimum.Y));
     }
 
@@ -155,7 +155,7 @@ internal static unsafe class ParleyLayoutImporter2D
             return second;
         }
 
-        (float X, float Y, float Width, float Height) bounds = CoordinateGeometry.Union((a.X, a.Y, a.Width, a.Height), (second.X, second.Y, second.Width, second.Height));
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.UnionBoundsIgnoringZeroArea((a.X, a.Y, a.Width, a.Height), (second.X, second.Y, second.Width, second.Height));
         return new Rect2D(bounds.X, bounds.Y, bounds.Width, bounds.Height);
     }
 
@@ -171,7 +171,7 @@ internal static unsafe class ParleyLayoutImporter2D
             return first;
         }
 
-        (float X, float Y, float Width, float Height) bounds = CoordinateGeometry.Intersect((a.X, a.Y, a.Width, a.Height), (b.X, b.Y, b.Width, b.Height));
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.IntersectBoundsClamped((a.X, a.Y, a.Width, a.Height), (b.X, b.Y, b.Width, b.Height));
         return new Rect2D(bounds.X, bounds.Y, bounds.Width, bounds.Height);
     }
 

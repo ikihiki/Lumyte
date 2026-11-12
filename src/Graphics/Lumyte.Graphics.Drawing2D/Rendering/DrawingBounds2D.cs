@@ -59,7 +59,7 @@ internal static class DrawingBounds2D
 
         void Intersect(Rect2D bounds, Matrix3x2 transform)
         {
-            NumericsGeometry.GetTransformedBounds(new(bounds.X, bounds.Y), new(bounds.X + bounds.Width, bounds.Y + bounds.Height), transform, out Vector2 lower, out Vector2 upper);
+            Geometry2D.GetTransformedBoundsBcl(new(bounds.X, bounds.Y), new(bounds.X + bounds.Width, bounds.Y + bounds.Height), transform, out Vector2 lower, out Vector2 upper);
 
             // Retain the previous extent reconstruction and its finite-range check.
             Rect2D transformed = float.IsPositiveInfinity(lower.X) ? default : new(lower.X, lower.Y, upper.X - lower.X, upper.Y - lower.Y);
@@ -82,17 +82,17 @@ internal static class DrawingBounds2D
             PathSegment2D segment = path.Segments[i];
             if (segment.Verb != PathVerb2D.Close)
             {
-                DrawingGeometry.IncludeInBounds(segment.P0, ref minimum, ref maximum);
+                Geometry2D.IncludeInBoundsBcl(segment.P0, ref minimum, ref maximum);
             }
 
             if (segment.Verb is PathVerb2D.Quadratic or PathVerb2D.Cubic)
             {
-                DrawingGeometry.IncludeInBounds(segment.P1, ref minimum, ref maximum);
+                Geometry2D.IncludeInBoundsBcl(segment.P1, ref minimum, ref maximum);
             }
 
             if (segment.Verb == PathVerb2D.Cubic)
             {
-                DrawingGeometry.IncludeInBounds(segment.P2, ref minimum, ref maximum);
+                Geometry2D.IncludeInBoundsBcl(segment.P2, ref minimum, ref maximum);
             }
         }
 
@@ -105,7 +105,7 @@ internal static class DrawingBounds2D
         Vector2 maximum = new(float.NegativeInfinity);
         for (int i = 0; i < mesh.Vertices.Count; i++)
         {
-            DrawingGeometry.IncludeInBounds(mesh.Vertices[i].Position, ref minimum, ref maximum);
+            Geometry2D.IncludeInBoundsBcl(mesh.Vertices[i].Position, ref minimum, ref maximum);
         }
 
         return Bounds(minimum, maximum);
@@ -115,8 +115,8 @@ internal static class DrawingBounds2D
     {
         Vector2 minimum = new(float.PositiveInfinity);
         Vector2 maximum = new(float.NegativeInfinity);
-        DrawingGeometry.IncludeInBounds(start, ref minimum, ref maximum);
-        DrawingGeometry.IncludeInBounds(end, ref minimum, ref maximum);
+        Geometry2D.IncludeInBoundsBcl(start, ref minimum, ref maximum);
+        Geometry2D.IncludeInBoundsBcl(end, ref minimum, ref maximum);
         return Bounds(minimum, maximum);
     }
 

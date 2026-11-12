@@ -483,11 +483,11 @@ public sealed class WindowSystem : IDisposable
     }
 
     private static bool Contains(WindowRect rect, Vector2 point)
-        => CoordinateGeometry.ContainsHalfOpen(rect.X, rect.Y, rect.Width, rect.Height, point.X, point.Y);
+        => Geometry2D.ContainsHalfOpenBounds(rect.X, rect.Y, rect.Width, rect.Height, point.X, point.Y);
 
     private static WindowRect Intersect(WindowRect a, WindowRect b)
     {
-        (float X, float Y, float Width, float Height) bounds = CoordinateGeometry.Intersect((a.X, a.Y, a.Width, a.Height), (b.X, b.Y, b.Width, b.Height));
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.IntersectBoundsClamped((a.X, a.Y, a.Width, a.Height), (b.X, b.Y, b.Width, b.Height));
         return new WindowRect(bounds.X, bounds.Y, bounds.Width, bounds.Height);
     }
 

@@ -65,19 +65,19 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
         Action<Vector2> append = static _ => { };
         for (int i = 0; i < 1000; i++)
         {
-            DrawingGeometry.AppendFlattenedCubic(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
+            Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
         }
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1000; i++)
         {
-            DrawingGeometry.AppendFlattenedCubic(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
+            Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
         var failure = new InvalidOperationException();
-        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => DrawingGeometry.AppendFlattenedQuadratic(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, _ => throw failure, 24)));
-        Assert.Throws<NotSupportedException>(() => DrawingGeometry.AppendFlattenedQuadratic(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, append, 0));
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, _ => throw failure, 24)));
+        Assert.Throws<NotSupportedException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, append, 0));
     }
 
     /// <summary>Path, line and mesh bounds no longer allocate point gathers or LINQ iterators.</summary>
@@ -515,7 +515,7 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
 
             void Intersect(Rect2D bounds, Matrix3x2 transform)
             {
-                NumericsGeometry.GetTransformedBounds(new(bounds.X, bounds.Y), new(bounds.X + bounds.Width, bounds.Y + bounds.Height), transform, out Vector2 lower, out Vector2 upper);
+                Geometry2D.GetTransformedBoundsBcl(new(bounds.X, bounds.Y), new(bounds.X + bounds.Width, bounds.Y + bounds.Height), transform, out Vector2 lower, out Vector2 upper);
 
                 // Retain the previous extent reconstruction and its finite-range check.
                 Rect2D transformed = float.IsPositiveInfinity(lower.X) ? default : new(lower.X, lower.Y, upper.X - lower.X, upper.Y - lower.Y);

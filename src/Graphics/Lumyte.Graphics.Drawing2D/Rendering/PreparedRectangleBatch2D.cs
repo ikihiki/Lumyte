@@ -419,7 +419,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
         private static void Intersect(ref Vector2 minimum, ref Vector2 maximum, Rect2D rect, Matrix3x2 transform)
         {
-            NumericsGeometry.GetTransformedBounds(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, out Vector2 low, out Vector2 high);
+            Geometry2D.GetTransformedBoundsBcl(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, out Vector2 low, out Vector2 high);
             if (!float.IsFinite(low.X) || !float.IsFinite(low.Y) || !float.IsFinite(high.X) || !float.IsFinite(high.Y))
             {
                 throw new NotSupportedException("Transformed drawing bounds exceed the finite coordinate range.");

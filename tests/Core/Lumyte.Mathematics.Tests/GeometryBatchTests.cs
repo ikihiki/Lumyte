@@ -26,7 +26,7 @@ public sealed class GeometryBatchTests
 
             foreach (float point in special)
             {
-                GeometryBatch.SquaredDistances(x, y, point, 1.75f, output);
+                Geometry2D.SquaredDistancesBcl(x, y, point, 1.75f, output);
                 for (int i = 0; i < length; i++)
                 {
                     float dx = x[i] - point;
@@ -47,27 +47,27 @@ public sealed class GeometryBatchTests
         float[] x = Enumerable.Range(0, 33).Select(i => (float)i).ToArray();
         float[] y = Enumerable.Range(0, 33).Select(i => (float)(i * 2)).ToArray();
         float[] copy = (float[])x.Clone();
-        GeometryBatch.SquaredDistances(x, y, 0, 0, x);
+        Geometry2D.SquaredDistancesBcl(x, y, 0, 0, x);
         for (int i = 0; i < x.Length; i++)
         {
             Assert.Equal((copy[i] * copy[i]) + (y[i] * y[i]), x[i]);
         }
 
         Array.Copy(copy, x, x.Length);
-        GeometryBatch.SquaredDistances(x, y, 0, 0, y);
+        Geometry2D.SquaredDistancesBcl(x, y, 0, 0, y);
         for (int i = 0; i < x.Length; i++)
         {
             Assert.Equal((float)(i * i * 5), y[i]);
         }
 
         Array.Copy(copy, x, x.Length);
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x.AsSpan(0, 32), y.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x.AsSpan(1), y.AsSpan(0, 32), 0, 0, x.AsSpan(0, 32)));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(y.AsSpan(0, 32), x.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x, y.AsSpan(1), 0, 0, x));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x, y, 0, 0, x.AsSpan(1)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x.AsSpan(0, 32), y.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x.AsSpan(1), y.AsSpan(0, 32), 0, 0, x.AsSpan(0, 32)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(y.AsSpan(0, 32), x.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x, y.AsSpan(1), 0, 0, x));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x, y, 0, 0, x.AsSpan(1)));
         Assert.Equal(copy, x);
-        GeometryBatch.SquaredDistances(x, x, 0, 0, x);
+        Geometry2D.SquaredDistancesBcl(x, x, 0, 0, x);
         for (int i = 0; i < x.Length; i++)
         {
             Assert.Equal((float)(i * i * 2), x[i]);
@@ -94,7 +94,7 @@ public sealed class GeometryBatchTests
 
             foreach (double point in special)
             {
-                GeometryBatch.SquaredDistances(x, y, point, 1.75d, output);
+                Geometry2D.SquaredDistancesBcl(x, y, point, 1.75d, output);
                 for (int i = 0; i < length; i++)
                 {
                     double dx = x[i] - point;
@@ -115,27 +115,27 @@ public sealed class GeometryBatchTests
         double[] x = Enumerable.Range(0, 33).Select(i => (double)i).ToArray();
         double[] y = Enumerable.Range(0, 33).Select(i => (double)(i * 2)).ToArray();
         double[] copy = (double[])x.Clone();
-        GeometryBatch.SquaredDistances(x, y, 0, 0, x);
+        Geometry2D.SquaredDistancesBcl(x, y, 0, 0, x);
         for (int i = 0; i < x.Length; i++)
         {
             Assert.Equal((copy[i] * copy[i]) + (y[i] * y[i]), x[i]);
         }
 
         Array.Copy(copy, x, x.Length);
-        GeometryBatch.SquaredDistances(x, y, 0, 0, y);
+        Geometry2D.SquaredDistancesBcl(x, y, 0, 0, y);
         for (int i = 0; i < x.Length; i++)
         {
             Assert.Equal((double)(i * i * 5), y[i]);
         }
 
         Array.Copy(copy, x, x.Length);
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x.AsSpan(0, 32), y.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x.AsSpan(1), y.AsSpan(0, 32), 0, 0, x.AsSpan(0, 32)));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(y.AsSpan(0, 32), x.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x, y.AsSpan(1), 0, 0, x));
-        Assert.Throws<ArgumentException>(() => GeometryBatch.SquaredDistances(x, y, 0, 0, x.AsSpan(1)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x.AsSpan(0, 32), y.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x.AsSpan(1), y.AsSpan(0, 32), 0, 0, x.AsSpan(0, 32)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(y.AsSpan(0, 32), x.AsSpan(0, 32), 0, 0, x.AsSpan(1)));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x, y.AsSpan(1), 0, 0, x));
+        Assert.Throws<ArgumentException>(() => Geometry2D.SquaredDistancesBcl(x, y, 0, 0, x.AsSpan(1)));
         Assert.Equal(copy, x);
-        GeometryBatch.SquaredDistances(x, x, 0, 0, x);
+        Geometry2D.SquaredDistancesBcl(x, x, 0, 0, x);
         for (int i = 0; i < x.Length; i++)
         {
             Assert.Equal((double)(i * i * 2), x[i]);

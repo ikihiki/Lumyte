@@ -28,7 +28,7 @@ internal readonly record struct UiInputBounds(double Left, double Top, double Ri
             return this;
         }
 
-        (double Left, double Top, double Right, double Bottom) edges = CoordinateGeometry.EncloseRawEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
+        (double Left, double Top, double Right, double Bottom) edges = Geometry2D.EncloseBoundsEdges((Left, Top, Right, Bottom), (other.Left, other.Top, other.Right, other.Bottom));
         return new(edges.Left, edges.Top, edges.Right, edges.Bottom);
     }
 

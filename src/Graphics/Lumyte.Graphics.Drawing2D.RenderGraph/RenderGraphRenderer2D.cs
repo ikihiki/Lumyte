@@ -233,7 +233,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private static EffectPixelRect PixelBounds(Rect2D rect, Matrix3x2 transform, float pixelScale)
     {
-        NumericsGeometry.GetTransformedBounds(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, pixelScale, out Vector2 minimum, out Vector2 maximum);
+        Geometry2D.GetTransformedBoundsBcl(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, pixelScale, out Vector2 minimum, out Vector2 maximum);
         int x = checked((int)Math.Floor(minimum.X));
         int y = checked((int)Math.Floor(minimum.Y));
         int right = checked((int)Math.Ceiling(maximum.X));

@@ -3,8 +3,8 @@ using System.Runtime.Intrinsics;
 
 namespace Lumyte.Mathematics.Geometry;
 
-/// <summary>Allocation-free operations on separate coordinate spans; no generic geometry layout assumptions.</summary>
-public static class GeometryBatch
+/// <summary>Provides two-dimensional geometry operations with explicit numeric and boundary policies.</summary>
+public static partial class Geometry2D
 {
     /// <summary>Computes squared distances to a fixed point, independently for each coordinate pair.</summary>
     /// <param name="x">The X coordinates.</param>
@@ -20,7 +20,7 @@ public static class GeometryBatch
     /// before writing. Only the first X length output elements are written. Empty input is valid.
     /// </remarks>
     /// <exception cref="ArgumentException">Lengths differ, destination is short, or overlap is shifted.</exception>
-    public static void SquaredDistances(ReadOnlySpan<float> x, ReadOnlySpan<float> y, float pointX, float pointY, Span<float> destination)
+    public static void SquaredDistancesBcl(ReadOnlySpan<float> x, ReadOnlySpan<float> y, float pointX, float pointY, Span<float> destination)
     {
         Validate(x, y, destination);
         int i = 0;
@@ -72,7 +72,7 @@ public static class GeometryBatch
     /// before writing. Only the first X length output elements are written. Empty input is valid.
     /// </remarks>
     /// <exception cref="ArgumentException">Lengths differ, destination is short, or overlap is shifted.</exception>
-    public static void SquaredDistances(ReadOnlySpan<double> x, ReadOnlySpan<double> y, double pointX, double pointY, Span<double> destination)
+    public static void SquaredDistancesBcl(ReadOnlySpan<double> x, ReadOnlySpan<double> y, double pointX, double pointY, Span<double> destination)
     {
         Validate(x, y, destination);
         int i = 0;

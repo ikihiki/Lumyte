@@ -2,12 +2,11 @@ using System.Numerics;
 
 namespace Lumyte.Mathematics.Geometry;
 
-/// <summary>Provides streaming single-precision geometry with BCL vector arithmetic.</summary>
-/// <remarks>These operations retain single-precision evaluation order rather than the validated generic geometry contract.</remarks>
-public static class DrawingGeometry
+/// <summary>Provides two-dimensional geometry operations with explicit numeric and boundary policies.</summary>
+public static partial class Geometry2D
 {
     /// <summary>Receives flattened endpoints without requiring a delegate or boxing.</summary>
-    public interface IPointSink
+    public interface IStreamingPointSink
     {
         /// <summary>Appends the next accepted endpoint.</summary>
         /// <param name="point">The next accepted point.</param>
@@ -19,7 +18,7 @@ public static class DrawingGeometry
     /// <param name="start">The segment start.</param>
     /// <param name="end">The segment end.</param>
     /// <returns>The distance; non-finite arithmetic follows BCL semantics.</returns>
-    public static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
+    public static float DistanceToSegmentBcl(Vector2 point, Vector2 start, Vector2 end)
     {
         Vector2 delta = end - start;
         float lengthSquared = delta.LengthSquared();
@@ -36,27 +35,27 @@ public static class DrawingGeometry
     /// <param name="point">The next point.</param>
     /// <param name="minimum">The minimum, initially positive infinity.</param>
     /// <param name="maximum">The maximum, initially negative infinity.</param>
-    public static void IncludeInBounds(Vector2 point, ref Vector2 minimum, ref Vector2 maximum)
+    public static void IncludeInBoundsBcl(Vector2 point, ref Vector2 minimum, ref Vector2 maximum)
     {
         minimum = Vector2.Min(minimum, point);
         maximum = Vector2.Max(maximum, point);
     }
 
-    /// <summary>Appends quadratic endpoints through a callback.</summary>
+    /// <summary>Appends quadratic endpoints through a callback using BCL single-precision evaluation.</summary>
     /// <param name="start">The start point.</param>
     /// <param name="control">The control point.</param>
     /// <param name="end">The end point.</param>
     /// <param name="tolerance">The acceptance distance.</param>
     /// <param name="append">Receives each accepted endpoint.</param>
     /// <param name="maxDepth">The maximum subdivision depth, from zero through 30.</param>
-    public static void AppendFlattenedQuadratic(Vector2 start, Vector2 control, Vector2 end, float tolerance, Action<Vector2> append, int maxDepth)
+    public static void AppendFlattenedQuadraticBcl(Vector2 start, Vector2 control, Vector2 end, float tolerance, Action<Vector2> append, int maxDepth)
     {
         ArgumentNullException.ThrowIfNull(append);
         var sink = new ActionSink(append);
-        AppendFlattenedQuadratic(start, control, end, tolerance, ref sink, maxDepth);
+        AppendFlattenedQuadraticBcl(start, control, end, tolerance, ref sink, maxDepth);
     }
 
-    /// <summary>Appends cubic endpoints through a callback.</summary>
+    /// <summary>Appends cubic endpoints through a callback using BCL single-precision evaluation.</summary>
     /// <param name="start">The start point.</param>
     /// <param name="control1">The first control point.</param>
     /// <param name="control2">The second control point.</param>
@@ -64,11 +63,11 @@ public static class DrawingGeometry
     /// <param name="tolerance">The acceptance distance.</param>
     /// <param name="append">Receives each accepted endpoint.</param>
     /// <param name="maxDepth">The maximum subdivision depth, from zero through 30.</param>
-    public static void AppendFlattenedCubic(Vector2 start, Vector2 control1, Vector2 control2, Vector2 end, float tolerance, Action<Vector2> append, int maxDepth)
+    public static void AppendFlattenedCubicBcl(Vector2 start, Vector2 control1, Vector2 control2, Vector2 end, float tolerance, Action<Vector2> append, int maxDepth)
     {
         ArgumentNullException.ThrowIfNull(append);
         var sink = new ActionSink(append);
-        AppendFlattenedCubic(start, control1, control2, end, tolerance, ref sink, maxDepth);
+        AppendFlattenedCubicBcl(start, control1, control2, end, tolerance, ref sink, maxDepth);
     }
 
     /// <summary>Appends quadratic endpoints in order using a non-boxed mutable sink.</summary>
@@ -80,8 +79,8 @@ public static class DrawingGeometry
     /// <param name="tolerance">The acceptance distance.</param>
     /// <param name="sink">Receives endpoints and retains mutable state.</param>
     /// <param name="maxDepth">The maximum subdivision depth, from zero through 30.</param>
-    public static void AppendFlattenedQuadratic<TSink>(Vector2 start, Vector2 control, Vector2 end, float tolerance, ref TSink sink, int maxDepth)
-        where TSink : struct, IPointSink
+    public static void AppendFlattenedQuadraticBcl<TSink>(Vector2 start, Vector2 control, Vector2 end, float tolerance, ref TSink sink, int maxDepth)
+        where TSink : struct, IStreamingPointSink
     {
         ValidateDepth(maxDepth);
         Quadratic(start, control, end, tolerance, ref sink, maxDepth, 0);
@@ -97,17 +96,17 @@ public static class DrawingGeometry
     /// <param name="tolerance">The acceptance distance.</param>
     /// <param name="sink">Receives endpoints and retains mutable state.</param>
     /// <param name="maxDepth">The maximum subdivision depth, from zero through 30.</param>
-    public static void AppendFlattenedCubic<TSink>(Vector2 start, Vector2 control1, Vector2 control2, Vector2 end, float tolerance, ref TSink sink, int maxDepth)
-        where TSink : struct, IPointSink
+    public static void AppendFlattenedCubicBcl<TSink>(Vector2 start, Vector2 control1, Vector2 control2, Vector2 end, float tolerance, ref TSink sink, int maxDepth)
+        where TSink : struct, IStreamingPointSink
     {
         ValidateDepth(maxDepth);
         Cubic(start, control1, control2, end, tolerance, ref sink, maxDepth, 0);
     }
 
     private static void Quadratic<TSink>(Vector2 p0, Vector2 p1, Vector2 p2, float tolerance, ref TSink sink, int maxDepth, int depth)
-        where TSink : struct, IPointSink
+        where TSink : struct, IStreamingPointSink
     {
-        if (DistanceToSegment(p1, p0, p2) <= tolerance)
+        if (DistanceToSegmentBcl(p1, p0, p2) <= tolerance)
         {
             sink.Append(p2);
             return;
@@ -126,9 +125,9 @@ public static class DrawingGeometry
     }
 
     private static void Cubic<TSink>(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float tolerance, ref TSink sink, int maxDepth, int depth)
-        where TSink : struct, IPointSink
+        where TSink : struct, IStreamingPointSink
     {
-        if (MathF.Max(DistanceToSegment(p1, p0, p3), DistanceToSegment(p2, p0, p3)) <= tolerance)
+        if (MathF.Max(DistanceToSegmentBcl(p1, p0, p3), DistanceToSegmentBcl(p2, p0, p3)) <= tolerance)
         {
             sink.Append(p3);
             return;
@@ -155,7 +154,7 @@ public static class DrawingGeometry
         ArgumentOutOfRangeException.ThrowIfGreaterThan(maxDepth, 30);
     }
 
-    private readonly struct ActionSink(Action<Vector2> append) : IPointSink
+    private readonly struct ActionSink(Action<Vector2> append) : IStreamingPointSink
     {
         public void Append(Vector2 point) => append(point);
     }

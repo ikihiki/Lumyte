@@ -10,19 +10,19 @@ public sealed class CoordinateGeometryTests
     [Fact]
     public void IntersectionsPreserveEmptyAnchors()
     {
-        Assert.Equal((20f, 30f, 0f, 0f), CoordinateGeometry.Intersect((0f, 0f, 10f, 10f), (20f, 30f, 1f, 1f)));
-        Assert.Equal((5f, 2f, 0f, 4f), CoordinateGeometry.Intersect((5f, 2f, 0f, 4f), (0f, 0f, 10f, 10f)));
-        Assert.False(CoordinateGeometry.ContainsHalfOpen(5f, 2f, 0f, 4f, 5f, 3f));
-        Assert.False(CoordinateGeometry.ContainsHalfOpen(0f, 0f, 10f, 10f, float.NaN, 3f));
+        Assert.Equal((20f, 30f, 0f, 0f), Geometry2D.IntersectBoundsClamped((0f, 0f, 10f, 10f), (20f, 30f, 1f, 1f)));
+        Assert.Equal((5f, 2f, 0f, 4f), Geometry2D.IntersectBoundsClamped((5f, 2f, 0f, 4f), (0f, 0f, 10f, 10f)));
+        Assert.False(Geometry2D.ContainsHalfOpenBounds(5f, 2f, 0f, 4f, 5f, 3f));
+        Assert.False(Geometry2D.ContainsHalfOpenBounds(0f, 0f, 10f, 10f, float.NaN, 3f));
     }
 
     /// <summary>Checks edge-form clipping does not lose an upper edge through cancellation.</summary>
     [Fact]
     public void EdgeIntersectionPreservesOriginalUpperEdges()
     {
-        Assert.Equal((-1e20f, 0f, 1e20f, 1f), CoordinateGeometry.IntersectEdges((-1e20f, 0f, 1f, 1f), (-1e20f, 0f, 2f, 1f)));
-        Assert.Equal((1f, 2f, 3f, 4f), CoordinateGeometry.Union((99f, 99f, 0f, 1f), (1f, 2f, 3f, 4f)));
-        Assert.Equal((99f, 99f, 0f, 1f), CoordinateGeometry.Union((1f, 2f, 3f, 0f), (99f, 99f, 0f, 1f)));
+        Assert.Equal((-1e20f, 0f, 1e20f, 1f), Geometry2D.IntersectBoundsClampedEdges((-1e20f, 0f, 1f, 1f), (-1e20f, 0f, 2f, 1f)));
+        Assert.Equal((1f, 2f, 3f, 4f), Geometry2D.UnionBoundsIgnoringZeroArea((99f, 99f, 0f, 1f), (1f, 2f, 3f, 4f)));
+        Assert.Equal((99f, 99f, 0f, 1f), Geometry2D.UnionBoundsIgnoringZeroArea((1f, 2f, 3f, 0f), (99f, 99f, 0f, 1f)));
     }
 
     /// <summary>Checks generic integer storage, default values and arithmetic without floating-point narrowing.</summary>

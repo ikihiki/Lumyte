@@ -59,7 +59,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
             {
                 Point a = Transform(new(rect.X, rect.Y), transform);
                 Point b = Transform(new(rect.X + rect.Width, rect.Y + rect.Height), transform);
-                (double Left, double Top, double Right, double Bottom) rectangleEdges = CoordinateGeometry.EncloseRawEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
+                (double Left, double Top, double Right, double Bottom) rectangleEdges = Geometry2D.EncloseBoundsEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
                 rectangleBounds = rectangleBounds.Intersect(new(rectangleEdges.Left, rectangleEdges.Top, rectangleEdges.Right, rectangleEdges.Bottom));
                 continue;
             }
@@ -79,8 +79,8 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
                             throw new NotSupportedException("Clip normalization exceeds the 65536 aggregate edge budget.");
                         }
 
-                        (double Left, double Top, double Right, double Bottom) edgeBounds = CoordinateGeometry.EncloseRawEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
-                        (double Left, double Top, double Right, double Bottom) enclosed = CoordinateGeometry.EncloseRawEdges((pathBounds.Left, pathBounds.Top, pathBounds.Right, pathBounds.Bottom), edgeBounds);
+                        (double Left, double Top, double Right, double Bottom) edgeBounds = Geometry2D.EncloseBoundsEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
+                        (double Left, double Top, double Right, double Bottom) enclosed = Geometry2D.EncloseBoundsEdges((pathBounds.Left, pathBounds.Top, pathBounds.Right, pathBounds.Bottom), edgeBounds);
                         pathBounds = new(enclosed.Left, enclosed.Top, enclosed.Right, enclosed.Bottom);
                         edges.Add(new(a, b));
                     }
@@ -191,7 +191,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
     {
         try
         {
-            return AffineGeometry2D.Transform(new Point(p.X, p.Y), m);
+            return Geometry2D.TransformAffineFused(new Point(p.X, p.Y), m);
         }
         catch (ArgumentOutOfRangeException exception)
         {
@@ -201,7 +201,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
 
     private static bool Contains(Edge[] edges, FillRule2D rule, Point p)
     {
-        int winding = WindingGeometry2D.Accumulate<double>(edges, p);
+        int winding = Geometry2D.AccumulateWindingFused<double>(edges, p);
         return rule == FillRule2D.NonZero ? winding != 0 : (Math.Abs(winding) % 2) != 0;
     }
 }

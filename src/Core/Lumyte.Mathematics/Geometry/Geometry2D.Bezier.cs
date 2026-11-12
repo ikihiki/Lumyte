@@ -2,8 +2,8 @@ using System.Numerics;
 
 namespace Lumyte.Mathematics.Geometry;
 
-/// <summary>Evaluates and adaptively flattens planar Bezier curves without narrowing coordinates.</summary>
-public static class Bezier2D
+/// <summary>Provides two-dimensional geometry operations with explicit numeric and boundary policies.</summary>
+public static partial class Geometry2D
 {
     /// <summary>Evaluates a quadratic curve using De Casteljau interpolation.</summary>
     /// <typeparam name="T">The ordered coordinate arithmetic type.</typeparam>
@@ -12,7 +12,7 @@ public static class Bezier2D
     /// <param name="end">The end point.</param>
     /// <param name="amount">A finite parameter in the inclusive range zero to one.</param>
     /// <returns>The evaluated point.</returns>
-    public static Point2D<T> Quadratic<T>(Point2D<T> start, Point2D<T> control, Point2D<T> end, T amount)
+    public static Point2D<T> EvaluateQuadraticBezier<T>(Point2D<T> start, Point2D<T> control, Point2D<T> end, T amount)
         where T : INumber<T>
     {
         ValidateAmount(amount);
@@ -27,11 +27,11 @@ public static class Bezier2D
     /// <param name="end">The end point.</param>
     /// <param name="amount">A finite parameter in the inclusive range zero to one.</param>
     /// <returns>The evaluated point.</returns>
-    public static Point2D<T> Cubic<T>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, T amount)
+    public static Point2D<T> EvaluateCubicBezier<T>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, T amount)
         where T : INumber<T>
     {
         ValidateAmount(amount);
-        return Quadratic(Interpolate(start, control1, amount), Interpolate(control1, control2, amount), Interpolate(control2, end, amount), amount);
+        return EvaluateQuadraticBezier(Interpolate(start, control1, amount), Interpolate(control1, control2, amount), Interpolate(control2, end, amount), amount);
     }
 
     /// <summary>Appends a quadratic polyline, including both endpoints, within explicit resource limits.</summary>
@@ -45,7 +45,7 @@ public static class Bezier2D
     /// <param name="maxPoints">The maximum number of appended points, at least two.</param>
     /// <returns>True if every segment met the tolerance; false if a budget was exhausted. Failure leaves the destination unchanged.</returns>
     /// <exception cref="OverflowException">A segment distance cannot be represented in the coordinate precision. The destination is unchanged.</exception>
-    public static bool TryFlattenQuadratic<T>(Point2D<T> start, Point2D<T> control, Point2D<T> end, T tolerance, List<Point2D<T>> destination, int maxDepth, int maxPoints)
+    public static bool TryFlattenQuadraticBezier<T>(Point2D<T> start, Point2D<T> control, Point2D<T> end, T tolerance, List<Point2D<T>> destination, int maxDepth, int maxPoints)
         where T : INumber<T>
     {
         ValidateFlatten(tolerance, destination, maxDepth, maxPoints);
@@ -94,7 +94,7 @@ public static class Bezier2D
     /// <param name="maxPoints">The maximum number of appended points, at least two.</param>
     /// <returns>True if every segment met the tolerance; false if a budget was exhausted. Failure leaves the destination unchanged.</returns>
     /// <exception cref="OverflowException">A segment distance cannot be represented in the coordinate precision. The destination is unchanged.</exception>
-    public static bool TryFlattenCubic<T>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, T tolerance, List<Point2D<T>> destination, int maxDepth, int maxPoints)
+    public static bool TryFlattenCubicBezier<T>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, T tolerance, List<Point2D<T>> destination, int maxDepth, int maxPoints)
         where T : INumber<T>
     {
         ValidateFlatten(tolerance, destination, maxDepth, maxPoints);
@@ -143,9 +143,9 @@ public static class Bezier2D
     /// <param name="amount">The finite parameter between zero and one.</param>
     /// <returns>The evaluated point.</returns>
     [System.Runtime.CompilerServices.OverloadResolutionPriority(-1)]
-    public static Point2D<TResult> Quadratic<T, TResult>(Point2D<T> start, Point2D<T> control, Point2D<T> end, TResult amount)
+    public static Point2D<TResult> EvaluateQuadraticBezier<T, TResult>(Point2D<T> start, Point2D<T> control, Point2D<T> end, TResult amount)
         where T : INumber<T>
-        where TResult : INumber<TResult> => Quadratic<TResult>(Convert<T, TResult>(start), Convert<T, TResult>(control), Convert<T, TResult>(end), amount);
+        where TResult : INumber<TResult> => EvaluateQuadraticBezier<TResult>(ConvertBezierPoint<T, TResult>(start), ConvertBezierPoint<T, TResult>(control), ConvertBezierPoint<T, TResult>(end), amount);
 
     /// <summary>Flattens a quadratic curve using the selected result arithmetic.</summary>
     /// <typeparam name="T">The input coordinate type.</typeparam>
@@ -159,9 +159,9 @@ public static class Bezier2D
     /// <param name="maxPoints">The appended point limit, at least two.</param>
     /// <returns>Whether flattening completed within the budgets.</returns>
     [System.Runtime.CompilerServices.OverloadResolutionPriority(-1)]
-    public static bool TryFlattenQuadratic<T, TResult>(Point2D<T> start, Point2D<T> control, Point2D<T> end, TResult tolerance, List<Point2D<TResult>> destination, int maxDepth, int maxPoints)
+    public static bool TryFlattenQuadraticBezier<T, TResult>(Point2D<T> start, Point2D<T> control, Point2D<T> end, TResult tolerance, List<Point2D<TResult>> destination, int maxDepth, int maxPoints)
         where T : INumber<T>
-        where TResult : INumber<TResult> => TryFlattenQuadratic<TResult>(Convert<T, TResult>(start), Convert<T, TResult>(control), Convert<T, TResult>(end), tolerance, destination, maxDepth, maxPoints);
+        where TResult : INumber<TResult> => TryFlattenQuadraticBezier<TResult>(ConvertBezierPoint<T, TResult>(start), ConvertBezierPoint<T, TResult>(control), ConvertBezierPoint<T, TResult>(end), tolerance, destination, maxDepth, maxPoints);
 
     /// <summary>Evaluates a cubic curve in an explicitly selected arithmetic type.</summary>
     /// <typeparam name="T">The input coordinate type.</typeparam>
@@ -173,9 +173,9 @@ public static class Bezier2D
     /// <param name="amount">The finite parameter between zero and one.</param>
     /// <returns>The evaluated point.</returns>
     [System.Runtime.CompilerServices.OverloadResolutionPriority(-1)]
-    public static Point2D<TResult> Cubic<T, TResult>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, TResult amount)
+    public static Point2D<TResult> EvaluateCubicBezier<T, TResult>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, TResult amount)
         where T : INumber<T>
-        where TResult : INumber<TResult> => Cubic<TResult>(Convert<T, TResult>(start), Convert<T, TResult>(control1), Convert<T, TResult>(control2), Convert<T, TResult>(end), amount);
+        where TResult : INumber<TResult> => EvaluateCubicBezier<TResult>(ConvertBezierPoint<T, TResult>(start), ConvertBezierPoint<T, TResult>(control1), ConvertBezierPoint<T, TResult>(control2), ConvertBezierPoint<T, TResult>(end), amount);
 
     /// <summary>Flattens a cubic curve using the selected result arithmetic.</summary>
     /// <typeparam name="T">The input coordinate type.</typeparam>
@@ -190,11 +190,11 @@ public static class Bezier2D
     /// <param name="maxPoints">The appended point limit, at least two.</param>
     /// <returns>Whether flattening completed within the budgets.</returns>
     [System.Runtime.CompilerServices.OverloadResolutionPriority(-1)]
-    public static bool TryFlattenCubic<T, TResult>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, TResult tolerance, List<Point2D<TResult>> destination, int maxDepth, int maxPoints)
+    public static bool TryFlattenCubicBezier<T, TResult>(Point2D<T> start, Point2D<T> control1, Point2D<T> control2, Point2D<T> end, TResult tolerance, List<Point2D<TResult>> destination, int maxDepth, int maxPoints)
         where T : INumber<T>
-        where TResult : INumber<TResult> => TryFlattenCubic<TResult>(Convert<T, TResult>(start), Convert<T, TResult>(control1), Convert<T, TResult>(control2), Convert<T, TResult>(end), tolerance, destination, maxDepth, maxPoints);
+        where TResult : INumber<TResult> => TryFlattenCubicBezier<TResult>(ConvertBezierPoint<T, TResult>(start), ConvertBezierPoint<T, TResult>(control1), ConvertBezierPoint<T, TResult>(control2), ConvertBezierPoint<T, TResult>(end), tolerance, destination, maxDepth, maxPoints);
 
-    private static Point2D<TResult> Convert<T, TResult>(Point2D<T> point)
+    private static Point2D<TResult> ConvertBezierPoint<T, TResult>(Point2D<T> point)
         where T : INumber<T>
         where TResult : INumber<TResult> => new(TResult.CreateChecked(point.X), TResult.CreateChecked(point.Y));
 
@@ -204,7 +204,7 @@ public static class Bezier2D
         T half = T.One / (T.One + T.One);
         if (half == T.Zero || half + half != T.One)
         {
-            throw new ArithmeticException("Subdivision requires a type representing one half. Use TryFlattenQuadratic<T, TResult> or TryFlattenCubic<T, TResult> with a fractional result type.");
+            throw new ArithmeticException("Subdivision requires a type representing one half. Use TryFlattenQuadraticBezier<T, TResult> or TryFlattenCubicBezier<T, TResult> with a fractional result type.");
         }
 
         return half;

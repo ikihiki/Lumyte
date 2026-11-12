@@ -40,7 +40,7 @@ internal static class BatchBenchmark
         }
 
         Reference(x, y, 1.25f, -3.75f, expected);
-        GeometryBatch.SquaredDistances(x, y, 1.25f, -3.75f, output);
+        Geometry2D.SquaredDistancesBcl(x, y, 1.25f, -3.75f, output);
         if (!output.AsSpan().SequenceEqual(expected))
         {
             throw new InvalidOperationException("Scalar oracle mismatch.");
@@ -67,7 +67,7 @@ internal static class BatchBenchmark
             {
                 if (optimized)
                 {
-                    GeometryBatch.SquaredDistances(x, y, 1.25f, -3.75f, output);
+                    Geometry2D.SquaredDistancesBcl(x, y, 1.25f, -3.75f, output);
                 }
                 else
                 {
@@ -131,7 +131,7 @@ internal static class BatchBenchmark
         }
 
         Reference(x, y, 1.25d, -3.75d, expected);
-        GeometryBatch.SquaredDistances(x, y, 1.25d, -3.75d, output);
+        Geometry2D.SquaredDistancesBcl(x, y, 1.25d, -3.75d, output);
         if (!output.AsSpan().SequenceEqual(expected))
         {
             throw new InvalidOperationException("Scalar oracle mismatch.");
@@ -158,7 +158,7 @@ internal static class BatchBenchmark
             {
                 if (optimized)
                 {
-                    GeometryBatch.SquaredDistances(x, y, 1.25d, -3.75d, output);
+                    Geometry2D.SquaredDistancesBcl(x, y, 1.25d, -3.75d, output);
                 }
                 else
                 {

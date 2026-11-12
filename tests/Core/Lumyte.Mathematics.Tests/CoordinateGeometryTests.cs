@@ -10,8 +10,8 @@ public sealed class CoordinateGeometryTests
     [Fact]
     public void UnsignedCoordinateArithmeticDoesNotWrap()
     {
-        Assert.Equal((10u, 10u, 0u, 0u), CoordinateGeometry.Intersect((10u, 10u, 2u, 2u), (0u, 0u, 2u, 2u)));
-        Assert.Throws<OverflowException>(() => CoordinateGeometry.ContainsHalfOpen(uint.MaxValue, 0u, 1u, 1u, uint.MaxValue, 0u));
+        Assert.Equal((10u, 10u, 0u, 0u), Geometry2D.IntersectBoundsClamped((10u, 10u, 2u, 2u), (0u, 0u, 2u, 2u)));
+        Assert.Throws<OverflowException>(() => Geometry2D.ContainsHalfOpenBounds(uint.MaxValue, 0u, 1u, 1u, uint.MaxValue, 0u));
         Assert.Equal(0u, new Bounds2D<uint>(10u, 10u, 0u, 0u).Width);
     }
 
@@ -26,8 +26,8 @@ public sealed class CoordinateGeometryTests
             {
                 (double Left, double Top, double Right, double Bottom) first = (a, b, a, b);
                 (double Left, double Top, double Right, double Bottom) second = (b, a, b, a);
-                (double Left, double Top, double Right, double Bottom) intersection = CoordinateGeometry.IntersectRawEdges(first, second);
-                (double Left, double Top, double Right, double Bottom) union = CoordinateGeometry.EncloseRawEdges(first, second);
+                (double Left, double Top, double Right, double Bottom) intersection = Geometry2D.IntersectBoundsEdges(first, second);
+                (double Left, double Top, double Right, double Bottom) union = Geometry2D.EncloseBoundsEdges(first, second);
                 AssertBits((Math.Max(a, b), Math.Max(b, a), Math.Min(a, b), Math.Min(b, a)), intersection);
                 AssertBits((Math.Min(a, b), Math.Min(b, a), Math.Max(a, b), Math.Max(b, a)), union);
                 var firstBounds = new Bounds2D<double>(a, b, a, b);
@@ -45,13 +45,13 @@ public sealed class CoordinateGeometryTests
         Assert.True(Bounds2D<double>.Unbounded.Contains(double.NegativeInfinity, double.NegativeInfinity));
         Assert.False(Bounds2D<double>.Unbounded.Contains(double.PositiveInfinity, 0));
         Assert.False(Bounds2D<double>.Unbounded.Contains(0, double.NaN));
-        Assert.True(CoordinateGeometry.ContainsHalfOpenEdges((-0d, -0d, 1d, 1d), 0d, -0d));
-        Assert.False(CoordinateGeometry.ContainsHalfOpenEdges((0d, 0d, -0d, 1d), -0d, 0d));
+        Assert.True(Geometry2D.ContainsHalfOpenEdges((-0d, -0d, 1d, 1d), 0d, -0d));
+        Assert.False(Geometry2D.ContainsHalfOpenEdges((0d, 0d, -0d, 1d), -0d, 0d));
         var rectangle = new Rect2D<double>(-0d, -0d, 1, 1);
         Assert.True(rectangle.ContainsHalfOpen(new(0, 0)));
         Assert.False(rectangle.ContainsHalfOpen(new(1, 0)));
-        Assert.Equal((20d, 20d, 10d, 10d), CoordinateGeometry.IntersectRawEdges((0d, 0d, 10d, 10d), (20d, 20d, 30d, 30d)));
-        Assert.Equal((20d, 20d, 0d, 0d), CoordinateGeometry.IntersectEdges((0d, 0d, 10d, 10d), (20d, 20d, 30d, 30d)));
+        Assert.Equal((20d, 20d, 10d, 10d), Geometry2D.IntersectBoundsEdges((0d, 0d, 10d, 10d), (20d, 20d, 30d, 30d)));
+        Assert.Equal((20d, 20d, 0d, 0d), Geometry2D.IntersectBoundsClampedEdges((0d, 0d, 10d, 10d), (20d, 20d, 30d, 30d)));
     }
 
     /// <summary>Integer union retains checked extents, checked edges and degenerate closed bounds.</summary>

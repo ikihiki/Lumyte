@@ -102,28 +102,28 @@ public sealed class CustomNumberGeometryTests
     public void PolygonsCurvesAndAffineTransformsSupportCustomNumbers()
     {
         Point2D<ManagedDecimal>[] polygon = [default, new(N(4), N(0)), new(N(4), N(4)), new(N(0), N(4))];
-        Assert.True(Polygon2D.Contains<ManagedDecimal>(polygon, new(N(2), N(2))));
-        Assert.True(Polygon2D.ContainsEvenOdd<ManagedDecimal>(polygon, new(N(0), N(2))));
-        Assert.False(Polygon2D.Contains<ManagedDecimal>(polygon, new(N(5), N(2))));
+        Assert.True(Geometry2D.ContainsPolygonClosed<ManagedDecimal>(polygon, new(N(2), N(2))));
+        Assert.True(Geometry2D.ContainsPolygonEvenOddClosed<ManagedDecimal>(polygon, new(N(0), N(2))));
+        Assert.False(Geometry2D.ContainsPolygonClosed<ManagedDecimal>(polygon, new(N(5), N(2))));
         Point2D<ManagedDecimal> start = default;
         var control = new Point2D<ManagedDecimal>(N(2), N(4));
         var end = new Point2D<ManagedDecimal>(N(4), N(0));
-        Assert.Equal(new Point2D<ManagedDecimal>(N(2), N(2)), Bezier2D.Quadratic(start, control, end, N(0.5m)));
-        Assert.Equal(new Point2D<ManagedDecimal>(N(2), N(3)), Bezier2D.Cubic(start, new(N(0), N(4)), new(N(4), N(4)), end, N(0.5m)));
-        Assert.Equal(new Point2D<decimal>(2, 2), Bezier2D.Quadratic<ManagedDecimal, decimal>(start, control, end, 0.5m));
+        Assert.Equal(new Point2D<ManagedDecimal>(N(2), N(2)), Geometry2D.EvaluateQuadraticBezier(start, control, end, N(0.5m)));
+        Assert.Equal(new Point2D<ManagedDecimal>(N(2), N(3)), Geometry2D.EvaluateCubicBezier(start, new(N(0), N(4)), new(N(4), N(4)), end, N(0.5m)));
+        Assert.Equal(new Point2D<decimal>(2, 2), Geometry2D.EvaluateQuadraticBezier<ManagedDecimal, decimal>(start, control, end, 0.5m));
         var polyline = new List<Point2D<double>>();
-        Assert.True(Bezier2D.TryFlattenQuadratic<ManagedDecimal, double>(start, control, end, 0.1, polyline, 12, 1024));
+        Assert.True(Geometry2D.TryFlattenQuadraticBezier<ManagedDecimal, double>(start, control, end, 0.1, polyline, 12, 1024));
         Assert.Equal(new Point2D<double>(0, 0), polyline[0]);
         Assert.Equal(new Point2D<double>(4, 0), polyline[^1]);
         Assert.True(polyline.Count > 2);
         var cubic = new List<Point2D<decimal>>();
-        Assert.True(Bezier2D.TryFlattenCubic<ManagedDecimal, decimal>(start, new(N(0), N(4)), new(N(4), N(4)), end, 0.1m, cubic, 12, 1024));
+        Assert.True(Geometry2D.TryFlattenCubicBezier<ManagedDecimal, decimal>(start, new(N(0), N(4)), new(N(4), N(4)), end, 0.1m, cubic, 12, 1024));
         Assert.True(cubic.Count > 2);
         var point = new Point2D<ManagedDecimal>(N(2), N(3));
-        Assert.Equal(new Point2D<ManagedDecimal>(N(8), N(8)), AffineGeometry2D.Transform(point, N(2), N(0), N(0), N(2), N(4), N(2)));
+        Assert.Equal(new Point2D<ManagedDecimal>(N(8), N(8)), Geometry2D.TransformAffineChecked(point, N(2), N(0), N(0), N(2), N(4), N(2)));
         var matrix = new Matrix3x2(0.5f, 0, 0, 2, 1, -1);
-        Assert.Equal(new Point2D<ManagedDecimal>(N(2), N(5)), AffineGeometry2D.Transform(point, matrix));
-        Assert.Equal(new Point2D<decimal>(2, 5), AffineGeometry2D.Transform<ManagedDecimal, decimal>(point, matrix));
+        Assert.Equal(new Point2D<ManagedDecimal>(N(2), N(5)), Geometry2D.TransformAffineFused(point, matrix));
+        Assert.Equal(new Point2D<decimal>(2, 5), Geometry2D.TransformAffineFused<ManagedDecimal, decimal>(point, matrix));
     }
 
     /// <summary>Cross-type metrics preserve custom fractions rather than truncating coordinates.</summary>

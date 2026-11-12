@@ -2,8 +2,8 @@ using System.Numerics;
 
 namespace Lumyte.Mathematics.Geometry;
 
-/// <summary>Low-level winding predicates without boundary-inclusive polygon policy.</summary>
-public static class WindingGeometry2D
+/// <summary>Provides two-dimensional geometry operations with explicit numeric and boundary policies.</summary>
+public static partial class Geometry2D
 {
     /// <summary>Returns one directed edge's signed winding contribution at a query coordinate.</summary>
     /// <typeparam name="T">The coordinate precision.</typeparam>
@@ -19,7 +19,7 @@ public static class WindingGeometry2D
     /// For IEEE built-ins orientation is FMA(endX-startX, pointY-startY, -FMA(endY-startY, pointX-startX, 0)).
     /// IEEE built-ins preserve FMA rounding; other numeric types use exact orientation without an epsilon or boundary override.
     /// </remarks>
-    public static int Contribution<T>(T startX, T startY, T endX, T endY, T pointX, T pointY)
+    public static int GetWindingContributionFused<T>(T startX, T startY, T endX, T endY, T pointX, T pointY)
         where T : INumber<T>
     {
         // Preserve IEEE FMA rounding for renderer-facing callers.
@@ -62,13 +62,13 @@ public static class WindingGeometry2D
     /// <param name="edges">The directed edges; closure is explicit.</param>
     /// <param name="point">The query point.</param>
     /// <returns>The signed winding sum. Nonzero containment is sum != 0; even-odd containment is (sum &amp; 1) != 0.</returns>
-    public static int Accumulate<T>(ReadOnlySpan<Segment2D<T>> edges, Point2D<T> point)
+    public static int AccumulateWindingFused<T>(ReadOnlySpan<Segment2D<T>> edges, Point2D<T> point)
         where T : INumber<T>
     {
         int winding = 0;
         foreach (Segment2D<T> edge in edges)
         {
-            winding += Contribution(edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y, point.X, point.Y);
+            winding += GetWindingContributionFused(edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y, point.X, point.Y);
         }
 
         return winding;

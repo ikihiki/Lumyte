@@ -19,7 +19,7 @@ public sealed class DrawingBoundsGeometryTests
             Vector2 last = i % 5 == 0 ? first : new(Next(), Next());
             var transform = new Matrix3x2(Next(), Next(), Next(), Next(), Next(), Next());
             (Vector2 lower, Vector2 upper) = Reference(first, last, transform);
-            NumericsGeometry.GetTransformedBounds(first, last, transform, out Vector2 actualLower, out Vector2 actualUpper);
+            Geometry2D.GetTransformedBoundsBcl(first, last, transform, out Vector2 actualLower, out Vector2 actualUpper);
             Assert.Equal(lower, actualLower);
             Assert.Equal(upper, actualUpper);
         }
@@ -61,7 +61,7 @@ public sealed class DrawingBoundsGeometryTests
         {
             var transform = new Matrix3x2(value, 0, 0, 1, 0, 0);
             (Vector2 lower, Vector2 upper) = Reference(Vector2.Zero, Vector2.One, transform);
-            NumericsGeometry.GetTransformedBounds(Vector2.Zero, Vector2.One, transform, out Vector2 actualLower, out Vector2 actualUpper);
+            Geometry2D.GetTransformedBoundsBcl(Vector2.Zero, Vector2.One, transform, out Vector2 actualLower, out Vector2 actualUpper);
             Assert.Equal(lower.X, actualLower.X);
             Assert.Equal(lower.Y, actualLower.Y);
             Assert.Equal(upper.X, actualUpper.X);

@@ -26,7 +26,7 @@ public sealed class GeometryNumericalRegressionTests
     {
         Point2D<double>[] vertices = [default, new(1e200, 1e-200)];
         var p = new Point2D<double>(5e199, 9e-201);
-        Assert.False(evenOdd ? Polygon2D.ContainsEvenOdd<double>(vertices, p) : Polygon2D.Contains<double>(vertices, p));
+        Assert.False(evenOdd ? Geometry2D.ContainsPolygonEvenOddClosed<double>(vertices, p) : Geometry2D.ContainsPolygonClosed<double>(vertices, p));
     }
 
     /// <summary>A huge perpendicular coordinate cannot erase the projected component.</summary>
@@ -92,8 +92,8 @@ public sealed class GeometryNumericalRegressionTests
         var b = new Point2D<double>(double.MaxValue, 1);
         Point2D<double>[] vertices = [a, b];
         Assert.False(new Segment2D<double>(a, b).Intersects(default));
-        Assert.False(Polygon2D.Contains<double>(vertices, default));
-        Assert.False(Polygon2D.ContainsEvenOdd<double>(vertices, default));
+        Assert.False(Geometry2D.ContainsPolygonClosed<double>(vertices, default));
+        Assert.False(Geometry2D.ContainsPolygonEvenOddClosed<double>(vertices, default));
     }
 
     private static void CheckUnderflowingProjection<T>(T large, T small)

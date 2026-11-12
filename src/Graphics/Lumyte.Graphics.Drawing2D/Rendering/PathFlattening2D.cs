@@ -33,10 +33,10 @@ internal static class PathFlattening2D
                     sink.Append(segment.P0);
                     break;
                 case PathVerb2D.Quadratic:
-                    DrawingGeometry.AppendFlattenedQuadratic(sink.Position, segment.P0, segment.P1, tolerance, ref sink, 24);
+                    Geometry2D.AppendFlattenedQuadraticBcl(sink.Position, segment.P0, segment.P1, tolerance, ref sink, 24);
                     break;
                 case PathVerb2D.Cubic:
-                    DrawingGeometry.AppendFlattenedCubic(sink.Position, segment.P0, segment.P1, segment.P2, tolerance, ref sink, 24);
+                    Geometry2D.AppendFlattenedCubicBcl(sink.Position, segment.P0, segment.P1, segment.P2, tolerance, ref sink, 24);
                     break;
                 case PathVerb2D.Close:
                     sink.Current!.Closed = true;
@@ -199,7 +199,7 @@ internal static class PathFlattening2D
 
     private static float Cross(Vector2 a, Vector2 b) => Vector2.Cross(a, b);
 
-    private struct ContourSink : DrawingGeometry.IPointSink
+    private struct ContourSink : Geometry2D.IStreamingPointSink
     {
         private int _count;
 

@@ -85,7 +85,7 @@ internal static class Program
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static Vector4 Optimized(Vector2 first, Vector2 last, Matrix3x2 transform)
     {
-        NumericsGeometry.GetTransformedBounds(first, last, transform, out Vector2 minimum, out Vector2 maximum);
+        Geometry2D.GetTransformedBoundsBcl(first, last, transform, out Vector2 minimum, out Vector2 maximum);
         return Rectangle(minimum, maximum);
     }
 
