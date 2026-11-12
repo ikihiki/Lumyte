@@ -16,7 +16,7 @@ Drawing2D を保守する利用者は、異なる図形を連続格納し、そ�
 
 ## 決定
 
-一つの論理描画を **96 B の DrawRecord2D** にし、すべての組込み描画を同じ配列へ実行順に詰める。paint、正規化 clip、可変 geometry は別の共有領域へ分離し、既存の引数設定に先頭 record と個数を渡して連続範囲を描く。単純図形の逆変換と形状値は record 内に置き、小さな固定ヘッダーだけを作って全図形に追加 geometry fetch を強制する案は選ばない。
+一つの論理描画を **96 B の DrawRecord2D** にし、すべての通常組込み描画を同じ配列へ実行順に詰める。paint、正規化 clip、可変 geometry は別の共有領域へ分離し、既存の引数設定に先頭 record と個数を渡して連続範囲を描く。単純図形の逆変換と形状値は record 内に置き、小さな固定ヘッダーだけを作って全図形に追加 geometry fetch を強制する案は選ばない。
 
 ### 利用者の変更前・変更後
 
@@ -68,21 +68,175 @@ record は旧式命令ではなく一つの描画である。shader 配列の el
 | DrawMesh | MeshTriangles、Shape0 = 0、Mode = center coverage | index 展開済み position/coverage 三角形 |
 | DrawPaintGraph | PaintGraph、Shape0 = 0、逆変換は identity | paint graph。保守的 bounds がなければ target 全域 |
 
-PayloadOffset16 は NumericPayload の 16 B 単位位置、mask/field Kind では MaskDescriptors の byte offset/16 とする。image/field paint の directory entry も ImagePaintData の byte offset/16 を用い、それ以外の paint と clip は NumericPayload 相対とする。typed descriptor の開始位置はその reflected stride と 16 B の両方に整列し、shader では offset*16/stride を索引にする。mask/field descriptor と image/field paint の双方で offset*16 が stride で割り切れない値を準備時に拒否する。directory の image/field PayloadLength16 は reflected stride/16 と等しく、offset と長さの合計が ImagePaintData の有効 byte 長以下であることを checked 64 bit で検査する。mask descriptor も count=1 と reflected stride の境界を同様に検査する。PayloadCount は辺数、三角形数、または descriptor 一個を表す。各 Kind の消費長を checked 演算で検査する。StrokeTriangles は三角形あたり float4 三個、MeshTriangles も同形式とし、mask descriptor は source float4（x,y,width,height）、texture 寸法/range float4（width,height,distanceRange,0）、uint encoding/reserved 四個、GPU texture/sampler 参照の typed 部分からなる独立型とする。GPU 参照を raw uint へ cast せず、生成 serializer が実際の wire stride を決める。mask/field は追加 descriptor fetch を負担するが、単純図形には発生しない。
+PayloadOffset16 の参照先、Kind ごとの消費長、typed descriptor の索引変換は「全 stream の byte 配置」を正本とする。mask/field は追加 descriptor fetch を負担するが、単純図形には発生しない。
 
 無効な inverse、空 clip、面積ゼロの image/mask/field は従来の透明・空の扱いを維持し、通常描画なら record 確保前に除く。shape の local 座標、paint 固有変換、clip の捕捉変換を混同しない。
 
 ### paint と clip の独立表現
 
-PaintId は同ページの paint directory を指す。directory entry は uint Kind、PayloadOffset16、PayloadLength16、Flags の 16 B とし、型別 payload を 16 B 境界に置く。無条件に全 paint node を旧 144 B にしない。payload は単色の線形 premultiplied float4、gradient の逆変換・幾何値・extend・stop 範囲、image の逆変換・source・寸法・tile/filter/alpha・typed texture/sampler 参照、子 ID と係数を持つ opacity、二子 ID と mode を持つ composite、子 ID と ClipId、field descriptor と子 ID に分ける。transform は各 leaf の累積変換へ畳み、各中間変換の有限 inverse 検査を維持する。Layers は順序付き SrcOver の graph として保持する。
+PaintId は同ページの paint directory を指す。directory entry と型別 payload の正確な配置は「全 stream の byte 配置」に従う。無条件に全 paint node を旧 144 B にしない。payload は単色の線形 premultiplied float4、gradient の逆変換・幾何値・extend・stop 範囲、image の逆変換・source・寸法・tile/filter/alpha・typed texture/sampler 参照、子 ID と係数を持つ opacity、二子 ID と mode を持つ composite、子 ID と ClipId、field descriptor と子 ID に分ける。transform は各 leaf の累積変換へ畳み、各中間変換の有限 inverse 検査を維持する。Layers は順序付き SrcOver の graph として保持する。
 
 paint 共有 key は不変 node identity、累積変換、target 情報、資源 revision/generation とし、同一ページかつ同じ table でのみ共有する。ImagePaintData は image/field leaf 共通型とし、逆変換、source、寸法/tile、filter/alpha/field mode/range、typed texture/sampler 参照を持ち、field の子 ID はその leaf payload に保持する。評価順は子先行、循環拒否、深さ 64 を保つ。一描画あたりの旧表現相当の式作業量（shape、paint、外側 Multiply と残余 clip を含む）の上限 256 と Data 合計予算も preflight で保ち、固定長化だけで受理上限を拡大しない。Data 合計は一描画の旧 Compile 相当の path/stroke/mesh geometry、gradient stops、外側と paint 子の clip mask を合算し、共有資源であっても各描画の到達分を算定する。旧 paint cache と同じ node identity/累積変換で一度だけ計数し、それ以外の重複は旧展開どおり計数する。式作業も旧 Compile 相当の形状・paint 展開・Multiply・正規化 clip を同じ cache key で数える。新しい directory/descriptor の bytes はこの旧 Data 換算へ混ぜず、別途物理 pool と retained 総予算へ加算する。outer shape×paint 用 Multiply は削除するが、paint 内の composition、opacity、distance-field coverage と子 clip は独立 node のまま残す。
 
 gradient stop は offset float4 と線形 premultiplied RGBA float4 の **32 B/stop** を維持し、現行の解析的な stop 補間・色空間・精度を変更しない。texture/sampler は paint/descriptor に一度だけ格納し、ページの登録表に属する IGpuRef として materialize 後に pack する。
 
-ClipId は uint Kind、PayloadOffset16、PayloadLength16、Reserved の 16 B directory を指す。None は payload なし、Scissor/Analytic は確定 sample 添字の uint4、SampleMask は pixel bounds uint4 と mask offset/count/reserved の uint4 を持つ。mask は現行と同じ 16 bit membership を数値 float lane に格納し 4 B/画素とする。CPU 正規化の分類、予算、FMA・fill rule・origin/DPR は変更しない。outer の整数 clip は bounding quad を整数境界で絞れば同 batch に混在できる。paint 子の clip はその子の値だけへ適用し、opacity/composite 境界を越えて外側 scissor にしない。
+ClipId は独立した clip directory を指し、payload と membership の配置は「全 stream の byte 配置」に従う。CPU 正規化の分類、予算、FMA・fill rule・origin/DPR は変更しない。outer の整数 clip は bounding quad を整数境界で絞れば同 batch に混在できる。paint 子の clip はその子の値だけへ適用し、opacity/composite 境界を越えて外側 scissor にしない。
 
 各画素の s=(x+(i+0.5)/4,y+(j+0.5)/4)、i,j=0..3 について、**sum(shape(s) * paint(s) * clip(s)) / 16** を出力する。DrawMesh の coverage は基準 shader の Mode=1 と同じ画素中心で求め、その値と各サンプルの paint/clip を積にする。shape と clip の別々の平均を掛けない。record と descriptor の不変値を sample loop 外で取得し、毎サンプルで旧 144 B 式 record を読み直す構造を残さない。ただし実際の load 削減やレジスタ使用量は compiler/backend の検証事項である。
+
+### 全 stream の byte 配置
+
+以下を提案する canonical ABI とする。offset は各要素または payload 先頭からの byte、範囲は半開区間、スカラーは little-endian の 32 bit である。float4 は各 lane が float32、uint4 は各 lane が uint32、いずれも lane offset は 0/4/8/12 B である。表の長さは padding 込みで正確な長さであり、明記した reserved、tail、未使用 lane はゼロにする。数値 stream の alignment は 16 B とする。
+
+NumericPayload は raw の `float4` 配列（16 B/cell）一つであり、以下の paint、clip、stops、geometry、membership はその内部の論理領域であって独立 binding ではない。整数 lane は uint32 の wire bits を float32 storage へ bitcast し、shader で asuint する。CPU staging/upload は NaN を含む全 bit を保存し、float 数値変換・演算・正規化を介さない。membership だけは後述の数値 float である。新しい raw uint pointer API を前提にしない。
+
+#### directory と ID
+
+| stream / stride | byte offset | 長さ | wire と意味 |
+| --- | --- | --- | --- |
+| PaintDirectory / 16 B | 0 | 4 | uint Kind |
+| 同上 | 4 | 4 | uint PayloadOffset16 |
+| 同上 | 8 | 4 | uint PayloadLength16（16 B cell 数） |
+| 同上 | 12 | 4 | uint Flags = 0 |
+| ClipDirectory / 16 B | 0 | 4 | uint Kind |
+| 同上 | 4 | 4 | uint PayloadOffset16 |
+| 同上 | 8 | 4 | uint PayloadLength16 |
+| 同上 | 12 | 4 | uint Reserved = 0 |
+
+Draw Kind は本提案で Rect=1、RoundedRect=2、Circle=3、PathEdges=4、StrokeTriangles=5、MeshTriangles=6、CoverageMask=7、DistanceField=8、PaintGraph=9 とする。Flags は現版では 0 のみ。Path Mode は NonZero=0 / EvenOdd=1、Mesh Mode は 1、他の Mode は 0 とする。PaintGraph の shape coverage は 1、逆変換は identity、geometry payload は空であり、terminal paint は DrawRecord.PaintId で指定する。
+
+paint Kind は本提案で Transparent=0、Solid=1、Linear=2、Radial=3、Sweep=4、Image=5、Opacity=6、Composite=7、Clip=8、DistanceField=9 とする。clip Kind は None=0、Scissor=2、Analytic=3、SampleMask=4（基準 NormalizedClipKind2D と同値）、Empty=1 は準備時に除き GPU へ送らない。未知 Kind/enum/flag は拒否する。PaintDirectory[0] と ClipDirectory[0] は全 16 B をゼロにし、payload を読まない透明 paint / clip なしとする。Solid の透明値は別の有効 payload としても表せる。ID は全て uint32 の directory element index、0 以外は有効 count 未満でなければならない。
+
+#### NumericPayload の paint payload
+
+下表の各 offset は directory の PayloadOffset16 * 16 からの相対 byte である。float と uint の混在 cell も 16 B を占める。全長と PayloadLength16 を右端で固定する。
+
+| Kind | byte offset | 長さ | lane 内容 | 全長 / Length16 |
+| --- | --- | --- | --- | --- |
+| Solid | 0 | 16 | float4 linear premultiplied R,G,B,A | 16 B / 1 |
+| Linear / Radial / Sweep | 0 | 16 | float4 InverseX: M11,M21,M31,0 | 下記 |
+| 同上 | 16 | 16 | float4 InverseY: M12,M22,M32,0 | 下記 |
+| Linear | 32 | 16 | float4 P0.x,P0.y,P1.x,P1.y | 80 B / 5 |
+| Linear | 48 | 16 | float4 P2.x,P2.y,0,0 | 同上 |
+| Linear | 64 | 16 | uint StopOffset16,StopCount,Extend,0 | 同上 |
+| Radial | 32 | 16 | float4 C0.x,C0.y,R0,0 | 80 B / 5 |
+| Radial | 48 | 16 | float4 C1.x,C1.y,R1,0 | 同上 |
+| Radial | 64 | 16 | uint StopOffset16,StopCount,Extend,0 | 同上 |
+| Sweep | 32 | 16 | float4 Center.x,Center.y,StartAngle,EndAngle | 64 B / 4 |
+| Sweep | 48 | 16 | uint StopOffset16,StopCount,Extend,0 | 同上 |
+| Opacity | 0 | 16 | uint ChildId at 0; float Opacity at 4; uint 0,0 at 8,12 | 16 B / 1 |
+| Composite | 0 | 16 | uint SourceId,BackdropId,CompositeMode,0 | 16 B / 1 |
+| Clip | 0 | 16 | uint ChildId,ClipId,0,0 | 16 B / 1 |
+| Transparent | — | 0 | offset/length = 0、payload なし | 0 B / 0 |
+
+Image と DistanceField は NumericPayload を消費せず、directory の offset/length は ImagePaintData の byte offset/16 と 8 を表す。StopOffset16 は NumericPayload の先頭相対で、StopCount は stop 数である。stop の消費 cell 数は 2*StopCount。空 stop 列は offset=0、count=0 で透明となり読まない。Extend は既存 Pad=0 / Repeat=1 / Reflect=2、角度は既存と同じ radian。P0/P1/P2 による線形投影、二円 radial の根選択、sweep のゼロ角幅と重複 stop の規則は基準 evaluator を維持する。
+
+leaf inverse は target-local sample から paint-local（image なら source-relative texel）への累積逆変換であり、DrawRecord inverse（shape-local）で代用しない。Transform node は有限性を各段で検査して leaf へ畳む。Opacity は child * 係数、Composite は source/backdrop の指定順、Clip は child のみに ClipId の sample membership を掛ける。子 ID は親より小さいページ内 ID とし、到達 node を子先行に一度評価して root の値を返す。Layers は透明 ID=0 から各 child を source、直前の結果を backdrop とする SrcOver=3 の列へ下げる。CompositeMode は基準 Model/CompositeMode2D.cs の Clear=0 から HslLuminosity=27 の全値を保つ。深さ・式作業量の検査は共有後の directory count だけで代用しない。
+
+#### typed image と mask/field descriptor
+
+ImagePaintData は **128 B stride**、MaskDescriptors は **80 B stride** を本提案の固定 wire とする。texture/sampler の 16 B wire は後述の backend 表に従うが、論理値は IGpuRef のまま generated serializer と登録表で解決する。生 uint4 の resource ID を自作して参照を偽装しない。
+
+| stream | byte offset | 長さ | 内容 |
+| --- | --- | --- | --- |
+| ImagePaintData | 0 | 16 | float4 InverseX: M11,M21,M31,0 |
+| 同上 | 16 | 16 | float4 InverseY: M12,M22,M32,0 |
+| 同上 | 32 | 16 | float4 Source: x,y,width,height（選択 mip の texel） |
+| 同上 | 48 | 16 | float4 TextureSizeAndRange: width,height,distanceRange,0 |
+| 同上 | 64 | 16 | uint ChildId,TileX,TileY,Filter |
+| 同上 | 80 | 16 | uint Alpha,FieldMode,Reserved0=0,Reserved1=0 |
+| 同上 | 96 | 16 | GpuTextureRef Texture |
+| 同上 | 112 | 16 | GpuSamplerRef Sampler |
+| MaskDescriptors | 0 | 16 | float4 Source: x,y,width,height |
+| 同上 | 16 | 16 | float4 TextureSizeAndRange: width,height,distanceRange,0 |
+| 同上 | 32 | 16 | uint Encoding,Reserved0=0,Reserved1=0,Reserved2=0 |
+| 同上 | 48 | 16 | GpuTextureRef Texture |
+| 同上 | 64 | 16 | GpuSamplerRef Sampler |
+
+image は ChildId/FieldMode/distanceRange=0。TileX/Y は Clamp=0 / Repeat=1 / Mirror=2 / Decal=3、Filter は Nearest=0 / Linear=1、Alpha は Straight=0 / Premultiplied=1。source-relative texel の tile/filter と straight RGB の alpha 乗算を基準 ImageInstruction/imagePattern と同じ順に行う。DrawImage は基準 Compile と同じ viewTransform を使い、source crop を単に destination inverse へ取り違えない。
+
+DistanceField paint は ChildId と正の distanceRange を使い、FieldMode は既存 Msdf=0 / Mtsdf=1。画像の数値 channel は sRGB/alpha 変換を行わず、基準の median RGB、MTSDF minification、affine footprint と 1/4 pixel ramp で child に掛ける。shape 用 MaskDescriptors の Encoding は既存 Sdf=0 / Msdf=1 / Mtsdf=2。CoverageMask は Encoding/range=0 で赤 channel を用い、shape DistanceField は基準 SampleMask evaluator の encoding 分岐・range/rate を維持する。両者を paint 用 field evaluator と統合して再構成 filter を変更しない。
+
+MaskDescriptors の destination と shape inverse は DrawRecord の値を使い、local destination から Source への写像とその微分で texture sample を取る。PayloadCount は 1、消費長は 80 B。image/field directory の Length16 は 8。typed index はそれぞれ PayloadOffset16/5、PayloadOffset16/8 とし、割り切れない offset は拒否する。末尾も含め checked 64 bit で有効 byte 長内を検査する。
+
+#### clip、stop、geometry、membership
+
+| 論理領域 | byte offset | 長さ | 内容 / element stride |
+| --- | --- | --- | --- |
+| Scissor / Analytic payload | 0 | 16 | uint4 sampleLeft,sampleTop,sampleRight,sampleBottom / 16 B |
+| SampleMask payload | 0 | 16 | uint4 pixelX,pixelY,width,height |
+| 同上 | 16 | 16 | uint MaskOffset16,MaskCellCount,0,0 / 全体 32 B |
+| gradient stop | 0 | 16 | float4 offset,0,0,0 |
+| 同上 | 16 | 16 | float4 linear premultiplied R,G,B,A / 32 B |
+| path edge | 0 | 16 | float4 start.x,start.y,end.x,end.y / 16 B |
+| stroke triangle | 0 | 16 | float4 a.x,a.y,1,0 |
+| 同上 | 16 | 16 | float4 b.x,b.y,1,0 |
+| 同上 | 32 | 16 | float4 c.x,c.y,1,0 / 48 B |
+| mesh triangle | 0 | 16 | float4 a.x,a.y,a.coverage,0 |
+| 同上 | 16 | 16 | float4 b.x,b.y,b.coverage,0 |
+| 同上 | 32 | 16 | float4 c.x,c.y,c.coverage,0 / 48 B |
+| membership cell | 0 | 16 | float4 exactIntegerMask0,Mask1,Mask2,Mask3 / 16 B、4 pixels |
+
+clip directory の Length16 は Scissor/Analytic=1、SampleMask=2、None=0。sample bounds は target-local の確定済み 4 倍整数添字で right/bottom exclusive、Scissor は pixel bounds を 4 倍する。mask bounds は target-local pixel の非負整数であり、MaskOffset16 は同じ NumericPayload 先頭相対である。幅・高さを checked で掛け、MaskCellCount=ceil(width*height/4) を検査する。
+
+membership は各 pixel の 16 bit、bit(j*4+i) がその AA sample の所属を表す。各 lane は [0,65535] の整数を **数値 float32** として格納し、uint(packed[lane]) で復元する（他の uint lane の bitcast と区別する）。q=(pixelY-boundsY)*width+(pixelX-boundsX)、cell=q/4、lane=q%4 の row-major とし、行末に padding を入れない。width が 4 の倍数でなくても次行が同じ cell の残 lane に続く。最終 cell の範囲外 lane のみゼロ。16 B/4 pixels = 4 B/pixel、実領域は 16*ceil(width*height/4) B である。
+
+辺・三角形の座標は基準 flatten/mesh と同じ shape-local、coverage は float32。DrawRecord の PayloadCount は辺数または三角形数で、必要 cell 数は順に count、3*count、3*count。PayloadOffset16 は三角形の 48 B element index ではなく 16 B cell index のままで、48 B 境界を要求しない。PayloadCount=0 なら offset=0 で読まない。gradient stop も 32 B の独立 typed 配列ではなく二 cell 組なので、StopOffset16 を偶数に制限しない。
+
+#### GPU 参照 wire と compiler の照合
+
+基準 SHA の `tools/shaders/include/lumyte.slang` の `GpuBufferRef<T>`、GpuTextureRef、GpuSamplerRef は全て uint 四個の **16 B** である。GpuBufferRef.Count は byte 数でなく参照先 T の要素数。次表はこの既存 helper ABI の backend 差であって新しい portable address の提案ではない。
+
+| backend / reference | +0 (4 B) | +4 (4 B) | +8 (4 B) | +12 (4 B) |
+| --- | --- | --- | --- | --- |
+| Vulkan buffer | device address low32 | address high32 | uint element count | 0 |
+| Vulkan texture / sampler | uint table slot | 0 | uint reference count | 0 |
+| D3D12 buffer / texture / sampler | uint table slot | uint OffsetInBytes | uint element/reference count | 0 |
+| Wgpu / Browser 同上 | uint logical slot | uint (OffsetInBytes - RegistrationOffsetInBytes) | uint element/reference count | 0 |
+
+Vulkan は address + slice offset、D3D12 は raw buffer の byte offset、WGSL は登録範囲相対 offset を使う。根拠は基準 SHA の `src/Graphics/Lumyte.Graphics.Vulkan/VulkanShaderReferenceEncoding.cs`、`src/Graphics/Lumyte.Graphics.Direct3D12/Direct3D12ShaderReferenceEncoding.cs`、`src/Graphics/Lumyte.Graphics.Shared/ShaderReferenceEncoding.cs` の Pack である。WGSL の remap は同 `Shared/ShaderBindingData.cs` の Map に従い、slot ごとに +0 texture、+4 sampler、+8 read buffer、+12 writable buffer の各 uint index を持つ 16 B row である。この backend 所有 binding buffer は Drawing2D の payload や追加 page metadata ではない。
+
+基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/ShaderSourcePreparation.cs` は `StructuredBuffer<Ptr<T>>` probe を追加し、buffer target schema を保存する。`src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.cs` は natural-layout の field offset/size を読み、`src/Graphics/Lumyte.Graphics.Generators/ShaderArgumentsGenerator.cs` は名前付き value/reference の writer を生成する。したがって C# 宣言順の sizeof を wire とみなさず、各 target の schema と generated codec を上の **固定値へ照合**する。root uniform の layout も別に照合する。96/16/80/128 B と下記 80/64/144 B の offset/stride が一致しない backend は有効化しない。未知の reflected stride を受け入れて設計値を黙って変更しない。これは提案 ABI の受け入れ gate であり、新型の reflection が取得済みという主張ではない。
+
+#### page metadata と全引数
+
+DrawPageMetadata2D は **GPU typed element 一個、80 B stride** とし、CPU allocation directory とは区別する。CPU 側の有効長、capacity、owner、block 一覧、admission counter に新しい必須 GPU record は加えない。GPU が必要な各 stream count は参照内 Count にある。
+
+| 型 | byte offset | 長さ | 内容 |
+| --- | --- | --- | --- |
+| DrawPageMetadata2D | 0 | 16 | `GpuBufferRef<DrawDirectoryEntry2D>` PaintDirectory |
+| 同上 | 16 | 16 | `GpuBufferRef<DrawDirectoryEntry2D>` ClipDirectory |
+| 同上 | 32 | 16 | `GpuBufferRef<float4>` NumericPayload |
+| 同上 | 48 | 16 | `GpuBufferRef<MaskDescriptor2D>` MaskDescriptors |
+| 同上 | 64 | 16 | `GpuBufferRef<ImagePaintData2D>` ImagePaintData |
+| DrawRangeArguments2D | 0 | 16 | `GpuBufferRef<DrawRecord2D>` Records |
+| 同上 | 16 | 16 | `GpuBufferRef<DrawPageMetadata2D>` PageMetadata（Count=1） |
+| 同上 | 32 | 8 | uint FirstRecord at 32、RecordCount at 36 |
+| 同上 | 40 | 8 | float2 TargetSize: width,height |
+| 同上 | 48 | 8 | float2 PixelOrigin: x,y |
+| 同上 | 56 | 8 | uint Reserved0=0、Reserved1=0 / 全体 64 B |
+
+PixelOrigin は global graph pixel との変換用であり、通常 record の sample/DeviceBounds は target-local のままである。Records、directories、metadata、typed descriptors は IShaderData の ShaderDataSlice と generated serializer で登録する。NumericPayload の Vector4 は IShaderData ではないため `IGraphicsBuffer<Vector4>` の `BufferSlice<Vector4>` と `RegisterBuffer<T>` を用い、shader の `GpuBufferRef<float4>` target と 16 B stride を照合する。uint directory は scalar uint 四個の IShaderData とし、現行 writer に未対応な C# uint4 型を前提にしない。
+
+graph 合成は新しい range arguments に GraphMode 等を暗黙追加せず、既存 DrawingArguments を使う別 route とする。その wire（基準 `Rendering/DrawingArguments.cs` と `Shaders/drawing-fragment.slang`、Drawing2D 配下）は次の **144 B**。effect kernel 自体の固有 arguments はこの描画 ABI に含めない。
+
+| byte offset | 長さ | DrawingArguments の内容 |
+| --- | --- | --- |
+| 0 | 16 | `GpuBufferRef<DrawingInstruction>` Instructions |
+| 16 | 16 | `GpuBufferRef<float4>` Data |
+| 32 | 16 | uint Count at 32、Root at 36、GraphMode at 40、float Opacity at 44 |
+| 48 | 16 | float4 SourceBounds: x,y,width,height |
+| 64 | 16 | float4 OriginalBounds: x,y,width,height |
+| 80 | 16 | float4 PixelOrigin: x,y,0,0 |
+| 96 | 16 | GpuTextureRef SourceTexture |
+| 112 | 16 | GpuTextureRef OriginalTexture |
+| 128 | 16 | GpuSamplerRef GraphSampler |
+
+この route の DrawingInstruction は上の背景に記した既存 144 B element（T0/T1/A/B/C/D が 0/16/32/48/64/80、Kind/First/Count/Mode が 96/100/104/108、Texture/Sampler が 112/128）を維持する。Data は同じ float4 stride 16 B。Count/Root は旧命令数/terminal index であり FirstRecord/RecordCount に読み替えない。GraphMode=0 は通常 evaluator、1 は Source*Opacity*coverage、2 はそれに Original*(1-coverage) を加え、totalCoverage=0 の fragment を discard する。Source/OriginalBounds と global pixel=p+PixelOrigin の契約を維持し、graph coverage の既存 clip interpreter を通常描画の新 record evaluator と混ぜない。通常描画全種の固定長化に対し、pass 合成専用のこの既存経路は明示的な例外とする。
+
+有効化時には新 route の **7 read storage streams**（Records、PageMetadata、二 directory、NumericPayload、MaskDescriptors、ImagePaintData）と WGSL remap 一個で最大 **8 storage bindings/stage** を予算化する。空の payload stream も有効なゼロ初期化 dummy element 一個を登録し（参照 Count=1）、CPU 有効 count は 0 として payload から到達させない。dummy descriptor の texture/sampler 参照 lane はゼロ bit の偽参照にせず有効な fallback view/sampler を generated serializer で pack し、それ以外の lane をゼロにする。directory の ID=0 entry とは別の規則である。これらの dummy の bytes と登録も物理予算へ入れる。参照から辿る texture/sampler、root uniform 一個、backend 固有の予約 binding を併せて DeviceCaps と登録表の上限へ preflight する。metadata への indirection で binding count が減るとはみなさない。graph route は二 read streams + remap の最大 3 と Source/Original/GraphSampler を別に検査し、両 route の和を同一 draw の必須 binding 数としない。7+1 が backend 上限を超えるならこの構成を拒否し、storage 集約なしに適合すると主張しない。
+
+stream 開始位置は binding alignment と各 stride（96/16/80/128、metadata 80）の最小公倍数へ揃える。16 B cell 内の論理 payload は別 binding ではなく 16 B alignment のみ。例として binding alignment=256 の MaskDescriptors は LCM(256,80)=1280 B、ImagePaintData は 256 B 境界である。offset16 の typed 変換と領域上限は開始・終端とも検査する。count と ID は uint32、byte 積と pool の合算は checked uint64。物理 bytes は record、directories、全 numeric cell、80/128 B descriptors、80 B metadata、dummy、argument upload、alignment/tail を含め、CPU staging/GPU/in-flight ごとに計上する。旧 Data 262144 float4 の admission は前節の旧 Compile 換算を維持し、新 descriptor の存在でその counter を増減させない。
 
 ### 範囲と painter order
 
@@ -94,7 +248,7 @@ record の配列順を painter order とする。種類順 sorting、別々の d
 
 基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/IRenderEncoder.cs` の Draw は instanceCount/firstInstance を持ち、`src/Graphics/Lumyte.Graphics.Vulkan/VulkanRenderEncoder.cs` と `src/Graphics/Lumyte.Graphics.Wgpu/WgpuRenderEncoder.cs`、`src/Graphics/Lumyte.Graphics.Direct3D12/Direct3D12RenderEncoder.cs` の `Draw` は native の引数へ渡す。これは instancing の入口の根拠であり、全 backend の pixel/order 受け入れ完了を意味しない。
 
-連続範囲を一 Draw にする条件は同じ pipeline、blend、target、table、ページ、互換な state である。異なる Kind は一 pipeline の分岐で処理できるが、effect、layer の一時 target、backdrop read、異なる blend/scissor、table 容量、pass 境界は同順の範囲へ分割する。一範囲が必ず一 native draw になる保証はしない。graph の Source/Original/Opacity/GraphMode による合成は既存 pass の責務を保ち、対象範囲の clip coverage を固定長 record で供給する。effect kernel 自体は drawing record ではない。
+連続範囲を一 Draw にする条件は同じ pipeline、blend、target、table、ページ、互換な state である。異なる Kind は一 pipeline の分岐で処理できるが、effect、layer の一時 target、backdrop read、異なる blend/scissor、table 容量、pass 境界は同順の範囲へ分割する。一範囲が必ず一 native draw になる保証はしない。graph の Source/Original/Opacity/GraphMode による pass 合成は「page metadata と全引数」の既存 DrawingArguments route を維持する。effect kernel 自体は drawing record ではない。
 
 ### ページ、容量と登録の順序
 
@@ -133,7 +287,8 @@ paint、clip、geometry は数値 stream と参照を持つ typed descriptor str
 +        IGpuRef<DrawRecord2D> Records,
 +        IGpuRef<DrawPageMetadata2D> PageMetadata,
 +        uint FirstRecord, uint RecordCount,
-+        Vector2 TargetSize, Vector2 PixelOrigin) : IShaderArguments;
++        Vector2 TargetSize, Vector2 PixelOrigin,
++        uint Reserved0, uint Reserved1) : IShaderArguments;
  }
 ```
 
@@ -158,7 +313,7 @@ PageMetadata は次の typed shader-data 一個を指す。directory と geometr
 +        IGpuRef<IGraphicsTextureView> Texture,
 +        IGpuRef<IGraphicsSampler> Sampler) : IShaderData;
 +
-+    // uint 群は child、tile、filter、alpha、field mode。正確な lane は pack schema で固定。
++    // uint 群と typed 参照の正確な lane は「全 stream の byte 配置」に固定。
 +    internal readonly partial record struct ImagePaintData2D(
 +        Vector4 InverseX, Vector4 InverseY, Vector4 Source, Vector4 TextureSizeAndRange,
 +        uint ChildId, uint TileX, uint TileY, uint Filter,
@@ -168,7 +323,7 @@ PageMetadata は次の typed shader-data 一個を指す。directory と geometr
  }
 ```
 
-NumericPayload は geometry、paint 数値、clip 数値のページ内共通 16 B stream とする。directory の uint lane は uint4 wire を用い、NumericPayload 内で整数を扱う lane は bit-preserving な asuint/asfloat で読み書きし、float として数値 decode しない。mask の membership lane だけは既存の数値 float 方式を維持する。すべての reserved と未使用 lane を 0 にする。これら二つの参照付き型の wire offset/stride は backend reflection を正とし、DrawRecord2D の 96 B と混同しない。実装時に typed schema を揃え、全 backend の reflection と生成 codec で 96 B/各 field offset/array stride を照合することを必須とする。
+NumericPayload は geometry、paint 数値、clip 数値のページ内共通 16 B stream とする。directory の uint lane は uint4 wire を用い、NumericPayload 内で整数を扱う lane は bit-preserving な asuint/asfloat で読み書きし、float として数値 decode しない。mask の membership lane だけは既存の数値 float 方式を維持する。すべての reserved と未使用 lane を 0 にする。参照付き型も「全 stream の byte 配置」の固定 offset/stride を用い、全 backend の reflection と生成 codec で照合する。照合不一致は導入条件の不成立として拒否する。
 
 ## 検討した代替案
 
@@ -185,7 +340,7 @@ NumericPayload は geometry、paint 数値、clip 数値のページ内共通 16
 ### 受け入れ条件
 
 - 全 command、全 paint constructor、graph layer/effect 合成を基準の公開 API pixel 出力と照合する。単色/gradient、半透明 overlap、各 composite、異なる子 clip、深さ 64 と超過、特異な中間変換、共有 paint の異なる transform を含める。
-- backend reflection と generated serialization の offsets/stride を検査する。32 KiB の 0/1/340/341/342 record、first/last/空/範囲外/uint overflow、256 B binding alignment と 96 B stride、typed offset、buffer/range の上限と tail 初期化を検査する。
+- backend reflection と generated serialization の全表の offsets/stride を検査する。全 uint bit pattern（NaN 相当を含む）の NumericPayload 往復、空 stream の dummy/fallback と transitive binding、7+1 の exact/+1 binding limit、80/128 B descriptor の offset16 と LCM alignment を含める。32 KiB の 0/1/340/341/342 record、first/last/空/範囲外/uint overflow、256 B binding alignment と 96 B stride、typed offset、buffer/range の上限と tail 初期化を検査する。
 - instance の透明重なり・quad 共通辺・混在 Kind と record ごとの同順 Draw を比較する。Vulkan、D3D12、Wgpu/Browser の API 順序保証の根拠確認と実機試験を分け、未確認 backend を完了扱いにしない。
 - disjoint half の shape/clip の積が 0、coincident half が 1/2 となること、gradient 相関、16 bit の各 lane、穴、DPR/origin、隣接 float 境界、DrawMesh の中心 coverage を独立 oracle で確認する。
 - table exact/+1 と単一超過、transitive reference、paint sharing と別 table 再 pack、AddPass 超過拒否、組込み pass 分割、copy producer と culling を検査する。
