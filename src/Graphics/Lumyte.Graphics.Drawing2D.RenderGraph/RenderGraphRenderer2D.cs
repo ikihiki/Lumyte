@@ -2,6 +2,7 @@ using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Mathematics.Geometry;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -146,8 +147,6 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private static bool ValidChannel(float value) => float.IsFinite(value) && value >= 0 && value <= 1;
 
-    private static double Linear(float value) => value <= 0.04045f ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
-
     private static void AppendClear(RenderGraphBuilder graph, RenderTargetBinding2D target)
     {
         if (target.LoadOp != AttachmentLoadOp.Clear)
@@ -156,7 +155,8 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         }
 
         Color2D color = target.ClearColor;
-        var clear = new ClearColor(Linear(color.R) * color.A, Linear(color.G) * color.A, Linear(color.B) * color.A, color.A);
+        Rgba<double> linear = new Rgba<float>(color.R, color.G, color.B, color.A).DecodeSrgb<double>().PremultiplyLinear<double>();
+        var clear = new ClearColor(linear.R, linear.G, linear.B, linear.A);
         graph.AddPass("drawing2d.clear", context =>
         {
             IRenderEncoder pass = context.Commands.BeginRenderPass(new RenderPassDesc

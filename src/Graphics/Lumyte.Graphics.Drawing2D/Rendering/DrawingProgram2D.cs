@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -34,8 +35,8 @@ internal sealed class DrawingProgram2D
 
     internal static Vector4 Linear(Color2D color)
     {
-        static float Decode(float c) => c <= 0.04045f ? c / 12.92f : MathF.Pow((c + 0.055f) / 1.055f, 2.4f);
-        return new(Decode(color.R) * color.A, Decode(color.G) * color.A, Decode(color.B) * color.A, color.A);
+        Rgba<float> linear = new Rgba<float>(color.R, color.G, color.B, color.A).DecodeSrgb<float>().PremultiplyLinear<float>();
+        return new(linear.R, linear.G, linear.B, linear.A);
     }
 
     internal static bool TryRectangle(Path2D path, out Rect2D rectangle)

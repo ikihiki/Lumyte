@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Mathematics.Sample;
@@ -7,6 +8,21 @@ internal static class Program
 {
     private static void Main()
     {
+        var colorCodes = Rgba<byte>.FromArgb32Codes(0x80FF0000u);
+        Rgba<double> normalizedColor = colorCodes.NormalizeUnorm<double>(byte.MaxValue);
+        Require(normalizedColor.R == 1 && normalizedColor.A == 128d / 255, "Explicit code normalization");
+        Rgba<double> linearColor = normalizedColor.DecodeSrgb<double>().PremultiplyLinear<double>();
+        Require(linearColor.R == normalizedColor.A, "Transfer and association");
+        var cyan = Rgba<double>.FromHsvSrgbDegrees(180m, 1m, 1m, 1m);
+        Require(cyan == new Rgba<double>(0, 1, 1, 1), "Exact HSV color factory");
+        byte[] pixel = new byte[4];
+        cyan.WritePixel(pixel, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
+        var decodedPixels = new Rgba<double>[1];
+        Lumyte.Mathematics.Colors.Color.DecodePixels<double>(pixel, decodedPixels, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
+        Require(decodedPixels[0] == cyan, "Batch pixel API");
+        var colorMaximum = BigInteger.Pow(10, 400);
+        Require(new Rgba<BigInteger>(0, colorMaximum, 0, colorMaximum).NormalizeUnorm<float>(colorMaximum).G == 1, "Huge exact UNORM maximum");
+
         // This ordinary project reference deliberately has no friend-assembly access or test dependencies.
         CheckPolygon<int>(100);
         CheckPolygon<decimal>(100m);

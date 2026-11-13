@@ -1,6 +1,6 @@
-# Public geometry consumer
+# Public mathematics consumer
 
-An ordinary console project references Mathematics without friend-assembly access. It exercises the public `Geometry2D` / `Geometry3D` entry points, generic integer/decimal/BigInteger geometry, float BCL versus double FMA arithmetic, streaming struct sinks, and SIMD span operations.
+An ordinary console project references Mathematics without friend-assembly access. It exercises the public `Geometry2D` / `Geometry3D` entry points, generic integer/decimal/BigInteger geometry, float BCL versus double FMA arithmetic, streaming struct sinks, and SIMD span operations. It also exercises `Rgba<T>` code normalization, packed pixel storage, sRGB transfer, alpha association, HSL/HSV, and `Color` batch conversion.
 
 ```sh
 dotnet run --project samples/Lumyte.Mathematics.Sample -c Release

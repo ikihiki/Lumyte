@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -88,9 +89,10 @@ public sealed class PreparedDraw2D : IDisposable
             if (_target.LoadOp == AttachmentLoadOp.Clear)
             {
                 Color2D color = _target.ClearColor;
+                Rgba<double> linear = new Rgba<float>(color.R, color.G, color.B, color.A).DecodeSrgb<double>().PremultiplyLinear<double>();
                 IRenderEncoder pass = commands.BeginRenderPass(new()
                 {
-                    ColorAttachments = [new() { View = _target.View, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(Linear(color.R) * color.A, Linear(color.G) * color.A, Linear(color.B) * color.A, color.A) }],
+                    ColorAttachments = [new() { View = _target.View, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(linear.R, linear.G, linear.B, linear.A) }],
                 });
                 pass.End();
                 var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
@@ -126,6 +128,4 @@ public sealed class PreparedDraw2D : IDisposable
             profile?.Counter(14, resident);
         }
     }
-
-    private static double Linear(float value) => value <= 0.04045f ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
 }

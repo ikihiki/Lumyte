@@ -64,3 +64,24 @@ double distance = Geometry3D.Distance<int, double>(new(0, 0, 0), new(2, 3, 6));
 通常の別 assembly から公開境界を使う実行例は [Mathematics sample](../../../samples/Lumyte.Mathematics.Sample/README.md) にあります。
 
 囲む矩形を構築する `FromMinMax`・`FromPoints`・`Union` は、丸めた extent を足し戻した最大辺も入力を含むよう必要時だけ外向きに補正します。有限に表現できない場合は例外／Try factory の false とし、無条件の余白は付けません。汎用 Bezier では定数成分と subnormal 成分を早期の積の underflow で失わないようにします。
+
+## 色
+
+`Lumyte.Mathematics.Colors.Rgba<T>` は `INumber<T>` の有限な RGBA 成分を保持します。数値型から sRGB／linear、alpha association、コード値の上限を推測しません。単色の構築・変換・補間・合成は `Rgba<T>`、複数画素の span 変換と既存 UI の raw 互換処理は `Color` に置きます。
+
+```csharp
+using Lumyte.Mathematics.Colors;
+
+var input = new Rgba<float>(0.5f, 0.5f, 0.5f, 0.5f);
+Rgba<float> premultiplied = input.DecodeSrgb<float>().PremultiplyLinear<float>();
+Rgba<byte> codes = Rgba<byte>.FromArgb32Codes(0x80FF0000u);
+Rgba<double> normalized = codes.NormalizeUnorm<double>(byte.MaxValue);
+Rgba<float> pixel = Rgba<float>.DecodePixel(
+    new byte[] { 0, 0, 255, 128 }, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
+```
+
+27 種の格納形式は、RGB/BGR/RGBA/BGRA/ARGB/ABGR、8/16-bit UNORM、Gray/GrayAlpha、565/4444/5551/1010102 packed、8/16-bit SNORM、Half/float/double の RGB/RGBA 成分列です。`ColorByteOrder` は成分または packed word の byte 順を指定し、GPU texture format の対応とは別です。decode はコード値を正規化しますが、gamma と alpha association は変更しません。`FromArgb32Codes` の整数 bit 順は 0xAARRGGBB で、こちらは正規化しないコード値の factory です。
+
+HSL/HSV は正規化された straight sRGB に対する degree hue の変換です。hue は有限な値を周期化し、無彩色は hue=0 とします。分数を整数結果へ黙って切り捨てません。UNORM は厳密な比・積と最近接偶数で変換し、型 cast と区別します。
+
+一画素の `WritePixel` は失敗時に出力を変更しません。batch は長さ・enum・全重複を出力前に検査し、データ変換失敗では完了した prefix のみ更新します。RGB への書き出しは alpha=1、Gray は R=G=B を要求し、透明度や色を黙って捨てません。HDR・負の linear RGB を保つ演算と、RGB も clamp する演算を名前で区別します。ICC/profile 変換、画像 codec、GPU capability の追加は含みません。

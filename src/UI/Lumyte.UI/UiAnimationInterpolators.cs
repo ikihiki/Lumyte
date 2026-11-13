@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Lumyte.Animation;
 using Lumyte.Graphics.Drawing2D;
@@ -37,28 +38,9 @@ public static class UiAnimationInterpolators
     {
         public Color2D Interpolate(Color2D from, Color2D to, float amount)
         {
-            if (amount == 0)
-            {
-                return from;
-            }
-
-            if (amount == 1)
-            {
-                return to;
-            }
-
-            double alpha = from.A + ((to.A - from.A) * (double)amount);
-            if (alpha == 0)
-            {
-                return default;
-            }
-
-            float Channel(float first, float last) => Encode(((Decode(first) * from.A) + (((Decode(last) * to.A) - (Decode(first) * from.A)) * amount)) / alpha);
-            return new(Channel(from.R, to.R), Channel(from.G, to.G), Channel(from.B, to.B), (float)alpha);
+            Vector4 result = Lumyte.Mathematics.Colors.Color.InterpolateSrgbLinearPremultipliedRaw(
+                new(from.R, from.G, from.B, from.A), new(to.R, to.G, to.B, to.A), amount);
+            return new(result.X, result.Y, result.Z, result.W);
         }
-
-        private static double Decode(float value) => value <= 0.04045f ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
-
-        private static float Encode(double value) => (float)(value <= 0.0031308 ? value * 12.92 : (1.055 * Math.Pow(value, 1 / 2.4)) - 0.055);
     }
 }

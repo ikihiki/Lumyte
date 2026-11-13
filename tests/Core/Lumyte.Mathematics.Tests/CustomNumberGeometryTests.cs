@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Mathematics.Geometry;
 using Xunit;
 
@@ -181,6 +182,19 @@ public sealed class CustomNumberGeometryTests
         Assert.Equal(3u, segment.DistanceTo<uint>(query));
         Assert.Equal(25u, segment3.DistanceSquared<uint>(query3));
         Assert.Equal(5u, segment3.DistanceTo<uint>(query3));
+    }
+
+    /// <summary>Color storage and exact normalization support reference-containing custom numbers.</summary>
+    [Fact]
+    public void ColorsSupportManagedCustomNumbers()
+    {
+        Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<Rgba<ManagedDecimal>>());
+        var codes = Rgba<ManagedDecimal>.FromRgba8Codes(1, 2, 3, 4);
+        Assert.Equal(new Rgba<decimal>(0.25m, 0.5m, 0.75m, 1), codes.NormalizeUnorm<decimal>(N(4)));
+        Assert.Equal(new Rgba<int>(1, 2, 3, 4), codes.NormalizeUnorm<ManagedDecimal>(N(4)).QuantizeUnorm(4));
+        Assert.Equal(0x04010203u, codes.ToArgb32Codes());
+        Assert.Equal(N(99), codes.WithAlpha(N(99)).A);
+        Assert.Equal(new Rgba<decimal>(1, 2, 3, 4), codes.ConvertChecked<decimal>());
     }
 
     private static ManagedDecimal N(decimal value) => new(value);
