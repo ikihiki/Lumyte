@@ -134,7 +134,13 @@ internal readonly partial record struct Rgba<T>
         {
             Rational p = Rational.From(x) * a;
             Rational q = Rational.From(y) * b;
-            return ((p + ((q - p) * t)) / alpha).To<TResult>();
+            Rational exact = (p + ((q - p) * t)) / alpha;
+            if (exact.Numerator.Sign < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(amount), "The interpolated RGB channel is outside the unit interval.");
+            }
+
+            return exact.To<TResult>();
         }
 
         TResult EncodedChannel(T original, T target, TResult decodedFirst, TResult decodedLast)
@@ -155,8 +161,13 @@ internal readonly partial record struct Rgba<T>
                 Rational p = Rational.From(original) * a;
                 Rational q = Rational.From(target) * b;
                 Rational exact = (p + ((q - p) * t)) / alpha;
+                if (exact.Numerator.Sign < 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(amount), "The interpolated RGB channel is outside the unit interval.");
+                }
+
                 Rational limit = Rational.From(0.0031308m) * Rational.From(12.92m);
-                if (exact.Numerator.Sign >= 0 && (exact.Numerator * limit.Denominator) <= (limit.Numerator * exact.Denominator))
+                if ((exact.Numerator * limit.Denominator) <= (limit.Numerator * exact.Denominator))
                 {
                     TResult value = exact.To<TResult>();
                     RequireUnit(value);
