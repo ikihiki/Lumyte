@@ -29,6 +29,7 @@ internal sealed class Direct3D12Semaphore : IGraphicsSemaphore
 
     public void Dispose()
     {
+        Owner.Validation?.Release(this);
         NativeMethods.Release(_native);
         _native = 0;
     }

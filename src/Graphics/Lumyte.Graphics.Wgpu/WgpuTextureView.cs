@@ -29,6 +29,8 @@ internal sealed class WgpuTextureView(WgpuTexture texture, TextureViewInfo info,
             return;
         }
 
+        Owner.Validation?.Release(this);
+
         native.Dispose();
         _disposed = true;
     }

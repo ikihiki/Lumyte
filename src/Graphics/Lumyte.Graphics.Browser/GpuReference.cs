@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong count, ulong stride, ulong offset, ulong size) : IGpuRef<T>, IShaderReference
+internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong count, ulong stride, ulong offset, ulong size) : IGpuRef<T>, IShaderReference, IValidatedShaderReference
 {
     public ulong Count { get; } = count;
 
@@ -21,6 +21,8 @@ internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong c
     public ShaderBufferAccess BufferAccess => registration.BufferAccess;
 
     public uint Slot => registration.Slot;
+
+    public void ValidateRegistration() => registration.Owner.ValidateRegistration(registration, registration.Slot, registration.Resource);
 
     public IGpuRef<T> GetElement(ulong index)
     {

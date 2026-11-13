@@ -50,19 +50,13 @@ public sealed class ShaderArgumentsTests
 
         Assert.Equal("BindingCameraArguments", root.ShaderTypeName);
         Assert.Empty(root.Values);
-#if DEBUG
-        Assert.Equal("ViewProjection", Assert.Single(root.Fields).Path);
-#else
         Assert.Empty(root.Fields);
-#endif
+        Assert.Equal("ViewProjection", Assert.Single(root.DiagnosticFields!()).Path);
         Assert.Equal(64, root.Data.Length);
         Assert.Equal("BindingVector", element.ShaderTypeName);
         Assert.Empty(element.Values);
-#if DEBUG
-        Assert.Equal("Value", Assert.Single(element.Fields).Path);
-#else
         Assert.Empty(element.Fields);
-#endif
+        Assert.Equal("Value", Assert.Single(element.DiagnosticFields!()).Path);
         Assert.Equal(12, element.Data.Length);
     }
 

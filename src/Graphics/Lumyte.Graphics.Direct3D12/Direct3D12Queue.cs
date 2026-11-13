@@ -13,6 +13,7 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        owner.Validation?.ValidateSemaphores(desc);
         var semaphores = new HashSet<Direct3D12Semaphore>();
         Direct3D12Semaphore Own(IGraphicsSemaphore value)
         {
@@ -67,6 +68,7 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
                 throw new InvalidOperationException("Finish each command before submitting it exactly once.");
             }
 
+            command.ValidateSubmit();
             commands[i] = command;
             handles[i] = command.Native;
         }
@@ -99,6 +101,7 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
             }
 
             owner.Check(NativeMethods.QueueSignal(owner.Native, fence));
+            owner.Validation?.SubmittedSemaphores(submission, desc);
             return submission;
         }
         catch

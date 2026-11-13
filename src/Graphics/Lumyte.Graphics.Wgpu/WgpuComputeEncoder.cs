@@ -21,6 +21,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         }
 
         selected.ThrowIfDisposed();
+        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -35,6 +36,11 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        if (owner.Owner.Validation != null)
+        {
+            ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        }
+
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -50,7 +56,11 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = arguments.Copy();
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        if (owner.Owner.Validation != null)
+        {
+            ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        }
+
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -65,6 +75,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         }
 
         program.ValidateAlive();
+        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
@@ -123,6 +134,15 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         {
             _table?.ThrowIfDisposed();
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            if (owner.Owner.Validation is { } validation)
+            {
+                foreach (IShaderReference reference in snapshot.References)
+                {
+                    ((IValidatedShaderReference)reference).ValidateRegistration();
+                    validation.Use(owner, reference.Resource);
+                }
+            }
+
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
         }
 

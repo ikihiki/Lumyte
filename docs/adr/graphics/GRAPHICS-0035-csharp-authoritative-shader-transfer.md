@@ -7,7 +7,7 @@
 - 変更元: [GRAPHICS-0005](GRAPHICS-0005-argument-tables-and-gpu-references.md)の「登録API」と、[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)の「生成codecとbackendの接続」「MaterialData内のIGpuRefと明示的な転送」と、[GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)の型制約
 - 変更対象: 数値の転送表現、参照を含む型の宣言、転送サイズの基準、配置検証の実行構成、登録ごとのバッファアクセス選択
 - 継続する判断: テーブルの明示選択、不透明な型付き参照、資源の所有権、明示転送・送信・完了待機
-- リソース検証方針: [GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)。
+- リソース検証方針の一部変更: [GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)の「任意のvalidation modeへ移すAPIは追加しない」と検証追跡の除去を、明示的に有効化したdeviceに限って変更する。無効時の利用者責任、所有権、明示同期、ホスト範囲検査と必要なbinding metadataは継続する。
 - 明示的な操作を補助するAPI: [GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)。
 
 ## 背景
@@ -105,7 +105,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
 
 通常の数値データにはIShaderArgumentsもIShaderDataも不要である。`CreateShaderDataBufferのunmanagedオーバーロードは既存のIGraphicsBuffer<T>`を返し、`BufferSlice<T>`、`BufferBarrierDesc<T>`、CopyBuffer、WriteBufferとRenderGraphの通常のバッファ経路を使う。RenderGraph.CreateShaderDataBufferにもunmanagedオーバーロードを用意し、`RenderGraphBuffer<T>`を返す。`Lumyte.Resources.Graphicsでは既存のGraphicsBufferDefinition<T>`と生バッファのインポートをそのまま利用する。参照依存メタデータがないため、要素ごとの取得・符号化は行わず`ReadOnlySpan<T>`をそのままコピーする。既存のインターフェースを明示実装する数値型も互換経路として使用できる。IGpuRefを含む型はpartialクラスにする。数値データは1つの非公開unmanaged構造体に保持し、利用側には通常の読み書き可能なプロパティを提供する。.NET 10のpartialプロパティはジェネレーターで実装できる。利用者が定義する格納用構造体には、参照プロパティと同名の16バイトのShaderReferenceSlotフィールドも配置する。ジェネレーターは非公開の格納領域を一括コピーし、参照の識別情報とC#側のスロット位置を記録する。管理オブジェクト自体のメモリは転送しない。
 
-通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のクラスは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、Debug診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体ではDebugに限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。Releaseにはフィールド走査も実行時コード生成も含めない。動的コード生成ができないBrowserやDebug AOTでも、通常構造体を直接転送できる。その場合は名前とサイズを診断し、取得できないフィールドオフセットの診断だけを省略する。生成型の静的な配置情報はその環境でも使用する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
+通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のクラスは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、任意の診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体では検証を明示的に有効にした場合に限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。無効時にはフィールド走査も実行時コード生成も実行しない。動的コード生成ができないBrowserやAOTでも、通常構造体を直接転送できる。その場合は名前とサイズを診断し、取得できないフィールドオフセットの診断だけを省略する。生成型の静的な配置情報はその環境でも使用する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
 
 旧フィールド単位のwriterと、リフレクションに従って数値を詰め直す処理は削除する。数値の書き込み操作はWriteBytesのみとし、Valuesには参照の差し替え情報だけを保持する。ShaderDataLayout.Packは取得済みのバイト列を複製し、C#側の各参照位置にある16バイトだけを差し替える。参照の種類は参照先リソースとArgumentTableの登録から解決する。シェーダーの名前やパスから実行時のアクセス種別を決めない。WriteReferenceはC#側のオフセットと不透明な参照だけを受け取る。
 
@@ -207,7 +207,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
 +    // 非公開の格納用構造体で使う16バイトの参照領域。
 +    [StructLayout(LayoutKind.Sequential, Size = 16, Pack = 4)]
 +    public struct ShaderReferenceSlot { }
-+    // C#の配置をDebug診断へ渡す。GPUアドレスは含まない。
++    // C#の配置を任意の診断へ渡す。GPUアドレスは含まない。
 +    public sealed record ShaderTransferField(
 +        string Path, int Offset, int Size, Type ValueType, bool IsReference = false);
 -    public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : struct, IShaderData
@@ -243,11 +243,39 @@ RenderGraphの同名オーバーロードも通常のバッファ型を返す。
  }
 ```
 
-### DebugとReleaseの違い
+### デバイスごとの任意の検証
 
-Debugでは、C#の名前、サイズ、フィールド型、オフセット、入れ子のパス、参照スロットをシェーダーのスキーマと照合する。4つのパイプラインでのステージ間のValidateProgram呼び出しと、ModelVertexの配置検証（ModelMeshからの呼び出しを含む）はDebug限定とする。
+DebugとReleaseは同じ実行契約とし、検証は既定で無効にする。backendの実deviceを生成した直後、子資源を作る前にEnableValidation()を呼び出す場合だけ、有効期間・同期・配置の診断を追加する。D3D12のEnableDebugLayerは別のnative設定として維持する。
 
-Releaseでは数値スキーマの不一致を拒否せず、バイト列も補正しない。シェーダー宣言が誤っていれば描画結果が壊れることを許容する。ホスト側の範囲検査、参照ABIの長さと範囲、整数オーバーフロー、選択したテーブルへの所属、登録時の用途能力と、現在操作するインスタンス自身のdisposed・mapping状態などの局所的な検査は維持する。リソースと登録の寿命はGRAPHICS-0014に従って利用者が保証し、登録の世代・失効検出やdraw・Submit時の生存確認の再走査は再導入しない。ホストメモリの安全性をDebug診断に依存させない。
+変更は過去のGRAPHICS-0014の任意モードを追加しない判断と追跡の除去だけに限定する。生存期間と同期を利用者が明示管理する契約は継続する。無効時は診断trackerを生成せず、診断callbackの記録、状態表の走査、配置診断のためのリフレクションを行わない。ホストspanの範囲・overflow・参照ABI長・native失敗の処理と、実際のbinding生成に必要なmetadataは保持する。
+
+変更前はdevice生成後に構成による暗黙の検査を受けた。変更後は次のように指定する。
+
+```csharp
+using var device = VulkanDevice.Create(); // 既定では無効
+device.EnableValidation(); // 診断が必要な場合だけ、子資源を作る前に指定
+```
+
+他のbackendの実deviceも同名のAPIを持ち、別deviceへforwardしない。
+
+比較元は基準コミットの各backend deviceであり、4型とも次の追加を行う。
+
+```diff
+ namespace Lumyte.Graphics.Vulkan;
+ public sealed class VulkanDevice
+ {
++    // 既定null。診断状態の有無を示す。
++    public GraphicsValidation? Validation { get; private set; }
++    // 子資源の生成前だけに呼ぶ。Debug／Release共通。
++    public void EnableValidation();
+ }
+```
+
+WgpuDevice、BrowserDevice、Direct3D12Deviceも同じメンバーを追加する。
+
+検出対象は登録identity、記録／in-flight resource、親子、mapping、command内copy buffer scope、既知のtexture subresource Before状態、binary semaphore、copy source metadataのsnapshot identityである。最初のtexture Beforeは利用者の宣言として受け入れ、commandをまたぐtexture状態とbuffer範囲別hazard、全presentation経路は保証しない。
+
+診断はCPUから観測できる明示操作を対象とし、GPU内の動的index、shader内部の実アクセス、native外部操作を完全には観測できない。検証を有効にしたdeviceの操作は外部で直列化する。
 
 ### 参照ABI
 
@@ -259,7 +287,7 @@ Releaseでは数値スキーマの不一致を拒否せず、バイト列も補�
 
 参照は不透明で、所有権を持たず、型付きのままとする。参照や引数値を保持してもGPU登録の所有権は取得しない。参照を含むシェーダーデータバッファには、生の別名参照やシェーダーからの書き込み経路を追加しない。通常のunmanagedバッファでは既存の生バッファの用途・同期契約を維持する。
 
-WgpuとBrowserの読み取り専用・書き込み可能poolとremapの各laneは登録のアクセス種別から選択する。同じバッファ範囲を両poolへ登録した場合も、各スロットの選択したlaneだけを設定する。nativeの同時使用・エイリアス制約は別途適用される。Vulkanの物理アドレス、Direct3D12の絶対オフセットの符号化は変更しない。Direct3D12のSRVまたはUAVも登録の選択に従う。シェーダーの参照種別・対象型との一致はDebugだけで診断し、Releaseの転送やbinding生成はシェーダー文字列やフィールドパスで分類しない。
+WgpuとBrowserの読み取り専用・書き込み可能poolとremapの各laneは登録のアクセス種別から選択する。同じバッファ範囲を両poolへ登録した場合も、各スロットの選択したlaneだけを設定する。nativeの同時使用・エイリアス制約は別途適用される。Vulkanの物理アドレス、Direct3D12の絶対オフセットの符号化は変更しない。Direct3D12のSRVまたはUAVも登録の選択に従う。シェーダーの参照種別・対象型との一致は検証を有効にした場合だけ診断し、Releaseの転送やbinding生成はシェーダー文字列やフィールドパスで分類しない。
 
 ### 値の取得・転送・寿命
 
@@ -267,11 +295,11 @@ SetArgumentsと、マップ済みアップロード領域へのCopyFromは、呼
 
 MemoryPreference.UploadのバッファはCPUステージング領域、AutomaticのバッファはGPUのシェーダーデータとする。マップ、書き込み、アンマップ、バリア、コピー、送信、完了待機、再利用の同期は引き続き明示的に行う。コピーの記録時には、コマンド内だけで有効なメタデータの上書き情報を作る。送信が成功した場合に限ってGPUバッファへメタデータを反映し、破棄したコマンドや未送信のコマンドからは反映しない。部分コピーは転送先の対象要素だけを置き換える。転送元の変更とリソース寿命には、既存のコマンドと登録の契約を適用する。
 
-ルート引数の取得時には、転送済みシェーダーデータの参照依存関係を再帰的に収集する。確認済みのバッファと要素の組を記録し、自己参照や相互参照で探索が循環しないようにする。同一テーブルへの所属とリソースの検査は、ルートからの直接参照だけでなく、間接的な参照にも適用する。バッファ参照のアクセス種別はArgumentTableの登録が保持する。参照は登録の識別情報を持ち、GetElementも同じ登録を参照する。BufferUsageはリソースの能力であり、選択したアクセス種別ではない。WriteBuffer(slot, range, ShaderBufferAccess.ReadOnly)を既定とし、書き込みにはReadWriteを明示する。ReadOnlyにはShaderRead、ReadWriteにはShaderWriteの能力を登録時に要求する。参照を含むShaderDataSliceの登録は読み取り専用に限定する。同じバッファに別スロットで異なるアクセス種別を登録できる。置換は新しい登録を作り、古い参照のCPUメタデータを変更しないが、古い参照の実行はGRAPHICS-0014に従って禁止する。世代照合や失効検出は追加しない。
+ルート引数の取得時には、転送済みシェーダーデータの参照依存関係を再帰的に収集する。確認済みのバッファと要素の組を記録し、自己参照や相互参照で探索が循環しないようにする。同一テーブルへの所属とリソースの検査は、ルートからの直接参照だけでなく、間接的な参照にも適用する。バッファ参照のアクセス種別はArgumentTableの登録が保持する。参照は登録の識別情報を持ち、GetElementも同じ登録を参照する。BufferUsageはリソースの能力であり、選択したアクセス種別ではない。WriteBuffer(slot, range, ShaderBufferAccess.ReadOnly)を既定とし、書き込みにはReadWriteを明示する。ReadOnlyにはShaderRead、ReadWriteにはShaderWriteの能力を登録時に要求する。参照を含むShaderDataSliceの登録は読み取り専用に限定する。同じバッファに別スロットで異なるアクセス種別を登録できる。置換は新しい登録を作り、古い参照のCPUメタデータを変更しないが、古い参照の実行はGRAPHICS-0014に従って禁止する。検証を有効にした場合は登録identityの照合で失効を検出する。
 
 ### 検証方針
 
-テストでは、インターフェースもpartial宣言もない構造体と外部の数値型、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、クラスの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、Debugでの不一致検出、Releaseでのバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映、登録ごとのアクセス種別と能力の検査、同じバッファの別登録、GetElementによる登録の保持、置換前後の独立したCPUメタデータとremapのlane分離も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。
+テストでは、インターフェースもpartial宣言もない構造体と外部の数値型、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、クラスの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、有効時の不一致検出、無効時のバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映、登録ごとのアクセス種別と能力の検査、同じバッファの別登録、GetElementによる登録の保持、置換前後の独立したCPUメタデータとremapのlane分離も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。
 
 ## 検討した代替案
 
@@ -283,4 +311,4 @@ MemoryPreference.UploadのバッファはCPUステージング領域、Automatic
 
 ## 結果と影響
 
-シェーダー引数とソース生成の契約に対する破壊的変更となる。利用側は参照を含む構造体をクラスへ移行し、シェーダー宣言の配置を一致させる責務を持つ。Debugでは配置診断を提供し、Releaseでは元の数値バイト列を保持する。所有権の管理、リソース検証、明示的なGPU同期は引き続き必要となる。
+シェーダー引数とソース生成の契約に対する破壊的変更となる。利用側は参照を含む構造体をクラスへ移行し、シェーダー宣言の配置を一致させる責務を持つ。検証を有効にした場合に配置診断を提供し、いずれの構成でも元の数値バイト列を保持する。所有権の管理、リソース検証、明示的なGPU同期は引き続き必要となる。

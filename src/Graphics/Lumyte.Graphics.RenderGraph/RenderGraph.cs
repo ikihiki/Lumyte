@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph;
 
@@ -215,7 +214,7 @@ public sealed class RenderGraph : IDisposable
     {
         ArgumentNullException.ThrowIfNull(artifact);
         RequireDevice();
-        ShaderDataLayout.ValidateUnmanaged<T>(artifact, Device!.Caps.ShaderTarget);
+
         return CreateBuffer<T>(new() { Count = count, Usage = usage }, name);
     }
 

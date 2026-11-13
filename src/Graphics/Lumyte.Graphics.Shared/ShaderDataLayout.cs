@@ -20,6 +20,12 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         Add(type, string.Empty, 0);
     }
 
+    private ShaderDataLayout(string name, int size)
+    {
+        Name = name;
+        Size = size;
+    }
+
     private ShaderDataLayout(ShaderDataLayout compiled, int size)
     {
         if (size <= 0)
@@ -77,7 +83,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     /// <summary>Validates compatible root and transitively referenced layouts across graphics stages.</summary>
     /// <param name="vertex">The vertex input.</param>
     /// <param name="fragment">The fragment input.</param>
-    [System.Diagnostics.Conditional("DEBUG")]
     public static void ValidateProgram(ShaderTargetData vertex, ShaderTargetData? fragment)
     {
         if (fragment == null || !HasRoot(vertex) || !HasRoot(fragment))
@@ -153,18 +158,12 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     /// <param name="target">The active backend target.</param>
     /// <returns>The C#-stride storage layout.</returns>
     public static ShaderDataLayout Data<T>(ShaderArtifact artifact, ShaderTarget target)
-        where T : IShaderData
-    {
-        ShaderDataLayout compiled = Data(artifact, target, T.ShaderTypeName);
-        compiled.ValidateTransfer(T.TransferSize, T.TransferFields, T.ShaderTypeName);
-        return new(compiled, T.TransferSize);
-    }
+        where T : IShaderData => new(T.ShaderTypeName, T.TransferSize);
 
     /// <summary>Checks an ordinary unmanaged storage layout without changing its C# stride.</summary>
     /// <typeparam name="T">The unmanaged C# element type.</typeparam>
     /// <param name="artifact">The compiled shader artifact.</param>
     /// <param name="target">The backend code target.</param>
-    [System.Diagnostics.Conditional("DEBUG")]
     public static void ValidateUnmanaged<T>(ShaderArtifact artifact, ShaderTarget target)
         where T : unmanaged
     {
@@ -185,31 +184,46 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     public void ValidateArguments(ShaderValueSnapshot snapshot, bool validateReferences = false)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        ValidateTransfer(snapshot.Data.Length, snapshot.Fields, snapshot.ShaderTypeName);
-        var seen = new HashSet<int>();
-        foreach (ShaderValue value in snapshot.Values)
+        if (validateReferences)
         {
-            if (value.Offset < 0 || value.Offset > snapshot.Data.Length - 16 || !seen.Add(value.Offset))
+            ValidateTransfer(snapshot.Data.Length, snapshot.DiagnosticFields?.Invoke() ?? snapshot.Fields, snapshot.ShaderTypeName);
+        }
+
+        for (int index = 0; index < snapshot.Values.Count; index++)
+        {
+            ShaderValue value = snapshot.Values[index];
+            for (int prior = 0; prior < index; prior++)
             {
-                throw new ArgumentException("Reference slots must be unique and fit the C# wire value.", nameof(snapshot));
+                if (snapshot.Values[prior].Offset == value.Offset)
+                {
+                    throw new ArgumentException("Reference slots must be unique.", nameof(snapshot));
+                }
+            }
+
+            if (value.Offset < 0 || value.Offset > snapshot.Data.Length - 16)
+            {
+                throw new ArgumentException("Reference slot exceeds the C# wire value.", nameof(snapshot));
             }
         }
 
-#if DEBUG
-        if (snapshot.Values.Count != _members.Values.Count(member => member.Reference) || (snapshot.Values.Count != 0 && snapshot.ShaderTypeName != Name))
+        if (validateReferences && (snapshot.Values.Count != _members.Values.Count(member => member.Reference) || (snapshot.Values.Count != 0 && snapshot.ShaderTypeName != Name)))
         {
             throw new ArgumentException("Root type or resource count differs from the compiled schema.", nameof(snapshot));
+        }
+
+        if (!validateReferences)
+        {
+            return;
         }
 
         foreach (ShaderValue value in snapshot.Values)
         {
             ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
-            if (member == null || (validateReferences && !ReferenceMatches(value, member)))
+            if (validateReferences && (member == null || !ReferenceMatches(value, member)))
             {
                 throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(snapshot));
             }
         }
-#endif
     }
 
     /// <inheritdoc/>
@@ -240,7 +254,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         return result;
     }
 
-#if DEBUG
     private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
     {
         if (value.Reference is not IShaderReference reference)
@@ -269,8 +282,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         BufferUsage required = member.Kind == "GpuRWBufferRef" ? BufferUsage.ShaderWrite : BufferUsage.ShaderRead;
         return resource is IShaderRawBuffer raw && raw.ElementType == value.ValueType && raw.ShaderTypeName == member.Target && (raw.Usage & required) == required;
     }
-
-#endif
 
     private static JsonElement DataType(JsonElement metadata, string name)
     {
@@ -397,7 +408,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
             }
             else
             {
-#if DEBUG
                 Type valueType = kind switch
                 {
                     "scalar" => memberType.GetProperty("scalarType").GetString() switch
@@ -427,12 +437,10 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
                     _ => throw new NotSupportedException("Unsupported shader member layout."),
                 };
                 _members.Add(path, new(offset, size, false, kind, valueType, null));
-#endif
             }
         }
     }
 
-    [System.Diagnostics.Conditional("DEBUG")]
     private void ValidateTransfer(int size, IReadOnlyList<ShaderTransferField> fields, string name)
     {
         // Browser and Debug AOT can still transfer bytes when managed-offset probes are unavailable.

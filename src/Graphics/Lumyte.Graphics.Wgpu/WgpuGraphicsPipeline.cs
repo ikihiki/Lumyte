@@ -28,9 +28,19 @@ internal sealed unsafe partial class WgpuGraphicsPipeline : IGraphicsPipeline
 
         VertexData = PipelineValidation.Shader(vertex, owner.Caps.ShaderTarget, ShaderStage.Vertex, owner.Caps);
         FragmentData = _fragment == null ? null : PipelineValidation.Shader(_fragment, owner.Caps.ShaderTarget, ShaderStage.Fragment, owner.Caps);
+        if (owner.Validation != null)
+        {
+            ShaderDataLayout.ValidateProgram(VertexData, FragmentData);
+        }
+
         PipelineValidation.Program(desc, VertexData, FragmentData);
         RequiresArguments = ShaderDataLayout.HasRoot(VertexData) || (FragmentData != null && ShaderDataLayout.HasRoot(FragmentData));
         Initialize();
+        owner.Validation?.Use(this, desc.VertexShader);
+        if (desc.FragmentShader != null)
+        {
+            owner.Validation?.Use(this, desc.FragmentShader);
+        }
     }
 
     public GraphicsPipelineDesc Desc { get; }
@@ -49,6 +59,9 @@ internal sealed unsafe partial class WgpuGraphicsPipeline : IGraphicsPipeline
         {
             return;
         }
+
+        _owner.Validation?.Release(this);
+        _owner.Validation?.Discard(this);
 
         DisposeNative();
         _disposed = true;

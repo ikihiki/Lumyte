@@ -36,13 +36,10 @@ public sealed class UnmanagedShaderTransferTests
         Assert.Empty(snapshot.Values);
         var layout = new BufferLayout<PaddedValue>(32, 32, 4, 4);
         Assert.Equal(64UL, layout.GetSizeInBytes(2));
-#if DEBUG
-        Assert.Contains(snapshot.Fields, field => field.Path == "Position" && field.Offset == 8 && field.Size == 12);
-        Assert.Contains(snapshot.Fields, field => field.Path == "Tail" && field.Offset == 24);
-        Assert.Same(ShaderTransfer.Fields<PaddedValue>(), snapshot.Fields);
-#else
         Assert.Empty(snapshot.Fields);
-#endif
+        IReadOnlyList<ShaderTransferField> fields = snapshot.DiagnosticFields!();
+        Assert.Contains(fields, field => field.Path == "Position" && field.Offset == 8 && field.Size == 12);
+        Assert.Same(ShaderTransfer.Fields<PaddedValue>(), fields);
     }
 
     /// <summary>External System.Numerics types need neither registration nor generated implementations.</summary>
@@ -89,6 +86,26 @@ public sealed class UnmanagedShaderTransferTests
     public async Task WgpuExternalNumericElementsTransferWithoutGeneratorAsync()
     {
         using var device = WgpuDevice.Create();
+        await TransferExternalElementsAsync(device);
+    }
+
+    /// <summary>Enabled managed diagnostics permit a valid Vulkan upload and readback.</summary>
+    /// <returns>The completed transfer check.</returns>
+    [GpuFact]
+    public async Task VulkanValidatedExternalElementsAsync()
+    {
+        using var device = VulkanDevice.Create();
+        device.EnableValidation();
+        await TransferExternalElementsAsync(device);
+    }
+
+    /// <summary>Enabled managed diagnostics permit a valid Wgpu upload and readback.</summary>
+    /// <returns>The completed transfer check.</returns>
+    [GpuFact]
+    public async Task WgpuValidatedExternalElementsAsync()
+    {
+        using var device = WgpuDevice.Create();
+        device.EnableValidation();
         await TransferExternalElementsAsync(device);
     }
 

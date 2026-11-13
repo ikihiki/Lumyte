@@ -6,6 +6,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
     where T : IShaderData
 {
     private readonly ShaderValueSnapshot?[] _values;
+    private readonly ShaderDataLayout? _diagnosticLayout;
     private bool _disposed;
 
     internal Direct3D12ShaderDataBuffer(Direct3D12Device owner, ShaderArtifact artifact, ulong count, MemoryPreference memory)
@@ -16,6 +17,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         }
 
         Layout = ShaderDataLayout.Data<T>(artifact, owner.Caps.ShaderTarget);
+        _diagnosticLayout = owner.Validation == null ? null : ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, T.ShaderTypeName);
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));
@@ -95,6 +97,8 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         byte[] bytes = new byte[checked(source.Length * Layout.Size)];
         for (int i = 0; i < snapshots.Length; i++)
         {
+            _diagnosticLayout?.ValidateArguments(snapshots[i], validateReferences: true);
+
             Layout.Pack(snapshots[i], PackReference).CopyTo(bytes, i * Layout.Size);
         }
 
@@ -138,6 +142,8 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         {
             return;
         }
+
+        Owner.Validation?.Release(this);
 
         Storage.Dispose();
         Array.Clear(_values);

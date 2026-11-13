@@ -29,6 +29,7 @@ internal sealed class WgpuSubmission : IGraphicsSubmission
                 if (_request.IsComplete || _owner.Status == GraphicsDeviceStatus.Lost)
                 {
                     _status = _owner.Status == GraphicsDeviceStatus.Ready && _request.IsSuccess ? SubmissionStatus.Completed : SubmissionStatus.Failed;
+                    _owner.Validation?.CompleteSemaphores(this);
                     foreach (WgpuCommandBuffer command in _commands)
                     {
                         command.Complete(_status == SubmissionStatus.Completed);

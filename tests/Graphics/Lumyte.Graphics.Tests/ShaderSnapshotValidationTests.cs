@@ -49,12 +49,13 @@ public sealed class ShaderSnapshotValidationTests
             errors.Add((name, Record.Exception(() => layout.Pack(invalid, _ => new byte[16]))));
         }
 
-#if DEBUG
-        AssertRejected(errors);
-#else
+        foreach ((string name, ShaderValueSnapshot invalid) in InvalidSnapshots(valid, new object()).Take(4))
+        {
+            Assert.Throws<ArgumentException>(() => layout.ValidateArguments(invalid, validateReferences: true));
+        }
+
         AssertRejected(errors.Where(error => error.Name is "duplicate resource slot" or "reference slot outside wire bytes"));
         Assert.All(errors.Where(error => error.Name is not ("duplicate resource slot" or "reference slot outside wire bytes")), error => Assert.Null(error.Error));
-#endif
     }
 
     /// <summary>Checks all five malformed snapshots through the public Vulkan setter and dispatch boundary.</summary>
@@ -63,6 +64,7 @@ public sealed class ShaderSnapshotValidationTests
     public async Task VulkanRejectsMalformedRootSnapshotsAsync()
     {
         using var device = VulkanDevice.Create();
+        device.EnableValidation();
         await RejectNativeSnapshotsAsync(device);
     }
 
@@ -72,6 +74,7 @@ public sealed class ShaderSnapshotValidationTests
     public async Task WgpuRejectsMalformedRootSnapshotsAsync()
     {
         using var device = WgpuDevice.Create();
+        device.EnableValidation();
         await RejectNativeSnapshotsAsync(device);
     }
 
@@ -102,13 +105,8 @@ public sealed class ShaderSnapshotValidationTests
             errors.Add((name, RecordDispatch(device, pipeline, table, invalid)));
         }
 
-        // Collect every result before asserting so one accepted root cannot hide the other cases.
-#if DEBUG
+        // Enabled diagnostics reject every malformed schema in both configurations.
         AssertRejected(errors);
-#else
-        AssertRejected(errors.Where(error => error.Name is "duplicate resource slot" or "reference slot outside wire bytes"));
-        Assert.All(errors.Where(error => error.Name is not ("duplicate resource slot" or "reference slot outside wire bytes")), error => Assert.Null(error.Error));
-#endif
     }
 
     private static Exception? RecordDispatch(IGraphicDevice device, IGraphicsComputePipeline pipeline, IArgumentTable table, ShaderValueSnapshot snapshot)

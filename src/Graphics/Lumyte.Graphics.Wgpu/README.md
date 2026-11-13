@@ -232,3 +232,9 @@ ProcessEvents と 1 ms の再確認を使用します。通知ベースへの変
 返す blocking wait が必要です。依存の fork や未対応 API の呼び出しは追加していません。
 更新時には concurrent waits、caller cancellation 後の callback retirement、device loss、
 submission／device disposal と callback storage の寿命を一緒に再検証してください。
+
+## 任意のmanaged検証
+
+生成した実deviceに、子資源を作る前に`EnableValidation()`を呼ぶと、Debug／Releaseの両方で診断を有効にします。既定ではValidationはnullで、診断tracker・callback・状態走査を作りません。D3D12のnative debug layerとは別設定です。
+
+現在の診断は、記録済みcopy／binding／pipelineの解放とmapping競合、登録の置換・Release後のidentity、登録済みdevice childとtexture viewの親子関係、command内copy bufferの依存scope、同じcommand内で既に宣言したtexture subresource状態とのBefore不一致、queueのbinary semaphore signal／wait・in-flight再利用です。GPU内の動的アクセスは見えません。bufferの範囲別hazard、command間のtexture状態、全presentation経路、staging bytesの直接変更は検出保証の対象外です。copy source metadataは記録時とSubmit前のsnapshot identityを照合します。検証有効時はdevice操作を外部で直列化してください。無効時は寿命・同期とも利用者の責任です。

@@ -84,6 +84,7 @@ internal sealed class Direct3D12Submission(Direct3D12Device owner, Direct3D12Com
     private void SetCompleted(bool success)
     {
         _status = success ? SubmissionStatus.Completed : SubmissionStatus.Failed;
+        owner.Validation?.CompleteSemaphores(this);
         foreach (Direct3D12CommandBuffer command in commands)
         {
             command.Complete(success);

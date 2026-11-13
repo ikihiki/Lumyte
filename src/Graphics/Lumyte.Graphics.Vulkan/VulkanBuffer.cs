@@ -129,6 +129,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        _owner.Validation?.Map(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -174,6 +175,8 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         {
             return;
         }
+
+        _owner.Validation?.Release(this);
 
         if (_pending)
         {

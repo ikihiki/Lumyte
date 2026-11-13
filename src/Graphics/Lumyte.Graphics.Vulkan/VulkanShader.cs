@@ -54,6 +54,8 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
             return;
         }
 
+        _owner.Validation?.Release(this);
+
         _owner.Api.DestroyShaderModule(_owner.NativeDevice, _native, null);
         _disposed = true;
     }

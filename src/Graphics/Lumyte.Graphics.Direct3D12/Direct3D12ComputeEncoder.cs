@@ -20,6 +20,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         }
 
         selected.ThrowIfDisposed();
+        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -34,6 +35,11 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        if (owner.Owner.Validation != null)
+        {
+            ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        }
+
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -49,7 +55,11 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = arguments.Copy();
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        if (owner.Owner.Validation != null)
+        {
+            ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        }
+
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -64,6 +74,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         }
 
         program.ValidateAlive();
+        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
@@ -113,6 +124,15 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         {
             _table?.ThrowIfDisposed();
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            if (owner.Owner.Validation is { } validation)
+            {
+                foreach (IShaderReference reference in snapshot.References)
+                {
+                    ((IValidatedShaderReference)reference).ValidateRegistration();
+                    validation.Use(owner, reference.Resource);
+                }
+            }
+
             bindingSnapshot = snapshot;
         }
 

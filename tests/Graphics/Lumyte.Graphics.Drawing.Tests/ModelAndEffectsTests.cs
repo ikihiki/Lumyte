@@ -61,11 +61,8 @@ public sealed class ModelAndEffectsTests
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
             var layout = ShaderDataLayout.Root(DrawingShaders.LoadModelVertex().GetTarget(target), "arguments");
-#if DEBUG
             Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-#else
-            layout.ValidateArguments(snapshot, validateReferences: true);
-#endif
+            layout.ValidateArguments(snapshot);
             Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(snapshot, null));
             int encoded = 0;
             byte[] bytes = layout.Pack(snapshot, member =>
@@ -92,12 +89,7 @@ public sealed class ModelAndEffectsTests
             JsonNode size = type["sizes"]!.AsArray().Single(entry => entry!["kind"]!.GetValue<string>() == "uniform")!;
             size["value"] = 68;
             var changed = ShaderArtifact.PackTarget(target, data.Stage, data.EntryPoint, data.CompilerVersion, data.Code, reflection.ToJsonString());
-#if DEBUG
             Assert.Throws<ArgumentException>(() => ModelVertex.ValidateShaderLayout(changed, target));
-#else
-            // The call is intentionally removed by ConditionalAttribute in Release.
-            ModelVertex.ValidateShaderLayout(changed, target);
-#endif
         }
     }
 

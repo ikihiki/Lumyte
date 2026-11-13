@@ -7,6 +7,7 @@ namespace Lumyte.Graphics.Direct3D12;
 public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 {
     private readonly GraphicsDeviceLifetime _lifetime;
+
     private readonly nint _native;
 
     private Direct3D12Device(nint native, bool partial)
@@ -24,6 +25,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         add => _lifetime.DeviceLost += value;
         remove => _lifetime.DeviceLost -= value;
     }
+
+    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
+    public GraphicsValidation? Validation { get; private set; }
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -156,15 +160,22 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new NotSupportedException("Buffer usage is incompatible with the selected heap.");
         }
 
-        return new Direct3D12Buffer<T>(this, desc, layout, size);
+        var child = new Direct3D12Buffer<T>(this, desc, layout, size);
+        Validation?.Register(child, this);
+        return child;
     }
+
+    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
+    public void EnableValidation() => Validation ??= new GraphicsValidation();
 
     /// <inheritdoc />
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc)
     {
         ArgumentNullException.ThrowIfNull(desc);
         RequireReady();
-        return new Direct3D12CommandBuffer(this);
+        var child = new Direct3D12CommandBuffer(this);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -185,6 +196,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        Validation?.Release(this);
         if (Status == GraphicsDeviceStatus.Disposed)
         {
             return;
@@ -199,7 +211,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         TextureValidation.Validate(desc, Caps);
-        return new Direct3D12Texture(this, desc);
+        var child = new Direct3D12Texture(this, desc);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -207,7 +221,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         SamplerValidation.Validate(desc, Caps);
-        return new Direct3D12Sampler(this, desc);
+        var child = new Direct3D12Sampler(this, desc);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -220,7 +236,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new ArgumentException("An argument table must have at least one logical slot.", nameof(desc));
         }
 
-        return new Direct3D12ArgumentTable(this, desc);
+        var child = new Direct3D12ArgumentTable(this, desc);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -228,14 +246,18 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(artifact);
-        return new Direct3D12Shader(this, artifact);
+        var child = new Direct3D12Shader(this, artifact);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
         RequireReady();
-        return new Direct3D12Semaphore(this);
+        var child = new Direct3D12Semaphore(this);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -258,7 +280,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
-        return new Direct3D12GraphicsPipeline(this, desc);
+        var child = new Direct3D12GraphicsPipeline(this, desc);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -266,7 +290,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
-        return new Direct3D12ComputePipeline(this, desc);
+        var child = new Direct3D12ComputePipeline(this, desc);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
@@ -280,7 +306,11 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(artifact);
-        ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        if (Validation != null)
+        {
+            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        }
+
         return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
 
@@ -291,7 +321,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         RequireReady();
 
         ArgumentNullException.ThrowIfNull(artifact);
-        return new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
+        var child = new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <summary>Creates a surface borrowing a valid HWND; the caller owns the window and its message loop.</summary>
@@ -305,7 +337,9 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new ArgumentException("A valid HWND is required.", nameof(window));
         }
 
-        return new Direct3D12Surface(this, window);
+        var child = new Direct3D12Surface(this, window);
+        Validation?.Register(child, this);
+        return child;
     }
 
     internal void RequireReady()

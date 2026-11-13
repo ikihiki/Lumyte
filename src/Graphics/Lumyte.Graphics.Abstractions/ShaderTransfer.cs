@@ -1,10 +1,8 @@
 using System.Numerics;
-using System.Runtime.InteropServices;
-#if DEBUG
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
-#endif
+using System.Runtime.InteropServices;
 
 namespace Lumyte.Graphics.Abstractions;
 
@@ -23,7 +21,7 @@ public static class ShaderTransfer
         ArgumentException.ThrowIfNullOrWhiteSpace(rootParameter);
         string name = shaderTypeName ?? TypeName<T>();
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        return new(rootParameter, name, MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), [], Fields<T>());
+        return new(rootParameter, name, MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), [], []) { DiagnosticFields = Fields<T> };
     }
 
     /// <summary>Gets the conventional shader name for an unmanaged C# type.</summary>
@@ -32,16 +30,12 @@ public static class ShaderTransfer
     public static string TypeName<T>()
         where T : unmanaged => TypeName(typeof(T));
 
-    /// <summary>Gets cached C# field metadata in Debug, or an empty list in Release.</summary>
+    /// <summary>Explicitly gets cached diagnostic C# field metadata in any configuration.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <returns>Diagnostic metadata only; it never determines transferred bytes.</returns>
     public static IReadOnlyList<ShaderTransferField> Fields<T>()
         where T : unmanaged
-#if DEBUG
         => DiagnosticFields<T>.Value;
-#else
-        => [];
-#endif
 
     private static string TypeName(Type type) => type == typeof(int) ? "int"
         : type == typeof(uint) ? "uint"
@@ -51,7 +45,6 @@ public static class ShaderTransfer
         : type == typeof(Vector4) ? "float4"
         : type == typeof(Matrix4x4) ? "float4x4" : type.Name;
 
-#if DEBUG
     private static void Describe(Type type, string prefix, int offset, List<ShaderTransferField> fields)
     {
         foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
@@ -103,5 +96,4 @@ public static class ShaderTransfer
             return fields.AsReadOnly();
         }
     }
-#endif
 }

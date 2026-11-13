@@ -21,5 +21,14 @@ internal sealed class Direct3D12TextureView(Direct3D12Texture texture, TextureVi
         }
     }
 
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Owner.Validation?.Release(this);
+        _disposed = true;
+    }
 }

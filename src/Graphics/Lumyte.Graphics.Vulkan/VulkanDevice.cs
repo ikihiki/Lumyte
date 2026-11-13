@@ -16,6 +16,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Queue _nativeQueue;
     private readonly VulkanPresentation? _presentation;
     private readonly GraphicsDeviceLifetime _lifetime;
+
     private readonly VulkanCompletionDispatcher _completions = new();
     private bool _disposed;
 
@@ -38,6 +39,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         add => _lifetime.DeviceLost += value;
         remove => _lifetime.DeviceLost -= value;
     }
+
+    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
+    public GraphicsValidation? Validation { get; private set; }
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -167,12 +171,16 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
     }
 
+    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
+    public void EnableValidation() => Validation ??= new GraphicsValidation();
+
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanGraphicsPipeline(this, desc);
+        Validation?.Register(program, this);
         return program;
     }
 
@@ -182,6 +190,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanComputePipeline(this, desc);
+        Validation?.Register(program, this);
         return program;
     }
 
@@ -190,6 +199,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new VulkanSemaphore(this);
+        Validation?.Register(semaphore, this);
         return semaphore;
     }
 
@@ -199,6 +209,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new VulkanCommandBuffer(this);
+        Validation?.Register(commands, this);
         return commands;
     }
 
@@ -253,6 +264,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new VulkanBuffer<T>(this, desc, layout, size);
+        Validation?.Register(buffer, this);
         return buffer;
     }
 
@@ -267,7 +279,11 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(artifact);
-        ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        if (Validation != null)
+        {
+            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        }
+
         return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
 
@@ -279,6 +295,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new VulkanShaderDataBuffer<T>(this, artifact, count, memory);
+        Validation?.Register(buffer, this);
         return buffer;
     }
 
@@ -288,6 +305,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new VulkanTexture(this, desc);
+        Validation?.Register(texture, this);
         return texture;
     }
 
@@ -297,6 +315,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new VulkanSampler(this, desc);
+        Validation?.Register(sampler, this);
         return sampler;
     }
 
@@ -311,6 +330,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
 
         var table = new VulkanArgumentTable(this, desc);
+        Validation?.Register(table, this);
         return table;
     }
 
@@ -320,12 +340,14 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new VulkanShader(this, artifact);
+        Validation?.Register(shader, this);
         return shader;
     }
 
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
+        Validation?.Release(this);
         if (_disposed)
         {
             return;

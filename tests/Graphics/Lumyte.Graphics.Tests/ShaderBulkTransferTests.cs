@@ -54,7 +54,7 @@ public sealed class ShaderBulkTransferTests
     [InlineData("fieldSize")]
     [InlineData("type")]
     [InlineData("reference")]
-    public void NumericSchemaMismatchIsDebugOnly(string mismatch)
+    public void NumericSchemaMismatchIsOptIn(string mismatch)
     {
         var layout = ShaderDataLayout.Root(Target(), "arguments");
         byte[] bytes = mismatch == "size" ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6, 7, 8];
@@ -69,13 +69,8 @@ public sealed class ShaderBulkTransferTests
             _ => fields[0],
         };
         var snapshot = new ShaderValueSnapshot("arguments", mismatch == "name" ? "Other" : "Wire", bytes, [], mismatch == "count" ? [] : fields);
-#if DEBUG
         Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => throw new InvalidOperationException()));
-#else
-        layout.ValidateArguments(snapshot, validateReferences: true);
         Assert.Equal(bytes, layout.Pack(snapshot, _ => throw new InvalidOperationException()));
-#endif
     }
 
     /// <summary>Reference replacement only changes its explicit sixteen-byte C# slot.</summary>
@@ -103,18 +98,15 @@ public sealed class ShaderBulkTransferTests
 
     /// <summary>Reference fixups use the C# offset even when Release shader metadata disagrees.</summary>
     [Fact]
-    public void ReferenceOffsetMismatchIsDebugOnly()
+    public void ReferenceOffsetMismatchIsOptIn()
     {
         var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
         byte[] bytes = Enumerable.Range(0, 24).Select(index => (byte)index).ToArray();
         var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new(typeof(IGraphicsTextureView), new object(), 0)], [new("First", 20, 4, typeof(uint)), new("Resource", 0, 16, typeof(ShaderReferenceSlot), true), new("Last", 16, 4, typeof(uint))]);
-#if DEBUG
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => new byte[16]));
-#else
+        Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
         byte[] packed = layout.Pack(snapshot, _ => new byte[16]);
         Assert.Equal(new byte[16], packed[..16]);
         Assert.Equal(bytes[16..], packed[16..]);
-#endif
     }
 
     /// <summary>Static wire metadata determines data stride without creating a reference-containing instance.</summary>
@@ -140,11 +132,7 @@ public sealed class ShaderBulkTransferTests
 
         Assert.Equal("Wire", layout.Name);
         Assert.Equal(UnconstructibleData.TransferSize, layout.Size);
-#if DEBUG
-        Assert.Throws<ArgumentException>(() => ShaderDataLayout.Data<PaddedUnconstructibleData>(artifact, ShaderTarget.Wgsl));
-#else
         Assert.Equal(12, ShaderDataLayout.Data<PaddedUnconstructibleData>(artifact, ShaderTarget.Wgsl).Size);
-#endif
     }
 
     /// <summary>Malformed offsets never reach backend encoders, even in Release.</summary>
@@ -180,16 +168,13 @@ public sealed class ShaderBulkTransferTests
 
     /// <summary>Plain struct diagnostics use managed offsets, but Release never rearranges bytes.</summary>
     [Fact]
-    public void OrdinaryStructLayoutMismatchIsDebugOnly()
+    public void OrdinaryStructLayoutMismatchIsOptIn()
     {
         var value = new OrdinaryWire { First = 17, Last = 29 };
         ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value, shaderTypeName: "Wire");
         var layout = ShaderDataLayout.Root(Target(), "arguments");
-#if DEBUG
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => throw new InvalidOperationException()));
-#else
+        Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
         Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), layout.Pack(snapshot, _ => throw new InvalidOperationException()));
-#endif
     }
 
     private static ShaderTransferField[] Fields() => [new("First", 0, 4, typeof(uint)), new("Last", 4, 4, typeof(uint))];

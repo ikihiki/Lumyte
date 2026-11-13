@@ -38,7 +38,6 @@ public readonly record struct ModelVertex(Vector3 Position, Vector3 Normal, Vect
     /// <summary>Verifies the compiled shader consumes the fixed C# vertex bytes exactly, without repacking.</summary>
     /// <param name="artifact">The model shader artifact.</param>
     /// <param name="target">The active backend target.</param>
-    [System.Diagnostics.Conditional("DEBUG")]
     public static void ValidateShaderLayout(ShaderArtifact artifact, ShaderTarget target)
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -47,6 +46,7 @@ public readonly record struct ModelVertex(Vector3 Position, Vector3 Normal, Vect
         var probe = new ModelVertex(new(1, 2, 3), new(4, 5, 6), new(7, 8, 9, 10), new(11, 12), new(13, 14, 15, 16));
         ReadOnlySpan<byte> raw = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref probe, 1));
         var layout = ShaderDataLayout.Data(artifact.GetTarget(target), "ModelVertex");
+        layout.ValidateArguments(ShaderTransfer.Capture(in probe), validateReferences: true);
         byte[] packed = layout.Pack(ShaderTransfer.Capture(in probe), _ => throw new NotSupportedException("Model vertices cannot contain GPU references."));
         if (!BitConverter.IsLittleEndian || raw.Length != SizeInBytes || layout.Size != SizeInBytes || !raw.SequenceEqual(packed))
         {

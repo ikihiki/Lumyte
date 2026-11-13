@@ -188,7 +188,6 @@ public sealed class ArgumentTableBindingTests
         var root = new ShaderValueSnapshot("arguments", "Pools", new byte[64], values, fields);
         var caps = new DeviceCaps { MaxStorageBufferBindingSize = 1024, MaxStorageBuffersPerStage = 8, MaxUniformBuffersPerStage = 1 };
         var layout = ShaderDataLayout.Root(target, "arguments");
-#if DEBUG
         if (mismatch)
         {
             Assert.Throws<ArgumentException>(() => layout.ValidateArguments(root, validateReferences: true));
@@ -197,9 +196,8 @@ public sealed class ArgumentTableBindingTests
         {
             layout.ValidateArguments(root, validateReferences: true);
         }
-#else
-        layout.ValidateArguments(root, validateReferences: true);
-#endif
+
+        layout.ValidateArguments(root);
         var binding = new ShaderBindingData(ShaderBindingSnapshot.Capture(root, table), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
         Assert.Equal(2, binding.Writable.Count);

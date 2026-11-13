@@ -8,6 +8,9 @@ namespace Lumyte.Graphics.Abstractions;
 /// <param name="Fields">The C# wire layout.</param>
 public sealed record ShaderValueSnapshot(string RootParameter, string ShaderTypeName, ReadOnlyMemory<byte> Data, IReadOnlyList<ShaderValue> Values, IReadOnlyList<ShaderTransferField> Fields)
 {
+    /// <summary>Gets a deferred field probe, evaluated only by explicitly enabled diagnostics.</summary>
+    public Func<IReadOnlyList<ShaderTransferField>>? DiagnosticFields { get; init; }
+
     internal Action<IReadOnlyCollection<IShaderReference>>? ExecutionReferenceValidation { get; init; }
 
     /// <summary>Applies host constraints to a reference at native command-local capture time.</summary>

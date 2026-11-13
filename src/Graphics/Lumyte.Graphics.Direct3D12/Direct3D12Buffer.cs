@@ -67,6 +67,7 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        Owner.Validation?.Map(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         Owner.RequireReady();
         cancellationToken.ThrowIfCancellationRequested();
@@ -97,6 +98,8 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
         {
             return;
         }
+
+        Owner.Validation?.Release(this);
 
         if (IsMapped)
         {

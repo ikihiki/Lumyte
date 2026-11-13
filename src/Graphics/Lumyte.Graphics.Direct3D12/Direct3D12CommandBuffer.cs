@@ -12,6 +12,11 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     internal Direct3D12CommandBuffer(Direct3D12Device owner)
     {
         _owner = owner;
+        if (owner.Validation != null)
+        {
+            _shaderData.EnableValidation();
+        }
+
         Initialize();
     }
 
@@ -59,6 +64,8 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
             throw new ArgumentException("Invalid GPU copy range, allocation or alignment.");
         }
 
+        _owner.Validation?.Access(this, src, new(PipelineStage.Copy, ResourceAccess.CopyRead));
+        _owner.Validation?.Access(this, dst, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
         CopyBufferNative(src, source.OffsetInBytes, dst, destination.OffsetInBytes, source.SizeInBytes);
     }
 
@@ -114,6 +121,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         CommandValidation.Scope(barrier.After);
         CommandValidation.BufferAccess(buffer, barrier.Before);
         CommandValidation.BufferAccess(buffer, barrier.After);
+        _owner.Validation?.Barrier(this, buffer, barrier.Before, barrier.After);
         BufferBarrierNative(buffer, barrier);
     }
 
@@ -129,6 +137,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         CommandValidation.Scope(barrier.After);
         CommandValidation.TextureAccess(barrier.BeforeState, barrier.Before);
         CommandValidation.TextureAccess(barrier.AfterState, barrier.After);
+        _owner.Validation?.TextureBarrier(this, barrier);
         TextureBarrierNative(texture, barrier);
     }
 
@@ -164,6 +173,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
                 throw new ArgumentException("Invalid color attachment, operation or dimensions.");
             }
 
+            _owner.Validation?.Use(this, view);
             size = (width, height);
         }
 
@@ -224,6 +234,8 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
 
         _active = null;
 
+        _owner.Validation?.Discard(this);
+        _owner.Validation?.Release(this);
         DisposeNative();
         foreach (IDisposable binding in _bindings)
         {
@@ -238,6 +250,11 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
 
     internal void ValidateSubmit()
     {
+        if (_owner.Validation != null)
+        {
+            _shaderData.ValidateSubmit();
+        }
+
         if (State != CommandBufferState.Executable)
         {
             throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
@@ -246,12 +263,14 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
 
     internal void MarkSubmitted()
     {
+        _owner.Validation?.Submit(this);
         _shaderData.Publish();
         State = CommandBufferState.Submitted;
     }
 
     internal void Complete(bool success)
     {
+        _owner.Validation?.Complete(this);
         if (State != CommandBufferState.Disposed)
         {
             State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
@@ -272,6 +291,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
 
         buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
         _ = buffer.Native;
+        _owner.Validation?.Use(this, buffer);
         return buffer;
     }
 
@@ -293,6 +313,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         }
 
         _ = texture.Native;
+        _owner.Validation?.Use(this, texture);
         return texture;
     }
 

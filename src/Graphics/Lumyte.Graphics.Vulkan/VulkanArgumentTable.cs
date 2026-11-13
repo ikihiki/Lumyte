@@ -90,10 +90,21 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
             return;
         }
 
+        owner.Validation?.Release(this);
         _textures.Clear();
         _samplers.Clear();
         _buffers.Clear();
         _disposed = true;
+    }
+
+    internal void ValidateRegistration(object entry, uint slot, object resource)
+    {
+        ThrowIfDisposed();
+        Dictionary<uint, ArgumentRegistration> slots = resource is IGraphicsTextureView ? _textures : resource is IGraphicsSampler ? _samplers : _buffers;
+        if (!slots.TryGetValue(slot, out ArgumentRegistration? current) || !ReferenceEquals(current, entry))
+        {
+            throw new InvalidOperationException("Validation: stale argument registration.");
+        }
     }
 
     internal bool BelongsTo(VulkanDevice device) => ReferenceEquals(owner, device);

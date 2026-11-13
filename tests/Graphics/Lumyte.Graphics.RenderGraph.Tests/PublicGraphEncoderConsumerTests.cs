@@ -85,7 +85,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
 
     /// <summary>Numeric root layout mismatches diagnose in Debug; Release preserves the original bytes.</summary>
     [Fact]
-    public void NumericLayoutMismatchIsDebugOnlyBeforeNativeDraw()
+    public void NumericLayoutMismatchIsExplicitlyDiagnosedBeforeNativeDraw()
     {
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
@@ -97,25 +97,14 @@ public sealed partial class PublicGraphEncoderConsumerTests
         {
             using RenderGraphRenderEncoder encoder = context.BeginRenderPass(Attachments(target));
             encoder.SetPipeline(pipeline);
-#if DEBUG
             Assert.Throws<ArgumentException>(() => encoder.SetArguments(logical));
-#else
-            encoder.SetArguments(logical);
-#endif
         }).UseTexture(target, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite))
           .KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
         Assert.Equal(0, commands.Encoder.Draws);
-#if DEBUG
         Assert.Empty(commands.Encoder.Snapshots);
-#else
-        ShaderValueSnapshot snapshot = Assert.Single(commands.Encoder.Snapshots);
-        Assert.Equal("OtherInputs", snapshot.ShaderTypeName);
-        Assert.Equal(sizeof(float), snapshot.Data.Length);
-        Assert.Equal(1f, MemoryMarshal.Read<float>(snapshot.Data.Span));
-#endif
     }
 
     /// <summary>Compute uses the ordinary codec schema, not artifact object identity, and closes its callback scope.</summary>

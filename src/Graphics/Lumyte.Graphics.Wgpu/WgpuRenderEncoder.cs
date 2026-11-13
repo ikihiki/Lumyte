@@ -31,6 +31,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         }
 
         selected.ThrowIfDisposed();
+        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -45,6 +46,11 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        if (owner.Owner.Validation != null)
+        {
+            ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        }
+
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -60,7 +66,11 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
         _pipeline.ValidateAlive();
         ShaderValueSnapshot snapshot = arguments.Copy();
-        ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        if (owner.Owner.Validation != null)
+        {
+            ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
+        }
+
         _arguments = snapshot;
         _argumentProgram = _pipeline;
     }
@@ -75,6 +85,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         }
 
         program.ValidateAlive();
+        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
@@ -222,6 +233,15 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         {
             _table?.ThrowIfDisposed();
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            if (owner.Owner.Validation is { } validation)
+            {
+                foreach (IShaderReference reference in snapshot.References)
+                {
+                    ((IValidatedShaderReference)reference).ValidateRegistration();
+                    validation.Use(owner, reference.Resource);
+                }
+            }
+
             bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);
         }
 

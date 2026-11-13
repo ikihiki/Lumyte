@@ -13,6 +13,7 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        owner.Validation?.ValidateSemaphores(desc);
         IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
         if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
@@ -43,6 +44,8 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
             command.MarkSubmitted();
         }
 
-        return new BrowserSubmission(owner, commands, handle);
+        var submission = new BrowserSubmission(owner, commands, handle);
+        owner.Validation?.SubmittedSemaphores(submission, desc);
+        return submission;
     }
 }

@@ -63,9 +63,6 @@ internal static class PipelineValidation
 
     internal static void Program(GraphicsPipelineDesc desc, ShaderTargetData vertex, ShaderTargetData? fragment)
     {
-#if DEBUG
-        ShaderDataLayout.ValidateProgram(vertex, fragment);
-#endif
         if (!Enum.IsDefined(desc.TopologyClass) || !Enum.IsDefined(desc.Optimization) || (desc.AlphaToCoverageEnable && fragment == null))
         {
             throw new ArgumentException("Invalid compilation options.");

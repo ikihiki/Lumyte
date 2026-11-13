@@ -29,6 +29,8 @@ internal sealed class BrowserShader(BrowserDevice owner, ShaderArtifact artifact
             return;
         }
 
+        owner.Validation?.Release(this);
+
         _handle.Dispose();
         _disposed = true;
     }

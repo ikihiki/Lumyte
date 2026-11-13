@@ -7,6 +7,28 @@ public sealed class ShaderDataTransferState
 {
     private readonly Dictionary<(IShaderDataSource Source, ulong Element), ShaderValueSnapshot> _pending = [];
 
+    private List<(IShaderDataSource Source, ulong Index, ShaderValueSnapshot Value)>? _validation;
+
+    /// <summary>Enables copy metadata revision checks for this command.</summary>
+    public void EnableValidation() => _validation ??= [];
+
+    /// <summary>Rejects changed source metadata before native submission.</summary>
+    public void ValidateSubmit()
+    {
+        if (_validation == null)
+        {
+            return;
+        }
+
+        foreach ((IShaderDataSource source, ulong index, ShaderValueSnapshot value) in _validation)
+        {
+            if (!ReferenceEquals(source.Read(index), value))
+            {
+                throw new InvalidOperationException("Validation: copy source metadata changed after recording.");
+            }
+        }
+    }
+
     /// <summary>Records a staging copy and its CPU dependency metadata.</summary>
     /// <param name="source">The upload staging source.</param>
     /// <param name="sourceOffset">The source element offset.</param>
@@ -20,6 +42,7 @@ public sealed class ShaderDataTransferState
         for (ulong i = 0; i < count; i++)
         {
             values[checked((int)i)] = source.Read(checked(sourceOffset + i));
+            _validation?.Add((source, checked(sourceOffset + i), values[checked((int)i)]));
         }
 
         copy();

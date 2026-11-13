@@ -13,6 +13,7 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        owner.Validation?.ValidateSemaphores(desc);
         IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
         if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
@@ -43,6 +44,8 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
             buffer.MarkSubmitted();
         }
 
-        return new WgpuSubmission(owner, commands);
+        var submission = new WgpuSubmission(owner, commands);
+        owner.Validation?.SubmittedSemaphores(submission, desc);
+        return submission;
     }
 }
