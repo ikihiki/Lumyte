@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
+using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -50,9 +51,11 @@ public sealed class ShaderArgumentsTests
         Assert.Equal("BindingCameraArguments", root.ShaderTypeName);
         Assert.Equal("ViewProjection", Assert.Single(root.Values).Path);
         Assert.Equal(64, root.Values[0].Data.Length);
+        Assert.Equal(64, root.SizeInBytes);
         Assert.Equal("BindingVector", element.ShaderTypeName);
         Assert.Equal("Value", Assert.Single(element.Values).Path);
         Assert.Equal(12, element.Values[0].Data.Length);
+        Assert.Equal(12, element.SizeInBytes);
     }
 
     /// <summary>Checks that writing to a value-type writer mutates the caller's instance.</summary>
@@ -67,6 +70,22 @@ public sealed class ShaderArgumentsTests
         Assert.Equal(1, writer.Count);
     }
 
+    /// <summary>The C# compute root declares uniform gaps explicitly for every embedded backend.</summary>
+    [Fact]
+    public void ComputeRootOffsetsAreCSharpDeclaredForEveryTarget()
+    {
+        BindingComputeArguments value = default;
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        Assert.Equal(new[] { 0, 64, 80, 96 }, snapshot.Values.Select(member => member.Offset));
+        Assert.Equal(112, snapshot.SizeInBytes);
+        var artifact = ShaderArtifact.LoadEmbedded(typeof(ShaderBindingExercise).Assembly, "Lumyte.Shaders.binding-compute.lshader");
+        foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
+        {
+            var layout = ShaderDataLayout.Root(artifact.GetTarget(target), "arguments");
+            Assert.Equal(112, layout.Pack(snapshot, (_, _) => new byte[16]).Length);
+        }
+    }
+
     private static void Write<T>(in T value, ref CountingWriter writer)
         where T : struct, IShaderArguments => value.Write(ref writer);
 
@@ -75,7 +94,7 @@ public sealed class ShaderArgumentsTests
         public static string ShaderTypeName => "ManualArguments";
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue("Value", Value);
+            where TWriter : IShaderValueWriter => writer.WriteValue(0, "Value", Value);
     }
 
     private readonly record struct CustomRootArguments(uint Value) : IShaderArguments
@@ -85,16 +104,16 @@ public sealed class ShaderArgumentsTests
         public static string ShaderTypeName => "SceneArguments";
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue("Value", Value);
+            where TWriter : IShaderValueWriter => writer.WriteValue(0, "Value", Value);
     }
 
     private struct CountingWriter : IShaderValueWriter
     {
         public int Count { get; private set; }
 
-        public void WriteValue<T>(string path, in T value)
+        public void WriteValue<T>(int offset, string path, in T value)
             where T : unmanaged => Count++;
 
-        public void WriteReference<T>(string path, IGpuRef<T>? value) => Count++;
+        public void WriteReference<T>(int offset, string path, IGpuRef<T>? value) => Count++;
     }
 }

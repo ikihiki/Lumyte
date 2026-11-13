@@ -1,16 +1,22 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
+[StructLayout(LayoutKind.Explicit, Size = 96)]
 internal readonly partial record struct DrawRecord2D(
-    uint Kind, uint Flags, uint PaintId, uint ClipId,
-    Vector4 DeviceBounds, Vector4 InverseX, Vector4 InverseY,
-    Vector4 Shape0, uint PayloadOffset16, uint PayloadCount,
-    uint Mode, uint ExtraBits) : IShaderData;
+    [field: FieldOffset(0)] uint Kind, [field: FieldOffset(4)] uint Flags,
+    [field: FieldOffset(8)] uint PaintId, [field: FieldOffset(12)] uint ClipId,
+    [field: FieldOffset(16)] Vector4 DeviceBounds, [field: FieldOffset(32)] Vector4 InverseX,
+    [field: FieldOffset(48)] Vector4 InverseY, [field: FieldOffset(64)] Vector4 Shape0,
+    [field: FieldOffset(80)] uint PayloadOffset16, [field: FieldOffset(84)] uint PayloadCount,
+    [field: FieldOffset(88)] uint Mode, [field: FieldOffset(92)] uint ExtraBits) : IShaderNumericWireData;
 
+[StructLayout(LayoutKind.Explicit, Size = 16)]
 internal readonly partial record struct DrawDirectoryEntry2D(
-    uint Kind, uint PayloadOffset16, uint PayloadLength16, uint Flags) : IShaderData;
+    [field: FieldOffset(0)] uint Kind, [field: FieldOffset(4)] uint PayloadOffset16,
+    [field: FieldOffset(8)] uint PayloadLength16, [field: FieldOffset(12)] uint Flags) : IShaderNumericWireData;
 
 internal readonly partial record struct DrawPageMetadata2D(
     IGpuRef<DrawDirectoryEntry2D> PaintDirectory,
@@ -77,14 +83,14 @@ internal readonly partial record struct DrawRangeArguments2D<TMetadata>(
 
     void IShaderArguments.Write<TWriter>(ref TWriter writer)
     {
-        writer.WriteReference(nameof(Records), Records);
-        writer.WriteReference(nameof(PageMetadata), PageMetadata);
-        writer.WriteValue(nameof(FirstRecord), FirstRecord);
-        writer.WriteValue(nameof(RecordCount), RecordCount);
-        writer.WriteValue(nameof(TargetSize), TargetSize);
-        writer.WriteValue(nameof(PixelOrigin), PixelOrigin);
-        writer.WriteValue(nameof(Reserved0), Reserved0);
-        writer.WriteValue(nameof(Reserved1), Reserved1);
+        writer.WriteReference(0, nameof(Records), Records);
+        writer.WriteReference(16, nameof(PageMetadata), PageMetadata);
+        writer.WriteValue(32, nameof(FirstRecord), FirstRecord);
+        writer.WriteValue(36, nameof(RecordCount), RecordCount);
+        writer.WriteValue(40, nameof(TargetSize), TargetSize);
+        writer.WriteValue(48, nameof(PixelOrigin), PixelOrigin);
+        writer.WriteValue(56, nameof(Reserved0), Reserved0);
+        writer.WriteValue(60, nameof(Reserved1), Reserved1);
     }
 }
 

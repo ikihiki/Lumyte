@@ -30,8 +30,8 @@ for (const name of ['A1', 'B1', 'B2', 'A2']) {
             measuredWorkloadSeconds: actual.reduce((sum, row) => sum + row.Nanoseconds / 1e9, 0),
             warmupIterations: warmup.length, minimumIterationSeconds,
             confidence999MarginNs: statistics.ConfidenceInterval.Margin,
-            relativeConfidenceMargin, reachedDeclaredIterationCap: statistics.N >= 30,
-            stabilityQualifiedAtTwoPercent: statistics.N >= 15 && relativeConfidenceMargin <= 0.02 && minimumIterationSeconds >= 0.1,
+            relativeConfidenceMargin, relativeConfidenceFullWidth: 2 * relativeConfidenceMargin, reachedDeclaredIterationCap: statistics.N >= 30,
+            stabilityQualifiedAtTwoPercent: statistics.N >= 15 && 2 * relativeConfidenceMargin <= 0.02 && minimumIterationSeconds >= 0.1,
             allIterationEstimatesNs: statistics.OriginalValues,
             outlierCountRetained: statistics.AllOutliers.length,
         };
@@ -53,5 +53,5 @@ const comparisons = names.map(name => {
         allFourProcessesStabilityQualified: Object.values(row).every(value => value.stabilityQualifiedAtTwoPercent),
     };
 });
-fs.writeFileSync(destination, JSON.stringify({schema: 1, order: ['A1', 'B1', 'B2', 'A2'], boundary: 'one recorded/prepared/submitted/GPU-completed/command-disposed/retired frame; serialized depth one; no presentation', percentiles: 'BDN normalized iteration estimates, not individual-frame latency percentiles', qualification: 'bounded 15–30 adaptive actual iterations; no outlier removal; 99.9% CI relative margin <=2% and minimum measured iteration >=100ms; failures remain explicit', runs, comparisons}));
+fs.writeFileSync(destination, JSON.stringify({schema: 1, order: ['A1', 'B1', 'B2', 'A2'], boundary: 'one recorded/prepared/submitted/GPU-completed/command-disposed/retired frame; serialized depth one; no presentation', percentiles: 'BDN normalized iteration estimates, not individual-frame latency percentiles', qualification: 'bounded 15–30 adaptive actual iterations; no outlier removal; 99.9% CI full width/mean <=2% (BDN half-width target 1%) and minimum measured iteration >=100ms; failures remain explicit', runs, comparisons}));
 console.log(JSON.stringify(comparisons, null, 2));

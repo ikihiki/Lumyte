@@ -42,7 +42,7 @@ public sealed class ArgumentTableBindingTests
     [Fact]
     public void ValueOnlyArgumentsDoNotRequireTable()
     {
-        var root = new ShaderValueSnapshot("arguments", "Values", [new("Value", typeof(float), BitConverter.GetBytes(1f), null, false)]);
+        var root = new ShaderValueSnapshot("arguments", "Values", [new(0, "Value", typeof(float), BitConverter.GetBytes(1f), null, false)]) { SizeInBytes = 16 };
         var captured = ShaderBindingSnapshot.Capture(root, null);
         Assert.Empty(captured.References);
         Assert.Empty(captured.Elements);
@@ -131,12 +131,12 @@ public sealed class ArgumentTableBindingTests
     public void InvalidReferenceIsRejected()
     {
         using var table = new Table();
-        var root = new ShaderValueSnapshot("arguments", "Values", [new("Resource", typeof(object), ReadOnlyMemory<byte>.Empty, new object(), true)]);
+        var root = new ShaderValueSnapshot("arguments", "Values", [new(0, "Resource", typeof(object), ReadOnlyMemory<byte>.Empty, new object(), true)]) { SizeInBytes = 16 };
         Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(root, table));
     }
 
     private static ShaderValueSnapshot Snapshot(IShaderReference reference)
-        => new("arguments", "Values", [new("Resource", typeof(object), ReadOnlyMemory<byte>.Empty, reference, true)]);
+        => new("arguments", "Values", [new(0, "Resource", typeof(object), ReadOnlyMemory<byte>.Empty, reference, true)]) { SizeInBytes = 16 };
 
     private sealed class Reference(IArgumentTable table, object resource, ulong count = 1) : IShaderReference
     {
@@ -190,7 +190,7 @@ public sealed class ArgumentTableBindingTests
 
         public int Size => 16;
 
-        public string ReferenceKind(string path) => "GpuBufferRef";
+        public string ReferenceKind(int offset) => "GpuBufferRef";
 
         public bool Matches(IShaderDataLayout layout) => ReferenceEquals(this, layout);
 

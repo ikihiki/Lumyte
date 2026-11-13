@@ -33,7 +33,7 @@ public sealed class ShaderBindingData
             {
                 if (value.Reference is IShaderReference reference)
                 {
-                    string kind = layout.ReferenceKind(value.Path);
+                    string kind = layout.ReferenceKind(value.Offset);
                     if (kind == "GpuBufferRef")
                     {
                         read.Add(reference);

@@ -113,9 +113,9 @@ public sealed class TypedGraphArgumentsTests
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter
         {
-            writer.WriteReference("Output", Output);
-            writer.WriteValue("Index", Index);
-            writer.WriteValue("Value", Value);
+            writer.WriteReference(0, "Output", Output);
+            writer.WriteValue(16, "Index", Index);
+            writer.WriteValue(20, "Value", Value);
         }
     }
 }

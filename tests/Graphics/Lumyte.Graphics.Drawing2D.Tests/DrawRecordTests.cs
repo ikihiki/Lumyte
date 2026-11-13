@@ -1,8 +1,10 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.Shared;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -26,6 +28,26 @@ public sealed class DrawRecordTests
             {
                 var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-" + stage + ".lshader");
                 DrawRecordAbi2D.Validate(artifact, target, mode);
+                var layout = ShaderDataLayout.Data(artifact, target, "DrawRecord2D");
+                layout.ValidateNumericWireData<DrawRecord2D>();
+                var record = new DrawRecord2D(2, 0, 0x7fc01234, 0xffffffff, new(1, 2, 3, 4), new(1, 0, 0, 0), new(0, 1, 0, 0), new(1, 2, 3, 4), 0x80000000, 3, 0, 0x7fa12345);
+                DrawRecord2D[] records = [record, record with { ExtraBits = 0x80000001 }];
+                byte[] direct = layout.Pack<DrawRecord2D>(records, (_, _) => throw new InvalidOperationException(), out ShaderValueSnapshot[] snapshots);
+                Assert.Equal(MemoryMarshal.AsBytes(records.AsSpan()).ToArray(), direct);
+                for (int i = 0; i < records.Length; i++)
+                {
+                    ShaderValueSnapshot generic = IShaderArguments.Capture(in records[i]);
+                    Assert.Equal(layout.Pack(generic, (_, _) => throw new InvalidOperationException()), direct.AsSpan(i * 96, 96).ToArray());
+                    for (int field = 0; field < generic.Values.Count; field++)
+                    {
+                        Assert.Equal(generic.Values[field].Data.ToArray(), snapshots[i].Values[field].Data.ToArray());
+                    }
+                }
+
+                foreach (ShaderNumericWireMember member in ((IShaderNumericWireData)record).NumericWireLayout.Members)
+                {
+                    Assert.Equal(member.Offset, Marshal.OffsetOf<DrawRecord2D>("<" + member.Path + ">k__BackingField").ToInt32());
+                }
             }
         }
     }

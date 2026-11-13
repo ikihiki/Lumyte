@@ -9,7 +9,7 @@ internal readonly record struct ConsumerLinkArguments(IGpuRef<ConsumerLink> Data
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter
     {
-        writer.WriteReference("Data", Data);
-        writer.WriteValue("Float", Float);
+        writer.WriteReference(0, "Data", Data);
+        writer.WriteValue(16, "Float", Float);
     }
 }

@@ -9,7 +9,7 @@ internal readonly record struct NumericBitsArguments(IGpuRef<Vector4> Data, IGpu
 
     void IShaderArguments.Write<TWriter>(ref TWriter writer)
     {
-        writer.WriteReference(nameof(Data), Data);
-        writer.WriteReference(nameof(Output), Output);
+        writer.WriteReference(0, nameof(Data), Data);
+        writer.WriteReference(16, nameof(Output), Output);
     }
 }

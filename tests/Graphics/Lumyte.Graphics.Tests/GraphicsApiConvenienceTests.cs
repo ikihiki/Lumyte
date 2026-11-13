@@ -119,7 +119,7 @@ public sealed class GraphicsApiConvenienceTests
         public static string ShaderTypeName => nameof(SampleData);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(nameof(Value), Value);
+            where TWriter : IShaderValueWriter => writer.WriteValue(0, nameof(Value), Value);
     }
 
     private sealed class ShaderBuffer : IGraphicsShaderDataBuffer<SampleData>

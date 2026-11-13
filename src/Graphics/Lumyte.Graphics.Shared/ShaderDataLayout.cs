@@ -8,8 +8,8 @@ namespace Lumyte.Graphics.Shared;
 public sealed partial class ShaderDataLayout : IShaderDataLayout
 {
     private readonly Dictionary<string, ShaderMember> _members = [];
+    private readonly Dictionary<int, ShaderMember> _offsetMembers = [];
     private readonly JsonElement _referenceTargets;
-    private readonly KeyValuePair<string, ShaderMember>[] _bulkPlan;
     private readonly bool _bulkSafe;
 
     private ShaderDataLayout(JsonElement type, JsonElement metadata, bool uniform = false)
@@ -21,8 +21,19 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         int alignment = storage.GetProperty("alignment").GetInt32();
         Size = uniform ? checked(((size + alignment - 1) / alignment) * alignment) : size;
         Add(type, string.Empty, 0);
-        _bulkPlan = _members.ToArray();
-        _bulkSafe = BulkWriter.IsSafe(this);
+        _bulkSafe = IsSafeWireLayout();
+        if (!_bulkSafe)
+        {
+            throw new NotSupportedException("Shader wire fields must have nonnegative, nonoverlapping in-range storage.");
+        }
+
+        foreach (ShaderMember member in _members.Values)
+        {
+            if (!_offsetMembers.TryAdd(member.Offset, member))
+            {
+                throw new NotSupportedException("Shader wire members cannot overlap or share an offset.");
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -139,27 +150,25 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         => GetReflection(target).Root(name);
 
     /// <summary>Checks one numeric root member against the compiled logical schema.</summary>
-    /// <param name="path">The flattened logical member path.</param>
+    /// <param name="offset">The C#-declared wire byte offset.</param>
     /// <param name="type">The explicitly supported numeric CLR type.</param>
-    public void ValidateValue(string path, Type type)
+    public void ValidateValue(int offset, Type type)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (!_members.TryGetValue(path, out ShaderMember? member) || member.Reference || member.ValueType != type)
+        if (!_offsetMembers.TryGetValue(offset, out ShaderMember? member) || member.Reference || member.ValueType != type)
         {
-            throw new ArgumentException("Numeric member type differs from the compiled shader schema.", nameof(path));
+            throw new ArgumentException("Numeric member type differs from the compiled shader schema.", nameof(offset));
         }
     }
 
     /// <summary>Checks an opaque resource member's compiled kind and logical element target.</summary>
-    /// <param name="path">The flattened logical member path.</param>
+    /// <param name="offset">The C#-declared wire byte offset.</param>
     /// <param name="kind">The compiled resource kind.</param>
     /// <param name="target">The static shader element name for buffers, otherwise null.</param>
-    public void ValidateReference(string path, string kind, string? target = null)
+    public void ValidateReference(int offset, string kind, string? target = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (!_members.TryGetValue(path, out ShaderMember? member) || !member.Reference || member.Kind != kind || member.Target != target)
+        if (!_offsetMembers.TryGetValue(offset, out ShaderMember? member) || !member.Reference || member.Kind != kind || member.Target != target)
         {
-            throw new ArgumentException("Resource kind or element target differs from the compiled shader schema.", nameof(path));
+            throw new ArgumentException("Resource kind or element target differs from the compiled shader schema.", nameof(offset));
         }
     }
 
@@ -173,7 +182,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     public void ValidateArguments(ShaderValueSnapshot snapshot, bool validateReferences)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (snapshot.ShaderTypeName != Name || snapshot.Values.Count != _members.Count)
+        if (snapshot.ShaderTypeName != Name || snapshot.SizeInBytes != Size || snapshot.Values.Count != _members.Count)
         {
             throw new ArgumentException("Root type or complete member count differs from the compiled schema.", nameof(snapshot));
         }
@@ -183,7 +192,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         for (int i = 0; i < snapshot.Values.Count; i++)
         {
             ShaderValue value = snapshot.Values[i];
-            if (!_members.TryGetValue(value.Path, out ShaderMember? member) || seen[member.Ordinal] || value.IsReference != member.Reference)
+            if (!_offsetMembers.TryGetValue(value.Offset, out ShaderMember? member) || seen[member.Ordinal] || value.IsReference != member.Reference)
             {
                 throw new ArgumentException("Root members are missing, duplicated, or incompatible.", nameof(snapshot));
             }
@@ -194,26 +203,26 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     }
 
     /// <inheritdoc/>
-    public string ReferenceKind(string path) => _members[path].Kind;
+    public string ReferenceKind(int offset) => _offsetMembers[offset].Kind;
 
     /// <inheritdoc/>
-    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value.Offset == member.Offset && pair.Value.Size == member.Size && pair.Value.Reference == member.Reference && pair.Value.Kind == member.Kind && pair.Value.ValueType == member.ValueType && pair.Value.Target == member.Target);
+    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _offsetMembers.Count == other._offsetMembers.Count && _offsetMembers.All(pair => other._offsetMembers.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value.Offset == member.Offset && pair.Value.Size == member.Size && pair.Value.Reference == member.Reference && pair.Value.Kind == member.Kind && pair.Value.ValueType == member.ValueType && pair.Value.Target == member.Target);
 
     /// <inheritdoc/>
     public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference)
     {
         ValidateArguments(snapshot);
-        byte[] result = new byte[Size];
+        byte[] result = new byte[snapshot.SizeInBytes];
         foreach (ShaderValue value in snapshot.Values)
         {
-            ShaderMember member = _members[value.Path];
+            ShaderMember member = _offsetMembers[value.Offset];
             ReadOnlySpan<byte> bytes = member.Reference ? reference(value, member.Kind) : value.Data.Span;
             if (bytes.Length != member.Size)
             {
                 throw new ArgumentException("Reference ABI size differs from the compiled layout.");
             }
 
-            bytes.CopyTo(result.AsSpan(member.Offset, member.Size));
+            bytes.CopyTo(result.AsSpan(value.Offset, member.Size));
         }
 
         return result;
@@ -376,6 +385,22 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
                 }
             }
         }
+    }
+
+    private bool IsSafeWireLayout()
+    {
+        int end = 0;
+        foreach (ShaderMember member in _members.Values.OrderBy(member => member.Offset))
+        {
+            if (member.Offset < end || member.Size <= 0 || member.Offset > Size || member.Size > Size - member.Offset)
+            {
+                return false;
+            }
+
+            end = member.Offset + member.Size;
+        }
+
+        return true;
     }
 
     private void Add(JsonElement type, string prefix, int baseOffset)

@@ -90,7 +90,7 @@ public sealed class ShaderNumericCaptureTests
             for (int i = 0; i < Count; i++)
             {
                 float value = BitConverter.Int32BitsToSingle(unchecked(Bits + i));
-                writer.WriteValue("Repeated", value);
+                writer.WriteValue(0, "Repeated", value);
             }
         }
     }
@@ -103,13 +103,13 @@ public sealed class ShaderNumericCaptureTests
             where TWriter : IShaderValueWriter
         {
             Calls.Add("write");
-            writer.WriteValue("First", 11);
-            writer.WriteValue("Second", 22);
+            writer.WriteValue(0, "First", 11);
+            writer.WriteValue(4, "Second", 22);
             TWriter alias = writer;
-            alias.WriteReference<IGraphicsTextureView>("Texture", Reference);
-            alias.WriteValue("Third", 33);
-            writer.WriteValue("Fourth", 44);
-            alias.WriteValue("Fifth", 55);
+            alias.WriteReference<IGraphicsTextureView>(8, "Texture", Reference);
+            alias.WriteValue(24, "Third", 33);
+            writer.WriteValue(28, "Fourth", 44);
+            alias.WriteValue(32, "Fifth", 55);
         }
     }
 
@@ -118,7 +118,7 @@ public sealed class ShaderNumericCaptureTests
         public static string ShaderTypeName => "UnsupportedArguments";
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue("Unsupported", 1L);
+            where TWriter : IShaderValueWriter => writer.WriteValue(0, "Unsupported", 1L);
     }
 
     private sealed class TestReference : IGpuRef<IGraphicsTextureView>

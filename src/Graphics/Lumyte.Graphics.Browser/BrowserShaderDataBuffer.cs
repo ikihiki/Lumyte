@@ -16,8 +16,9 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
         }
 
         T empty = default;
-        ShaderValueSnapshot codec = IShaderArguments.Capture(in empty);
-        Layout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, codec.ShaderTypeName);
+        string name = typeof(IShaderNumericWireData).IsAssignableFrom(typeof(T)) ? T.ShaderTypeName : IShaderArguments.Capture(in empty).ShaderTypeName;
+        Layout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, name);
+        ((ShaderDataLayout)Layout).ValidateNumericWireData<T>();
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));

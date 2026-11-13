@@ -20,7 +20,7 @@ Drawing2D を保守する利用者は、異なる図形を連続格納し、そ�
 
 ### 利用者の変更前・変更後
 
-内部変更なので、利用者の Canvas、Renderer2D、DrawingScene2D、retained content の記述、準備・Record・submit・完了待ち・解放は変わらない。公開シグネチャの追加・削除はない。MaxCachedBytes の共有・in-flight 所有分の計上は「所有権と retained 更新」の契約へ変更する。内部の prepared batch は、現在の一描画一 interpreter 実行から、互換な連続 record 範囲のインスタンス実行へ変わる。custom renderer の独自 batch までこの格納形式へ強制しない。
+内部変更なので、利用者の Canvas、Renderer2D、DrawingScene2D、retained content の記述、準備・Record・submit・完了待ち・解放は変わらない。通常の描画 API の追加・削除はない。数値 wire 作成者と backend 向けの明示 opt-in は後述する。MaxCachedBytes の共有・in-flight 所有分の計上は「所有権と retained 更新」の契約へ変更する。内部の prepared batch は、現在の一描画一 interpreter 実行から、互換な連続 record 範囲のインスタンス実行へ変わる。custom renderer の独自 batch までこの格納形式へ強制しない。
 
 変更前の内部呼び出しは、基準 SHA の `Rendering/PreparedGpuBatch2D.cs` の `RecordCommand` で次の形を取る。pipeline/state、引数生成、upload、所有者と失敗処理は抜粋外である。
 
@@ -41,7 +41,7 @@ render.Draw(vertexCount: 6, instanceCount: selected.RecordCount,
 
 ### 96 B の格納契約
 
-record は旧式命令ではなく一つの描画である。shader 配列の各要素の実際の先頭を 16 B 境界へ置き、stride は正確に 96 B とする。これは stream 開始位置と stride による保証であり、compiler の natural-layout reflection が報告する型の最小 alignment と同一であることは要求しない。C# の managed sizeof を wire の根拠にしない。数値以外の GPU 参照は record に埋めず、下表の uint ID は同じ参照集合内の論理索引である。
+record は旧式命令ではなく一つの描画である。shader 配列の各要素の実際の先頭を 16 B 境界へ置き、stride は正確に 96 B とする。これは stream 開始位置と stride による保証であり、compiler の natural-layout reflection が報告する型の最小 alignment と同一であることは要求しない。C# の explicit Size/FieldOffset を数値 wire の正本とし、実 managed stride と shader layout を一度だけ照合する。宣言順だけからの sizeof 推測は使わない。数値以外の GPU 参照は record に埋めず、下表の uint ID は同じ参照集合内の論理索引である。
 
 | byte offset | 長さ | 内容 |
 | --- | --- | --- |
@@ -196,26 +196,81 @@ membership は各 pixel の 16 bit、bit(j*4+i) がその AA sample の所属を
 
 Vulkan は address + slice offset、D3D12 は raw buffer の byte offset、WGSL は登録範囲相対 offset を使う。根拠は基準 SHA の `src/Graphics/Lumyte.Graphics.Vulkan/VulkanShaderReferenceEncoding.cs`、`src/Graphics/Lumyte.Graphics.Direct3D12/Direct3D12ShaderReferenceEncoding.cs`、`src/Graphics/Lumyte.Graphics.Shared/ShaderReferenceEncoding.cs` の Pack である。WGSL の remap は同 `Shared/ShaderBindingData.cs` の Map に従い、slot ごとに +0 texture、+4 sampler、+8 read buffer、+12 writable buffer の各 uint index を持つ 16 B row である。この backend 所有 binding buffer は Drawing2D の payload や追加 page metadata ではない。
 
-基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/ShaderSourcePreparation.cs` は `StructuredBuffer<Ptr<T>>` probe を追加し、buffer target schema を保存する。`src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.cs` は natural-layout の field offset/size を読み、`src/Graphics/Lumyte.Graphics.Generators/ShaderArgumentsGenerator.cs` は名前付き value/reference の writer を生成する。したがって C# 宣言順の sizeof を wire とみなさず、各 target の schema と generated codec を上の **固定値へ照合**する。root uniform の layout も別に照合する。96/16/80/128 B と下記48/64/80 B metadata・64 B range・144 B graph の offset/stride が一致しない backend は有効化しない。未知の reflected stride を受け入れて設計値を黙って変更しない。これは ABI の受け入れ gate とし、stride や field の一致を条件に specialization を有効化する。
+基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/ShaderSourcePreparation.cs` は `StructuredBuffer<Ptr<T>>` probe を追加し、buffer target schema を保存する。`src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.cs` は natural-layout の field offset/size を読み、`src/Graphics/Lumyte.Graphics.Generators/ShaderArgumentsGenerator.cs` は名前付き value/reference の writer を生成する。数値 wire は C# の explicit Size/FieldOffset を上の固定配置として宣言し、各 target の shader schema を生成した C# metadata へ照合する。reference-bearing logical 型は generated codec と既存 backend serializer を使う。root uniform の layout も別に照合する。96/16/80/128 B と下記48/64/80 B metadata・64 B range・144 B graph の offset/stride が一致しない backend は有効化しない。未知の reflected stride を受け入れて設計値を黙って変更しない。これは ABI の受け入れ gate とし、stride や field の一致を条件に specialization を有効化する。
 
-#### CPU capture と bulk packing
+#### C# を正本とする数値 wire と CPU upload
 
-backend の既存 `CopyFrom(ReadOnlySpan<T>)` は、Shared の
-`ShaderDataLayout.Pack<T>(ReadOnlySpan<T>, referenceEncoder, out snapshots)`
-を使う。この追加公開 overload は backend 接続のためであり、描画専用 factory や
-friend assembly を増やさない。既存の単一 snapshot の Pack は維持する。
+DrawRecord2D と directory は C# の `StructLayout(LayoutKind.Explicit, Size = ...)` と
+各 field の `FieldOffset` を正本とする。source generator がこの宣言から数値 wire metadata
+を生成し、backend は buffer 作成時に shader の型・field・offset・size・stride と一度だけ照合する。
+shader が一致しなければ作成を拒否し、backend の alignment 差を upload ごとの並べ替えで補わない。
 
-immutable reflected schema で member path・型・長さ・範囲・非重複を一度検査し、
-codec の全 emission が一致する数値だけの要素は contiguous packed storage と
-遅延 logical member view を保持する。managed sizeof の blit は使わない。
-codec は要素ごとに一度実行し、全 capture 後に generic packing の検証と reference
-encoding を行う。順序違い、欠落、重複、異なる型、reference、unsafe layout は
-その同じ invocation から独立 payload を保持する fallback とし、codec を再実行しない。
+描画利用者の `PrepareAsync`、Record、submit、完了待ち、解放と、typed buffer の
+`CopyFrom(ReadOnlySpan<T>)` は変わらない。内部の数値 wire 型の作成者は、従来の
+`IShaderData` 宣言に代えて `IShaderNumericWireData` を明示し、C# に offset/stride を宣言する。
+その span の連続 bytes を直接 upload し、record ごとの codec・field 名辞書・repacking は行わない。
+名前による照合は buffer 作成時の schema gate だけに使う。
 
-転送 metadata は immutable numeric owner と element view を共有し、reference traversal
-では内部の認証済み numeric-only view だけを leaf とする。公開 snapshot の numeric
-backing storage から opaque GPU wire を読めず、返した packed bytes の変更、新しい
-upload、staging disposal は旧 snapshot を変更しない。copy 成功前に backend metadata
+変更前の内部型は offset を持たない `record struct DrawRecord2D(...) : IShaderData` であり、
+generated codec の値を shader reflection の offset へ pack する。変更後の最小例は次のとおり。
+省略した codec と numeric wire metadata は generator が生成する。buffer/table の作成と GPU 同期は既存契約に従う。
+
+```csharp
+[StructLayout(LayoutKind.Explicit, Size = 16)]
+internal readonly partial record struct DrawDirectoryEntry2D(
+    [field: FieldOffset(0)] uint Kind,
+    [field: FieldOffset(4)] uint PayloadOffset16,
+    [field: FieldOffset(8)] uint PayloadLength16,
+    [field: FieldOffset(12)] uint Flags) : IShaderNumericWireData;
+
+// 変更前後とも mapped upload buffer に対する呼出しは同じ。
+staging.CopyFrom(entries);
+```
+
+新しい opt-in は managed reference を含まない explicit-layout 数値型に限る。logical な
+`IGpuRef` interface/object を含む image、mask、metadata、root arguments をそのまま blit しない。
+それらの opaque reference は table materialization 後に既存 backend serializer で解決する。
+この判断で reference-bearing C# wire ABI 全体を移行したとはしない。
+
+通常の `IShaderData` と手書き codec も、C# の固定 byte offset を出力する writer へ移行する。
+名前は診断専用であり、generic serializer に field 名から GPU 配置先を解決する経路を残さない。
+全 capture 後に型・offset・範囲・重複を検証して指定位置へ serialize し、opaque 参照は
+既存 backend encoder で解決する。codec と reference callback は一度だけ実行する。
+
+公開接続は次の差分に限定し、描画専用 factory と friend assembly を増やさない。
+
+```diff
+ namespace Lumyte.Graphics.Abstractions
+ {
++    public interface IShaderNumericWireData : IShaderData
++    {
++        ShaderNumericWireLayout NumericWireLayout { get; }
++    }
++    public sealed class ShaderNumericWireLayout
++    {
++        public ShaderNumericWireLayout(int stride, params ShaderNumericWireMember[] members);
++        public int Stride { get; }
++        public IReadOnlyList<ShaderNumericWireMember> Members { get; }
++    }
++    public sealed record ShaderNumericWireMember(string Path, Type ValueType, int Offset, int Size);
+ }
+ namespace Lumyte.Graphics.Shared
+ {
+     public sealed partial class ShaderDataLayout
+     {
++        // backend allocation 前の一度だけの C# wire compatibility gate。
++        public void ValidateNumericWireData<T>() where T : struct, IShaderData;
++        // C# wire opt-in は contiguous bytes、通常 IShaderData も固定 offset codec。
++        public byte[] Pack<T>(ReadOnlySpan<T> source,
++            Func<ShaderValue, string, byte[]> reference, out ShaderValueSnapshot[] snapshots)
++            where T : struct, IShaderData;
+     }
+ }
+```
+
+転送 metadata は独立所有の immutable numeric-only batch と element view を共有する。
+公開 snapshot の numeric backing から opaque GPU wire を読めず、返した packed bytes の変更、
+新しい upload、staging disposal は旧 snapshot を変更しない。copy 成功前に backend metadata
 を公開せず、table・generation・range・寿命・completion の契約は変更しない。
 
 #### 参照集合の metadata と全引数

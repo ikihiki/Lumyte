@@ -1,9 +1,10 @@
 # ADR-GRAPHICS-0009: Argument Tableのシェーダー引数への接続
 
-- 状態: 置換済み（実行時検証の方針のみ。その他の決定は引き続き採用）
+- 状態: 置換済み
+- 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`（既存判断の記述整理。本文の API 差分は採用時の記録を保持）
 - 日付: 2026-10-09
-- 変更日: 2026-10-10
-- 置換範囲: draw／Submitでの登録失効検出と、staging revision・command間metadata依存の再検証。利用者が寿命と同期を管理し、検証のための追跡費用を省く方針へ変更する。
+- 変更日: 2026-11-13
+- 置換範囲: field 名から reflected offset への実行時配置とその codec/writer 契約、および draw／Submitでの登録失効検出と、staging revision・command間metadata依存の再検証。利用者が寿命と同期を管理し、検証のための追跡費用を省く方針へ変更する。
 - 後継: [ADR-GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)。以下の本文は判断時点の記録であり、上記の実行時検証には後継を適用する。
 - 追加変更日: 2026-10-28。[GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)で、選択したtableへの直接・間接参照の所属検証を明確化する。SetArgumentTableによる選択は維持する。
 
@@ -14,6 +15,10 @@
 Argument Tableのslotは種類別の論理登録位置であり、shaderのbinding番号ではない。tableを設定するだけで全登録を一度にshaderへ渡す方式では、登録容量が物理binding上限に制約される。不透明参照をshader引数へ渡し、必要な登録だけをbackendが解決する契約が必要となる。
 
 ## 決定
+
+### 利用者の変更前・変更後
+
+この節の追加は既存判断の記述整理であり、以下の API 差分と利用例は採用時のものを保持する。この履歴の整理自体で利用側の記述は変わらない。
 
 ### Table選択と引数指定を分離する
 

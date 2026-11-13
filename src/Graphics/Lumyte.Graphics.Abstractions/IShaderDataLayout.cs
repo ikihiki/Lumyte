@@ -10,9 +10,9 @@ public interface IShaderDataLayout
     int Size { get; }
 
     /// <summary>Returns the compiled reference kind of a flattened member.</summary>
-    /// <param name="path">The member path.</param>
+    /// <param name="offset">The C#-declared wire byte offset.</param>
     /// <returns>The reference kind.</returns>
-    string ReferenceKind(string path);
+    string ReferenceKind(int offset);
 
     /// <summary>Checks whether another layout has the same compiled schema.</summary>
     /// <param name="layout">The layout to compare.</param>

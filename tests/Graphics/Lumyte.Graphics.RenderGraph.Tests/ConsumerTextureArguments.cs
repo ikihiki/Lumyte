@@ -9,8 +9,8 @@ internal readonly record struct ConsumerTextureArguments(IGpuRef<IGraphicsTextur
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter
     {
-        writer.WriteReference("Input", Input);
-        writer.WriteReference("Backdrop", Backdrop);
-        writer.WriteValue("Float", Float);
+        writer.WriteReference(0, "Input", Input);
+        writer.WriteReference(16, "Backdrop", Backdrop);
+        writer.WriteValue(32, "Float", Float);
     }
 }

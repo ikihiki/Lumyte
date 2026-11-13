@@ -9,6 +9,9 @@ public interface IShaderArguments
     /// <summary>Gets the logical shader structure name.</summary>
     static abstract string ShaderTypeName { get; }
 
+    /// <summary>Gets the declared C# wire stride, or zero to infer it from explicit codec writes.</summary>
+    static virtual int WireSizeInBytes => 0;
+
     /// <summary>Writes numeric members and opaque references without GPU transfer.</summary>
     /// <typeparam name="TWriter">The writer type, which can be a value type without boxing.</typeparam>
     /// <param name="writer">The snapshot destination.</param>
@@ -26,8 +29,19 @@ public interface IShaderArguments
         string name = T.ShaderTypeName;
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        int size = T.WireSizeInBytes;
         var writer = new ShaderSnapshotWriter();
         value.Write(ref writer);
-        return new(root, name, writer.Values.AsReadOnly());
+        if (size == 0)
+        {
+            size = typeof(IShaderData).IsAssignableFrom(typeof(T)) ? writer.SizeInBytes : checked((writer.SizeInBytes + 15) / 16 * 16);
+        }
+
+        if (size < writer.SizeInBytes)
+        {
+            throw new ArgumentException("The C# wire stride does not contain the codec writes.");
+        }
+
+        return new(root, name, writer.Values.AsReadOnly()) { SizeInBytes = size };
     }
 }

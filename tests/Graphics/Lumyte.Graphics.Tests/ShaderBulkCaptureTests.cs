@@ -29,8 +29,8 @@ public sealed class ShaderBulkCaptureTests
         input[0] = new(1, 2, 0, calls);
         _ = layout.Pack<Datum>(input, (_, _) => [], out _);
         Assert.Equal(0x7fc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Values[0].Data.Span));
-        Assert.Throws<IndexOutOfRangeException>(() => snapshots[0].Values[-1]);
-        Assert.Throws<IndexOutOfRangeException>(() => snapshots[0].Values[2]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => snapshots[0].Values[-1]);
+        Assert.Throws<ArgumentOutOfRangeException>(() => snapshots[0].Values[2]);
     }
 
     /// <summary>Reordered codecs run once and preserve emission order through the fallback.</summary>
@@ -95,27 +95,34 @@ public sealed class ShaderBulkCaptureTests
         Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshots[0], true));
     }
 
-    /// <summary>Overlapping wire fields must retain distinct logical values.</summary>
+    /// <summary>Overlapping shader storage is rejected before codec execution.</summary>
     [Fact]
-    public void OverlappingLayoutKeepsIndependentSnapshotMembers()
+    public void OverlappingShaderLayoutIsRejectedBeforeCapture() => Assert.Throws<NotSupportedException>(() => Layout(secondOffset: 0));
+
+    /// <summary>Negative reflected offsets are rejected as invalid schemas.</summary>
+    [Fact]
+    public void InvalidShaderOffsetIsRejectedBeforeCapture() => Assert.Throws<NotSupportedException>(() => Layout(firstOffset: -1));
+
+    /// <summary>Names are diagnostic only: changed labels do not select GPU placement.</summary>
+    [Fact]
+    public void DiagnosticNamesCannotRedirectFixedByteOffsets()
     {
         var calls = new List<int>();
-        Datum[] input = [new(7, 13, 0, calls)];
-        byte[] bytes = Layout(secondOffset: 0).Pack<Datum>(input, (_, _) => [], out ShaderValueSnapshot[] snapshots);
-        Assert.Equal(13u, BinaryPrimitives.ReadUInt32LittleEndian(bytes));
-        Assert.Equal(7u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Values[0].Data.Span));
-        Assert.Equal(13u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Values[1].Data.Span));
+        Datum[] input = [new(7, 13, 6, calls)];
+        byte[] bytes = Layout().Pack<Datum>(input, (_, _) => [], out ShaderValueSnapshot[] snapshots);
+        Assert.Equal(7u, BinaryPrimitives.ReadUInt32LittleEndian(bytes));
+        Assert.Equal(13u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(8)));
+        Assert.Equal(new[] { "not-a-shader-field", "arbitrary-diagnostic" }, snapshots[0].Values.Select(value => value.Path));
+        Assert.Equal(new[] { 0, 8 }, snapshots[0].Values.Select(value => value.Offset));
     }
 
-    /// <summary>Invalid offsets cannot preempt later codec exceptions or prevent their invocation.</summary>
+    /// <summary>The removed string-only writer and layout resolver APIs are absent.</summary>
     [Fact]
-    public void InvalidOffsetPreservesCaptureAllBeforePackErrorOrder()
+    public void PublicSerializationContractRequiresOffsets()
     {
-        var calls = new List<int>();
-        Datum[] input = [new(7, 13, 0, calls), new(11, 19, 5, calls)];
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Layout(firstOffset: -1).Pack<Datum>(input, (_, _) => [], out _));
-        Assert.Equal("codec failure", error.Message);
-        Assert.Equal(new[] { 0, 5 }, calls);
+        Assert.All(typeof(IShaderValueWriter).GetMethods(), method => Assert.Equal(typeof(int), method.GetParameters()[0].ParameterType));
+        Assert.Equal(typeof(int), typeof(IShaderDataLayout).GetMethod(nameof(IShaderDataLayout.ReferenceKind))!.GetParameters()[0].ParameterType);
+        Assert.All(typeof(ShaderValue).GetConstructors(), constructor => Assert.NotEqual(typeof(string), constructor.GetParameters()[0].ParameterType));
     }
 
     private static ShaderDataLayout ReferenceLayout()
@@ -155,8 +162,8 @@ public sealed class ShaderBulkCaptureTests
             where TWriter : IShaderValueWriter
         {
             Events.Add("write");
-            writer.WriteValue(nameof(Value), Value);
-            writer.WriteReference<IGraphicsTextureView>("Texture", null);
+            writer.WriteValue(0, nameof(Value), Value);
+            writer.WriteReference<IGraphicsTextureView>(16, "Texture", null);
         }
     }
 
@@ -164,10 +171,19 @@ public sealed class ShaderBulkCaptureTests
     {
         public static string ShaderTypeName => "Datum";
 
+        public static int WireSizeInBytes => 16;
+
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter
         {
             Calls.Add(Mode);
+            if (Mode == 6)
+            {
+                writer.WriteValue(0, "not-a-shader-field", First);
+                writer.WriteValue(8, "arbitrary-diagnostic", Second);
+                return;
+            }
+
             if (Mode == 5)
             {
                 throw new InvalidOperationException("codec failure");
@@ -175,12 +191,12 @@ public sealed class ShaderBulkCaptureTests
 
             if (Mode == 1)
             {
-                writer.WriteValue(nameof(Second), Second);
-                writer.WriteValue(nameof(First), First);
+                writer.WriteValue(8, nameof(Second), Second);
+                writer.WriteValue(0, nameof(First), First);
                 return;
             }
 
-            writer.WriteValue(nameof(First), First);
+            writer.WriteValue(0, nameof(First), First);
             if (Mode == 2)
             {
                 return;
@@ -188,15 +204,15 @@ public sealed class ShaderBulkCaptureTests
 
             if (Mode == 3)
             {
-                writer.WriteValue(nameof(First), Second);
+                writer.WriteValue(0, nameof(First), Second);
             }
             else if (Mode == 4)
             {
-                writer.WriteValue(nameof(Second), unchecked((int)Second));
+                writer.WriteValue(8, nameof(Second), unchecked((int)Second));
             }
             else
             {
-                writer.WriteValue(nameof(Second), Second);
+                writer.WriteValue(8, nameof(Second), Second);
             }
         }
     }

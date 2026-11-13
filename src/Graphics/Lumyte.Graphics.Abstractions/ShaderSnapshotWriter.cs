@@ -8,9 +8,11 @@ internal sealed class ShaderSnapshotWriter : IShaderValueWriter
     private byte[]? _numericStorage;
     private int _numericOffset;
 
+    internal int SizeInBytes { get; private set; }
+
     internal List<ShaderValue> Values { get; } = [];
 
-    public void WriteValue<T>(string path, in T value)
+    public void WriteValue<T>(int offset, string path, in T value)
         where T : unmanaged
     {
         Type type = typeof(T);
@@ -33,8 +35,13 @@ internal sealed class ShaderSnapshotWriter : IShaderValueWriter
         bytes.CopyTo(_numericStorage.AsSpan(_numericOffset));
         ReadOnlyMemory<byte> payload = _numericStorage.AsMemory(_numericOffset, bytes.Length);
         _numericOffset += bytes.Length;
-        Values.Add(new(path, type, payload, null, false));
+        SizeInBytes = Math.Max(SizeInBytes, checked(offset + bytes.Length));
+        Values.Add(new(offset, path, type, payload, null, false));
     }
 
-    public void WriteReference<T>(string path, IGpuRef<T>? value) => Values.Add(new(path, typeof(T), default, value, true));
+    public void WriteReference<T>(int offset, string path, IGpuRef<T>? value)
+    {
+        SizeInBytes = Math.Max(SizeInBytes, checked(offset + 16));
+        Values.Add(new(offset, path, typeof(T), default, value, true));
+    }
 }
