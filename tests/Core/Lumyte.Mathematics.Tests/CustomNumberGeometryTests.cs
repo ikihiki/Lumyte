@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Mathematics.Geometry;
 using Xunit;
 
@@ -181,6 +182,54 @@ public sealed class CustomNumberGeometryTests
         Assert.Equal(3u, segment.DistanceTo<uint>(query));
         Assert.Equal(25u, segment3.DistanceSquared<uint>(query3));
         Assert.Equal(5u, segment3.DistanceTo<uint>(query3));
+    }
+
+    /// <summary>Color storage and exact normalization support reference-containing custom numbers.</summary>
+    [Fact]
+    public void ColorsSupportManagedCustomNumbers()
+    {
+        Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<SRgba<ManagedDecimal>>());
+        Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<SGray<ManagedDecimal>>());
+        var gray = new SGray<ManagedDecimal>(N(128));
+        Assert.Equal(new SRgba<decimal>(128m / 255, 128m / 255, 128m / 255, 1), gray.NormalizeUnorm<decimal>(N(255)));
+        Assert.Equal(N(255), gray.ToRgba(N(255)).A);
+        var rgba = new SRgba<ManagedDecimal>(N(0), N(1), N(0), N(1));
+        var bgra = SBgra<ManagedDecimal>.FromRgba(rgba);
+        byte[] encoded = new byte[4];
+        Lumyte.Mathematics.Colors.Color.WritePixels<SBgra<ManagedDecimal>>(new[] { bgra }, encoded, ColorComponentEncoding.Unorm8, ColorByteOrder.BigEndian);
+        var decoded = new SBgra<ManagedDecimal>[1];
+        Lumyte.Mathematics.Colors.Color.DecodePixels<SBgra<ManagedDecimal>>(encoded, decoded, ColorComponentEncoding.Unorm8, ColorByteOrder.BigEndian);
+        Assert.Equal(bgra, decoded[0]);
+        var codes = SRgba<ManagedDecimal>.FromRgba8Codes(1, 2, 3, 4);
+        Assert.Equal(new SRgba<decimal>(0.25m, 0.5m, 0.75m, 1), codes.NormalizeUnorm<decimal>(N(4)));
+        Assert.Equal(new SRgba<int>(1, 2, 3, 4), codes.NormalizeUnorm<ManagedDecimal>(N(4)).QuantizeUnorm(4));
+        Assert.Equal(0x04010203u, codes.ToArgb32Codes());
+        Assert.Equal(N(99), codes.WithAlpha(N(99)).A);
+        Assert.Equal(new SRgba<decimal>(1, 2, 3, 4), codes.ConvertChecked<decimal>());
+    }
+
+    /// <summary>Color storage and exact normalization support reference-containing custom numbers.</summary>
+    [Fact]
+    public void LinearColorsSupportManagedCustomNumbers()
+    {
+        Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<LRgba<ManagedDecimal>>());
+        Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<LGray<ManagedDecimal>>());
+        var gray = new LGray<ManagedDecimal>(N(128));
+        Assert.Equal(new LRgba<decimal>(128m / 255, 128m / 255, 128m / 255, 1), gray.NormalizeUnorm<decimal>(N(255)));
+        Assert.Equal(N(255), gray.ToRgba(N(255)).A);
+        var rgba = new LRgba<ManagedDecimal>(N(0), N(1), N(0), N(1));
+        var bgra = LBgra<ManagedDecimal>.FromRgba(rgba);
+        byte[] encoded = new byte[4];
+        Lumyte.Mathematics.Colors.Color.WritePixels<LBgra<ManagedDecimal>>(new[] { bgra }, encoded, ColorComponentEncoding.Unorm8, ColorByteOrder.BigEndian);
+        var decoded = new LBgra<ManagedDecimal>[1];
+        Lumyte.Mathematics.Colors.Color.DecodePixels<LBgra<ManagedDecimal>>(encoded, decoded, ColorComponentEncoding.Unorm8, ColorByteOrder.BigEndian);
+        Assert.Equal(bgra, decoded[0]);
+        var codes = LRgba<ManagedDecimal>.FromRgba8Codes(1, 2, 3, 4);
+        Assert.Equal(new LRgba<decimal>(0.25m, 0.5m, 0.75m, 1), codes.NormalizeUnorm<decimal>(N(4)));
+        Assert.Equal(new LRgba<int>(1, 2, 3, 4), codes.NormalizeUnorm<ManagedDecimal>(N(4)).QuantizeUnorm(4));
+        Assert.Equal(0x04010203u, codes.ToArgb32Codes());
+        Assert.Equal(N(99), codes.WithAlpha(N(99)).A);
+        Assert.Equal(new LRgba<decimal>(1, 2, 3, 4), codes.ConvertChecked<decimal>());
     }
 
     private static ManagedDecimal N(decimal value) => new(value);

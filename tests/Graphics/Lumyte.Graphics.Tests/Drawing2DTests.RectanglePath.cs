@@ -4,6 +4,7 @@ using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -57,7 +58,7 @@ public sealed partial class Drawing2DTests
                 canvas.ClipPath(RectanglePath(split), rule);
                 canvas.Scale(new Vector2(1e24f));
                 canvas.ClipRect(new(0, 0, 8, 8));
-                canvas.FillCircle(new(1, 1), 4, new Color2D(1, 0, 0, 1));
+                canvas.FillCircle(new(1, 1), 4, new SRgba<float>(1, 0, 0, 1));
             }
 
             Vector4[] winding = await RenderAsync(device, 8, 8, canvas => Draw(canvas, true));
@@ -85,8 +86,8 @@ public sealed partial class Drawing2DTests
                         canvas.ClipPath(path, rule);
                         canvas.Translate(new(0.125f, -0.25f));
                         canvas.ClipPath(path, rule);
-                        canvas.FillCircle(new Vector2(8, 7), 12, new Color2D(1, 0.25f, 0.5f, 0.5f));
-                        canvas.FillPath(path, new Color2D(0, 0.5f, 1, 0.5f), rule);
+                        canvas.FillCircle(new Vector2(8, 7), 12, new SRgba<float>(1, 0.25f, 0.5f, 0.5f));
+                        canvas.FillPath(path, new SRgba<float>(0, 0.5f, 1, 0.5f), rule);
                         canvas.Restore();
                     }
                 }

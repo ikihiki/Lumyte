@@ -31,7 +31,7 @@ internal sealed class UiTargetAnimation<T>(IReadSignal<T> target, Duration durat
 
     internal T Pending => _pending;
 
-    internal T Detached => _target.Peek();
+    internal T Detached => ReadTarget(_target.Peek());
 
     internal override bool Inherit(UiAnimationProducer previous)
     {
@@ -54,7 +54,12 @@ internal sealed class UiTargetAnimation<T>(IReadSignal<T> target, Duration durat
 
     protected override void ConnectCore()
     {
-        Scope.Run(() => _watch = Signal.Effect(() => Volatile.Write(ref _latest, new(_target.Value)), this, onError: _ => { }));
+        Scope.Run(() => _watch = Signal.Effect(() => Volatile.Write(ref _latest, new(ReadTarget(_target.Value))), this, onError: _ => { }));
+        if (_watch!.Failure is { } failure)
+        {
+            throw new InvalidOperationException("The animation target failed.", failure);
+        }
+
         if (!_inherited)
         {
             _goal = _latest!.Value;
@@ -76,7 +81,7 @@ internal sealed class UiTargetAnimation<T>(IReadSignal<T> target, Duration durat
         }
 
         _stagedTarget = Volatile.Read(ref _latest)!;
-        T latest = _stagedTarget.Value;
+        T latest = ReadTarget(_stagedTarget.Value);
         T current = Sample();
         if (!EqualityComparer<T>.Default.Equals(latest, _goal))
         {
@@ -124,6 +129,12 @@ internal sealed class UiTargetAnimation<T>(IReadSignal<T> target, Duration durat
 
         _completionPending = false;
         completed?.Invoke();
+    }
+
+    private T ReadTarget(T value)
+    {
+        _interpolator.Validate(value);
+        return UiColorPolicy.Value(value, nameof(target));
     }
 
     private T Sample() => _tween is null ? _current : _tween.Sample(Duration.FromTicks(Math.Min(_duration.Ticks, (ActiveTime - _start).Ticks)));

@@ -1,6 +1,6 @@
 using Lumyte.Animation;
 using Lumyte.Core.Time;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Signals;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -150,10 +150,10 @@ public sealed class AnimationTests
     [Fact]
     public void ColorInterpolationUsesLinearPremultipliedComponents()
     {
-        Color2D midpoint = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 1), new(1, 1, 1, 1), 0.5f);
+        SRgba<float> midpoint = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 1), new(1, 1, 1, 1), 0.5f);
         Assert.InRange(midpoint.R, 0.735f, 0.736f);
         Assert.Equal(1, midpoint.A);
-        Color2D transparent = UiAnimationInterpolators.Color.Interpolate(new(1, 0, 0, 0), new(0, 0, 1, 0), 0.5f);
+        SRgba<float> transparent = UiAnimationInterpolators.Color.Interpolate(new(1, 0, 0, 0), new(0, 0, 1, 0), 0.5f);
         Assert.Equal(default, transparent);
         IAnimationInterpolator<float?> nullable = UiAnimationInterpolators.Nullable(AnimationInterpolators.Float);
         Assert.Null(nullable.Interpolate(null, 10, 0.5f));

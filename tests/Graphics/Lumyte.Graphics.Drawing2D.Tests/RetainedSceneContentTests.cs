@@ -1,4 +1,5 @@
 using System.Reflection;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -14,7 +15,7 @@ public sealed class RetainedSceneContentTests
         canvas.Begin();
         for (int i = 0; i < 137; i++)
         {
-            canvas.FillRect(new(i, 0, 1, 1), new Color2D(1, 0, 0, 1));
+            canvas.FillRect(new(i, 0, 1, 1), new SRgba<float>(1, 0, 0, 1));
         }
 
         DrawList2D recording = canvas.End();
@@ -32,7 +33,7 @@ public sealed class RetainedSceneContentTests
         Assert.Throws<ArgumentException>(() => original.WithPage(0, original.RetainedPages.Pages[2]));
         Assert.Throws<ArgumentOutOfRangeException>(() => original.WithPage(3, original.RetainedPages.Pages[0]));
         canvas.Begin();
-        canvas.FillCircle(new(0, 0), 2, new Color2D(0, 1, 0, 1));
+        canvas.FillCircle(new(0, 0), 2, new SRgba<float>(0, 1, 0, 1));
         canvas.End();
         Assert.Equal(137, original.Count);
         Assert.Equal(new Rect2D(70, 0, 1, 1), Assert.IsType<FillRectCommand2D>(original.RetainedPages.Pages[1].Commands[6]).Rect);
@@ -51,7 +52,7 @@ public sealed class RetainedSceneContentTests
         Assert.Empty(empty.RetainedPages.Pages);
         Assert.Equal(0, empty.RetainedPages.PageCount);
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 1, 1), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 1, 1), new SRgba<float>(1, 0, 0, 1));
         DrawList2D recording = canvas.End();
         DrawList2D content = recording;
         Assert.Same(recording, Assert.Single(content.RetainedPages.Pages));
@@ -157,7 +158,7 @@ public sealed class RetainedSceneContentTests
         canvas.Begin();
         for (int index = 0; index < count; index++)
         {
-            canvas.FillRect(new(index, 0, 1, 1), new Color2D(1, 0, 0, 1));
+            canvas.FillRect(new(index, 0, 1, 1), new SRgba<float>(1, 0, 0, 1));
         }
 
         return canvas.End();

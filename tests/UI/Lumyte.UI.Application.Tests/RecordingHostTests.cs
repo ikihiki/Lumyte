@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI.Windowing;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -17,7 +18,7 @@ public sealed class RecordingHostTests
         var driver = new Driver();
         UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1) });
         builder.UseDriver(() => driver);
-        builder.UseRoot(_ => Rectangle(fill: new Color2D(1, 0, 0, 1)));
+        builder.UseRoot(_ => Rectangle(fill: new SRgba<float>(1, 0, 0, 1)));
         await using UiApplication app = builder.Build();
         Task running = app.RunAsync();
         try

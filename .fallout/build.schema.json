@@ -26,6 +26,7 @@
         "Direct3D12Native",
         "FormatMarkdown",
         "FormatNative",
+        "GenerateNamedColors",
         "NativeSmoke",
         "Pack",
         "ParleyNative",
@@ -53,6 +54,7 @@
         "TestWasm",
         "TestWindowing",
         "VerifyEnvironment",
+        "VerifyNamedColors",
         "VerifySdk"
       ]
     },

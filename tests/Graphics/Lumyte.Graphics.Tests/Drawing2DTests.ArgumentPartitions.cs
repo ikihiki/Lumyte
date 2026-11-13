@@ -5,6 +5,7 @@ using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -138,7 +139,7 @@ public sealed partial class Drawing2DTests
         RenderGraphTexture target = graph.CreateTexture(description, "target");
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 10, 4), new Color2D(0, 1, 0, 0.25f));
+        canvas.FillRect(new(0, 0, 10, 4), new SRgba<float>(0, 1, 0, 0.25f));
         canvas.BeginLayer(new() { ContentBounds = new(0, 0, 10, 4), Effects = effects => effects.AppendOpacity(effects.Source, 0.5f) });
         for (int x = 0; x < views.Length; x++)
         {
