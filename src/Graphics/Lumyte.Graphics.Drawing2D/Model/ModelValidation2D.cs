@@ -67,7 +67,7 @@ internal static class ModelValidation2D
         Finite(value.Y + value.Height, name);
     }
 
-    internal static void Color(Rgba<float> value, string name)
+    internal static void Color(SrgbRgba<float> value, string name)
     {
         Unit(value.R, name);
         Unit(value.G, name);

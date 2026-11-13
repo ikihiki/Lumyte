@@ -36,7 +36,7 @@ public sealed partial class Drawing2DTests
         // A one-past-end physical load must not depend on a warm driver shader cache.
         foreach ((int layers, int opacity) in new[] { (126, 1), (126, 0), (2, 1), (3, 0), (6, 1), (6, 2) })
         {
-            var paint = PaintGraph2D.Layers(Enumerable.Range(0, layers).Select(_ => PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 1))).ToArray());
+            var paint = PaintGraph2D.Layers(Enumerable.Range(0, layers).Select(_ => PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 1))).ToArray());
             for (int i = 0; i < opacity; i++)
             {
                 paint = PaintGraph2D.Opacity(1, paint);

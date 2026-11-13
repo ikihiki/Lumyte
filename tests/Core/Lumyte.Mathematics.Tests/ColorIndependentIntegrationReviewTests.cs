@@ -16,11 +16,11 @@ public sealed class ColorIndependentIntegrationReviewTests
         {
             float channel = random.NextSingle();
             float alpha = random.NextSingle();
-            var input = new Rgba<float>(channel, channel, channel, alpha);
+            var input = new SrgbRgba<float>(channel, channel, channel, alpha);
             float paint = BaselinePaint(channel) * alpha;
             double clear = BaselineDecode(channel) * alpha;
-            Assert.Equal(BitConverter.SingleToInt32Bits(paint), BitConverter.SingleToInt32Bits(input.DecodeSrgb<float>().PremultiplyLinear<float>().R));
-            Assert.Equal(BitConverter.DoubleToInt64Bits(clear), BitConverter.DoubleToInt64Bits(input.DecodeSrgb<double>().PremultiplyLinear<double>().R));
+            Assert.Equal(BitConverter.SingleToInt32Bits(paint), BitConverter.SingleToInt32Bits(input.ToLinear<float>().PremultiplyLinear<float>().R));
+            Assert.Equal(BitConverter.DoubleToInt64Bits(clear), BitConverter.DoubleToInt64Bits(input.ToLinear<double>().PremultiplyLinear<double>().R));
         }
     }
 
@@ -42,17 +42,17 @@ public sealed class ColorIndependentIntegrationReviewTests
     [Fact]
     public void StrictInterpolationRetainsSubnormalConstantRgbAcrossDifferentAlphas()
     {
-        var first = new Rgba<double>(double.Epsilon, double.Epsilon, double.Epsilon, 0.25);
-        Rgba<double> last = first.WithAlpha(0.75);
-        Assert.Equal(new Rgba<double>(double.Epsilon, double.Epsilon, double.Epsilon, 0.5), first.InterpolateSrgbLinearPremultiplied(last, 0.5));
+        var first = new SrgbRgba<double>(double.Epsilon, double.Epsilon, double.Epsilon, 0.25);
+        SrgbRgba<double> last = first.WithAlpha(0.75);
+        Assert.Equal(new SrgbRgba<double>(double.Epsilon, double.Epsilon, double.Epsilon, 0.5), first.InterpolateSrgbLinearPremultiplied(last, 0.5));
     }
 
     /// <summary>Different subnormal channels retain their exact low-segment interpolation before final rounding.</summary>
     [Fact]
     public void StrictInterpolationRetainsDifferentSubnormalRgb()
     {
-        var first = new Rgba<double>(double.Epsilon, 0, 0, 1);
-        var last = new Rgba<double>(2 * double.Epsilon, 0, 0, 1);
+        var first = new SrgbRgba<double>(double.Epsilon, 0, 0, 1);
+        var last = new SrgbRgba<double>(2 * double.Epsilon, 0, 0, 1);
         Assert.Equal(2 * double.Epsilon, first.InterpolateSrgbLinearPremultiplied(last, 0.5).R);
     }
 
@@ -60,8 +60,8 @@ public sealed class ColorIndependentIntegrationReviewTests
     [Fact]
     public void StrictInterpolationRejectsNegativeAlphaThatRoundsToZero()
     {
-        var first = new Rgba<double>(0, 0, 0, 0);
-        var last = new Rgba<double>(0, 0, 0, double.Epsilon);
+        var first = new SrgbRgba<double>(0, 0, 0, 0);
+        var last = new SrgbRgba<double>(0, 0, 0, double.Epsilon);
         Assert.Throws<ArgumentOutOfRangeException>(() => first.InterpolateSrgbLinearPremultiplied(last, -0.25));
     }
 
@@ -71,15 +71,15 @@ public sealed class ColorIndependentIntegrationReviewTests
     {
         const double Channel = 0.04045;
         double expected = Channel / 12.92;
-        Assert.Equal(BitConverter.DoubleToInt64Bits(expected), BitConverter.DoubleToInt64Bits(new Rgba<double>(Channel, Channel, Channel, 1).DecodeSrgb<double>().R));
+        Assert.Equal(BitConverter.DoubleToInt64Bits(expected), BitConverter.DoubleToInt64Bits(new SrgbRgba<double>(Channel, Channel, Channel, 1).ToLinear<double>().R));
     }
 
     /// <summary>Toe cancellation is not valid when extrapolation leaves the linear transfer segment.</summary>
     [Fact]
     public void ToeExtrapolationUsesNonlinearEncodeOutsideToe()
     {
-        var first = new Rgba<double>(0.01, 0, 0, 1);
-        var last = new Rgba<double>(0.02, 0, 0, 1);
+        var first = new SrgbRgba<double>(0.01, 0, 0, 1);
+        var last = new SrgbRgba<double>(0.02, 0, 0, 1);
         double linear = (0.01 / 12.92) + (((0.02 / 12.92) - (0.01 / 12.92)) * 10);
         double expected = (1.055 * Math.Pow(linear, 1 / 2.4)) - 0.055;
         Assert.Equal(expected, first.InterpolateSrgbLinearPremultiplied(last, 10d).R, 14);
@@ -89,8 +89,8 @@ public sealed class ColorIndependentIntegrationReviewTests
     [Fact]
     public void SubnormalToeExtrapolationDoesNotValidateRoundedPipelineFirst()
     {
-        var first = new Rgba<double>(6 * double.Epsilon, 0, 0, 1);
-        var last = new Rgba<double>(7 * double.Epsilon, 0, 0, 1);
+        var first = new SrgbRgba<double>(6 * double.Epsilon, 0, 0, 1);
+        var last = new SrgbRgba<double>(7 * double.Epsilon, 0, 0, 1);
         Assert.Equal(5 * double.Epsilon, first.InterpolateSrgbLinearPremultiplied(last, -1d).R);
     }
 

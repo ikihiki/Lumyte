@@ -93,7 +93,7 @@ public sealed class SignalTests
     [Fact]
     public void PaintChangesReuseInputGeometry()
     {
-        var fill = Signal.Create(new Rgba<float>(1, 0, 0, 1));
+        var fill = Signal.Create(new SrgbRgba<float>(1, 0, 0, 1));
         var width = Signal.Create<float?>(20);
         using var surface = new UiSurface(Panel()[Rectangle(width: width, fill: fill)]);
         surface.SetViewport(new(200, 100));
@@ -239,7 +239,7 @@ public sealed class SignalTests
                 width.Value = 40;
             }
         });
-        using var surface = new UiSurface(Panel()[Rectangle(width: width, height: 10, fill: new Rgba<float>(1, 0, 0, 1)), notifier]);
+        using var surface = new UiSurface(Panel()[Rectangle(width: width, height: 10, fill: new SrgbRgba<float>(1, 0, 0, 1)), notifier]);
         surface.SetViewport(new(200, 100));
         var canvas = new Canvas2D();
         canvas.Begin();

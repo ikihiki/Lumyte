@@ -10,9 +10,9 @@ public sealed class ColorConsolidationTests
     [Fact]
     public void AdapterRetainsMixedPrecisionAndFinalValidation()
     {
-        Rgba<float> midpoint = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.1f), new(0, 0, 0, 0.9f), 0.5f);
+        SrgbRgba<float> midpoint = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.1f), new(0, 0, 0, 0.9f), 0.5f);
         Assert.Equal(0.49999997f, midpoint.A);
-        Rgba<float> overshoot = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.9f), new(0, 0, 0, 1), MathF.BitIncrement(1));
+        SrgbRgba<float> overshoot = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.9f), new(0, 0, 0, 1), MathF.BitIncrement(1));
         Assert.Equal(1f, overshoot.A);
         Assert.Throws<ArgumentOutOfRangeException>(() => UiAnimationInterpolators.Color.Interpolate(default, new(1, 1, 1, 1), float.NaN));
     }
@@ -21,8 +21,8 @@ public sealed class ColorConsolidationTests
     [Fact]
     public void AdapterPreservesHiddenEndpointRgb()
     {
-        Rgba<float> from = new(1, 0.5f, 0.25f, 0);
-        Rgba<float> to = new(0.25f, 0.5f, 1, 0);
+        SrgbRgba<float> from = new(1, 0.5f, 0.25f, 0);
+        SrgbRgba<float> to = new(0.25f, 0.5f, 1, 0);
         Assert.Equal(from, UiAnimationInterpolators.Color.Interpolate(from, to, 0));
         Assert.Equal(to, UiAnimationInterpolators.Color.Interpolate(from, to, 1));
         Assert.Equal(default, UiAnimationInterpolators.Color.Interpolate(from, to, 0.5f));
@@ -39,8 +39,8 @@ public sealed class ColorConsolidationTests
         {
             float[] values = [0.25f, 0.5f, 0.75f, 0f];
             values[component] = invalid;
-            var bad = new Rgba<float>(values[0], values[1], values[2], values[3]);
-            Rgba<float> valid = new(0.1f, 0.2f, 0.3f, 0.4f);
+            var bad = new SrgbRgba<float>(values[0], values[1], values[2], values[3]);
+            SrgbRgba<float> valid = new(0.1f, 0.2f, 0.3f, 0.4f);
             var rectangle = new Compose.Definitions.Rectangle { Fill = valid };
             var separator = new Compose.Definitions.Separator { Color = valid };
             Assert.Throws<ArgumentOutOfRangeException>(() => rectangle.Fill = bad);

@@ -268,10 +268,10 @@ public sealed class UiApplicationWindowChrome
 
         protected override void OnRecord(DrawingCanvas2D canvas)
         {
-            canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), IsPressed ? new Rgba<float>(0.65f, 0.15f, 0.15f, 1) : new Rgba<float>(0.3f, 0.3f, 0.35f, 1));
+            canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), IsPressed ? new SrgbRgba<float>(0.65f, 0.15f, 0.15f, 1) : new SrgbRgba<float>(0.3f, 0.3f, 0.35f, 1));
             var stroke = new StrokeStyle2D { Width = 2 };
-            canvas.DrawLine(new(ContentSize.X * 0.3f, ContentSize.Y * 0.3f), new(ContentSize.X * 0.7f, ContentSize.Y * 0.7f), new Rgba<float>(1, 1, 1, 1), stroke);
-            canvas.DrawLine(new(ContentSize.X * 0.7f, ContentSize.Y * 0.3f), new(ContentSize.X * 0.3f, ContentSize.Y * 0.7f), new Rgba<float>(1, 1, 1, 1), stroke);
+            canvas.DrawLine(new(ContentSize.X * 0.3f, ContentSize.Y * 0.3f), new(ContentSize.X * 0.7f, ContentSize.Y * 0.7f), new SrgbRgba<float>(1, 1, 1, 1), stroke);
+            canvas.DrawLine(new(ContentSize.X * 0.7f, ContentSize.Y * 0.3f), new(ContentSize.X * 0.3f, ContentSize.Y * 0.7f), new SrgbRgba<float>(1, 1, 1, 1), stroke);
         }
     }
 
@@ -390,7 +390,7 @@ public sealed class UiApplicationWindowChrome
 
         protected override void OnRecord(DrawingCanvas2D canvas)
         {
-            canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), new Rgba<float>(0.2f, 0.25f, 0.35f, 1));
+            canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), new SrgbRgba<float>(0.2f, 0.25f, 0.35f, 1));
             if (_caption is not null)
             {
                 canvas.Translate(new(4, 2));

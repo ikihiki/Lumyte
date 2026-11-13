@@ -311,7 +311,7 @@ public sealed class UiDrawingScene2D : IDisposable
 
         internal Compose.Definitions.Widget? Configuration { get; set; }
 
-        internal Rgba<float> Fill { get; set; }
+        internal SrgbRgba<float> Fill { get; set; }
 
         internal ulong VisualRevision { get; set; }
 

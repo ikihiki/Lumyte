@@ -4,7 +4,7 @@ using Rational = Lumyte.Mathematics.Geometry.GeometryRational;
 namespace Lumyte.Mathematics.Colors;
 
 /// <content>Single-pixel storage conversion operations.</content>
-public readonly partial record struct Rgba<T>
+internal readonly partial record struct Rgba<T>
     where T : INumber<T>
 {
     /// <summary>Reads the first pixel, normalizing integer codes without changing transfer or alpha association.</summary>

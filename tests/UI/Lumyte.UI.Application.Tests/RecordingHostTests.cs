@@ -18,7 +18,7 @@ public sealed class RecordingHostTests
         var driver = new Driver();
         UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1) });
         builder.UseDriver(() => driver);
-        builder.UseRoot(_ => Rectangle(fill: new Rgba<float>(1, 0, 0, 1)));
+        builder.UseRoot(_ => Rectangle(fill: new SrgbRgba<float>(1, 0, 0, 1)));
         await using UiApplication app = builder.Build();
         Task running = app.RunAsync();
         try

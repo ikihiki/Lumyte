@@ -12,7 +12,7 @@ public sealed class GradientSemanticsTests
     [Fact]
     public void DegenerateGeometryAndColorLinesRemainRepresentable()
     {
-        ColorStop2D[] stops = [new(0.5f, new Rgba<float>(1, 0, 0, 1)), new(0.5f, new Rgba<float>(0, 0, 1, 1))];
+        ColorStop2D[] stops = [new(0.5f, new SrgbRgba<float>(1, 0, 0, 1)), new(0.5f, new SrgbRgba<float>(0, 0, 1, 1))];
         PaintGraph2D[] paints =
         [
             PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.Zero, Vector2.Zero, stops, ExtendMode2D.Pad),
@@ -44,7 +44,7 @@ public sealed class GradientSemanticsTests
     [Fact]
     public void SignedRadialRadiiReachTheShaderUnchanged()
     {
-        ColorStop2D[] stops = [new(0, new Rgba<float>(1, 0, 0, 1)), new(1, new Rgba<float>(0, 0, 1, 1))];
+        ColorStop2D[] stops = [new(0, new SrgbRgba<float>(1, 0, 0, 1)), new(1, new SrgbRgba<float>(0, 0, 1, 1))];
         var paint = PaintGraph2D.RadialGradient(new Vector2(2, 3), -10, new Vector2(5, 7), 20, stops, ExtendMode2D.Reflect);
         RadialPaintNode2D node = Assert.IsType<RadialPaintNode2D>(paint.Root);
         Assert.Equal(-10, node.R0);
@@ -62,9 +62,9 @@ public sealed class GradientSemanticsTests
     {
         ColorStop2D[] stops =
         [
-            new(-0.5f, new Rgba<float>(0.5f, 0.5f, 0.5f, 0.5f)),
-            new(0.75f, new Rgba<float>(1, 0, 0, 0.5f)),
-            new(0.75f, new Rgba<float>(0, 0, 1, 1)),
+            new(-0.5f, new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 0.5f)),
+            new(0.75f, new SrgbRgba<float>(1, 0, 0, 0.5f)),
+            new(0.75f, new SrgbRgba<float>(0, 0, 1, 1)),
         ];
         var paint = PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.One, stops);
         DrawingProgram2D program = Compile(paint);

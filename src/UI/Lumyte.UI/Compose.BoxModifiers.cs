@@ -32,7 +32,7 @@ public static partial class Compose
         public partial class Border
         {
             [ComposeAction]
-            private static void Stroke(Widget target, Rgba<float> color, float width)
+            private static void Stroke(Widget target, SrgbRgba<float> color, float width)
             {
                 UiColorPolicy.Unit(color, nameof(color));
                 UiLayoutMath.ValidateDimension(width, nameof(width));

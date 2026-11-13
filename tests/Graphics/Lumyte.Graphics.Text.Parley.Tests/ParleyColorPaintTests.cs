@@ -73,8 +73,8 @@ public sealed class ParleyColorPaintTests
         TextPaintGeometry2D first = Assert.IsType<TextPaintGeometry2D>(Assert.Single(engine.CreateLayout("\ue00a", options).Drawings));
         TextPaintGeometry2D second = Assert.IsType<TextPaintGeometry2D>(Assert.Single(engine.CreateLayout("\ue00a", options with { ColorPaletteIndex = 1 }).Drawings));
         Assert.Equal(first.Bounds, second.Bounds);
-        Assert.Contains(PaintAssertions.Nodes(first.Paint.Root).OfType<SolidPaintNode2D>(), node => node.Color == new Rgba<float>(1, 0, 0, 1));
-        Assert.Contains(PaintAssertions.Nodes(second.Paint.Root).OfType<SolidPaintNode2D>(), node => node.Color == new Rgba<float>(42 / 255f, 41 / 255f, 74 / 255f, 1));
+        Assert.Contains(PaintAssertions.Nodes(first.Paint.Root).OfType<SolidPaintNode2D>(), node => node.Color == new SrgbRgba<float>(1, 0, 0, 1));
+        Assert.Contains(PaintAssertions.Nodes(second.Paint.Root).OfType<SolidPaintNode2D>(), node => node.Color == new SrgbRgba<float>(42 / 255f, 41 / 255f, 74 / 255f, 1));
     }
 
     /// <summary>Self-referenced color base glyphs keep real contours and multiply foreground alpha exactly once.</summary>
@@ -87,7 +87,7 @@ public sealed class ParleyColorPaintTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "ColorFontTest.ttf");
-        var foreground = PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 0.5f));
+        var foreground = PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 0.5f));
         TextPaintGeometry2D drawing = Assert.IsType<TextPaintGeometry2D>(Assert.Single(engine.CreateLayout(char.ConvertFromUtf32(codePoint), Options(family), foreground).Drawings));
         Assert.True(drawing.Bounds.Width > 0);
         Assert.True(drawing.Bounds.Height > 0);
@@ -107,7 +107,7 @@ public sealed class ParleyColorPaintTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "ColrVectorForegroundTransforms.ttf");
-        var foreground = PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(64, 0), [new(0, new Rgba<float>(1, 0, 0, 0.25f)), new(1, new Rgba<float>(0, 0, 1, 0.5f))]);
+        var foreground = PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(64, 0), [new(0, new SrgbRgba<float>(1, 0, 0, 0.25f)), new(1, new SrgbRgba<float>(0, 0, 1, 0.5f))]);
         TextPaintGeometry2D drawing = Assert.IsType<TextPaintGeometry2D>(Assert.Single(engine.CreateLayout("\ue00a", Options(family), foreground).Drawings));
         Assert.Contains(PaintAssertions.Nodes(drawing.Paint.Root), node => ReferenceEquals(node, foreground.Root));
         var center = new Vector2(drawing.Bounds.X + (drawing.Bounds.Width / 2), drawing.Bounds.Y + (drawing.Bounds.Height / 2));

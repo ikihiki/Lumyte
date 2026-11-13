@@ -151,7 +151,7 @@ public sealed class DrawingProfilingTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(1, 2, 3, 4), new Rgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(1, 2, 3, 4), new SrgbRgba<float>(1, 0, 0, 1));
         using var snapshot = new DrawingSnapshot2D(1, [new(default, canvas.End(), Matrix3x2.Identity, [], 1, 1)]);
         var run = Guid.NewGuid();
         for (int i = 0; i < 2; i++)
@@ -198,11 +198,11 @@ public sealed class DrawingProfilingTests
         canvas.Begin();
         for (int i = 0; i < 1025; i++)
         {
-            canvas.FillRect(new(1, 2, 3, 4), new Rgba<float>(1, 0, 0, 1));
+            canvas.FillRect(new(1, 2, 3, 4), new SrgbRgba<float>(1, 0, 0, 1));
         }
 
         canvas.Scale(Vector2.Zero);
-        canvas.FillRect(new(1, 2, 3, 4), new Rgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(1, 2, 3, 4), new SrgbRgba<float>(1, 0, 0, 1));
         using PreparedDraw2D drawing = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         Event[] events = listener.Events.ToArray();
         Assert.Contains(events, item => item.Id == 3 && Equals(item.Payload[4], 5) && Equals(item.Payload[5], 9) && Equals(item.Payload[6], 3L));
@@ -233,8 +233,8 @@ public sealed class DrawingProfilingTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(5, 5), 3, new Rgba<float>(1, 0, 0, 1));
-        canvas.FillCircle(new(9, 9), 2, new Rgba<float>(0, 1, 0, 1));
+        canvas.FillCircle(new(5, 5), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(9, 9), 2, new SrgbRgba<float>(0, 1, 0, 1));
         DrawList2D list = canvas.End();
         if (failCopy == 0)
         {
@@ -274,7 +274,7 @@ public sealed class DrawingProfilingTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(1, 2, 3, 4), new Rgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(1, 2, 3, 4), new SrgbRgba<float>(1, 0, 0, 1));
         Exception? observed = await Record.ExceptionAsync(async () => await renderer.PrepareAsync(canvas.End(), new() { View = view }));
         Assert.Same(failure, observed);
         Event[] events = listener.Events.ToArray();

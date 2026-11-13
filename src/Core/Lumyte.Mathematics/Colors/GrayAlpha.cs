@@ -4,7 +4,7 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores finite GrayAlpha components without implicit normalization, transfer, or alpha association.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct GrayAlpha<T> : IColorPixel<GrayAlpha<T>>
+internal readonly record struct GrayAlpha<T> : IColorPixel<GrayAlpha<T>>
     where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="GrayAlpha{T}"/> struct with finite raw components.</summary>

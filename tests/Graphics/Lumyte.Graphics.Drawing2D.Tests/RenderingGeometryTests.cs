@@ -164,11 +164,11 @@ public sealed class RenderingGeometryTests
         }
 
         var style = new StrokeStyle2D { Width = 20, Cap = LineCap2D.Square, MiterLimit = 1 };
-        canvas.DrawLine(new Vector2(30, 30), new Vector2(70, 70), new Rgba<float>(1, 1, 1, 1), style);
+        canvas.DrawLine(new Vector2(30, 30), new Vector2(70, 70), new SrgbRgba<float>(1, 1, 1, 1), style);
         var path = new PathBuilder2D();
         path.MoveTo(new Vector2(30, 30));
         path.LineTo(new Vector2(70, 70));
-        canvas.StrokePath(path.Build(), new Rgba<float>(1, 1, 1, 1), style);
+        canvas.StrokePath(path.Build(), new SrgbRgba<float>(1, 1, 1, 1), style);
         DrawList2D draws = canvas.End();
         DrawingTargetInfo2D target = Target() with { PixelScale = 2, PixelOrigin = new Vector2(5, 10) };
         float extent = 10 * MathF.Sqrt(2);
@@ -190,7 +190,7 @@ public sealed class RenderingGeometryTests
     public void DistinctPaintNodesFailBeforeExceedingShaderCapacity()
     {
         var paint = PaintGraph2D.Layers(Enumerable.Range(0, 256)
-            .Select(i => PaintGraph2D.Solid(new Rgba<float>(i / 255f, 0, 0, 1)))
+            .Select(i => PaintGraph2D.Solid(new SrgbRgba<float>(i / 255f, 0, 0, 1)))
             .ToArray());
 
         var canvas = new Canvas2D();

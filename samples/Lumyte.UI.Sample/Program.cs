@@ -66,10 +66,10 @@ if (args is not ["record-only"] and not ["pointer-only"] and not ["keyboard-only
 }
 
 int clicks = 0;
-Definitions.Rectangle accent = Rectangle(width: 72, height: 28, fill: new Rgba<float>(1, 0.3f, 0.1f, 0.7f));
-Definitions.Rectangle header = Rectangle(width: 160, height: 24, fill: new Rgba<float>(0.2f, 0.6f, 1, 1));
-Definitions.Button button = Button(onClick: () => clicks++)[accent, Button.Background()[Rectangle(fill: new Rgba<float>(0.1f, 0.2f, 0.4f, 1))]];
-Definitions.Rectangle overflow = Rectangle(width: 220, height: 200, fill: new Rgba<float>(0.3f, 1, 0.5f, 0.5f));
+Definitions.Rectangle accent = Rectangle(width: 72, height: 28, fill: new SrgbRgba<float>(1, 0.3f, 0.1f, 0.7f));
+Definitions.Rectangle header = Rectangle(width: 160, height: 24, fill: new SrgbRgba<float>(0.2f, 0.6f, 1, 1));
+Definitions.Button button = Button(onClick: () => clicks++)[accent, Button.Background()[Rectangle(fill: new SrgbRgba<float>(0.1f, 0.2f, 0.4f, 1))]];
+Definitions.Rectangle overflow = Rectangle(width: 220, height: 200, fill: new SrgbRgba<float>(0.3f, 1, 0.5f, 0.5f));
 Definitions.Stack column = Stack(spacing: 12)[header, button, overflow];
 Definitions.Panel root = Panel(clipToBounds: true)[column];
 using var surface = new UiSurface(root);

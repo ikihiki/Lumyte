@@ -5,7 +5,7 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores finite numeric RGBA components without implicit units, transfer, or alpha association.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly partial record struct Rgba<T> : IColorPixel<Rgba<T>>
+internal readonly partial record struct Rgba<T> : IColorPixel<Rgba<T>>
     where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="Rgba{T}"/> struct with finite components, including raw codes and HDR values.</summary>

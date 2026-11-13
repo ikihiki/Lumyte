@@ -273,7 +273,7 @@ internal static partial class Program
         bool saved = false;
         _mainUi = new(BuildMain());
         _mainButton = (ButtonElement)_mainUi.RootElement.Children[0].Children[0];
-        Definitions.Widget BuildMain() => Panel()[Stack()[Button(testId: "save", automationName: "保存", onClick: Save)[Rectangle(width: 160, height: 80, fill: new Rgba<float>(0.2f, 0.5f, 0.9f, 1))], new UiSavedIndicator { IsVisible = saved }]];
+        Definitions.Widget BuildMain() => Panel()[Stack()[Button(testId: "save", automationName: "保存", onClick: Save)[Rectangle(width: 160, height: 80, fill: new SrgbRgba<float>(0.2f, 0.5f, 0.9f, 1))], new UiSavedIndicator { IsVisible = saved }]];
         void Save()
         {
             saved = true;
@@ -281,7 +281,7 @@ internal static partial class Program
             Console.WriteLine($"Main clicks: {++_clicks}");
         }
 
-        Definitions.Button hostedButton = Button(onClick: () => Console.WriteLine($"Hosted clicks: {++_clicks}"))[Rectangle(width: 180, height: 120, fill: new Rgba<float>(0.7f, 0.3f, 0.1f, 1))];
+        Definitions.Button hostedButton = Button(onClick: () => Console.WriteLine($"Hosted clicks: {++_clicks}"))[Rectangle(width: 180, height: 120, fill: new SrgbRgba<float>(0.7f, 0.3f, 0.1f, 1))];
         _hostedUi = new(Panel()[hostedButton]);
         _hostedButton = (ButtonElement)_hostedUi.RootElement.Children[0];
         _router.Attach(_root, _mainUi);

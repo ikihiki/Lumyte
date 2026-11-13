@@ -38,7 +38,7 @@ public sealed class GraphPassCapacityTests
             bindings.BindTexture(texture, graph.ImportTexture(texture, TextureState.Sampled, read));
         }
 
-        var ink = PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 1));
+        var ink = PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 1));
         var first = PaintGraph2D.DistanceField(new() { View = a, Source = new(0, 0, 16, 16) }, 4, imageChild ? PaintGraph2D.ImagePattern(new() { View = x, Source = new(0, 0, 16, 16) }) : ink);
         var second = PaintGraph2D.DistanceField(new() { View = imageChild ? a : b, Source = new(0, 0, 16, 16) }, 4, imageChild ? PaintGraph2D.ImagePattern(new() { View = y, Source = new(0, 0, 16, 16) }) : ink);
         var canvas = new RenderGraphCanvas2D();
@@ -85,8 +85,8 @@ public sealed class GraphPassCapacityTests
         RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillCircle(new Vector2(4, 8), 3, new Rgba<float>(1, 0, 0, 1));
-        canvas.FillCircle(new Vector2(12, 8), 3, new Rgba<float>(0, 1, 0, 1));
+        canvas.FillCircle(new Vector2(4, 8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new Vector2(12, 8), 3, new SrgbRgba<float>(0, 1, 0, 1));
         using var renderer = new RenderGraphRenderer2D(
             DrawingCommandRenderers2D.CreateDefault(),
             canvas.End(),

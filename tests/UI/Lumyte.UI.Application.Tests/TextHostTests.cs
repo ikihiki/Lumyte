@@ -130,7 +130,7 @@ public sealed class TextHostTests
     [Fact]
     public async Task EditorValidationUsesServiceRequirementsInsteadOfEveryTreePublicationAsync()
     {
-        var color = Signal.Create(new Rgba<float>(1, 0, 0, 1));
+        var color = Signal.Create(new SrgbRgba<float>(1, 0, 0, 1));
         var readOnly = Signal.Create(true);
         var provider = new LayoutProvider();
         using var surface = new UiSurface(Lumyte.UI.Compose.Panel()[

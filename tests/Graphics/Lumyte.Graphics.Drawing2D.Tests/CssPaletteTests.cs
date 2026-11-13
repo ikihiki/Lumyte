@@ -12,18 +12,18 @@ public sealed class CssPaletteTests
     {
         for (int i = 0; i <= 255; i++)
         {
-            var codes = new Srgb8((byte)i, (byte)(255 - i), (byte)(i ^ 127), (byte)i);
-            var expected = new Rgba<float>((float)(i / 255d), (float)((255 - i) / 255d), (float)((i ^ 127) / 255d), (float)(i / 255d));
-            Rgba<float> automatic = codes;
+            var codes = new SrgbRgba8((byte)i, (byte)(255 - i), (byte)(i ^ 127), (byte)i);
+            var expected = new SrgbRgba<float>((float)(i / 255d), (float)((255 - i) / 255d), (float)((i ^ 127) / 255d), (float)(i / 255d));
+            SrgbRgba<float> automatic = codes;
             Assert.Equal(expected, automatic);
             Assert.Equal(codes.ToCodes().NormalizeUnorm<float>(255), automatic);
         }
 
-        Assert.Equal(new Rgba<float>(1, 0, 0, 1), (Rgba<float>)CssColors.Red);
-        Assert.Equal(default, (Rgba<float>)CssColors.Transparent);
-        Assert.Equal(128 / 255f, ((Rgba<float>)CssColors.Green).G);
-        Assert.Equal(1, ((Rgba<float>)CssColors.Lime).G);
-        Assert.Equal(new Rgba<float>(100 / 255f, 149 / 255f, 237 / 255f, 128 / 255f), (Rgba<float>)CssColors.CornflowerBlue.WithAlpha(128));
+        Assert.Equal(new SrgbRgba<float>(1, 0, 0, 1), (SrgbRgba<float>)CssColors.Red);
+        Assert.Equal(default, (SrgbRgba<float>)CssColors.Transparent);
+        Assert.Equal(128 / 255f, ((SrgbRgba<float>)CssColors.Green).G);
+        Assert.Equal(1, ((SrgbRgba<float>)CssColors.Lime).G);
+        Assert.Equal(new SrgbRgba<float>(100 / 255f, 149 / 255f, 237 / 255f, 128 / 255f), (SrgbRgba<float>)CssColors.CornflowerBlue.WithAlpha(128));
     }
 
     /// <summary>The normalized palette composes directly with an ordinary canvas recording.</summary>
@@ -36,6 +36,6 @@ public sealed class CssPaletteTests
         DrawList2D list = canvas.End();
         FillRectCommand2D command = Assert.IsType<FillRectCommand2D>(Assert.Single(list.Commands));
         SolidPaintNode2D solid = Assert.IsType<SolidPaintNode2D>(command.Paint.Root);
-        Assert.Equal(new Rgba<float>(1, 0, 0, 1), solid.Color);
+        Assert.Equal(new SrgbRgba<float>(1, 0, 0, 1), solid.Color);
     }
 }

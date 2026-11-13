@@ -129,7 +129,7 @@ public sealed unsafe class ParleyTextEngine2D : IDisposable
         };
         var source = new Utf8Text2D(text);
         ValidateOptions(options);
-        paint ??= PaintGraph2D.Solid(new Rgba<float>(0, 0, 0, 1));
+        paint ??= PaintGraph2D.Solid(new SrgbRgba<float>(0, 0, 0, 1));
 
         lock (_sync)
         {

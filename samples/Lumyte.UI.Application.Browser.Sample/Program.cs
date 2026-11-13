@@ -15,7 +15,7 @@ builder.UseRoot(context =>
 {
     BrowserProbe.Context = context;
     BrowserProbe.Width = Animate(BrowserProbe.Target, Duration.FromSeconds(1), UiAnimationInterpolators.Nullable(AnimationInterpolators.Float), AnimationEasing.Linear, () => BrowserProbe.Completed++);
-    return Button(width: BrowserProbe.Width, height: 48, testId: "quit", onClick: context.RequestStop)[Rectangle(width: BrowserProbe.Width, height: 48, fill: new Rgba<float>(0.5f, 0.5f, 0.5f, 1))];
+    return Button(width: BrowserProbe.Width, height: 48, testId: "quit", onClick: context.RequestStop)[Rectangle(width: BrowserProbe.Width, height: 48, fill: new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1))];
 });
 await using UiApplication app = builder.Build();
 BrowserProbe.Application = app;

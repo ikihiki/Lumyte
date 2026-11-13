@@ -34,7 +34,7 @@ public sealed class UiDrawingTests
 
     private static async Task CheckFramesAsync(IGraphicDevice device)
     {
-        using var hosted = new UiSurface(Rectangle(fill: new Rgba<float>(0, 1, 0, 0.5f)));
+        using var hosted = new UiSurface(Rectangle(fill: new SrgbRgba<float>(0, 1, 0, 0.5f)));
         hosted.SetViewport(new(4, 4));
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
@@ -60,8 +60,8 @@ public sealed class UiDrawingTests
 
     private static Definitions.Panel Build(int frame) => Panel(isVisible: frame != 3)[
         Stack(width: 12, height: 10, spacing: frame == 2 ? 2 : 0, clipToBounds: frame != 2)[
-            Rectangle(width: 8, height: 8, fill: new Rgba<float>(1, 0, 0, 1)),
-            Rectangle(width: 8, height: 8, fill: new Rgba<float>(0, 0, 1, 0.5f))]];
+            Rectangle(width: 8, height: 8, fill: new SrgbRgba<float>(1, 0, 0, 1)),
+            Rectangle(width: 8, height: 8, fill: new SrgbRgba<float>(0, 0, 1, 0.5f))]];
 
     private static async Task<Vector4[]> RenderFrameAsync(IGraphicDevice device, Renderer2D renderer, IGraphicsTexture target, IGraphicsTextureView view, DrawList2D list, bool firstFrame)
     {

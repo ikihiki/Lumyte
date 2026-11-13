@@ -171,15 +171,15 @@ public sealed class CssColorsTests
     [Fact]
     public void CompletePaletteMatchesIndependentStandardFixture()
     {
-        Dictionary<string, Rgba<byte>> expected = CreateExpected();
+        Dictionary<string, SrgbRgba<byte>> expected = CreateExpected();
         Assert.Equal(149, expected.Count);
         Assert.Equal(149, CssColors.All.Count);
         Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), CssColors.All.Keys.Order(StringComparer.Ordinal));
-        foreach ((string keyword, Rgba<byte> value) in expected)
+        foreach ((string keyword, SrgbRgba<byte> value) in expected)
         {
             Assert.Equal(keyword.ToLowerInvariant(), keyword);
             Assert.Equal(value, CssColors.All[keyword].ToCodes());
-            Assert.True(CssColors.TryGet(keyword, out Srgb8 actual), keyword);
+            Assert.True(CssColors.TryGet(keyword, out SrgbRgba8 actual), keyword);
             Assert.Equal(value, actual.ToCodes());
             Assert.Equal(keyword == "transparent" ? (byte)0 : (byte)255, actual.A);
         }
@@ -193,20 +193,20 @@ public sealed class CssColorsTests
         Assert.True(type.IsAbstract && type.IsSealed);
         const BindingFlags Flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
         FieldInfo[] fields = type.GetFields(Flags);
-        Dictionary<string, Rgba<byte>> expected = CreateExpected();
+        Dictionary<string, SrgbRgba<byte>> expected = CreateExpected();
         Assert.Equal(149, fields.Length);
         Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), fields.Select(field => field.Name.ToLowerInvariant()).Order(StringComparer.Ordinal));
         foreach (FieldInfo field in fields)
         {
             Assert.True(field.IsStatic && field.IsInitOnly && !field.IsLiteral, field.Name);
-            Assert.Equal(typeof(Srgb8), field.FieldType);
+            Assert.Equal(typeof(SrgbRgba8), field.FieldType);
             Assert.True(char.IsUpper(field.Name[0]), field.Name);
-            Assert.Equal(expected[field.Name.ToLowerInvariant()], Assert.IsType<Srgb8>(field.GetValue(null)).ToCodes());
+            Assert.Equal(expected[field.Name.ToLowerInvariant()], Assert.IsType<SrgbRgba8>(field.GetValue(null)).ToCodes());
         }
 
         PropertyInfo property = Assert.Single(type.GetProperties(Flags));
         Assert.Equal("All", property.Name);
-        Assert.Equal(typeof(IReadOnlyDictionary<string, Srgb8>), property.PropertyType);
+        Assert.Equal(typeof(IReadOnlyDictionary<string, SrgbRgba8>), property.PropertyType);
         Assert.Null(property.SetMethod);
         Assert.Equal(new[] { "TryGet", "get_All" }, type.GetMethods(Flags).Select(method => method.Name).Order(StringComparer.Ordinal));
         Assert.Empty(type.GetConstructors(Flags));
@@ -226,12 +226,12 @@ public sealed class CssColorsTests
 
         Assert.Equal(CssColors.Aqua, CssColors.Cyan);
         Assert.Equal(CssColors.Fuchsia, CssColors.Magenta);
-        Assert.Equal(new Rgba<byte>(0, 128, 0, 255), CssColors.Green.ToCodes());
-        Assert.Equal(new Rgba<byte>(0, 255, 0, 255), CssColors.Lime.ToCodes());
+        Assert.Equal(new SrgbRgba<byte>(0, 128, 0, 255), CssColors.Green.ToCodes());
+        Assert.Equal(new SrgbRgba<byte>(0, 255, 0, 255), CssColors.Lime.ToCodes());
         Assert.NotEqual(CssColors.Green, CssColors.Lime);
-        Assert.Equal(new Rgba<byte>(102, 51, 153, 255), CssColors.RebeccaPurple.ToCodes());
-        Assert.Equal(new Rgba<byte>(100, 149, 237, 255), CssColors.CornflowerBlue.ToCodes());
-        Assert.Equal(new Rgba<byte>(0, 0, 0, 0), CssColors.Transparent.ToCodes());
+        Assert.Equal(new SrgbRgba<byte>(102, 51, 153, 255), CssColors.RebeccaPurple.ToCodes());
+        Assert.Equal(new SrgbRgba<byte>(100, 149, 237, 255), CssColors.CornflowerBlue.ToCodes());
+        Assert.Equal(new SrgbRgba<byte>(0, 0, 0, 0), CssColors.Transparent.ToCodes());
         Assert.NotEqual(CssColors.White.WithAlpha(0), CssColors.Transparent);
     }
 
@@ -243,11 +243,11 @@ public sealed class CssColorsTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
-            foreach ((string name, Rgba<byte> value) in CreateExpected())
+            foreach ((string name, SrgbRgba<byte> value) in CreateExpected())
             {
                 string upper = name.ToUpperInvariant();
                 string mixed = string.Concat(name.Select((letter, index) => index % 2 == 0 ? char.ToUpperInvariant(letter) : letter));
-                Assert.True(CssColors.TryGet(upper, out Srgb8 actual));
+                Assert.True(CssColors.TryGet(upper, out SrgbRgba8 actual));
                 Assert.Equal(value, actual.ToCodes());
                 Assert.True(CssColors.TryGet(mixed, out actual));
                 Assert.Equal(value, actual.ToCodes());
@@ -268,7 +268,7 @@ public sealed class CssColorsTests
         string?[] invalid = [null, string.Empty, " ", " red", "red ", "\tred\n", "red\0", "unknown", "#ff0000", "ff0000", "rgb(255, 0, 0)", "rgba(0,0,0,0)", "hsl(0 100% 50%)", "currentColor", "Canvas", "CanvasText", "ButtonFace", "AccentColor", "inherit", "initial", "revert", "none", "lİme"];
         foreach (string? name in invalid)
         {
-            Srgb8 result = CssColors.Red;
+            SrgbRgba8 result = CssColors.Red;
             Assert.False(CssColors.TryGet(name, out result));
             Assert.Equal(default, result);
             if (name is not null)
@@ -282,8 +282,8 @@ public sealed class CssColorsTests
     [Fact]
     public void CodesRequireExplicitNormalizationForEveryNumericStorage()
     {
-        Assert.Equal(new Rgba<float>(100, 149, 237, 255), CssColors.CornflowerBlue.ToCodes().ConvertChecked<float>());
-        Assert.Equal(new Rgba<float>(1, 0, 0, 1), CssColors.Red.ToCodes().NormalizeUnorm<float>(255));
+        Assert.Equal(new SrgbRgba<float>(100, 149, 237, 255), CssColors.CornflowerBlue.ToCodes().ConvertChecked<float>());
+        Assert.Equal(new SrgbRgba<float>(1, 0, 0, 1), CssColors.Red.ToCodes().NormalizeUnorm<float>(255));
         CheckNormalization<byte>();
         CheckNormalization<short>();
         CheckNormalization<ushort>();
@@ -307,11 +307,11 @@ public sealed class CssColorsTests
     [Fact]
     public void AllIsFrozenAndCannotBeMutated()
     {
-        IReadOnlyDictionary<string, Srgb8> all = CssColors.All;
+        IReadOnlyDictionary<string, SrgbRgba8> all = CssColors.All;
         Assert.Same(all, CssColors.All);
-        FrozenDictionary<string, Srgb8> frozen = Assert.IsAssignableFrom<FrozenDictionary<string, Srgb8>>(all);
+        FrozenDictionary<string, SrgbRgba8> frozen = Assert.IsAssignableFrom<FrozenDictionary<string, SrgbRgba8>>(all);
         Assert.Equal(StringComparer.OrdinalIgnoreCase, frozen.Comparer);
-        if (all is IDictionary<string, Srgb8> generic)
+        if (all is IDictionary<string, SrgbRgba8> generic)
         {
             Assert.True(generic.IsReadOnly);
             Assert.Throws<NotSupportedException>(() => generic["red"] = default);
@@ -323,13 +323,13 @@ public sealed class CssColorsTests
         if (all is IDictionary dictionary)
         {
             Assert.True(dictionary.IsReadOnly);
-            Assert.Throws<NotSupportedException>(() => dictionary["red"] = default(Srgb8));
+            Assert.Throws<NotSupportedException>(() => dictionary["red"] = default(SrgbRgba8));
             Assert.Throws<NotSupportedException>(() => dictionary.Clear());
         }
 
-        Srgb8 copy = all["red"].WithAlpha(0);
+        SrgbRgba8 copy = all["red"].WithAlpha(0);
         Assert.Equal((byte)0, copy.A);
-        Assert.Equal(new Rgba<byte>(255, 0, 0, 255), all["red"].ToCodes());
+        Assert.Equal(new SrgbRgba<byte>(255, 0, 0, 255), all["red"].ToCodes());
         Assert.Equal(149, all.Count);
         Assert.False(all.ContainsKey("notacolor"));
     }
@@ -338,49 +338,49 @@ public sealed class CssColorsTests
     [Fact]
     public void ConcurrentLookupMatchesIndependentFixture()
     {
-        KeyValuePair<string, Rgba<byte>>[] expected = CreateExpected().ToArray();
+        KeyValuePair<string, SrgbRgba<byte>>[] expected = CreateExpected().ToArray();
         Parallel.For(0, 32, iteration =>
         {
-            foreach ((string name, Rgba<byte> value) in expected)
+            foreach ((string name, SrgbRgba<byte> value) in expected)
             {
                 string key = iteration % 2 == 0 ? name : name.ToUpperInvariant();
-                Assert.True(CssColors.TryGet(key, out Srgb8 actual));
+                Assert.True(CssColors.TryGet(key, out SrgbRgba8 actual));
                 Assert.Equal(value, actual.ToCodes());
                 Assert.Equal(value, CssColors.All[key].ToCodes());
             }
 
-            Assert.False(CssColors.TryGet("currentColor", out Srgb8 missing));
+            Assert.False(CssColors.TryGet("currentColor", out SrgbRgba8 missing));
             Assert.Equal(default, missing);
         });
     }
 
-    private static Dictionary<string, Rgba<byte>> CreateExpected()
+    private static Dictionary<string, SrgbRgba<byte>> CreateExpected()
     {
-        var expected = new Dictionary<string, Rgba<byte>>(StringComparer.Ordinal);
+        var expected = new Dictionary<string, SrgbRgba<byte>>(StringComparer.Ordinal);
         foreach (string line in NamedColorCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             string[] pair = line.Split(',');
             Assert.Equal(2, pair.Length);
             byte[] rgb = Convert.FromHexString(pair[1]);
             Assert.Equal(3, rgb.Length);
-            expected.Add(pair[0], new Rgba<byte>(rgb[0], rgb[1], rgb[2], 255));
+            expected.Add(pair[0], new SrgbRgba<byte>(rgb[0], rgb[1], rgb[2], 255));
         }
 
         Assert.Equal(148, expected.Count);
-        expected.Add("transparent", new Rgba<byte>(0, 0, 0, 0));
+        expected.Add("transparent", new SrgbRgba<byte>(0, 0, 0, 0));
         return expected;
     }
 
     private static void CheckNormalization<T>()
         where T : INumber<T>
     {
-        Rgba<T> raw = CssColors.CornflowerBlue.ToCodes().ConvertChecked<T>();
+        SrgbRgba<T> raw = CssColors.CornflowerBlue.ToCodes().ConvertChecked<T>();
         Assert.Equal(T.CreateChecked(255), raw.A);
-        Assert.Equal(new Rgba<T>(T.CreateChecked(100), T.CreateChecked(149), T.CreateChecked(237), T.CreateChecked(255)), raw);
-        Assert.Equal(new Rgba<double>(100d / 255, 149d / 255, 237d / 255, 1), raw.NormalizeUnorm<double>(T.CreateChecked(255)));
-        Assert.Equal(new Rgba<decimal>(100m / 255, 149m / 255, 237m / 255, 1), raw.NormalizeUnorm<decimal>(T.CreateChecked(255)));
+        Assert.Equal(new SrgbRgba<T>(T.CreateChecked(100), T.CreateChecked(149), T.CreateChecked(237), T.CreateChecked(255)), raw);
+        Assert.Equal(new SrgbRgba<double>(100d / 255, 149d / 255, 237d / 255, 1), raw.NormalizeUnorm<double>(T.CreateChecked(255)));
+        Assert.Equal(new SrgbRgba<decimal>(100m / 255, 149m / 255, 237m / 255, 1), raw.NormalizeUnorm<decimal>(T.CreateChecked(255)));
         Assert.Throws<ArithmeticException>(() => raw.NormalizeUnorm<int>(T.CreateChecked(255)));
         Assert.Throws<ArithmeticException>(() => raw.NormalizeUnorm<BigInteger>(T.CreateChecked(255)));
-        Assert.Equal(new Rgba<BigInteger>(1, 0, 0, 1), CssColors.Red.ToCodes().ConvertChecked<T>().NormalizeUnorm<BigInteger>(T.CreateChecked(255)));
+        Assert.Equal(new SrgbRgba<BigInteger>(1, 0, 0, 1), CssColors.Red.ToCodes().ConvertChecked<T>().NormalizeUnorm<BigInteger>(T.CreateChecked(255)));
     }
 }

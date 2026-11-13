@@ -58,7 +58,7 @@ public sealed partial class Drawing2DTests
                 canvas.ClipPath(RectanglePath(split), rule);
                 canvas.Scale(new Vector2(1e24f));
                 canvas.ClipRect(new(0, 0, 8, 8));
-                canvas.FillCircle(new(1, 1), 4, new Rgba<float>(1, 0, 0, 1));
+                canvas.FillCircle(new(1, 1), 4, new SrgbRgba<float>(1, 0, 0, 1));
             }
 
             Vector4[] winding = await RenderAsync(device, 8, 8, canvas => Draw(canvas, true));
@@ -86,8 +86,8 @@ public sealed partial class Drawing2DTests
                         canvas.ClipPath(path, rule);
                         canvas.Translate(new(0.125f, -0.25f));
                         canvas.ClipPath(path, rule);
-                        canvas.FillCircle(new Vector2(8, 7), 12, new Rgba<float>(1, 0.25f, 0.5f, 0.5f));
-                        canvas.FillPath(path, new Rgba<float>(0, 0.5f, 1, 0.5f), rule);
+                        canvas.FillCircle(new Vector2(8, 7), 12, new SrgbRgba<float>(1, 0.25f, 0.5f, 0.5f));
+                        canvas.FillPath(path, new SrgbRgba<float>(0, 0.5f, 1, 0.5f), rule);
                         canvas.Restore();
                     }
                 }

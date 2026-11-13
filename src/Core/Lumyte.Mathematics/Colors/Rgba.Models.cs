@@ -3,7 +3,7 @@ using Rational = Lumyte.Mathematics.Geometry.GeometryRational;
 
 namespace Lumyte.Mathematics.Colors;
 
-public readonly partial record struct Rgba<T>
+internal readonly partial record struct Rgba<T>
     where T : INumber<T>
 {
     private static Rational ModelZero => new(BigInteger.Zero, BigInteger.One);

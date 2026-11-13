@@ -85,7 +85,7 @@ public sealed class RetainedLayerTests
     {
         var visible = Signal.Create(true);
         await using UiApplication app = UiApplication.CreateBuilder().UseHeadless().UseRoot(_ => Panel()).Build();
-        using var surface = new UiSurface(Panel(width: 20, height: 10)[Rectangle(fill: new Rgba<float>(1, 0, 0, 1), isPresent: visible)]);
+        using var surface = new UiSurface(Panel(width: 20, height: 10)[Rectangle(fill: new SrgbRgba<float>(1, 0, 0, 1), isPresent: visible)]);
         surface.SetViewport(new(20, 10));
         surface.UpdateLayout();
         var coordinator = new UiVisualCoordinator(app, surface, static () => null);
@@ -129,7 +129,7 @@ public sealed class RetainedLayerTests
         protected override void OnRecord(DrawingCanvas2D canvas)
         {
             Widget.Record();
-            canvas.FillRect(new(0, 0, Size.X, Size.Y), Widget.Green ? new Rgba<float>(0, 1, 0, 1) : new Rgba<float>(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, Size.X, Size.Y), Widget.Green ? new SrgbRgba<float>(0, 1, 0, 1) : new SrgbRgba<float>(1, 0, 0, 1));
         }
     }
 
@@ -145,7 +145,7 @@ public sealed class RetainedLayerTests
         protected override void OnRecord(DrawingCanvas2D canvas)
         {
             Widget.Record();
-            canvas.FillRect(new(0, 0, Size.X, Size.Y), new Rgba<float>(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, Size.X, Size.Y), new SrgbRgba<float>(1, 0, 0, 1));
         }
     }
 }

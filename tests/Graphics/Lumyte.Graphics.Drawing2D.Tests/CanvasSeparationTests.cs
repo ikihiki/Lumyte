@@ -47,7 +47,7 @@ public sealed class CanvasSeparationTests
                 throw new InvalidOperationException("The user callback failed.");
             },
         });
-        canvas.FillRect(new(2, 3, 4, 5), new Rgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(2, 3, 4, 5), new SrgbRgba<float>(1, 0, 0, 1));
         canvas.EndLayer();
         RenderGraphDrawList2D list = canvas.End();
         Assert.Equal(0, calls);

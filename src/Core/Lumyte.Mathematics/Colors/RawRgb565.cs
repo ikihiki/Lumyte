@@ -4,11 +4,11 @@ using System.Numerics;
 namespace Lumyte.Mathematics.Colors;
 
 /// <summary>A raw packed UNORM word with R:15..11, G:10..5, B:4..0.</summary>
-public readonly record struct Rgb565 : IPackedColorPixel<Rgb565>
+public readonly record struct RawRgb565 : IPackedColorPixel<RawRgb565>
 {
-    /// <summary>Initializes a new instance of the <see cref="Rgb565"/> struct from its exact packed bits.</summary>
+    /// <summary>Initializes a new instance of the <see cref="RawRgb565"/> struct from its exact packed bits.</summary>
     /// <param name="packedValue">The raw integer word.</param>
-    public Rgb565(ushort packedValue)
+    public RawRgb565(ushort packedValue)
     {
         PackedValue = packedValue;
     }
@@ -23,7 +23,7 @@ public readonly record struct Rgb565 : IPackedColorPixel<Rgb565>
     /// <param name="source">Input storage; unused bytes are ignored.</param>
     /// <param name="byteOrder">The packed word byte order.</param>
     /// <returns>The packed pixel.</returns>
-    public static Rgb565 Read(ReadOnlySpan<byte> source, ColorByteOrder byteOrder)
+    public static RawRgb565 Read(ReadOnlySpan<byte> source, ColorByteOrder byteOrder)
     {
         ValidateByteOrder(byteOrder);
         if (source.Length < ByteSize)
@@ -60,11 +60,37 @@ public readonly record struct Rgb565 : IPackedColorPixel<Rgb565>
         return ByteSize;
     }
 
+    /// <summary>Quantizes unit sRGB components without transfer or alpha-association conversion.</summary>
+    /// <typeparam name="T">The finite numeric component type.</typeparam>
+    /// <param name="color">Unit sRGB components; alpha must be one for an alpha-less format.</param>
+    /// <returns>The exact nearest-even UNORM packed word.</returns>
+    public static RawRgb565 FromSrgb<T>(SrgbRgba<T> color)
+        where T : INumber<T> => FromNormalized(color.Components);
+
+    /// <summary>Quantizes unit linear components without transfer or alpha-association conversion.</summary>
+    /// <typeparam name="T">The finite numeric component type.</typeparam>
+    /// <param name="color">Unit linear components; alpha must be one for an alpha-less format.</param>
+    /// <returns>The exact nearest-even UNORM packed word.</returns>
+    public static RawRgb565 FromLinear<T>(LinearRgba<T> color)
+        where T : INumber<T> => FromNormalized(color.Components);
+
+    /// <summary>Interprets the bits as normalized sRGB components without transfer or alpha-association conversion.</summary>
+    /// <typeparam name="T">The result component type; fractional results must be representable.</typeparam>
+    /// <returns>Normalized sRGB components, with alpha one for an alpha-less format.</returns>
+    public SrgbRgba<T> InterpretSrgb<T>()
+        where T : INumber<T> => new(ToNormalized<T>());
+
+    /// <summary>Interprets the bits as normalized linear components without transfer or alpha-association conversion.</summary>
+    /// <typeparam name="T">The result component type; fractional results must be representable.</typeparam>
+    /// <returns>Normalized linear components, with alpha one for an alpha-less format.</returns>
+    public LinearRgba<T> InterpretLinear<T>()
+        where T : INumber<T> => new(ToNormalized<T>());
+
     /// <summary>Quantizes normalized RGBA using exact nearest-even UNORM conversion.</summary>
     /// <typeparam name="T">The finite numeric component type.</typeparam>
     /// <param name="color">Normalized RGBA; alpha must be one when the format has no alpha.</param>
     /// <returns>The quantized packed pixel.</returns>
-    public static Rgb565 FromNormalized<T>(Rgba<T> color)
+    private static RawRgb565 FromNormalized<T>(Rgba<T> color)
         where T : INumber<T>
     {
         Span<byte> bytes = stackalloc byte[2];
@@ -75,7 +101,7 @@ public readonly record struct Rgb565 : IPackedColorPixel<Rgb565>
     /// <summary>Normalizes each packed channel without changing transfer or alpha association.</summary>
     /// <typeparam name="T">The result component type; fractional results must be representable.</typeparam>
     /// <returns>Normalized RGBA, with alpha one for an alpha-less format.</returns>
-    public Rgba<T> ToNormalized<T>()
+    private Rgba<T> ToNormalized<T>()
         where T : INumber<T>
     {
         Span<byte> bytes = stackalloc byte[2];

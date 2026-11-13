@@ -4,7 +4,7 @@ namespace Lumyte.UI.Application;
 
 internal static class UiColorPolicy
 {
-    internal static Rgba<float> Unit(Rgba<float> color, string parameterName)
+    internal static SrgbRgba<float> Unit(SrgbRgba<float> color, string parameterName)
     {
         Validate(color.R, color.G, color.B, color.A, parameterName);
         return color;

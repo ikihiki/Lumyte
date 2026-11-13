@@ -10,8 +10,10 @@ public sealed class TypedColorApiReviewTests
 {
     private static readonly Type[] _layouts =
     [
-        typeof(Gray<>), typeof(GrayAlpha<>), typeof(Rgb<>), typeof(Rgba<>),
-        typeof(Bgr<>), typeof(Bgra<>), typeof(Argb<>), typeof(Abgr<>),
+        typeof(SrgbGray<>), typeof(SrgbGrayAlpha<>), typeof(SrgbRgb<>), typeof(SrgbRgba<>),
+        typeof(SrgbBgr<>), typeof(SrgbBgra<>), typeof(SrgbArgb<>), typeof(SrgbAbgr<>),
+        typeof(LinearGray<>), typeof(LinearGrayAlpha<>), typeof(LinearRgb<>), typeof(LinearRgba<>),
+        typeof(LinearBgr<>), typeof(LinearBgra<>), typeof(LinearArgb<>), typeof(LinearAbgr<>),
     ];
 
     /// <summary>Checks every component constructor position, including alpha, for nonfinite values.</summary>
@@ -48,8 +50,8 @@ public sealed class TypedColorApiReviewTests
     [Fact]
     public void EntirePublicSurfaceHasNoHelperOrOldLayoutEnumLeak()
     {
-        Type[] exported = typeof(Rgba<>).Assembly.GetExportedTypes()
-            .Where(type => type.Namespace == typeof(Rgba<>).Namespace).ToArray();
+        Type[] exported = typeof(SrgbRgba<>).Assembly.GetExportedTypes()
+            .Where(type => type.Namespace == typeof(SrgbRgba<>).Namespace).ToArray();
         Assert.DoesNotContain(exported, type => type.Name == "ColorPixelFormat");
         foreach (Type type in exported)
         {
@@ -100,7 +102,7 @@ public sealed class TypedColorApiReviewTests
             }
         }
 
-        foreach (Type layout in _layouts.Concat(new[] { typeof(Hsla<>), typeof(Hsva<>) }))
+        foreach (Type layout in _layouts.Concat(new[] { typeof(SrgbHsla<>), typeof(SrgbHsva<>) }))
         {
             Type argument = Assert.Single(layout.GetGenericArguments());
             Assert.Equal(GenericParameterAttributes.None, argument.GenericParameterAttributes);
@@ -113,18 +115,18 @@ public sealed class TypedColorApiReviewTests
     [Fact]
     public void RawAlphaIsExplicitAndNormalizationSuppliesOnlyMissingAlpha()
     {
-        var expected = new Rgba<double>(0.2, 0.4, 0.6, 1);
-        Assert.Equal(expected, new Rgb<byte>(51, 102, 153).NormalizeUnorm<double>(255));
-        Assert.Equal(expected, new Bgr<byte>(153, 102, 51).NormalizeUnorm<double>(255));
-        Assert.Equal(expected, new Rgba<byte>(51, 102, 153, 255).NormalizeUnorm<double>(255));
-        Assert.Equal(expected, new Bgra<byte>(153, 102, 51, 255).NormalizeUnorm<double>(255));
-        Assert.Equal(expected, new Argb<byte>(255, 51, 102, 153).NormalizeUnorm<double>(255));
-        Assert.Equal(expected, new Abgr<byte>(255, 153, 102, 51).NormalizeUnorm<double>(255));
-        Assert.Equal(new Rgba<double>(0.2, 0.2, 0.2, 1), new Gray<byte>(51).NormalizeUnorm<double>(255));
-        Assert.Equal(new Rgba<double>(0.2, 0.2, 0.2, 0.4), new GrayAlpha<byte>(51, 102).NormalizeUnorm<double>(255));
-        Assert.Equal((byte)255, new Bgr<byte>(3, 2, 1).ToRgba(255).A);
-        Assert.Equal((byte)255, new Rgb<byte>(1, 2, 3).ToRgba(255).A);
-        foreach (Type layout in new[] { typeof(Gray<byte>), typeof(Rgb<byte>), typeof(Bgr<byte>) })
+        var expected = new SrgbRgba<double>(0.2, 0.4, 0.6, 1);
+        Assert.Equal(expected, new SrgbRgb<byte>(51, 102, 153).NormalizeUnorm<double>(255));
+        Assert.Equal(expected, new SrgbBgr<byte>(153, 102, 51).NormalizeUnorm<double>(255));
+        Assert.Equal(expected, new SrgbRgba<byte>(51, 102, 153, 255).NormalizeUnorm<double>(255));
+        Assert.Equal(expected, new SrgbBgra<byte>(153, 102, 51, 255).NormalizeUnorm<double>(255));
+        Assert.Equal(expected, new SrgbArgb<byte>(255, 51, 102, 153).NormalizeUnorm<double>(255));
+        Assert.Equal(expected, new SrgbAbgr<byte>(255, 153, 102, 51).NormalizeUnorm<double>(255));
+        Assert.Equal(new SrgbRgba<double>(0.2, 0.2, 0.2, 1), new SrgbGray<byte>(51).NormalizeUnorm<double>(255));
+        Assert.Equal(new SrgbRgba<double>(0.2, 0.2, 0.2, 0.4), new SrgbGrayAlpha<byte>(51, 102).NormalizeUnorm<double>(255));
+        Assert.Equal((byte)255, new SrgbBgr<byte>(3, 2, 1).ToRgba(255).A);
+        Assert.Equal((byte)255, new SrgbRgb<byte>(1, 2, 3).ToRgba(255).A);
+        foreach (Type layout in new[] { typeof(SrgbGray<byte>), typeof(SrgbRgb<byte>), typeof(SrgbBgr<byte>) })
         {
             Assert.Null(layout.GetMethod("ToRgba", Type.EmptyTypes));
         }
@@ -134,35 +136,35 @@ public sealed class TypedColorApiReviewTests
     [Fact]
     public void TypedModelsRoundOnlyFinalComponentsAndDoNotPromiseLosslessRoundTrips()
     {
-        var nearWhite = new Rgba<float>(1, 1, float.BitDecrement(1), 0.5f);
-        Hsla<float> rounded = nearWhite.ToHslSrgbDegrees<float>();
-        Assert.Equal(new Hsla<float>(60, 1, 1, 0.5f), rounded);
-        Assert.Equal(new Rgba<float>(1, 1, 1, 0.5f), rounded.ToRgba<float>());
+        var nearWhite = new SrgbRgba<float>(1, 1, float.BitDecrement(1), 0.5f);
+        SrgbHsla<float> rounded = nearWhite.ToHslSrgbDegrees<float>();
+        Assert.Equal(new SrgbHsla<float>(60, 1, 1, 0.5f), rounded);
+        Assert.Equal(new SrgbRgba<float>(1, 1, 1, 0.5f), rounded.ToRgba<float>());
         Assert.NotEqual(nearWhite, rounded.ToRgba<float>());
-        var exact = new Rgba<decimal>(1, 0.5m, 0, 0.25m);
-        Assert.Equal(new Hsla<decimal>(30, 1, 0.5m, 0.25m), exact.ToHslSrgbDegrees<decimal>());
-        Assert.Equal(new Hsva<decimal>(30, 1, 1, 0.25m), exact.ToHsvSrgbDegrees<decimal>());
+        var exact = new SrgbRgba<decimal>(1, 0.5m, 0, 0.25m);
+        Assert.Equal(new SrgbHsla<decimal>(30, 1, 0.5m, 0.25m), exact.ToHslSrgbDegrees<decimal>());
+        Assert.Equal(new SrgbHsva<decimal>(30, 1, 1, 0.25m), exact.ToHsvSrgbDegrees<decimal>());
         Assert.Equal(exact, exact.ToHslSrgbDegrees<decimal>().ToRgba<decimal>());
         Assert.Equal(exact, exact.ToHsvSrgbDegrees<decimal>().ToRgba<decimal>());
         Assert.Throws<ArithmeticException>(() => exact.ToHslSrgbDegrees<int>());
-        Assert.Equal(new Rgba<double>(1, 1, 1, 1), new Hsla<byte>(255, 0, 1, 1).ToRgba<double>());
+        Assert.Equal(new SrgbRgba<double>(1, 1, 1, 1), new SrgbHsla<byte>(255, 0, 1, 1).ToRgba<double>());
     }
 
     /// <summary>Checks raw packed ownership, bit preservation, and explicit normalized conversion for all five formats.</summary>
     [Fact]
     public void PackedWordsAreRawAndNeverImplicitNormalizedComponents()
     {
-        CheckPacked(new Rgb565(0x1234));
-        CheckPacked(new Rgba4444(0x1234));
-        CheckPacked(new Rgba5551(0x1234));
-        CheckPacked(new Rgba1010102(0x12345678));
-        CheckPacked(new Bgra1010102(0x12345678));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Rgb565.FromNormalized(new Rgba<double>(1, 0, 0, 0.5)));
-        Assert.Throws<ArithmeticException>(() => new Rgba4444(0x1234).ToNormalized<int>());
-        Assert.Equal(new Rgba<int>(1, 1, 1, 1), new Rgba4444(ushort.MaxValue).ToNormalized<int>());
-        Assert.Equal(new Rgba<double>(1, 0, 0, 1), new Rgb565(0xF800).ToNormalized<double>());
-        Assert.Equal(new Rgba<double>(1, 0, 0, 1), new Rgba1010102(0xC00003FF).ToNormalized<double>());
-        Assert.Equal(new Rgba<double>(1, 0, 0, 1), new Bgra1010102(0xFFF00000).ToNormalized<double>());
+        CheckPacked(new RawRgb565(0x1234));
+        CheckPacked(new RawRgba4444(0x1234));
+        CheckPacked(new RawRgba5551(0x1234));
+        CheckPacked(new RawRgba1010102(0x12345678));
+        CheckPacked(new RawBgra1010102(0x12345678));
+        Assert.Throws<ArgumentOutOfRangeException>(() => RawRgb565.FromSrgb(new SrgbRgba<double>(1, 0, 0, 0.5)));
+        Assert.Throws<ArithmeticException>(() => new RawRgba4444(0x1234).InterpretSrgb<int>());
+        Assert.Equal(new SrgbRgba<int>(1, 1, 1, 1), new RawRgba4444(ushort.MaxValue).InterpretSrgb<int>());
+        Assert.Equal(new SrgbRgba<double>(1, 0, 0, 1), new RawRgb565(0xF800).InterpretSrgb<double>());
+        Assert.Equal(new SrgbRgba<double>(1, 0, 0, 1), new RawRgba1010102(0xC00003FF).InterpretSrgb<double>());
+        Assert.Equal(new SrgbRgba<double>(1, 0, 0, 1), new RawBgra1010102(0xFFF00000).InterpretSrgb<double>());
     }
 
     private static void CheckPacked<TPixel>(TPixel pixel)
@@ -214,6 +216,7 @@ public sealed class TypedColorApiReviewTests
         Assert.DoesNotContain("Rational", type.Name);
         Assert.DoesNotContain("TypedPixelLayout", type.Name);
         Assert.NotEqual("ColorPixelFormat", type.Name);
+        Assert.DoesNotContain(type.Name.Split('`')[0], new[] { "Rgba", "Rgb", "Gray", "GrayAlpha", "Bgr", "Bgra", "Argb", "Abgr", "Hsla", "Hsva", "RawRgba", "Srgb8" });
         foreach (Type argument in type.GetGenericArguments())
         {
             CheckType(argument);

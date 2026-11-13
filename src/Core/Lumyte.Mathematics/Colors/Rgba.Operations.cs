@@ -4,7 +4,7 @@ using Rational = Lumyte.Mathematics.Geometry.GeometryRational;
 namespace Lumyte.Mathematics.Colors;
 
 /// <content>Provides transfer, alpha, interpolation, and linear color operations.</content>
-public readonly partial record struct Rgba<T>
+internal readonly partial record struct Rgba<T>
     where T : INumber<T>
 {
     /// <summary>Decodes normalized straight sRGB, preserving alpha.</summary>

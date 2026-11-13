@@ -61,7 +61,7 @@ engineをDisposeした後も描画でき、[共通Text](../Lumyte.Graphics.Text/
 ```csharp
 var accent = PaintGraph2D.LinearGradient(
     new Vector2(0, 0), new Vector2(150, 0),
-    [new(0, new Rgba<float>(0.1f, 0.3f, 1, 1)), new(1, new Rgba<float>(0.8f, 0.1f, 0.5f, 1))]);
+    [new(0, new SrgbRgba<float>(0.1f, 0.3f, 1, 1)), new(1, new SrgbRgba<float>(0.8f, 0.1f, 0.5f, 1))]);
 var styled = options with
 {
     TextRuns = [new ParleyTextRun2D

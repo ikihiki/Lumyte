@@ -4,6 +4,6 @@ using Lumyte.UI.Application.Desktop;
 using static Lumyte.UI.Compose;
 
 UiApplicationBuilder builder = UiApplication.CreateBuilder(args).UseDesktop();
-builder.UseRoot(context => Button(width: 160, height: 48, testId: "quit", onClick: context.RequestStop)[Rectangle(width: 160, height: 48, fill: new Rgba<float>(0.5f, 0.5f, 0.5f, 1))]);
+builder.UseRoot(context => Button(width: 160, height: 48, testId: "quit", onClick: context.RequestStop)[Rectangle(width: 160, height: 48, fill: new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1))]);
 await using UiApplication app = builder.Build();
 await app.RunAsync();

@@ -38,7 +38,7 @@ public sealed class RectanglePoolTests
         canvas.Begin();
         for (int i = 0; i < 1000; i++)
         {
-            canvas.FillRect(new(0, 0, 2, 2), new Rgba<float>(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, 2, 2), new SrgbRgba<float>(1, 0, 0, 1));
         }
 
         DrawList2D list = canvas.End();

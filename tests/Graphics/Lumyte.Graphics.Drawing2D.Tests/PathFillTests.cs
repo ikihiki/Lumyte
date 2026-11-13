@@ -18,12 +18,12 @@ public sealed class PathFillTests
         builder.LineTo(new Vector2(0, 10));
         Path2D path = builder.Build();
         var canvas = new Canvas2D();
-        Assert.Throws<InvalidOperationException>(() => canvas.FillPath(path, default(Rgba<float>)));
+        Assert.Throws<InvalidOperationException>(() => canvas.FillPath(path, default(SrgbRgba<float>)));
         canvas.Begin();
         canvas.Translate(new Vector2(3, 4));
-        Assert.Throws<ArgumentNullException>(() => canvas.FillPath(null!, default(Rgba<float>)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillPath(path, default(Rgba<float>), (FillRule2D)42));
-        canvas.FillPath(path, new Rgba<float>(1, 1, 1, 1), FillRule2D.EvenOdd);
+        Assert.Throws<ArgumentNullException>(() => canvas.FillPath(null!, default(SrgbRgba<float>)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillPath(path, default(SrgbRgba<float>), (FillRule2D)42));
+        canvas.FillPath(path, new SrgbRgba<float>(1, 1, 1, 1), FillRule2D.EvenOdd);
         canvas.Translate(Vector2.One);
         builder.Close();
 
@@ -52,7 +52,7 @@ public sealed class PathFillTests
         canvas.Begin();
         canvas.ClipRect(new Rect2D(0, 0, 40, 40));
         canvas.Translate(new Vector2(10, 20));
-        canvas.FillPath(builder.Build(), new Rgba<float>(1, 0, 0, 0.5f), FillRule2D.EvenOdd);
+        canvas.FillPath(builder.Build(), new SrgbRgba<float>(1, 0, 0, 0.5f), FillRule2D.EvenOdd);
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         var target = new DrawingTargetInfo2D
         {

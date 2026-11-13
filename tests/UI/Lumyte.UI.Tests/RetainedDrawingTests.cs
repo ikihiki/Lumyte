@@ -14,7 +14,7 @@ public sealed class RetainedDrawingTests
     [Fact]
     public void StaticBuiltinsReuseLocalContent()
     {
-        using var surface = new UiSurface(Panel()[Rectangle(fill: new Rgba<float>(1, 0, 0, 1))]);
+        using var surface = new UiSurface(Panel()[Rectangle(fill: new SrgbRgba<float>(1, 0, 0, 1))]);
         surface.SetViewport(new(100, 80));
         using UiDrawingScene2D drawing = surface.CreateDrawingScene();
         drawing.Update();
@@ -220,13 +220,13 @@ public sealed class RetainedDrawingTests
         {
             Widget.Events.Add("before");
             canvas.Translate(new(3, 4));
-            canvas.FillRect(new(0, 0, 2, 2), new Rgba<float>(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, 2, 2), new SrgbRgba<float>(1, 0, 0, 1));
             foreach (UiElement child in GetChildren(Widget.Content))
             {
                 RecordChild(child, canvas);
             }
 
-            canvas.FillRect(new(0, 0, 2, 2), new Rgba<float>(0, 0, 1, 1));
+            canvas.FillRect(new(0, 0, 2, 2), new SrgbRgba<float>(0, 0, 1, 1));
             Widget.Events.Add("after");
         }
     }
@@ -253,7 +253,7 @@ public sealed class RetainedDrawingTests
         protected override void OnRecord(DrawingCanvas2D canvas)
         {
             Calls++;
-            canvas.FillRect(new(0, 0, Size.X, Size.Y), new Rgba<float>(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, Size.X, Size.Y), new SrgbRgba<float>(1, 0, 0, 1));
         }
     }
 }

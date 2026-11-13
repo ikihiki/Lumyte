@@ -4,7 +4,7 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores finite Abgr components without implicit normalization, transfer, or alpha association.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct Abgr<T> : IColorPixel<Abgr<T>>
+internal readonly record struct Abgr<T> : IColorPixel<Abgr<T>>
     where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="Abgr{T}"/> struct with finite raw components.</summary>

@@ -112,7 +112,7 @@ public sealed class HostRoutingTests
         var canvas = new Canvas2D();
         canvas.Begin();
         UiHostDrawing.Record(canvas, host.Window, host.Surface);
-        canvas.FillRect(new(1, 2, 3, 4), new Rgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(1, 2, 3, 4), new SrgbRgba<float>(1, 0, 0, 1));
         DrawList2D list = canvas.End();
         Assert.Equal(new Vector2(100, 100), host.Surface.RootElement.Size);
         Assert.Equal(Matrix3x2.Identity, list.Commands[^1].State.Transform);
@@ -188,7 +188,7 @@ public sealed class HostRoutingTests
             Platform.PumpEvents();
             Source.Windows.Add(Window.Id, Origin);
             Router = new(Source, Source);
-            Definitions.Button declaration = Compose.Button(onClick: () => Clicks++)[Rectangle(width: 100, height: 100, fill: new Rgba<float>(1, 1, 1, 1))];
+            Definitions.Button declaration = Compose.Button(onClick: () => Clicks++)[Rectangle(width: 100, height: 100, fill: new SrgbRgba<float>(1, 1, 1, 1))];
             Surface = new(declaration);
             Button = (ButtonElement)Surface.RootElement;
             Surface.SetViewport(new(100, 100));

@@ -4,7 +4,7 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores a straight sRGB HSV model with periodic degree hue and unit components.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct Hsva<T>
+internal readonly record struct Hsva<T>
     where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="Hsva{T}"/> struct.</summary>

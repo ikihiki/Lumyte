@@ -44,10 +44,10 @@ public sealed partial class Drawing2DTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(1, 1, 5, 5), new Rgba<float>(1, 0, 0, 0.5f));
+        canvas.FillRect(new(1, 1, 5, 5), new SrgbRgba<float>(1, 0, 0, 0.5f));
         canvas.Save();
         canvas.ClipRect(new(3, 1, 4, 5));
-        canvas.FillPath(Rectangle(2, 1, 5, 5), new Rgba<float>(0, 0, 1, 0.5f));
+        canvas.FillPath(Rectangle(2, 1, 5, 5), new SrgbRgba<float>(0, 0, 1, 0.5f));
         canvas.Restore();
         using var scene = new DrawingScene2D();
         scene.Insert(scene.Root, 0, canvas.End());

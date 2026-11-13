@@ -15,8 +15,8 @@ public sealed class ColorIndependentReviewTests
     {
         BigInteger denominator = BigInteger.One << 2000;
         BigInteger midpoint = (denominator / 2) + (denominator >> 25);
-        var input = new Rgba<BigInteger>(midpoint - 1, midpoint, midpoint + 1, denominator);
-        Assert.Equal(new Rgba<float>(0.5f, 0.5f, float.BitIncrement(0.5f), 1), input.NormalizeUnorm<float>(denominator));
+        var input = new SrgbRgba<BigInteger>(midpoint - 1, midpoint, midpoint + 1, denominator);
+        Assert.Equal(new SrgbRgba<float>(0.5f, 0.5f, float.BitIncrement(0.5f), 1), input.NormalizeUnorm<float>(denominator));
     }
 
     /// <summary>An exact represented binary fraction times a huge bound is not a rounded double product.</summary>
@@ -24,9 +24,9 @@ public sealed class ColorIndependentReviewTests
     public void HugeQuantizationUsesAllRepresentedInputBits()
     {
         BigInteger maximum = (BigInteger.One << 2000) + 1;
-        var input = new Rgba<double>(0.5, double.BitIncrement(0.5), double.Epsilon, 1);
+        var input = new SrgbRgba<double>(0.5, double.BitIncrement(0.5), double.Epsilon, 1);
         BigInteger midpoint = BigInteger.One << 1999;
-        Assert.Equal(new Rgba<BigInteger>(midpoint, midpoint + (BigInteger.One << 1947) + 1, BigInteger.One << 926, maximum), input.QuantizeUnorm(maximum));
+        Assert.Equal(new SrgbRgba<BigInteger>(midpoint, midpoint + (BigInteger.One << 1947) + 1, BigInteger.One << 926, maximum), input.QuantizeUnorm(maximum));
     }
 
     /// <summary>IEEE pixel decoding preserves finite negative zero rather than applying arithmetic to storage.</summary>
@@ -40,7 +40,7 @@ public sealed class ColorIndependentReviewTests
     {
         byte[] bytes = new byte[4 * width];
         bytes[width - 1] = 0x80;
-        var decoded = Rgba<double>.DecodePixel(bytes, format, ColorByteOrder.LittleEndian);
+        var decoded = SrgbRgba<double>.DecodePixel(bytes, format, ColorByteOrder.LittleEndian);
         Assert.Equal(long.MinValue, BitConverter.DoubleToInt64Bits(decoded.R));
     }
 
@@ -49,9 +49,9 @@ public sealed class ColorIndependentReviewTests
     public void ReferenceContainingStorageRejectsEveryAlias()
     {
         BigInteger huge = BigInteger.One << 500;
-        var expected = new Rgba<BigInteger>(huge, huge, huge, huge);
-        Rgba<BigInteger>[] pixels = [expected, expected];
-        int size = Unsafe.SizeOf<Rgba<BigInteger>>();
+        var expected = new SrgbRgba<BigInteger>(huge, huge, huge, huge);
+        SrgbRgba<BigInteger>[] pixels = [expected, expected];
+        int size = Unsafe.SizeOf<SrgbRgba<BigInteger>>();
         foreach (int offset in new[] { 0, 1, size - 1, (2 * size) - 4 })
         {
             Assert.Throws<ArgumentException>(() => WriteAliased(pixels, offset));
@@ -68,12 +68,12 @@ public sealed class ColorIndependentReviewTests
     public void DecimalAndSubnormalModelsRoundOnlyFinalComponents()
     {
         var maximum = BigInteger.Pow(10, 29);
-        var codes = new Rgba<BigInteger>(5, 15, 25, maximum);
-        Assert.Equal(new Rgba<decimal>(0, 0.0000000000000000000000000002m, 0.0000000000000000000000000002m, 1), codes.NormalizeUnorm<decimal>(maximum));
-        var color = new Rgba<double>(1, 0, double.Epsilon, 1);
+        var codes = new SrgbRgba<BigInteger>(5, 15, 25, maximum);
+        Assert.Equal(new SrgbRgba<decimal>(0, 0.0000000000000000000000000002m, 0.0000000000000000000000000002m, 1), codes.NormalizeUnorm<decimal>(maximum));
+        var color = new SrgbRgba<double>(1, 0, double.Epsilon, 1);
         Assert.Equal(0d, color.ToHsvSrgbDegrees<double>().HueDegrees);
         Assert.Equal(0d, color.ToHslSrgbDegrees<double>().HueDegrees);
-        Assert.Equal(new Rgba<double>(0, double.Epsilon, 0, 1), Rgba<double>.FromHsvSrgbDegrees(90d, 1d, double.Epsilon, 1d));
+        Assert.Equal(new SrgbRgba<double>(0, double.Epsilon, 0, 1), SrgbRgba<double>.FromHsvSrgbDegrees(90d, 1d, double.Epsilon, 1d));
     }
 
     /// <summary>Negative SNORM ties select the even symmetric code and conversion failures are atomic.</summary>
@@ -81,24 +81,24 @@ public sealed class ColorIndependentReviewTests
     public void SignedQuantizationIsSymmetricAndAtomic()
     {
         byte[] output = [0xAB, 0xAB, 0xAB, 0xAB, 0xAB];
-        new Rgba<decimal>(-0.5m, 0.5m, -1m, 1m).WritePixel(output, ColorComponentEncoding.Snorm8, ColorByteOrder.LittleEndian);
+        new SrgbRgba<decimal>(-0.5m, 0.5m, -1m, 1m).WritePixel(output, ColorComponentEncoding.Snorm8, ColorByteOrder.LittleEndian);
         Assert.Equal(new byte[] { 192, 64, 129, 127, 0xAB }, output);
         byte[] before = (byte[])output.Clone();
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Rgba<double>(1, 2, double.MaxValue, 1).WritePixel(output.AsSpan(0, 4), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SrgbRgba<double>(1, 2, double.MaxValue, 1).WritePixel(output.AsSpan(0, 4), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
         Assert.Equal(before, output);
     }
 
-    private static void WriteAliased(Rgba<BigInteger>[] pixels, int offset)
+    private static void WriteAliased(SrgbRgba<BigInteger>[] pixels, int offset)
     {
-        ref byte first = ref Unsafe.As<Rgba<BigInteger>, byte>(ref pixels[0]);
+        ref byte first = ref Unsafe.As<SrgbRgba<BigInteger>, byte>(ref pixels[0]);
         Span<byte> bytes = MemoryMarshal.CreateSpan(ref Unsafe.Add(ref first, offset), 8);
-        Color.WritePixels<Rgba<BigInteger>>(pixels, bytes, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        Color.WritePixels<SrgbRgba<BigInteger>>(pixels, bytes, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
     }
 
-    private static void DecodeAliased(Rgba<BigInteger>[] pixels, int offset)
+    private static void DecodeAliased(SrgbRgba<BigInteger>[] pixels, int offset)
     {
-        ref byte first = ref Unsafe.As<Rgba<BigInteger>, byte>(ref pixels[0]);
+        ref byte first = ref Unsafe.As<SrgbRgba<BigInteger>, byte>(ref pixels[0]);
         ReadOnlySpan<byte> bytes = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref first, offset), 8);
-        Color.DecodePixels<Rgba<BigInteger>>(bytes, pixels, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        Color.DecodePixels<SrgbRgba<BigInteger>>(bytes, pixels, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
     }
 }

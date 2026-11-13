@@ -395,7 +395,7 @@ public sealed class BoxModifierTests
             {
                 Widget.RecordOrigin = Vector2.Transform(Vector2.Zero, ((InspectCanvas)canvas).CurrentTransform);
                 Widget.BodySize = ContentSize;
-                canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), new Rgba<float>(1, 0, 0, 1));
+                canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), new SrgbRgba<float>(1, 0, 0, 1));
             }
 
             protected override UiInputResult OnInput(in UiInputContext context)

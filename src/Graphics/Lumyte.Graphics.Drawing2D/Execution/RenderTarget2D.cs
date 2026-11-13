@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <summary>Describes a borrowed display-linear two-dimensional rendering destination.</summary>
 public sealed record RenderTarget2D
 {
-    private readonly Rgba<float> _clearColor;
+    private readonly SrgbRgba<float> _clearColor;
 
     /// <summary>Gets the whole single-mip, single-layer Rgba8Srgb or Rgba16Float attachment view.</summary>
     public required IGraphicsTextureView View { get; init; }
@@ -18,7 +18,7 @@ public sealed record RenderTarget2D
     public AttachmentLoadOp LoadOp { get; init; } = AttachmentLoadOp.Load;
 
     /// <summary>Gets or initializes the finite unit straight-alpha sRGB color used by Clear; invalid values are rejected before assignment.</summary>
-    public Rgba<float> ClearColor
+    public SrgbRgba<float> ClearColor
     {
         get => _clearColor;
         init

@@ -4,7 +4,7 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores finite Argb components without implicit normalization, transfer, or alpha association.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct Argb<T> : IColorPixel<Argb<T>>
+internal readonly record struct Argb<T> : IColorPixel<Argb<T>>
     where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="Argb{T}"/> struct with finite raw components.</summary>

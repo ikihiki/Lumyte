@@ -17,11 +17,11 @@ public sealed class ColorAdmissionTests
         {
             float[] channels = [0, 0, 0, 1];
             channels[component] = invalid;
-            var bad = new Rgba<float>(channels[0], channels[1], channels[2], channels[3]);
+            var bad = new SrgbRgba<float>(channels[0], channels[1], channels[2], channels[3]);
             var original = new UiApplicationOptions();
             Assert.Throws<ArgumentOutOfRangeException>(() => new UiApplicationOptions { Background = bad });
             Assert.Throws<ArgumentOutOfRangeException>(() => original with { Background = bad });
-            Assert.Equal(new Rgba<float>(1, 1, 1, 1), original.Background);
+            Assert.Equal(new SrgbRgba<float>(1, 1, 1, 1), original.Background);
         }
     }
 }

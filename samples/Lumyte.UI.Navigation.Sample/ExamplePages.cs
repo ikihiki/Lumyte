@@ -45,11 +45,11 @@ internal sealed class ExamplePages(Action requestStop) : IUiPageActivationProvid
         {
             if (context.Destination.Route == Home.Value)
             {
-                return Button(width: 160, height: 48, testId: "next", onClick: () => context.Navigation.RequestNavigate(Details, new("Prepared details")))[Rectangle(width: 160, height: 48, fill: new Rgba<float>(0.5f, 0.5f, 0.5f, 1))];
+                return Button(width: 160, height: 48, testId: "next", onClick: () => context.Navigation.RequestNavigate(Details, new("Prepared details")))[Rectangle(width: 160, height: 48, fill: new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1))];
             }
 
             _ = context.Destination.GetArguments<DetailArguments>();
-            return Button(width: 160, height: 48, testId: "quit", onClick: requestStop)[Rectangle(width: 160, height: 48, fill: new Rgba<float>(0.25f, 0.5f, 0.75f, 1))];
+            return Button(width: 160, height: 48, testId: "quit", onClick: requestStop)[Rectangle(width: 160, height: 48, fill: new SrgbRgba<float>(0.25f, 0.5f, 0.75f, 1))];
         }
     }
 }

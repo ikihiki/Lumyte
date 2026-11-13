@@ -21,7 +21,7 @@ if (backend is not ("none" or "vulkan" or "wgpu"))
 using VulkanDevice? vulkan = backend == "vulkan" ? VulkanDevice.Create() : null;
 using WgpuDevice? wgpu = backend == "wgpu" ? WgpuDevice.Create() : null;
 IGraphicDevice? device = vulkan is not null ? vulkan : wgpu;
-Definitions.Button anchor = Button(width: 20, height: 20, testId: "owner")[Rectangle(width: 20, height: 20, fill: new Rgba<float>(0, 0, 1, 1))];
+Definitions.Button anchor = Button(width: 20, height: 20, testId: "owner")[Rectangle(width: 20, height: 20, fill: new SrgbRgba<float>(0, 0, 1, 1))];
 using var surface = new UiSurface(Panel()[anchor]);
 var origin = new InputWindowId(Guid.NewGuid());
 var scope = Guid.NewGuid();

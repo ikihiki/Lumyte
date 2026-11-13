@@ -14,8 +14,8 @@ public sealed class CompositeTests
     {
         CompositeMode2D[] modes = Enum.GetValues<CompositeMode2D>();
         Assert.Equal(28, modes.Length);
-        var source = PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 0.5f));
-        var backdrop = PaintGraph2D.Solid(new Rgba<float>(0, 0, 1, 0.25f));
+        var source = PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 0.5f));
+        var backdrop = PaintGraph2D.Solid(new SrgbRgba<float>(0, 0, 1, 0.25f));
         for (int i = 0; i < modes.Length; i++)
         {
             var graph = PaintGraph2D.Composite(source, backdrop, modes[i]);
@@ -37,7 +37,7 @@ public sealed class CompositeTests
     [Fact]
     public void SharedSubgraphsRetainDagEvaluation()
     {
-        var solid = PaintGraph2D.Solid(new Rgba<float>(0, 1, 0, 0.4f));
+        var solid = PaintGraph2D.Solid(new SrgbRgba<float>(0, 1, 0, 0.4f));
         PaintGraph2D graph = solid;
         for (int i = 0; i < 8; i++)
         {
@@ -57,7 +57,7 @@ public sealed class CompositeTests
     [Fact]
     public void SharedPaintRetainsDistinctTransforms()
     {
-        var gradient = PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.UnitX, [new(0, new Rgba<float>(1, 0, 0, 1)), new(1, new Rgba<float>(0, 0, 1, 1))]);
+        var gradient = PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.UnitX, [new(0, new SrgbRgba<float>(1, 0, 0, 1)), new(1, new SrgbRgba<float>(0, 0, 1, 1))]);
         var source = PaintGraph2D.Transform(Matrix3x2.CreateTranslation(2, 3), gradient);
         var backdrop = PaintGraph2D.Transform(Matrix3x2.CreateTranslation(5, 7), gradient);
         DrawingProgram2D program = Compile(PaintGraph2D.Composite(source, backdrop));
@@ -76,8 +76,8 @@ public sealed class CompositeTests
         var canvas = new Canvas2D();
         canvas.Begin();
         canvas.ClipRect(new Rect2D(1, 2, 8, 9));
-        var source = PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 0.5f));
-        var backdrop = PaintGraph2D.Solid(new Rgba<float>(0, 0, 1, 0.5f));
+        var source = PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 0.5f));
+        var backdrop = PaintGraph2D.Solid(new SrgbRgba<float>(0, 0, 1, 0.5f));
         canvas.FillRect(new Rect2D(0, 0, 20, 20), PaintGraph2D.Composite(source, backdrop, CompositeMode2D.SrcIn));
         DrawingProgram2D program = Program();
         uint root = program.Compile(Assert.Single(canvas.End().Commands));
@@ -97,7 +97,7 @@ public sealed class CompositeTests
     [Fact]
     public void FactoryRejectsInvalidOperandsModesAndBudgets()
     {
-        var solid = PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 1));
+        var solid = PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 1));
         Assert.Throws<ArgumentNullException>(() => PaintGraph2D.Composite(null!, solid));
         Assert.Throws<ArgumentNullException>(() => PaintGraph2D.Composite(solid, null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.Composite(solid, solid, (CompositeMode2D)28));

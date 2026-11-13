@@ -4,7 +4,7 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores a straight sRGB HSL model with periodic degree hue and unit components.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct Hsla<T>
+internal readonly record struct Hsla<T>
     where T : INumber<T>
 {
     /// <summary>Initializes a new instance of the <see cref="Hsla{T}"/> struct.</summary>

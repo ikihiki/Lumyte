@@ -3,7 +3,7 @@ using System.Numerics;
 namespace Lumyte.Mathematics.Colors;
 
 /// <content>Typed RGBA component-encoding pixel operations.</content>
-public readonly partial record struct Rgba<T>
+internal readonly partial record struct Rgba<T>
     where T : INumber<T>
 {
     /// <summary>Gets a supported RGBA pixel size, validating encoding and byte order.</summary>
