@@ -145,6 +145,16 @@ slotの置換・Release・table Dispose後の古い参照と派生要素は使�
 
 設計判断は [GRAPHICS-0005](../../../docs/adr/graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md) を参照してください。
 
+raw範囲のWriteBufferは登録ごとにShaderBufferAccessを選択します。既定はReadOnlyで、ShaderReadの能力が必要です。ReadWriteを明示する登録にはShaderWriteが必要です。BufferUsageは作成済みリソースの能力であり、その登録のアクセス種別を推定するためには使いません。
+
+```csharp
+IGpuRef<uint> read = table.WriteBuffer(0, storage.SliceElements(0, 4));
+IGpuRef<uint> write = table.WriteBuffer(1, storage.SliceElements(0, 4), ShaderBufferAccess.ReadWrite);
+IGpuRef<uint> element = write.GetElement(2);
+```
+
+この例のstorageはShaderReadとShaderWriteの両能力を持ちます。参照型はどちらも`IGpuRef<uint>`のままで、GetElementは元の登録を保持します。別スロットへの別アクセス登録は独立し、nativeの同時使用制約と寿命・同期責務は維持します。参照を含むShaderDataSliceは引き続き読み取り専用です。シェーダーとの種別・対象型の一致はDebugで診断し、Releaseの参照転送に文字列パスやシェーダーからのアクセス推定を使いません。
+
 ## シェーダー
 
 `ShaderCompilationDesc` は Slang source、entry、stage と生成 target を指定します。`IShaderCompiler.CompileAsync` は GPU に依存せず `ShaderArtifact` を返します。artifactは全targetのcode、reflection、コンパイルmetadataを格納したopaque binaryを保持し、`LoadEmbedded(assembly, resourceName)`でDLLから読み込めます。online compilerのtarget選択は任意で、省略／null時は全対応target、指定時はそのtargetだけを生成します。

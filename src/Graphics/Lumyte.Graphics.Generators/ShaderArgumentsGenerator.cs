@@ -106,7 +106,7 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
                 return;
             }
 
-            refs.Append("        writer.WriteReference(").Append(Quote(member.Name)).Append(", ").Append(Offset(wire, slot, offsets, offsetNames)).Append(", this.@").Append(member.Name).AppendLine(");");
+            refs.Append("        writer.WriteReference(").Append(Offset(wire, slot, offsets, offsetNames)).Append(", this.@").Append(member.Name).AppendLine(");");
         }
 
         AttributeData? attr = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute");

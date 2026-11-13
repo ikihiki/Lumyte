@@ -53,7 +53,7 @@ public sealed class ShaderBindingSnapshot
 
             if (!ReferenceEquals(reference.Table, table))
             {
-                throw new ArgumentException($"Shader resource '{member.Path}' belongs to a different argument table.", nameof(table));
+                throw new ArgumentException($"Shader resource at offset {member.Offset} belongs to a different argument table.", nameof(table));
             }
 
             if (!_references.Add(reference) || reference.Resource is not IShaderDataSource source)

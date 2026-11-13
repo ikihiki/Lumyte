@@ -23,7 +23,7 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
                 throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
             }
 
-            byte[] PackReference(ShaderValue value, string kind) => VulkanShaderReferenceEncoding.Pack(owner, value, kind);
+            byte[] PackReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(owner, value);
 
             byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, PackReference);
 

@@ -144,5 +144,5 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         _disposed = true;
     }
 
-    private byte[] PackReference(ShaderValue value, string kind) => ShaderReferenceEncoding.Pack(value, kind);
+    private byte[] PackReference(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 }

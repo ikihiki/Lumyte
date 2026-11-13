@@ -39,7 +39,7 @@ internal sealed class Direct3D12ArgumentTable(Direct3D12Device owner, ArgumentTa
         return Write<IGraphicsSampler>(_samplers, SamplerCapacity, slot, resource, 1, 0, 0, 0);
     }
 
-    public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
+    public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
         where T : unmanaged
     {
         ThrowIfDisposed();
@@ -48,8 +48,19 @@ internal sealed class Direct3D12ArgumentTable(Direct3D12Device owner, ArgumentTa
             throw new ArgumentException("A shader buffer range from the same device is required.", nameof(range));
         }
 
+        if (access is not ShaderBufferAccess.ReadOnly and not ShaderBufferAccess.ReadWrite)
+        {
+            throw new ArgumentOutOfRangeException(nameof(access));
+        }
+
+        BufferUsage required = access == ShaderBufferAccess.ReadWrite ? BufferUsage.ShaderWrite : BufferUsage.ShaderRead;
+        if ((resource.Usage & required) != required)
+        {
+            throw new ArgumentException("The buffer usage does not support the selected registration access.", nameof(access));
+        }
+
         resource.ValidateByteRange(range.OffsetInBytes, range.SizeInBytes);
-        return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes);
+        return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes, access);
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
@@ -89,10 +100,10 @@ internal sealed class Direct3D12ArgumentTable(Direct3D12Device owner, ArgumentTa
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size)
+    private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
     {
         ValidateSlot(capacity, slot);
-        var entry = new ArgumentRegistration(this, slot, resource, offset, size);
+        var entry = new ArgumentRegistration(this, slot, resource, offset, size, access);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         slots[slot] = entry;
         return reference;

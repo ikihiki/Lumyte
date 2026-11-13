@@ -9,7 +9,7 @@ public interface IShaderRawBuffer
     /// <summary>Gets its conventional shader element name.</summary>
     string ShaderTypeName { get; }
 
-    /// <summary>Gets declared shader storage access.</summary>
+    /// <summary>Gets resource usage capabilities, independent of a registration's chosen storage view.</summary>
     BufferUsage Usage { get; }
 
     /// <summary>Gets the backing allocation size.</summary>

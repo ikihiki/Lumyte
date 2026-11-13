@@ -18,6 +18,8 @@ internal sealed class GpuReference<T>(ArgumentRegistration registration, ulong c
 
     public object Resource => registration.Resource;
 
+    public ShaderBufferAccess BufferAccess => registration.BufferAccess;
+
     public uint Slot => registration.Slot;
 
     public IGpuRef<T> GetElement(ulong index)

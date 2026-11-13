@@ -16,7 +16,7 @@ public sealed class ShaderBulkTransferTests
         var layout = ShaderDataLayout.Root(Target(), "arguments");
         byte[] bytes = [0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10];
         var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [], Fields());
-        byte[] packed = layout.Pack(snapshot, (_, _) => throw new InvalidOperationException());
+        byte[] packed = layout.Pack(snapshot, _ => throw new InvalidOperationException());
 
         Assert.Equal(bytes, packed);
         Assert.NotSame(bytes, packed);
@@ -30,7 +30,7 @@ public sealed class ShaderBulkTransferTests
     {
         byte[] bytes = new byte[16];
         object reference = new();
-        ShaderValue[] values = [new("Resource", typeof(IGraphicsTextureView), reference, 0)];
+        ShaderValue[] values = [new(typeof(IGraphicsTextureView), reference, 0)];
         ShaderTransferField[] fields = [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)];
         var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, values, fields);
         ShaderValueSnapshot copy = snapshot.Copy();
@@ -71,10 +71,10 @@ public sealed class ShaderBulkTransferTests
         var snapshot = new ShaderValueSnapshot("arguments", mismatch == "name" ? "Other" : "Wire", bytes, [], mismatch == "count" ? [] : fields);
 #if DEBUG
         Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
+        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => throw new InvalidOperationException()));
 #else
         layout.ValidateArguments(snapshot, validateReferences: true);
-        Assert.Equal(bytes, layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
+        Assert.Equal(bytes, layout.Pack(snapshot, _ => throw new InvalidOperationException()));
 #endif
     }
 
@@ -85,13 +85,12 @@ public sealed class ShaderBulkTransferTests
         var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
         byte[] bytes = Enumerable.Range(0, 24).Select(index => (byte)index).ToArray();
         object reference = new();
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new("Resource", typeof(IGraphicsTextureView), reference, 4)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
+        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new(typeof(IGraphicsTextureView), reference, 4)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
         int calls = 0;
-        byte[] packed = layout.Pack(snapshot, (value, kind) =>
+        byte[] packed = layout.Pack(snapshot, value =>
         {
             calls++;
             Assert.Same(reference, value.Reference);
-            Assert.Equal("GpuTextureRef", kind);
             return Enumerable.Repeat((byte)0xA5, 16).ToArray();
         });
 
@@ -108,11 +107,11 @@ public sealed class ShaderBulkTransferTests
     {
         var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
         byte[] bytes = Enumerable.Range(0, 24).Select(index => (byte)index).ToArray();
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new("Resource", typeof(IGraphicsTextureView), new object(), 0)], [new("First", 20, 4, typeof(uint)), new("Resource", 0, 16, typeof(ShaderReferenceSlot), true), new("Last", 16, 4, typeof(uint))]);
+        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new(typeof(IGraphicsTextureView), new object(), 0)], [new("First", 20, 4, typeof(uint)), new("Resource", 0, 16, typeof(ShaderReferenceSlot), true), new("Last", 16, 4, typeof(uint))]);
 #if DEBUG
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => new byte[16]));
+        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => new byte[16]));
 #else
-        byte[] packed = layout.Pack(snapshot, (_, _) => new byte[16]);
+        byte[] packed = layout.Pack(snapshot, _ => new byte[16]);
         Assert.Equal(new byte[16], packed[..16]);
         Assert.Equal(bytes[16..], packed[16..]);
 #endif
@@ -157,9 +156,9 @@ public sealed class ShaderBulkTransferTests
     public void OutOfBoundsReferenceSlotsAreAlwaysRejected(int offset)
     {
         var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[24], [new("Resource", typeof(IGraphicsTextureView), new object(), offset)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
+        var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[24], [new(typeof(IGraphicsTextureView), new object(), offset)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
         bool encoded = false;
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) =>
+        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ =>
         {
             encoded = true;
             return new byte[16];
@@ -175,8 +174,8 @@ public sealed class ShaderBulkTransferTests
     public void ReferenceEncodingSizeIsAlwaysChecked(int length)
     {
         var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[24], [new("Resource", typeof(IGraphicsTextureView), new object(), 4)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => new byte[length]));
+        var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[24], [new(typeof(IGraphicsTextureView), new object(), 4)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
+        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => new byte[length]));
     }
 
     /// <summary>Plain struct diagnostics use managed offsets, but Release never rearranges bytes.</summary>
@@ -187,9 +186,9 @@ public sealed class ShaderBulkTransferTests
         ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value, shaderTypeName: "Wire");
         var layout = ShaderDataLayout.Root(Target(), "arguments");
 #if DEBUG
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
+        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => throw new InvalidOperationException()));
 #else
-        Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
+        Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), layout.Pack(snapshot, _ => throw new InvalidOperationException()));
 #endif
     }
 

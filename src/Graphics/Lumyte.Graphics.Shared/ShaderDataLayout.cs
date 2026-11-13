@@ -179,57 +179,56 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         Data(artifact, target, name).ValidateTransfer(System.Runtime.CompilerServices.Unsafe.SizeOf<T>(), ShaderTransfer.Fields<T>(), name);
     }
 
-    /// <summary>Validates C# layout in Debug and native resource admission in every configuration.</summary>
+    /// <summary>Validates shader consistency in Debug and host-safe reference slot ranges in every configuration.</summary>
     /// <param name="snapshot">The captured raw wire value.</param>
-    /// <param name="validateReferences">Whether native references must resolve to compatible resources.</param>
+    /// <param name="validateReferences">Whether Debug also diagnoses reference kind, element type and registered access.</param>
     public void ValidateArguments(ShaderValueSnapshot snapshot, bool validateReferences = false)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ValidateTransfer(snapshot.Data.Length, snapshot.Fields, snapshot.ShaderTypeName);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        if ((validateReferences && snapshot.Values.Count != 0 && snapshot.ShaderTypeName != Name) || snapshot.Values.Count != _members.Values.Count(member => member.Reference))
+        var seen = new HashSet<int>();
+        foreach (ShaderValue value in snapshot.Values)
+        {
+            if (value.Offset < 0 || value.Offset > snapshot.Data.Length - 16 || !seen.Add(value.Offset))
+            {
+                throw new ArgumentException("Reference slots must be unique and fit the C# wire value.", nameof(snapshot));
+            }
+        }
+
+#if DEBUG
+        if (snapshot.Values.Count != _members.Values.Count(member => member.Reference) || (snapshot.Values.Count != 0 && snapshot.ShaderTypeName != Name))
         {
             throw new ArgumentException("Root type or resource count differs from the compiled schema.", nameof(snapshot));
         }
 
         foreach (ShaderValue value in snapshot.Values)
         {
-            if (!seen.Add(value.Path) || !_members.TryGetValue(value.Path, out ShaderMember? member) || !member.Reference || value.Offset < 0 || value.Offset > snapshot.Data.Length - 16 || (validateReferences && !ReferenceMatches(value, member)))
+            ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
+            if (member == null || (validateReferences && !ReferenceMatches(value, member)))
             {
                 throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(snapshot));
             }
         }
-    }
-
-    /// <inheritdoc/>
-    public string ReferenceKind(string path)
-    {
-        if (!_members.TryGetValue(path, out ShaderMember? member) || !member.Reference)
-        {
-            throw new ArgumentException("The shader does not declare this resource reference.", nameof(path));
-        }
-
-        return member.Kind;
+#endif
     }
 
     /// <inheritdoc/>
     public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member);
 
     /// <inheritdoc/>
-    public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference)
+    public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
     {
         ValidateArguments(snapshot);
         byte[] result = snapshot.Data.ToArray();
         foreach (ShaderValue value in snapshot.Values)
         {
-            // Reference kinds remain operational metadata. Numeric placement never comes from reflection.
+            // C# offsets determine placement; references carry their registration identity.
             if (value.Offset < 0 || value.Offset > result.Length - 16)
             {
                 throw new ArgumentException("Reference slot exceeds the C# wire value.");
             }
 
-            string kind = ReferenceKind(value.Path);
-            byte[] bytes = reference(value, kind);
+            byte[] bytes = reference(value);
             if (bytes.Length != 16)
             {
                 throw new ArgumentException("Reference encoding must match the 16-byte ABI.");
@@ -241,9 +240,16 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         return result;
     }
 
+#if DEBUG
     private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
     {
         if (value.Reference is not IShaderReference reference)
+        {
+            return false;
+        }
+
+        if ((member.Kind == "GpuBufferRef" && reference.BufferAccess != ShaderBufferAccess.ReadOnly) ||
+            (member.Kind == "GpuRWBufferRef" && reference.BufferAccess != ShaderBufferAccess.ReadWrite))
         {
             return false;
         }
@@ -263,6 +269,8 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         BufferUsage required = member.Kind == "GpuRWBufferRef" ? BufferUsage.ShaderWrite : BufferUsage.ShaderRead;
         return resource is IShaderRawBuffer raw && raw.ElementType == value.ValueType && raw.ShaderTypeName == member.Target && (raw.Usage & required) == required;
     }
+
+#endif
 
     private static JsonElement DataType(JsonElement metadata, string name)
     {

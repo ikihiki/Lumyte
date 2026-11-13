@@ -7,7 +7,7 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal static unsafe class VulkanShaderReferenceEncoding
 {
-    internal static byte[] Pack(VulkanDevice owner, ShaderValue value, string kind)
+    internal static byte[] Pack(VulkanDevice owner, ShaderValue value)
     {
         if (value.Reference is not IShaderReference reference)
         {
@@ -15,7 +15,7 @@ internal static unsafe class VulkanShaderReferenceEncoding
         }
 
         byte[] wire = new byte[16];
-        if (kind is "GpuTextureRef" or "GpuSamplerRef")
+        if (reference.Resource is IGraphicsTextureView or IGraphicsSampler)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(wire, reference.Slot);
         }
@@ -23,7 +23,7 @@ internal static unsafe class VulkanShaderReferenceEncoding
         {
             object handle = reference.Resource switch
             {
-                IShaderDataSource source when source.Memory == MemoryPreference.Automatic && kind == "GpuBufferRef" => source.ShaderHandle,
+                IShaderDataSource source when source.Memory == MemoryPreference.Automatic && reference.BufferAccess == ShaderBufferAccess.ReadOnly => source.ShaderHandle,
                 IShaderRawBuffer raw => raw.ShaderHandle,
                 _ => throw new ArgumentException("A buffer reference requires GPU storage."),
             };

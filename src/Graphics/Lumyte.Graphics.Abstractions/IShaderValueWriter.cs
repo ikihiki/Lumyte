@@ -11,8 +11,7 @@ public interface IShaderValueWriter
 
     /// <summary>Records a reference and its C# wire slot offset (always 16 bytes).</summary>
     /// <typeparam name="T">The referenced element type.</typeparam>
-    /// <param name="path">The logical reference name.</param>
     /// <param name="offset">The C# wire slot offset.</param>
     /// <param name="value">The non-owning reference.</param>
-    void WriteReference<T>(string path, int offset, IGpuRef<T>? value);
+    void WriteReference<T>(int offset, IGpuRef<T>? value);
 }

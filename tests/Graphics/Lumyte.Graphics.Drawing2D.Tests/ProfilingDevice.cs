@@ -129,11 +129,13 @@ internal sealed class ProfilingDevice : IGraphicDevice
         }
     }
 
-    private sealed class Reference<T>(IArgumentTable owner, object resource, uint slot, ulong count, ulong offset = 0, ulong size = 0, ulong registrationOffset = 0, ulong registrationSize = 0) : IGpuRef<T>, IShaderReference
+    private sealed class Reference<T>(IArgumentTable owner, object resource, uint slot, ulong count, ulong offset = 0, ulong size = 0, ulong registrationOffset = 0, ulong registrationSize = 0, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly) : IGpuRef<T>, IShaderReference
     {
         public IArgumentTable Owner => owner;
 
         public object Table => owner;
+
+        public ShaderBufferAccess BufferAccess => access;
 
         public object Resource => resource;
 
@@ -153,7 +155,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, count);
             ulong stride = size / count;
-            return new Reference<T>(owner, resource, slot, 1, offset + (index * stride), stride, registrationOffset, registrationSize);
+            return new Reference<T>(owner, resource, slot, 1, offset + (index * stride), stride, registrationOffset, registrationSize, access);
         }
     }
 
@@ -172,8 +174,8 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => Write<IGraphicsSampler>(slot, SamplerCapacity, 1, sampler);
 
-        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
-            where T : unmanaged => Write<T>(slot, BufferCapacity, range.Count, range.Buffer, range.OffsetInBytes, range.SizeInBytes);
+        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
+            where T : unmanaged => Write<T>(slot, BufferCapacity, range.Count, range.Buffer, range.OffsetInBytes, range.SizeInBytes, access);
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
             where T : IShaderData => Write<T>(slot, BufferCapacity, range.Count, range.Buffer, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes);
@@ -207,7 +209,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
             device.ActiveTables--;
         }
 
-        private IGpuRef<T> Write<T>(uint slot, uint capacity, ulong count, object resource, ulong offset = 0, ulong size = 0)
+        private IGpuRef<T> Write<T>(uint slot, uint capacity, ulong count, object resource, ulong offset = 0, ulong size = 0, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (slot >= capacity)
@@ -221,7 +223,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
                 throw new InvalidOperationException("Injected registration failure.");
             }
 
-            return new Reference<T>(this, resource, slot, count, offset, size, offset, size);
+            return new Reference<T>(this, resource, slot, count, offset, size, offset, size, access);
         }
     }
 

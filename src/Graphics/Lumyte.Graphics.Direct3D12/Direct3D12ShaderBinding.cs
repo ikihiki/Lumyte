@@ -8,7 +8,7 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 
     internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingSnapshot snapshot, ShaderTargetData target)
     {
-        byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, (value, kind) => Direct3D12ShaderReferenceEncoding.Pack(owner, value, kind));
+        byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, value => Direct3D12ShaderReferenceEncoding.Pack(owner, value));
         Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));
         if (root.Length > 65536)
         {
@@ -56,10 +56,10 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
                             throw new NotSupportedException("Buffer slot exceeds 63.");
                         }
 
-                        (nint handle, ulong size, BufferUsage usage) = reference.Resource switch
+                        (nint handle, ulong size) = reference.Resource switch
                         {
-                            IShaderRawBuffer raw => ((nint)raw.ShaderHandle, raw.SizeInBytes, raw.Usage),
-                            IShaderDataSource data => ((nint)data.ShaderHandle, data.SizeInBytes, BufferUsage.ShaderRead),
+                            IShaderRawBuffer raw => ((nint)raw.ShaderHandle, raw.SizeInBytes),
+                            IShaderDataSource data => ((nint)data.ShaderHandle, data.SizeInBytes),
                             _ => throw new ArgumentException("Unknown buffer reference."),
                         };
                         if (size % 4 != 0)
@@ -67,12 +67,12 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
                             throw new NotSupportedException("Raw shader storage size must be divisible by four.");
                         }
 
-                        if ((usage & BufferUsage.ShaderRead) != 0)
+                        if (reference.BufferAccess == ShaderBufferAccess.ReadOnly)
                         {
                             NativeMethods.BindingBuffer(owner.Native, _native, reference.Slot, handle, size, 0);
                         }
 
-                        if ((usage & BufferUsage.ShaderWrite) != 0)
+                        if (reference.BufferAccess == ShaderBufferAccess.ReadWrite)
                         {
                             NativeMethods.BindingBuffer(owner.Native, _native, reference.Slot, handle, size, 1);
                         }

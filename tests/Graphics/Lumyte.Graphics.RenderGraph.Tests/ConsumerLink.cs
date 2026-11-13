@@ -16,7 +16,7 @@ internal sealed record class ConsumerLink(IGpuRef<IGraphicsTextureView> Texture)
     {
         Wire wire = default;
         writer.WriteBytes(in wire);
-        writer.WriteReference("Texture", 0, Texture);
+        writer.WriteReference(0, Texture);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 16)]

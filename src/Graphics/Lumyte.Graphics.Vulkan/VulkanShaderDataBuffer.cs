@@ -144,5 +144,5 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         _disposed = true;
     }
 
-    private byte[] PackReference(ShaderValue value, string kind) => VulkanShaderReferenceEncoding.Pack(Owner, value, kind);
+    private byte[] PackReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(Owner, value);
 }

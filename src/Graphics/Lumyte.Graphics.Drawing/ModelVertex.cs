@@ -47,7 +47,7 @@ public readonly record struct ModelVertex(Vector3 Position, Vector3 Normal, Vect
         var probe = new ModelVertex(new(1, 2, 3), new(4, 5, 6), new(7, 8, 9, 10), new(11, 12), new(13, 14, 15, 16));
         ReadOnlySpan<byte> raw = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref probe, 1));
         var layout = ShaderDataLayout.Data(artifact.GetTarget(target), "ModelVertex");
-        byte[] packed = layout.Pack(ShaderTransfer.Capture(in probe), (_, _) => throw new NotSupportedException("Model vertices cannot contain GPU references."));
+        byte[] packed = layout.Pack(ShaderTransfer.Capture(in probe), _ => throw new NotSupportedException("Model vertices cannot contain GPU references."));
         if (!BitConverter.IsLittleEndian || raw.Length != SizeInBytes || layout.Size != SizeInBytes || !raw.SequenceEqual(packed))
         {
             throw new NotSupportedException("The compiled ModelVertex layout does not match the fixed 64-byte drawing ABI.");

@@ -19,7 +19,8 @@ There is no codec registry, per-numeric-field serialization, or reflected repack
 - Values containing IGpuRef are partial classes with one **private unmanaged storage
   struct**. That explicitly authored struct determines field order, packing, padding
   and stride. A same-named ShaderReferenceSlot reserves 16 bytes per reference.
-  The generator copies storage once, then records reference fixups.
+  The generator copies storage once, then records offset-only reference fixups with
+  writer.WriteReference(offset, reference); no shader path is passed at runtime.
 - Numeric properties can forward to private storage normally, or be public read/write
   partial properties implemented by the generator (.NET 10).
 - Static TransferSize and TransferFields describe C# wire layout without creating an
@@ -27,7 +28,11 @@ There is no codec registry, per-numeric-field serialization, or reflected repack
   they do not inspect or repack shader values.
 - Shader layout diagnostics run only in Debug. Release transfers original bytes even
   for incompatible shaders. Reference bounds, ABI size, same-device admission
-  and binding access-kind checks remain active. Callers own resource lifetime and
+  and registration usage-capability checks remain active. Shader reference kind/type
+  consistency is Debug-only. Access comes from the argument-table registration,
+  not the shader or BufferUsage: raw WriteBuffer defaults to ShaderBufferAccess.ReadOnly;
+  explicitly select ReadWrite for a writable storage view. GetElement shares that
+  registration; IGpuRef remains opaque without read/write variants. Callers own resource lifetime and
   CPU/GPU synchronization under GRAPHICS-0014; no lifetime rescan is introduced.
 
 Example (using System.Numerics and System.Runtime.InteropServices):

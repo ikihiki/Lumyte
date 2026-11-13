@@ -178,7 +178,7 @@ public sealed class ShaderArgumentsTests
             Bytes += Unsafe.SizeOf<T>();
         }
 
-        public void WriteReference<T>(string path, int offset, IGpuRef<T>? value) => ReferenceCount++;
+        public void WriteReference<T>(int offset, IGpuRef<T>? value) => ReferenceCount++;
     }
 
     private sealed class TestReference : IGpuRef<uint>

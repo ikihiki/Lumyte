@@ -33,17 +33,17 @@ public sealed class ModelAndEffectsTests
             ShaderTargetData fs = DrawingShaders.LoadModelFragment().GetTarget(target);
             ShaderDataLayout.ValidateProgram(vs, fs);
             var layout = ShaderDataLayout.Data(vs, "ModelVertex");
-            byte[] packed = layout.Pack(ShaderTransfer.Capture(in vertex), (_, _) => throw new InvalidOperationException());
+            byte[] packed = layout.Pack(ShaderTransfer.Capture(in vertex), _ => throw new InvalidOperationException());
             Assert.Equal(ModelVertex.SizeInBytes, packed.Length);
             Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref vertex, 1)).ToArray(), packed);
             Assert.Equal(vertex, ModelVertex.AsVertices(packed)[0]);
             Assert.True(layout.Matches(ShaderDataLayout.Data(fs, "ModelVertex")));
             Assert.Equal(1, BitConverter.ToSingle(packed, 0));
             var materialLayout = ShaderDataLayout.Data(vs, "ModelMaterial");
-            Assert.NotEmpty(materialLayout.Pack(ShaderTransfer.Capture(in material), (_, _) => throw new InvalidOperationException()));
+            Assert.NotEmpty(materialLayout.Pack(ShaderTransfer.Capture(in material), _ => throw new InvalidOperationException()));
             int references = 0;
             var root = ShaderDataLayout.Root(vs, "arguments");
-            Assert.NotEmpty(root.Pack(IShaderArguments.Capture(in arguments), (_, _) =>
+            Assert.NotEmpty(root.Pack(IShaderArguments.Capture(in arguments), _ =>
             {
                 references++;
                 return new byte[16];
@@ -61,9 +61,14 @@ public sealed class ModelAndEffectsTests
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
             var layout = ShaderDataLayout.Root(DrawingShaders.LoadModelVertex().GetTarget(target), "arguments");
+#if DEBUG
             Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
+#else
+            layout.ValidateArguments(snapshot, validateReferences: true);
+#endif
+            Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(snapshot, null));
             int encoded = 0;
-            byte[] bytes = layout.Pack(snapshot, (member, _) =>
+            byte[] bytes = layout.Pack(snapshot, member =>
             {
                 Assert.Null(member.Reference);
                 encoded++;

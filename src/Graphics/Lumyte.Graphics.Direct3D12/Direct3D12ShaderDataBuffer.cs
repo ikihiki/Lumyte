@@ -144,5 +144,5 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         _disposed = true;
     }
 
-    private byte[] PackReference(ShaderValue value, string kind) => Direct3D12ShaderReferenceEncoding.Pack(Owner, value, kind);
+    private byte[] PackReference(ShaderValue value) => Direct3D12ShaderReferenceEncoding.Pack(Owner, value);
 }

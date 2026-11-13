@@ -8,9 +8,8 @@ public static class ShaderReferenceEncoding
 {
     /// <summary>Packs a reference without draw-dependent resource indices.</summary>
     /// <param name="value">The reference value.</param>
-    /// <param name="kind">The compiled reference kind.</param>
     /// <returns>The helper ABI bytes.</returns>
-    public static byte[] Pack(ShaderValue value, string kind)
+    public static byte[] Pack(ShaderValue value)
     {
         if (value.Reference is not IShaderReference reference)
         {

@@ -16,8 +16,8 @@ internal sealed record class ConsumerTextureArguments(IGpuRef<IGraphicsTextureVi
     {
         Wire wire = new() { Float = Float };
         writer.WriteBytes(in wire);
-        writer.WriteReference("Input", 0, Input);
-        writer.WriteReference("Backdrop", 16, Backdrop);
+        writer.WriteReference(0, Input);
+        writer.WriteReference(16, Backdrop);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 48)]

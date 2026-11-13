@@ -279,7 +279,7 @@ public sealed class ArgumentTableReservation
         }
 
         var key = new ArgumentKey(range.Buffer, typeof(T), 2, range.OffsetInBytes, range.Count, range.Buffer.Layout.ElementStrideInBytes, access);
-        return new(key, (table, slot) => table.WriteBuffer(slot, range));
+        return new(key, (table, slot) => table.WriteBuffer(slot, range, (access & ArgumentBufferAccess.Write) != 0 ? ShaderBufferAccess.ReadWrite : ShaderBufferAccess.ReadOnly));
     }
 
     private static ResolvedArgument Shader<T>(ShaderDataSlice<T> range)

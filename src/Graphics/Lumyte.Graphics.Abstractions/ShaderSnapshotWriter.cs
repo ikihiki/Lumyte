@@ -18,6 +18,6 @@ internal struct ShaderSnapshotWriter : IShaderValueWriter
         Data = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray();
     }
 
-    public void WriteReference<T>(string path, int offset, IGpuRef<T>? value)
-        => (Values ??= []).Add(new(path, typeof(T), value, offset));
+    public void WriteReference<T>(int offset, IGpuRef<T>? value)
+        => (Values ??= []).Add(new(typeof(T), value, offset));
 }

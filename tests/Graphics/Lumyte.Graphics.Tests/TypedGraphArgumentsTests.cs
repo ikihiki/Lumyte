@@ -119,7 +119,7 @@ public sealed class TypedGraphArgumentsTests
         {
             Wire wire = new() { Index = Index, Value = Value };
             writer.WriteBytes(in wire);
-            writer.WriteReference("Output", 0, Output);
+            writer.WriteReference(0, Output);
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 24)]

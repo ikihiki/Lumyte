@@ -41,15 +41,20 @@ public sealed class ShaderSnapshotValidationTests
         ShaderArtifact artifact = await CompileAsync(ShaderTarget.Wgsl);
         var layout = ShaderDataLayout.Root(artifact.GetTarget(ShaderTarget.Wgsl), "arguments");
         ShaderValueSnapshot valid = Snapshot(new object(), new object(), new object());
-        Assert.Equal(layout.Size, layout.Pack(valid, (_, _) => new byte[16]).Length);
+        Assert.Equal(layout.Size, layout.Pack(valid, _ => new byte[16]).Length);
 
         var errors = new List<(string Name, Exception? Error)>();
         foreach ((string name, ShaderValueSnapshot invalid) in InvalidSnapshots(valid, new object()).Take(4))
         {
-            errors.Add((name, Record.Exception(() => layout.Pack(invalid, (_, _) => new byte[16]))));
+            errors.Add((name, Record.Exception(() => layout.Pack(invalid, _ => new byte[16]))));
         }
 
+#if DEBUG
         AssertRejected(errors);
+#else
+        AssertRejected(errors.Where(error => error.Name is "duplicate resource slot" or "reference slot outside wire bytes"));
+        Assert.All(errors.Where(error => error.Name is not ("duplicate resource slot" or "reference slot outside wire bytes")), error => Assert.Null(error.Error));
+#endif
     }
 
     /// <summary>Checks all five malformed snapshots through the public Vulkan setter and dispatch boundary.</summary>
@@ -85,7 +90,7 @@ public sealed class ShaderSnapshotValidationTests
         using IArgumentTable table = device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1, BufferCapacity = 1 });
         IGpuRef<IGraphicsTextureView> textureRef = table.WriteTexture(0, view);
         IGpuRef<IGraphicsSampler> samplerRef = table.WriteSampler(0, sampler);
-        IGpuRef<uint> outputRef = table.WriteBuffer(0, output.SliceElements(0, 1));
+        IGpuRef<uint> outputRef = table.WriteBuffer(0, output.SliceElements(0, 1), ShaderBufferAccess.ReadWrite);
         ShaderValueSnapshot valid = Snapshot(textureRef, samplerRef, outputRef);
 
         // A complete, correctly typed root must pass the identical native recording path.
@@ -98,7 +103,12 @@ public sealed class ShaderSnapshotValidationTests
         }
 
         // Collect every result before asserting so one accepted root cannot hide the other cases.
+#if DEBUG
         AssertRejected(errors);
+#else
+        AssertRejected(errors.Where(error => error.Name is "duplicate resource slot" or "reference slot outside wire bytes"));
+        Assert.All(errors.Where(error => error.Name is not ("duplicate resource slot" or "reference slot outside wire bytes")), error => Assert.Null(error.Error));
+#endif
     }
 
     private static Exception? RecordDispatch(IGraphicDevice device, IGraphicsComputePipeline pipeline, IArgumentTable table, ShaderValueSnapshot snapshot)
@@ -123,13 +133,13 @@ public sealed class ShaderSnapshotValidationTests
     }
 
     private static ShaderValueSnapshot Snapshot(object texture, object sampler, object output)
-        => new("arguments", "SnapshotArguments", new byte[52], [new("Texture", typeof(IGraphicsTextureView), texture, 4), new("Sampler", typeof(IGraphicsSampler), sampler, 20), new("Output", typeof(uint), output, 36)], [new("Value", 0, 4, typeof(float)), new("Texture", 4, 16, typeof(ShaderReferenceSlot), true), new("Sampler", 20, 16, typeof(ShaderReferenceSlot), true), new("Output", 36, 16, typeof(ShaderReferenceSlot), true)]);
+        => new("arguments", "SnapshotArguments", new byte[52], [new(typeof(IGraphicsTextureView), texture, 4), new(typeof(IGraphicsSampler), sampler, 20), new(typeof(uint), output, 36)], [new("Value", 0, 4, typeof(float)), new("Texture", 4, 16, typeof(ShaderReferenceSlot), true), new("Sampler", 20, 16, typeof(ShaderReferenceSlot), true), new("Output", 36, 16, typeof(ShaderReferenceSlot), true)]);
 
     private static IEnumerable<(string Name, ShaderValueSnapshot Snapshot)> InvalidSnapshots(ShaderValueSnapshot valid, object sampler)
     {
         yield return ("missing resource slot", valid with { Values = valid.Values.Skip(1).ToArray() });
         yield return ("duplicate resource slot", valid with { Values = [.. valid.Values, valid.Values[0]] });
-        yield return ("unknown resource path", valid with { Values = [valid.Values[0] with { Path = "Unknown" }, .. valid.Values.Skip(1)] });
+        yield return ("unknown reference offset", valid with { Values = [valid.Values[0] with { Offset = 5 }, .. valid.Values.Skip(1)] });
         yield return ("reference slot outside wire bytes", valid with { Values = [valid.Values[0] with { Offset = 52 }, .. valid.Values.Skip(1)] });
         ShaderValue[] wrongResource = valid.Values.ToArray();
         wrongResource[0] = wrongResource[0] with { ValueType = typeof(IGraphicsSampler), Reference = sampler };

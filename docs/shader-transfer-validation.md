@@ -4,6 +4,76 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## Registration-owned access follow-up (2026-11-13)
+
+Starting at 4e58e198, raw-buffer WriteBuffer selects ShaderBufferAccess.ReadOnly
+(default) or ReadWrite at registration. Usage flags remain allocation capabilities;
+registration validates the selected capability. Reference-containing ShaderDataSlice
+registrations remain read-only. IGpuRef stays opaque and unchanged, and GetElement
+follows the original immutable registration. Replacement creates new metadata;
+old references are never executed after replacement. ADR0014's caller-owned lifetime
+contract is unchanged: no generations, invalidation tracking or lifetime rescans.
+
+WriteReference now receives only the C# offset and reference. ShaderValue has no
+runtime Path, the generator emits no reference-path argument, and Pack callbacks
+no longer receive shader kind strings. Wgpu/Browser classify reachable references
+from registration access, including transitive references. Separate read/write
+registrations of the same range use separate pool/remap lanes, without accidentally
+filling both lanes from the allocation's capabilities. D3D12 selects SRV/UAV by
+registration; Vulkan physical addresses and D3D12 absolute-offset encoding remain
+unchanged. Shader resource kind/type/access consistency is a Debug diagnostic,
+not a Release admission rule. Host slot bounds, duplicate offsets, reference ABI
+length, selected-table membership and registration capability checks remain active.
+
+ArgumentTableExercise now checks read-only/writable capabilities, invalid enum values,
+GetElement access, distinct registrations of one allocation and replacement metadata.
+It runs through the existing Vulkan/Wgpu hardware argument-table tests and Windows
+D3D12 parity exercise. A deterministic CPU theory checks read/write pool deduplication
+and each remap lane for two aliased ranges, plus deliberately reversed shader access:
+Debug diagnoses the mismatch; Release still uses registrations for classification.
+No intentionally invalid shader root is submitted to the GPU.
+
+Use the activation/TMPDIR setup below and the official Fallout runner:
+
+    dotnet run --project build -c Release -- --target Test --host-only --configuration Release
+    LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
+    LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Release
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
+    dotnet run --project build -c Release -- --target CheckMarkdown
+
+Final targeted results:
+
+- Hardware Graphics Debug and Release: each 167 passed, 2 failed, 0 skipped
+  (169 total). Only the known VulkanAdvancedCommandsAsync and
+  VulkanUncachedAdvancedCommandsAsync unsupported depth-format paths fail.
+  The registration capability/GetElement/replacement checks and new alias/remap
+  theory pass; no native assertion or GPU-test eligibility was relaxed.
+- Full host Release: 2,886 passed, 0 failed, 97 skipped (2,983 total,
+  40 test projects). Official restore/compile/test all succeeded; compile reported
+  0 warnings/errors. No full-host Debug run was performed.
+- Official CheckMarkdown: 311 files, 0 issues; git diff --check passed.
+- RenderGraph Debug and Release: each 124 passed, 0 failed/skipped.
+- Direct3D12 Debug and Release Linux CPU tests: each 4 passed, 0 failed,
+  7 Windows-native tests skipped. Managed backend source compiled in both modes.
+- Drawing Debug and Release CPU tests: each 12 passed, 0 failed,
+  10 native GPU tests skipped. Null references still fail host snapshot capture
+  in both modes; shader-schema checks alone are Debug-only.
+
+The initial host compile exposed remaining callback fixture signatures and test
+analyzer diagnostics; those were corrected before the final full-host run. Generated
+build-schema drift is restored before committing. No CI/configuration files changed.
+
+Logs use the registration- prefix under artifacts/shader-transfer. Hardware was
+reverified with the Radeon ICD: Radeon 8060S Graphics (RADV STRIX_HALO), Mesa
+26.0.8-1ubuntu0.3; .NET SDK 10.0.403 and Slang 2026.19. Actual Browser/WASM WebGPU,
+Windows native D3D12, NativeAOT and simultaneous read/write alias GPU execution are
+not validated by the CPU remap test. Native alias-use constraints still apply.
+No performance claim is made. Protected historical ADRs 0009/0015/0018/0022/0023
+remain byte-identical to ef61258f; only the unmerged ADR0035 is revised.
+
 ## Ordinary unmanaged transfer follow-up (2026-11-13)
 
 This follow-up starts at b27fce00 on the same isolated main-based branch. Ordinary

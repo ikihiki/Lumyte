@@ -98,7 +98,7 @@ internal static class BindingRegressionExercise
             table.WriteBuffer(0, vectors.SliceElements(0, 2)),
             table.WriteBuffer(1, packed.SliceElements(0, 2)),
             table.WriteBuffer(2, nested.SliceElements(0, 2)),
-            table.WriteBuffer(3, output.SliceElements(0, output.Count)));
+            table.WriteBuffer(3, output.SliceElements(0, output.Count), ShaderBufferAccess.ReadWrite));
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         RecordUpload(commands, vectorStaging, vectors);
         RecordUpload(commands, packedStaging, packed);
@@ -140,7 +140,7 @@ internal static class BindingRegressionExercise
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 3 });
         IGpuRef<BindingNode> a = table.WriteBuffer(0, first.SliceElements(elementOffset, 1));
         IGpuRef<BindingNode> b = table.WriteBuffer(1, second.SliceElements(elementOffset, 1));
-        IGpuRef<uint> result = table.WriteBuffer(2, output.SliceElements(0, 1));
+        IGpuRef<uint> result = table.WriteBuffer(2, output.SliceElements(0, 1), ShaderBufferAccess.ReadWrite);
         await WriteAsync(firstStaging, [new(3, b)]);
         await WriteAsync(secondStaging, [new(7, a)]);
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
@@ -187,7 +187,7 @@ internal static class BindingRegressionExercise
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 3 });
         IGpuRef<uint> first = table.WriteBuffer(0, storage.SliceElements(firstOffset, 4));
         IGpuRef<uint> second = table.WriteBuffer(1, storage.SliceElements(secondOffset, 4));
-        var arguments = new BindingRangeArguments(first.GetElement(1), second.GetElement(2), table.WriteBuffer(2, output.SliceElements(0, 1)));
+        var arguments = new BindingRangeArguments(first.GetElement(1), second.GetElement(2), table.WriteBuffer(2, output.SliceElements(0, 1), ShaderBufferAccess.ReadWrite));
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = staging.SliceElements(0, 8), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.CopyBuffer(staging.SliceElements(0, 4), storage.SliceElements(firstOffset, 4));

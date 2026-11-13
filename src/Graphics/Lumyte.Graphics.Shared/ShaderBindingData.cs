@@ -20,33 +20,6 @@ public sealed class ShaderBindingData
     {
         Snapshot = snapshot;
         var rootLayout = ShaderDataLayout.Root(target, snapshot.Root.RootParameter);
-        var read = new HashSet<IShaderReference>();
-        var write = new HashSet<IShaderReference>();
-        void Uses(IShaderDataLayout layout, ShaderValueSnapshot values)
-        {
-            foreach (ShaderValue value in values.Values)
-            {
-                if (value.Reference is IShaderReference reference)
-                {
-                    string kind = layout.ReferenceKind(value.Path);
-                    if (kind == "GpuBufferRef")
-                    {
-                        read.Add(reference);
-                    }
-                    else if (kind == "GpuRWBufferRef")
-                    {
-                        write.Add(reference);
-                    }
-                }
-            }
-        }
-
-        Uses(rootLayout, snapshot.Root);
-        foreach (((IShaderDataSource source, ulong _), ShaderValueSnapshot values) in snapshot.Elements)
-        {
-            Uses(source.Layout, values);
-        }
-
         foreach (IShaderReference reference in snapshot.References)
         {
             object resource = reference.Resource;
@@ -58,12 +31,12 @@ public sealed class ShaderBindingData
             {
                 _samplers.TryAdd(resource, _samplers.Count);
             }
-            else if (read.Contains(reference))
+            else if (reference.BufferAccess == ShaderBufferAccess.ReadOnly)
             {
                 _buffers.TryAdd(BufferRange(reference, caps), _buffers.Count);
             }
 
-            if (write.Contains(reference))
+            if (resource is not IGraphicsTextureView and not IGraphicsSampler && reference.BufferAccess == ShaderBufferAccess.ReadWrite)
             {
                 _writable.TryAdd(BufferRange(reference, caps), _writable.Count);
             }
@@ -98,12 +71,12 @@ public sealed class ShaderBindingData
             }
 
             var range = new ShaderBufferBinding(reference.Resource, reference.RegistrationOffsetInBytes, reference.RegistrationSizeInBytes);
-            if (_buffers.TryGetValue(range, out int buffer))
+            if (reference.BufferAccess == ShaderBufferAccess.ReadOnly && _buffers.TryGetValue(range, out int buffer))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 8), (uint)buffer);
             }
 
-            if (_writable.TryGetValue(range, out int writable))
+            if (reference.BufferAccess == ShaderBufferAccess.ReadWrite && _writable.TryGetValue(range, out int writable))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 12), (uint)writable);
             }
@@ -169,5 +142,5 @@ public sealed class ShaderBindingData
         return new(reference.Resource, offset, size);
     }
 
-    private static byte[] ReferenceBytes(ShaderValue value, string kind) => ShaderReferenceEncoding.Pack(value, kind);
+    private static byte[] ReferenceBytes(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 }

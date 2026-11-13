@@ -16,7 +16,7 @@ internal sealed record class ConsumerLinkArguments(IGpuRef<ConsumerLink> Data, f
     {
         Wire wire = new() { Float = Float };
         writer.WriteBytes(in wire);
-        writer.WriteReference("Data", 0, Data);
+        writer.WriteReference(0, Data);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 32)]

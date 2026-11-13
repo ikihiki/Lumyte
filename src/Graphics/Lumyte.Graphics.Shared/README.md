@@ -20,3 +20,5 @@ GPU同期とリソースの有効期間は利用者が管理します。この�
 `SurfaceFrameLifetime`は取得・提示の局所状態を扱い、ネイティブ取得・提示の明示的な完了待機を提供します。GPU submissionを自動収集せず、GPU使用の完了は利用者が別途確認します。semaphoreのsignal／wait履歴、使用中resourceの保持数、検証callbackは管理しません。
 
 共通の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)に従います。
+
+参照fixupはC#オフセットと不透明な参照だけを保持します。Wgpu/Browserのstorage poolとremap laneはArgumentTable登録のShaderBufferAccessから決定し、BufferUsageやshaderの文字列パスから推定しません。同一範囲のread/write登録も別laneを使用します。シェーダーとの配置・参照種別の整合性はDebug診断であり、Releaseのbinding分類には使いません。

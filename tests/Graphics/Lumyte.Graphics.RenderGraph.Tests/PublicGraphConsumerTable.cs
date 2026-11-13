@@ -16,8 +16,8 @@ internal sealed class PublicGraphConsumerTable(ArgumentTableDesc desc) : IArgume
 
     public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => new PublicGraphConsumerRef<IGraphicsSampler>(this, sampler, slot, 1);
 
-    public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
-        where T : unmanaged => new PublicGraphConsumerRef<T>(this, range.Buffer, slot, range.Count, range.OffsetInBytes, range.SizeInBytes, range.OffsetInBytes, range.SizeInBytes);
+    public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
+        where T : unmanaged => new PublicGraphConsumerRef<T>(this, range.Buffer, slot, range.Count, range.OffsetInBytes, range.SizeInBytes, range.OffsetInBytes, range.SizeInBytes, access);
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
         where T : IShaderData => new PublicGraphConsumerRef<T>(this, range.Buffer, slot, range.Count, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes);

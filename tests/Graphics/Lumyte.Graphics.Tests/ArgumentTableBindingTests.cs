@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
 using Xunit;
@@ -131,20 +133,98 @@ public sealed class ArgumentTableBindingTests
     public void InvalidReferenceIsRejected()
     {
         using var table = new Table();
-        var root = new ShaderValueSnapshot("arguments", "Values", new byte[16], [new("Resource", typeof(object), new object(), 0)], [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)]);
+        var root = new ShaderValueSnapshot("arguments", "Values", new byte[16], [new(typeof(object), new object(), 0)], [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)]);
         Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(root, table));
     }
 
-    private static ShaderValueSnapshot Snapshot(IShaderReference reference)
-        => new("arguments", "Values", new byte[16], [new("Resource", typeof(object), reference, 0)], [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)]);
+    /// <summary>Aliased storage keeps distinct read/write pools and remap lanes per registration.</summary>
+    /// <param name="mismatch">Whether registrations intentionally disagree with shader access declarations.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RegistrationAccessChoosesPoolsAndRemapLanes(bool mismatch)
+    {
+        using var table = new Table();
+        var first = new RawSource();
+        var second = new RawSource();
+        string[] names = ["Read0", "Write0", "Read1", "Write1"];
+        var values = new ShaderValue[4];
+        var fields = new ShaderTransferField[4];
+        for (int i = 0; i < values.Length; i++)
+        {
+            var reference = new Reference(table, i < 2 ? first : second, slot: (uint)i, access: (i % 2 == 0) != mismatch ? ShaderBufferAccess.ReadOnly : ShaderBufferAccess.ReadWrite);
+            values[i] = new(typeof(uint), reference, i * 16);
+            fields[i] = new(names[i], i * 16, 16, typeof(ShaderReferenceSlot), true);
+        }
 
-    private sealed class Reference(IArgumentTable table, object resource, ulong count = 1) : IShaderReference
+        string json = JsonSerializer.Serialize(new
+        {
+            lumyteReferenceTargets = names.ToDictionary(name => "Pools." + name, _ => "uint"),
+            parameters = new[]
+            {
+                new
+                {
+                    name = "arguments",
+                    type = new
+                    {
+                        kind = "constantBuffer",
+                        elementType = new
+                        {
+                            kind = "struct",
+                            name = "Pools",
+                            sizes = new[] { new { kind = "uniform", value = 64, alignment = 4 } },
+                            fields = names.Select((name, i) => new
+                            {
+                                name,
+                                type = new { kind = "struct", name = i % 2 == 0 ? "GpuBufferRef" : "GpuRWBufferRef" },
+                                binding = new { offset = i * 16, size = 16 },
+                            }).ToArray(),
+                        },
+                    },
+                },
+            },
+        });
+        var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [], json);
+        var root = new ShaderValueSnapshot("arguments", "Pools", new byte[64], values, fields);
+        var caps = new DeviceCaps { MaxStorageBufferBindingSize = 1024, MaxStorageBuffersPerStage = 8, MaxUniformBuffersPerStage = 1 };
+        var layout = ShaderDataLayout.Root(target, "arguments");
+#if DEBUG
+        if (mismatch)
+        {
+            Assert.Throws<ArgumentException>(() => layout.ValidateArguments(root, validateReferences: true));
+        }
+        else
+        {
+            layout.ValidateArguments(root, validateReferences: true);
+        }
+#else
+        layout.ValidateArguments(root, validateReferences: true);
+#endif
+        var binding = new ShaderBindingData(ShaderBindingSnapshot.Capture(root, table), target, caps);
+        Assert.Equal(2, binding.Buffers.Count);
+        Assert.Equal(2, binding.Writable.Count);
+        Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 8)));
+        Assert.Equal(mismatch ? 1u : 0u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 12)));
+        Assert.Equal(mismatch ? 1u : 0u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 8)));
+        Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 12)));
+        for (int i = 0; i < values.Length; i++)
+        {
+            Assert.Equal((uint)i, BinaryPrimitives.ReadUInt32LittleEndian(binding.Root.AsSpan(i * 16)));
+        }
+    }
+
+    private static ShaderValueSnapshot Snapshot(IShaderReference reference)
+        => new("arguments", "Values", new byte[16], [new(typeof(object), reference, 0)], [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)]);
+
+    private sealed class Reference(IArgumentTable table, object resource, ulong count = 1, uint slot = 0, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly) : IShaderReference
     {
         public object Table => table;
 
+        public ShaderBufferAccess BufferAccess => access;
+
         public object Resource => resource;
 
-        public uint Slot => 0;
+        public uint Slot => slot;
 
         public ulong OffsetInBytes => 0;
 
@@ -155,6 +235,19 @@ public sealed class ArgumentTableBindingTests
         public ulong RegistrationSizeInBytes => SizeInBytes;
 
         public ulong Count => count;
+    }
+
+    private sealed class RawSource : IShaderRawBuffer
+    {
+        public Type ElementType => typeof(uint);
+
+        public string ShaderTypeName => "uint";
+
+        public BufferUsage Usage => BufferUsage.ShaderRead | BufferUsage.ShaderWrite;
+
+        public ulong SizeInBytes => 16;
+
+        public object ShaderHandle => this;
     }
 
     private sealed class DataSource : IShaderDataSource
@@ -190,11 +283,9 @@ public sealed class ArgumentTableBindingTests
 
         public int Size => 16;
 
-        public string ReferenceKind(string path) => "GpuBufferRef";
-
         public bool Matches(IShaderDataLayout layout) => ReferenceEquals(this, layout);
 
-        public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, string, byte[]> reference) => throw new NotSupportedException();
+        public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference) => throw new NotSupportedException();
     }
 
     private sealed class Table : IArgumentTable
@@ -209,7 +300,7 @@ public sealed class ArgumentTableBindingTests
 
         public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => throw new NotSupportedException();
 
-        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
+        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
             where T : unmanaged => throw new NotSupportedException();
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
