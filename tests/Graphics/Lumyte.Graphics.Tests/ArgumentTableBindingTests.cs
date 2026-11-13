@@ -57,7 +57,7 @@ public sealed class ArgumentTableBindingTests
         using var selected = new Table();
         using var foreign = new Table();
         var data = new DataSource();
-        data.Values[0] = Snapshot(new Reference(foreign, new object()));
+        data.Values[0] = new ShaderReferenceMetadata(Snapshot(new Reference(foreign, new object())).Values);
         Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Snapshot(new Reference(selected, data)), selected));
         Assert.Equal(1, data.Reads);
     }
@@ -80,8 +80,8 @@ public sealed class ArgumentTableBindingTests
         using var selected = new Table();
         using var foreign = new Table();
         var data = new DataSource();
-        data.Values[0] = Snapshot(new Reference(selected, new object()));
-        data.Values[1] = Snapshot(new Reference(foreign, new object()));
+        data.Values[0] = new ShaderReferenceMetadata(Snapshot(new Reference(selected, new object())).Values);
+        data.Values[1] = new ShaderReferenceMetadata(Snapshot(new Reference(foreign, new object())).Values);
         Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Snapshot(new Reference(selected, data, 2)), selected));
         Assert.Equal(2, data.Reads);
     }
@@ -95,8 +95,8 @@ public sealed class ArgumentTableBindingTests
         var second = new DataSource();
         var a = new Reference(table, first);
         var b = new Reference(table, second);
-        first.Values[0] = Snapshot(b);
-        second.Values[0] = Snapshot(a);
+        first.Values[0] = new ShaderReferenceMetadata(Snapshot(b).Values);
+        second.Values[0] = new ShaderReferenceMetadata(Snapshot(a).Values);
         var captured = ShaderBindingSnapshot.Capture(Snapshot(a), table);
         Assert.Equal(2, captured.References.Count);
         Assert.Equal(2, captured.Elements.Count);
@@ -111,8 +111,8 @@ public sealed class ArgumentTableBindingTests
         using var selected = new Table();
         using var foreign = new Table();
         var data = new DataSource();
-        data.Values[0] = Snapshot(new Reference(selected, new object()));
-        ShaderValueSnapshot copied = Snapshot(new Reference(foreign, new object()));
+        data.Values[0] = new ShaderReferenceMetadata(Snapshot(new Reference(selected, new object())).Values);
+        ShaderReferenceMetadata copied = new(Snapshot(new Reference(foreign, new object())).Values);
         Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Snapshot(new Reference(selected, data)), selected, (_, _) => copied));
         Assert.Equal(0, data.Reads);
     }
@@ -258,17 +258,17 @@ public sealed class ArgumentTableBindingTests
 
         public object ShaderHandle => this;
 
-        internal Dictionary<ulong, ShaderValueSnapshot> Values { get; } = [];
+        internal Dictionary<ulong, ShaderReferenceMetadata> Values { get; } = [];
 
         internal int Reads { get; private set; }
 
-        public ShaderValueSnapshot Read(ulong index)
+        public ShaderReferenceMetadata ReadReferences(ulong index)
         {
             Reads++;
             return Values[index];
         }
 
-        public void SetTransferredValue(ulong index, ShaderValueSnapshot value) => Values[index] = value;
+        public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value) => Values[index] = value;
 
         public void ValidateAlive()
         {

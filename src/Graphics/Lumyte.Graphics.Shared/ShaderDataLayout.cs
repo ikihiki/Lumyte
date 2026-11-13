@@ -265,6 +265,33 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         }
     }
 
+    /// <summary>Diagnoses C# layout without constructing or retaining a numeric value snapshot.</summary>
+    /// <param name="size">The complete managed wire size.</param>
+    /// <param name="fields">Explicitly requested static C# field locations.</param>
+    /// <param name="name">The declared shader structure name.</param>
+    public void ValidateTransferLayout(int size, IReadOnlyList<ShaderTransferField> fields, string name)
+        => ValidateTransfer(size, fields, name);
+
+    /// <summary>Diagnoses reference kind, element type and access without CPU numeric bytes.</summary>
+    /// <param name="metadata">The current resource identities.</param>
+    public void ValidateReferenceMetadata(ShaderReferenceMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (metadata.Values.Count != _members.Values.Count(member => member.Reference))
+        {
+            throw new ArgumentException("Resource count differs from the compiled schema.", nameof(metadata));
+        }
+
+        foreach (ShaderValue value in metadata.Values)
+        {
+            ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
+            if (member == null || !ReferenceMatches(value, member))
+            {
+                throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(metadata));
+            }
+        }
+    }
+
     /// <inheritdoc/>
     public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && ((_members == null && other._members == null) || (_members != null && other._members != null && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member)));
 

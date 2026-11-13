@@ -194,7 +194,7 @@ public sealed class OptionalGraphicsValidationTests
         }
 
         state.Record(source, 0, destination, 0, 1, () => { });
-        source.Value = source.Value.Copy();
+        source.Value = new ShaderReferenceMetadata(source.Value.Values);
         if (enabled)
         {
             Assert.Throws<InvalidOperationException>(state.ValidateSubmit);
@@ -255,7 +255,7 @@ public sealed class OptionalGraphicsValidationTests
 
     private sealed class FakeDataSource : IShaderDataSource
     {
-        public ShaderValueSnapshot Value { get; set; } = new("arguments", "Fake", new byte[4], [], []);
+        public ShaderReferenceMetadata Value { get; set; } = new([]);
 
         public IShaderDataLayout Layout => throw new NotSupportedException();
 
@@ -265,9 +265,9 @@ public sealed class OptionalGraphicsValidationTests
 
         public object ShaderHandle => this;
 
-        public ShaderValueSnapshot Read(ulong index) => Value;
+        public ShaderReferenceMetadata ReadReferences(ulong index) => Value;
 
-        public void SetTransferredValue(ulong index, ShaderValueSnapshot value) => Value = value;
+        public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value) => Value = value;
 
         public void ValidateAlive()
         {

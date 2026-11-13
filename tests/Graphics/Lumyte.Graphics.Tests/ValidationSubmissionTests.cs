@@ -409,20 +409,20 @@ public sealed class ValidationSubmissionTests
         using var write = new FakeCommand();
         using var stale = new FakeCommand();
         using var matching = new FakeCommand();
-        ShaderValueSnapshot original = new("arguments", "Wire", new byte[] { 0 }, [], []);
-        ShaderValueSnapshot copied = original.Copy();
+        ShaderReferenceMetadata original = new([]);
+        ShaderReferenceMetadata copied = new(original.Values);
         var source = new FakeMetadataSource(original);
         validation?.Metadata(write, source, 0, copied, write: true);
         validation?.Metadata(stale, source, 0, original, write: false);
 
         // Capture a matching read independently, then restore the pre-submit source value.
-        source.SetTransferredValue(0, copied);
+        source.SetTransferredReferences(0, copied);
         validation?.Metadata(matching, source, 0, copied, write: false);
-        source.SetTransferredValue(0, original);
+        source.SetTransferredReferences(0, original);
         CheckInvalid(enabled, () => validation?.PrepareSubmission([write, stale]));
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
         Commit(validation, [write, matching]);
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
     }
 
     /// <summary>Checks abandoned native-submit preparation publishes no metadata or resource hazards.</summary>
@@ -436,8 +436,8 @@ public sealed class ValidationSubmissionTests
         using var write = new FakeCommand();
         using var originalRead = new FakeCommand();
         object buffer = new();
-        ShaderValueSnapshot original = new("arguments", "Wire", new byte[] { 0 }, [], []);
-        ShaderValueSnapshot copied = original.Copy();
+        ShaderReferenceMetadata original = new([]);
+        ShaderReferenceMetadata copied = new(original.Values);
         var source = new FakeMetadataSource(original);
         validation?.Metadata(write, source, 0, copied, write: true);
         validation?.Access(write, buffer, _write, 0, 16);
@@ -449,7 +449,7 @@ public sealed class ValidationSubmissionTests
             Assert.NotNull(abandoned);
         }
 
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
         Commit(validation, [originalRead]);
     }
 
@@ -519,8 +519,8 @@ public sealed class ValidationSubmissionTests
         GraphicsValidation? validation = enabled ? new() : null;
         using var command = new FakeCommand();
         using var originalRead = new FakeCommand();
-        ShaderValueSnapshot original = new("arguments", "Wire", new byte[] { 0 }, [], []);
-        ShaderValueSnapshot copied = original.Copy();
+        ShaderReferenceMetadata original = new([]);
+        ShaderReferenceMetadata copied = new(original.Values);
         var source = new FakeMetadataSource(original);
         object buffer = new();
         validation?.Access(command, buffer, _write, 0, 16);
@@ -532,7 +532,7 @@ public sealed class ValidationSubmissionTests
             validation?.Access(command, buffer, _read, 0, 16);
             recording?.Commit();
         });
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
 
         // Reading the original in the same command proves the partial metadata operation rolled back.
         validation?.Metadata(command, source, 0, original, write: false);
@@ -544,7 +544,7 @@ public sealed class ValidationSubmissionTests
             // Native recording failed: leave the transaction uncommitted.
         }
 
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
         GraphicsValidation.SubmissionState? abandoned = validation?.PrepareSubmission([command]);
         if (enabled)
         {
@@ -552,9 +552,9 @@ public sealed class ValidationSubmissionTests
         }
 
         // Native submission failed: leave the prepared queue state uncommitted as well.
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
         Commit(validation, [command, originalRead]);
-        Assert.Same(original, source.Read(0));
+        Assert.Same(original, source.ReadReferences(0));
     }
 
     private static void CheckInvalid(bool enabled, Action action)
@@ -581,7 +581,7 @@ public sealed class ValidationSubmissionTests
     private static TextureBarrierDesc Transition(IGraphicsTexture texture, TextureState beforeState, TextureState afterState, BarrierScope before, BarrierScope after)
         => new() { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = beforeState, AfterState = afterState, Before = before, After = after };
 
-    private sealed class FakeMetadataSource(ShaderValueSnapshot value) : IShaderDataSource
+    private sealed class FakeMetadataSource(ShaderReferenceMetadata value) : IShaderDataSource
     {
         /// <summary>Gets the unused layout for this sequencing-only source.</summary>
         public IShaderDataLayout Layout => throw new NotSupportedException();
@@ -598,12 +598,12 @@ public sealed class ValidationSubmissionTests
         /// <summary>Reads the single element snapshot.</summary>
         /// <param name="index">The logical element index.</param>
         /// <returns>The currently published snapshot.</returns>
-        public ShaderValueSnapshot Read(ulong index) => index == 0 ? value : throw new ArgumentOutOfRangeException(nameof(index));
+        public ShaderReferenceMetadata ReadReferences(ulong index) => index == 0 ? value : throw new ArgumentOutOfRangeException(nameof(index));
 
         /// <summary>Publishes the single element snapshot.</summary>
         /// <param name="index">The logical element index.</param>
         /// <param name="snapshot">The transferred snapshot.</param>
-        public void SetTransferredValue(ulong index, ShaderValueSnapshot snapshot)
+        public void SetTransferredReferences(ulong index, ShaderReferenceMetadata snapshot)
         {
             if (index != 0)
             {

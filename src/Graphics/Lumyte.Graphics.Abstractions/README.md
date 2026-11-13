@@ -162,3 +162,7 @@ IGpuRef<uint> element = write.GetElement(2);
 opaque binaryのartifactをそのまま `IGraphicDevice.CreateShader` に渡すと、backendが自分用のtargetを取り出し、バックエンド所有の `IGraphicsShader` が返ります。必要な同期は利用側が管理します。[設計](../../../docs/adr/graphics/GRAPHICS-0006-shader-compilation-and-modules.md)／[Slang コンパイラーとオフライン設定](../Lumyte.Graphics.Shaders/README.md)を参照してください。
 
 形状・静的モデルの描画には [Lumyte.Graphics.Drawing](../Lumyte.Graphics.Drawing/README.md)、共有画像処理には [ImageEffects](../Lumyte.Graphics.ImageEffects/README.md) を使用できます。
+
+## 参照付きbufferのCPU metadata
+
+IShaderDataSource.Read／SetTransferredValueの完全なCPU値契約は、ReadReferences／SetTransferredReferencesへ変更しました。返すShaderReferenceMetadataはresource identityとwire slotだけを所有し、numeric Dataや元の値objectを保持しません。ShaderBindingSnapshot.Elementsも同じreference-only値です。数値の独立したCPU値が必要な場合は明示Captureを、GPU上の値が必要な場合は明示readbackを使ってください。CopyFromは現在の値を同期転送し、失敗時はbyteが部分更新され得ます。要求範囲のmetadataは無効になり、全範囲の明示再転送で回復します。

@@ -14,7 +14,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     internal List<ShaderBindingSnapshot> Bindings { get; } = [];
 
-    internal Func<IShaderDataSource, ulong, ShaderValueSnapshot>? ReadShaderData { get; set; }
+    internal Func<IShaderDataSource, ulong, ShaderReferenceMetadata>? ReadShaderData { get; set; }
 
     internal int Draws { get; private set; }
 

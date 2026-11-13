@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.Wgpu;
 internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
     where T : IShaderData
 {
-    private readonly ShaderValueSnapshot?[] _values;
+    private readonly ShaderReferenceMetadata?[] _values;
     private readonly ShaderDataLayout? _diagnosticLayout;
     private bool _disposed;
 
@@ -27,7 +27,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         Owner = owner;
         Count = count;
-        _values = new ShaderValueSnapshot?[checked((int)count)];
+        _values = new ShaderReferenceMetadata?[checked((int)count)];
     }
 
     object IValidatedShaderDataStorage.ValidationStorage => Storage;
@@ -90,22 +90,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
             return;
         }
 
-        var snapshots = new ShaderValueSnapshot[source.Length];
-        for (int i = 0; i < source.Length; i++)
-        {
-            snapshots[i] = IShaderArguments.Capture(in source[i]);
-        }
-
-        byte[] bytes = new byte[checked(source.Length * Layout.Size)];
-        for (int i = 0; i < snapshots.Length; i++)
-        {
-            _diagnosticLayout?.ValidateArguments(snapshots[i], validateReferences: true);
-
-            ShaderDataLayout.PackRawInto(snapshots[i], bytes.AsSpan(i * Layout.Size, Layout.Size), PackReference);
-        }
-
-        Storage.SliceElements(checked(elementOffset * (ulong)Layout.Size), (ulong)bytes.Length).CopyFrom(bytes);
-        snapshots.CopyTo(_values, checked((int)elementOffset));
+        ShaderDataUpload.CopyFrom(source, Storage, elementOffset, _values, PackReference, _diagnosticLayout);
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -114,7 +99,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         return new(this, offset, count);
     }
 
-    public ShaderValueSnapshot Read(ulong index)
+    public ShaderReferenceMetadata ReadReferences(ulong index)
     {
         ValidateAlive();
         if (index >= Count)
@@ -122,10 +107,10 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
             throw new ArgumentOutOfRangeException(nameof(index));
         }
 
-        return _values[checked((int)index)] ?? throw new InvalidOperationException("Shader data element has not been set by the CPU.");
+        return _values[checked((int)index)] ?? throw new InvalidOperationException("Shader data reference metadata is uninitialized or invalid after a failed transfer.");
     }
 
-    public void SetTransferredValue(ulong index, ShaderValueSnapshot value)
+    public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value)
     {
         ValidateAlive();
         if (Memory != MemoryPreference.Automatic || index >= Count)

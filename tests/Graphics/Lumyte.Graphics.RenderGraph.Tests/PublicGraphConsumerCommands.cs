@@ -43,13 +43,13 @@ internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
 
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
     {
-        Encoder.ReadShaderData = _transfers.Read;
+        Encoder.ReadShaderData = _transfers.ReadReferences;
         return Encoder;
     }
 
     public IComputeEncoder BeginComputePass(ComputePassDesc desc)
     {
-        Encoder.ReadShaderData = _transfers.Read;
+        Encoder.ReadShaderData = _transfers.ReadReferences;
         return Encoder;
     }
 

@@ -37,6 +37,22 @@ public static class ShaderTransfer
         where T : unmanaged
         => Fields(typeof(T));
 
+    /// <summary>Explicitly gets diagnostic metadata using the shader argument compatibility contract.</summary>
+    /// <typeparam name="T">The application shader argument type.</typeparam>
+    /// <param name="value">The value whose reference-type metadata provider may be queried synchronously.</param>
+    /// <returns>Type-derived value-type fields or reference-type provider fields, without retaining the value.</returns>
+    public static IReadOnlyList<ShaderTransferField> Fields<T>(in T value)
+        where T : IShaderArguments
+    {
+        if (typeof(T).IsValueType)
+        {
+            return Fields(typeof(T));
+        }
+
+        ArgumentNullException.ThrowIfNull(value);
+        return InterfaceFields(value);
+    }
+
     /// <summary>Explicitly gets cached diagnostic C# field metadata for a value type.</summary>
     /// <param name="type">The C# value type to inspect.</param>
     /// <returns>Diagnostic metadata only; it never determines transferred bytes.</returns>

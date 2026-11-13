@@ -75,3 +75,10 @@ a type identity, not a diagnostic callback. Generated classes retain an unboxed
 metadata provider and initialize diagnostic field tables only when explicitly
 requested; packing never invokes the provider. The disabled path has no field
 reflection, diagnostic table initialization, or runtime code generation.
+
+The generated `Write<TWriter>` seam also supports direct reference-bearing uploads.
+CopyFrom uses a streaming writer, not an implicit Capture: private unmanaged bytes
+are copied synchronously and only immutable resource identities remain on the CPU.
+Explicit Capture and SetArguments still request independent value snapshots.
+A failed upload may partially modify bytes and invalidates the requested reference
+metadata range; it does not roll back values or retain a hidden numeric history.

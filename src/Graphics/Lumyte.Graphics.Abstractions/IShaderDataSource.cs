@@ -15,15 +15,16 @@ public interface IShaderDataSource
     /// <summary>Gets the backend native GPU buffer handle.</summary>
     object ShaderHandle { get; }
 
-    /// <summary>Reads an immutable CPU element snapshot.</summary>
+    /// <summary>Reads immutable reference-only metadata without reading numeric shader data.</summary>
     /// <param name="index">The logical element.</param>
-    /// <returns>The immutable CPU value snapshot.</returns>
-    ShaderValueSnapshot Read(ulong index);
+    /// <returns>The immutable reference metadata for this element.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The element index is outside the buffer.</exception>
+    ShaderReferenceMetadata ReadReferences(ulong index);
 
     /// <summary>Publishes metadata after an explicit GPU copy is submitted.</summary>
     /// <param name="index">The destination element.</param>
     /// <param name="value">The copied value metadata.</param>
-    void SetTransferredValue(ulong index, ShaderValueSnapshot value);
+    void SetTransferredReferences(ulong index, ShaderReferenceMetadata value);
 
     /// <summary>Validates that the logical shader data source is alive.</summary>
     void ValidateAlive();

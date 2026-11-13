@@ -4,7 +4,48 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## 明示転送境界の確認とscratch直接pack（2026-11-13）
+## reference-only CopyFromの最新検証（2026-11-13）
+
+20:36の承認により、IShaderDataSourceの完全なCPU値Read契約を廃止し、
+ReadReferences／SetTransferredReferencesとimmutableなShaderReferenceMetadataへ移した。
+ShaderBindingSnapshot.Elements、Graph、copy overlay、任意検証のrevision照合も
+reference-onlyである。Data、numeric byte配列、元の値objectや配置providerは保持しない。
+
+参照付きCopyFromはgeneric writerで現在のprivate unmanaged backingを同期的にmapped
+uploadへ書く。四つのbackendからIShaderArguments.Capture、要素ごとの
+ShaderValueSnapshot、numeric byte配列とtransactional batch scratchを削除した。
+残したのはbindingに必要なresource identityとwire slotのmetadataだけである。
+明示Capture／SetArgumentsのvalue snapshotは変更していない。GPU-only bufferからの
+隠れたreadbackや待機も追加していない。
+
+失敗atomicityは要求しない。codec、encoder、mapped書き込みが途中で失敗すると、
+byteは部分更新され得る。要求したmetadata範囲は全て無効とし、範囲外を変更せず、
+元の例外を返す。無効なsourceからのtyped copyをnative記録前に拒否する。
+全範囲の再転送で回復し、記録済み・in-flight資源の寿命と同期責任は維持する。
+
+直接方式とCPU一時buffer方式は同じmetadata義務で、1／64／1024要素の実際の
+CopyFromをBDNで比較した。CPU一時bufferにはsmall CPU stageで5–6%の利益も
+あったが、completed GPU copyでは1–2%の差で断定できず、1024要素では約13%遅く
+allocationも増えたため、直接方式を採用した。pooled scratchや他backendの性能に
+一般化はしない。最終candidateのABBA、全24case、pilotを含む全証拠は
+[比較report](performance/shader-upload-strategies-20261113.md)に保持する。
+従来のcab86fd3の6.45倍／2.24倍の結果は別の歴史的比較であり、流用しない。
+
+- Graphics Debug／Release: 各215成功、失敗0、84スキップ（299件）。
+- RenderGraph Debug／Release: 各125成功、失敗0、スキップ0。
+- 全ホストRelease: 3,180成功、失敗0、105スキップ。
+- Vulkan／Wgpu転送fixture: Debug／Release各10成功、失敗0、スキップ0。
+  最新値、失敗後のmetadata拒否と再転送による回復を実readbackで確認した。
+- failure／diagnostic15ケースで、元の例外、要求範囲の無効化、host bounds／overflow、
+  不透明ABI、reference-only性、手書きclass／structの任意診断を確認した。
+- D3D12管理側Release: 28成功、失敗0、Windows nativeスキップ7。
+- Browser Release compile成功。Windows native、Browser実行、AOT、presentationは未検証。
+
+ログはartifacts/validation6-{Debug,Release,fullhost,graph-debug,d3d-release,browser-release,hardware-Debug,hardware-Release,markdown}.log。
+新decisionとbreaking API移行はADR0035だけへ反映し、過去ADRは変更しない。
+以下は各旧revision時点の履歴であり、今回の最新契約ではない。
+
+## 693b969f時点の転送境界・scratch検証履歴（2026-11-13）
 
 「転送前の変更はすべて有効」という要件について、cab86fd3の実装を先に追跡し、
 変更前に新しいGPU readback検査を実行した。buffer／slice作成、tableへの登録、

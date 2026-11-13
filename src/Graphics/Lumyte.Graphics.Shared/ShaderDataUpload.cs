@@ -1,0 +1,72 @@
+using Lumyte.Graphics.Abstractions;
+
+namespace Lumyte.Graphics.Shared;
+
+/// <summary>Writes current application bytes and retains only resource reference identities.</summary>
+public static class ShaderDataUpload
+{
+    /// <summary>Writes a batch without promising failure atomicity or retaining CPU numeric values.</summary>
+    /// <typeparam name="T">The application shader data type.</typeparam>
+    /// <param name="source">Values read synchronously during this call.</param>
+    /// <param name="storage">Idle, mapped upload storage.</param>
+    /// <param name="elementOffset">The first destination element.</param>
+    /// <param name="metadata">Backend-owned per-element reference metadata.</param>
+    /// <param name="encode">The existing backend reference encoder.</param>
+    /// <param name="diagnostic">An explicitly enabled compiled layout, or null.</param>
+    /// <remarks>Any failure invalidates metadata for the requested range. Destination bytes may already be partially modified.</remarks>
+    public static void CopyFrom<T>(ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ShaderReferenceMetadata?[] metadata, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic)
+        where T : IShaderData
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(encode);
+        int stride = T.TransferSize;
+        if (stride <= 0 || elementOffset > (ulong)metadata.Length || (ulong)source.Length > (ulong)metadata.Length - elementOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elementOffset));
+        }
+
+        if (source.IsEmpty)
+        {
+            return;
+        }
+
+        ulong offset = checked(elementOffset * (ulong)stride);
+        int length = checked(source.Length * stride);
+        storage.ValidateByteRange(offset, (ulong)length);
+        if (!storage.IsMapped || storage.Memory != MemoryPreference.Upload)
+        {
+            throw new InvalidOperationException("CopyFrom requires idle mapped upload storage.");
+        }
+
+        int start = checked((int)elementOffset);
+        Array.Clear(metadata, start, source.Length);
+        try
+        {
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (!typeof(T).IsValueType)
+                {
+                    ArgumentNullException.ThrowIfNull(source[i]);
+                }
+
+                if (diagnostic != null)
+                {
+                    diagnostic.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
+                }
+
+                var writer = new ShaderDataUploadWriter(storage, checked(offset + ((ulong)i * (ulong)stride)), stride, encode);
+                source[i].Write(ref writer);
+                ShaderReferenceMetadata value = writer.Complete();
+                diagnostic?.ValidateReferenceMetadata(value);
+                metadata[start + i] = value;
+            }
+        }
+        catch
+        {
+            // Clearing this known-valid range cannot replace the original failure.
+            Array.Clear(metadata, start, source.Length);
+            throw;
+        }
+    }
+}

@@ -158,6 +158,21 @@ public sealed class ExplicitTransferBoundaryTests
         typedUpload.Unmap();
         await DispatchAndCheckAsync([999, 1000, 999, 100], reuse: true);
 
+        // A failed reference-bearing write may change mapped bytes, but cannot leave
+        // old metadata claiming that those bytes still form a coherent element.
+        await typedUpload.MapAsync();
+        values[0].Value = 1001;
+        values[0].Target = null;
+        Assert.Throws<ArgumentException>(() => typedUpload.CopyFrom(values));
+        Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)typedUpload).ReadReferences(0));
+        typedUpload.Unmap();
+        using (IGraphicsCommandBuffer rejected = device.CreateCommandBuffer(new()))
+        {
+            Assert.Throws<InvalidOperationException>(() => rejected.CopyBuffer(typedSource, typedDestination));
+        }
+
+        values[0].Target = a;
+
         // Multiple writes while mapped, before recording CopyBuffer, are legal: the last wins.
         await MapAndCopyAsync();
         numbers[0] = 11;

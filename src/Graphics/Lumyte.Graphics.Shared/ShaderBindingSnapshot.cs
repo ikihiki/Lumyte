@@ -6,16 +6,16 @@ namespace Lumyte.Graphics.Shared;
 public sealed class ShaderBindingSnapshot
 {
     private readonly HashSet<IShaderReference> _references = [];
-    private readonly Dictionary<(IShaderDataSource Buffer, ulong Element), ShaderValueSnapshot> _elements = [];
+    private readonly Dictionary<(IShaderDataSource Buffer, ulong Element), ShaderReferenceMetadata> _elements = [];
 
-    private ShaderBindingSnapshot(ShaderValueSnapshot root, IArgumentTable? table, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read)
+    private ShaderBindingSnapshot(ShaderValueSnapshot root, IArgumentTable? table, Func<IShaderDataSource, ulong, ShaderReferenceMetadata>? read)
     {
         Root = root;
-        Stack<ShaderValueSnapshot>? pending = null;
-        Collect(root, table, ref pending, read);
-        while (pending != null && pending.TryPop(out ShaderValueSnapshot? value))
+        Stack<ShaderReferenceMetadata>? pending = null;
+        Collect(root.Values, table, ref pending, read);
+        while (pending != null && pending.TryPop(out ShaderReferenceMetadata? value))
         {
-            Collect(value, table, ref pending, read);
+            Collect(value.Values, table, ref pending, read);
         }
 
         Root.ValidateExecutionReferences(_references);
@@ -28,18 +28,18 @@ public sealed class ShaderBindingSnapshot
     public IReadOnlyCollection<IShaderReference> References => _references;
 
     /// <summary>Gets the captured shader data elements.</summary>
-    public IReadOnlyDictionary<(IShaderDataSource Buffer, ulong Element), ShaderValueSnapshot> Elements => _elements;
+    public IReadOnlyDictionary<(IShaderDataSource Buffer, ulong Element), ShaderReferenceMetadata> Elements => _elements;
 
     /// <summary>Captures a root value and its transitive element dependencies.</summary>
     /// <param name="root">The root input.</param>
     /// <param name="table">The selected table; required when any reachable value contains a resource reference.</param>
     /// <param name="read">The command-local transferred metadata reader.</param>
     /// <returns>The processed result.</returns>
-    public static ShaderBindingSnapshot Capture(ShaderValueSnapshot root, IArgumentTable? table, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read = null) => new(root, table, read);
+    public static ShaderBindingSnapshot Capture(ShaderValueSnapshot root, IArgumentTable? table, Func<IShaderDataSource, ulong, ShaderReferenceMetadata>? read = null) => new(root, table, read);
 
-    private void Collect(ShaderValueSnapshot value, IArgumentTable? table, ref Stack<ShaderValueSnapshot>? pending, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read)
+    private void Collect(IReadOnlyList<ShaderValue> values, IArgumentTable? table, ref Stack<ShaderReferenceMetadata>? pending, Func<IShaderDataSource, ulong, ShaderReferenceMetadata>? read)
     {
-        foreach (ShaderValue member in value.Values)
+        foreach (ShaderValue member in values)
         {
             if (member.Reference is not IShaderReference reference)
             {
@@ -71,7 +71,7 @@ public sealed class ShaderBindingSnapshot
                     continue;
                 }
 
-                ShaderValueSnapshot snapshot = read == null ? source.Read(key.Item2) : read(source, key.Item2);
+                ShaderReferenceMetadata snapshot = read == null ? source.ReadReferences(key.Item2) : read(source, key.Item2);
                 _elements.Add(key, snapshot);
                 (pending ??= new()).Push(snapshot);
             }

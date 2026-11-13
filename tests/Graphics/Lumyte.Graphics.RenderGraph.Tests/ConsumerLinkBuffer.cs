@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 1, MemoryPreference memory = MemoryPreference.Automatic) : IGraphicsShaderDataBuffer<ConsumerLink>, IShaderDataSource
 {
-    private readonly ShaderValueSnapshot?[] _values = new ShaderValueSnapshot?[checked((int)count)];
+    private readonly ShaderReferenceMetadata?[] _values = new ShaderReferenceMetadata?[checked((int)count)];
     private bool _disposed;
 
     public ulong Count => count;
@@ -30,13 +30,13 @@ internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 
 
     public ShaderDataSlice<ConsumerLink> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-    public ShaderValueSnapshot Read(ulong index)
+    public ShaderReferenceMetadata ReadReferences(ulong index)
     {
         ValidateAlive();
-        return _values[checked((int)index)] ?? new("element", "ConsumerLink", new byte[16], [], ConsumerLink.TransferFields);
+        return _values[checked((int)index)] ?? new([]);
     }
 
-    public void SetTransferredValue(ulong index, ShaderValueSnapshot value) => _values[checked((int)index)] = value;
+    public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value) => _values[checked((int)index)] = value;
 
     public void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 

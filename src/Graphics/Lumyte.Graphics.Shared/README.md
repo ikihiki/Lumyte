@@ -5,7 +5,7 @@
 - `ShaderDataLayout` は artifact の型 schema を読み、生成時の互換性確認と値の配置を行います。
 
   `Data(artifact, target, name)`はtargetの展開・reflection解析・layout構築をartifactの寿命内で共有します。`Data(target, name)`・`Root`・`HasRoot`も不変のtargetごとに解析結果を再利用します。所有者は弱参照で結び付け、GPU資源を保持しません。別artifact・別target・同名の異なるschemaを分離し、公開されるshader codeのコピー契約を維持します。成功したlayoutだけを保存し、存在しない名前の問い合わせでキャッシュを増やしません。
-- `ShaderBindingSnapshot` は選択した要素から参照を収集し、循環と転送済み要素の依存snapshotを扱います。
+- `ShaderBindingSnapshot` は選択した要素から参照を収集し、循環と転送済み要素のreference-only metadataを扱います。
 - `ShaderDataTransferState` は明示copyのmetadata overlayを管理し、submit成功後に公開します。
 - `ShaderBindingData` と `WgslBindingSpecializer` は WGSL を使うバックエンドで必要な binding データと shader variant を生成します。Vulkan は snapshot と layout を利用し、参照の GPU 表現は自身で生成します。
 - `ShaderBufferBinding` はallocationと登録byte範囲を保持します。同じallocationでも異なる範囲は別bindingとして解決し、GetElementはそのbinding内の要素位置を指定します。
@@ -15,7 +15,7 @@
 
 GPU同期とリソースの有効期間は利用者が管理します。このライブラリはGPU同期や転送命令の自動発行を追加しません。metadataキャッシュの初期構築と公開は内部lockで保護します。
 
-`ShaderBindingSnapshot`の収集と`ShaderDataTransferState`のmetadata overlayはbinding生成に必要な情報だけを保持します。既定では登録の失効、staging revision、command間依存の変化をSubmit時に再検証しません。各backendの実deviceでEnableValidation()を明示した場合に限り、nullableなGraphicsValidationが寿命・登録・scope・semaphoreを追跡し、ShaderDataTransferStateはcopy source snapshotのidentityをSubmit前に照合します。
+`ShaderBindingSnapshot`の収集と`ShaderDataTransferState`のmetadata overlayはbinding生成に必要な情報だけを保持します。既定では登録の失効、staging revision、command間依存の変化をSubmit時に再検証しません。各backendの実deviceでEnableValidation()を明示した場合に限り、nullableなGraphicsValidationが寿命・登録・scope・semaphoreを追跡し、ShaderDataTransferStateはcopy source reference metadataのidentityをSubmit前に照合します。
 
 `SurfaceFrameLifetime`は取得・提示の局所状態を扱い、ネイティブ取得・提示の明示的な完了待機を提供します。GPU submissionを自動収集せず、GPU使用の完了は利用者が別途確認します。semaphoreのsignal／wait履歴、使用中resourceの保持数、検証callbackは管理しません。
 
@@ -26,3 +26,7 @@ GPU同期とリソースの有効期間は利用者が管理します。この�
 GraphicsValidationは、command記録をrollback可能な診断transactionとして保持し、Submit時にqueue状態の複製へアクセスを指定順で適用します。成功後だけ状態を公開するため、未提出・破棄・同期的に失敗したnative Submitは後続commandの状態を変えません。bufferはbyte範囲、textureはmip／layer別に追跡します。登録identity、親子、mapping、binary semaphoreとmetadata copyの順序も診断します。GPU内部の動的アクセスは登録範囲として保守的に扱い、直接のnative操作やstaging byte変更は観測できません。D3D12の部分発行済みnative操作や非同期GPU失敗を取り消す保証はありません。
 
 ShaderResourcesの不可分なresource groupへの所属確認は、有限のnative bindingを生成するための通常のadmission契約です。snapshotはgroupのmetadata objectを保持し、診断callbackを記録しません。これは任意の寿命・barrier・semaphore診断と分離して維持します。通常のcaptureも診断delegateを作らず、型identityまたは生成型の配置providerだけを保持します。
+
+## 参照付きuploadのmetadata
+
+IShaderDataSourceはReadReferences／SetTransferredReferencesを提供し、ShaderReferenceMetadataにはresource identityとwire slotだけを保存します。数値Dataや元の値objectは保持せず、Elementsもreference-onlyです。CopyFromはgeneric writerで現在値を同期書き込みし、失敗した要求範囲のmetadataを無効にします。byteのrollbackは保証しません。完全な値のCPU履歴は明示Capture、GPUの値は明示readbackで取得します。直接書き込みとCPU batch scratchの選択は性能上の判断であり、atomicity保護ではありません。
