@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Platform.TextInput.Abstractions;
 using Lumyte.Signals;
 using Lumyte.TextEditing;
@@ -129,7 +130,7 @@ public sealed class TextHostTests
     [Fact]
     public async Task EditorValidationUsesServiceRequirementsInsteadOfEveryTreePublicationAsync()
     {
-        var color = Signal.Create(new Color2D(1, 0, 0, 1));
+        var color = Signal.Create(new SRgba<float>(1, 0, 0, 1));
         var readOnly = Signal.Create(true);
         var provider = new LayoutProvider();
         using var surface = new UiSurface(Lumyte.UI.Compose.Panel()[

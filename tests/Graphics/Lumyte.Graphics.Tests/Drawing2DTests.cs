@@ -7,6 +7,7 @@ using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Resources;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
@@ -16,9 +17,9 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks the complete 2D pipeline against independently specified GPU pixel results.</summary>
 public sealed partial class Drawing2DTests
 {
-    private static readonly Color2D _white = new(1, 1, 1, 1);
-    private static readonly Color2D _red = new(1, 0, 0, 1);
-    private static readonly Color2D _blue = new(0, 0, 1, 1);
+    private static readonly SRgba<float> _white = new(1, 1, 1, 1);
+    private static readonly SRgba<float> _red = new(1, 0, 0, 1);
+    private static readonly SRgba<float> _blue = new(0, 0, 1, 1);
     private static readonly BarrierScope _copyRead = new(PipelineStage.Copy, ResourceAccess.CopyRead);
     private static readonly BarrierScope _copyWrite = new(PipelineStage.Copy, ResourceAccess.CopyWrite);
     private static readonly BarrierScope _sampleRead = new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
@@ -131,8 +132,8 @@ public sealed partial class Drawing2DTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(1, 0, 2, 2), new Color2D(0.5f, 0.5f, 0.5f, 1));
-        canvas.FillCircle(Vector2.Zero, 1, new Color2D(0, 0, 0, 0));
+        canvas.FillRect(new(1, 0, 2, 2), new SRgba<float>(0.5f, 0.5f, 0.5f, 1));
+        canvas.FillCircle(Vector2.Zero, 1, new SRgba<float>(0, 0, 0, 0));
         DrawList2D list = canvas.End();
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
@@ -285,7 +286,7 @@ public sealed partial class Drawing2DTests
         {
             canvas.FillRect(new(0, 0, 8, 1), PaintGraph2D.LinearGradient(Vector2.Zero, new(8, 0), transparentBlueToRed));
             canvas.FillRect(new(0, 1, 8, 1), PaintGraph2D.LinearGradient(Vector2.Zero, new(4, 0), new(4, 4), blackToWhite, ExtendMode2D.Pad));
-            canvas.FillRect(new(0, 2, 8, 1), new Color2D(0.5f, 0.5f, 0.5f, 1));
+            canvas.FillRect(new(0, 2, 8, 1), new SRgba<float>(0.5f, 0.5f, 0.5f, 1));
             canvas.FillRect(new(0, 3, 8, 1), PaintGraph2D.LinearGradient(Vector2.Zero, new(4, 0), blackToWhite, ExtendMode2D.Reflect));
         });
         AssertPixel(pixels, 8, 3, 0, new(0.4375f, 0, 0, 0.4375f));
@@ -551,7 +552,7 @@ public sealed partial class Drawing2DTests
     {
         Vector4[] translucent = await RenderAsync(device, 4, 2, canvas =>
         {
-            canvas.FillRect(new(0, 0, 4, 2), new Color2D(1, 0, 0, 0.5f));
+            canvas.FillRect(new(0, 0, 4, 2), new SRgba<float>(1, 0, 0, 0.5f));
             canvas.DrawBackdropEffect(new() { OutputBounds = new(1.5f, 0, 2.5f, 2), Effects = graph => graph.AppendOpacity(graph.Source, 0.5f) });
             canvas.FillRect(new(3, 0, 1, 2), _blue);
         });

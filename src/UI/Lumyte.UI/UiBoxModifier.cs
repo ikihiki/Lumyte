@@ -1,5 +1,5 @@
 using System.Numerics;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -11,8 +11,10 @@ internal enum UiBoxModifierKind
     Constraints,
 }
 
-internal readonly record struct UiBoxModifier(UiBoxModifierKind Kind, float Left = 0, float Top = 0, float Right = 0, float Bottom = 0, Color2D Color = default, UiBoxConstraints Constraints = default)
+internal readonly record struct UiBoxModifier(UiBoxModifierKind Kind, float Left = 0, float Top = 0, float Right = 0, float Bottom = 0, SRgba<float> Color = default, UiBoxConstraints Constraints = default)
 {
+    public SRgba<float> Color { get; init => field = UiColorPolicy.Unit(value, nameof(Color)); } = UiColorPolicy.Unit(Color, nameof(Color));
+
     internal UiBoxConstraints Forward(UiBoxConstraints parent)
     {
         if (Kind == UiBoxModifierKind.Align)

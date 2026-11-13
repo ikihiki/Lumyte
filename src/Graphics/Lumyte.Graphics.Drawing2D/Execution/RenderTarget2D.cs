@@ -1,10 +1,13 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
 /// <summary>Describes a borrowed display-linear two-dimensional rendering destination.</summary>
 public sealed record RenderTarget2D
 {
+    private readonly SRgba<float> _clearColor;
+
     /// <summary>Gets the whole single-mip, single-layer Rgba8Srgb or Rgba16Float attachment view.</summary>
     public required IGraphicsTextureView View { get; init; }
 
@@ -14,6 +17,14 @@ public sealed record RenderTarget2D
     /// <summary>Gets the initial attachment operation.</summary>
     public AttachmentLoadOp LoadOp { get; init; } = AttachmentLoadOp.Load;
 
-    /// <summary>Gets the straight sRGB color used by Clear.</summary>
-    public Color2D ClearColor { get; init; }
+    /// <summary>Gets or initializes the finite unit straight-alpha sRGB color used by Clear; invalid values are rejected before assignment.</summary>
+    public SRgba<float> ClearColor
+    {
+        get => _clearColor;
+        init
+        {
+            ModelValidation2D.Color(value, nameof(ClearColor));
+            _clearColor = value;
+        }
+    }
 }

@@ -36,6 +36,8 @@ public static class AnimationInterpolators
         ArgumentNullException.ThrowIfNull(interpolator);
         Validate(control1);
         Validate(control2);
+        interpolator.Validate(control1);
+        interpolator.Validate(control2);
         return new Bezier<T>(control1, control2, interpolator);
     }
 
@@ -92,6 +94,10 @@ public static class AnimationInterpolators
     private sealed class Bezier<T>(T control1, T control2, IAnimationInterpolator<T> interpolator) : IAnimationInterpolator<T>
     {
         private readonly Func<T, T, float, T> _interpolate = interpolator.Interpolate;
+        private readonly IAnimationInterpolator<T> _interpolator = interpolator;
+
+        /// <inheritdoc />
+        public void Validate(T value) => _interpolator.Validate(value);
 
         /// <inheritdoc />
         public T Interpolate(T from, T to, float amount) => BezierInterpolation.Cubic(from, control1, control2, to, amount, _interpolate);

@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -148,7 +149,7 @@ public sealed class DrawingResourceLifetimeTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 1, 1), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 1, 1), new SRgba<float>(1, 0, 0, 1));
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view }, cancellationToken);

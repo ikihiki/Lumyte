@@ -18,7 +18,7 @@ public sealed class UiAnimated<T> : IReadSignal<T>, IUiAnimationProjection
         _producer = producer;
         _published = published;
         _detached = detached;
-        _staged = UiAnimationEvaluation.Read(detached);
+        _staged = UiColorPolicy.Value(UiAnimationEvaluation.Read(detached), nameof(detached));
         _display = Signal.Create(_staged);
         _sample = Signal.Computed(() =>
         {
@@ -28,13 +28,13 @@ public sealed class UiAnimated<T> : IReadSignal<T>, IUiAnimationProjection
     }
 
     /// <inheritdoc/>
-    public T Value => _producer.IsConnected ? _display.Value : UiAnimationEvaluation.Read(_detached);
+    public T Value => _producer.IsConnected ? _display.Value : UiColorPolicy.Value(UiAnimationEvaluation.Read(_detached), nameof(Value));
 
     /// <inheritdoc/>
     UiAnimationProducer IUiAnimationProjection.Producer => _producer;
 
     /// <inheritdoc/>
-    public T Peek() => _producer.IsConnected ? _display.Peek() : UiAnimationEvaluation.Read(_detached);
+    public T Peek() => _producer.IsConnected ? _display.Peek() : UiColorPolicy.Value(UiAnimationEvaluation.Read(_detached), nameof(Value));
 
     /// <summary>Projects the same producer without transferring its lifetime or reading other signals.</summary>
     /// <typeparam name="TResult">The exact destination property type.</typeparam>
@@ -47,7 +47,7 @@ public sealed class UiAnimated<T> : IReadSignal<T>, IUiAnimationProjection
     }
 
     /// <inheritdoc/>
-    void IUiAnimationProjection.Stage() => _staged = _sample.Peek();
+    void IUiAnimationProjection.Stage() => _staged = UiColorPolicy.Value(_sample.Peek(), nameof(Value));
 
     /// <inheritdoc/>
     void IUiAnimationProjection.Publish()

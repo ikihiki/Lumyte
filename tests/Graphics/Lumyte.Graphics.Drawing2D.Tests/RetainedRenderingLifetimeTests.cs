@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -81,7 +82,7 @@ public sealed class RetainedRenderingLifetimeTests
         canvas.Begin();
         for (int i = 0; i < 130; i++)
         {
-            canvas.FillRect(new(i, 0, 1, 1), new Color2D(1, 0, 0, 0.5f));
+            canvas.FillRect(new(i, 0, 1, 1), new SRgba<float>(1, 0, 0, 0.5f));
         }
 
         DrawList2D content = canvas.End();
@@ -142,7 +143,7 @@ public sealed class RetainedRenderingLifetimeTests
         path.LineTo(new(4, 0));
         path.LineTo(new(0, 4));
         path.Close();
-        canvas.FillPath(path.Build(), new Color2D(1, 1, 1, 1));
+        canvas.FillPath(path.Build(), new SRgba<float>(1, 1, 1, 1));
         using var snapshot = new DrawingSnapshot2D(1, [new(default, canvas.End(), Matrix3x2.Identity, [], 1, 1)]);
         using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(snapshot, new() { View = view });
         renderer.Dispose();
@@ -388,7 +389,7 @@ public sealed class RetainedRenderingLifetimeTests
             // Each distinct clip stack forces a separate prepared batch in the same small chunk.
             canvas.Save();
             canvas.ClipPath(shape);
-            canvas.FillPath(shape, new Color2D(1, 1, 1, 1));
+            canvas.FillPath(shape, new SRgba<float>(1, 1, 1, 1));
             canvas.Restore();
         }
 

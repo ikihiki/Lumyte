@@ -1,4 +1,4 @@
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI.SampleSupport;
 
@@ -10,7 +10,7 @@ internal sealed class UiSavedIndicator : Compose.Definitions.Rectangle
         TestId = "saved-indicator";
         Width = 8;
         Height = 8;
-        Fill = new Color2D(0, 1, 0, 1);
+        Fill = new SRgba<float>(0, 1, 0, 1);
         IsVisible = false;
     }
 }
