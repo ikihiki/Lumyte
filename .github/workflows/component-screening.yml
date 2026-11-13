@@ -1,0 +1,94 @@
+name: Component performance screening
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: component-screening-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screening:
+    name: Advisory CPU component screening
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate screening tooling
+        run: |
+          python3 -m unittest discover -s tools/benchmarks/component-screening -p 'test_*.py' -v
+          python3 -m unittest discover -s tools/ci -p 'test_component_screening*.py' -v
+
+      - name: Select bounded component cases
+        id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          extra=()
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then extra+=(--all); fi
+          python3 tools/benchmarks/component-screening/screen.py plan "${extra[@]}" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --output artifacts/component-screening
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        if: steps.plan.outputs.selected == 'true'
+        with:
+          global-json-file: global.json
+
+      - name: Cache downloaded NuGet packages
+        if: steps.plan.outputs.selected == 'true'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ~/.nuget/packages
+          key: component-nuget-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', '**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: component-nuget-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Prepare exact product revisions
+        if: steps.plan.outputs.selected == 'true'
+        env:
+          BASE_SHA: ${{ steps.plan.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/component-base" "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/component-head" "$HEAD_SHA"
+          mkdir -p "$RUNNER_TEMP/component-base/artifacts/nuget" "$RUNNER_TEMP/component-head/artifacts/nuget"
+
+      - name: Measure base and head serially
+        if: steps.plan.outputs.selected == 'true'
+        run: |
+          python3 tools/benchmarks/component-screening/screen.py run \
+            --plan artifacts/component-screening/plan.json \
+            --base-dir "$RUNNER_TEMP/component-base" \
+            --head-dir "$RUNNER_TEMP/component-head" \
+            --output artifacts/component-screening --timeout-seconds 900
+
+      - name: Publish advisory summary
+        if: always()
+        run: |
+          if test -f artifacts/component-screening/summary.md; then
+            cat artifacts/component-screening/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Screening did not produce a summary. This is not a no-regression result; inspect the job logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: component-screening
+          path: |
+            artifacts/component-screening/
+            !artifacts/component-screening/scratch/**
+          retention-days: 30
+          if-no-files-found: warn

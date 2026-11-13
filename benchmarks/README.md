@@ -12,6 +12,9 @@ ExecutionとVulkanはsampleの起動・device構築を使用するため、測�
 
 グラフィックスのシナリオ別測定と比較条件は[ADR-GRAPHICS-0027（提案）](../docs/adr/graphics/GRAPHICS-0027-scenario-based-graphics-benchmarks.md)にまとめています。
 
+非同期のPR部品スクリーニングは[運用と測定範囲](../docs/performance/component-screening.md)を参照してください。
+通常のCIやマージを待たせず、退行候補と未測定範囲をActionsに保存します。
+
 ## 実行
 
 SDKと依存ツールは[開発環境](../docs/development-environment.md)の手順で準備します。リポジトリルートから実行してください。
