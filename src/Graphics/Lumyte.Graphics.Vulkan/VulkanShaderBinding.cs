@@ -25,13 +25,26 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 
             byte[] PackReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(owner, value);
 
-            byte[] root = ShaderDataLayout.PackRaw(snapshot.Root, PackReference);
+            var nativeRoot = snapshot.Arguments?.Storage as VulkanRootStorage;
+            VulkanShaderBacking? legacyRoot = null;
+            if (snapshot.Arguments is { } arguments)
+            {
+                if (nativeRoot == null)
+                {
+                    throw new ArgumentException("Root storage belongs to another backend.", nameof(snapshot));
+                }
 
-            // Physical uint4 uniform lanes require complete 16-byte capacity, not a new C# stride.
-            Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));
-            var uniform = new VulkanShaderBacking(owner, root.Length);
-            _backings.Add(uniform);
-            uniform.Set(root);
+                arguments.Seal(PackReference);
+            }
+            else
+            {
+                byte[] root = ShaderDataLayout.PackRaw(snapshot.Root, PackReference);
+                Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));
+                legacyRoot = new(owner, root.Length);
+                _backings.Add(legacyRoot);
+                legacyRoot.Set(root);
+            }
+
             DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
             sizes[0] = new() { Type = DescriptorType.SampledImage, DescriptorCount = checked((uint)textureCount) };
             sizes[1] = new() { Type = DescriptorType.Sampler, DescriptorCount = checked((uint)samplerCount) };
@@ -41,7 +54,7 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             var allocate = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = _pool, DescriptorSetCount = 1, PSetLayouts = &layout };
             Check(owner.Api.AllocateDescriptorSets(owner.NativeDevice, &allocate, out DescriptorSet set));
             Native = set;
-            var rootInfo = new DescriptorBufferInfo { Buffer = uniform.Native, Range = uniform.Size };
+            var rootInfo = new DescriptorBufferInfo { Buffer = nativeRoot?.Native ?? legacyRoot!.Native, Range = nativeRoot == null ? legacyRoot!.Size : (ulong)nativeRoot.Size };
             var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 8, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBuffer, PBufferInfo = &rootInfo };
             owner.Api.UpdateDescriptorSets(owner.NativeDevice, 1, &write, 0, null);
             for (int i = 0; i < textures.Length; i++)

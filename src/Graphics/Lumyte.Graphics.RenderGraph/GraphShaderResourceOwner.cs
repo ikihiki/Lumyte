@@ -152,6 +152,8 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
 
     internal ShaderValueSnapshot Constrain(IReadOnlyList<ShaderResources> resources, ShaderValueSnapshot arguments) => ((ModuleResources)resources[0]).Constrain(arguments, resources);
 
+    internal IShaderArgumentScope Scope(IReadOnlyList<ShaderResources> resources) => ((ModuleResources)resources[0]).Scope(resources);
+
     internal void Bind(ShaderResources resources, IRenderEncoder encoder) => ((ModuleResources)resources).BindRender(encoder);
 
     internal void Bind(ShaderResources resources, IComputeEncoder encoder) => ((ModuleResources)resources).BindCompute(encoder);
@@ -179,20 +181,10 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
     }
 
     internal IReadOnlyList<ShaderResources> SelectArguments(ShaderValueSnapshot snapshot, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
-    {
-        ShaderResources core = Lookup(pass).Core;
-        ValidateExecution(core, pass, outputs, graphics);
-        ValidateLookup(core, pass);
-        foreach (ShaderValue value in snapshot.Values)
-        {
-            if (value.Reference is not IShaderReference reference || !((ModuleResources)core).Accepts(reference))
-            {
-                throw new ArgumentException("Root references must originate from this pass's shader declarations.");
-            }
-        }
+        => SelectArguments(snapshot.Values, pass, outputs, graphics);
 
-        return [core];
-    }
+    internal IReadOnlyList<ShaderResources> SelectArguments(ShaderReferenceMetadata references, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+        => SelectArguments(references.Values, pass, outputs, graphics);
 
     internal ShaderResources CreateModule()
     {
@@ -283,6 +275,22 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
     }
 
+    private IReadOnlyList<ShaderResources> SelectArguments(IReadOnlyList<ShaderValue> values, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    {
+        ShaderResources core = Lookup(pass).Core;
+        ValidateExecution(core, pass, outputs, graphics);
+        ValidateLookup(core, pass);
+        foreach (ShaderValue value in values)
+        {
+            if (value.Reference is not IShaderReference reference || !((ModuleResources)core).Accepts(reference))
+            {
+                throw new ArgumentException("Root references must originate from this pass's shader declarations.");
+            }
+        }
+
+        return [core];
+    }
+
     private void CheckAllowed(RenderGraphPass pass, object resource, ulong offset, ulong size, ArgumentBufferAccess access)
     {
         if (!_allowed[pass].Any(value => ReferenceEquals(value.Resource, resource) && offset >= value.Offset && offset - value.Offset <= value.Size && size <= value.Size - (offset - value.Offset) && (access & ~value.Access) == 0))
@@ -317,6 +325,8 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         internal void SameTable(ShaderResources other) => JoinTable(other);
 
         internal ShaderValueSnapshot Constrain(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates) => ConstrainArguments(arguments, candidates);
+
+        internal IShaderArgumentScope Scope(IReadOnlyList<ShaderResources> candidates) => CreateArgumentScope(candidates);
 
         internal void BindRender(IRenderEncoder encoder) => Bind(encoder);
 

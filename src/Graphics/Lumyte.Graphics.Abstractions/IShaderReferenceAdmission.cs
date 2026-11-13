@@ -1,9 +1,10 @@
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Required host binding-group admission, distinct from optional device diagnostics.</summary>
-internal interface IShaderReferenceAdmission
+internal interface IShaderReferenceAdmission : IShaderArgumentScope
 {
-    /// <summary>Admits the resources needed by one indivisible native binding operation.</summary>
-    /// <param name="references">The complete reachable resource set.</param>
-    void Admit(IReadOnlyCollection<IShaderReference> references);
+    /// <inheritdoc/>
+    void IShaderArgumentScope.Prepare(ShaderReferenceMetadata references)
+    {
+    }
 }

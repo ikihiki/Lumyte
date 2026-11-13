@@ -46,9 +46,18 @@ public sealed class ShaderBindingData
             throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
         }
 
-        byte[] packedRoot = ShaderDataLayout.PackRaw(snapshot.Root, ReferenceBytes);
-        Root = new byte[checked(((packedRoot.Length + 15) / 16) * 16)];
-        packedRoot.CopyTo(Root, 0);
+        if (snapshot.Arguments is { } arguments)
+        {
+            arguments.Seal(ShaderReferenceEncoding.Pack);
+            Root = [];
+        }
+        else
+        {
+            byte[] packedRoot = ShaderDataLayout.PackRaw(snapshot.Root, ReferenceBytes);
+            Root = new byte[checked(((packedRoot.Length + 15) / 16) * 16)];
+            packedRoot.CopyTo(Root, 0);
+        }
+
         uint capacity = snapshot.References.Count == 0 ? 0 : checked(snapshot.References.Max(r => r.Slot) + 1);
         if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
         {
@@ -87,6 +96,12 @@ public sealed class ShaderBindingData
 
     /// <summary>Gets the root uniform backing bytes, with trailing capacity padding only.</summary>
     public byte[] Root { get; }
+
+    /// <summary>Gets the native root generation, or null for legacy packed roots.</summary>
+    public ShaderRootArguments? RootArgs => Snapshot.Arguments;
+
+    /// <summary>Gets the final root uniform allocation size.</summary>
+    public int RootSize => RootArgs?.Storage.Size ?? Root.Length;
 
     /// <summary>Gets the resource remapping bytes.</summary>
     public byte[] Map { get; }

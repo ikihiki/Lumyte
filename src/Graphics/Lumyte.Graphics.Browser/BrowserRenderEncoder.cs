@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject handle, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder
+internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject handle, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder, IShaderRootEncoder
 {
     private readonly TextureFormat[] _formats = attachments.Select(a => a.View.Info.Format).ToArray();
     private readonly (uint Width, uint Height) _size = (attachments.FirstOrDefault()?.View ?? depth!.View).Texture.GetMipSize((attachments.FirstOrDefault()?.View ?? depth!.View).Info.BaseMipLevel);
@@ -19,7 +19,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private bool _blend;
     private bool _stencil;
 
-    private ShaderValueSnapshot? _arguments;
+    private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private BrowserArgumentTable? _table;
 
@@ -38,43 +38,33 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     }
 
     public void SetArguments<T>(in T value)
+        where T : IShaderArguments => SetRootArguments(in value);
+
+    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => SetRootArguments(in value, rootParameter, shaderTypeName);
+
+    public void SetRootArguments<T>(in T value, IShaderArgumentScope? scope = null)
         where T : IShaderArguments
     {
-        owner.ValidatePass(this);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
-        }
+        ValidateRootSelection();
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope);
+        SelectRoot(root);
+    }
 
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        if (owner.Owner.Validation != null)
-        {
-            ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        }
-
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+    public void SetRootArguments<T>(in T value, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+        where T : unmanaged
+    {
+        ValidateRootSelection();
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope);
+        SelectRoot(root);
     }
 
     public void SetArguments(ShaderValueSnapshot arguments)
     {
-        owner.ValidatePass(this);
+        ValidateRootSelection();
         ArgumentNullException.ThrowIfNull(arguments);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
-        }
-
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = arguments.Copy();
-        if (owner.Owner.Validation != null)
-        {
-            ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        }
-
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter));
+        SelectRoot(root);
     }
 
     public void SetPipeline(IGraphicsPipeline pipeline)
@@ -226,6 +216,37 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         return owner.Buffer(arguments, BufferUsage.Indirect);
     }
 
+    private void ValidateRootSelection()
+    {
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+    }
+
+    private IShaderRootStorage CreateRootStorage(int size) => new BrowserRootStorage(owner.Owner, size);
+
+    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
+
+    private void SelectRoot(ShaderRootArguments root)
+    {
+        try
+        {
+            owner.KeepBinding(root);
+        }
+        catch
+        {
+            root.Dispose();
+            throw;
+        }
+
+        _arguments = root;
+        _argumentProgram = _pipeline;
+    }
+
     private void PrepareDraw(bool indexed)
     {
         owner.ValidatePass(this);
@@ -246,10 +267,10 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter));
+                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter));
             }
 
-            bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);
+            bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), owner.Owner.Caps);
         }
 
         if (indexed)

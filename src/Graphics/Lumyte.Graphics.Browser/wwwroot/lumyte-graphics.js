@@ -313,16 +313,45 @@ function shaderBacking(device, view, usage) {
     buffer.unmap();
     return buffer;
 }
-export function createShaderBinding(handle, key, compute, root, map) {
-    if (root.length > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
-    const uniform = shaderBacking(handle.device, root, GPUBufferUsage.UNIFORM);
-    const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [uniform], entries: [{ binding: 8, resource: { buffer: uniform, size: root.length } }] };
-    if (map.length > 0) {
-        const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
-        binding.buffers.push(remap);
-        binding.entries.push({ binding: 9, resource: { buffer: remap, size: map.length } });
+export function createRootBacking(handle, size) {
+    if (size <= 0 || size % 16 !== 0 || size > handle.device.limits.maxBufferSize || size > handle.device.limits.maxUniformBufferBindingSize) throw new Error("Root arguments exceed device size limits.");
+    const buffer = handle.device.createBuffer({ size, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true });
+    try {
+        const mapped = buffer.getMappedRange();
+        new Uint8Array(mapped).fill(0);
+        return { buffer, size, mapped, disposed: false };
+    } catch (error) {
+        buffer.destroy();
+        throw error;
     }
-    return binding;
+}
+export function writeRootBacking(root, view, offset) {
+    if (root.disposed || !root.mapped) throw new Error("Root arguments are not writable.");
+    // MemoryView.slice creates a JS copy, not a retained C# numeric snapshot.
+    const bytes = view.slice();
+    if (!Number.isInteger(offset) || offset < 0 || offset > root.size || bytes.length > root.size - offset) throw new Error("Root write is outside the allocation.");
+    new Uint8Array(root.mapped, offset, bytes.length).set(bytes);
+}
+export function createShaderBinding(handle, key, compute, root, map, rootBacking = null) {
+    const rootSize = rootBacking ? rootBacking.size : root.length;
+    if (rootSize > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
+    if (rootBacking && (rootBacking.disposed || rootBacking.mapped)) throw new Error("Root arguments must be sealed before binding.");
+    const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [], entries: [] };
+    try {
+        const uniform = rootBacking ? rootBacking.buffer : shaderBacking(handle.device, root, GPUBufferUsage.UNIFORM);
+        // Command-owned roots are borrowed, never destroyed with this binding.
+        if (!rootBacking) binding.buffers.push(uniform);
+        binding.entries.push({ binding: 8, resource: { buffer: uniform, size: rootSize } });
+        if (map.length > 0) {
+            const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
+            binding.buffers.push(remap);
+            binding.entries.push({ binding: 9, resource: { buffer: remap, size: map.length } });
+        }
+        return binding;
+    } catch (error) {
+        destroyShaderBinding(binding);
+        throw error;
+    }
 }
 export function addShaderResource(binding, slot, kind, resource, offset, size) {
     binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, offset, size } });

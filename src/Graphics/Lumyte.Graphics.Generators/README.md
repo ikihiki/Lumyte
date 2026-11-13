@@ -79,6 +79,8 @@ reflection, diagnostic table initialization, or runtime code generation.
 The generated `Write<TWriter>` seam also supports direct reference-bearing uploads.
 CopyFrom uses a streaming writer, not an implicit Capture: private unmanaged bytes
 are copied synchronously and only immutable resource identities remain on the CPU.
-Explicit Capture and SetArguments still request independent value snapshots.
+Explicit Capture still creates an independent CPU value snapshot. SetArguments
+keeps Set-time value semantics by writing directly into a new command-owned final
+uniform generation; it does not allocate an intermediate numeric snapshot.
 A failed upload may partially modify bytes and invalidates the requested reference
 metadata range; it does not roll back values or retain a hidden numeric history.

@@ -30,3 +30,7 @@ ShaderResourcesの不可分なresource groupへの所属確認は、有限のnat
 ## 参照付きuploadのmetadata
 
 IShaderDataSourceはReadReferences／SetTransferredReferencesを提供し、ShaderReferenceMetadataにはresource identityとwire slotだけを保存します。数値Dataや元の値objectは保持せず、Elementsもreference-onlyです。CopyFromはgeneric writerで現在値を同期書き込みし、失敗した要求範囲のmetadataを無効にします。byteのrollbackは保証しません。完全な値のCPU履歴は明示Capture、GPUの値は明示readbackで取得します。直接書き込みとCPU batch scratchの選択は性能上の判断であり、atomicity保護ではありません。
+
+## Set-time final root storage
+
+ShaderRootArguments streams a generic interface or unmanaged input once into IShaderRootStorage, which is the final native uniform backing, and retains only reference metadata. A successful Set publishes a fresh command-owned generation. First execution patches opaque references and seals it; later executions cannot overwrite it. ShaderBindingSnapshot.Arguments and RootParameter describe this route; legacy Root is available only for the explicit snapshot capture overload. ShaderBindingData keeps no numeric Root array for native arguments, but rebuilds transitive resources/remaps per execution. Graph admission remains functional when diagnostics are disabled.

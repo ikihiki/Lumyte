@@ -269,6 +269,19 @@ public sealed class RenderGraphContext
         return (resources, owner.Constrain(resources, snapshot));
     }
 
+    internal (IReadOnlyList<ShaderResources>? Resources, IShaderArgumentScope? Scope) SelectArguments(ShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    {
+        EnsureActive();
+        if (references.Values.Count == 0)
+        {
+            return (null, null);
+        }
+
+        GraphShaderResourceOwner owner = _plan.ShaderResourceOwner ?? throw new ArgumentException("Declare shader resources on this pass before resolving references.");
+        IReadOnlyList<ShaderResources> resources = owner.SelectArguments(references, Pass, outputs, graphics);
+        return (resources, owner.Scope(resources));
+    }
+
     internal void BindResources(IReadOnlyList<ShaderResources> resources, IRenderEncoder encoder, IReadOnlyList<RenderGraphTexture> outputs)
     {
         EnsureActive();

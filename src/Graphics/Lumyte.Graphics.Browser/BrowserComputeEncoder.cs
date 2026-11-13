@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject handle) : IComputeEncoder
+internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject handle) : IComputeEncoder, IShaderRootEncoder
 {
     private BrowserComputePipeline? _pipeline;
 
-    private ShaderValueSnapshot? _arguments;
+    private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private BrowserArgumentTable? _table;
 
@@ -26,43 +26,33 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
     }
 
     public void SetArguments<T>(in T value)
+        where T : IShaderArguments => SetRootArguments(in value);
+
+    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => SetRootArguments(in value, rootParameter, shaderTypeName);
+
+    public void SetRootArguments<T>(in T value, IShaderArgumentScope? scope = null)
         where T : IShaderArguments
     {
-        owner.ValidatePass(this);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
-        }
+        ValidateRootSelection();
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope);
+        SelectRoot(root);
+    }
 
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        if (owner.Owner.Validation != null)
-        {
-            ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        }
-
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+    public void SetRootArguments<T>(in T value, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+        where T : unmanaged
+    {
+        ValidateRootSelection();
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope);
+        SelectRoot(root);
     }
 
     public void SetArguments(ShaderValueSnapshot arguments)
     {
-        owner.ValidatePass(this);
+        ValidateRootSelection();
         ArgumentNullException.ThrowIfNull(arguments);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
-        }
-
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = arguments.Copy();
-        if (owner.Owner.Validation != null)
-        {
-            ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        }
-
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter));
+        SelectRoot(root);
     }
 
     public void SetPipeline(IGraphicsComputePipeline pipeline)
@@ -111,6 +101,37 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
     }
 
     public void End() => owner.EndCompute(this, handle);
+
+    private void ValidateRootSelection()
+    {
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+    }
+
+    private IShaderRootStorage CreateRootStorage(int size) => new BrowserRootStorage(owner.Owner, size);
+
+    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(_pipeline!.Data, rootParameter);
+
+    private void SelectRoot(ShaderRootArguments root)
+    {
+        try
+        {
+            owner.KeepBinding(root);
+        }
+        catch
+        {
+            root.Dispose();
+            throw;
+        }
+
+        _arguments = root;
+        _argumentProgram = _pipeline;
+    }
 
     private void PrepareDispatch()
     {

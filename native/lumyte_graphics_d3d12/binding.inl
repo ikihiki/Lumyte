@@ -1,22 +1,96 @@
+// Final root upload allocation, owned by the command's root generation.
+struct Root
+{
+    ComPtr<ID3D12Resource> uniform;
+    void* mapped = nullptr;
+    UINT size = 0, allocation_size = 0;
+    ~Root()
+    {
+        if (mapped)
+        {
+            buffer_unmap(uniform.Get(), allocation_size, 1);
+        }
+    }
+};
+API HRESULT root_create(Device* device, UINT size, Root** output) noexcept
+{
+    if (!output)
+    {
+        return E_INVALIDARG;
+    }
+    *output = nullptr;
+    if (!device || size < 16 || size > 65536 || size % 16 != 0)
+    {
+        return E_INVALIDARG;
+    }
+    auto root = std::unique_ptr<Root>(new (std::nothrow) Root());
+    if (!root)
+    {
+        return E_OUTOFMEMORY;
+    }
+    root->size = size;
+    root->allocation_size = (size + 255u) & ~255u;
+    CHECK(buffer_create(device, root->allocation_size, 1, 0, &root->uniform));
+    CHECK(buffer_map(root->uniform.Get(), root->allocation_size, 0, &root->mapped));
+    std::memset(root->mapped, 0, root->allocation_size);
+    *output = root.release();
+    return S_OK;
+}
+API HRESULT root_write(Root* root, const void* bytes, UINT size, UINT offset) noexcept
+{
+    if (!root || !root->mapped || offset > root->size || size > root->size - offset || (size && !bytes))
+    {
+        return E_INVALIDARG;
+    }
+    // The caller's pointer is borrowed only for this synchronous copy.
+    if (size)
+    {
+        std::memcpy(static_cast<unsigned char*>(root->mapped) + offset, bytes, size);
+    }
+    return S_OK;
+}
+API HRESULT root_seal(Root* root) noexcept
+{
+    if (!root)
+    {
+        return E_INVALIDARG;
+    }
+    if (root->mapped)
+    {
+        buffer_unmap(root->uniform.Get(), root->allocation_size, 1);
+        root->mapped = nullptr;
+    }
+    return S_OK;
+}
+API void root_destroy(Root* root) noexcept
+{
+    delete root;
+}
+
 struct Binding
 {
     ComPtr<ID3D12DescriptorHeap> resources, samplers;
     ComPtr<ID3D12Resource> uniform;
     UINT resource_stride = 0, sampler_stride = 0;
 };
-API HRESULT binding_create(Device* device, const void* bytes, UINT size, Binding** output) noexcept
+static HRESULT binding_create_resource(Device* device, ID3D12Resource* uniform, Binding** output) noexcept
 {
+    if (!output)
+    {
+        return E_INVALIDARG;
+    }
     *output = nullptr;
+    if (!device || !uniform)
+    {
+        return E_INVALIDARG;
+    }
     auto binding = std::unique_ptr<Binding>(new (std::nothrow) Binding());
     if (!binding)
     {
         return E_OUTOFMEMORY;
     }
-    CHECK(buffer_create(device, (static_cast<UINT64>(size) + 255) & ~255ull, 1, 0, &binding->uniform));
-    void* mapped;
-    CHECK(buffer_map(binding->uniform.Get(), size, 0, &mapped));
-    std::memcpy(mapped, bytes, size);
-    buffer_unmap(binding->uniform.Get(), size, 1);
+    // Retain the existing root allocation; never allocate or copy another root buffer.
+    binding->uniform = uniform;
     D3D12_DESCRIPTOR_HEAP_DESC heap{D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 256,
                                     D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0};
     CHECK(device->device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&binding->resources)));
@@ -72,6 +146,38 @@ API HRESULT binding_create(Device* device, const void* bytes, UINT size, Binding
     }
     *output = binding.release();
     return S_OK;
+}
+API HRESULT binding_create_root(Device* device, Root* root, Binding** output) noexcept
+{
+    if (!root || root->mapped)
+    {
+        if (output)
+        {
+            *output = nullptr;
+        }
+        return E_INVALIDARG;
+    }
+    return binding_create_resource(device, root->uniform.Get(), output);
+}
+// Legacy entry point retained for existing native consumers.
+API HRESULT binding_create(Device* device, const void* bytes, UINT size, Binding** output) noexcept
+{
+    if (!output)
+    {
+        return E_INVALIDARG;
+    }
+    *output = nullptr;
+    if (!device || !bytes || !size || size > 65536)
+    {
+        return E_INVALIDARG;
+    }
+    ComPtr<ID3D12Resource> uniform;
+    CHECK(buffer_create(device, (static_cast<UINT64>(size) + 255) & ~255ull, 1, 0, &uniform));
+    void* mapped;
+    CHECK(buffer_map(uniform.Get(), size, 0, &mapped));
+    std::memcpy(mapped, bytes, size);
+    buffer_unmap(uniform.Get(), size, 1);
+    return binding_create_resource(device, uniform.Get(), output);
 }
 API void binding_destroy(Binding* binding) noexcept
 {

@@ -377,8 +377,13 @@ public class ShaderResources
     protected ShaderValueSnapshot ConstrainArguments(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates)
         => arguments with
         {
-            ExecutionAdmission = new ReferenceAdmission(candidates),
+            ExecutionAdmission = new ReferenceAdmission(candidates, arguments.ExecutionScope),
         };
+
+    /// <summary>Creates reference-only admission for this indivisible resource group.</summary>
+    /// <param name="candidates">Groups individually covering the complete reference set.</param>
+    /// <returns>The command-local argument scope without numeric root data.</returns>
+    protected IShaderArgumentScope CreateArgumentScope(IReadOnlyList<ShaderResources> candidates) => new ReferenceAdmission(candidates);
 
     /// <summary>Connects a host's immutable collection boundary to every inherited registration path.</summary>
     /// <param name="validate">The serial host collection guard.</param>
@@ -388,10 +393,11 @@ public class ShaderResources
         _reservation.AddCollectionGuard(validate);
     }
 
-    private sealed class ReferenceAdmission(IReadOnlyList<ShaderResources> candidates) : IShaderReferenceAdmission
+    private sealed class ReferenceAdmission(IReadOnlyList<ShaderResources> candidates, IShaderArgumentScope? parent = null) : IShaderReferenceAdmission
     {
         public void Admit(IReadOnlyCollection<IShaderReference> references)
         {
+            parent?.Admit(references);
             if (!candidates.Any(candidate => references.All(candidate._reservation.ContainsReference)))
             {
                 throw new ArgumentException("A shader reference is outside the selected indivisible resource group.");

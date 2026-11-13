@@ -89,6 +89,15 @@ internal sealed unsafe class VulkanShaderBacking : IDisposable
         }
     }
 
+    internal void* Map()
+    {
+        void* pointer;
+        Check(_owner.Api.MapMemory(_owner.NativeDevice, _memory, 0, Size, 0, &pointer));
+        return pointer;
+    }
+
+    internal void Unmap() => _owner.Api.UnmapMemory(_owner.NativeDevice, _memory);
+
     private void Check(Result result)
     {
         if (result == Result.ErrorDeviceLost)

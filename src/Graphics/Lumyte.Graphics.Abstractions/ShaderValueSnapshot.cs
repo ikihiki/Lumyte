@@ -17,6 +17,9 @@ public sealed record ShaderValueSnapshot(string RootParameter, string ShaderType
     /// <summary>Gets a reference-type metadata provider, retained without a delegate or boxed value.</summary>
     public IShaderArguments? DiagnosticSource { get; init; }
 
+    /// <summary>Gets the host execution scope without retaining this numeric snapshot.</summary>
+    public IShaderArgumentScope? ExecutionScope => ExecutionAdmission;
+
     internal IShaderReferenceAdmission? ExecutionAdmission { get; init; }
 
     /// <summary>Explicitly probes diagnostic metadata in any build configuration.</summary>

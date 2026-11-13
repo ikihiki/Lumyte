@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer owner, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder
+internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer owner, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder, IShaderRootEncoder
 {
     private readonly TextureFormat[] _formats = attachments.Select(a => a.View.Info.Format).ToArray();
     private readonly (uint Width, uint Height) _size = (attachments.FirstOrDefault()?.View ?? depth!.View).Texture.GetMipSize((attachments.FirstOrDefault()?.View ?? depth!.View).Info.BaseMipLevel);
@@ -18,7 +18,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private bool _blend;
     private bool _stencil;
 
-    private ShaderValueSnapshot? _arguments;
+    private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private Direct3D12ArgumentTable? _table;
 
@@ -37,43 +37,33 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     }
 
     public void SetArguments<T>(in T value)
+        where T : IShaderArguments => SetRootArguments(in value);
+
+    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => SetRootArguments(in value, rootParameter, shaderTypeName);
+
+    public void SetRootArguments<T>(in T value, IShaderArgumentScope? scope = null)
         where T : IShaderArguments
     {
-        owner.ValidatePass(this);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
-        }
+        ValidateRootSelection();
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope);
+        SelectRoot(root);
+    }
 
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        if (owner.Owner.Validation != null)
-        {
-            ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        }
-
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+    public void SetRootArguments<T>(in T value, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+        where T : unmanaged
+    {
+        ValidateRootSelection();
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope);
+        SelectRoot(root);
     }
 
     public void SetArguments(ShaderValueSnapshot arguments)
     {
-        owner.ValidatePass(this);
+        ValidateRootSelection();
         ArgumentNullException.ThrowIfNull(arguments);
-        if (_pipeline == null)
-        {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
-        }
-
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = arguments.Copy();
-        if (owner.Owner.Validation != null)
-        {
-            ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        }
-
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter));
+        SelectRoot(root);
     }
 
     public void SetPipeline(IGraphicsPipeline pipeline)
@@ -225,6 +215,37 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         return owner.Buffer(arguments, BufferUsage.Indirect);
     }
 
+    private void ValidateRootSelection()
+    {
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+    }
+
+    private IShaderRootStorage CreateRootStorage(int size) => new Direct3D12RootStorage(owner.Owner, size);
+
+    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
+
+    private void SelectRoot(ShaderRootArguments root)
+    {
+        try
+        {
+            owner.KeepBinding(root);
+        }
+        catch
+        {
+            root.Dispose();
+            throw;
+        }
+
+        _arguments = root;
+        _argumentProgram = _pipeline;
+    }
+
     private void PrepareDraw(bool indexed)
     {
         owner.ValidatePass(this);
@@ -245,7 +266,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter));
+                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter));
             }
 
             bindingSnapshot = snapshot;
@@ -271,7 +292,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         NativeMethods.Topology(owner.Native, (uint)_state.Desc.Topology + 1);
         if (bindingSnapshot != null)
         {
-            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingSnapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingSnapshot.Root.RootParameter));
+            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingSnapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingSnapshot.RootParameter));
             owner.KeepBinding(binding);
             NativeMethods.Binding(owner.Native, binding.Native, 0);
         }

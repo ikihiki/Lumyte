@@ -11,7 +11,7 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
 
     internal WgpuShaderBinding(WgpuDevice owner, ShaderBindingData data, WGPUBindGroupLayoutImpl* layout)
     {
-        if ((ulong)data.Root.Length > owner.Limits.maxUniformBufferBindingSize || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
+        if ((ulong)data.RootSize > owner.Limits.maxUniformBufferBindingSize || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
         {
             throw new NotSupportedException("Internal root or remap binding exceeds the device size limit.");
         }
@@ -19,8 +19,8 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
         try
         {
             var entries = new List<WGPUBindGroupEntry>();
-            WGPUBufferImpl* root = Buffer(owner, data.Root, A.BufferUsage.Uniform);
-            entries.Add(new() { binding = 8, buffer = root, size = (ulong)data.Root.Length });
+            WGPUBufferImpl* root = data.RootArgs is { } arguments ? ((WgpuRootStorage)arguments.Storage).Native : Buffer(owner, data.Root, A.BufferUsage.Uniform);
+            entries.Add(new() { binding = 8, buffer = root, size = (ulong)data.RootSize });
             if (data.Map.Length != 0)
             {
                 WGPUBufferImpl* map = Buffer(owner, data.Map, A.BufferUsage.Storage);

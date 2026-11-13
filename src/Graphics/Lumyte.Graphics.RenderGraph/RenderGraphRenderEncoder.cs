@@ -102,9 +102,22 @@ public sealed class RenderGraphRenderEncoder : IDisposable
             throw new InvalidOperationException("Select a pipeline before setting its arguments.");
         }
 
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
-        (IReadOnlyList<ShaderResources>? resources, ShaderValueSnapshot selected) = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
-        _native.SetArguments(selected);
+        IReadOnlyList<ShaderResources>? resources;
+        if (_native is IShaderRootEncoder rootEncoder)
+        {
+            var scope = new GraphRootArgumentScope(_context, _colorAttachments, graphics: true);
+            rootEncoder.SetRootArguments(in arguments, scope);
+            resources = scope.Resources;
+        }
+        else
+        {
+            // Compatibility for third-party encoders that still consume numeric snapshots.
+            ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
+            (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) selection = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
+            _native.SetArguments(selection.Snapshot);
+            resources = selection.Resources;
+        }
+
         _arguments = resources;
         _hasArguments = true;
         _argumentPipeline = _pipeline;
@@ -124,9 +137,22 @@ public sealed class RenderGraphRenderEncoder : IDisposable
             throw new InvalidOperationException("Select a pipeline before setting its arguments.");
         }
 
-        ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
-        (IReadOnlyList<ShaderResources>? resources, ShaderValueSnapshot selected) = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
-        _native.SetArguments(selected);
+        IReadOnlyList<ShaderResources>? resources;
+        if (_native is IShaderRootEncoder rootEncoder)
+        {
+            var scope = new GraphRootArgumentScope(_context, _colorAttachments, graphics: true);
+            rootEncoder.SetRootArguments(in arguments, rootParameter, shaderTypeName, scope);
+            resources = scope.Resources;
+        }
+        else
+        {
+            // Compatibility for third-party encoders that still consume numeric snapshots.
+            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+            (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) selection = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
+            _native.SetArguments(selection.Snapshot);
+            resources = selection.Resources;
+        }
+
         _arguments = resources;
         _hasArguments = true;
         _argumentPipeline = _pipeline;

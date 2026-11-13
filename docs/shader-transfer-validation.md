@@ -4,7 +4,56 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## reference-only CopyFromの最新検証（2026-11-13）
+## SetArguments最終uniform所有の最新検証（2026-11-13）
+
+Vulkan／D3D12／Wgpu／Browserのgeneric interface・通常unmanaged SetArgumentsを、
+Set時点で新しいcommand所有の最終uniformへ直接書く経路に変更した。
+Capture、ShaderValueSnapshot、numeric byte配列、pack・padding配列をgeneric経路で
+作らない。元のclass／in参照／配置providerも保持しない。明示snapshot入力も
+同期的に最終領域へ消費し、互換のためのnumeric cloneは追加しない。
+明示Capture API自体は変更していない。
+
+各Setは別世代を所有する。最初の実行でroot参照を符号化してsealし、既存Drawが読む
+世代を後のSetや実行で上書きしない。transitive metadata、table照合、Graph groupと
+WGSL remapは実行ごとに更新する。失敗したSetは未公開世代だけを破棄し、前回選択と
+元の例外を保つ。GPU完了前の資源解放やstaging再利用を許可する変更ではない。
+
+GraphはIShaderRootEncoderの追加contractでreference-onlyの準備・admissionを行う。
+非対応の第三者encoderには従来snapshot fallbackを残す。native-rootの
+ShaderBindingSnapshotはArguments／RootParameterを使い、legacy Root.Dataの要求は
+明示拒否する。隠れたreadbackでnumeric履歴を復元しない。
+
+- Graphics Debug／Release: 各239成功、失敗0、86スキップ（325件）。
+- RenderGraph Debug／Release: 各129成功、失敗0、スキップ0。
+- 全ホストRelease: 3,208成功、失敗0、107スキップ。
+- Vulkan／Wgpuの転送・final-root fixture: Debug／Release各12成功、失敗0、skip0。
+- root core24ケースとGraph4ケースで、初回Write／factory counter、Capture拒否codec、
+  世代独立、failed Set、範囲・16-byte ABI、scope、transitive更新を確認した。
+- 実GPUでSet後の元値変更、複数Setの遅延読取り、pipeline／table guard、
+  explicit snapshot配列変更からの独立をreadbackした。既存cancel／dispose／submission
+  lifetime検査も全ホストsuiteで継続する。
+- D3D12管理側Release: 28成功、失敗0、Windows native7skip。
+- Browser Release compile成功。Windows native、Browser実行、AOT、presentationは未検証。
+
+[Set→Dispatch→GPU完了の比較](performance/setarguments-final-root-20261113.md)は
+baseline abba2719と同じharnessでABBAを実行した。速度改善は確認していない。
+interfaceの1／64回は差を断定せず、explicit snapshotの1回には中央値約5.6%の
+遅延増加を観測した。managed allocationは全caseで減った。これをframe速度や
+allocation-freeとは扱わない。全16case、source／binary hash、raw JSONを保存する。
+
+ログはartifacts/validation7-{initial,fullhost,graph-debug,d3d-release,browser-release,hardware-debug,hardware-release,markdown}.log。
+
+21:56のcursor形式の検討は、C# raw segmentと16-byte参照を一つの同期関数内で
+書く追加生成contractとして実現可能である。ただし現在の全wire WriteBytesの
+Spanを呼び出し後まで保存せず、新しいWriteWire＋同期reference emitterの形が
+必要になる。offset順・overlap・getter評価順・手書きfallbackを決め、numericの
+個別シリアライズや無効な診断reflectionを復活させない。Browserのchunkごとの
+interop費用も未測定である。今回のSetは参照解決を最初のDrawまで遅延する境界を
+維持し、この追加protocolを無断で混ぜていない。詳細は最新ADR0035へ記録した。
+
+以下は旧revision時点の履歴であり、最新Set契約とは分けて読む。
+
+## abba2719時点のreference-only CopyFrom検証履歴（2026-11-13）
 
 20:36の承認により、IShaderDataSourceの完全なCPU値Read契約を廃止し、
 ReadReferences／SetTransferredReferencesとimmutableなShaderReferenceMetadataへ移した。
