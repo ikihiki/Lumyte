@@ -17,7 +17,7 @@ public sealed class ShaderUploadDiagnosticTests
     {
         using var storage = new MappedBuffer();
         var value = new InstanceData { Number = 37 };
-        var metadata = new ShaderReferenceMetadata?[1];
+        var metadata = new IShaderReferenceMetadata?[1];
         ShaderDataLayout layout = CreateLayout();
 
         // The previous streaming call used this empty static default and rejected the valid provider.
@@ -31,7 +31,7 @@ public sealed class ShaderUploadDiagnosticTests
 
         Assert.Equal(enabled ? 1 : 0, value.Probes);
         Assert.Equal(37U, MemoryMarshal.Read<uint>(storage.Bytes));
-        Assert.Empty(Assert.IsType<ShaderReferenceMetadata>(metadata[0]).Values);
+        Assert.Empty(Assert.IsAssignableFrom<IShaderReferenceMetadata>(metadata[0]).References);
     }
 
     /// <summary>Value-type uploads derive fields from their type without querying an instance provider.</summary>
@@ -43,7 +43,7 @@ public sealed class ShaderUploadDiagnosticTests
     {
         using var storage = new MappedBuffer();
         var value = new TypeData { Number = 73 };
-        var metadata = new ShaderReferenceMetadata?[1];
+        var metadata = new IShaderReferenceMetadata?[1];
         ShaderDataLayout layout = CreateLayout();
 
         Assert.Empty(StaticFields<TypeData>());
@@ -55,7 +55,7 @@ public sealed class ShaderUploadDiagnosticTests
         ShaderDataUpload.CopyFrom<TypeData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
 
         Assert.Equal(73U, MemoryMarshal.Read<uint>(storage.Bytes));
-        Assert.Empty(Assert.IsType<ShaderReferenceMetadata>(metadata[0]).Values);
+        Assert.Empty(Assert.IsAssignableFrom<IShaderReferenceMetadata>(metadata[0]).References);
     }
 
     private static IReadOnlyList<ShaderTransferField> StaticFields<T>()

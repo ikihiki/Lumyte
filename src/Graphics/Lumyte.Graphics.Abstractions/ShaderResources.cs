@@ -184,7 +184,18 @@ public class ShaderResources
     /// <param name="rootParameter">The shader root parameter name.</param>
     /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
     public void Draw<T>(IRenderEncoder encoder, in T arguments, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0, string rootParameter = "arguments", string? shaderTypeName = null)
-        where T : unmanaged => Draw(encoder, ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName), vertexCount, instanceCount, firstVertex, firstInstance);
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(in arguments, rootParameter, shaderTypeName);
+        encoder.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
+    }
 
     /// <summary>Selects this set's native bindings and root arguments, then records an indexed draw.</summary>
     /// <typeparam name="T">The ordinary unmanaged root argument type.</typeparam>
@@ -198,7 +209,18 @@ public class ShaderResources
     /// <param name="rootParameter">The shader root parameter name.</param>
     /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
     public void DrawIndexed<T>(IRenderEncoder encoder, in T arguments, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0, string rootParameter = "arguments", string? shaderTypeName = null)
-        where T : unmanaged => DrawIndexed(encoder, ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName), indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(in arguments, rootParameter, shaderTypeName);
+        encoder.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+    }
 
     /// <summary>Selects this set's native bindings and root arguments, then records compute workgroups.</summary>
     /// <typeparam name="T">The ordinary unmanaged root argument type.</typeparam>
@@ -210,7 +232,18 @@ public class ShaderResources
     /// <param name="rootParameter">The shader root parameter name.</param>
     /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
     public void Dispatch<T>(IComputeEncoder encoder, in T arguments, uint x, uint y = 1, uint z = 1, string rootParameter = "arguments", string? shaderTypeName = null)
-        where T : unmanaged => Dispatch(encoder, ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName), x, y, z);
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(encoder);
+        IArgumentTable? table = _reservation.RecordingTable(graphics: false);
+        if (table is not null)
+        {
+            encoder.SetArgumentTable(table);
+        }
+
+        encoder.SetArguments(in arguments, rootParameter, shaderTypeName);
+        encoder.Dispatch(x, y, z);
+    }
 
     /// <summary>Selects this set's bindings and snapshot, then records Draw work.</summary>
     /// <param name="encoder">The native encoder with a selected pipeline.</param>

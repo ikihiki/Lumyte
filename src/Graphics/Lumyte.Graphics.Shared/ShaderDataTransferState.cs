@@ -5,11 +5,11 @@ namespace Lumyte.Graphics.Shared;
 /// <summary>Tracks explicit shader data copies within one command recording.</summary>
 public sealed class ShaderDataTransferState
 {
-    private readonly Dictionary<(IShaderDataSource Source, ulong Element), ShaderReferenceMetadata> _pending = [];
+    private readonly Dictionary<(IShaderDataSource Source, ulong Element), IShaderReferenceMetadata> _pending = [];
 
     private GraphicsValidation? _diagnostics;
     private object? _command;
-    private List<(IShaderDataSource Source, ulong Index, ShaderReferenceMetadata Value)>? _validation;
+    private List<(IShaderDataSource Source, ulong Index, IShaderReferenceMetadata Value)>? _validation;
 
     /// <summary>Enables copy metadata revision checks for this command.</summary>
     public void EnableValidation() => _validation ??= [];
@@ -32,7 +32,7 @@ public sealed class ShaderDataTransferState
             return;
         }
 
-        foreach ((IShaderDataSource source, ulong index, ShaderReferenceMetadata value) in _validation)
+        foreach ((IShaderDataSource source, ulong index, IShaderReferenceMetadata value) in _validation)
         {
             if (!ReferenceEquals(source.ReadReferences(index), value))
             {
@@ -50,7 +50,7 @@ public sealed class ShaderDataTransferState
     /// <param name="copy">The explicit native copy recorder.</param>
     public void Record(IShaderDataSource source, ulong sourceOffset, IShaderDataSource destination, ulong destinationOffset, ulong count, Action copy)
     {
-        var values = new ShaderReferenceMetadata[checked((int)count)];
+        var values = new IShaderReferenceMetadata[checked((int)count)];
         for (ulong i = 0; i < count; i++)
         {
             values[checked((int)i)] = source.ReadReferences(checked(sourceOffset + i));
@@ -70,15 +70,15 @@ public sealed class ShaderDataTransferState
     /// <param name="source">The GPU source.</param>
     /// <param name="index">The element index.</param>
     /// <returns>The transferred element metadata.</returns>
-    public ShaderReferenceMetadata ReadReferences(IShaderDataSource source, ulong index)
+    public IShaderReferenceMetadata ReadReferences(IShaderDataSource source, ulong index)
     {
-        if (_pending.TryGetValue((source, index), out ShaderReferenceMetadata? value))
+        if (_pending.TryGetValue((source, index), out IShaderReferenceMetadata? value))
         {
             _diagnostics?.Metadata(_command!, source, index, value, false);
             return value;
         }
 
-        ShaderReferenceMetadata snapshot = source.ReadReferences(index);
+        IShaderReferenceMetadata snapshot = source.ReadReferences(index);
         _diagnostics?.Metadata(_command!, source, index, snapshot, false);
         return snapshot;
     }
@@ -86,7 +86,7 @@ public sealed class ShaderDataTransferState
     /// <summary>Publishes dependency metadata after native queue submission succeeds.</summary>
     public void Publish()
     {
-        foreach (((IShaderDataSource source, ulong index), ShaderReferenceMetadata value) in _pending)
+        foreach (((IShaderDataSource source, ulong index), IShaderReferenceMetadata value) in _pending)
         {
             source.SetTransferredReferences(index, value);
         }

@@ -4,7 +4,44 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## SetArguments最終uniform所有の最新検証（2026-11-13）
+## 同期cursor・backend metadata・helperの最新検証（2026-11-14）
+
+生成codecはraw区間（padding込み）→16-byte参照のinline符号化→次区間を
+一つの同期WriteWireで書く。source Span／in参照を呼び出し外に保持しない。
+custom getter／手書きcodec／非対応writerと明示Captureは従来の単一呼び出し・
+評価順を保持するfallback。normal native backend ownerはidentity列挙だけを保持し、
+C# wire offsetの共有listは保存しない。登録slot／range／accessはbindingに必要なため残す。
+Setのstable wire encodingは同期実行し、WGSL remapとtransitive admissionはDrawで更新する。
+
+ShaderResourcesのunmanaged Draw／DrawIndexed／Dispatchに残っていた無条件Captureも
+除去した。table選択後にgeneric SetArgumentsへ渡す。third-party encoder interfaceの
+既定実装、Graphの非対応分岐、ModelVertexの明示layout probe、利用者の明示Captureを
+区別する。ShaderBindingSnapshot.Capture(rootArguments, …)はnumeric snapshotではない。
+
+- Graphics Debug／Release: 各275成功、失敗0、88skip（363件）。
+- RenderGraph Debug／Release: 各129成功、失敗0、skip0。
+- 全ホストRelease: 3,244成功、失敗0、109skip。
+- Vulkan／Wgpu native subset Release: 17成功、失敗0、skip0。
+- Debugは既存subset15成功とhelper2成功。helper各factはvalidation off/onで
+  厳密なsnapshot拒否wrapperを通し、実GPUの1pixel redをreadbackした。
+- Cursor coverage／padding／slot順／negative・overflow・交差、handwritten双方順、
+  custom getter評価回数、隣接slot、failed Setの旧世代、snapshot失敗解放を検査。
+- backend固有identity-only owner、metadata immutable性、元値変更、複数Set、
+  transitive／table／pipeline／lifetimeの既存assertionを継続した。
+- D3D12管理側Release28成功・Windows native7skip、Browser Release compile成功。
+  Windows native、Browser実行／AOT、presentationは未検証。
+
+[最終ABBA比較](performance/wire-cursor-metadata-20261113.md)はbaseline7e89と同じ
+harnessで実行した。mapped1要素の中央値7.7%短縮以外は改善を断定しない。
+upload allocationは40B／要素減少、interface Setは40B／Set、snapshot Setは256B／Set増加。
+完了込みやframe速度の改善は主張しない。helper修正前pilotもsupersededとして保存した。
+最終32case、source／binary hash、全raw JSONとcandidate変更sourceを圧縮保存する。
+
+ログはartifacts/validation8-{debug,fullhost,graph-debug,d3d-release,browser-release,hardware-debug,hardware-release,helper-gpu-debug,markdown}.log。
+
+以下は当時のrevisionの履歴であり、最新のcursor・metadata・Set参照符号化時点とは分けて読む。
+
+## 7e89時点のSetArguments最終uniform所有検証履歴（2026-11-13）
 
 Vulkan／D3D12／Wgpu／Browserのgeneric interface・通常unmanaged SetArgumentsを、
 Set時点で新しいcommand所有の最終uniformへ直接書く経路に変更した。

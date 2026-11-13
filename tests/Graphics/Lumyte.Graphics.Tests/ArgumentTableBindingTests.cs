@@ -258,17 +258,17 @@ public sealed class ArgumentTableBindingTests
 
         public object ShaderHandle => this;
 
-        internal Dictionary<ulong, ShaderReferenceMetadata> Values { get; } = [];
+        internal Dictionary<ulong, IShaderReferenceMetadata> Values { get; } = [];
 
         internal int Reads { get; private set; }
 
-        public ShaderReferenceMetadata ReadReferences(ulong index)
+        public IShaderReferenceMetadata ReadReferences(ulong index)
         {
             Reads++;
             return Values[index];
         }
 
-        public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value) => Values[index] = value;
+        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value) => Values[index] = value;
 
         public void ValidateAlive()
         {

@@ -29,8 +29,12 @@ ShaderResourcesの不可分なresource groupへの所属確認は、有限のnat
 
 ## 参照付きuploadのmetadata
 
-IShaderDataSourceはReadReferences／SetTransferredReferencesを提供し、ShaderReferenceMetadataにはresource identityとwire slotだけを保存します。数値Dataや元の値objectは保持せず、Elementsもreference-onlyです。CopyFromはgeneric writerで現在値を同期書き込みし、失敗した要求範囲のmetadataを無効にします。byteのrollbackは保証しません。完全な値のCPU履歴は明示Capture、GPUの値は明示readbackで取得します。直接書き込みとCPU batch scratchの選択は性能上の判断であり、atomicity保護ではありません。
+IShaderDataSourceはReadReferences／SetTransferredReferencesを提供し、IShaderReferenceMetadataは依存identityの列挙だけを公開し、通常native経路のprivate backend ownerにはC# wire offsetを保存しません。legacy ShaderReferenceMetadata.Valuesは明示snapshotの互換adapterです。数値Dataや元の値objectは保持せず、Elementsもreference-onlyです。CopyFromはgeneric writerで現在値を同期書き込みし、失敗した要求範囲のmetadataを無効にします。byteのrollbackは保証しません。完全な値のCPU履歴は明示Capture、GPUの値は明示readbackで取得します。直接書き込みとCPU batch scratchの選択は性能上の判断であり、atomicity保護ではありません。
 
 ## Set-time final root storage
 
-ShaderRootArguments streams a generic interface or unmanaged input once into IShaderRootStorage, which is the final native uniform backing, and retains only reference metadata. A successful Set publishes a fresh command-owned generation. First execution patches opaque references and seals it; later executions cannot overwrite it. ShaderBindingSnapshot.Arguments and RootParameter describe this route; legacy Root is available only for the explicit snapshot capture overload. ShaderBindingData keeps no numeric Root array for native arguments, but rebuilds transitive resources/remaps per execution. Graph admission remains functional when diagnostics are disabled.
+ShaderRootArguments streams a generic interface or unmanaged input once into IShaderRootStorage, which is the final native uniform backing, and retains only reference metadata. A successful Set publishes a fresh command-owned generation. Stable opaque wire references are encoded synchronously at Set; first execution seals storage; later executions cannot overwrite it. ShaderBindingSnapshot.Arguments and RootParameter describe this route; legacy Root is available only for the explicit snapshot capture overload. ShaderBindingData keeps no numeric Root array for native arguments, but rebuilds transitive resources/remaps per execution. Graph admission remains functional when diagnostics are disabled.
+
+## Synchronous wire cursor
+
+Eligible generated codecs call ShaderWire.Write / WriteWire to copy raw ranges including padding, encode each 16-byte reference inline, then copy the raw tail. No complete numeric copy precedes patching. Custom getters and handwritten codecs preserve their original single-invocation ordering through the legacy bulk fallback. Static ordered reference offsets are functional type metadata, not diagnostic reflection. Backend-owned dependency metadata retains identities, registration slots/ranges/access, but no C# wire offset. Dynamic WGSL remapping and transitive admission still refresh per execution.

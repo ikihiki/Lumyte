@@ -289,7 +289,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
         State = CommandBufferState.Disposed;
     }
 
-    internal ShaderReferenceMetadata ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.ReadReferences(source, index);
+    internal IShaderReferenceMetadata ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.ReadReferences(source, index);
 
     internal void ValidateSubmit()
     {

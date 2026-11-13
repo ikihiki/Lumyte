@@ -269,10 +269,10 @@ public sealed class RenderGraphContext
         return (resources, owner.Constrain(resources, snapshot));
     }
 
-    internal (IReadOnlyList<ShaderResources>? Resources, IShaderArgumentScope? Scope) SelectArguments(ShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    internal (IReadOnlyList<ShaderResources>? Resources, IShaderArgumentScope? Scope) SelectArguments(IShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
         EnsureActive();
-        if (references.Values.Count == 0)
+        if (references.References.Count == 0)
         {
             return (null, null);
         }

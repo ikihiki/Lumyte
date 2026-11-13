@@ -7,6 +7,8 @@ internal struct ShaderSnapshotWriter : IShaderValueWriter
     internal byte[]? Data;
     internal List<ShaderValue>? Values;
 
+    public readonly bool SupportsWireCursor => false;
+
     public void WriteBytes<T>(in T value)
         where T : unmanaged
     {

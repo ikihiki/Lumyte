@@ -70,6 +70,9 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         var offsets = new StringBuilder();
         var offsetNames = new Dictionary<IFieldSymbol, string>(SymbolEqualityComparer.Default);
         var refs = new StringBuilder();
+        var referenceMembers = new List<ISymbol>();
+        var referenceOffsets = new List<string>();
+        bool cursorEligible = isClass;
         var properties = new StringBuilder();
         if (isClass)
         {
@@ -110,9 +113,22 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
                 return;
             }
 
-            refs.Append("        writer.WriteReference(").Append(Offset(wire, slot, offsets, offsetNames)).Append(", this.@").Append(member.Name).AppendLine(");");
+            string referenceOffset = Offset(wire, slot, offsets, offsetNames);
+            referenceMembers.Add(member);
+            referenceOffsets.Add(referenceOffset);
+            if (member is IPropertySymbol referenceProperty && !IsAutomatic(referenceProperty))
+            {
+                cursorEligible = false;
+            }
+
+            refs.Append("        writer.WriteReference(").Append(referenceOffset).Append(", this.@").Append(member.Name).AppendLine(");");
         }
 
+        bool useCursor = cursorEligible && referenceMembers.Count != 0;
+        string emitter = useCursor ? ReferenceEmitter(type, wire, referenceMembers, referenceOffsets) : string.Empty;
+        string writeBody = useCursor
+            ? "        var emitter = new __ReferenceEmitter(this);\n        global::Lumyte.Graphics.Abstractions.ShaderWire.Write(in this.@" + storage!.Name + ", ref emitter, ref writer);\n"
+            : "        writer.WriteBytes(in " + (isClass ? "this.@" + storage!.Name : "this") + ");\n" + refs;
         AttributeData? attr = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute");
         string name = attr?.ConstructorArguments[0].Value as string ?? type.Name;
         bool generateName = type.FindImplementationForInterfaceMember(contract.GetMembers("ShaderTypeName").Single()) == null;
@@ -121,13 +137,77 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (isClass ? (type.IsRecord ? "record class " : "class ") : (type.IsRecord ? "record struct " : "struct ")) + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(name) + ";\n" : string.Empty) +
             "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferSize => global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + Full(wire) + ">();\n" +
-            offsets + "    private static class __TransferDiagnostics\n    {\n" +
+            offsets + emitter + "    private static class __TransferDiagnostics\n    {\n" +
             "        static __TransferDiagnostics() { }\n" + diagnosticOffsets +
             "        internal static readonly global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> Fields = global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderTransferField[] {\n" + fields + "        });\n    }\n" +
             "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferFields => __TransferDiagnostics.Fields;\n" +
             "    global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.GetTransferFields() => __TransferDiagnostics.Fields;\n" +
-            "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n        writer.WriteBytes(in " + (isClass ? "this.@" + storage!.Name : "this") + ");\n" + refs + "    }\n" + properties + "}\n";
+            "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + writeBody + "    }\n" + properties + "}\n";
         output.AddSource("ShaderArguments_" + string.Concat(type.ToDisplayString().Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".g.cs", SourceText.From(source, Encoding.UTF8));
+    }
+
+    private static bool IsAutomatic(IPropertySymbol property)
+        => !property.IsVirtual && !property.IsOverride && !property.IsAbstract &&
+            property.DeclaringSyntaxReferences.Length != 0 && property.DeclaringSyntaxReferences.All(r =>
+            r.GetSyntax() is PropertyDeclarationSyntax syntax && syntax.ExpressionBody == null &&
+            syntax.AccessorList != null && syntax.AccessorList.Accessors.All(a => a.Body == null && a.ExpressionBody == null));
+
+    private static string ReferenceEmitter(INamedTypeSymbol owner, INamedTypeSymbol wire, List<ISymbol> members, List<string> offsets)
+    {
+        var source = new StringBuilder();
+        source.AppendLine("    private static class __ReferencePlan");
+        source.AppendLine("    {");
+        source.AppendLine("    static __ReferencePlan() { }");
+        source.AppendLine("    internal static readonly int[] Order = __CreateReferenceOrder();");
+        source.AppendLine("    private static int[] __CreateReferenceOrder()");
+        source.AppendLine("    {");
+        source.Append("        int[] offsets = new int[] { ").Append(string.Join(", ", offsets)).AppendLine(" };");
+        source.Append("        int[] order = new int[] { ").Append(string.Join(", ", Enumerable.Range(0, members.Count))).AppendLine(" };");
+        source.AppendLine("        global::System.Array.Sort(offsets, order);");
+        source.AppendLine("        int end = 0;");
+        source.AppendLine("        foreach (int offset in offsets)");
+        source.AppendLine("        {");
+        source.Append("            if (offset < end || offset > global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(Full(wire)).AppendLine(">() - 16)");
+        source.AppendLine("            {");
+        source.AppendLine("                throw new global::System.InvalidOperationException(\"Reference slots must be non-overlapping and inside the wire value.\");");
+        source.AppendLine("            }");
+        source.AppendLine("            end = offset + 16;");
+        source.AppendLine("        }");
+        source.AppendLine("        return order;");
+        source.AppendLine("    }");
+        source.AppendLine("    }");
+        source.AppendLine("    private readonly struct __ReferenceEmitter : global::Lumyte.Graphics.Abstractions.IShaderReferenceEmitter");
+        source.AppendLine("    {");
+        source.Append("        private readonly ").Append(Full(owner)).AppendLine(" _owner;");
+        source.Append("        internal __ReferenceEmitter(").Append(Full(owner)).AppendLine(" owner) { _owner = owner; }");
+        source.AppendLine("        public void Emit<TCursor>(ref TCursor cursor, bool ordered)");
+        source.AppendLine("            where TCursor : global::Lumyte.Graphics.Abstractions.IShaderReferenceCursor, allows ref struct");
+        source.AppendLine("        {");
+        source.AppendLine("            if (ordered)");
+        source.AppendLine("            {");
+        source.AppendLine("                foreach (int index in __ReferencePlan.Order)");
+        source.AppendLine("                {");
+        source.AppendLine("                    switch (index)");
+        source.AppendLine("                    {");
+        for (int i = 0; i < members.Count; i++)
+        {
+            source.Append("                        case ").Append(i).Append(": cursor.WriteReference(").Append(offsets[i]).Append(", _owner.@").Append(members[i].Name).AppendLine("); break;");
+        }
+
+        source.AppendLine("                    }");
+        source.AppendLine("                }");
+        source.AppendLine("            }");
+        source.AppendLine("            else");
+        source.AppendLine("            {");
+        for (int i = 0; i < members.Count; i++)
+        {
+            source.Append("                cursor.WriteReference(").Append(offsets[i]).Append(", _owner.@").Append(members[i].Name).AppendLine(");");
+        }
+
+        source.AppendLine("            }");
+        source.AppendLine("        }");
+        source.AppendLine("    }");
+        return source.ToString();
     }
 
     private static void Describe(INamedTypeSymbol type, string prefix, string baseOffset, StringBuilder fields, StringBuilder offsets, Dictionary<IFieldSymbol, string> offsetNames)

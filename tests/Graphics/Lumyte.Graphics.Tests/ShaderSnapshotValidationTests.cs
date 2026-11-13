@@ -137,7 +137,9 @@ public sealed class ShaderSnapshotValidationTests
     {
         yield return ("missing resource slot", valid with { Values = valid.Values.Skip(1).ToArray() });
         yield return ("duplicate resource slot", valid with { Values = [.. valid.Values, valid.Values[0]] });
-        yield return ("unknown reference offset", valid with { Values = [valid.Values[0] with { Offset = 5 }, .. valid.Values.Skip(1)] });
+
+        // Host-safe and disjoint, but inconsistent with the shader field at offset 4.
+        yield return ("unknown reference offset", valid with { Values = [valid.Values[0] with { Offset = 0 }, .. valid.Values.Skip(1)] });
         yield return ("reference slot outside wire bytes", valid with { Values = [valid.Values[0] with { Offset = 52 }, .. valid.Values.Skip(1)] });
         ShaderValue[] wrongResource = valid.Values.ToArray();
         wrongResource[0] = wrongResource[0] with { ValueType = typeof(IGraphicsSampler), Reference = sampler };

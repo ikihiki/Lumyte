@@ -47,7 +47,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope);
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope, encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -55,7 +55,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope);
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope, encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -63,7 +63,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     {
         ValidateRootSelection();
         ArgumentNullException.ThrowIfNull(arguments);
-        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter));
+        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter), encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -228,6 +228,9 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     }
 
     private IShaderRootStorage CreateRootStorage(int size) => new BrowserRootStorage(owner.Owner, size);
+
+    // Stable reference encoding can fail during Set; selection and command ownership change only after creation succeeds.
+    private byte[] EncodeRootReference(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 

@@ -35,7 +35,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope);
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -43,7 +43,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope);
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -51,7 +51,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     {
         ValidateRootSelection();
         ArgumentNullException.ThrowIfNull(arguments);
-        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter));
+        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter), encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -123,6 +123,9 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     }
 
     private IShaderRootStorage CreateRootStorage(int size) => new WgpuRootStorage(owner.Owner, size);
+
+    // Stable reference encoding can fail during Set; selection and command ownership change only after creation succeeds.
+    private byte[] EncodeRootReference(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(_pipeline!.Data, rootParameter);
 

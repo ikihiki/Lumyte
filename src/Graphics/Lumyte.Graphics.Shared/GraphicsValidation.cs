@@ -45,7 +45,7 @@ public sealed class GraphicsValidation
     /// <param name="index">The element.</param>
     /// <param name="value">The captured snapshot.</param>
     /// <param name="write">Whether this operation publishes a copied value.</param>
-    public void Metadata(object command, IShaderDataSource source, ulong index, ShaderReferenceMetadata value, bool write)
+    public void Metadata(object command, IShaderDataSource source, ulong index, IShaderReferenceMetadata value, bool write)
         => Record(command, new(source, 0, 0, default, default, false, null, default, MetadataSource: source, Element: index, Value: value, MetadataWrite: write));
 
     /// <summary>Registers a successfully created child.</summary>
@@ -707,7 +707,7 @@ public sealed class GraphicsValidation
 
     internal sealed class State
     {
-        internal Dictionary<(IShaderDataSource Source, ulong Element), ShaderReferenceMetadata> Metadata { get; } = [];
+        internal Dictionary<(IShaderDataSource Source, ulong Element), IShaderReferenceMetadata> Metadata { get; } = [];
 
         internal Dictionary<object, List<BufferAccess>> Buffers { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -726,7 +726,7 @@ public sealed class GraphicsValidation
                 result.Textures.Add(pair.Key, pair.Value);
             }
 
-            foreach (KeyValuePair<(IShaderDataSource Source, ulong Element), ShaderReferenceMetadata> pair in Metadata)
+            foreach (KeyValuePair<(IShaderDataSource Source, ulong Element), IShaderReferenceMetadata> pair in Metadata)
             {
                 result.Metadata.Add(pair.Key, pair.Value);
             }
@@ -735,7 +735,7 @@ public sealed class GraphicsValidation
         }
     }
 
-    private sealed record Operation(object? Resource, ulong Offset, ulong End, BarrierScope Scope, BarrierScope Before, bool Barrier, TextureSubresourceRange? Range, TextureState TextureState, TextureState BeforeState = default, bool Host = false, IShaderDataSource? MetadataSource = null, ulong Element = 0, ShaderReferenceMetadata? Value = null, bool MetadataWrite = false);
+    private sealed record Operation(object? Resource, ulong Offset, ulong End, BarrierScope Scope, BarrierScope Before, bool Barrier, TextureSubresourceRange? Range, TextureState TextureState, TextureState BeforeState = default, bool Host = false, IShaderDataSource? MetadataSource = null, ulong Element = 0, IShaderReferenceMetadata? Value = null, bool MetadataWrite = false);
 
     private sealed record AccessState(BarrierScope Scope, bool Used, BarrierScope? Available = null);
 }

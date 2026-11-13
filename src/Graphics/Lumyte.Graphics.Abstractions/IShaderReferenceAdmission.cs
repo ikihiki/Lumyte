@@ -4,7 +4,7 @@ namespace Lumyte.Graphics.Abstractions;
 internal interface IShaderReferenceAdmission : IShaderArgumentScope
 {
     /// <inheritdoc/>
-    void IShaderArgumentScope.Prepare(ShaderReferenceMetadata references)
+    void IShaderArgumentScope.Prepare(IShaderReferenceMetadata references)
     {
     }
 }

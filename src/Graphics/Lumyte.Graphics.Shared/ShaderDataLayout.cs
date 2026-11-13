@@ -189,9 +189,9 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
             ShaderValue value = snapshot.Values[index];
             for (int prior = 0; prior < index; prior++)
             {
-                if (snapshot.Values[prior].Offset == value.Offset)
+                if ((long)value.Offset < ((long)snapshot.Values[prior].Offset + 16) && (long)snapshot.Values[prior].Offset < ((long)value.Offset + 16))
                 {
-                    throw new ArgumentException("Reference slots must be unique.", nameof(snapshot));
+                    throw new ArgumentException("Reference slots must be unique and non-overlapping.", nameof(snapshot));
                 }
             }
 
@@ -289,6 +289,27 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
             {
                 throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(metadata));
             }
+        }
+    }
+
+    /// <summary>Checks one emitted reference against explicitly enabled shader diagnostics.</summary>
+    /// <param name="value">The transient reference and its current wire slot.</param>
+    public void ValidateReference(ShaderValue value)
+    {
+        ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
+        if (member == null || !ReferenceMatches(value, member))
+        {
+            throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(value));
+        }
+    }
+
+    /// <summary>Checks the completed reference count without retaining wire positions.</summary>
+    /// <param name="count">The emitted reference count.</param>
+    public void ValidateReferenceCount(int count)
+    {
+        if (count != _members.Values.Count(member => member.Reference))
+        {
+            throw new ArgumentException("Resource count differs from the compiled schema.", nameof(count));
         }
     }
 

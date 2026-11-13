@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.Direct3D12;
 internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
     where T : IShaderData
 {
-    private readonly ShaderReferenceMetadata?[] _values;
+    private readonly IShaderReferenceMetadata?[] _values;
     private readonly ShaderDataLayout? _diagnosticLayout;
     private bool _disposed;
 
@@ -27,7 +27,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         Owner = owner;
         Count = count;
-        _values = new ShaderReferenceMetadata?[checked((int)count)];
+        _values = new IShaderReferenceMetadata?[checked((int)count)];
     }
 
     object IValidatedShaderDataStorage.ValidationStorage => Storage;
@@ -90,7 +90,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
             return;
         }
 
-        ShaderDataUpload.CopyFrom(source, Storage, elementOffset, _values, PackReference, _diagnosticLayout);
+        ShaderDataUpload.CopyFrom(source, Storage, elementOffset, _values, PackReference, _diagnosticLayout, metadataFactory: Direct3D12ReferenceMetadata.Create);
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -99,7 +99,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         return new(this, offset, count);
     }
 
-    public ShaderReferenceMetadata ReadReferences(ulong index)
+    public IShaderReferenceMetadata ReadReferences(ulong index)
     {
         ValidateAlive();
         if (index >= Count)
@@ -110,7 +110,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         return _values[checked((int)index)] ?? throw new InvalidOperationException("Shader data reference metadata is uninitialized or invalid after a failed transfer.");
     }
 
-    public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value)
+    public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value)
     {
         ValidateAlive();
         if (Memory != MemoryPreference.Automatic || index >= Count)

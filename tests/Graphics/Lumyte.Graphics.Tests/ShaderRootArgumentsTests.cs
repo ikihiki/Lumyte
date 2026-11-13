@@ -9,6 +9,34 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks final-storage root ownership without a native device or allocation budgets.</summary>
 public sealed class ShaderRootArgumentsTests
 {
+    /// <summary>Minimal metadata owns an immutable ordered identity copy without legacy wire locations.</summary>
+    [Fact]
+    public void DependencyMetadataCopiesOrderedIdentities()
+    {
+        using var table = new Table();
+        var first = new Reference(table, new object());
+        var second = new Reference(table, new object());
+        IShaderReference[] source = [first, second, first];
+        var metadata = new ShaderDependencyMetadata(source);
+        source[0] = second;
+        Assert.Equal(new IShaderReference[] { first, second, first }, metadata.References);
+        IList<IShaderReference> references = Assert.IsAssignableFrom<IList<IShaderReference>>(metadata.References);
+        Assert.True(references.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => references[0] = second);
+        Assert.Equal(nameof(IShaderReferenceMetadata.References), Assert.Single(typeof(ShaderDependencyMetadata).GetProperties()).Name);
+    }
+
+    /// <summary>Legacy values remain usable until identity-based admission requests valid references.</summary>
+    [Fact]
+    public void LegacyMetadataValidatesReferencesWhenEnumerated()
+    {
+        ShaderValue[] values = [new(typeof(object), new object(), 32)];
+        var metadata = new ShaderReferenceMetadata(values);
+        values[0] = new(typeof(object), null, 0);
+        Assert.Equal(32, Assert.Single(metadata.Values).Offset);
+        Assert.Throws<ArgumentException>(() => metadata.References);
+    }
+
     /// <summary>Each selection writes once straight into independently owned final storage.</summary>
     [Fact]
     public void CreateStreamsOnceAndOwnsIndependentGenerations()
@@ -45,7 +73,7 @@ public sealed class ShaderRootArgumentsTests
         Assert.Equal(16, storage.Size);
         Assert.Equal(42u, Read(storage));
         Assert.Equal(1, storage.Writes);
-        Assert.Empty(root.References.Values);
+        Assert.Empty(root.References.References);
     }
 
     /// <summary>Selection prepares identities; execution admission and reference patching occur later.</summary>
@@ -60,7 +88,7 @@ public sealed class ShaderRootArgumentsTests
         using var root = ShaderRootArguments.Create(in value, factory.Create, scope: scope);
         Storage storage = Assert.Single(factory.Items);
         Assert.Same(root.References, Assert.Single(scope.Prepared));
-        Assert.Same(reference, Assert.Single(root.References.Values).Reference);
+        Assert.Same(reference, Assert.Single(root.References.References));
         Assert.Empty(scope.Admitted);
         Assert.Equal(0, storage.Seals);
         int encodes = 0;
@@ -99,8 +127,7 @@ public sealed class ShaderRootArgumentsTests
         values[0] = new(typeof(object), null, 0);
         provider.Value = 100;
         Assert.Equal(23u, Read(Assert.Single(factory.Items)));
-        Assert.Same(reference, Assert.Single(root.References.Values).Reference);
-        Assert.Equal(16, Assert.Single(root.References.Values).Offset);
+        Assert.Same(reference, Assert.Single(root.References.References));
         Assert.Equal(0, provider.Probes);
         Assert.Equal(0, provider.Writes);
         AssertNoRetainedInput(root, provider);
@@ -255,9 +282,9 @@ public sealed class ShaderRootArgumentsTests
         var factory = new StorageFactory();
         var scope = new Scope();
         using var root = ShaderRootArguments.Create(in value, factory.Create, scope: scope);
-        ShaderReferenceMetadata current = new([new(typeof(object), firstReference, 0)]);
+        IShaderReferenceMetadata current = new ShaderDependencyMetadata([firstReference]);
         int reads = 0;
-        ShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer, ulong index)
+        IShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer, ulong index)
         {
             Assert.Same(source, buffer);
             Assert.Equal(0ul, index);
@@ -266,13 +293,13 @@ public sealed class ShaderRootArgumentsTests
         }
 
         var first = ShaderBindingSnapshot.Capture(root, table, ReadMetadata);
-        current = new([new(typeof(object), secondReference, 0)]);
+        current = new ShaderDependencyMetadata([secondReference]);
         var second = ShaderBindingSnapshot.Capture(root, table, ReadMetadata);
         Assert.Contains(firstReference, first.References);
         Assert.DoesNotContain(secondReference, first.References);
         Assert.Contains(secondReference, second.References);
         Assert.DoesNotContain(firstReference, second.References);
-        Assert.Same(rootReference, Assert.Single(root.References.Values).Reference);
+        Assert.Same(rootReference, Assert.Single(root.References.References));
         Assert.NotSame(first.Elements[(source, 0)], second.Elements[(source, 0)]);
         Assert.Equal(2, reads);
         Assert.Equal(2, scope.Admitted.Count);
@@ -508,13 +535,13 @@ public sealed class ShaderRootArgumentsTests
 
     private sealed class Scope : IShaderArgumentScope
     {
-        internal List<ShaderReferenceMetadata> Prepared { get; } = [];
+        internal List<IShaderReferenceMetadata> Prepared { get; } = [];
 
         internal List<IReadOnlyCollection<IShaderReference>> Admitted { get; } = [];
 
         internal Exception? Failure { get; init; }
 
-        public void Prepare(ShaderReferenceMetadata references)
+        public void Prepare(IShaderReferenceMetadata references)
         {
             if (Failure is { } failure)
             {
@@ -562,13 +589,13 @@ public sealed class ShaderRootArgumentsTests
 
         internal int Reads { get; private set; }
 
-        public ShaderReferenceMetadata ReadReferences(ulong index)
+        public IShaderReferenceMetadata ReadReferences(ulong index)
         {
             Reads++;
             throw new InvalidOperationException("Expected command-local metadata reader.");
         }
 
-        public void SetTransferredReferences(ulong index, ShaderReferenceMetadata value) => throw new NotSupportedException();
+        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value) => throw new NotSupportedException();
 
         public void ValidateAlive()
         {

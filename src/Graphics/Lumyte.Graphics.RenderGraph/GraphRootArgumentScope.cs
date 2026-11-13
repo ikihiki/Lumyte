@@ -19,7 +19,7 @@ internal sealed class GraphRootArgumentScope : IShaderArgumentScope
 
     internal IReadOnlyList<ShaderResources>? Resources { get; private set; }
 
-    public void Prepare(ShaderReferenceMetadata references)
+    public void Prepare(IShaderReferenceMetadata references)
     {
         RenderGraphContext context = _context ?? throw new InvalidOperationException("The graph root scope has already been prepared.");
         try

@@ -290,7 +290,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         State = CommandBufferState.Disposed;
     }
 
-    internal ShaderReferenceMetadata ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.ReadReferences(source, index);
+    internal IShaderReferenceMetadata ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.ReadReferences(source, index);
 
     internal void ValidateSubmit()
     {

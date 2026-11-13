@@ -19,12 +19,12 @@ public interface IShaderDataSource
     /// <param name="index">The logical element.</param>
     /// <returns>The immutable reference metadata for this element.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The element index is outside the buffer.</exception>
-    ShaderReferenceMetadata ReadReferences(ulong index);
+    IShaderReferenceMetadata ReadReferences(ulong index);
 
     /// <summary>Publishes metadata after an explicit GPU copy is submitted.</summary>
     /// <param name="index">The destination element.</param>
     /// <param name="value">The copied value metadata.</param>
-    void SetTransferredReferences(ulong index, ShaderReferenceMetadata value);
+    void SetTransferredReferences(ulong index, IShaderReferenceMetadata value);
 
     /// <summary>Validates that the logical shader data source is alive.</summary>
     void ValidateAlive();

@@ -21,9 +21,9 @@ public sealed class ShaderDataUploadTests
         var first = new UploadValue { Number = 17, Reference = new TestReference(1) };
         var second = new UploadValue { Number = 29, Reference = new TestReference(2) };
         UploadValue[] source = [first, second];
-        ShaderReferenceMetadata?[] metadata = SeedMetadata();
-        ShaderReferenceMetadata? before = metadata[0];
-        ShaderReferenceMetadata? after = metadata[3];
+        IShaderReferenceMetadata?[] metadata = SeedMetadata();
+        IShaderReferenceMetadata? before = metadata[0];
+        IShaderReferenceMetadata? after = metadata[3];
         var failure = new InvalidOperationException("Injected upload failure.");
         int encoded = 0;
         if (failureKind == 0)
@@ -108,8 +108,8 @@ public sealed class ShaderDataUploadTests
     public void InvalidHostRangesNeverWrite(int rangeKind)
     {
         using var storage = new MappedBuffer(UploadValue.TransferSize);
-        ShaderReferenceMetadata?[] metadata = SeedMetadata();
-        ShaderReferenceMetadata?[] original = metadata.ToArray();
+        IShaderReferenceMetadata?[] metadata = SeedMetadata();
+        IShaderReferenceMetadata?[] original = metadata.ToArray();
         var value = new UploadValue();
         int encoded = 0;
         byte[] Encode(ShaderValue reference)
@@ -153,9 +153,9 @@ public sealed class ShaderDataUploadTests
     public void InvalidSlotsClearMetadataWithoutUnsafeWrites(int slot)
     {
         using var storage = new MappedBuffer(4 * UploadValue.TransferSize);
-        ShaderReferenceMetadata?[] metadata = SeedMetadata();
-        ShaderReferenceMetadata? before = metadata[0];
-        ShaderReferenceMetadata? after = metadata[3];
+        IShaderReferenceMetadata?[] metadata = SeedMetadata();
+        IShaderReferenceMetadata? before = metadata[0];
+        IShaderReferenceMetadata? after = metadata[3];
         var value = new UploadValue { ExtraSlot = slot };
         int encoded = 0;
         byte[] Encode(ShaderValue reference)
@@ -174,8 +174,8 @@ public sealed class ShaderDataUploadTests
         AssertOuterBytes(storage);
     }
 
-    private static ShaderReferenceMetadata?[] SeedMetadata()
-        => Enumerable.Range(0, 4).Select(_ => (ShaderReferenceMetadata?)new ShaderReferenceMetadata([])).ToArray();
+    private static IShaderReferenceMetadata?[] SeedMetadata()
+        => Enumerable.Range(0, 4).Select(_ => (IShaderReferenceMetadata?)new ShaderReferenceMetadata([])).ToArray();
 
     private static byte[] EncodeReference(ShaderValue value)
         => Enumerable.Repeat((byte)Assert.IsType<TestReference>(value.Reference).Count, 16).ToArray();
@@ -187,20 +187,31 @@ public sealed class ShaderDataUploadTests
         Assert.All(storage.Bytes.AsSpan(offset + 4, 16).ToArray(), item => Assert.Equal((byte)value.Reference.Count, item));
     }
 
-    private static void AssertReferenceMetadata(ShaderReferenceMetadata? metadata, IGpuRef<uint> reference)
+    private static void AssertReferenceMetadata(IShaderReferenceMetadata? dependencies, IGpuRef<uint> reference)
     {
-        Assert.NotNull(metadata);
-        ShaderValue slot = Assert.Single(metadata.Values);
-        Assert.Same(reference, slot.Reference);
-        Assert.Equal(typeof(uint), slot.ValueType);
-        Assert.Equal(4, slot.Offset);
-        IList<ShaderValue> values = Assert.IsAssignableFrom<IList<ShaderValue>>(metadata.Values);
-        Assert.True(values.IsReadOnly);
-        Assert.Throws<NotSupportedException>(() => values[0] = new(typeof(uint), null, 4));
-        PropertyInfo property = Assert.Single(typeof(ShaderReferenceMetadata).GetProperties());
-        Assert.Equal(nameof(ShaderReferenceMetadata.Values), property.Name);
-        FieldInfo field = Assert.Single(typeof(ShaderReferenceMetadata).GetFields(BindingFlags.NonPublic | BindingFlags.Instance));
-        Assert.Same(metadata.Values, field.GetValue(metadata));
+        ShaderDependencyMetadata metadata = Assert.IsType<ShaderDependencyMetadata>(dependencies);
+        IShaderReference dependency = Assert.Single(metadata.References);
+        TestReference expected = Assert.IsType<TestReference>(reference);
+        Assert.Same(expected, dependency);
+        Assert.IsAssignableFrom<IGpuRef<uint>>(dependency);
+        Assert.Same(expected.Table, dependency.Table);
+        Assert.Same(expected.Resource, dependency.Resource);
+        Assert.Equal(ShaderBufferAccess.ReadWrite, dependency.BufferAccess);
+        Assert.Equal(3U, dependency.Slot);
+        Assert.Equal(8UL, dependency.OffsetInBytes);
+        Assert.Equal(reference.Count * sizeof(uint), dependency.SizeInBytes);
+        Assert.Equal(8UL, dependency.RegistrationOffsetInBytes);
+        Assert.Equal(reference.Count * sizeof(uint), dependency.RegistrationSizeInBytes);
+        Assert.Equal(reference.Count, dependency.Count);
+        IList<IShaderReference> references = Assert.IsAssignableFrom<IList<IShaderReference>>(metadata.References);
+        Assert.True(references.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => references[0] = new TestReference(99));
+        PropertyInfo property = Assert.Single(typeof(ShaderDependencyMetadata).GetProperties());
+        Assert.Equal(nameof(ShaderDependencyMetadata.References), property.Name);
+        Assert.Equal(typeof(IReadOnlyList<IShaderReference>), property.PropertyType);
+        FieldInfo field = Assert.Single(typeof(ShaderDependencyMetadata).GetFields(BindingFlags.NonPublic | BindingFlags.Instance));
+        Assert.Equal(typeof(IReadOnlyList<IShaderReference>), field.FieldType);
+        Assert.Same(metadata.References, field.GetValue(metadata));
     }
 
     private static void AssertOuterBytes(MappedBuffer storage)
@@ -271,8 +282,24 @@ public sealed class ShaderDataUploadTests
             where TWriter : IShaderValueWriter => throw new InvalidOperationException("Overflow must precede codec execution.");
     }
 
-    private sealed class TestReference(ulong count) : IGpuRef<uint>
+    private sealed class TestReference(ulong count) : IGpuRef<uint>, IShaderReference
     {
+        public object Table { get; } = new();
+
+        public object Resource { get; } = new();
+
+        public ShaderBufferAccess BufferAccess => ShaderBufferAccess.ReadWrite;
+
+        public uint Slot => 3;
+
+        public ulong OffsetInBytes => 8;
+
+        public ulong SizeInBytes => checked(Count * sizeof(uint));
+
+        public ulong RegistrationOffsetInBytes => OffsetInBytes;
+
+        public ulong RegistrationSizeInBytes => SizeInBytes;
+
         public ulong Count => count;
 
         public IGpuRef<uint> GetElement(ulong index) => throw new NotSupportedException();

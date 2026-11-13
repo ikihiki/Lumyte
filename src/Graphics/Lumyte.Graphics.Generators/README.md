@@ -84,3 +84,7 @@ keeps Set-time value semantics by writing directly into a new command-owned fina
 uniform generation; it does not allocate an intermediate numeric snapshot.
 A failed upload may partially modify bytes and invalidates the requested reference
 metadata range; it does not roll back values or retain a hidden numeric history.
+
+## Wire cursor
+
+参照がfieldまたは非virtual auto-propertyの生成型は、ShaderWire.Writeで同期cursor writerへ渡します。実際のC# offsetの順にraw区間（padding込み）と16-byte参照を交互に書きます。numericをメンバーごとに変換しません。custom getter／手書きcodec／非対応writerと明示Captureは、従来のbulk呼び出し・宣言順を保持し、codecを二度呼びません。functionalなoffset順と範囲・overlap検査は、任意の診断reflectionと独立しています。

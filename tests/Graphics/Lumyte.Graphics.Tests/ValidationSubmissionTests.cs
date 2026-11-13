@@ -581,7 +581,7 @@ public sealed class ValidationSubmissionTests
     private static TextureBarrierDesc Transition(IGraphicsTexture texture, TextureState beforeState, TextureState afterState, BarrierScope before, BarrierScope after)
         => new() { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = beforeState, AfterState = afterState, Before = before, After = after };
 
-    private sealed class FakeMetadataSource(ShaderReferenceMetadata value) : IShaderDataSource
+    private sealed class FakeMetadataSource(IShaderReferenceMetadata value) : IShaderDataSource
     {
         /// <summary>Gets the unused layout for this sequencing-only source.</summary>
         public IShaderDataLayout Layout => throw new NotSupportedException();
@@ -598,12 +598,12 @@ public sealed class ValidationSubmissionTests
         /// <summary>Reads the single element snapshot.</summary>
         /// <param name="index">The logical element index.</param>
         /// <returns>The currently published snapshot.</returns>
-        public ShaderReferenceMetadata ReadReferences(ulong index) => index == 0 ? value : throw new ArgumentOutOfRangeException(nameof(index));
+        public IShaderReferenceMetadata ReadReferences(ulong index) => index == 0 ? value : throw new ArgumentOutOfRangeException(nameof(index));
 
         /// <summary>Publishes the single element snapshot.</summary>
         /// <param name="index">The logical element index.</param>
         /// <param name="snapshot">The transferred snapshot.</param>
-        public void SetTransferredReferences(ulong index, ShaderReferenceMetadata snapshot)
+        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata snapshot)
         {
             if (index != 0)
             {

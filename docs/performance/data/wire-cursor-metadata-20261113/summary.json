@@ -1,0 +1,1198 @@
+{
+  "schema": 1,
+  "units": "nanoseconds per batch; bytes allocated per batch; percentiles of iteration estimates",
+  "runs": {
+    "baseline-run1": {
+      "MappedReferenceWrite/1": {
+        "method": "MappedReferenceWrite",
+        "count": 1,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 1)",
+        "values": [
+          192.2053677539249,
+          192.57694152801537,
+          192.01799170741677,
+          189.43927083175632,
+          191.88491107519718,
+          189.8352388422933,
+          190.33823643513543,
+          194.8444880436922,
+          189.65314264681393,
+          189.51446896810137
+        ],
+        "medianNs": 191.11157375516632,
+        "p95Ns": 193.8240921116376,
+        "bytesPerBatch": 488,
+        "n": 10,
+        "standardDeviationNs": 1.7719037036484298,
+        "actualMeasurementRows": 10
+      },
+      "InterfaceSetDispatchComplete/1": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 1)",
+        "values": [
+          104441.23572551073,
+          106666.0445259298,
+          103442.30330015715,
+          101403.59455212153,
+          106996.35725510739,
+          117413.23363017286,
+          106687.09848088004,
+          110834.86013619696,
+          107910.87008905187,
+          105966.79570455736,
+          102291.35358826611,
+          103167.5667888947,
+          107366.72970141436,
+          108221.77894185437,
+          108872.4248297538
+        ],
+        "medianNs": 106687.09848088004,
+        "p95Ns": 112808.37218438972,
+        "bytesPerBatch": 3624,
+        "n": 15,
+        "standardDeviationNs": 3937.282746022451,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/1": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 1,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 1)",
+        "values": [
+          85266.7590408805,
+          81633.18081761006,
+          78489.59158805032,
+          75072.2802672956,
+          80426.44732704402,
+          82364.90998427673,
+          81778.59984276729,
+          89181.25786163523,
+          84068.9606918239,
+          79951.78852201258,
+          75322.36556603774,
+          74528.18907232705,
+          77313.77908805032,
+          77921.7570754717,
+          75618.1603773585
+        ],
+        "medianNs": 79951.78852201258,
+        "p95Ns": 86441.10868710691,
+        "bytesPerBatch": 2352,
+        "n": 15,
+        "standardDeviationNs": 4219.371220387735,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/1": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 1)",
+        "values": [
+          113523.44184865414,
+          104627.32453021838,
+          106188.61452513967,
+          107056.84865413916,
+          110346.562214322,
+          114339.18486541392,
+          105966.96952767903,
+          104531.37277805993,
+          105276.74707973591,
+          104860.56373793804,
+          109224.30472320975,
+          102852.7028948705,
+          104370.99492127984,
+          106051.77247333672,
+          108914.94210259015
+        ],
+        "medianNs": 106051.77247333672,
+        "p95Ns": 113768.16475368207,
+        "bytesPerBatch": 3496,
+        "n": 15,
+        "standardDeviationNs": 3397.3617802436324,
+        "actualMeasurementRows": 15
+      },
+      "MappedReferenceWrite/64": {
+        "method": "MappedReferenceWrite",
+        "count": 64,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 64)",
+        "values": [
+          10075.578703703704,
+          10441.554176516942,
+          10233.339046493302,
+          10111.719414893618,
+          10132.90676713948,
+          10122.852147360127,
+          9939.44208037825,
+          9944.030535855003,
+          10206.722468479118,
+          9805.424891646966,
+          9933.1332249803,
+          9783.314962568951,
+          10008.809200157604,
+          10180.516646966114
+        ],
+        "medianNs": 10093.649059298661,
+        "p95Ns": 10306.214342001576,
+        "bytesPerBatch": 27200,
+        "n": 14,
+        "standardDeviationNs": 177.91038454113004,
+        "actualMeasurementRows": 14
+      },
+      "InterfaceSetDispatchComplete/64": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 64)",
+        "values": [
+          2028768.4456521738,
+          2018173.097826087,
+          2099367.967391304,
+          2150458.184782609,
+          2146182.902173913,
+          2076197.6304347827,
+          2029753.152173913,
+          2108472.054347826,
+          2236232.597826087,
+          2068485.5652173914,
+          2038506.0217391304,
+          2051015.6956521738,
+          2063236.9673913044,
+          2100202.782608696,
+          2207889.3260869565
+        ],
+        "medianNs": 2076197.6304347827,
+        "p95Ns": 2216392.3076086957,
+        "bytesPerBatch": 147352,
+        "n": 15,
+        "standardDeviationNs": 65656.61455853847,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/64": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 64,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 64)",
+        "values": [
+          99162.87939453125,
+          98592.95263671875,
+          100577.041015625,
+          95051.2197265625,
+          93324.40771484375,
+          95163.20654296875,
+          99474.8359375,
+          95209.4345703125,
+          93745.373046875,
+          92440.673828125,
+          96145.40234375,
+          94725.72705078125,
+          96481.62744140625,
+          94667.46826171875,
+          99804.439453125
+        ],
+        "medianNs": 95209.4345703125,
+        "p95Ns": 100036.219921875,
+        "bytesPerBatch": 35176,
+        "n": 15,
+        "standardDeviationNs": 2585.9967428301857,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/64": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/baseline-run1/results/BenchmarkRun-joined-2026-11-14-00-41-43-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 64)",
+        "values": [
+          2203019.466666667,
+          2195321.355555556,
+          2211238.7,
+          2185453.488888889,
+          2204648.7555555557,
+          2212027.177777778,
+          2178375.4111111113,
+          2288441.322222222,
+          2176051.433333333,
+          2149639.077777778,
+          2007119.1222222222,
+          2069841.4555555556,
+          1958372.2777777778,
+          1970745.788888889,
+          1998707.322222222
+        ],
+        "medianNs": 2178375.4111111113,
+        "p95Ns": 2234951.421111111,
+        "bytesPerBatch": 139160,
+        "n": 15,
+        "standardDeviationNs": 104220.61637507212,
+        "actualMeasurementRows": 15
+      }
+    },
+    "candidate-run1": {
+      "MappedReferenceWrite/1": {
+        "method": "MappedReferenceWrite",
+        "count": 1,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 1)",
+        "values": [
+          175.0235216724681,
+          174.72522739515995,
+          173.96915402784686,
+          178.19058718713742,
+          175.20882973506824,
+          181.99728662495164,
+          184.25704717802088,
+          174.66724508260126,
+          177.47982191695675,
+          177.7850658185535,
+          172.16131157108128,
+          171.67821858251838,
+          171.78997803746063,
+          171.45917937455107,
+          170.91517746146195
+        ],
+        "medianNs": 174.72522739515995,
+        "p95Ns": 182.67521479087242,
+        "bytesPerBatch": 448,
+        "n": 15,
+        "standardDeviationNs": 3.927933928357081,
+        "actualMeasurementRows": 15
+      },
+      "InterfaceSetDispatchComplete/1": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 1)",
+        "values": [
+          109836.20566572237,
+          114548.9790368272,
+          122182.43682719547,
+          108176.63966005665,
+          109025.16883852691,
+          118075.87648725213,
+          106588.49858356941,
+          119091.89745042493,
+          122271.14900849859,
+          126103.32917847026,
+          114996.97507082153,
+          115896.71898016997,
+          108066.10254957507,
+          99985.32181303116,
+          105354.14560906516
+        ],
+        "medianNs": 114548.9790368272,
+        "p95Ns": 123420.80305949008,
+        "bytesPerBatch": 3664,
+        "n": 15,
+        "standardDeviationNs": 7368.783488112091,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/1": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 1,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 1)",
+        "values": [
+          85824.7059859155,
+          81908.13996478873,
+          83762.74339788733,
+          79604.59991197183,
+          81737.26540492958,
+          84898.51804577465,
+          81958.26496478873,
+          79782.87279929577,
+          79642.625,
+          79394.6522887324,
+          79900.15801056338,
+          84247.35475352113,
+          81042.37235915494,
+          79366.7548415493,
+          79683.84154929577
+        ],
+        "medianNs": 81042.37235915494,
+        "p95Ns": 85176.3744278169,
+        "bytesPerBatch": 2312,
+        "n": 15,
+        "standardDeviationNs": 2210.2198337503037,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/1": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 1)",
+        "values": [
+          112927.63793982661,
+          117674.95359510454,
+          113134.30188679245,
+          120739.70474247832,
+          110724.98419173891,
+          111971.42682304946,
+          111222.1907190209,
+          112347.9500254972,
+          112616.9668536461,
+          116947.61550229475,
+          122249.87047424783,
+          110400.71749107598,
+          107537.13819479858,
+          104503.51606323304,
+          107813.84038755737
+        ],
+        "medianNs": 112347.9500254972,
+        "p95Ns": 121192.75446200918,
+        "bytesPerBatch": 3752,
+        "n": 15,
+        "standardDeviationNs": 4842.211093463863,
+        "actualMeasurementRows": 15
+      },
+      "MappedReferenceWrite/64": {
+        "method": "MappedReferenceWrite",
+        "count": 64,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 64)",
+        "values": [
+          9679.473369565218,
+          9702.96057312253,
+          9969.937796442688,
+          9974.855039525692,
+          9836.784436758893,
+          9798.060424901185,
+          9820.558942687747,
+          9951.490365612648,
+          9822.85993083004,
+          10028.66259881423
+        ],
+        "medianNs": 9829.822183794466,
+        "p95Ns": 10004.449197134387,
+        "bytesPerBatch": 24640,
+        "n": 10,
+        "standardDeviationNs": 118.62014463928571,
+        "actualMeasurementRows": 10
+      },
+      "InterfaceSetDispatchComplete/64": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 64)",
+        "values": [
+          2077404.731958763,
+          2056907.3711340206,
+          2130273.5773195876,
+          2169579.0721649486,
+          2156205,
+          2176781.443298969,
+          2161179.845360825,
+          2148228.8865979384,
+          2162092.7731958763,
+          2198640.824742268,
+          2238254.6701030927,
+          2178577.597938144,
+          2163257.3608247424,
+          2161942.7731958763,
+          2165667.556701031
+        ],
+        "medianNs": 2162092.7731958763,
+        "p95Ns": 2210524.9783505155,
+        "bytesPerBatch": 149912,
+        "n": 15,
+        "standardDeviationNs": 43648.484149222255,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/64": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 64,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 64)",
+        "values": [
+          101001.04519230769,
+          96272.45913461539,
+          94740.86057692308,
+          101033.7485576923,
+          96408.50384615385,
+          97034.19903846153,
+          101953.63413461538,
+          101130.08413461539,
+          116879.74038461539,
+          110489.81971153847,
+          93214.68990384616,
+          96494.62259615384,
+          107640.03461538462,
+          98486.5923076923,
+          99422.28557692308
+        ],
+        "medianNs": 99422.28557692308,
+        "p95Ns": 112406.79591346154,
+        "bytesPerBatch": 32616,
+        "n": 15,
+        "standardDeviationNs": 6407.419441319609,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/64": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/candidate-run1/results/BenchmarkRun-joined-2026-11-14-00-43-22-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 64)",
+        "values": [
+          2244026.086956522,
+          2157370.9782608696,
+          2211968.7391304346,
+          2166962.152173913,
+          2114801.8804347827,
+          2134860.347826087,
+          2116340,
+          2180587.5108695654,
+          2205940.0108695654,
+          2178314.4782608696,
+          2238987.717391304,
+          2172141.5,
+          2127492.532608696,
+          2218104.445652174,
+          2205966.9565217393
+        ],
+        "medianNs": 2178314.4782608696,
+        "p95Ns": 2240499.2282608696,
+        "bytesPerBatch": 155544,
+        "n": 15,
+        "standardDeviationNs": 42425.97331331868,
+        "actualMeasurementRows": 15
+      }
+    },
+    "candidate-run2": {
+      "MappedReferenceWrite/1": {
+        "method": "MappedReferenceWrite",
+        "count": 1,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 1)",
+        "values": [
+          171.3237664358037,
+          173.32408108915763,
+          174.74658583532556,
+          174.82415316059627,
+          175.28253893615525,
+          181.28195884896638,
+          176.91695129025453,
+          177.83213902756293,
+          176.45655366685418,
+          176.3409264695542,
+          173.39971479046548,
+          173.30829480734073
+        ],
+        "medianNs": 175.05334604837577,
+        "p95Ns": 179.38455794719448,
+        "bytesPerBatch": 448,
+        "n": 12,
+        "standardDeviationNs": 2.609156260204066,
+        "actualMeasurementRows": 12
+      },
+      "InterfaceSetDispatchComplete/1": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 1)",
+        "values": [
+          113080.0649948823,
+          104255.1857727738,
+          105849.56243602866,
+          128270.50716479018,
+          130020.99078812692,
+          130078.9616171955,
+          119137.5593654043,
+          101236.12180143296,
+          112187.0747185261,
+          105658.12180143296,
+          105983.06397134085,
+          105262.79273285568,
+          104620.23234390993,
+          108652.89099283521,
+          108255.91914022517
+        ],
+        "medianNs": 108255.91914022517,
+        "p95Ns": 130038.38203684748,
+        "bytesPerBatch": 3664,
+        "n": 15,
+        "standardDeviationNs": 9939.86825877164,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/1": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 1,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 1)",
+        "values": [
+          85091.21935483871,
+          80015.54798387097,
+          83596.43024193548,
+          75201.95564516129,
+          80934.47822580645,
+          82094.67258064516,
+          73942.58346774193,
+          75889.93266129032,
+          77807.55887096774,
+          77090.57258064517,
+          76693.68024193548,
+          75227.5939516129,
+          81984.58346774193,
+          81032.07903225806,
+          77675.29516129033
+        ],
+        "medianNs": 77807.55887096774,
+        "p95Ns": 84044.86697580645,
+        "bytesPerBatch": 2312,
+        "n": 15,
+        "standardDeviationNs": 3397.803567373731,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/1": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 1)",
+        "values": [
+          107176.44497607656,
+          111395.82243487507,
+          104568.59914938862,
+          109455.68633705477,
+          103838.40829346092,
+          106421.04891015418,
+          106188.42317916002,
+          103691.36842105263,
+          103278.8947368421,
+          110174.2812333865,
+          105346.10632642212,
+          103382.07868155236,
+          105192.86230728336,
+          119020.80329611909,
+          103969.31738437002
+        ],
+        "medianNs": 105346.10632642212,
+        "p95Ns": 113683.31669324827,
+        "bytesPerBatch": 3752,
+        "n": 15,
+        "standardDeviationNs": 4223.153105111663,
+        "actualMeasurementRows": 15
+      },
+      "MappedReferenceWrite/64": {
+        "method": "MappedReferenceWrite",
+        "count": 64,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 64)",
+        "values": [
+          10388.880093002657,
+          10444.550155004428,
+          10358.811337466785,
+          10194.857229849424,
+          10218.504705491585,
+          10341.498228520815,
+          10241.725974313551,
+          10450.772143489814,
+          10343.09875996457,
+          10250.11475863596
+        ],
+        "medianNs": 10342.298494242692,
+        "p95Ns": 10447.97224867139,
+        "bytesPerBatch": 24640,
+        "n": 10,
+        "standardDeviationNs": 92.33135632757724,
+        "actualMeasurementRows": 10
+      },
+      "InterfaceSetDispatchComplete/64": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 64)",
+        "values": [
+          2210691.153846154,
+          2255821.5384615385,
+          2166567.736263736,
+          2173116.8021978023,
+          2186733.758241758,
+          2179468.835164835,
+          2225866.4065934066,
+          2172642.395604396,
+          2178568.912087912,
+          2181578.7032967033
+        ],
+        "medianNs": 2180523.769230769,
+        "p95Ns": 2242341.729120879,
+        "bytesPerBatch": 149912,
+        "n": 10,
+        "standardDeviationNs": 28692.06324414415,
+        "actualMeasurementRows": 10
+      },
+      "ReferenceWriteCopyComplete/64": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 64,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 64)",
+        "values": [
+          98745.64134615385,
+          98399.60240384615,
+          97570.77403846153,
+          101648.96682692308,
+          106477.99951923077,
+          96822.62163461538,
+          103658.13413461538,
+          100966.51923076923,
+          114605.7875,
+          115946.43173076923,
+          105684.6048076923,
+          95460.21778846154,
+          101208.56346153846,
+          97366.23605769231,
+          94550.87596153846
+        ],
+        "medianNs": 100966.51923076923,
+        "p95Ns": 115007.98076923077,
+        "bytesPerBatch": 32616,
+        "n": 15,
+        "standardDeviationNs": 6443.486374299536,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/64": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/candidate-run2/results/BenchmarkRun-joined-2026-11-14-00-44-56-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 64)",
+        "values": [
+          2191396.347826087,
+          2090374.108695652,
+          2170459.684782609,
+          2260776.7934782607,
+          2319725.7282608696,
+          2250975.7282608696,
+          2270016.75,
+          2167079.7717391304,
+          2235708.0108695654,
+          2225878.032608696,
+          2167174.554347826,
+          2119539.152173913,
+          2176971.7065217393,
+          2056709.847826087,
+          2074980.1956521738
+        ],
+        "medianNs": 2176971.7065217393,
+        "p95Ns": 2284929.4434782607,
+        "bytesPerBatch": 155544,
+        "n": 15,
+        "standardDeviationNs": 76752.46181145585,
+        "actualMeasurementRows": 15
+      }
+    },
+    "baseline-run2": {
+      "MappedReferenceWrite/1": {
+        "method": "MappedReferenceWrite",
+        "count": 1,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 1)",
+        "values": [
+          188.78148390300885,
+          189.69499094148983,
+          187.98899725826612,
+          186.0104568130413,
+          186.83065933677568,
+          187.77805766569446,
+          185.26713444168328,
+          185.4225027714949,
+          184.09059393693641,
+          188.1556013027886
+        ],
+        "medianNs": 187.30435850123507,
+        "p95Ns": 189.2839127741734,
+        "bytesPerBatch": 488,
+        "n": 10,
+        "standardDeviationNs": 1.7738645501980579,
+        "actualMeasurementRows": 10
+      },
+      "InterfaceSetDispatchComplete/1": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 1)",
+        "values": [
+          115504.51567120047,
+          120271.51330573625,
+          111107.0839739799,
+          110883.23654642224,
+          103464.64754583087,
+          102013.72797161443,
+          107198.17090479007,
+          105714.60792430515,
+          114847.96510940272,
+          105603.79834417504,
+          103787.44056771141,
+          101978.81845062094,
+          99520.18036664695,
+          104039.86398580721,
+          113815.73861620342
+        ],
+        "medianNs": 105714.60792430515,
+        "p95Ns": 116934.6149615612,
+        "bytesPerBatch": 3624,
+        "n": 15,
+        "standardDeviationNs": 6066.2476228848245,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/1": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 1,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 1)",
+        "values": [
+          79880.15522875817,
+          78095.34109477124,
+          77584.21609477124,
+          76202.97263071896,
+          84512.93014705883,
+          78452.1862745098,
+          88171.66053921569,
+          79011.46241830065,
+          80971.37009803922,
+          87297.40767973856,
+          91495.16013071896,
+          87224.55718954248,
+          77155.4885620915,
+          84556.67401960785,
+          84632.7193627451
+        ],
+        "medianNs": 80971.37009803922,
+        "p95Ns": 89168.71041666667,
+        "bytesPerBatch": 2352,
+        "n": 15,
+        "standardDeviationNs": 4784.241768408092,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/1": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 1,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 1)",
+        "values": [
+          115722.70573183215,
+          108029.98822927328,
+          120572.83572159673,
+          104814.252814739,
+          104202.89099283521,
+          106823.09416581372,
+          109785.40583418628,
+          111142.73080859774,
+          107220.41453428863,
+          108189.40634595702,
+          105952.29989764585,
+          106504.06345957011,
+          116118.02968270215,
+          104909.0977482088,
+          105112.64841351075
+        ],
+        "medianNs": 107220.41453428863,
+        "p95Ns": 117454.47149437052,
+        "bytesPerBatch": 3496,
+        "n": 15,
+        "standardDeviationNs": 4872.670577051873,
+        "actualMeasurementRows": 15
+      },
+      "MappedReferenceWrite/64": {
+        "method": "MappedReferenceWrite",
+        "count": 64,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.CpuBenchmarks.MappedReferenceWrite(Count: 64)",
+        "values": [
+          9846.447058240887,
+          9666.967858557844,
+          9747.91476822504,
+          9827.788431061806,
+          9820.375742868462,
+          9827.455625990491,
+          9870.88554873217,
+          9778.914471077655,
+          9786.918532091917,
+          9730.236232171157
+        ],
+        "medianNs": 9803.64713748019,
+        "p95Ns": 9859.888228011092,
+        "bytesPerBatch": 27200,
+        "n": 10,
+        "standardDeviationNs": 61.54759688765999,
+        "actualMeasurementRows": 10
+      },
+      "InterfaceSetDispatchComplete/64": {
+        "method": "InterfaceSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.InterfaceSetDispatchComplete(Count: 64)",
+        "values": [
+          2141154.35106383,
+          2174736.095744681,
+          2053700.7340425532,
+          2106676.074468085,
+          2013887.9787234042,
+          2058437.319148936,
+          2137729.9468085105,
+          2238432.212765957,
+          2091056.0531914893,
+          2174701.414893617,
+          2225017.5,
+          2120790.6170212766,
+          2283649.8829787234,
+          2311009.776595745,
+          2203928.1914893617
+        ],
+        "medianNs": 2141154.35106383,
+        "p95Ns": 2291857.85106383,
+        "bytesPerBatch": 147352,
+        "n": 15,
+        "standardDeviationNs": 85982.1715306624,
+        "actualMeasurementRows": 15
+      },
+      "ReferenceWriteCopyComplete/64": {
+        "method": "ReferenceWriteCopyComplete",
+        "count": 64,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.UploadStrategies.Benchmarks.GpuBenchmarks.ReferenceWriteCopyComplete(Count: 64)",
+        "values": [
+          101425.18017578125,
+          99148.3251953125,
+          99678.32861328125,
+          103235.67236328125,
+          101775.25830078125,
+          98695.13720703125,
+          95798.02197265625,
+          98493.2294921875,
+          96632.44189453125,
+          105072.38134765625,
+          99437.771484375,
+          96090.4462890625,
+          95351.56201171875,
+          98827.8427734375,
+          99218.62646484375
+        ],
+        "medianNs": 99148.3251953125,
+        "p95Ns": 103786.68505859375,
+        "bytesPerBatch": 35176,
+        "n": 15,
+        "standardDeviationNs": 2753.311178322175,
+        "actualMeasurementRows": 15
+      },
+      "ExplicitSnapshotSetDispatchComplete/64": {
+        "method": "ExplicitSnapshotSetDispatchComplete",
+        "count": 64,
+        "file": "artifacts/baseline-run2/results/BenchmarkRun-joined-2026-11-14-00-46-33-report-full.json",
+        "fullName": "Lumyte.Graphics.FinalRoot.Benchmarks.FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete(Count: 64)",
+        "values": [
+          2067789.0947368422,
+          2048767.2315789473,
+          2136608.3368421053,
+          2146133.8947368423,
+          2138486.947368421,
+          2153984.9684210527,
+          2186345.9263157896,
+          2209108.610526316,
+          2092323.242105263,
+          2223968.010526316,
+          2234624.252631579,
+          2171738.9368421054,
+          2185318.6736842105,
+          2208444.610526316,
+          2250211.863157895
+        ],
+        "medianNs": 2171738.9368421054,
+        "p95Ns": 2239300.535789474,
+        "bytesPerBatch": 139160,
+        "n": 15,
+        "standardDeviationNs": 60078.01297374916,
+        "actualMeasurementRows": 15
+      }
+    }
+  },
+  "comparison": [
+    {
+      "key": "InterfaceSetDispatchComplete/1",
+      "method": "InterfaceSetDispatchComplete",
+      "count": 1,
+      "mainMedianNs": 106676.57150340492,
+      "prMedianNs": 109430.68725212464,
+      "mainP95Ns": 116554.31054863529,
+      "prP95Ns": 129233.27315762539,
+      "mainBytesPerBatch": [
+        3624,
+        3624
+      ],
+      "prBytesPerBatch": [
+        3664,
+        3664
+      ],
+      "ratioMainOverPr": 0.9748323270384446,
+      "percentTimeReduction": -2.5817437792625464,
+      "absoluteReductionNs": -2754.1157487197197,
+      "mainProcessMediansNs": [
+        106687.09848088004,
+        105714.60792430515
+      ],
+      "prProcessMediansNs": [
+        114548.9790368272,
+        108255.91914022517
+      ],
+      "mainMedianSpread": 0.009157087982332252,
+      "prMedianSpread": 0.05648942144531514,
+      "pairReductions": [
+        -7.369101482646578,
+        -2.403935715052441
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    },
+    {
+      "key": "InterfaceSetDispatchComplete/64",
+      "method": "InterfaceSetDispatchComplete",
+      "count": 64,
+      "mainMedianNs": 2107574.064407956,
+      "prMedianNs": 2172642.395604396,
+      "mainP95Ns": 2263301.9313829783,
+      "prP95Ns": 2235777.0174011556,
+      "mainBytesPerBatch": [
+        147352,
+        147352
+      ],
+      "prBytesPerBatch": [
+        149912,
+        149912
+      ],
+      "ratioMainOverPr": 0.9700510625549407,
+      "percentTimeReduction": -3.087356800185259,
+      "absoluteReductionNs": -65068.33119643992,
+      "mainProcessMediansNs": [
+        2076197.6304347827,
+        2141154.35106383
+      ],
+      "prProcessMediansNs": [
+        2162092.7731958763,
+        2180523.769230769
+      ],
+      "mainMedianSpread": 0.03080450525069294,
+      "prMedianSpread": 0.008488428971254984,
+      "pairReductions": [
+        -4.137137115559941,
+        -1.8387006124700234
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    },
+    {
+      "key": "ExplicitSnapshotSetDispatchComplete/1",
+      "method": "ExplicitSnapshotSetDispatchComplete",
+      "count": 1,
+      "mainMedianNs": 106663.5788126919,
+      "prMedianNs": 109814.98378522063,
+      "mainP95Ns": 115940.13390481065,
+      "prP95Ns": 119966.19909161667,
+      "mainBytesPerBatch": [
+        3496,
+        3496
+      ],
+      "prBytesPerBatch": [
+        3752,
+        3752
+      ],
+      "ratioMainOverPr": 0.9713025958398143,
+      "percentTimeReduction": -2.9545276912776197,
+      "absoluteReductionNs": -3151.4049725287186,
+      "mainProcessMediansNs": [
+        106051.77247333672,
+        107220.41453428863
+      ],
+      "prProcessMediansNs": [
+        112347.9500254972,
+        105346.10632642212
+      ],
+      "mainMedianSpread": 0.010959160473279416,
+      "prMedianSpread": 0.0643273759183949,
+      "pairReductions": [
+        -5.936890450127508,
+        1.7480889399724586
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    },
+    {
+      "key": "ExplicitSnapshotSetDispatchComplete/64",
+      "method": "ExplicitSnapshotSetDispatchComplete",
+      "count": 64,
+      "mainMedianNs": 2177213.422222222,
+      "prMedianNs": 2177643.0923913047,
+      "mainP95Ns": 2243197.438421053,
+      "prP95Ns": 2265858.769565217,
+      "mainBytesPerBatch": [
+        139160,
+        139160
+      ],
+      "prBytesPerBatch": [
+        155544,
+        155544
+      ],
+      "ratioMainOverPr": 0.9998026902706951,
+      "percentTimeReduction": -0.01973486681172698,
+      "absoluteReductionNs": -429.67016908247024,
+      "mainProcessMediansNs": [
+        2178375.4111111113,
+        2171738.9368421054
+      ],
+      "prProcessMediansNs": [
+        2178314.4782608696,
+        2176971.7065217393
+      ],
+      "mainMedianSpread": 0.003051172331655364,
+      "prMedianSpread": 0.0006166169946866064,
+      "pairReductions": [
+        0.002797169391965948,
+        -0.24094837509534006
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    },
+    {
+      "key": "MappedReferenceWrite/1",
+      "method": "MappedReferenceWrite",
+      "count": 1,
+      "mainMedianNs": 189.47686989992883,
+      "prMedianNs": 174.82415316059627,
+      "mainP95Ns": 192.6903188537992,
+      "prP95Ns": 181.78268829215605,
+      "mainBytesPerBatch": [
+        488,
+        488
+      ],
+      "prBytesPerBatch": [
+        448,
+        448
+      ],
+      "ratioMainOverPr": 1.0838140295515823,
+      "percentTimeReduction": 7.733248257199577,
+      "absoluteReductionNs": 14.652716739332561,
+      "mainProcessMediansNs": [
+        191.11157375516632,
+        187.30435850123507
+      ],
+      "prProcessMediansNs": [
+        174.72522739515995,
+        175.05334604837577
+      ],
+      "mainMedianSpread": 0.020121854971748974,
+      "prMedianSpread": 0.00187615067432821,
+      "pairReductions": [
+        8.574230245730163,
+        6.540698011989143
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": false
+    },
+    {
+      "key": "MappedReferenceWrite/64",
+      "method": "MappedReferenceWrite",
+      "count": 64,
+      "mainMedianNs": 9902.009386856236,
+      "prMedianNs": 10111.759914331826,
+      "mainP95Ns": 10229.346559791175,
+      "prP95Ns": 10444.861254428697,
+      "mainBytesPerBatch": [
+        27200,
+        27200
+      ],
+      "prBytesPerBatch": [
+        24640,
+        24640
+      ],
+      "ratioMainOverPr": 0.9792567733754931,
+      "percentTimeReduction": -2.1182622564871467,
+      "absoluteReductionNs": -209.75052747558948,
+      "mainProcessMediansNs": [
+        10093.649059298661,
+        9803.64713748019
+      ],
+      "prProcessMediansNs": [
+        9829.822183794466,
+        10342.298494242692
+      ],
+      "mainMedianSpread": 0.029149882370994674,
+      "prMedianSpread": 0.05081035540365334,
+      "pairReductions": [
+        2.613790849614961,
+        -5.494397638029946
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    },
+    {
+      "key": "ReferenceWriteCopyComplete/1",
+      "method": "ReferenceWriteCopyComplete",
+      "count": 1,
+      "mainMedianNs": 80189.1179245283,
+      "prMedianNs": 79957.85299721718,
+      "mainP95Ns": 88726.93906654643,
+      "prP95Ns": 85004.50376575989,
+      "mainBytesPerBatch": [
+        2352,
+        2352
+      ],
+      "prBytesPerBatch": [
+        2312,
+        2312
+      ],
+      "ratioMainOverPr": 1.0028923353822314,
+      "percentTimeReduction": 0.288399390461902,
+      "absoluteReductionNs": 231.26492731111648,
+      "mainProcessMediansNs": [
+        79951.78852201258,
+        80971.37009803922
+      ],
+      "prProcessMediansNs": [
+        81042.37235915494,
+        77807.55887096774
+      ],
+      "mainMedianSpread": 0.012671657513682391,
+      "prMedianSpread": 0.04072791801843448,
+      "pairReductions": [
+        -1.3640518333646767,
+        3.9073208508646595
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    },
+    {
+      "key": "ReferenceWriteCopyComplete/64",
+      "method": "ReferenceWriteCopyComplete",
+      "count": 64,
+      "mainMedianNs": 98543.09106445312,
+      "prMedianNs": 100194.40240384615,
+      "mainP95Ns": 102578.48603515625,
+      "prP95Ns": 115343.14182692308,
+      "mainBytesPerBatch": [
+        35176,
+        35176
+      ],
+      "prBytesPerBatch": [
+        32616,
+        32616
+      ],
+      "ratioMainOverPr": 0.9835189262096977,
+      "percentTimeReduction": -1.675725128525718,
+      "absoluteReductionNs": -1651.3113393930253,
+      "mainProcessMediansNs": [
+        95209.4345703125,
+        99148.3251953125
+      ],
+      "prProcessMediansNs": [
+        99422.28557692308,
+        100966.51923076923
+      ],
+      "mainMedianSpread": 0.040532373183863483,
+      "prMedianSpread": 0.015412374511920587,
+      "pairReductions": [
+        -4.424825150599299,
+        -1.8338121515165007
+      ],
+      "highDispersion": false,
+      "noisyOrInconclusive": true
+    }
+  ]
+}

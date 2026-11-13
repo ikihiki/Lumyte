@@ -347,17 +347,16 @@ public sealed partial class Drawing2DTests
             {
                 Assert.Contains(tables, item => ReferenceEquals(item.Table, table));
                 var visited = new HashSet<(object Resource, ulong Offset, ulong Size)>();
-                Visit(snapshot.Values, table, visited);
+                Visit(new ShaderReferenceMetadata(snapshot.Values).References, table, visited);
             }
 
             Assert.True(nested >= 10, "Every sampled image must be reached through shader-data metadata.");
             Assert.All(views, view => Assert.Contains(view, sampled));
 
-            void Visit(IReadOnlyList<ShaderValue> values, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
+            void Visit(IReadOnlyList<IShaderReference> values, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
             {
-                foreach (ShaderValue value in values)
+                foreach (IShaderReference reference in values)
                 {
-                    IShaderReference reference = Assert.IsAssignableFrom<IShaderReference>(value.Reference);
                     Assert.Same(table, reference.Table);
                     if (reference.Resource is IGraphicsTextureView view)
                     {
@@ -374,9 +373,9 @@ public sealed partial class Drawing2DTests
                     Assert.Equal(0ul, reference.SizeInBytes % stride);
                     for (ulong offset = 0; offset < reference.SizeInBytes; offset += stride)
                     {
-                        ShaderReferenceMetadata child = source.ReadReferences((reference.OffsetInBytes + offset) / stride);
+                        IShaderReferenceMetadata child = source.ReadReferences((reference.OffsetInBytes + offset) / stride);
                         nested++;
-                        Visit(child.Values, table, visited);
+                        Visit(child.References, table, visited);
                     }
                 }
             }

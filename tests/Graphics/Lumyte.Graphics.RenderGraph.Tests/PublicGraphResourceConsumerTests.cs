@@ -428,7 +428,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         plan.Record(commands);
         Assert.Equal(2, device.Tables.Count);
         Assert.Contains("shader-copy", commands.Events);
-        Assert.Empty(storage.ReadReferences(1).Values);
+        Assert.Empty(storage.ReadReferences(1).References);
         Lumyte.Graphics.Shared.ShaderBindingSnapshot capture = Assert.Single(commands.Encoder.Bindings);
         Assert.Same(image, Assert.IsAssignableFrom<IGraphicsTextureView>(Assert.Single(capture.References, reference => reference.Resource is IGraphicsTextureView).Resource).Texture);
         Assert.Equal(1ul, Assert.Single(capture.Elements).Key.Element);
@@ -470,7 +470,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             Assert.Same(metadataB, upload.ReadReferences(0));
             context.Commands.CopyBuffer(context.GetShaderDataBuffer(source).SliceElements(0, 1), context.GetShaderDataBuffer(destination).SliceElements(1, 1));
             upload.SetTransferredReferences(0, metadataA!);
-            Assert.Empty(storage.ReadReferences(1).Values);
+            Assert.Empty(storage.ReadReferences(1).References);
         }).UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Copy, ResourceAccess.CopyRead))
           .UseShaderDataBuffer(destination, 1, 1, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).DependsOn(producer);
         using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
@@ -487,12 +487,12 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Null(metadataA);
         Assert.Null(metadataB);
-        Assert.Empty(upload.ReadReferences(0).Values);
+        Assert.Empty(upload.ReadReferences(0).References);
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
         Assert.Same(metadataA, upload.ReadReferences(0));
-        Assert.Empty(storage.ReadReferences(0).Values);
-        Assert.Empty(storage.ReadReferences(1).Values);
+        Assert.Empty(storage.ReadReferences(0).References);
+        Assert.Empty(storage.ReadReferences(1).References);
         Assert.Equal(1, commands.Events.Count(item => item is string name && name == "shader-copy"));
         Lumyte.Graphics.Shared.ShaderBindingSnapshot capture = Assert.Single(commands.Encoder.Bindings);
         Assert.Same(imageB, Assert.IsAssignableFrom<IGraphicsTextureView>(Assert.Single(capture.References, reference => reference.Resource is IGraphicsTextureView).Resource).Texture);

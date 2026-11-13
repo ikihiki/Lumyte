@@ -181,10 +181,10 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
     }
 
     internal IReadOnlyList<ShaderResources> SelectArguments(ShaderValueSnapshot snapshot, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
-        => SelectArguments(snapshot.Values, pass, outputs, graphics);
+        => SelectArguments(new ShaderReferenceMetadata(snapshot.Values).References, pass, outputs, graphics);
 
-    internal IReadOnlyList<ShaderResources> SelectArguments(ShaderReferenceMetadata references, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
-        => SelectArguments(references.Values, pass, outputs, graphics);
+    internal IReadOnlyList<ShaderResources> SelectArguments(IShaderReferenceMetadata references, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+        => SelectArguments(references.References, pass, outputs, graphics);
 
     internal ShaderResources CreateModule()
     {
@@ -275,14 +275,14 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
     }
 
-    private IReadOnlyList<ShaderResources> SelectArguments(IReadOnlyList<ShaderValue> values, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    private IReadOnlyList<ShaderResources> SelectArguments(IReadOnlyList<IShaderReference> references, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
         ShaderResources core = Lookup(pass).Core;
         ValidateExecution(core, pass, outputs, graphics);
         ValidateLookup(core, pass);
-        foreach (ShaderValue value in values)
+        foreach (IShaderReference reference in references)
         {
-            if (value.Reference is not IShaderReference reference || !((ModuleResources)core).Accepts(reference))
+            if (!((ModuleResources)core).Accepts(reference))
             {
                 throw new ArgumentException("Root references must originate from this pass's shader declarations.");
             }
