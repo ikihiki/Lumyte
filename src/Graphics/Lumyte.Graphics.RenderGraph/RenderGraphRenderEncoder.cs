@@ -19,7 +19,9 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     internal RenderGraphRenderEncoder(RenderGraphContext context, IRenderEncoder native, RenderGraphTexture[] colorAttachments, RenderGraphTexture? depthAttachment)
     {
         _context = context;
-        _native = native;
+        _native = native is IShaderRootEncoder
+            ? native
+            : throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
         _colorAttachments = Array.AsReadOnly((RenderGraphTexture[])colorAttachments.Clone());
         _depthAttachment = depthAttachment;
     }
@@ -111,11 +113,7 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         }
         else
         {
-            // Compatibility for third-party encoders that still consume numeric snapshots.
-            ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
-            (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) selection = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
-            _native.SetArguments(selection.Snapshot);
-            resources = selection.Resources;
+            throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
         }
 
         _arguments = resources;
@@ -146,11 +144,7 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         }
         else
         {
-            // Compatibility for third-party encoders that still consume numeric snapshots.
-            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
-            (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) selection = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
-            _native.SetArguments(selection.Snapshot);
-            resources = selection.Resources;
+            throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
         }
 
         _arguments = resources;

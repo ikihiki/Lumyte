@@ -3,10 +3,11 @@ using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncoder
+internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncoder, IShaderRootEncoder
 {
     private ShaderTargetData? _target;
     private IArgumentTable? _table;
+    private ShaderRootArguments? _selected;
 
     internal List<ShaderValueSnapshot> Snapshots { get; } = [];
 
@@ -31,17 +32,29 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     public void SetArgumentTable(IArgumentTable table) => _table = table;
 
     public void SetArguments<T>(in T arguments)
-        where T : IShaderArguments => throw new NotSupportedException();
+        where T : IShaderArguments => SetRootArguments(in arguments);
 
-    public void SetArguments(ShaderValueSnapshot arguments)
+    public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
+        where T : unmanaged => SetRootArguments(in arguments, rootParameter, shaderTypeName);
+
+    public void SetRootArguments<T>(in T arguments, IShaderArgumentScope? scope = null)
+        where T : IShaderArguments
     {
-        if (SetArgumentsException is { } error)
-        {
-            throw error;
-        }
+        ThrowSelectionError();
+        var layout = ShaderDataLayout.Root(_target!, T.RootParameter);
+        var root = ShaderRootArguments.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, scope: scope);
+        _selected = root;
+        RecordSelection(root, ShaderTransfer.Fields(in arguments));
+    }
 
-        ShaderDataLayout.Root(_target!, arguments.RootParameter).ValidateArguments(arguments, validateReferences: true);
-        Snapshots.Add(arguments.Copy());
+    public void SetRootArguments<T>(in T arguments, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+        where T : unmanaged
+    {
+        ThrowSelectionError();
+        var layout = ShaderDataLayout.Root(_target!, rootParameter);
+        var root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, scope: scope);
+        _selected = root;
+        RecordSelection(root, ShaderTransfer.Fields<T>());
     }
 
     public void SetPipeline(IGraphicsPipeline pipeline) => _target = pipeline.Desc.VertexShader.Artifact.GetTarget(ShaderTarget.SpirV);
@@ -125,12 +138,51 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
         }
     }
 
+    private static byte[] Encode(ShaderValue value) => new byte[16];
+
     private void CaptureExecution()
     {
         if (Snapshots.Count != 0)
         {
-            Bindings.Add(ShaderBindingSnapshot.Capture(Snapshots.Last(), _table, ReadShaderData));
+            var binding = ShaderBindingSnapshot.Capture(_selected!, _table, ReadShaderData);
+            _selected!.Seal();
+            Bindings.Add(binding);
             Executions.Add(Snapshots.Last());
+        }
+    }
+
+    private void ThrowSelectionError()
+    {
+        if (SetArgumentsException is { } error)
+        {
+            throw error;
+        }
+    }
+
+    // Test observations only: read the fixture's final storage after successful selection.
+    // These diagnostic bytes are never fed back into any production writing API.
+    private void RecordSelection(ShaderRootArguments root, IReadOnlyList<ShaderTransferField> fields)
+        => Snapshots.Add(new(
+            root.RootParameter,
+            root.ShaderTypeName,
+            ((MemoryStorage)root.Storage).Bytes.AsMemory(0, root.WireSize).ToArray(),
+            [],
+            fields));
+
+    private sealed class MemoryStorage(int size) : IShaderRootStorage
+    {
+        public int Size => Bytes.Length;
+
+        internal byte[] Bytes { get; } = new byte[size];
+
+        public void Write(ReadOnlySpan<byte> bytes, int offset) => bytes.CopyTo(Bytes.AsSpan(offset));
+
+        public void Seal()
+        {
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

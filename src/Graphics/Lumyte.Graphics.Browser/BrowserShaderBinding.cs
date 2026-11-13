@@ -9,7 +9,7 @@ internal sealed class BrowserShaderBinding : IDisposable
 
     internal BrowserShaderBinding(BrowserDevice owner, ShaderBindingData data, bool compute = false)
     {
-        _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key, compute, data.Root, data.Map, data.RootArgs is { } arguments ? ((BrowserRootStorage)arguments.Storage).Native : null);
+        _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key, compute, ((BrowserRootStorage)data.RootArgs.Storage).Native, data.Map);
         try
         {
             foreach ((object resource, int index) in data.Textures)

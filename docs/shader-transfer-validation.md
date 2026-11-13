@@ -4,7 +4,63 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## 同期cursor・backend metadata・helperの最新検証（2026-11-14）
+## cursor以外の書き込み経路の削除（2026-11-14）
+
+利用者の明示的な破壊的変更要求により、以前残した互換書き込みを削除した。
+IShaderValueWriterは必須WriteWireだけ、IShaderReferenceEmitterは物理順Emitだけとする。
+数値だけの型はempty emitterで連続raw bytesをcursorへ渡す。numeric field別の変換は行わない。
+
+削除したAPI／実装:
+
+- SupportsWireCursor、writerのWriteBytes／直接WriteReference、既定throw実装とbulk分岐。
+- 手書き／custom getter用bulk fallback、遅延reference fixupとoffset list。
+- encoder／ShaderResources／Graphのsnapshot setter・helper、interface既定CaptureとGraphのCapture分岐。
+- ShaderRootArguments.CreateSnapshot、encoderなしCreate、Sealのencoder引数。
+- ShaderDataLayout.Pack／PackRaw／PackRawInto、IShaderDataLayout.Packとlegacy ShaderReferenceMetadata。
+- binding snapshotのCPU Root、snapshot実行admission、backendでのCPU root packing。
+- Browser interop／JSのCPU-root upload fallback。managedとJSはsealed native backingを必須にする。
+
+公開consumer／テストの手書きcodecは型付きemitterへ移行した。生成型はcustom／virtual getterも
+物理offset順に一度だけ評価し、その前にwireのローカル値コピーを取る。
+生成planが不正な場合はgetter／destination書き込み前に毎回ArgumentExceptionで拒否し、
+static初期化例外で型をpoisonしない。手書きemitterの不正offsetはcursorの
+ArgumentOutOfRangeExceptionで拒否する。既に書いた私有prefixは残り得る。
+CopyFromの要求範囲metadata無効化、元例外、Set失敗時の以前の選択は維持する。
+
+残したCaptureはIShaderArguments.CaptureとShaderTransfer.Captureの明示的なCPU検査／診断だけ。
+ShaderValueSnapshotをnative書き込みへ戻す入口は存在しない。ModelVertexのlayout probeも
+size／Fieldsだけを検査する。ShaderBindingSnapshot.Capture(rootArguments, …)は依存identity収集である。
+low-level storage.Write、数値IGraphicsBufferのmemcpy、GPU CopyBufferとremap uploadは必要なprimitiveであり削除しない。
+
+必須API反映・不在を調べるguardは、隔離した旧ac52 checkoutでbuild成功後に
+旧writerの4 methodを検出して失敗した。現行の同じguardは成功する。
+過去のpacking-onlyテストは削除したAPIの不在・cursor型の検査に置換し、
+padding、参照順／16-byte ABI／交差、getter評価回数、partial failure、世代とGPU lifetimeは維持した。
+
+過去3つのbenchmark harnessは凍結revisionで再現する履歴sourceとして明示した。
+current HEADのconsumer build対象ではなく、過去C# workload・raw結果は改変していない。
+今回のAPI削除に対する新しい性能測定や過去結果の読み替えは行わない。
+
+削除後の最終検証:
+
+- Graphics Debug／Release: 各251成功、失敗0、86skip（337件）。
+- RenderGraph Debug／Release: 各130成功、失敗0、skip0。
+- 全ホストRelease: 3,221成功、失敗0、107skip。samplesを含むhost consumer buildも成功。
+- Vulkan／Wgpu native subset Debug／Release: 各14成功、失敗0、skip0。
+- D3D12管理側Release28成功・Windows native7skip、Browser Release compileとJS syntax成功。
+- Markdown／diff検査成功。Windows native、Browser実行／AOTとpresentationは未検証。
+- sourceの非cursor書き込みsymbol検索はAPI不在assertion／削除を説明するdocs以外0。
+  残る参照16-byte encoder、raw buffer copy、remap uploadはcursor下位primitiveである。
+- 独立read-only reviewでblockerなし。ModelVertexの不整合例外も元のArgumentException順を維持した。
+- 全ホストの一度の実行では全assertion成功後にUI test runnerのPortableSymbolReader.Disposeが
+  NullReferenceExceptionとなった。ログを保存し、source／CI設定を緩和せず同じgateを再実行して成功した。
+
+ログはartifacts/validation9-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,markdown,negative-control}.log。
+runnerの障害はartifacts/validation9-fullhost-testplatform-dispose-failure.logに保存した。
+
+以下のcursor導入時の記述／件数は当時のsourceの履歴であり、上記の削除後APIとは区別する。
+
+## ac52時点の同期cursor・backend metadata・helper検証履歴（2026-11-14）
 
 生成codecはraw区間（padding込み）→16-byte参照のinline符号化→次区間を
 一つの同期WriteWireで書く。source Span／in参照を呼び出し外に保持しない。

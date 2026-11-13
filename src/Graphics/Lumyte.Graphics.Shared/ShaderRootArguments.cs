@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
@@ -8,11 +7,10 @@ namespace Lumyte.Graphics.Shared;
 public sealed class ShaderRootArguments : IDisposable
 {
     private readonly IShaderArgumentScope? _scope;
-    private readonly IReadOnlyList<ShaderValue>? _compatibilityFixups;
     private bool _sealed;
     private bool _disposed;
 
-    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, IShaderArgumentScope? scope, IReadOnlyList<ShaderValue>? compatibilityFixups = null)
+    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, IShaderArgumentScope? scope)
     {
         RootParameter = rootParameter;
         ShaderTypeName = shaderTypeName;
@@ -20,7 +18,6 @@ public sealed class ShaderRootArguments : IDisposable
         Storage = storage;
         References = references;
         _scope = scope;
-        _compatibilityFixups = compatibilityFixups;
     }
 
     /// <summary>Gets the logical root parameter name.</summary>
@@ -35,19 +32,19 @@ public sealed class ShaderRootArguments : IDisposable
     /// <summary>Gets the final native uniform allocation owned by this generation.</summary>
     public IShaderRootStorage Storage { get; }
 
-    /// <summary>Gets immutable, non-owning root reference fixups.</summary>
+    /// <summary>Gets immutable, non-owning root resource dependencies.</summary>
     public IShaderReferenceMetadata References { get; }
 
     /// <summary>Writes application arguments once into a new final native allocation.</summary>
     /// <typeparam name="T">The shader argument type.</typeparam>
     /// <param name="value">The input used synchronously and never retained.</param>
     /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
+    /// <param name="encode">The stable synchronous backend reference encoder.</param>
     /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
     /// <param name="scope">Optional selection preparation and execution admission.</param>
-    /// <param name="encode">The stable backend wire encoder, or null for legacy deferred patching.</param>
     /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
     /// <returns>The independently owned root generation.</returns>
-    public static ShaderRootArguments Create<T>(in T value, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, IShaderArgumentScope? scope = null, Func<ShaderValue, byte[]>? encode = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
+    public static ShaderRootArguments Create<T>(in T value, Func<int, IShaderRootStorage> factory, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic = null, IShaderArgumentScope? scope = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
         where T : IShaderArguments
     {
         if (!typeof(T).IsValueType)
@@ -55,6 +52,7 @@ public sealed class ShaderRootArguments : IDisposable
             ArgumentNullException.ThrowIfNull(value);
         }
 
+        ArgumentNullException.ThrowIfNull(encode);
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
@@ -66,7 +64,7 @@ public sealed class ShaderRootArguments : IDisposable
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
             scope?.Prepare(references);
-            return new(root, name, size, storage, references, scope, writer.DeferredFixups);
+            return new(root, name, size, storage, references, scope);
         }
         catch
         {
@@ -83,7 +81,7 @@ public sealed class ShaderRootArguments : IDisposable
     /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
     /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
     /// <param name="scope">Optional selection preparation and execution admission.</param>
-    /// <param name="encode">The stable backend wire encoder, or null for legacy deferred patching.</param>
+    /// <param name="encode">The stable synchronous backend reference encoder.</param>
     /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
     /// <returns>The independently owned root generation.</returns>
     public static ShaderRootArguments CreateUnmanaged<T>(in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, IShaderArgumentScope? scope = null, Func<ShaderValue, byte[]>? encode = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
@@ -94,9 +92,9 @@ public sealed class ShaderRootArguments : IDisposable
         IShaderRootStorage storage = Allocate(rootParameter, name, size, factory);
         try
         {
-            storage.Write(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)), 0);
-            IEnumerable<IShaderReference> empty = Array.Empty<IShaderReference>();
-            IShaderReferenceMetadata references = metadataFactory == null ? new ShaderDependencyMetadata(empty) : metadataFactory(empty);
+            var writer = new ShaderTransferWriter<ShaderRootDestination>(new(storage), size, encode ?? RejectReference, metadataFactory, diagnostic);
+            ShaderWire.Write(in value, ref writer);
+            IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
             diagnostic?.ValidateReferenceCount(0);
             scope?.Prepare(references);
@@ -109,61 +107,13 @@ public sealed class ShaderRootArguments : IDisposable
         }
     }
 
-    /// <summary>Copies an explicit compatibility snapshot once into final native storage.</summary>
-    /// <param name="snapshot">The caller-owned snapshot, which is not retained.</param>
-    /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
-    /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
-    /// <param name="scope">Optional scope overriding the snapshot execution scope.</param>
-    /// <param name="encode">The stable backend wire encoder, or null for legacy deferred patching.</param>
-    /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
-    /// <returns>The independently owned root generation.</returns>
-    public static ShaderRootArguments CreateSnapshot(ShaderValueSnapshot snapshot, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, IShaderArgumentScope? scope = null, Func<ShaderValue, byte[]>? encode = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-        IShaderRootStorage storage = Allocate(snapshot.RootParameter, snapshot.ShaderTypeName, snapshot.Data.Length, factory);
-        try
-        {
-            ShaderDataLayout.ValidateSnapshot(snapshot);
-            var writer = new ShaderTransferWriter<ShaderRootDestination>(new(storage), snapshot.Data.Length, encode, metadataFactory, diagnostic);
-            writer.WriteRawValue(snapshot.Data.Span);
-            foreach (ShaderValue value in snapshot.Values)
-            {
-                writer.WriteCapturedReference(value);
-            }
-
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(snapshot.Data.Length, snapshot.GetDiagnosticFields(), snapshot.ShaderTypeName);
-            scope ??= snapshot.ExecutionScope;
-            scope?.Prepare(references);
-            return new(snapshot.RootParameter, snapshot.ShaderTypeName, snapshot.Data.Length, storage, references, scope, writer.DeferredFixups);
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
-    }
-
-    /// <summary>Patches reference slots and seals the native allocation on its first successful execution.</summary>
-    /// <param name="encode">The backend's stable 16-byte reference encoder.</param>
-    public void Seal(Func<ShaderValue, byte[]> encode)
+    /// <summary>Seals the already encoded native allocation on its first successful execution.</summary>
+    public void Seal()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(encode);
         if (_sealed)
         {
             return;
-        }
-
-        foreach (ShaderValue value in _compatibilityFixups ?? (IEnumerable<ShaderValue>)Array.Empty<ShaderValue>())
-        {
-            byte[] bytes = encode(value);
-            if (bytes.Length != 16)
-            {
-                throw new ArgumentException("Reference encoding must match the 16-byte ABI.", nameof(encode));
-            }
-
-            Storage.Write(bytes, value.Offset);
         }
 
         Storage.Seal();
@@ -189,6 +139,9 @@ public sealed class ShaderRootArguments : IDisposable
         _disposed = true;
         Storage.Dispose();
     }
+
+    private static byte[] RejectReference(ShaderValue value)
+        => throw new InvalidOperationException("A raw unmanaged value cannot emit resource references.");
 
     private static IShaderRootStorage Allocate(string root, string name, int size, Func<int, IShaderRootStorage> factory)
     {

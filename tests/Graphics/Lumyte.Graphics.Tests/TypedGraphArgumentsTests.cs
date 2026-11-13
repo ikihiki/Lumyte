@@ -118,8 +118,8 @@ public sealed class TypedGraphArgumentsTests
             where TWriter : IShaderValueWriter
         {
             Wire wire = new() { Index = Index, Value = Value };
-            writer.WriteBytes(in wire);
-            writer.WriteReference(0, Output);
+            var emitter = new References(Output);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 24)]
@@ -133,6 +133,12 @@ public sealed class TypedGraphArgumentsTests
 
             [System.Runtime.InteropServices.FieldOffset(20)]
             public uint Value;
+        }
+
+        private readonly struct References(IGpuRef<uint> output) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct => cursor.WriteReference(0, output);
         }
     }
 }

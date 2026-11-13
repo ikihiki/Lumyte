@@ -47,7 +47,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope, encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope: scope, encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
         SelectRoot(root);
     }
 
@@ -55,15 +55,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, DiagnosticRoot(rootParameter), scope, encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
-        SelectRoot(root);
-    }
-
-    public void SetArguments(ShaderValueSnapshot arguments)
-    {
-        ValidateRootSelection();
-        ArgumentNullException.ThrowIfNull(arguments);
-        var root = ShaderRootArguments.CreateSnapshot(arguments, CreateRootStorage, DiagnosticRoot(arguments.RootParameter), encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), scope: scope, encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
         SelectRoot(root);
     }
 

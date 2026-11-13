@@ -15,8 +15,8 @@ internal sealed record class ConsumerLink(IGpuRef<IGraphicsTextureView> Texture)
         where TWriter : IShaderValueWriter
     {
         Wire wire = default;
-        writer.WriteBytes(in wire);
-        writer.WriteReference(0, Texture);
+        var emitter = new Emitter(Texture);
+        ShaderWire.Write(in wire, ref emitter, ref writer);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 16)]
@@ -24,5 +24,12 @@ internal sealed record class ConsumerLink(IGpuRef<IGraphicsTextureView> Texture)
     {
         [FieldOffset(0)]
         public ShaderReferenceSlot Texture;
+    }
+
+    private readonly struct Emitter(IGpuRef<IGraphicsTextureView> texture) : IShaderReferenceEmitter
+    {
+        public void Emit<TCursor>(ref TCursor cursor)
+            where TCursor : IShaderReferenceCursor, allows ref struct
+            => cursor.WriteReference(0, texture);
     }
 }

@@ -1,5 +1,20 @@
 # Shader upload strategies (frozen common harness)
 
+## ARCHIVED — historical reproducer, not a current-HEAD build target
+
+This frozen harness records the API and timed workload used by its original
+report. It intentionally uses APIs removed by the cursor-only shader transfer
+contract (including snapshot root selection where applicable). **Do not build it
+against current HEAD**, migrate its timed C# workload, or relabel its results as
+measurements of the current implementation.
+
+For reproduction, check out frozen revision `abba27197abf33cf84f8d06b0d3eb40a2d09fe3a`
+in a separate worktree and use the exact baseline/candidate source archives and
+hash manifest linked by the original report. A dirty candidate must be restored
+from that archive, not reconstructed from current HEAD. Instructions below apply
+only to those historical source trees; the old workload and measurements remain
+unchanged as provenance.
+
 Copy this directory unchanged into each candidate tree at the same relative path.
 Both candidates require the new reference-only IShaderDataSource API. The pilot
 selected one helper branch with a buffered flag. The final direct candidate removes

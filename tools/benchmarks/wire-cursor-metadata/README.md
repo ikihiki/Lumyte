@@ -1,5 +1,20 @@
 # Wire cursor and metadata: frozen common harness
 
+## ARCHIVED — historical reproducer, not a current-HEAD build target
+
+This frozen harness records the API and timed workload used by its original
+report. It intentionally uses APIs removed by the cursor-only shader transfer
+contract (including snapshot root selection where applicable). **Do not build it
+against current HEAD**, migrate its timed C# workload, or relabel its results as
+measurements of the current implementation.
+
+For reproduction, check out frozen revision `7e89cd7e8cecd2a4a507758253b934c95b612cef`
+in a separate worktree and use the exact baseline/candidate source archives and
+hash manifest linked by the original report. A dirty candidate must be restored
+from that archive, not reconstructed from current HEAD. Instructions below apply
+only to those historical source trees; the old workload and measurements remain
+unchanged as provenance.
+
 One BenchmarkDotNet 0.15.8 project, exactly eight cases: Count 1 and 64 for
 FinalRootBenchmarks.InterfaceSetDispatchComplete,
 FinalRootBenchmarks.ExplicitSnapshotSetDispatchComplete,

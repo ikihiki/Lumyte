@@ -185,8 +185,6 @@ public sealed class ShaderResourcesUnmanagedGpuTests
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => throw new InvalidOperationException("An ordinary unmanaged root has no interface serializer.");
 
-        public void SetArguments(ShaderValueSnapshot arguments) => throw new InvalidOperationException("The resource helper must not capture a compatibility snapshot.");
-
         public void SetArgumentTable(IArgumentTable table) => native.SetArgumentTable(table);
 
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);

@@ -245,123 +245,6 @@ public class ShaderResources
         encoder.Dispatch(x, y, z);
     }
 
-    /// <summary>Selects this set's bindings and snapshot, then records Draw work.</summary>
-    /// <param name="encoder">The native encoder with a selected pipeline.</param>
-    /// <param name="arguments">The logical root snapshot.</param>
-    /// <param name="vertexCount">The vertex count.</param>
-    /// <param name="instanceCount">The instance count.</param>
-    /// <param name="firstVertex">The first vertex.</param>
-    /// <param name="firstInstance">The first instance.</param>
-    public void Draw(IRenderEncoder encoder, ShaderValueSnapshot arguments, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
-    {
-        ArgumentNullException.ThrowIfNull(encoder);
-        ArgumentNullException.ThrowIfNull(arguments);
-        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
-        if (table is not null)
-        {
-            encoder.SetArgumentTable(table);
-        }
-
-        encoder.SetArguments(arguments);
-        encoder.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
-    }
-
-    /// <summary>Selects this set's bindings and snapshot, then records DrawIndexed work.</summary>
-    /// <param name="encoder">The native encoder with a selected pipeline.</param>
-    /// <param name="arguments">The logical root snapshot.</param>
-    /// <param name="indexCount">The index count.</param>
-    /// <param name="instanceCount">The instance count.</param>
-    /// <param name="firstIndex">The first index.</param>
-    /// <param name="baseVertex">The signed vertex offset.</param>
-    /// <param name="firstInstance">The first instance.</param>
-    public void DrawIndexed(IRenderEncoder encoder, ShaderValueSnapshot arguments, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
-    {
-        ArgumentNullException.ThrowIfNull(encoder);
-        ArgumentNullException.ThrowIfNull(arguments);
-        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
-        if (table is not null)
-        {
-            encoder.SetArgumentTable(table);
-        }
-
-        encoder.SetArguments(arguments);
-        encoder.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
-    }
-
-    /// <summary>Selects this set's bindings and snapshot, then records Dispatch work.</summary>
-    /// <param name="encoder">The native encoder with a selected pipeline.</param>
-    /// <param name="arguments">The logical root snapshot.</param>
-    /// <param name="x">The X workgroup count.</param>
-    /// <param name="y">The Y workgroup count.</param>
-    /// <param name="z">The Z workgroup count.</param>
-    public void Dispatch(IComputeEncoder encoder, ShaderValueSnapshot arguments, uint x, uint y = 1, uint z = 1)
-    {
-        ArgumentNullException.ThrowIfNull(encoder);
-        ArgumentNullException.ThrowIfNull(arguments);
-        IArgumentTable? table = _reservation.RecordingTable(graphics: false);
-        if (table is not null)
-        {
-            encoder.SetArgumentTable(table);
-        }
-
-        encoder.SetArguments(arguments);
-        encoder.Dispatch(x, y, z);
-    }
-
-    /// <summary>Selects this set's bindings and snapshot, then records DrawIndirect work.</summary>
-    /// <param name="encoder">The native encoder with a selected pipeline.</param>
-    /// <param name="arguments">The logical root snapshot.</param>
-    /// <param name="indirectArguments">Exactly one GPU-sourced indirect record.</param>
-    public void DrawIndirect(IRenderEncoder encoder, ShaderValueSnapshot arguments, BufferSlice<DrawIndirectArguments> indirectArguments)
-    {
-        ArgumentNullException.ThrowIfNull(encoder);
-        ArgumentNullException.ThrowIfNull(arguments);
-        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
-        if (table is not null)
-        {
-            encoder.SetArgumentTable(table);
-        }
-
-        encoder.SetArguments(arguments);
-        encoder.DrawIndirect(indirectArguments);
-    }
-
-    /// <summary>Selects this set's bindings and snapshot, then records DrawIndexedIndirect work.</summary>
-    /// <param name="encoder">The native encoder with a selected pipeline.</param>
-    /// <param name="arguments">The logical root snapshot.</param>
-    /// <param name="indirectArguments">Exactly one GPU-sourced indirect record.</param>
-    public void DrawIndexedIndirect(IRenderEncoder encoder, ShaderValueSnapshot arguments, BufferSlice<DrawIndexedIndirectArguments> indirectArguments)
-    {
-        ArgumentNullException.ThrowIfNull(encoder);
-        ArgumentNullException.ThrowIfNull(arguments);
-        IArgumentTable? table = _reservation.RecordingTable(graphics: true);
-        if (table is not null)
-        {
-            encoder.SetArgumentTable(table);
-        }
-
-        encoder.SetArguments(arguments);
-        encoder.DrawIndexedIndirect(indirectArguments);
-    }
-
-    /// <summary>Selects this set's bindings and snapshot, then records DispatchIndirect work.</summary>
-    /// <param name="encoder">The native encoder with a selected pipeline.</param>
-    /// <param name="arguments">The logical root snapshot.</param>
-    /// <param name="indirectArguments">Exactly one GPU-sourced indirect record.</param>
-    public void DispatchIndirect(IComputeEncoder encoder, ShaderValueSnapshot arguments, BufferSlice<DispatchIndirectArguments> indirectArguments)
-    {
-        ArgumentNullException.ThrowIfNull(encoder);
-        ArgumentNullException.ThrowIfNull(arguments);
-        IArgumentTable? table = _reservation.RecordingTable(graphics: false);
-        if (table is not null)
-        {
-            encoder.SetArgumentTable(table);
-        }
-
-        encoder.SetArguments(arguments);
-        encoder.DispatchIndirect(indirectArguments);
-    }
-
     internal bool Uses(ArgumentTableReservation reservation) => ReferenceEquals(_reservation, reservation);
 
     /// <summary>Validates this reservation and selects its render bindings without recapturing root values.</summary>
@@ -403,16 +286,6 @@ public class ShaderResources
     /// <returns>Whether its registered range belongs to this reservation.</returns>
     protected bool ContainsReference(IShaderReference reference) => _reservation.ContainsReference(reference);
 
-    /// <summary>Constrains native command-local root and transitive capture to this reservation.</summary>
-    /// <param name="arguments">The root snapshot already captured through the application codec.</param>
-    /// <param name="candidates">Groups individually covering every root reference and sharing its native table.</param>
-    /// <returns>The snapshot with a command-local validation constraint.</returns>
-    protected ShaderValueSnapshot ConstrainArguments(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates)
-        => arguments with
-        {
-            ExecutionAdmission = new ReferenceAdmission(candidates, arguments.ExecutionScope),
-        };
-
     /// <summary>Creates reference-only admission for this indivisible resource group.</summary>
     /// <param name="candidates">Groups individually covering the complete reference set.</param>
     /// <returns>The command-local argument scope without numeric root data.</returns>
@@ -426,8 +299,12 @@ public class ShaderResources
         _reservation.AddCollectionGuard(validate);
     }
 
-    private sealed class ReferenceAdmission(IReadOnlyList<ShaderResources> candidates, IShaderArgumentScope? parent = null) : IShaderReferenceAdmission
+    private sealed class ReferenceAdmission(IReadOnlyList<ShaderResources> candidates, IShaderArgumentScope? parent = null) : IShaderArgumentScope
     {
+        public void Prepare(IShaderReferenceMetadata references)
+        {
+        }
+
         public void Admit(IReadOnlyCollection<IShaderReference> references)
         {
             parent?.Admit(references);

@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
+using Lumyte.Graphics.Shared;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -68,11 +69,11 @@ public sealed class UnmanagedShaderTransferTests
         var value = new PaddedValue { Header = 17 };
         encoder.SetArguments(in value);
         value.Header = 29;
-        Assert.Equal(17u, MemoryMarshal.Read<uint>(target.Snapshot!.Data.Span));
-        Assert.Equal("PaddedValue", target.Snapshot.ShaderTypeName);
+        Assert.Equal(17u, MemoryMarshal.Read<uint>(target.Storage!.Bytes));
+        Assert.Equal("PaddedValue", target.Root!.ShaderTypeName);
         encoder.SetArguments(in value, rootParameter: "scene", shaderTypeName: "Scene");
-        Assert.Equal("scene", target.Snapshot.RootParameter);
-        Assert.Equal("Scene", target.Snapshot.ShaderTypeName);
+        Assert.Equal("scene", target.Root!.RootParameter);
+        Assert.Equal("Scene", target.Root!.ShaderTypeName);
     }
 
     /// <summary>External numeric elements traverse explicit upload and readback on Vulkan.</summary>
@@ -158,12 +159,15 @@ public sealed class UnmanagedShaderTransferTests
 
     private sealed class CaptureEncoder : IComputeEncoder
     {
-        public ShaderValueSnapshot? Snapshot { get; private set; }
+        public ShaderRootArguments? Root { get; private set; }
+
+        public TestRootStorage? Storage { get; private set; }
 
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => throw new InvalidOperationException("The numeric path must not call an interface serializer.");
 
-        public void SetArguments(ShaderValueSnapshot arguments) => Snapshot = arguments.Copy();
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged => Root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new TestRootStorage(size));
 
         public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();
 

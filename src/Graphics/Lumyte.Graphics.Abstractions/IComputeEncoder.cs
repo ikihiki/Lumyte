@@ -7,23 +7,19 @@ public interface IComputeEncoder
     /// <param name="table">The live argument table containing all directly and transitively referenced resources.</param>
     void SetArgumentTable(IArgumentTable table);
 
-    /// <summary>Snapshots application root values using their generated codec.</summary>
+    /// <summary>Copies application root values directly through their cursor writer.</summary>
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>
     void SetArguments<T>(in T arguments)
         where T : IShaderArguments;
 
-    /// <summary>Snapshots an ordinary unmanaged value without an interface or generated code.</summary>
+    /// <summary>Copies an ordinary unmanaged value directly without an interface or generated code.</summary>
     /// <typeparam name="T">The unmanaged argument type.</typeparam>
     /// <param name="arguments">The raw C# value, including padding.</param>
     /// <param name="rootParameter">The shader root parameter name.</param>
     /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
     void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
-        where T : unmanaged => SetArguments(ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName));
-
-    /// <summary>Copies a logical root snapshot for the selected program.</summary>
-    /// <param name="arguments">The root member values and numeric payloads.</param>
-    void SetArguments(ShaderValueSnapshot arguments) => throw new NotSupportedException("This encoder does not support logical argument snapshots.");
+        where T : unmanaged;
 
     /// <summary>Selects a same-device compute program.</summary>
     /// <param name="pipeline">The compute program.</param>

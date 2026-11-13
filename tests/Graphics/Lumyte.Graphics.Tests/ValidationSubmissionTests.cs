@@ -409,8 +409,8 @@ public sealed class ValidationSubmissionTests
         using var write = new FakeCommand();
         using var stale = new FakeCommand();
         using var matching = new FakeCommand();
-        ShaderReferenceMetadata original = new([]);
-        ShaderReferenceMetadata copied = new(original.Values);
+        ShaderDependencyMetadata original = new([]);
+        ShaderDependencyMetadata copied = new(original.References);
         var source = new FakeMetadataSource(original);
         validation?.Metadata(write, source, 0, copied, write: true);
         validation?.Metadata(stale, source, 0, original, write: false);
@@ -436,8 +436,8 @@ public sealed class ValidationSubmissionTests
         using var write = new FakeCommand();
         using var originalRead = new FakeCommand();
         object buffer = new();
-        ShaderReferenceMetadata original = new([]);
-        ShaderReferenceMetadata copied = new(original.Values);
+        ShaderDependencyMetadata original = new([]);
+        ShaderDependencyMetadata copied = new(original.References);
         var source = new FakeMetadataSource(original);
         validation?.Metadata(write, source, 0, copied, write: true);
         validation?.Access(write, buffer, _write, 0, 16);
@@ -519,8 +519,8 @@ public sealed class ValidationSubmissionTests
         GraphicsValidation? validation = enabled ? new() : null;
         using var command = new FakeCommand();
         using var originalRead = new FakeCommand();
-        ShaderReferenceMetadata original = new([]);
-        ShaderReferenceMetadata copied = new(original.Values);
+        ShaderDependencyMetadata original = new([]);
+        ShaderDependencyMetadata copied = new(original.References);
         var source = new FakeMetadataSource(original);
         object buffer = new();
         validation?.Access(command, buffer, _write, 0, 16);

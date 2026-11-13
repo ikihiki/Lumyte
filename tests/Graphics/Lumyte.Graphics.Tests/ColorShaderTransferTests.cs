@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
@@ -74,7 +73,7 @@ public sealed class ColorShaderTransferTests
         ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value, "color", "ColorWire");
         Assert.Equal(expected, snapshot.Data.ToArray());
         Assert.Equal(components, MemoryMarshal.Read<Vector4>(snapshot.Data.Span));
-        Assert.Equal(expected, ShaderDataLayout.PackRaw(snapshot, _ => throw new InvalidOperationException("Numeric colors have no reference fixups.")));
+        Assert.Equal(expected, snapshot.Data.ToArray());
         Assert.Empty(snapshot.Values);
         Assert.Empty(snapshot.Fields);
         Assert.Null(snapshot.DiagnosticFields);

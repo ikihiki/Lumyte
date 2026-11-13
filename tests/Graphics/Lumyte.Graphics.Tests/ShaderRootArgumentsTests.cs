@@ -26,15 +26,12 @@ public sealed class ShaderRootArgumentsTests
         Assert.Equal(nameof(IShaderReferenceMetadata.References), Assert.Single(typeof(ShaderDependencyMetadata).GetProperties()).Name);
     }
 
-    /// <summary>Legacy values remain usable until identity-based admission requests valid references.</summary>
+    /// <summary>Legacy offset-list metadata and its layout-validation entry point are absent.</summary>
     [Fact]
-    public void LegacyMetadataValidatesReferencesWhenEnumerated()
+    public void LegacyReferenceMetadataApiIsAbsent()
     {
-        ShaderValue[] values = [new(typeof(object), new object(), 32)];
-        var metadata = new ShaderReferenceMetadata(values);
-        values[0] = new(typeof(object), null, 0);
-        Assert.Equal(32, Assert.Single(metadata.Values).Offset);
-        Assert.Throws<ArgumentException>(() => metadata.References);
+        Assert.Null(typeof(IShaderReferenceMetadata).Assembly.GetType("Lumyte.Graphics.Abstractions.ShaderReferenceMetadata"));
+        Assert.Null(typeof(ShaderDataLayout).GetMethod("ValidateReferenceMetadata"));
     }
 
     /// <summary>Each selection writes once straight into independently owned final storage.</summary>
@@ -43,9 +40,9 @@ public sealed class ShaderRootArgumentsTests
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 17 };
-        using var first = ShaderRootArguments.Create(in value, factory.Create);
+        using var first = ShaderRootArguments.Create(in value, factory.Create, Encode);
         value.Value = 29;
-        using var second = ShaderRootArguments.Create(in value, factory.Create);
+        using var second = ShaderRootArguments.Create(in value, factory.Create, Encode);
         value.Value = 91;
 
         Assert.Equal(2, value.Writes);
@@ -76,77 +73,31 @@ public sealed class ShaderRootArgumentsTests
         Assert.Empty(root.References.References);
     }
 
-    /// <summary>Selection prepares identities; execution admission and reference patching occur later.</summary>
+    /// <summary>Selection encodes references and prepares identities; execution admits and seals only once.</summary>
     [Fact]
-    public void ScopePreparesBeforeAdmissionAndSealPatchesOnlyOnce()
+    public void ScopePreparesBeforeAdmissionAndSealDoesNotRewrite()
     {
         using var table = new Table();
         var reference = new Reference(table, new object());
         var scope = new Scope();
         var factory = new StorageFactory();
         var value = new Arguments { Value = 7, Reference = reference };
-        using var root = ShaderRootArguments.Create(in value, factory.Create, scope: scope);
+        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, scope: scope);
         Storage storage = Assert.Single(factory.Items);
         Assert.Same(root.References, Assert.Single(scope.Prepared));
         Assert.Same(reference, Assert.Single(root.References.References));
         Assert.Empty(scope.Admitted);
         Assert.Equal(0, storage.Seals);
-        int encodes = 0;
-        root.Seal(member =>
-        {
-            Assert.Same(reference, member.Reference);
-            encodes++;
-            return Enumerable.Repeat((byte)0x5a, 16).ToArray();
-        });
         byte[] sealedBytes = storage.Bytes.ToArray();
-        root.Seal(_ => throw new InvalidOperationException("Already sealed."));
+        root.Seal();
+        root.Seal();
         root.Admit([reference]);
         Assert.Same(reference, Assert.Single(Assert.Single(scope.Admitted)));
-        Assert.Equal(1, encodes);
         Assert.Equal(2, storage.Writes);
         Assert.Equal(1, storage.Seals);
         Assert.Equal(sealedBytes, storage.Bytes);
         Assert.Equal(7u, Read(storage));
         Assert.All(storage.Bytes[16..32], item => Assert.Equal((byte)0x5a, item));
-    }
-
-    /// <summary>Explicit compatibility input copies bytes and fixup identities, not its diagnostic provider.</summary>
-    [Fact]
-    public void ExplicitSnapshotIsDefensivelyCopiedWithoutRetainingProvider()
-    {
-        using var table = new Table();
-        var reference = new Reference(table, new object());
-        byte[] bytes = new byte[32];
-        bytes[0] = 23;
-        ShaderValue[] values = [new(typeof(object), reference, 16)];
-        var provider = new Arguments();
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, values, []) { DiagnosticSource = provider };
-        var factory = new StorageFactory();
-        using var root = ShaderRootArguments.CreateSnapshot(snapshot, factory.Create);
-        bytes[0] = 91;
-        values[0] = new(typeof(object), null, 0);
-        provider.Value = 100;
-        Assert.Equal(23u, Read(Assert.Single(factory.Items)));
-        Assert.Same(reference, Assert.Single(root.References.References));
-        Assert.Equal(0, provider.Probes);
-        Assert.Equal(0, provider.Writes);
-        AssertNoRetainedInput(root, provider);
-        AssertNoRetainedInput(root, snapshot);
-        var binding = ShaderBindingSnapshot.Capture(root, table);
-        Assert.Same(root, binding.Arguments);
-        Assert.Throws<InvalidOperationException>(() => binding.Root);
-        Assert.Equal("arguments", binding.RootParameter);
-        Assert.Equal(1, factory.Items[0].Writes);
-    }
-
-    /// <summary>The old explicit snapshot capture retains its public root compatibility property.</summary>
-    [Fact]
-    public void LegacyCaptureStillExposesSnapshotRoot()
-    {
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[4], [], []);
-        var binding = ShaderBindingSnapshot.Capture(snapshot, null);
-        Assert.Same(snapshot, binding.Root);
-        Assert.Null(binding.Arguments);
     }
 
     /// <summary>Codec and scope failures dispose only the failed generation and preserve the original error.</summary>
@@ -158,12 +109,12 @@ public sealed class ShaderRootArgumentsTests
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 11 };
-        using var previous = ShaderRootArguments.Create(in value, factory.Create);
+        using var previous = ShaderRootArguments.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Selection failed.");
         factory.ThrowOnDispose = true;
         var scope = new Scope { Failure = failScope ? failure : null };
         value.Failure = failScope ? null : failure;
-        Exception? actual = Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, scope: scope));
+        Exception? actual = Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, Encode, scope: scope));
         Assert.Same(failure, actual);
         Assert.Equal(1, factory.Items[1].Disposes);
         Assert.Equal(0, factory.Items[0].Disposes);
@@ -176,9 +127,9 @@ public sealed class ShaderRootArgumentsTests
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 13 };
-        using var previous = ShaderRootArguments.Create(in value, factory.Create);
+        using var previous = ShaderRootArguments.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Allocation failed.");
-        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create(in value, _ => throw failure)));
+        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create(in value, _ => throw failure, Encode)));
         Assert.Equal(1, factory.Calls);
         Assert.Equal(13u, Read(factory.Items[0]));
         Assert.Equal(0, factory.Items[0].Disposes);
@@ -194,7 +145,7 @@ public sealed class ShaderRootArgumentsTests
     {
         var value = new Arguments();
         var storage = new Storage(size) { ThrowOnDispose = true };
-        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create(in value, _ => storage));
+        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create(in value, _ => storage, Encode));
         Assert.Equal(1, storage.Disposes);
         Assert.Equal(0, value.Writes);
     }
@@ -210,18 +161,37 @@ public sealed class ShaderRootArgumentsTests
     [InlineData("missing")]
     public void InvalidCodecIsRejectedAndStorageDisposed(string mode)
     {
+        using var table = new Table();
         var factory = new StorageFactory();
-        var value = new Arguments { Mode = mode };
+        var value = new Arguments { Mode = mode, Value = 17, Reference = new Reference(table, new object()) };
+        int encodes = 0;
+        byte[] EncodeSlot(ShaderValue slot)
+        {
+            encodes++;
+            return Encode(slot);
+        }
+
         if (mode is "duplicate" or "negative" or "outside")
         {
-            Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create(in value, factory.Create));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ShaderRootArguments.Create(in value, factory.Create, EncodeSlot));
         }
         else
         {
-            Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create(in value, factory.Create));
+            Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create(in value, factory.Create, EncodeSlot));
         }
 
-        Assert.Equal(1, Assert.Single(factory.Items).Disposes);
+        Storage storage = Assert.Single(factory.Items);
+        bool validFirstWire = mode is "duplicate" or "twice";
+        Assert.Equal(validFirstWire ? 1 : 0, encodes);
+        Assert.Equal(validFirstWire ? 2 : 0, storage.Writes);
+        if (validFirstWire)
+        {
+            Assert.Equal(17u, Read(storage));
+            Assert.All(storage.Bytes[16..32], item => Assert.Equal((byte)0x5a, item));
+        }
+
+        Assert.Equal(1, storage.Disposes);
+        Assert.Equal(0, storage.Seals);
         Assert.Equal(0, value.Probes);
     }
 
@@ -231,13 +201,12 @@ public sealed class ShaderRootArgumentsTests
     [InlineData(0)]
     [InlineData(15)]
     [InlineData(17)]
-    public void SealRejectsWrongReferenceAbiLength(int length)
+    public void SelectionRejectsWrongReferenceAbiLength(int length)
     {
         using var table = new Table();
         var value = new Arguments { Reference = new Reference(table, new object()) };
         var factory = new StorageFactory();
-        using var root = ShaderRootArguments.Create(in value, factory.Create);
-        Assert.Throws<ArgumentException>(() => root.Seal(_ => new byte[length]));
+        Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create(in value, factory.Create, _ => new byte[length]));
         Assert.Equal(1, factory.Items[0].Writes);
         Assert.Equal(0, factory.Items[0].Seals);
     }
@@ -249,11 +218,11 @@ public sealed class ShaderRootArgumentsTests
         ShaderDataLayout layout = DiagnosticLayout();
         var factory = new StorageFactory();
         var value = new NumericArguments { Value = 19 };
-        using var classRoot = ShaderRootArguments.Create(in value, factory.Create, layout);
+        using var classRoot = ShaderRootArguments.Create(in value, factory.Create, Encode, layout);
         Assert.Equal(1, value.Probes);
         Assert.Equal(19u, Read(factory.Items[0]));
         var numeric = new NumericStruct { Value = 31 };
-        using var structRoot = ShaderRootArguments.Create(in numeric, factory.Create, layout);
+        using var structRoot = ShaderRootArguments.Create(in numeric, factory.Create, Encode, layout);
         Assert.Equal(31u, Read(factory.Items[1]));
     }
 
@@ -264,7 +233,7 @@ public sealed class ShaderRootArgumentsTests
         var failure = new InvalidOperationException("Metadata failed.");
         var value = new NumericArguments { Failure = failure };
         var factory = new StorageFactory { ThrowOnDispose = true };
-        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, DiagnosticLayout())));
+        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, Encode, DiagnosticLayout())));
         Assert.Equal(1, Assert.Single(factory.Items).Disposes);
         Assert.Equal(1, value.Probes);
     }
@@ -281,7 +250,7 @@ public sealed class ShaderRootArgumentsTests
         var value = new Arguments { Reference = rootReference };
         var factory = new StorageFactory();
         var scope = new Scope();
-        using var root = ShaderRootArguments.Create(in value, factory.Create, scope: scope);
+        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, scope: scope);
         IShaderReferenceMetadata current = new ShaderDependencyMetadata([firstReference]);
         int reads = 0;
         IShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer, ulong index)
@@ -304,7 +273,7 @@ public sealed class ShaderRootArgumentsTests
         Assert.Equal(2, reads);
         Assert.Equal(2, scope.Admitted.Count);
         Assert.Equal(1, value.Writes);
-        Assert.Equal(1, factory.Items[0].Writes);
+        Assert.Equal(2, factory.Items[0].Writes);
         Assert.Equal(0, source.Reads);
         Assert.Contains(firstReference, scope.Admitted[0]);
         Assert.Contains(secondReference, scope.Admitted[1]);
@@ -316,13 +285,15 @@ public sealed class ShaderRootArgumentsTests
     {
         var value = new Arguments();
         var factory = new StorageFactory();
-        var root = ShaderRootArguments.Create(in value, factory.Create);
+        var root = ShaderRootArguments.Create(in value, factory.Create, Encode);
         root.Dispose();
         root.Dispose();
         Assert.Equal(1, factory.Items[0].Disposes);
-        Assert.Throws<ObjectDisposedException>(() => root.Seal(_ => new byte[16]));
+        Assert.Throws<ObjectDisposedException>(() => root.Seal());
         Assert.Throws<ObjectDisposedException>(() => root.Admit([]));
     }
+
+    private static byte[] Encode(ShaderValue value) => Enumerable.Repeat((byte)0x5a, 16).ToArray();
 
     private static uint Read(Storage storage) => MemoryMarshal.Read<uint>(storage.Bytes);
 
@@ -368,7 +339,7 @@ public sealed class ShaderRootArgumentsTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("Do not box diagnostic providers.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteBytes(in this);
+            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
     }
 
     private sealed class Arguments : IShaderArguments
@@ -419,23 +390,31 @@ public sealed class ShaderRootArgumentsTests
             if (Mode == "wrong-size")
             {
                 uint small = Value;
-                writer.WriteBytes(in small);
+                ShaderWire.Write(in small, ref writer);
                 return;
             }
 
             var wire = new Wire { Value = Value };
-            writer.WriteBytes(in wire);
+            var emitter = new References(this);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
             if (Mode == "twice")
             {
-                writer.WriteBytes(in wire);
+                ShaderWire.Write(in wire, ref emitter, ref writer);
             }
+        }
 
-            if (Reference != null || Mode is "duplicate" or "negative" or "outside")
+        private readonly struct References(Arguments owner) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct
             {
-                writer.WriteReference(Mode == "negative" ? -1 : Mode == "outside" ? 17 : 16, Reference);
-                if (Mode == "duplicate")
+                if (owner.Reference != null || owner.Mode is "duplicate" or "negative" or "outside")
                 {
-                    writer.WriteReference(16, Reference);
+                    cursor.WriteReference(owner.Mode == "negative" ? -1 : owner.Mode == "outside" ? 17 : 16, owner.Reference);
+                    if (owner.Mode == "duplicate")
+                    {
+                        cursor.WriteReference(16, owner.Reference);
+                    }
                 }
             }
         }
@@ -468,7 +447,7 @@ public sealed class ShaderRootArgumentsTests
             where TWriter : IShaderValueWriter
         {
             uint value = Value;
-            writer.WriteBytes(in value);
+            ShaderWire.Write(in value, ref writer);
         }
     }
 
@@ -609,8 +588,6 @@ public sealed class ShaderRootArgumentsTests
         public int Size => 16;
 
         public bool Matches(IShaderDataLayout layout) => ReferenceEquals(this, layout);
-
-        public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference) => throw new NotSupportedException();
     }
 
     private sealed class Table : IArgumentTable

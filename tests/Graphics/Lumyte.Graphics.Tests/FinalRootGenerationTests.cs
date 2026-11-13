@@ -135,15 +135,13 @@ public sealed class FinalRootGenerationTests
             compute.Dispatch(1);
             Assert.Equal(3, root.Writes);
 
-            // Compatibility callers may supply a snapshot, but Set must take independent ownership.
-            byte[] bytes = new byte[Arguments.TransferSize];
-            BitConverter.GetBytes(13u).CopyTo(bytes, 0);
-            var snapshot = new ShaderValueSnapshot("arguments", Arguments.ShaderTypeName, bytes, [new(typeof(uint), outputSnapshot, 4), new(typeof(uint), inputA, 20)], Arguments.TransferFields);
-            compute.SetArguments(snapshot);
-            BitConverter.GetBytes(999u).CopyTo(bytes, 0);
+            // A new typed selection owns numeric bytes independently of later source mutation.
+            root.Number = 13;
+            compute.SetArguments(in root);
+            root.Number = 999;
             compute.Dispatch(1);
-            Assert.Equal(3, root.Writes);
-            Assert.Equal(validation ? 2 : 0, root.Probes);
+            Assert.Equal(4, root.Writes);
+            Assert.Equal(validation ? 3 : 0, root.Probes);
         }
         finally
         {
@@ -216,14 +214,8 @@ public sealed class FinalRootGenerationTests
 
             Writes++;
             var wire = new Wire { Number = Number, Output = default, Input = default, Padding = 0 };
-            writer.WriteBytes(in wire);
-            if (Failure is { } failure)
-            {
-                throw failure;
-            }
-
-            writer.WriteReference(4, Output);
-            writer.WriteReference(20, Input);
+            var emitter = new References(this);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -236,6 +228,21 @@ public sealed class FinalRootGenerationTests
             public ShaderReferenceSlot Input;
 
             public uint Padding;
+        }
+
+        private readonly struct References(Arguments owner) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct
+            {
+                if (owner.Failure is { } failure)
+                {
+                    throw failure;
+                }
+
+                cursor.WriteReference(4, owner.Output);
+                cursor.WriteReference(20, owner.Input);
+            }
         }
     }
 }

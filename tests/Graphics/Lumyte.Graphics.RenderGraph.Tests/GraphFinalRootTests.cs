@@ -55,7 +55,7 @@ public sealed class GraphFinalRootTests
         Assert.All(commands.Encoder.Bindings, binding =>
         {
             Assert.Same(commands.Encoder.Selected, binding.Arguments);
-            Assert.Throws<InvalidOperationException>(() => binding.Root);
+            Assert.Null(typeof(ShaderBindingSnapshot).GetProperty("Root"));
         });
     }
 
@@ -181,8 +181,8 @@ public sealed class GraphFinalRootTests
         Assert.Equal(41u, MemoryMarshal.Read<uint>(storage.Bytes));
     }
 
-    private static ShaderReferenceMetadata Metadata(IGpuRef<IGraphicsTextureView> reference)
-        => new([new(typeof(IGraphicsTextureView), reference, 0)]);
+    private static ShaderDependencyMetadata Metadata(IGpuRef<IGraphicsTextureView> reference)
+        => new([Assert.IsAssignableFrom<IShaderReference>(reference)]);
 
     private static void AssertNoInputFields(ShaderRootArguments root, RootInput input)
     {
@@ -242,11 +242,8 @@ public sealed class GraphFinalRootTests
             }
 
             Wire wire = new() { Value = Value };
-            writer.WriteBytes(in wire);
-            if (Data is { } data)
-            {
-                writer.WriteReference(0, data);
-            }
+            var emitter = new Emitter(Data);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
         }
 
         [StructLayout(LayoutKind.Explicit, Size = 32)]
@@ -254,6 +251,18 @@ public sealed class GraphFinalRootTests
         {
             [FieldOffset(16)]
             public uint Value;
+        }
+
+        private readonly struct Emitter(IGpuRef<ConsumerLink>? data) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct
+            {
+                if (data is not null)
+                {
+                    cursor.WriteReference(0, data);
+                }
+            }
         }
     }
 
@@ -299,20 +308,25 @@ public sealed class GraphFinalRootTests
         }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => throw new InvalidOperationException("Unexpected compatibility setter.");
+            where T : IShaderArguments => SetRootArguments(in arguments);
 
-        public void SetArguments(ShaderValueSnapshot arguments) => throw new InvalidOperationException("Unexpected snapshot setter.");
+        public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
+            where T : unmanaged => SetRootArguments(in arguments, rootParameter, shaderTypeName);
 
         public void SetRootArguments<T>(in T arguments, IShaderArgumentScope? scope = null)
             where T : IShaderArguments
-            => Selected = ShaderRootArguments.Create(in arguments, Allocate, scope: scope);
+            => Selected = ShaderRootArguments.Create(in arguments, Allocate, Encode, scope: scope);
 
         public void SetRootArguments<T>(in T arguments, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
             where T : unmanaged
             => Selected = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, Allocate, scope: scope);
 
         public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
-            => Bindings.Add(ShaderBindingSnapshot.Capture(Selected!, _table));
+        {
+            var binding = ShaderBindingSnapshot.Capture(Selected!, _table);
+            Selected!.Seal();
+            Bindings.Add(binding);
+        }
 
         public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments) => Dispatch(1);
 
@@ -321,6 +335,8 @@ public sealed class GraphFinalRootTests
         }
 
         public void Dispose() => Selected?.Dispose();
+
+        private static byte[] Encode(ShaderValue value) => new byte[16];
 
         private IShaderRootStorage Allocate(int size)
         {

@@ -12,6 +12,6 @@ internal readonly struct MissingConsumerArguments : IShaderArguments
         where TWriter : IShaderValueWriter
     {
         float value = 1;
-        writer.WriteBytes(in value);
+        ShaderWire.Write(in value, ref writer);
     }
 }

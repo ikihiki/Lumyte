@@ -16,7 +16,7 @@ public sealed class OptionalLayoutCostTests
         var value = new CountedArguments();
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         ShaderValueSnapshot copy = snapshot.Copy();
-        byte[] packed = ShaderDataLayout.PackRaw(copy, _ => throw new InvalidOperationException());
+        byte[] packed = copy.Data.ToArray();
 
         Assert.Equal(0, value.Probes);
         Assert.Null(snapshot.DiagnosticFields);
@@ -36,17 +36,15 @@ public sealed class OptionalLayoutCostTests
     public void BindingPackingDoesNotParseReflectionOrProbeFields()
     {
         var value = new PlainValue(17);
-        ShaderValueSnapshot root = ShaderTransfer.Capture(in value) with
-        {
-            DiagnosticFields = () => throw new InvalidOperationException("Diagnostics must remain disabled."),
-        };
+        using var root = ShaderRootArguments.CreateUnmanaged(in value, "arguments", "PlainValue", size => new TestRootStorage(size));
         var snapshot = ShaderBindingSnapshot.Capture(root, null);
         var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [32], "not JSON");
         var data = new ShaderBindingData(snapshot, target, new DeviceCaps { MaxUniformBuffersPerStage = 1 });
 
-        Assert.Equal(16, data.Root.Length);
-        Assert.Equal(root.Data.ToArray(), data.Root[..root.Data.Length]);
-        Assert.All(data.Root[root.Data.Length..], item => Assert.Equal((byte)0, item));
+        Assert.Equal(16, data.RootSize);
+        TestRootStorage storage = Assert.IsType<TestRootStorage>(root.Storage);
+        Assert.Equal(17u, System.Runtime.InteropServices.MemoryMarshal.Read<uint>(storage.Bytes));
+        Assert.All(storage.Bytes[4..], item => Assert.Equal((byte)0, item));
         Assert.Empty(data.Map);
         Assert.ThrowsAny<JsonException>(() => ShaderDataLayout.Root(target, "arguments"));
     }
@@ -130,13 +128,7 @@ public sealed class OptionalLayoutCostTests
         {
             DiagnosticFields = () => throw new InvalidOperationException("No diagnostic probe expected."),
         };
-        bool encoded = false;
-        Assert.Throws<ArgumentException>(() => ShaderDataLayout.PackRaw(snapshot, _ =>
-        {
-            encoded = true;
-            return new byte[16];
-        }));
-        Assert.False(encoded);
+        Assert.Throws<ArgumentException>(() => ShaderDataLayout.ValidateSnapshot(snapshot));
     }
 
     /// <summary>Generated class metadata has no eager initializer and is reached only through the explicit instance probe.</summary>
@@ -211,7 +203,7 @@ public sealed class OptionalLayoutCostTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("No boxed provider expected.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteBytes(in this);
+            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
     }
 
     private readonly record struct PlainValue(uint Value);
@@ -236,7 +228,7 @@ public sealed class OptionalLayoutCostTests
             where TWriter : IShaderValueWriter
         {
             uint value = 17;
-            writer.WriteBytes(in value);
+            ShaderWire.Write(in value, ref writer);
         }
     }
 }

@@ -8,8 +8,8 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 
     internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingSnapshot snapshot, ShaderTargetData target)
     {
-        ShaderRootArguments root = snapshot.Arguments ?? throw new ArgumentException("Native root arguments are required.", nameof(snapshot));
-        root.Seal(value => Direct3D12ShaderReferenceEncoding.Pack(owner, value));
+        ShaderRootArguments root = snapshot.Arguments;
+        root.Seal();
         var storage = (Direct3D12RootStorage)root.Storage;
         owner.Check(NativeMethods.BindingCreateRoot(owner.Native, storage.Native, out _native));
 

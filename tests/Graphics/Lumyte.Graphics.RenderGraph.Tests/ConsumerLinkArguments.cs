@@ -14,9 +14,9 @@ internal sealed record class ConsumerLinkArguments(IGpuRef<ConsumerLink> Data, f
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter
     {
-        Wire wire = new() { Float = Float };
-        writer.WriteBytes(in wire);
-        writer.WriteReference(0, Data);
+        var wire = new Wire { Float = Float };
+        var emitter = new Emitter(Data);
+        ShaderWire.Write(in wire, ref emitter, ref writer);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 32)]
@@ -27,5 +27,12 @@ internal sealed record class ConsumerLinkArguments(IGpuRef<ConsumerLink> Data, f
 
         [FieldOffset(16)]
         public float Float;
+    }
+
+    private readonly struct Emitter(IGpuRef<ConsumerLink> data) : IShaderReferenceEmitter
+    {
+        public void Emit<TCursor>(ref TCursor cursor)
+            where TCursor : IShaderReferenceCursor, allows ref struct
+            => cursor.WriteReference(0, data);
     }
 }

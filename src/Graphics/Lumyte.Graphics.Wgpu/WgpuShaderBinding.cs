@@ -19,7 +19,7 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
         try
         {
             var entries = new List<WGPUBindGroupEntry>();
-            WGPUBufferImpl* root = data.RootArgs is { } arguments ? ((WgpuRootStorage)arguments.Storage).Native : Buffer(owner, data.Root, A.BufferUsage.Uniform);
+            WGPUBufferImpl* root = ((WgpuRootStorage)data.RootArgs.Storage).Native;
             entries.Add(new() { binding = 8, buffer = root, size = (ulong)data.RootSize });
             if (data.Map.Length != 0)
             {

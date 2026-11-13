@@ -1,11 +1,11 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Dispatches a borrowed wire value to an opt-in cursor writer or a legacy bulk writer.</summary>
+/// <summary>Dispatches borrowed wire values to mandatory synchronous cursor writers.</summary>
 public static class ShaderWire
 {
     /// <summary>Writes one wire value and synchronously emits its opaque references.</summary>
     /// <typeparam name="TWire">The complete unmanaged C# wire type.</typeparam>
-    /// <typeparam name="TEmitter">The generated synchronous reference provider.</typeparam>
+    /// <typeparam name="TEmitter">The synchronous reference provider.</typeparam>
     /// <typeparam name="TWriter">The destination writer.</typeparam>
     /// <param name="wire">The wire value, borrowed for this call only.</param>
     /// <param name="emitter">The synchronous reference emitter.</param>
@@ -14,25 +14,26 @@ public static class ShaderWire
         where TWire : unmanaged
         where TEmitter : struct, IShaderReferenceEmitter
         where TWriter : IShaderValueWriter
-    {
-        if (writer.SupportsWireCursor)
-        {
-            writer.WriteWire(in wire, ref emitter);
-        }
-        else
-        {
-            writer.WriteBytes(in wire);
-            var cursor = new LegacyCursor<TWriter>(ref writer);
-            emitter.Emit(ref cursor, ordered: false);
-        }
-    }
+        => writer.WriteWire(in wire, ref emitter);
 
-    private ref struct LegacyCursor<TWriter>(ref TWriter writer) : IShaderReferenceCursor
+    /// <summary>Writes a reference-free wire value as one raw cursor range, including padding.</summary>
+    /// <typeparam name="TWire">The complete unmanaged C# wire type, containing no reference slots.</typeparam>
+    /// <typeparam name="TWriter">The destination writer.</typeparam>
+    /// <param name="wire">The raw-only wire value, borrowed for this call only.</param>
+    /// <param name="writer">The mutable sink state passed by reference.</param>
+    public static void Write<TWire, TWriter>(in TWire wire, ref TWriter writer)
+        where TWire : unmanaged
         where TWriter : IShaderValueWriter
     {
-        private readonly ref TWriter _writer = ref writer;
+        EmptyEmitter emitter = default;
+        writer.WriteWire(in wire, ref emitter);
+    }
 
-        public void WriteReference<T>(int offset, IGpuRef<T>? value)
-            => _writer.WriteReference(offset, value);
+    private readonly struct EmptyEmitter : IShaderReferenceEmitter
+    {
+        public void Emit<TCursor>(ref TCursor cursor)
+            where TCursor : IShaderReferenceCursor, allows ref struct
+        {
+        }
     }
 }

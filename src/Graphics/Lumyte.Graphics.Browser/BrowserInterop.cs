@@ -183,7 +183,7 @@ internal static partial class BrowserInterop
     internal static partial void WriteRootBacking(JSObject root, [JSMarshalAs<JSType.MemoryView>] Span<byte> bytes, int offset);
 
     [JSImport("createShaderBinding", "Lumyte.Graphics.Browser")]
-    internal static partial JSObject CreateShaderBinding(JSObject device, string key, bool compute, [JSMarshalAs<JSType.MemoryView>] Span<byte> root, [JSMarshalAs<JSType.MemoryView>] Span<byte> map, JSObject? rootBacking = null);
+    internal static partial JSObject CreateShaderBinding(JSObject device, string key, bool compute, JSObject rootBacking, [JSMarshalAs<JSType.MemoryView>] Span<byte> map);
 
     [JSImport("addShaderResource", "Lumyte.Graphics.Browser")]
     internal static partial void AddShaderResource(JSObject binding, int slot, int kind, JSObject resource, double offset, double size);

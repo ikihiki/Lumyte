@@ -8,6 +8,30 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 /// <summary>Verifies separated logical argument selection from the consumer boundary.</summary>
 public sealed partial class PublicGraphEncoderConsumerTests
 {
+    /// <summary>Removed snapshot setters and optional native-root fallbacks cannot return.</summary>
+    [Fact]
+    public void ConsumerApiRequiresTypedNativeRootFactories()
+    {
+        foreach (Type type in new[] { typeof(RenderGraphRenderEncoder), typeof(RenderGraphComputeEncoder), typeof(IRenderEncoder), typeof(IComputeEncoder) })
+        {
+            Assert.DoesNotContain(type.GetMethods(), method => method.GetParameters().Any(parameter =>
+                parameter.ParameterType == typeof(ShaderValueSnapshot)));
+            Assert.DoesNotContain(type.GetMethods(), method => method.Name.Contains("Snapshot", StringComparison.Ordinal));
+        }
+
+        Assert.All(typeof(IShaderRootEncoder).GetMethods(), method => Assert.True(method.IsAbstract));
+        MethodInfo[] factories = typeof(IShaderRootEncoder).GetMethods();
+        Assert.Equal(2, factories.Length);
+        Assert.All(factories, method => Assert.Equal("SetRootArguments", method.Name));
+        MethodInfo raw = Assert.Single(factories, method => method.GetParameters().Length == 4);
+        Assert.False(raw.GetParameters()[1].IsOptional);
+        Assert.False(raw.GetParameters()[2].IsOptional);
+        Assert.Null(typeof(Lumyte.Graphics.Shared.ShaderBindingSnapshot).GetProperty("Root"));
+        Assert.DoesNotContain(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "CreateSnapshot");
+        MethodInfo create = Assert.Single(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "Create");
+        Assert.False(create.GetParameters()[2].IsOptional);
+    }
+
     /// <summary>Execution signatures including names and defaults exactly match the ordinary encoders.</summary>
     [Fact]
     public void PublicExecutionSignaturesMatchOrdinaryEncoders()

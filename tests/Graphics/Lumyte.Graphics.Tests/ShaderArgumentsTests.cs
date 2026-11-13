@@ -142,7 +142,7 @@ public sealed class ShaderArgumentsTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteBytes(in this);
+            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
     }
 
     private readonly record struct CustomRootArguments(uint Value) : IShaderArguments
@@ -154,7 +154,7 @@ public sealed class ShaderArgumentsTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteBytes(in this);
+            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
     }
 
     private struct CountingWriter : IShaderValueWriter
@@ -165,14 +165,23 @@ public sealed class ShaderArgumentsTests
 
         public int ReferenceCount { get; private set; }
 
-        public void WriteBytes<T>(in T value)
-            where T : unmanaged
+        public void WriteWire<TWire, TEmitter>(in TWire value, ref TEmitter emitter)
+            where TWire : unmanaged
+            where TEmitter : struct, IShaderReferenceEmitter
         {
             Count++;
-            Bytes += Unsafe.SizeOf<T>();
+            Bytes += Unsafe.SizeOf<TWire>();
+            CountingCursor cursor = default;
+            emitter.Emit(ref cursor);
+            ReferenceCount += cursor.Count;
         }
 
-        public void WriteReference<T>(int offset, IGpuRef<T>? value) => ReferenceCount++;
+        private struct CountingCursor : IShaderReferenceCursor
+        {
+            public int Count;
+
+            public void WriteReference<T>(int offset, IGpuRef<T>? value) => Count++;
+        }
     }
 
     private sealed class TestReference : IGpuRef<uint>

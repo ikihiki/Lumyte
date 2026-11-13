@@ -13,7 +13,7 @@ public static class ShaderDataUpload
     /// <param name="metadata">Backend-owned per-element reference metadata.</param>
     /// <param name="encode">The existing backend reference encoder.</param>
     /// <param name="diagnostic">An explicitly enabled compiled layout, or null.</param>
-    /// <param name="metadataFactory">The backend-owned immutable dependency factory, or the compatibility dependency owner.</param>
+    /// <param name="metadataFactory">The backend-owned immutable dependency factory, or the default identity-only owner.</param>
     /// <remarks>Any failure invalidates metadata for the requested range. Destination bytes may already be partially modified.</remarks>
     public static void CopyFrom<T>(ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
         where T : IShaderData

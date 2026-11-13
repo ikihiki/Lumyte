@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using Lumyte.Graphics.Abstractions;
@@ -33,28 +34,26 @@ public sealed class ModelAndEffectsTests
             ShaderTargetData fs = DrawingShaders.LoadModelFragment().GetTarget(target);
             ShaderDataLayout.ValidateProgram(vs, fs);
             var layout = ShaderDataLayout.Data(vs, "ModelVertex");
-            byte[] packed = layout.Pack(ShaderTransfer.Capture(in vertex), _ => throw new InvalidOperationException());
+            layout.ValidateTransferLayout(Unsafe.SizeOf<ModelVertex>(), ShaderTransfer.Fields<ModelVertex>(), "ModelVertex");
+            byte[] packed = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in vertex, 1)).ToArray();
             Assert.Equal(ModelVertex.SizeInBytes, packed.Length);
             Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref vertex, 1)).ToArray(), packed);
             Assert.Equal(vertex, ModelVertex.AsVertices(packed)[0]);
             Assert.True(layout.Matches(ShaderDataLayout.Data(fs, "ModelVertex")));
             Assert.Equal(1, BitConverter.ToSingle(packed, 0));
             var materialLayout = ShaderDataLayout.Data(vs, "ModelMaterial");
-            Assert.NotEmpty(materialLayout.Pack(ShaderTransfer.Capture(in material), _ => throw new InvalidOperationException()));
-            int references = 0;
+            materialLayout.ValidateTransferLayout(Unsafe.SizeOf<ModelMaterial>(), ShaderTransfer.Fields<ModelMaterial>(), "ModelMaterial");
             var root = ShaderDataLayout.Root(vs, "arguments");
-            Assert.NotEmpty(root.Pack(IShaderArguments.Capture(in arguments), _ =>
-            {
-                references++;
-                return new byte[16];
-            }));
-            Assert.Equal(11, references);
+            ShaderValueSnapshot diagnostic = IShaderArguments.Capture(in arguments);
+            root.ValidateTransferLayout(diagnostic.Data.Length, diagnostic.GetDiagnosticFields(), diagnostic.ShaderTypeName);
+            root.ValidateArguments(diagnostic);
+            Assert.Equal(11, diagnostic.Values.Count);
         }
     }
 
-    /// <summary>Custom layout encoding may handle unresolved references, but native argument admission remains strict.</summary>
+    /// <summary>Read-only diagnostics may inspect unresolved references, but native selection remains strict.</summary>
     [Fact]
-    public void CustomReferencePackingDoesNotRelaxNativeAdmission()
+    public void UnresolvedReferencesCannotSelectNativeRoots()
     {
         ModelDrawArguments arguments = new(null!, default, default, default, default, default, default, default, default, default, default, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
@@ -63,16 +62,8 @@ public sealed class ModelAndEffectsTests
             var layout = ShaderDataLayout.Root(DrawingShaders.LoadModelVertex().GetTarget(target), "arguments");
             Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
             layout.ValidateArguments(snapshot);
-            Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(snapshot, null));
-            int encoded = 0;
-            byte[] bytes = layout.Pack(snapshot, member =>
-            {
-                Assert.Null(member.Reference);
-                encoded++;
-                return new byte[16];
-            });
-            Assert.Equal(11, encoded);
-            Assert.Equal(layout.Size, bytes.Length);
+
+            Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create(in arguments, size => new MemoryStorage(size), _ => new byte[16]));
         }
     }
 
@@ -156,5 +147,22 @@ public sealed class ModelAndEffectsTests
         public ulong Count => 1;
 
         public IGpuRef<T> GetElement(ulong index) => index == 0 ? this : throw new ArgumentOutOfRangeException(nameof(index));
+    }
+
+    private sealed class MemoryStorage(int size) : IShaderRootStorage
+    {
+        private readonly byte[] _bytes = new byte[size];
+
+        public int Size => _bytes.Length;
+
+        public void Write(ReadOnlySpan<byte> bytes, int offset) => bytes.CopyTo(_bytes.AsSpan(offset));
+
+        public void Seal()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }

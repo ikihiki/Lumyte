@@ -202,36 +202,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         }
     }
 
-    /// <summary>Packs C# wire bytes and reference fixups without reading shader schemas.</summary>
-    /// <param name="snapshot">The captured raw wire value.</param>
-    /// <param name="reference">The native reference encoder.</param>
-    /// <returns>An independent packed wire value.</returns>
-    public static byte[] PackRaw(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
-    {
-        ArgumentNullException.ThrowIfNull(reference);
-        ValidateSnapshot(snapshot);
-        byte[] result = snapshot.Data.IsEmpty ? [] : new byte[snapshot.Data.Length];
-        PackRawCore(snapshot, result, reference);
-        return result;
-    }
-
-    /// <summary>Packs into an independently owned exact-size scratch range without an intermediate packed array.</summary>
-    /// <param name="snapshot">The independently retained C# wire snapshot.</param>
-    /// <param name="destination">Caller-owned scratch storage, not overlapping the snapshot bytes.</param>
-    /// <param name="reference">The backend's existing opaque reference encoder.</param>
-    /// <remarks>Reference encoding failures may partially write scratch storage. Publish it only after the complete batch succeeds.</remarks>
-    public static void PackRawInto(ShaderValueSnapshot snapshot, Span<byte> destination, Func<ShaderValue, byte[]> reference)
-    {
-        ArgumentNullException.ThrowIfNull(reference);
-        ValidateSnapshot(snapshot);
-        if (destination.Length != snapshot.Data.Length || snapshot.Data.Span.Overlaps(destination))
-        {
-            throw new ArgumentException("Scratch storage must exactly fit the wire value and must not alias its snapshot.", nameof(destination));
-        }
-
-        PackRawCore(snapshot, destination, reference);
-    }
-
     /// <summary>Explicitly validates shader consistency and always checks host-safe reference slot ranges.</summary>
     /// <param name="snapshot">The captured raw wire value.</param>
     /// <param name="validateReferences">Whether to diagnose layout, reference kind, element type and registered access in any configuration.</param>
@@ -272,26 +242,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     public void ValidateTransferLayout(int size, IReadOnlyList<ShaderTransferField> fields, string name)
         => ValidateTransfer(size, fields, name);
 
-    /// <summary>Diagnoses reference kind, element type and access without CPU numeric bytes.</summary>
-    /// <param name="metadata">The current resource identities.</param>
-    public void ValidateReferenceMetadata(ShaderReferenceMetadata metadata)
-    {
-        ArgumentNullException.ThrowIfNull(metadata);
-        if (metadata.Values.Count != _members.Values.Count(member => member.Reference))
-        {
-            throw new ArgumentException("Resource count differs from the compiled schema.", nameof(metadata));
-        }
-
-        foreach (ShaderValue value in metadata.Values)
-        {
-            ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
-            if (member == null || !ReferenceMatches(value, member))
-            {
-                throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(metadata));
-            }
-        }
-    }
-
     /// <summary>Checks one emitted reference against explicitly enabled shader diagnostics.</summary>
     /// <param name="value">The transient reference and its current wire slot.</param>
     public void ValidateReference(ShaderValue value)
@@ -315,27 +265,6 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
     /// <inheritdoc/>
     public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && ((_members == null && other._members == null) || (_members != null && other._members != null && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member)));
-
-    /// <inheritdoc/>
-    public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
-        => PackRaw(snapshot, reference);
-
-    private static void PackRawCore(ShaderValueSnapshot snapshot, Span<byte> destination, Func<ShaderValue, byte[]> reference)
-    {
-        snapshot.Data.Span.CopyTo(destination);
-        foreach (ShaderValue value in snapshot.Values)
-        {
-            // Offsets were checked before any write. Keep reference encoding separate
-            // from the CPU snapshot, whose numeric bytes must remain independent.
-            byte[] bytes = reference(value);
-            if (bytes.Length != 16)
-            {
-                throw new ArgumentException("Reference encoding must match the 16-byte ABI.");
-            }
-
-            bytes.CopyTo(destination.Slice(value.Offset, 16));
-        }
-    }
 
     private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
     {

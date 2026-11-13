@@ -100,7 +100,7 @@ public sealed class ShaderUploadDiagnosticTests
             => throw new InvalidOperationException("Value-type diagnostics must not query an instance provider.");
 
         public readonly void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteBytes(in Number);
+            where TWriter : IShaderValueWriter => ShaderWire.Write(in Number, ref writer);
     }
 
     private sealed class InstanceData : IShaderData
@@ -123,7 +123,7 @@ public sealed class ShaderUploadDiagnosticTests
             where TWriter : IShaderValueWriter
         {
             uint number = Number;
-            writer.WriteBytes(in number);
+            ShaderWire.Write(in number, ref writer);
         }
     }
 

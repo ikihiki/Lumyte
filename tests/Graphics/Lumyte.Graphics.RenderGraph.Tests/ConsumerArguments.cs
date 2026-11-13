@@ -16,8 +16,8 @@ internal sealed record class ConsumerArguments(float Float, Func<float>? Read = 
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter
     {
-        Wire wire = new() { Float = Read?.Invoke() ?? Float, Int = -2, UInt = 3, Vector2 = Vector2.One, Vector3 = Vector3.One, Vector4 = Vector4.One, Matrix = Matrix4x4.Identity };
-        writer.WriteBytes(in wire);
+        var wire = new Wire { Float = Read?.Invoke() ?? Float, Int = -2, UInt = 3, Vector2 = Vector2.One, Vector3 = Vector3.One, Vector4 = Vector4.One, Matrix = Matrix4x4.Identity };
+        ShaderWire.Write(in wire, ref writer);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 128)]

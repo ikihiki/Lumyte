@@ -252,16 +252,16 @@ public sealed partial class PublicGraphEncoderConsumerTests
         {
             var valid = new ConsumerLink(context.GetGpuRef(first));
             var foreignLink = new ConsumerLink(otherReference!);
-            data.SetTransferredReferences(0, new ShaderReferenceMetadata(IShaderArguments.Capture(in valid).Values));
+            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in valid).Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))));
             var arguments = new ConsumerLinkArguments(context.GetGpuRef(buffer), 1f);
             using var counts = new TestTypedBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
             using RenderGraphComputeEncoder compute = context.BeginComputePass();
             compute.SetPipeline(pipeline);
             compute.SetArguments(in arguments);
             Execute();
-            data.SetTransferredReferences(0, new ShaderReferenceMetadata(IShaderArguments.Capture(in foreignLink).Values));
+            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in foreignLink).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
             Assert.Throws<ArgumentException>(Execute);
-            data.SetTransferredReferences(0, new ShaderReferenceMetadata(IShaderArguments.Capture(in valid).Values));
+            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in valid).Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))));
             Execute();
             data.Dispose();
             Assert.Throws<ObjectDisposedException>(Execute);
@@ -302,7 +302,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         graph.AddPass("publish metadata", context =>
         {
             var value = new ConsumerLink(context.GetGpuRef(first));
-            data.SetTransferredReferences(0, new ShaderReferenceMetadata(IShaderArguments.Capture(in value).Values));
+            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in value).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
         }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseShaderDataBuffer(buffer, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).KeepAlive();
         graph.AddPass("unrelated", context => Assert.NotNull(context.GetGpuRef(second)))
@@ -405,7 +405,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         RenderGraphPass producer = graph.AddPass("metadata producer", context =>
         {
             var value = new ConsumerLink(context.GetGpuRef(texture));
-            upload.SetTransferredReferences(0, new ShaderReferenceMetadata(IShaderArguments.Capture(in value).Values));
+            upload.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in value).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
         }).UseTexture(texture, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Host, ResourceAccess.HostWrite)).KeepAlive();
         graph.AddPass("intervening partition", context => Assert.NotNull(context.GetGpuRef(unrelated)))
@@ -449,14 +449,14 @@ public sealed partial class PublicGraphEncoderConsumerTests
         RenderGraphTexture textureB = graph.ImportTexture(imageB, TextureState.Sampled, default);
         RenderGraphShaderDataBuffer<ConsumerLink> source = graph.ImportShaderDataBuffer(upload, default);
         RenderGraphShaderDataBuffer<ConsumerLink> destination = graph.ImportShaderDataBuffer(storage, default);
-        ShaderReferenceMetadata? metadataA = null;
-        ShaderReferenceMetadata? metadataB = null;
+        ShaderDependencyMetadata? metadataA = null;
+        ShaderDependencyMetadata? metadataB = null;
         RenderGraphPass producer = graph.AddPass("late metadata producer", context =>
         {
             var valueA = new ConsumerLink(context.GetGpuRef(textureA));
             var valueB = new ConsumerLink(context.GetGpuRef(textureB));
-            metadataA = new ShaderReferenceMetadata(IShaderArguments.Capture(in valueA).Values);
-            metadataB = new ShaderReferenceMetadata(IShaderArguments.Capture(in valueB).Values);
+            metadataA = new ShaderDependencyMetadata(IShaderArguments.Capture(in valueA).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference)));
+            metadataB = new ShaderDependencyMetadata(IShaderArguments.Capture(in valueB).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference)));
             upload.SetTransferredReferences(0, metadataA);
             ShaderDataSlice<ConsumerLink> range = context.GetShaderDataBuffer(source).SliceElements(0, 1);
             Assert.Equal(1ul, range.Count);

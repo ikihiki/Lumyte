@@ -1,5 +1,20 @@
 # Final-root SetArguments GPU-completed benchmarks
 
+## ARCHIVED — historical reproducer, not a current-HEAD build target
+
+This frozen harness records the API and timed workload used by its original
+report. It intentionally uses APIs removed by the cursor-only shader transfer
+contract (including snapshot root selection where applicable). **Do not build it
+against current HEAD**, migrate its timed C# workload, or relabel its results as
+measurements of the current implementation.
+
+For reproduction, check out frozen revision `7e89cd7e8cecd2a4a507758253b934c95b612cef`
+in a separate worktree and use the exact baseline/candidate source archives and
+hash manifest linked by the original report. A dirty candidate must be restored
+from that archive, not reconstructed from current HEAD. Instructions below apply
+only to those historical source trees; the old workload and measurements remain
+unchanged as provenance.
+
 Four cases only: two public API routes × Count 1 and 64. Vulkan only.
 The exact same harness is intended for baseline `abba27197abf33cf84f8d06b0d3eb40a2d09fe3a` and the separately frozen dirty candidate from Lumyte-shader-transfer-pr. No algorithm replicas, source-conditional paths, direct root-encoder calls, ordinary-unmanaged rows, counters or custom timing engine.
 

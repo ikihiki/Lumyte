@@ -9,21 +9,6 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks byte-authoritative packing and optional reflection diagnostics.</summary>
 public sealed class ShaderBulkTransferTests
 {
-    /// <summary>Matching reflection does not reconstruct or mutate transferred bytes.</summary>
-    [Fact]
-    public void PackCopiesRawBytesWithoutCallingReferenceEncoder()
-    {
-        var layout = ShaderDataLayout.Root(Target(), "arguments");
-        byte[] bytes = [0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10];
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [], Fields());
-        byte[] packed = layout.Pack(snapshot, _ => throw new InvalidOperationException());
-
-        Assert.Equal(bytes, packed);
-        Assert.NotSame(bytes, packed);
-        packed[0] = 0;
-        Assert.Equal(0xFE, snapshot.Data.Span[0]);
-    }
-
     /// <summary>Defensive copies isolate raw bytes and metadata while keeping resource identity non-owning.</summary>
     [Fact]
     public void SnapshotCopyIsolatesRawBytesAndMetadata()
@@ -70,30 +55,7 @@ public sealed class ShaderBulkTransferTests
         };
         var snapshot = new ShaderValueSnapshot("arguments", mismatch == "name" ? "Other" : "Wire", bytes, [], mismatch == "count" ? [] : fields);
         Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-        Assert.Equal(bytes, layout.Pack(snapshot, _ => throw new InvalidOperationException()));
-    }
-
-    /// <summary>Reference replacement only changes its explicit sixteen-byte C# slot.</summary>
-    [Fact]
-    public void ReferenceFixupPreservesSurroundingNumericBytes()
-    {
-        var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
-        byte[] bytes = Enumerable.Range(0, 24).Select(index => (byte)index).ToArray();
-        object reference = new();
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new(typeof(IGraphicsTextureView), reference, 4)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
-        int calls = 0;
-        byte[] packed = layout.Pack(snapshot, value =>
-        {
-            calls++;
-            Assert.Same(reference, value.Reference);
-            return Enumerable.Repeat((byte)0xA5, 16).ToArray();
-        });
-
-        Assert.Equal(1, calls);
-        Assert.Equal(bytes[..4], packed[..4]);
-        Assert.Equal(Enumerable.Repeat((byte)0xA5, 16).ToArray(), packed[4..20]);
-        Assert.Equal(bytes[20..], packed[20..]);
-        Assert.Equal(Enumerable.Range(0, 24).Select(index => (byte)index).ToArray(), snapshot.Data.ToArray());
+        ShaderDataLayout.ValidateSnapshot(snapshot);
     }
 
     /// <summary>Reference fixups use the C# offset when optional shader diagnostics are disabled.</summary>
@@ -104,9 +66,7 @@ public sealed class ShaderBulkTransferTests
         byte[] bytes = Enumerable.Range(0, 24).Select(index => (byte)index).ToArray();
         var snapshot = new ShaderValueSnapshot("arguments", "Wire", bytes, [new(typeof(IGraphicsTextureView), new object(), 0)], [new("First", 20, 4, typeof(uint)), new("Resource", 0, 16, typeof(ShaderReferenceSlot), true), new("Last", 16, 4, typeof(uint))]);
         Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-        byte[] packed = layout.Pack(snapshot, _ => new byte[16]);
-        Assert.Equal(new byte[16], packed[..16]);
-        Assert.Equal(bytes[16..], packed[16..]);
+        ShaderDataLayout.ValidateSnapshot(snapshot);
     }
 
     /// <summary>Static wire metadata determines data stride without creating a reference-containing instance.</summary>
@@ -145,25 +105,7 @@ public sealed class ShaderBulkTransferTests
     {
         var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
         var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[24], [new(typeof(IGraphicsTextureView), new object(), offset)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
-        bool encoded = false;
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ =>
-        {
-            encoded = true;
-            return new byte[16];
-        }));
-        Assert.False(encoded);
-    }
-
-    /// <summary>The common reference ABI cannot be shortened or enlarged in any configuration.</summary>
-    /// <param name="length">The invalid encoded ABI size.</param>
-    [Theory]
-    [InlineData(15)]
-    [InlineData(17)]
-    public void ReferenceEncodingSizeIsAlwaysChecked(int length)
-    {
-        var layout = ShaderDataLayout.Root(Target(reference: true), "arguments");
-        var snapshot = new ShaderValueSnapshot("arguments", "Wire", new byte[24], [new(typeof(IGraphicsTextureView), new object(), 4)], [new("First", 0, 4, typeof(uint)), new("Resource", 4, 16, typeof(ShaderReferenceSlot), true), new("Last", 20, 4, typeof(uint))]);
-        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => new byte[length]));
+        Assert.Throws<ArgumentException>(() => ShaderDataLayout.ValidateSnapshot(snapshot));
     }
 
     /// <summary>Plain struct diagnostics use managed offsets, while raw packing never rearranges bytes.</summary>
@@ -174,7 +116,7 @@ public sealed class ShaderBulkTransferTests
         ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value, shaderTypeName: "Wire");
         var layout = ShaderDataLayout.Root(Target(), "arguments");
         Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-        Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), layout.Pack(snapshot, _ => throw new InvalidOperationException()));
+        Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), snapshot.Data.ToArray());
     }
 
     private static ShaderTransferField[] Fields() => [new("First", 0, 4, typeof(uint)), new("Last", 4, 4, typeof(uint))];

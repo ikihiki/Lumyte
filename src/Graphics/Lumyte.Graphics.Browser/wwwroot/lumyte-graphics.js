@@ -332,15 +332,14 @@ export function writeRootBacking(root, view, offset) {
     if (!Number.isInteger(offset) || offset < 0 || offset > root.size || bytes.length > root.size - offset) throw new Error("Root write is outside the allocation.");
     new Uint8Array(root.mapped, offset, bytes.length).set(bytes);
 }
-export function createShaderBinding(handle, key, compute, root, map, rootBacking = null) {
-    const rootSize = rootBacking ? rootBacking.size : root.length;
+export function createShaderBinding(handle, key, compute, rootBacking, map) {
+    if (!rootBacking || rootBacking.disposed || rootBacking.mapped) throw new Error("Root arguments must have sealed native backing before binding.");
+    const rootSize = rootBacking.size;
     if (rootSize > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
-    if (rootBacking && (rootBacking.disposed || rootBacking.mapped)) throw new Error("Root arguments must be sealed before binding.");
     const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [], entries: [] };
     try {
-        const uniform = rootBacking ? rootBacking.buffer : shaderBacking(handle.device, root, GPUBufferUsage.UNIFORM);
         // Command-owned roots are borrowed, never destroyed with this binding.
-        if (!rootBacking) binding.buffers.push(uniform);
+        const uniform = rootBacking.buffer;
         binding.entries.push({ binding: 8, resource: { buffer: uniform, size: rootSize } });
         if (map.length > 0) {
             const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);

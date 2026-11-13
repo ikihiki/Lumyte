@@ -17,7 +17,9 @@ public sealed class RenderGraphComputeEncoder : IDisposable
     internal RenderGraphComputeEncoder(RenderGraphContext context, IComputeEncoder native)
     {
         _context = context;
-        _native = native;
+        _native = native is IShaderRootEncoder
+            ? native
+            : throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
     }
 
     /// <summary>Selects the compute pipeline.</summary>
@@ -51,11 +53,7 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         }
         else
         {
-            // Compatibility for third-party encoders that still consume numeric snapshots.
-            ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
-            (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) selection = _context.SelectArguments(snapshot, [], graphics: false);
-            _native.SetArguments(selection.Snapshot);
-            resources = selection.Resources;
+            throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
         }
 
         _arguments = resources;
@@ -86,11 +84,7 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         }
         else
         {
-            // Compatibility for third-party encoders that still consume numeric snapshots.
-            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
-            (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) selection = _context.SelectArguments(snapshot, [], graphics: false);
-            _native.SetArguments(selection.Snapshot);
-            resources = selection.Resources;
+            throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
         }
 
         _arguments = resources;

@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Packs snapshots and finite resource bindings for WGSL backends.</summary>
+/// <summary>Builds finite resource bindings for WGSL backends using native roots.</summary>
 public sealed class ShaderBindingData
 {
     private readonly Dictionary<object, int> _textures = [];
@@ -46,17 +46,7 @@ public sealed class ShaderBindingData
             throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
         }
 
-        if (snapshot.Arguments is { } arguments)
-        {
-            arguments.Seal(ShaderReferenceEncoding.Pack);
-            Root = [];
-        }
-        else
-        {
-            byte[] packedRoot = ShaderDataLayout.PackRaw(snapshot.Root, ReferenceBytes);
-            Root = new byte[checked(((packedRoot.Length + 15) / 16) * 16)];
-            packedRoot.CopyTo(Root, 0);
-        }
+        snapshot.Arguments.Seal();
 
         uint capacity = snapshot.References.Count == 0 ? 0 : checked(snapshot.References.Max(r => r.Slot) + 1);
         if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
@@ -94,14 +84,11 @@ public sealed class ShaderBindingData
     /// <summary>Gets the dependency snapshot.</summary>
     public ShaderBindingSnapshot Snapshot { get; }
 
-    /// <summary>Gets the root uniform backing bytes, with trailing capacity padding only.</summary>
-    public byte[] Root { get; }
-
-    /// <summary>Gets the native root generation, or null for legacy packed roots.</summary>
-    public ShaderRootArguments? RootArgs => Snapshot.Arguments;
+    /// <summary>Gets the native root generation.</summary>
+    public ShaderRootArguments RootArgs => Snapshot.Arguments;
 
     /// <summary>Gets the final root uniform allocation size.</summary>
-    public int RootSize => RootArgs?.Storage.Size ?? Root.Length;
+    public int RootSize => RootArgs.Storage.Size;
 
     /// <summary>Gets the resource remapping bytes.</summary>
     public byte[] Map { get; }
@@ -155,6 +142,4 @@ public sealed class ShaderBindingData
 
         return new(reference.Resource, offset, size);
     }
-
-    private static byte[] ReferenceBytes(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 }

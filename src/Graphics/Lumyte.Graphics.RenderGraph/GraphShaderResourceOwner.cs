@@ -150,8 +150,6 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         return _lookups.GetValueOrDefault(pass) ?? throw new ArgumentException("This pass has no prepared shader declarations.");
     }
 
-    internal ShaderValueSnapshot Constrain(IReadOnlyList<ShaderResources> resources, ShaderValueSnapshot arguments) => ((ModuleResources)resources[0]).Constrain(arguments, resources);
-
     internal IShaderArgumentScope Scope(IReadOnlyList<ShaderResources> resources) => ((ModuleResources)resources[0]).Scope(resources);
 
     internal void Bind(ShaderResources resources, IRenderEncoder encoder) => ((ModuleResources)resources).BindRender(encoder);
@@ -179,9 +177,6 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
             throw new InvalidOperationException("The pass references are not ready for recording.");
         }
     }
-
-    internal IReadOnlyList<ShaderResources> SelectArguments(ShaderValueSnapshot snapshot, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
-        => SelectArguments(new ShaderReferenceMetadata(snapshot.Values).References, pass, outputs, graphics);
 
     internal IReadOnlyList<ShaderResources> SelectArguments(IShaderReferenceMetadata references, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
         => SelectArguments(references.References, pass, outputs, graphics);
@@ -323,8 +318,6 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         internal void CoRecord(ShaderResources other) => JoinOperation(other);
 
         internal void SameTable(ShaderResources other) => JoinTable(other);
-
-        internal ShaderValueSnapshot Constrain(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates) => ConstrainArguments(arguments, candidates);
 
         internal IShaderArgumentScope Scope(IReadOnlyList<ShaderResources> candidates) => CreateArgumentScope(candidates);
 

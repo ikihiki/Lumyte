@@ -164,8 +164,8 @@ public sealed class ShaderDataUploadTests
             return EncodeReference(reference);
         }
 
-        Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<UploadValue>(new[] { value, new UploadValue() }, storage, 1, metadata, Encode, null));
-        Assert.Equal(0, encoded);
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShaderDataUpload.CopyFrom<UploadValue>(new[] { value, new UploadValue() }, storage, 1, metadata, Encode, null));
+        Assert.Equal(1, encoded);
         Assert.Null(metadata[1]);
         Assert.Null(metadata[2]);
         Assert.Same(before, metadata[0]);
@@ -175,7 +175,7 @@ public sealed class ShaderDataUploadTests
     }
 
     private static IShaderReferenceMetadata?[] SeedMetadata()
-        => Enumerable.Range(0, 4).Select(_ => (IShaderReferenceMetadata?)new ShaderReferenceMetadata([])).ToArray();
+        => Enumerable.Range(0, 4).Select(_ => (IShaderReferenceMetadata?)new ShaderDependencyMetadata([])).ToArray();
 
     private static byte[] EncodeReference(ShaderValue value)
         => Enumerable.Repeat((byte)Assert.IsType<TestReference>(value.Reference).Count, 16).ToArray();
@@ -263,11 +263,20 @@ public sealed class ShaderDataUploadTests
             }
 
             var wire = new WireValue { Number = Number, Reference = default };
-            writer.WriteBytes(in wire);
-            writer.WriteReference(4, Reference);
-            if (ExtraSlot is int slot)
+            var emitter = new References(this);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
+        }
+
+        private readonly struct References(UploadValue owner) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct
             {
-                writer.WriteReference(slot, Reference);
+                cursor.WriteReference(4, owner.Reference);
+                if (owner.ExtraSlot is int slot)
+                {
+                    cursor.WriteReference(slot, owner.Reference);
+                }
             }
         }
     }

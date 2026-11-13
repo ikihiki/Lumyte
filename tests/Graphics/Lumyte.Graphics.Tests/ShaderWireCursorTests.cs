@@ -52,12 +52,15 @@ public sealed class ShaderWireCursorTests
         Assert.Equal(new IShaderReference[] { a, b }, Assert.IsType<IdentityMetadata>(metadata[0]).References);
         Assert.Equal(original, value.RawBytes());
 
-        // Explicit capture remains bulk/raw and declaration ordered, not cursor ordered.
+        // Readonly capture also uses physical cursor order and zeroes reference slots.
         ShaderValueSnapshot captured = IShaderArguments.Capture(in value);
-        Assert.Equal(original, captured.Data.ToArray());
-        Assert.Equal(new[] { 32, 8 }, captured.Values.Select(slot => slot.Offset));
-        Assert.Same(b, captured.Values[0].Reference);
-        Assert.Same(a, captured.Values[1].Reference);
+        byte[] diagnostic = original.ToArray();
+        Array.Clear(diagnostic, 8, 16);
+        Array.Clear(diagnostic, 32, 16);
+        Assert.Equal(diagnostic, captured.Data.ToArray());
+        Assert.Equal(new[] { 8, 32 }, captured.Values.Select(slot => slot.Offset));
+        Assert.Same(a, captured.Values[0].Reference);
+        Assert.Same(b, captured.Values[1].Reference);
         Assert.Empty(captured.Fields);
     }
 
@@ -79,20 +82,39 @@ public sealed class ShaderWireCursorTests
         Assert.Equal(17U, MemoryMarshal.Read<uint>(buffer.Bytes));
         Assert.Equal(999U, value.Number);
         Assert.Equal(1, value.GetterCalls);
-        Assert.Equal(2, buffer.WriteCount);
-        Assert.StartsWith("W:0:32:", events[0]);
+        Assert.Equal(3, buffer.WriteCount);
+        Assert.StartsWith("W:0:8:", events[0]);
         Assert.Equal("E:8", events[1]);
     }
 
-    /// <summary>Handwritten codecs run once and retain reference evaluation order even before bytes.</summary>
-    /// <param name="referencesFirst">Whether the codec emits references before its raw bytes.</param>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void HandwrittenFallbackPreservesEmissionOrder(bool referencesFirst)
+    /// <summary>The first generated call orders custom getters physically, once, over a frozen numeric wire.</summary>
+    [Fact]
+    public void GeneratedCustomGettersUsePhysicalOrderExactlyOnce()
+    {
+        var getters = new List<string>();
+        var value = new WireCursorOrderedGetterValue(new Reference(1), new Reference(2), getters) { Number = 17 };
+        using var buffer = new MappedBuffer(64, []);
+        var offsets = new List<int>();
+        byte[] EncodeSlot(ShaderValue slot)
+        {
+            offsets.Add(slot.Offset);
+            return Encode(slot);
+        }
+
+        ShaderDataUpload.CopyFrom<WireCursorOrderedGetterValue>([value], buffer, 0, new IShaderReferenceMetadata?[1], EncodeSlot, null);
+        Assert.Equal(new[] { "A", "B" }, getters);
+        Assert.Equal(new[] { 8, 32 }, offsets);
+        Assert.Equal(17u, MemoryMarshal.Read<uint>(buffer.Bytes));
+        Assert.Equal(999u, value.Number);
+        Assert.Equal(5, buffer.WriteCount);
+    }
+
+    /// <summary>Handwritten codecs invoke the mandatory cursor once in physical reference order.</summary>
+    [Fact]
+    public void HandwrittenCursorPreservesEmissionOrder()
     {
         var events = new List<string>();
-        var value = new LegacyValue(events, referencesFirst);
+        var value = new CursorValue(events);
         using var buffer = new MappedBuffer(64, events);
         var metadata = new IShaderReferenceMetadata?[1];
 
@@ -102,30 +124,30 @@ public sealed class ShaderWireCursorTests
             return Encode(slot);
         }
 
-        ShaderDataUpload.CopyFrom<LegacyValue>([value], buffer, 0, metadata, EncodeSlot, null);
+        ShaderDataUpload.CopyFrom<CursorValue>([value], buffer, 0, metadata, EncodeSlot, null);
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
-        Assert.Equal(new[] { "G:32", "G:8", "E:32", "E:8" }, events.Where(item => !item.StartsWith("W:")));
-        Assert.Equal(3, buffer.WriteCount);
-        Assert.StartsWith("W:0:64:", events[referencesFirst ? 2 : 0]);
-        Assert.Equal("E:32", events[3]);
-        Assert.StartsWith("W:32:16:", events[4]);
-        Assert.Equal("E:8", events[5]);
-        Assert.StartsWith("W:8:16:", events[6]);
+        Assert.Equal(new[] { "G:8", "E:8", "G:32", "E:32" }, events.Where(item => !item.StartsWith("W:")));
+        Assert.Equal(5, buffer.WriteCount);
         Assert.Equal(17U, MemoryMarshal.Read<uint>(buffer.Bytes));
-        Assert.Equal(new uint[] { 2, 1 }, metadata[0]!.References.Select(reference => reference.Slot));
+        Assert.Equal(new uint[] { 1, 2 }, metadata[0]!.References.Select(reference => reference.Slot));
     }
 
-    /// <summary>Handwritten fallback rejects intersecting slots without diagnostics or metadata publication.</summary>
+    /// <summary>Handwritten cursor rejects malformed slots without diagnostics or metadata publication.</summary>
     /// <param name="first">The first emitted reference offset.</param>
-    /// <param name="second">The intersecting reference offset.</param>
+    /// <param name="second">The second emitted reference offset.</param>
     [Theory]
     [InlineData(8, 16)]
     [InlineData(16, 8)]
-    public void HandwrittenFallbackRejectsOverlappingSlots(int first, int second)
+    [InlineData(8, -1)]
+    [InlineData(8, 17)]
+    [InlineData(-1, 0)]
+    [InlineData(17, 0)]
+    [InlineData(int.MaxValue, 0)]
+    public void HandwrittenCursorRejectsMalformedSlots(int first, int second)
     {
-        var value = new LegacySlotValue(first, second);
-        var unvisited = new LegacySlotValue(0, 16);
+        var value = new CursorSlotValue(first, second);
+        var unvisited = new CursorSlotValue(0, 16);
         var old = new IdentityMetadata([]);
         IShaderReferenceMetadata?[] metadata = [old, old, old, old];
         using var buffer = new MappedBuffer(128, []);
@@ -144,46 +166,52 @@ public sealed class ShaderWireCursorTests
             return new IdentityMetadata(references);
         }
 
-        Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<LegacySlotValue>([value, unvisited], buffer, 1, metadata, EncodeSlot, null, CreateMetadata));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShaderDataUpload.CopyFrom<CursorSlotValue>([value, unvisited], buffer, 1, metadata, EncodeSlot, null, CreateMetadata));
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
         Assert.Equal(0, unvisited.Writes);
-        Assert.Equal(0, encodes);
+        bool validFirst = first is >= 0 and <= 16;
+        Assert.Equal(validFirst ? 1 : 0, encodes);
         Assert.Equal(0, factories);
         Assert.Null(metadata[1]);
         Assert.Null(metadata[2]);
         Assert.Same(old, metadata[0]);
         Assert.Same(old, metadata[3]);
-        Assert.Equal(1, buffer.WriteCount);
+        Assert.Equal(validFirst ? 2 : 0, buffer.WriteCount);
+        if (validFirst)
+        {
+            Assert.Equal(17u, MemoryMarshal.Read<uint>(buffer.Bytes.AsSpan(32)));
+            Assert.All(buffer.Bytes.AsSpan(32 + first, 16).ToArray(), item => Assert.Equal((byte)1, item));
+        }
+
         Assert.All(buffer.Bytes[..32], item => Assert.Equal((byte)0xCD, item));
         Assert.All(buffer.Bytes[64..], item => Assert.Equal((byte)0xCD, item));
     }
 
-    /// <summary>Adjacent fallback slots remain valid in either emission order.</summary>
+    /// <summary>Adjacent physically ordered cursor slots remain valid.</summary>
     /// <param name="first">The first emitted reference offset.</param>
     /// <param name="second">The adjacent reference offset.</param>
     [Theory]
     [InlineData(0, 16)]
-    [InlineData(16, 0)]
-    public void HandwrittenFallbackAcceptsAdjacentSlots(int first, int second)
+    public void HandwrittenCursorAcceptsAdjacentSlots(int first, int second)
     {
-        var value = new LegacySlotValue(first, second);
+        var value = new CursorSlotValue(first, second);
         using var buffer = new MappedBuffer(32, []);
         var metadata = new IShaderReferenceMetadata?[1];
 
-        ShaderDataUpload.CopyFrom<LegacySlotValue>([value], buffer, 0, metadata, Encode, null);
+        ShaderDataUpload.CopyFrom<CursorSlotValue>([value], buffer, 0, metadata, Encode, null);
 
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
-        Assert.Equal(3, buffer.WriteCount);
+        Assert.Equal(2, buffer.WriteCount);
         Assert.All(buffer.Bytes.AsSpan(first, 16).ToArray(), item => Assert.Equal((byte)1, item));
         Assert.All(buffer.Bytes.AsSpan(second, 16).ToArray(), item => Assert.Equal((byte)2, item));
         Assert.Equal(new uint[] { 1, 2 }, metadata[0]!.References.Select(reference => reference.Slot));
     }
 
-    /// <summary>Custom generated getters use fallback validation before encoding overlapping slots.</summary>
+    /// <summary>Malformed generated layouts repeatedly fail before getters, encoding or destination writes.</summary>
     [Fact]
-    public void GeneratedCustomGetterRejectsOverlappingFallbackSlots()
+    public void GeneratedCustomGetterRejectsOverlappingCursorSlots()
     {
         var value = new WireCursorOverlapGetterValue(new Reference(1), new Reference(2));
         var old = new IdentityMetadata([]);
@@ -197,12 +225,19 @@ public sealed class ShaderWireCursorTests
             return Encode(slot);
         }
 
-        Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
+        ArgumentException first = Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
+        ArgumentException repeated = Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
+        ArgumentException captured = Assert.Throws<ArgumentException>(() => IShaderArguments.Capture(in value));
+        ArgumentException capturedAgain = Assert.Throws<ArgumentException>(() => IShaderArguments.Capture(in value));
+        Assert.Equal(first.Message, repeated.Message);
+        Assert.Equal(first.Message, captured.Message);
+        Assert.Equal(first.Message, capturedAgain.Message);
 
-        Assert.Equal(1, value.AGetterCalls);
-        Assert.Equal(1, value.BGetterCalls);
+        Assert.Equal(0, value.AGetterCalls);
+        Assert.Equal(0, value.BGetterCalls);
         Assert.Equal(0, encodes);
-        Assert.Equal(1, buffer.WriteCount);
+        Assert.Equal(0, buffer.WriteCount);
+        Assert.All(buffer.Bytes, item => Assert.Equal((byte)0xCD, item));
         Assert.Null(metadata[1]);
         Assert.Null(metadata[2]);
         Assert.Same(old, metadata[0]);
@@ -211,7 +246,7 @@ public sealed class ShaderWireCursorTests
         Assert.All(buffer.Bytes[64..], item => Assert.Equal((byte)0xCD, item));
     }
 
-    /// <summary>Overlapping generated fallback slots cannot publish a replacement root.</summary>
+    /// <summary>Overlapping generated cursor slots cannot publish a replacement root.</summary>
     [Fact]
     public void GeneratedCustomGetterOverlapLeavesSelectedRootUntouched()
     {
@@ -233,94 +268,16 @@ public sealed class ShaderWireCursorTests
 
         Assert.Throws<ArgumentException>(() => selected = ShaderRootArguments.Create(in invalid, _ => candidate, encode: EncodeSlot));
 
-        Assert.Equal(1, invalid.AGetterCalls);
-        Assert.Equal(1, invalid.BGetterCalls);
+        Assert.Equal(0, invalid.AGetterCalls);
+        Assert.Equal(0, invalid.BGetterCalls);
         Assert.Equal(0, encodes);
         Assert.Same(previous, selected);
         Assert.Same(originalMetadata, selected.References);
-        Assert.Equal(original, previousStorage.Bytes);
-        Assert.False(previousStorage.Disposed);
-        Assert.True(candidate.Disposed);
-        Assert.Equal(1, candidate.WriteCount);
-    }
-
-    /// <summary>Overlapping snapshot fixups dispose the unpublished allocation before changing selection.</summary>
-    /// <param name="first">The first captured reference offset.</param>
-    /// <param name="second">The intersecting reference offset.</param>
-    [Theory]
-    [InlineData(8, 16)]
-    [InlineData(16, 8)]
-    public void SnapshotOverlapLeavesSelectedRootUntouched(int first, int second)
-    {
-        var a = new Reference(1);
-        var b = new Reference(2);
-        var valid = new ShaderValueSnapshot("arguments", "SnapshotWire", new byte[32], [new(typeof(uint), a, 0), new(typeof(uint), b, 16)], []);
-        ShaderValueSnapshot invalid = valid with { Values = new ShaderValue[] { new(typeof(uint), a, first), new(typeof(uint), b, second) } };
-        var previousStorage = new RootStorage(32);
-        var selected = ShaderRootArguments.CreateSnapshot(valid, _ => previousStorage, encode: Encode);
-        using ShaderRootArguments previous = selected;
-        byte[] original = previousStorage.Bytes.ToArray();
-        IShaderReferenceMetadata originalMetadata = previous.References;
-        var candidate = new RootStorage(32);
-        int encodes = 0;
-        int factories = 0;
-        int diagnostics = 0;
-        invalid = invalid with { DiagnosticFields = DiagnosticFields };
-
-        byte[] EncodeSlot(ShaderValue slot)
-        {
-            encodes++;
-            return Encode(slot);
-        }
-
-        IShaderReferenceMetadata CreateMetadata(IEnumerable<IShaderReference> references)
-        {
-            factories++;
-            return new IdentityMetadata(references);
-        }
-
-        IReadOnlyList<ShaderTransferField> DiagnosticFields()
-        {
-            diagnostics++;
-            throw new InvalidOperationException("No snapshot diagnostics.");
-        }
-
-        Assert.Throws<ArgumentException>(() => ShaderDataLayout.ValidateSnapshot(invalid));
-        Assert.Throws<ArgumentException>(() => selected = ShaderRootArguments.CreateSnapshot(invalid, _ => candidate, encode: EncodeSlot, metadataFactory: CreateMetadata));
-
-        Assert.Same(previous, selected);
-        Assert.Same(originalMetadata, selected.References);
-        Assert.Equal(new IShaderReference[] { a, b }, selected.References.References);
         Assert.Equal(original, previousStorage.Bytes);
         Assert.False(previousStorage.Disposed);
         Assert.True(candidate.Disposed);
         Assert.Equal(0, candidate.WriteCount);
-        Assert.Equal(0, encodes);
-        Assert.Equal(0, factories);
-        Assert.Equal(0, diagnostics);
-    }
-
-    /// <summary>Adjacent snapshot fixups remain valid in either declaration order.</summary>
-    /// <param name="first">The first captured reference offset.</param>
-    /// <param name="second">The adjacent reference offset.</param>
-    [Theory]
-    [InlineData(0, 16)]
-    [InlineData(16, 0)]
-    public void SnapshotAcceptsAdjacentSlots(int first, int second)
-    {
-        var a = new Reference(1);
-        var b = new Reference(2);
-        var snapshot = new ShaderValueSnapshot("arguments", "SnapshotWire", new byte[32], [new(typeof(uint), a, first), new(typeof(uint), b, second)], []);
-        var storage = new RootStorage(32);
-
-        ShaderDataLayout.ValidateSnapshot(snapshot);
-        using var root = ShaderRootArguments.CreateSnapshot(snapshot, _ => storage, encode: Encode);
-
-        Assert.Equal(3, storage.WriteCount);
-        Assert.All(storage.Bytes.AsSpan(first, 16).ToArray(), item => Assert.Equal((byte)1, item));
-        Assert.All(storage.Bytes.AsSpan(second, 16).ToArray(), item => Assert.Equal((byte)2, item));
-        Assert.Equal(new IShaderReference[] { a, b }, root.References.References);
-        Assert.False(storage.Disposed);
+        Assert.All(candidate.Bytes, item => Assert.Equal((byte)0, item));
     }
 
     /// <summary>Invalid direct-cursor slots are rejected before any corresponding sink operation.</summary>
@@ -420,7 +377,8 @@ public sealed class ShaderWireCursorTests
         Assert.Same(old, metadata[3]);
         Assert.All(buffer.Bytes[..64], item => Assert.Equal((byte)0xCD, item));
         Assert.All(buffer.Bytes[192..], item => Assert.Equal((byte)0xCD, item));
-        Assert.True(buffer.WriteCount > 0);
+        Assert.Equal(6, buffer.WriteCount); // Complete first element, then the second element's raw prefix.
+        Assert.Equal(value.RawBytes()[..8], buffer.Bytes[128..136]);
     }
 
     /// <summary>Generated inline references still require exactly sixteen encoded bytes.</summary>
@@ -482,7 +440,9 @@ public sealed class ShaderWireCursorTests
         Assert.Equal(original, previousStorage.Bytes);
         Assert.False(previousStorage.Disposed);
         Assert.True(candidate.Disposed);
-        Assert.True(candidate.WriteCount > 0);
+        Assert.Equal(2, calls);
+        Assert.Equal(3, candidate.WriteCount); // Prefix, first reference and the gap before the failed second encode.
+        Assert.Equal(value.RawBytes()[..8], candidate.Bytes[..8]);
     }
 
     /// <summary>The public metadata contract carries identities, not transfer positions or numeric trees.</summary>
@@ -515,14 +475,14 @@ public sealed class ShaderWireCursorTests
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 64)]
-    private struct LegacyWire
+    private struct CursorWire
     {
         [FieldOffset(0)]
         public uint Number;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 32)]
-    private struct LegacySlotWire
+    private struct CursorSlotWire
     {
         [FieldOffset(0)]
         public uint Number;
@@ -556,7 +516,7 @@ public sealed class ShaderWireCursorTests
         public IGpuRef<uint> GetElement(ulong index) => throw new NotSupportedException();
     }
 
-    private sealed class LegacyValue(List<string> events, bool referencesFirst) : IShaderData
+    private sealed class CursorValue(List<string> events) : IShaderData
     {
         public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
 
@@ -578,24 +538,25 @@ public sealed class ShaderWireCursorTests
             where TWriter : IShaderValueWriter
         {
             Writes++;
-            var wire = new LegacyWire { Number = 17 };
-            if (!referencesFirst)
-            {
-                writer.WriteBytes(in wire);
-            }
+            var wire = new CursorWire { Number = 17 };
+            var emitter = new References(events);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
+        }
 
-            events.Add("G:32");
-            writer.WriteReference<uint>(32, new Reference(2));
-            events.Add("G:8");
-            writer.WriteReference<uint>(8, new Reference(1));
-            if (referencesFirst)
+        private readonly struct References(List<string> events) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct
             {
-                writer.WriteBytes(in wire);
+                events.Add("G:8");
+                cursor.WriteReference<uint>(8, new Reference(1));
+                events.Add("G:32");
+                cursor.WriteReference<uint>(32, new Reference(2));
             }
         }
     }
 
-    private sealed class LegacySlotValue(int first, int second) : IShaderData
+    private sealed class CursorSlotValue(int first, int second) : IShaderData
     {
         public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
 
@@ -617,10 +578,19 @@ public sealed class ShaderWireCursorTests
             where TWriter : IShaderValueWriter
         {
             Writes++;
-            var wire = new LegacySlotWire { Number = 17 };
-            writer.WriteBytes(in wire);
-            writer.WriteReference<uint>(first, new Reference(1));
-            writer.WriteReference<uint>(second, new Reference(2));
+            var wire = new CursorSlotWire { Number = 17 };
+            var emitter = new References(first, second);
+            ShaderWire.Write(in wire, ref emitter, ref writer);
+        }
+
+        private readonly struct References(int first, int second) : IShaderReferenceEmitter
+        {
+            public void Emit<TCursor>(ref TCursor cursor)
+                where TCursor : IShaderReferenceCursor, allows ref struct
+            {
+                cursor.WriteReference<uint>(first, new Reference(1));
+                cursor.WriteReference<uint>(second, new Reference(2));
+            }
         }
     }
 

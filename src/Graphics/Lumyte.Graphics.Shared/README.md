@@ -2,12 +2,12 @@
 
 グラフィックスバックエンドから `ProjectReference` で参照する共通実装ライブラリです。ソースのリンクコンパイルは使用しません。
 
-- `ShaderDataLayout` は artifact の型 schema を読み、生成時の互換性確認と値の配置を行います。
+- `ShaderDataLayout` は artifact の型 schema を読み、生成時の互換性確認と明示的な配置診断を行います。数値の再配置やPackは提供しません。
 
   `Data(artifact, target, name)`はtargetの展開・reflection解析・layout構築をartifactの寿命内で共有します。`Data(target, name)`・`Root`・`HasRoot`も不変のtargetごとに解析結果を再利用します。所有者は弱参照で結び付け、GPU資源を保持しません。別artifact・別target・同名の異なるschemaを分離し、公開されるshader codeのコピー契約を維持します。成功したlayoutだけを保存し、存在しない名前の問い合わせでキャッシュを増やしません。
 - `ShaderBindingSnapshot` は選択した要素から参照を収集し、循環と転送済み要素のreference-only metadataを扱います。
 - `ShaderDataTransferState` は明示copyのmetadata overlayを管理し、submit成功後に公開します。
-- `ShaderBindingData` と `WgslBindingSpecializer` は WGSL を使うバックエンドで必要な binding データと shader variant を生成します。Vulkan は snapshot と layout を利用し、参照の GPU 表現は自身で生成します。
+- `ShaderBindingData` と `WgslBindingSpecializer` は WGSL を使うバックエンドで必要な binding データと shader variant を生成します。Vulkan は参照依存metadataとlayoutを利用し、参照の GPU 表現は自身で生成します。
 - `ShaderBufferBinding` はallocationと登録byte範囲を保持します。同じallocationでも異なる範囲は別bindingとして解決し、GetElementはそのbinding内の要素位置を指定します。
 - `GraphicsDeviceLifetime` は各backendが観測したdevice lossを一度だけ記録し、保存済みの状態、通知、loss待機を共通管理します。
 
@@ -21,20 +21,26 @@ GPU同期とリソースの有効期間は利用者が管理します。この�
 
 無効時の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を維持し、明示的な検証を許可する一部変更は[GRAPHICS-0035](../../../docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md)に記録します。
 
-参照fixupはC#オフセットと不透明な参照だけを保持します。Wgpu/Browserのstorage poolとremap laneはArgumentTable登録のShaderBufferAccessから決定し、BufferUsageやshaderの文字列パスから推定しません。同一範囲のread/write登録も別laneを使用します。シェーダーとの配置・参照種別の整合性は明示的に有効化する診断であり、Debug／Releaseとも既定無効です。binding分類には使いません。
+cursorは同期呼び出し中だけC#オフセットを使い、完了後は不透明な参照identityだけを保持します。Wgpu/Browserのstorage poolとremap laneはArgumentTable登録のShaderBufferAccessから決定し、BufferUsageやshaderの文字列パスから推定しません。同一範囲のread/write登録も別laneを使用します。シェーダーとの配置・参照種別の整合性は明示的に有効化する診断であり、Debug／Releaseとも既定無効です。binding分類には使いません。
 
 GraphicsValidationは、command記録をrollback可能な診断transactionとして保持し、Submit時にqueue状態の複製へアクセスを指定順で適用します。成功後だけ状態を公開するため、未提出・破棄・同期的に失敗したnative Submitは後続commandの状態を変えません。bufferはbyte範囲、textureはmip／layer別に追跡します。登録identity、親子、mapping、binary semaphoreとmetadata copyの順序も診断します。GPU内部の動的アクセスは登録範囲として保守的に扱い、直接のnative操作やstaging byte変更は観測できません。D3D12の部分発行済みnative操作や非同期GPU失敗を取り消す保証はありません。
 
-ShaderResourcesの不可分なresource groupへの所属確認は、有限のnative bindingを生成するための通常のadmission契約です。snapshotはgroupのmetadata objectを保持し、診断callbackを記録しません。これは任意の寿命・barrier・semaphore診断と分離して維持します。通常のcaptureも診断delegateを作らず、型identityまたは生成型の配置providerだけを保持します。
+ShaderResourcesの不可分なresource groupへの所属確認は、有限のnative bindingを生成するための通常のadmission契約です。ShaderRootArgumentsはscopeを介してgroupへのadmissionを行い、診断callbackを記録しません。これは任意の寿命・barrier・semaphore診断と分離して維持します。通常のcaptureも診断delegateを作らず、型identityまたは生成型の配置providerだけを保持します。
 
 ## 参照付きuploadのmetadata
 
-IShaderDataSourceはReadReferences／SetTransferredReferencesを提供し、IShaderReferenceMetadataは依存identityの列挙だけを公開し、通常native経路のprivate backend ownerにはC# wire offsetを保存しません。legacy ShaderReferenceMetadata.Valuesは明示snapshotの互換adapterです。数値Dataや元の値objectは保持せず、Elementsもreference-onlyです。CopyFromはgeneric writerで現在値を同期書き込みし、失敗した要求範囲のmetadataを無効にします。byteのrollbackは保証しません。完全な値のCPU履歴は明示Capture、GPUの値は明示readbackで取得します。直接書き込みとCPU batch scratchの選択は性能上の判断であり、atomicity保護ではありません。
+IShaderDataSourceはReadReferences／SetTransferredReferencesを提供します。IShaderReferenceMetadataはimmutableな依存identityのReferencesだけを公開し、各backendのprivate ownerはnumeric Data、wire offset、元の値objectを保持しません。旧ShaderReferenceMetadataクラスとValues adapterは削除しました。ShaderBindingSnapshot.Elementsもreference-onlyです。CopyFromの失敗は部分byte更新を許し、要求範囲のmetadata全体を無効にします。全範囲の明示再転送で回復し、rollbackや隠れた数値履歴は提供しません。
 
-## Set-time final root storage
+## Set時の最終ルート格納領域
 
-ShaderRootArguments streams a generic interface or unmanaged input once into IShaderRootStorage, which is the final native uniform backing, and retains only reference metadata. A successful Set publishes a fresh command-owned generation. Stable opaque wire references are encoded synchronously at Set; first execution seals storage; later executions cannot overwrite it. ShaderBindingSnapshot.Arguments and RootParameter describe this route; legacy Root is available only for the explicit snapshot capture overload. ShaderBindingData keeps no numeric Root array for native arguments, but rebuilds transitive resources/remaps per execution. Graph admission remains functional when diagnostics are disabled.
+ShaderRootArgumentsはgeneric interface／unmanaged入力をIShaderRootStorageへ一回だけ同期転送し、最終native uniformと参照metadataを所有します。Set成功時だけ新しいcommand所有世代を公開します。安定した参照表現はSet中に符号化し、不正な参照などで失敗しても前回の選択を保ちます。初回実行でsealし、後続実行は同じ世代を書き換えません。
 
-## Synchronous wire cursor
+ShaderBindingSnapshot.Capture(rootArguments, …)は依存metadataだけを収集し、ArgumentsとRootParameterを公開します。numeric Root、ShaderValueSnapshotを受けるCapture、CreateSnapshot、Pack／SharedPackRawと遅延fixupはありません。ShaderBindingDataは実行ごとに間接依存とWGSLのdynamic pool／remapを再構築します。Graphのadmissionは診断無効時も機能し、IShaderRootEncoder非対応encoderは例外で拒否します。
 
-Eligible generated codecs call ShaderWire.Write / WriteWire to copy raw ranges including padding, encode each 16-byte reference inline, then copy the raw tail. No complete numeric copy precedes patching. Custom getters and handwritten codecs preserve their original single-invocation ordering through the legacy bulk fallback. Static ordered reference offsets are functional type metadata, not diagnostic reflection. Backend-owned dependency metadata retains identities, registration slots/ranges/access, but no C# wire offset. Dynamic WGSL remapping and transitive admission still refresh per execution.
+## 必須の同期wire cursor
+
+すべての生成・手書きcodecはShaderWire.Writeから必須のWriteWireを一回呼びます。数値だけのoverloadも空のemitterを使い、パディングを含む全領域を一つのraw区間としてコピーします。参照を含む場合はraw区間、16-byte参照符号化、raw tailを物理順に処理します。数値のメンバー別シリアライズ、全領域をdestinationへコピーしてからの参照差し替え、Complete時の参照再走査は行いません。
+
+生成型は全wireのローカルコピー後、custom／virtual getterも物理スロット順で一回評価します。ローカルwireとcursorは同期借用だけで、保持するCPU snapshotではありません。交差・重複・範囲外の生成planはgetterより前に拒否し、手書きemitterもcursorで昇順・範囲・非交差を強制します。第三者writerはIShaderWireSinkとShaderWireCursorで消費し、sourceを保持せず、非aliasなdestinationへ書き、成功したComplete後だけ公開します。能力判定、WriteBytes／writerへの直接WriteReference、非cursor互換経路はありません。
+
+IShaderArguments.Capture／ShaderTransfer.CaptureとShaderValueSnapshotは明示検査・診断専用です。配置検査のFields、reflectionと手書き型の静的metadata取得補助は残しますが、backendの書き込み入力や実行admissionには使いません。ModelVertexの配置検査もUnsafe.SizeOfとFieldsを使い、Captureしません。通常の数値bufferの直接memcpyとGPU copy commandは変更しません。これはシェーダー転送の契約であり、無関係なコンパイル経路などの代替処理を除去する判断ではありません。

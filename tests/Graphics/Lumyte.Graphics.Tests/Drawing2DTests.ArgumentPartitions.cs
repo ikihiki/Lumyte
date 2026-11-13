@@ -347,7 +347,7 @@ public sealed partial class Drawing2DTests
             {
                 Assert.Contains(tables, item => ReferenceEquals(item.Table, table));
                 var visited = new HashSet<(object Resource, ulong Offset, ulong Size)>();
-                Visit(new ShaderReferenceMetadata(snapshot.Values).References, table, visited);
+                Visit(new ShaderDependencyMetadata(snapshot.Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))).References, table, visited);
             }
 
             Assert.True(nested >= 10, "Every sampled image must be reached through shader-data metadata.");
@@ -401,10 +401,11 @@ public sealed partial class Drawing2DTests
             _arguments = snapshot;
         }
 
-        public void SetArguments(ShaderValueSnapshot arguments)
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged
         {
-            ShaderValueSnapshot snapshot = arguments.Copy();
-            native.SetArguments(arguments);
+            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+            native.SetArguments(in arguments, rootParameter, shaderTypeName);
             _arguments = snapshot;
         }
 

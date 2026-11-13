@@ -121,7 +121,7 @@ public sealed class GraphicsApiConvenienceTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteBytes(in this);
+            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
     }
 
     private sealed class ShaderBuffer : IGraphicsShaderDataBuffer<SampleData>
@@ -267,6 +267,9 @@ public sealed class GraphicsApiConvenienceTests
 
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => throw new NotSupportedException();
+
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged => throw new NotSupportedException();
 
         public void SetPipeline(IGraphicsPipeline pipeline) => throw new NotSupportedException();
 

@@ -256,19 +256,6 @@ public sealed class RenderGraphContext
         }
     }
 
-    internal (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) SelectArguments(ShaderValueSnapshot snapshot, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
-    {
-        EnsureActive();
-        if (!snapshot.Values.Any())
-        {
-            return (null, snapshot);
-        }
-
-        GraphShaderResourceOwner owner = _plan.ShaderResourceOwner ?? throw new ArgumentException("Declare shader resources on this pass before resolving references.");
-        IReadOnlyList<ShaderResources> resources = owner.SelectArguments(snapshot, Pass, outputs, graphics);
-        return (resources, owner.Constrain(resources, snapshot));
-    }
-
     internal (IReadOnlyList<ShaderResources>? Resources, IShaderArgumentScope? Scope) SelectArguments(IShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
         EnsureActive();

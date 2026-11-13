@@ -27,7 +27,6 @@ public sealed class ShaderResourcesUnmanagedTests
         value = new Color(0xabcdef01u);
 
         Assert.Equal(1, encoder.RawSetCount);
-        Assert.Equal(0, encoder.SnapshotSetCount);
         Assert.Equal(0, encoder.TableSetCount);
         Assert.NotNull(encoder.Root);
         Assert.Equal("scene", encoder.Root.RootParameter);
@@ -63,26 +62,9 @@ public sealed class ShaderResourcesUnmanagedTests
         plan.Dispose();
         Assert.Throws<InvalidOperationException>(() => Invoke(resources, encoder, in value, operation));
         Assert.Equal(0, encoder.RawSetCount);
-        Assert.Equal(0, encoder.SnapshotSetCount);
         Assert.Equal(0, encoder.TableSetCount);
         Assert.Equal(0, encoder.DrawCount + encoder.IndexedDrawCount + encoder.DispatchCount);
         Assert.Null(encoder.Storage);
-    }
-
-    /// <summary>Third-party encoders without a raw override retain the interface's explicit compatibility fallback.</summary>
-    [Fact]
-    public void ThirdPartyDefaultUnmanagedOverloadMayCaptureSnapshot()
-    {
-        var receiver = new CompatibilityEncoder();
-        IComputeEncoder encoder = receiver;
-        var value = new Color(23);
-        encoder.SetArguments(in value, "scene", "PixelColor");
-        value = new Color(99);
-        Assert.Equal(1, receiver.SnapshotSetCount);
-        Assert.NotNull(receiver.Snapshot);
-        Assert.Equal("scene", receiver.Snapshot.RootParameter);
-        Assert.Equal("PixelColor", receiver.Snapshot.ShaderTypeName);
-        Assert.Equal(23u, MemoryMarshal.Read<uint>(receiver.Snapshot.Data.Span));
     }
 
     private static void Invoke(ShaderResources resources, RawEncoder encoder, in Color value, int operation)
@@ -133,8 +115,6 @@ public sealed class ShaderResourcesUnmanagedTests
     {
         internal int RawSetCount { get; private set; }
 
-        internal int SnapshotSetCount { get; private set; }
-
         internal int TableSetCount { get; private set; }
 
         internal int DrawCount { get; private set; }
@@ -162,12 +142,6 @@ public sealed class ShaderResourcesUnmanagedTests
 
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => throw new InvalidOperationException("Unexpected interface serializer.");
-
-        public void SetArguments(ShaderValueSnapshot arguments)
-        {
-            SnapshotSetCount++;
-            throw new InvalidOperationException("Resource helpers must not capture compatibility snapshots.");
-        }
 
         public void SetArgumentTable(IArgumentTable table)
         {
@@ -223,32 +197,6 @@ public sealed class ShaderResourcesUnmanagedTests
         public void End() => throw new NotSupportedException();
 
         public void Dispose() => Root?.Dispose();
-    }
-
-    private sealed class CompatibilityEncoder : IComputeEncoder
-    {
-        internal int SnapshotSetCount { get; private set; }
-
-        internal ShaderValueSnapshot? Snapshot { get; private set; }
-
-        public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => throw new InvalidOperationException("Unexpected interface serializer.");
-
-        public void SetArguments(ShaderValueSnapshot arguments)
-        {
-            SnapshotSetCount++;
-            Snapshot = arguments;
-        }
-
-        public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();
-
-        public void SetPipeline(IGraphicsComputePipeline pipeline) => throw new NotSupportedException();
-
-        public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1) => throw new NotSupportedException();
-
-        public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments) => throw new NotSupportedException();
-
-        public void End() => throw new NotSupportedException();
     }
 
     private sealed class NumericDevice : IGraphicDevice

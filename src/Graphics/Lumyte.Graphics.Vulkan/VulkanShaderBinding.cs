@@ -6,7 +6,6 @@ namespace Lumyte.Graphics.Vulkan;
 internal sealed unsafe class VulkanShaderBinding : IDisposable
 {
     private readonly VulkanDevice _owner;
-    private readonly List<VulkanShaderBacking> _backings = [];
     private DescriptorPool _pool;
 
     internal VulkanShaderBinding(VulkanDevice owner, ShaderBindingSnapshot snapshot, ShaderTargetData target, DescriptorSetLayout layout)
@@ -23,27 +22,12 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
                 throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
             }
 
-            byte[] PackReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(owner, value);
-
-            var nativeRoot = snapshot.Arguments?.Storage as VulkanRootStorage;
-            VulkanShaderBacking? legacyRoot = null;
-            if (snapshot.Arguments is { } arguments)
+            if (snapshot.Arguments.Storage is not VulkanRootStorage nativeRoot)
             {
-                if (nativeRoot == null)
-                {
-                    throw new ArgumentException("Root storage belongs to another backend.", nameof(snapshot));
-                }
+                throw new ArgumentException("Root storage belongs to another backend.", nameof(snapshot));
+            }
 
-                arguments.Seal(PackReference);
-            }
-            else
-            {
-                byte[] root = ShaderDataLayout.PackRaw(snapshot.Root, PackReference);
-                Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));
-                legacyRoot = new(owner, root.Length);
-                _backings.Add(legacyRoot);
-                legacyRoot.Set(root);
-            }
+            snapshot.Arguments.Seal();
 
             DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
             sizes[0] = new() { Type = DescriptorType.SampledImage, DescriptorCount = checked((uint)textureCount) };
@@ -54,7 +38,7 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             var allocate = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = _pool, DescriptorSetCount = 1, PSetLayouts = &layout };
             Check(owner.Api.AllocateDescriptorSets(owner.NativeDevice, &allocate, out DescriptorSet set));
             Native = set;
-            var rootInfo = new DescriptorBufferInfo { Buffer = nativeRoot?.Native ?? legacyRoot!.Native, Range = nativeRoot == null ? legacyRoot!.Size : (ulong)nativeRoot.Size };
+            var rootInfo = new DescriptorBufferInfo { Buffer = nativeRoot.Native, Range = (ulong)nativeRoot.Size };
             var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 8, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBuffer, PBufferInfo = &rootInfo };
             owner.Api.UpdateDescriptorSets(owner.NativeDevice, 1, &write, 0, null);
             for (int i = 0; i < textures.Length; i++)
@@ -87,13 +71,6 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             _owner.Api.DestroyDescriptorPool(_owner.NativeDevice, _pool, null);
             _pool = default;
         }
-
-        foreach (VulkanShaderBacking backing in _backings)
-        {
-            backing.Dispose();
-        }
-
-        _backings.Clear();
     }
 
     internal static DescriptorSetLayout CreateLayout(VulkanDevice owner, uint textures = 1, uint samplers = 1)

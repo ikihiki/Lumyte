@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
@@ -42,13 +43,9 @@ public readonly record struct ModelVertex(Vector3 Position, Vector3 Normal, Vect
     {
         ArgumentNullException.ThrowIfNull(artifact);
 
-        // Distinct sentinel components detect changed offsets, element sizes and member ordering.
-        var probe = new ModelVertex(new(1, 2, 3), new(4, 5, 6), new(7, 8, 9, 10), new(11, 12), new(13, 14, 15, 16));
-        ReadOnlySpan<byte> raw = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref probe, 1));
         var layout = ShaderDataLayout.Data(artifact.GetTarget(target), "ModelVertex");
-        layout.ValidateArguments(ShaderTransfer.Capture(in probe), validateReferences: true);
-        byte[] packed = layout.Pack(ShaderTransfer.Capture(in probe), _ => throw new NotSupportedException("Model vertices cannot contain GPU references."));
-        if (!BitConverter.IsLittleEndian || raw.Length != SizeInBytes || layout.Size != SizeInBytes || !raw.SequenceEqual(packed))
+        layout.ValidateTransferLayout(Unsafe.SizeOf<ModelVertex>(), ShaderTransfer.Fields<ModelVertex>(), "ModelVertex");
+        if (!BitConverter.IsLittleEndian || Unsafe.SizeOf<ModelVertex>() != SizeInBytes || layout.Size != SizeInBytes)
         {
             throw new NotSupportedException("The compiled ModelVertex layout does not match the fixed 64-byte drawing ABI.");
         }
