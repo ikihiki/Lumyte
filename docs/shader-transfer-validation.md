@@ -4,7 +4,64 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## main同期後の最新検証（2026-11-13）
+## 明示転送境界の確認とscratch直接pack（2026-11-13）
+
+「転送前の変更はすべて有効」という要件について、cab86fd3の実装を先に追跡し、
+変更前に新しいGPU readback検査を実行した。buffer／slice作成、tableへの登録、
+RenderGraphのimport／Use／CompileでCPUの数値やreference classを早期captureする
+不具合は見つからず、既存の明示転送時点で最新値を読むことを確認した。
+
+| 操作 | 値を読む時点と所有権 |
+| --- | --- |
+| buffer・slice作成、table登録 | allocation／範囲／参照identityのみ。CPU値を固定しない |
+| RenderGraph import・Use・Compile | resource宣言と実行callbackを保持。callback内の値はまだ転送しない |
+| mapped stagingのCopyFrom | この呼び出しで現在のCPU値・参照を同期的に読み、独立したstagingとmetadataへ明示転送する |
+| commandのCopyBuffer | 元のCPU objectではなく、指定したstaging範囲をGPUへcopyするcommandを記録する |
+| SetArguments | このAPI自体がroot値の明示設定。後続Draw／Dispatchは設定時の値を使う |
+| Capture | 呼び出し側が明示的に要求した独立CPU snapshot。元の値を借用し続けない |
+
+したがって、CopyFromより前のCPU変更はすべて含まれる。CopyFrom後に元のarrayや
+reference classを変更しても、既に書いたstagingは変わらない。新しい値を転送するには
+再びCopyFromする。CopyBuffer記録前の、mapped stagingへの複数の明示書き込みは
+最後の値が有効になる。一方、記録済み・実行中のGPU copyが読むstagingを無断で
+書き換えることや、GPUが実際に読む瞬間までCPU objectを自動追従することは意味しない。
+Span／stackのin参照を非同期処理まで保持する実装にもしていない。
+
+変更前の検査では、numeric arrayとgenerated reference classの数値・参照を
+宣言／登録後にAからBへ変更し、Vulkan／Wgpuの検証有効／無効で最新Bが読み出せた。
+元のCPU値をCopyFrom後に変更しても最初の転送結果はBのままであり、次の明示転送で
+新しい値へ変わることも確認した。これはstale captureの修正を捏造するための
+old-fail検査ではなく、既存の境界を保護するcharacterizationである。
+Graphの別検査ではCompile後のcallbackでstaging metadataを変更し、copy記録時の
+値がcommand-local overlayへ入ることを確認した。これはfake metadata検査であり、
+実stagingをGPU使用中に上書きしてよいという検査ではない。
+
+ただし、四つのbackendのshader-data CopyFromには、各要素で新しいpacked arrayを
+作り、それを既存のbatch scratchへ再copyする冗長な中間段階があった。
+PackRawIntoでowned scratchの該当Spanへ直接packするよう変更した。
+CPU snapshotと参照identityは保持し、capture-all-before-pack、batch全体のpack成功後に
+native stagingへ書く順序とmetadata公開を維持する。snapshotとのaliasを拒否し、
+参照slotの範囲・重複・16-byte ABI検査も残す。scratchはencoding失敗時に部分更新され得るが、
+成功前にnative stagingへ公開しない。配置reflectionや診断状態を無効経路へ追加しない。
+
+最終検証:
+
+- Graphics Debug／Release: 各200成功、失敗0、84スキップ（284件）。
+- RenderGraph Debug／Release: 各125成功、失敗0、スキップ0。
+- 全ホストRelease: 3,165成功、失敗0、105スキップ。
+- 実GPUの境界／unmanaged転送fixture: Debug／Release各10成功、失敗0、スキップ0。
+- Direct3D12管理側Release: 28成功、失敗0、Windows nativeスキップ7。
+- 変更前の境界GPU fixture: 3成功、失敗0、スキップ0。metadata graph検査も成功。
+- scratch専用18ケースで、バイト列・padding、外側guard、reference identityと順序、
+  alias／サイズ／不正slot拒否、snapshotの独立所有権を検査した。
+
+ログはartifacts/validation5-{before-debug,before-hardware,graph-before,debug,fullhost,graph-debug,d3d-release,hardware-debug,hardware-release,markdown}.log。
+転送APIのdecisionを変更していないためADR0035も過去ADRも書き換えない。
+benchmark-only branch b2ca7c92の測定はcab86fd3に固定した過去結果であり、この
+scratch変更後の速度を測ったものではない。CPU captureの約33µs／1024要素という
+独立stageの測定を、すべての転送の費用とも解釈しない。
+
+## main同期時の検証履歴（2026-11-13）
 
 同期元mainは70db1cd8144c22256505a433531efb0e37a4a7d0、同期前のPR先端は
 7e2c3208d7de7c3e8c5498bbac86fc217b511f08である。開始済みの通常mergeを

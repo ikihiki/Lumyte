@@ -434,6 +434,72 @@ public sealed partial class PublicGraphEncoderConsumerTests
         Assert.Equal(1ul, Assert.Single(capture.Elements).Key.Element);
     }
 
+    /// <summary>Preparation and range lookup leave metadata live until the explicit command-local copy.</summary>
+    [Fact]
+    public void PreparedShaderDataBridgeCapturesMetadataAtCopyRatherThanCompileOrRangeLookup()
+    {
+        // Metadata boundary only: ConsumerLinkBuffer cannot CopyFrom; CPU/staging native transfers have separate coverage.
+        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 2 } };
+        using var graph = new RenderGraph(device);
+        using var imageA = new TestTexture();
+        using var imageB = new TestTexture();
+        using var upload = new ConsumerLinkBuffer(LinkArtifact(element: true), 2, MemoryPreference.Upload);
+        using var storage = new ConsumerLinkBuffer(LinkArtifact(element: true), 2);
+        RenderGraphTexture textureA = graph.ImportTexture(imageA, TextureState.Sampled, default);
+        RenderGraphTexture textureB = graph.ImportTexture(imageB, TextureState.Sampled, default);
+        RenderGraphShaderDataBuffer<ConsumerLink> source = graph.ImportShaderDataBuffer(upload, default);
+        RenderGraphShaderDataBuffer<ConsumerLink> destination = graph.ImportShaderDataBuffer(storage, default);
+        ShaderValueSnapshot? metadataA = null;
+        ShaderValueSnapshot? metadataB = null;
+        RenderGraphPass producer = graph.AddPass("late metadata producer", context =>
+        {
+            var valueA = new ConsumerLink(context.GetGpuRef(textureA));
+            var valueB = new ConsumerLink(context.GetGpuRef(textureB));
+            metadataA = IShaderArguments.Capture(in valueA);
+            metadataB = IShaderArguments.Capture(in valueB);
+            upload.SetTransferredValue(0, metadataA);
+            ShaderDataSlice<ConsumerLink> range = context.GetShaderDataBuffer(source).SliceElements(0, 1);
+            Assert.Equal(1ul, range.Count);
+            upload.SetTransferredValue(0, metadataB);
+            Assert.Same(range.Buffer, context.GetShaderDataBuffer(source));
+        }).UseTexture(textureA, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseTexture(textureB, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Host, ResourceAccess.HostWrite)).KeepAlive();
+        RenderGraphPass copy = graph.AddPass("copy then overwrite metadata", context =>
+        {
+            Assert.Same(metadataB, upload.Read(0));
+            context.Commands.CopyBuffer(context.GetShaderDataBuffer(source).SliceElements(0, 1), context.GetShaderDataBuffer(destination).SliceElements(1, 1));
+            upload.SetTransferredValue(0, metadataA!);
+            Assert.Empty(storage.Read(1).Values);
+        }).UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Copy, ResourceAccess.CopyRead))
+          .UseShaderDataBuffer(destination, 1, 1, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).DependsOn(producer);
+        using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
+        graph.AddPass("consume copied metadata", context =>
+        {
+            var arguments = new ConsumerLinkArguments(context.GetGpuRef(destination, 1, 1), 1f);
+            using RenderGraphComputeEncoder compute = context.BeginComputePass();
+            compute.SetPipeline(pipeline);
+            compute.SetArguments(in arguments);
+            compute.Dispatch(1);
+        }).UseTexture(textureA, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseTexture(textureB, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseShaderDataBuffer(destination, 1, 1, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).DependsOn(copy).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        Assert.Null(metadataA);
+        Assert.Null(metadataB);
+        Assert.Empty(upload.Read(0).Values);
+        using var commands = new PublicGraphConsumerCommands();
+        plan.Record(commands);
+        Assert.Same(metadataA, upload.Read(0));
+        Assert.Empty(storage.Read(0).Values);
+        Assert.Empty(storage.Read(1).Values);
+        Assert.Equal(1, commands.Events.Count(item => item is string name && name == "shader-copy"));
+        Lumyte.Graphics.Shared.ShaderBindingSnapshot capture = Assert.Single(commands.Encoder.Bindings);
+        Assert.Same(imageB, Assert.IsAssignableFrom<IGraphicsTextureView>(Assert.Single(capture.References, reference => reference.Resource is IGraphicsTextureView).Resource).Texture);
+        Assert.Equal(1ul, Assert.Single(capture.Elements).Key.Element);
+        Assert.Single(commands.Encoder.Executions);
+    }
+
     private static ShaderArtifact LinkArtifact(bool element)
     {
         object Reference(string name, string kind, int offset) => new { name, type = new { kind = "struct", name = kind }, binding = new { kind = "uniform", offset, size = 16 } };

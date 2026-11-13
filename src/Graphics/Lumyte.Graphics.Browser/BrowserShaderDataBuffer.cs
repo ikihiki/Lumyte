@@ -101,7 +101,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
         {
             _diagnosticLayout?.ValidateArguments(snapshots[i], validateReferences: true);
 
-            Layout.Pack(snapshots[i], PackReference).CopyTo(bytes, i * Layout.Size);
+            ShaderDataLayout.PackRawInto(snapshots[i], bytes.AsSpan(i * Layout.Size, Layout.Size), PackReference);
         }
 
         Storage.SliceElements(checked(elementOffset * (ulong)Layout.Size), (ulong)bytes.Length).CopyFrom(bytes);

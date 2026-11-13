@@ -210,25 +210,26 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     {
         ArgumentNullException.ThrowIfNull(reference);
         ValidateSnapshot(snapshot);
-        byte[] result = snapshot.Data.ToArray();
-        foreach (ShaderValue value in snapshot.Values)
+        byte[] result = snapshot.Data.IsEmpty ? [] : new byte[snapshot.Data.Length];
+        PackRawCore(snapshot, result, reference);
+        return result;
+    }
+
+    /// <summary>Packs into an independently owned exact-size scratch range without an intermediate packed array.</summary>
+    /// <param name="snapshot">The independently retained C# wire snapshot.</param>
+    /// <param name="destination">Caller-owned scratch storage, not overlapping the snapshot bytes.</param>
+    /// <param name="reference">The backend's existing opaque reference encoder.</param>
+    /// <remarks>Reference encoding failures may partially write scratch storage. Publish it only after the complete batch succeeds.</remarks>
+    public static void PackRawInto(ShaderValueSnapshot snapshot, Span<byte> destination, Func<ShaderValue, byte[]> reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ValidateSnapshot(snapshot);
+        if (destination.Length != snapshot.Data.Length || snapshot.Data.Span.Overlaps(destination))
         {
-            // C# offsets determine placement; references carry their registration identity.
-            if (value.Offset < 0 || value.Offset > result.Length - 16)
-            {
-                throw new ArgumentException("Reference slot exceeds the C# wire value.");
-            }
-
-            byte[] bytes = reference(value);
-            if (bytes.Length != 16)
-            {
-                throw new ArgumentException("Reference encoding must match the 16-byte ABI.");
-            }
-
-            bytes.CopyTo(result.AsSpan(value.Offset, 16));
+            throw new ArgumentException("Scratch storage must exactly fit the wire value and must not alias its snapshot.", nameof(destination));
         }
 
-        return result;
+        PackRawCore(snapshot, destination, reference);
     }
 
     /// <summary>Explicitly validates shader consistency and always checks host-safe reference slot ranges.</summary>
@@ -270,6 +271,23 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     /// <inheritdoc/>
     public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
         => PackRaw(snapshot, reference);
+
+    private static void PackRawCore(ShaderValueSnapshot snapshot, Span<byte> destination, Func<ShaderValue, byte[]> reference)
+    {
+        snapshot.Data.Span.CopyTo(destination);
+        foreach (ShaderValue value in snapshot.Values)
+        {
+            // Offsets were checked before any write. Keep reference encoding separate
+            // from the CPU snapshot, whose numeric bytes must remain independent.
+            byte[] bytes = reference(value);
+            if (bytes.Length != 16)
+            {
+                throw new ArgumentException("Reference encoding must match the 16-byte ABI.");
+            }
+
+            bytes.CopyTo(destination.Slice(value.Offset, 16));
+        }
+    }
 
     private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
     {
