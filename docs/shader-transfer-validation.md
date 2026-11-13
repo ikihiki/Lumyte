@@ -1,7 +1,7 @@
 # Shader transfer migration validation
 
 The breaking contract is documented in
-[GRAPHICS-0009](adr/graphics/GRAPHICS-0009-shader-argument-binding.md) and the
+[GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
 ## PR branch provenance

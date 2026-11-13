@@ -1,7 +1,6 @@
 # ADR-GRAPHICS-0018: 2Dコマンド記録・基本図形・paintと描画資源の所有権
 
 - 状態: 採用
-- 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`
 - 日付: 2026-10-10
 - 更新: 2026-10-29
 
@@ -12,10 +11,6 @@
 本ADRは基本描画と共有基盤を扱う。線・パス、画像・mesh、文字向け形式、RenderGraphレイヤーは、それぞれの追加実装と同じPRのADRで扱う。画像patternとclip用pathは基本図形にも必要なため本ADRへ含める。Resourcesの汎用定義・世代管理は[RESOURCES-0008](../resources/RESOURCES-0008-graphics-generations.md)、GPUの寿命契約は[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)に従う。
 
 ## 決定
-
-### 利用者の変更前・変更後
-
-変更前は数値メンバーごとの書き込み処理と、参照を含む構造体を使用していた。変更後は数値専用のunmanaged構造体を一括転送し、参照を含む引数は非公開のunmanaged格納領域を持つpartialクラスにする。公開プロパティで値を設定し、既存の明示的な準備・コピー・送信・GPU完了待機と、資源の所有権に関する呼び出し順は維持する。転送契約は[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)を参照する。
 
 ### CPU記録とGPU実行を分ける
 
@@ -327,7 +322,7 @@ CPU記録・実装選択・共有資源・GPU実行の境界が明確になり�
 +        void UseTexture(IGraphicsTexture texture, TextureState state, BarrierScope scope);
 +        void UseBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope scope) where T : unmanaged;
 +        void UseShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-+            where T : IShaderData;
++            where T : struct, IShaderData;
 +    }
 +    public sealed class DefaultFillRectRenderer2D : IFillRectRenderer2D
 +    {

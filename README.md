@@ -56,6 +56,7 @@ dotnet run --project build -c Release -- --target Test
 - [利用者が管理するリソース寿命と実行時検証](docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)
 - [PSOのシェーダープログラムと描画状態の分離](docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)
 - [Argument Tableのシェーダー引数への接続](docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)
+- [C#の配置を正とするシェーダー一括転送](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md)
 - [CommandBufferと明示的なGPU実行](docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md)
 - [シェーダーの設計](docs/adr/graphics/GRAPHICS-0006-shader-compilation-and-modules.md)／[Slang コンパイラー](src/Graphics/Lumyte.Graphics.Shaders/README.md)
 - [Argument Tableと型付きGPU参照](docs/adr/graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md)

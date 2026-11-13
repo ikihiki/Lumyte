@@ -1,7 +1,6 @@
 # ADR-GRAPHICS-0015: 共通command API上のレンダーグラフ
 
 - 状態: 採用
-- 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`
 - 日付: 2026-10-11
 - 更新: 2026-10-26
 
@@ -12,10 +11,6 @@
 既存の明示的な submit と GPU 完了待機を維持し、一時リソース、出力指定と pass culling、shader data buffer、外部利用の最終状態、既存診断システムとの連携を含む実用版を採用する。2026-10-11 にこの範囲への合意を受け、状態を採用へ変更した。
 
 ## 決定
-
-### 利用者の変更前・変更後
-
-変更前は数値メンバーごとの書き込み処理と、参照を含む構造体を使用していた。変更後は数値専用のunmanaged構造体を一括転送し、参照を含む引数は非公開のunmanaged格納領域を持つpartialクラスにする。公開プロパティで値を設定し、既存の明示的な準備・コピー・送信・GPU完了待機と、資源の所有権に関する呼び出し順は維持する。転送契約は[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)を参照する。
 
 ### 責務と実装範囲
 
@@ -87,7 +82,7 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // 外部所有 allocation を借用し、実際の初期 state／scope を指定する。
 +    public RenderGraphTexture ImportTexture(IGraphicsTexture texture, TextureState initialState, BarrierScope initialScope, string? name = null);
 +    public RenderGraphBuffer<T> ImportBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope initialScope, string? name = null) where T : unmanaged;
-+    public RenderGraphShaderDataBuffer<T> ImportShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope initialScope, string? name = null) where T : IShaderData;
++    public RenderGraphShaderDataBuffer<T> ImportShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope initialScope, string? name = null) where T : struct, IShaderData;
 +    // 未初期化の descriptor を宣言し、live な Record まで GPU allocation を作らない。
 +    public RenderGraphTexture CreateTexture(TextureDesc desc, string? name = null);
 +    public RenderGraphBuffer<T> CreateBuffer<T>(BufferDesc<T> desc, string? name = null) where T : unmanaged;
@@ -96,7 +91,7 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // 出力を保持し、外部アクセスへ同期する。Present は借用 surface image と空 scope。
 +    public RenderGraph ExportTexture(RenderGraphTexture texture, TextureState state, BarrierScope scope);
 +    public RenderGraph ExportBuffer<T>(RenderGraphBuffer<T> buffer, BarrierScope scope) where T : unmanaged;
-+    public RenderGraph ExportShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope) where T : IShaderData;
++    public RenderGraph ExportShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope) where T : struct, IShaderData;
 +    // callback は encoder を End して返す。Finish／Submit／Wait は呼び出し側の責務。
 +    public RenderGraphPass AddPass(string name, Action<RenderGraphContext> record);
 +    // frameId は非負、0 は未指定。capture 未指定なら observer の単発要求だけが snapshot を有効化する。
@@ -135,7 +130,7 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +}
 +public sealed class RenderGraphTexture : RenderGraphResource { }
 +public sealed class RenderGraphBuffer<T> : RenderGraphResource where T : unmanaged { }
-+public sealed class RenderGraphShaderDataBuffer<T> : RenderGraphResource where T : IShaderData { }
++public sealed class RenderGraphShaderDataBuffer<T> : RenderGraphResource where T : struct, IShaderData { }
 +public sealed class RenderGraphPass
 +{
 +    public string Name { get; }
@@ -145,7 +140,7 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // true と read-only／read-write の組合せは ArgumentException。texture は全 mip／layer が対象。
 +    public RenderGraphPass UseTexture(RenderGraphTexture texture, TextureState state, BarrierScope scope, bool discard = false);
 +    public RenderGraphPass UseBuffer<T>(RenderGraphBuffer<T> buffer, BarrierScope scope, bool discard = false) where T : unmanaged;
-+    public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope, bool discard = false) where T : IShaderData;
++    public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope, bool discard = false) where T : struct, IShaderData;
 +    // 同じ graph の別 pass を先に実行する。resource hazard の追加順と矛盾すれば Compile が拒否する。
 +    public RenderGraphPass DependsOn(RenderGraphPass pass);
 +}
@@ -155,7 +150,7 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    public IGraphicsCommandBuffer Commands { get; }
 +    public IGraphicsTexture GetTexture(RenderGraphTexture texture);
 +    public IGraphicsBuffer<T> GetBuffer<T>(RenderGraphBuffer<T> buffer) where T : unmanaged;
-+    public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer) where T : IShaderData;
++    public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer) where T : struct, IShaderData;
 +    // 戻り値は plan 所有。利用者は直接 Dispose しない。
 +    public IGraphicsTextureView CreateTextureView(RenderGraphTexture texture, TextureViewDesc? desc = null);
 +}
@@ -175,7 +170,7 @@ Observe 権限の `request-capture` は次に Compile される指定名（空�
 +    // Record 成功後の明示出力だけを借用として返す。GPU 完了は保証しない。
 +    public IGraphicsTexture GetTexture(RenderGraphTexture texture);
 +    public IGraphicsBuffer<T> GetBuffer<T>(RenderGraphBuffer<T> buffer) where T : unmanaged;
-+    public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer) where T : IShaderData;
++    public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer) where T : struct, IShaderData;
 +    // 同一 device、Recording、active encoder なしが前提。失敗時も一回分を消費する。
 +    public void Record(IGraphicsCommandBuffer commands);
 +    // 構築済みplanへ所有権を追加する低水準の入口。Record前だけ使用する。
@@ -459,10 +454,10 @@ native binding 不要の test project を solution に追加し、既存 CI の 
 
 | 参照 | 主な機能 | 今回の判断 |
 | --- | --- | --- |
-| Unreal Engine RDG | 一時 resource、依存解析、culling、alias、async compute、可視化 | 一時生成・culling・自動同期・診断を実装。alias と複数 queue は後続 |
-| Unity RenderGraph | resource 宣言、culling、resource 管理、Render Graph Viewer | import／一時生成・出力指定・culling を実装。表示は既存診断の snapshot を使用 |
-| Daxa Task Graph | task のアクセス宣言、自動 barrier、一時 resource、同期・実行管理 | 明示 access から barrier を生成。Submit と GPU 完了は既存 API のまま |
-| Filament FrameGraph | virtual resource、compile、culling、resource lifetime | plan が一時 allocation を所有。GPU完了前の自動回収と pool は行わない |
+| [Unreal Engine RDG](https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine) | 一時 resource、依存解析、culling、alias、async compute、可視化 | 一時生成・culling・自動同期・診断を実装。alias と複数 queue は後続 |
+| [Unity RenderGraph](https://docs.unity3d.com/Packages/com.unity.render-pipelines.core@17.0/manual/render-graph-system.html) | resource 宣言、culling、resource 管理、Render Graph Viewer | import／一時生成・出力指定・culling を実装。表示は既存診断の snapshot を使用 |
+| [Daxa Task Graph](https://github.com/Ipotrick/Daxa) | task のアクセス宣言、自動 barrier、一時 resource、同期・実行管理 | 明示 access から barrier を生成。Submit と GPU 完了は既存 API のまま |
+| [Filament FrameGraph](https://github.com/google/filament/tree/main/filament/src/fg) | virtual resource、compile、culling、resource lifetime | plan が一時 allocation を所有。GPU完了前の自動回収と pool は行わない |
 
 単一 queue、whole allocation、one-shot Record で実用範囲を提供する。frame をまたぐ実行 plan の再利用、subresource 同期、pool／alias、複数 queue と Timeline semaphore の効果と寿命契約は利用状況と測定を踏まえて別途判断する。診断は CPU 集計と単一 run の構造 capture を扱い、GPU timestamp、resource 内容、再生可能な capture、複数 graph／frame の一括 capture は後続とする。
 

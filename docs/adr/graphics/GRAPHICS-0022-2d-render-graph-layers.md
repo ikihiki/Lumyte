@@ -1,7 +1,6 @@
 # ADR-GRAPHICS-0022: RenderGraph用2Dレイヤーと画像エフェクトの部分グラフ接続
 
 - 状態: 採用
-- 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`
 - 日付: 2026-10-26
 
 ## 背景
@@ -11,10 +10,6 @@
 基本描画と資源所有は[GRAPHICS-0018](GRAPHICS-0018-2d-graphics-engine.md)、追加命令は[線・パス](GRAPHICS-0019-2d-paths-and-strokes.md)、[画像・mesh](GRAPHICS-0020-2d-images-and-meshes.md)、[文字向け形式](GRAPHICS-0021-2d-glyph-representations.md)を参照する。本ADRはそれらを親graphへ接続する判断を扱う。RenderGraphのcompile/同期は[GRAPHICS-0015](GRAPHICS-0015-render-graph.md)、効果の定義・Append拡張は[GRAPHICS-0017](GRAPHICS-0017-image-effects.md)へ委ねる。
 
 ## 決定
-
-### 利用者の変更前・変更後
-
-変更前は数値メンバーごとの書き込み処理と、参照を含む構造体を使用していた。変更後は数値専用のunmanaged構造体を一括転送し、参照を含む引数は非公開のunmanaged格納領域を持つpartialクラスにする。公開プロパティで値を設定し、既存の明示的な準備・コピー・送信・GPU完了待機と、資源の所有権に関する呼び出し順は維持する。転送契約は[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)を参照する。
 
 ### 通常描画とレイヤーCanvasを型で分ける
 
@@ -161,9 +156,9 @@ CanvasSeparationTestsで通常描画の依存とAPI、delegateの遅延実行と
 +        public void BindBuffer<T>(IGraphicsBuffer<T> buffer, RenderGraphBuffer<T> resource) where T : unmanaged;
 +        public RenderGraphBuffer<T> GetBuffer<T>(IGraphicsBuffer<T> buffer) where T : unmanaged;
 +        public void BindShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer,
-+            RenderGraphShaderDataBuffer<T> resource) where T : IShaderData;
++            RenderGraphShaderDataBuffer<T> resource) where T : struct, IShaderData;
 +        public RenderGraphShaderDataBuffer<T> GetShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer)
-+            where T : IShaderData;
++            where T : struct, IShaderData;
 +    }
 +    public sealed class RenderGraphRenderer2D : IDisposable
 +    {

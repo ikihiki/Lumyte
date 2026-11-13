@@ -1,7 +1,6 @@
 # ADR-GRAPHICS-0023: 単位を明示するGraphics APIと描画初期化
 
 - 状態: 採用
-- 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`
 - 日付: 2026-10-26
 
 ## 背景
@@ -9,10 +8,6 @@
 byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw bufferも同じ生成名を使っていた。またArgument Tableのsetterが後続描画へ選択状態を渡しておらず、引数が指定tableの外を参照していないか検証できていなかった。
 
 ## 決定
-
-### 利用者の変更前・変更後
-
-変更前は数値メンバーごとの書き込み処理と、参照を含む構造体を使用していた。変更後は数値専用のunmanaged構造体を一括転送し、参照を含む引数は非公開のunmanaged格納領域を持つpartialクラスにする。公開プロパティで値を設定し、既存の明示的な準備・コピー・送信・GPU完了待機と、資源の所有権に関する呼び出し順は維持する。転送契約は[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)を参照する。
 
 単位と生成物を明示する名前を正式なinterfaceメンバーにする。旧名と転送専用の拡張メソッドは削除し、実装と利用側を移行する。
 
@@ -32,15 +27,15 @@ byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw b
 -        void CopyTo(Span<byte> destination, ulong offset, ulong length);
 +        void CopyBytesTo(Span<byte> destination, ulong offset, ulong length);
      }
-     public interface IGraphicsShaderDataBuffer<T> where T : IShaderData
+     public interface IGraphicsShaderDataBuffer<T> where T : struct, IShaderData
      {
 -        ValueTask MapAsync();
 +        ValueTask MapAsync(CancellationToken cancellationToken = default);
      }
      public interface IGraphicDevice
      {
--        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : IShaderData;
-+        IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : IShaderData;
+-        IGraphicsShaderDataBuffer<T> CreateBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : struct, IShaderData;
++        IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic) where T : struct, IShaderData;
      }
      public interface IRenderEncoder
      {
