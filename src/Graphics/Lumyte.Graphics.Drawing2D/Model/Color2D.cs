@@ -1,3 +1,5 @@
+using Lumyte.Mathematics.Colors;
+
 namespace Lumyte.Graphics.Drawing2D;
 
 /// <summary>A straight-alpha sRGB color whose components must be finite and between zero and one.</summary>
@@ -38,6 +40,15 @@ public readonly record struct Color2D(float R, float G, float B, float A)
     {
         get => _a;
         init => _a = Validate(value, nameof(A));
+    }
+
+    /// <summary>Creates a straight-alpha sRGB color from explicit eight-bit RGBA codes.</summary>
+    /// <param name="codes">The sRGB color codes, including alpha in [0,255].</param>
+    /// <returns>The validated unit color, without gamma or alpha-association conversion.</returns>
+    public static Color2D FromSrgb8(Rgba<byte> codes)
+    {
+        Rgba<float> normalized = codes.NormalizeUnorm<float>(byte.MaxValue);
+        return new(normalized.R, normalized.G, normalized.B, normalized.A);
     }
 
     private static float Validate(float value, string name)

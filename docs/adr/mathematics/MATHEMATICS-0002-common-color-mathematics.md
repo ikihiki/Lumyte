@@ -107,6 +107,49 @@ alpha のない形式への書き出しは A=1 を要求し、透明度を黙っ
 
 一画素の DecodePixel は必要 byte 数以上の入力の先頭だけを消費する。WritePixel は成分の変換と長さを先に検証し、失敗時は出力を書き換えない。未知の形式・byte 順は `ArgumentOutOfRangeException`、短い span は `ArgumentException`、非有限入力・範囲外は従来の数値例外とする。複数画素操作は destination の画素数（Write は source の画素数）を処理数とし、必要な byte 数・画素数は checked で求める。長さ・checked サイズ計算・enum 値を最初に検査し、source/destination の重複は同じ開始位置を含め全て `ArgumentException` で拒否する。これらの事前検査失敗では全出力を維持する。データ変換に失敗した場合は完了した画素の prefix だけを更新し、失敗画素と未処理 suffix・未使用末尾は変更しない。画像の stride・圧縮・palette・codec はこの一画素形式の契約には含めない。
 
+### 標準の名前付き色
+
+標準色は単一の `CssColors` catalog から `CssColors.Red`・`CssColors.CornflowerBlue` のように取り出す。CSS の148個の named color と gray/grey・aqua/cyan・fuchsia/magenta の別名を含め、`Rgba<byte>` の straight-alpha sRGB 8-bit コード値を immutable な static readonly field として提供する。C# の構造体は literal const にできないため readonly field を使い、値型ごとの暗黙な正規化や gamma 変換は行わない。opaque alpha は255であり、正規化値は `NormalizeUnorm<float>(255)` で明示する。
+
+`Transparent` は148色とは別の CSS keyword として RGBA=(0,0,0,0) を返す。currentColor と system/theme 色は利用文脈に依存するため固定値を登録しない。`All` は148色と transparent の149 keyword を小文字名で保持する変更不能な辞書として公開する。`TryGet` は ASCII の名前を ordinal case-insensitive で照合し、null・非ASCII・未知名では false と default を返す。空白除去や hex・関数構文の parse は行わない。catalog は名前付きデータだけを担当し、数値演算やテーマ管理を追加しない。Drawing2D の `Color2D.FromSrgb8(Rgba<byte> codes)` は明示した8-bit sRGBコードを共通の `NormalizeUnorm<float>(255)` へ委譲してから既存 constructor で検証する。Mathematics から Drawing2D への依存や暗黙変換は作らない。
+
+基準コードでは標準色のbyteコードを共通の名前で取り出す機能がなく、利用側が値を管理する。同じCornflowerBlueを既存の描画用constructorへ渡す場合は数値を繰り返す。
+
+```csharp
+using Lumyte.Graphics.Drawing2D;
+
+var color = new Color2D(100f / 255, 149f / 255, 237f / 255, 1);
+```
+
+変更後は catalog から取得し、必要な正規化と配置変換を明示する。
+
+```csharp
+using Lumyte.Mathematics.Colors;
+
+// 利用側で数値コードを管理する代わりに名前から取得する。
+Rgba<byte> codes = CssColors.CornflowerBlue; // (100,149,237,255)
+Rgba<float> normalized = codes.NormalizeUnorm<float>(255);
+Bgra<float> layout = Bgra<float>.FromRgba(normalized);
+```
+
+Drawing2D では同じ色を名前から構築し、既存 canvas API へ渡せる。
+
+```csharp
+using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
+
+var color = Color2D.FromSrgb8(CssColors.CornflowerBlue);
+```
+
+```diff
++namespace Lumyte.Graphics.Drawing2D;
++public readonly record struct Color2D
++{
++    // 8-bit sRGBコードを共通数学で正規化する。alphaも0..255のコード。
++    public static Color2D FromSrgb8(Lumyte.Mathematics.Colors.Rgba<byte> codes);
++}
+```
+
 ### transfer、alpha、補間
 
 sRGB decode は `c <= 0.04045` で `c / 12.92`、それ以外で `((c + 0.055) / 1.055)^2.4`。encode は `c <= 0.0031308` で `12.92 * c`、それ以外で `1.055 * c^(1/2.4) - 0.055` とする。alpha に transfer 関数を適用しない。通常の encode は RGB が単位区間であることを検証し、HDR の clamp・露出・tone mapping を暗黙に行わない。必要な clamp は明示操作とし、SceneLinear をそのまま表示色へ変換しない。
@@ -250,6 +293,18 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 +    public Rgba<TResult> ToRgba<TResult>() where TResult : INumber<TResult>;
 +}
 +
++// 148 named colorと、別keywordのtransparent。全fieldは8-bit sRGBコード。
++public static class CssColors
++{
++    public static readonly Rgba<byte> Red;
++    public static readonly Rgba<byte> CornflowerBlue;
++    public static readonly Rgba<byte> RebeccaPurple;
++    public static readonly Rgba<byte> Transparent;
++    // 全149keyword。変更不能、キーは小文字、ordinal case-insensitive照合。
++    public static IReadOnlyDictionary<string, Rgba<byte>> All { get; }
++    public static bool TryGet(string? name, out Rgba<byte> color);
++}
+
 +public static partial class Color
 +{
 +    // 長さと全ての重複を出力前に検査。空は許容、未使用末尾は保持。
@@ -268,7 +323,7 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 
 From/Try 構築、明示変換、span はそれぞれ失敗時の出力保証を持つ。TryCreate は無効入力で false・default、CopyTo は短い出力を例外で拒否し書き込まない。数値型を一般化したことと、SIMD で任意の T を直接再解釈できることは別である。SIMD を追加する場合は float・double 等の型別経路と scalar を照合し、長さ・重なり・空入力・末尾、NaN、丸め、tiny batch を含めて測定する。速度・無割り当ての数値目標はこの判断では保証しない。
 
-CSS 全構文、名前付き色一覧、ICC profile・広色域・知覚色差、CMYK の profile 変換、任意精度 gamma は今回の対象外とする。HSL/HSV は数値変換を提供するが、UI 編集部品は作らない。これらを暗黙に sRGB の単純変換として扱わない。
+CSS 全構文、currentColor・system color の解決、ICC profile・広色域・知覚色差、CMYK の profile 変換、任意精度 gamma は今回の対象外とする。HSL/HSV は数値変換を提供するが、UI 編集部品は作らない。これらを暗黙に sRGB の単純変換として扱わない。
 
 ## 検討した代替案
 

@@ -102,3 +102,20 @@ packed は `Rgb565`・`Rgba4444`・`Rgba5551`・`Rgba1010102`・`Bgra1010102` �
 `Hsla<T>` / `Hsva<T>` はhue/S/LまたはV/alphaを保持する値型です。HSL/HSV は正規化された straight sRGB に対する degree hue の変換です。hue は有限な値を周期化し、無彩色は hue=0 とします。分数を整数結果へ黙って切り捨てません。UNORM は厳密な比・積と最近接偶数で変換し、型 cast と区別します。
 
 一画素の `WritePixel` は失敗時に出力を変更しません。batch は長さ・enum・全重複を出力前に検査し、データ変換失敗では完了した prefix のみ更新します。RGB への書き出しは alpha=1、Gray は R=G=B を要求し、透明度や色を黙って捨てません。HDR・負の linear RGB を保つ演算と、RGB も clamp する演算を名前で区別します。ICC/profile 変換、画像 codec、GPU capability の追加は含みません。
+
+## 標準色パレット
+
+`CssColors.Red`・`CssColors.CornflowerBlue`・`CssColors.RebeccaPurple` などは、CSS Color 4 の148 named colorを straight-alpha sRGB の `Rgba<byte>` コード値として返します。opaque alphaは255です。構造体はC#のliteral constにできないため、各色は immutable な `static readonly` fieldです。型ごとの暗黙の正規化やlinear化はしません。
+
+```csharp
+using Lumyte.Mathematics.Colors;
+
+Rgba<byte> redCodes = CssColors.Red; // (255,0,0,255)
+Rgba<float> red = CssColors.Red.NormalizeUnorm<float>(255); // (1,0,0,1)
+Bgra<float> bgra = Bgra<float>.FromRgba(red);
+bool found = CssColors.TryGet("cornflowerblue", out Rgba<byte> codes);
+```
+
+`CssColors.All` は148色と別keywordの `transparent` を含む変更不能な149要素の辞書です。gray/greyなどの別名を保持し、CSSのGreenは#008000、Limeは#00FF00です。Transparentは白ではなくRGBA=(0,0,0,0)です。`TryGet` はASCIIの名前をcase-insensitiveに照合するだけで、空白除去・hex/関数parse・currentColor/system/theme色の解決はしません。
+
+値は [W3C CSSWG Color 4の固定ソース](https://github.com/w3c/csswg-drafts/blob/8e3693ea9baa53f5411eb18d3b18201e8c15fb14/css-color-4/Overview.bs#L1633) に照合し、[color-nameの固定データ](https://github.com/colorjs/color-name/blob/9ec3195524951f58bc1d33797fccc0f8ecfe070c/index.js) と全148色を相互確認しています。どちらもruntime依存にはしません。

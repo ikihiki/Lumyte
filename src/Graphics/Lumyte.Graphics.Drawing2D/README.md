@@ -4,15 +4,16 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
-Color2Dは生成時と各成分のinit（withを含む）で、RGBAがfiniteかつ0〜1であることを検査します。不正値はArgumentOutOfRangeExceptionです。defaultは透明色として有効で、従来の名前付き引数・分解・値比較も使えます。UI側で同じ色検証を繰り返す必要はありません。
+Color2Dは生成時と各成分のinit（withを含む）で、RGBAがfiniteかつ0〜1であることを検査します。不正値はArgumentOutOfRangeExceptionです。defaultは透明色として有効で、従来の名前付き引数・分解・値比較も使えます。UI側で同じ色検証を繰り返す必要はありません。`Color2D.FromSrgb8(CssColors.Red)` は標準パレットの8-bitコードを共通数学の `NormalizeUnorm<float>(255)` で正規化してから通常のColor2Dを構築します。暗黙変換やgamma変換はしません。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.FillRect(new Rect2D(20, 20, 100, 50), Color2D.FromSrgb8(CssColors.Red));
 DrawList2D list = canvas.End();
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());

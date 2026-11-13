@@ -15,7 +15,7 @@ public sealed class PublicColorApiTests
         string[] exported = typeof(Rgba<>).Assembly.GetExportedTypes()
             .Where(type => type.Namespace == "Lumyte.Mathematics.Colors")
             .Select(type => type.Name).Order().ToArray();
-        string[] expected = ["Abgr`1", "Argb`1", "Bgr`1", "Bgra`1", "Bgra1010102", "Color", "ColorByteOrder", "ColorComponentEncoding", "Gray`1", "GrayAlpha`1", "Hsla`1", "Hsva`1", "IColorPixel`1", "IPackedColorPixel`1", "Rgb`1", "Rgb565", "Rgba`1", "Rgba1010102", "Rgba4444", "Rgba5551"];
+        string[] expected = ["Abgr`1", "Argb`1", "Bgr`1", "Bgra`1", "Bgra1010102", "Color", "ColorByteOrder", "ColorComponentEncoding", "CssColors", "Gray`1", "GrayAlpha`1", "Hsla`1", "Hsva`1", "IColorPixel`1", "IPackedColorPixel`1", "Rgb`1", "Rgb565", "Rgba`1", "Rgba1010102", "Rgba4444", "Rgba5551"];
         Assert.Equal(expected.Order(), exported);
         string[] methods = typeof(ColorMath).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).Order().ToArray();
@@ -31,6 +31,11 @@ public sealed class PublicColorApiTests
                 {
                     AssertPublic(constraint);
                 }
+            }
+
+            foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            {
+                AssertPublic(field.FieldType);
             }
 
             foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))

@@ -7,3 +7,5 @@ dotnet run --project samples/Lumyte.Mathematics.Sample -c Release
 ```
 
 Assertions fail the process if a public operation returns an unexpected result. Shape-specific operations remain available on their value types. Arithmetic and boundary policies are explicit in method names, including `ContainsPolygonClosed`, `ContainsHalfOpenEdges`, `TransformAffineFused`, `TransformAffineChecked`, and BCL single-precision helpers.
+
+The sample also checks `CssColors.Red`, `CornflowerBlue`, `Transparent`, immutable keyword enumeration and named lookup. These are eight-bit sRGB codes: call `CssColors.Red.NormalizeUnorm<float>(255)` for unit components. Drawing2D consumers can pass `Color2D.FromSrgb8(CssColors.Red)` directly to their existing canvas API without copying four components. Contextual colors and CSS parsing are outside the catalog.

@@ -8,6 +8,14 @@ internal static class Program
 {
     private static void Main()
     {
+        Require(new Rgba<byte>(255, 0, 0, 255) == CssColors.Red, "Named colors are byte codes, not unit components");
+        Require(CssColors.CornflowerBlue.NormalizeUnorm<double>(255).R == 100d / 255, "Palette explicit normalization");
+        Require(CssColors.Transparent == default, "CSS transparent is black with zero alpha");
+        Require(CssColors.TryGet("rebeccapurple", out Rgba<byte> rebecca) && rebecca.ToArgb32Codes() == 0xFF663399, "Named palette lookup");
+        Require(CssColors.All.Count == 149 && !CssColors.TryGet("currentColor", out _), "Fixed keywords only, no contextual theme values");
+        Require(Bgra<byte>.FromRgba(CssColors.Red).ToRgba() == CssColors.Red, "Palette raw layout conversion");
+        Require(Gray<float>.FromRgba(CssColors.Gray.NormalizeUnorm<float>(255)).Value == 128 / 255f, "Palette normalized grayscale layout");
+        Require(CssColors.CornflowerBlue.ConvertChecked<ManagedDecimal>().NormalizeUnorm<decimal>(new(255)).R == 100m / 255, "Palette custom numeric conversion");
         var colorCodes = Rgba<byte>.FromArgb32Codes(0x80FF0000u);
         Rgba<double> normalizedColor = colorCodes.NormalizeUnorm<double>(byte.MaxValue);
         Require(normalizedColor.R == 1 && normalizedColor.A == 128d / 255, "Explicit code normalization");
