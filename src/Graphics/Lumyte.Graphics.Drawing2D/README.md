@@ -4,7 +4,9 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
-色の公開APIは `Lumyte.Mathematics.Colors.SRgba<float>` を使います。SRgbaは有限なencoded raw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットの `SRgba8` は `SRgba<float>` 引数へ暗黙に byte /255f で正規化され、gamma変換・premultiplyはしません。一般の `SRgba<T>` はraw値のままです。rawコードのcastは `CssColors.Red.ToCodes().ConvertChecked<float>()`、明示した結果型への正規化は `ToNormalized<double>()` を使います。
+色の公開APIは `Lumyte.Mathematics.Colors.SRgba<float>` を使います。SRgbaは有限なencoded raw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットの `SRgba8` は `SRgba<float>` 引数へ暗黙に byte /255f で正規化され、gamma変換・premultiplyはしません。一般の `SRgba<T>` はraw値のままです。rawコードのcastは `SRgba8.Red.ToCodes().ConvertChecked<float>()`、明示した結果型への正規化は `ToNormalized<double>()` を使います。
+
+名前付き色はC# 14のstatic extension propertyです。encoded描画には `SRgba<float>.Red`、linear値には `LRgba<float>.Red`、byteコードには `SRgba8.Red` を選びます。getterはofflineで焼き込んだreadonly値のcopyだけで、lookup時の変換はありません。CLR初期化とcopyはliteral constではありません。`CssColors.All/TryGet` は149件のreference catalogとして残ります。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
@@ -13,10 +15,10 @@ using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.Red);
+canvas.FillRect(new Rect2D(20, 20, 100, 50), SRgba<float>.Red);
 DrawList2D list = canvas.End();
-PaintGraph2D paint = PaintGraph2D.Solid(CssColors.CornflowerBlue);
-SRgba<float> color = CssColors.Red; // 型付き変数でも自動正規化。
+PaintGraph2D paint = PaintGraph2D.Solid(SRgba<float>.CornflowerBlue);
+SRgba<float> color = SRgba<float>.Red; // 既にtarget型の正規化encoded値。
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new RenderTarget2D

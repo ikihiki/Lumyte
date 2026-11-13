@@ -185,7 +185,7 @@ public sealed class CssColorsTests
         }
     }
 
-    /// <summary>The catalog exposes only immutable byte-code fields, All, and TryGet.</summary>
+    /// <summary>The catalog exposes only All and TryGet, with no former global named fields.</summary>
     [Fact]
     public void PublicSurfaceIsOnlyTheAgreedCatalog()
     {
@@ -193,16 +193,7 @@ public sealed class CssColorsTests
         Assert.True(type.IsAbstract && type.IsSealed);
         const BindingFlags Flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
         FieldInfo[] fields = type.GetFields(Flags);
-        Dictionary<string, SRgba<byte>> expected = CreateExpected();
-        Assert.Equal(149, fields.Length);
-        Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), fields.Select(field => field.Name.ToLowerInvariant()).Order(StringComparer.Ordinal));
-        foreach (FieldInfo field in fields)
-        {
-            Assert.True(field.IsStatic && field.IsInitOnly && !field.IsLiteral, field.Name);
-            Assert.Equal(typeof(SRgba8), field.FieldType);
-            Assert.True(char.IsUpper(field.Name[0]), field.Name);
-            Assert.Equal(expected[field.Name.ToLowerInvariant()], Assert.IsType<SRgba8>(field.GetValue(null)).ToCodes());
-        }
+        Assert.Empty(fields);
 
         PropertyInfo property = Assert.Single(type.GetProperties(Flags));
         Assert.Equal("All", property.Name);
@@ -224,15 +215,15 @@ public sealed class CssColorsTests
             Assert.Equal(CssColors.All[gray], CssColors.All[gray.Replace("gray", "grey", StringComparison.Ordinal)]);
         }
 
-        Assert.Equal(CssColors.Aqua, CssColors.Cyan);
-        Assert.Equal(CssColors.Fuchsia, CssColors.Magenta);
-        Assert.Equal(new SRgba<byte>(0, 128, 0, 255), CssColors.Green.ToCodes());
-        Assert.Equal(new SRgba<byte>(0, 255, 0, 255), CssColors.Lime.ToCodes());
-        Assert.NotEqual(CssColors.Green, CssColors.Lime);
-        Assert.Equal(new SRgba<byte>(102, 51, 153, 255), CssColors.RebeccaPurple.ToCodes());
-        Assert.Equal(new SRgba<byte>(100, 149, 237, 255), CssColors.CornflowerBlue.ToCodes());
-        Assert.Equal(new SRgba<byte>(0, 0, 0, 0), CssColors.Transparent.ToCodes());
-        Assert.NotEqual(CssColors.White.WithAlpha(0), CssColors.Transparent);
+        Assert.Equal(SRgba8.Aqua, SRgba8.Cyan);
+        Assert.Equal(SRgba8.Fuchsia, SRgba8.Magenta);
+        Assert.Equal(new SRgba<byte>(0, 128, 0, 255), SRgba8.Green.ToCodes());
+        Assert.Equal(new SRgba<byte>(0, 255, 0, 255), SRgba8.Lime.ToCodes());
+        Assert.NotEqual(SRgba8.Green, SRgba8.Lime);
+        Assert.Equal(new SRgba<byte>(102, 51, 153, 255), SRgba8.RebeccaPurple.ToCodes());
+        Assert.Equal(new SRgba<byte>(100, 149, 237, 255), SRgba8.CornflowerBlue.ToCodes());
+        Assert.Equal(new SRgba<byte>(0, 0, 0, 0), SRgba8.Transparent.ToCodes());
+        Assert.NotEqual(SRgba8.White.WithAlpha(0), SRgba8.Transparent);
     }
 
     /// <summary>Lookup is ordinal case-insensitive, including in a Turkish culture.</summary>
@@ -268,7 +259,7 @@ public sealed class CssColorsTests
         string?[] invalid = [null, string.Empty, " ", " red", "red ", "\tred\n", "red\0", "unknown", "#ff0000", "ff0000", "rgb(255, 0, 0)", "rgba(0,0,0,0)", "hsl(0 100% 50%)", "currentColor", "Canvas", "CanvasText", "ButtonFace", "AccentColor", "inherit", "initial", "revert", "none", "lİme"];
         foreach (string? name in invalid)
         {
-            SRgba8 result = CssColors.Red;
+            SRgba8 result = SRgba8.Red;
             Assert.False(CssColors.TryGet(name, out result));
             Assert.Equal(default, result);
             if (name is not null)
@@ -282,8 +273,8 @@ public sealed class CssColorsTests
     [Fact]
     public void CodesRequireExplicitNormalizationForEveryNumericStorage()
     {
-        Assert.Equal(new SRgba<float>(100, 149, 237, 255), CssColors.CornflowerBlue.ToCodes().ConvertChecked<float>());
-        Assert.Equal(new SRgba<float>(1, 0, 0, 1), CssColors.Red.ToCodes().NormalizeUnorm<float>(255));
+        Assert.Equal(new SRgba<float>(100, 149, 237, 255), SRgba8.CornflowerBlue.ToCodes().ConvertChecked<float>());
+        Assert.Equal(new SRgba<float>(1, 0, 0, 1), SRgba8.Red.ToCodes().NormalizeUnorm<float>(255));
         CheckNormalization<byte>();
         CheckNormalization<short>();
         CheckNormalization<ushort>();
@@ -300,7 +291,7 @@ public sealed class CssColorsTests
         CheckNormalization<Half>();
         CheckNormalization<float>();
         CheckNormalization<double>();
-        Assert.Throws<OverflowException>(() => CssColors.CornflowerBlue.ToCodes().ConvertChecked<sbyte>());
+        Assert.Throws<OverflowException>(() => SRgba8.CornflowerBlue.ToCodes().ConvertChecked<sbyte>());
     }
 
     /// <summary>The frozen map rejects all mutation paths and gives callers value copies.</summary>
@@ -354,7 +345,7 @@ public sealed class CssColorsTests
         });
     }
 
-    private static Dictionary<string, SRgba<byte>> CreateExpected()
+    internal static Dictionary<string, SRgba<byte>> CreateExpected()
     {
         var expected = new Dictionary<string, SRgba<byte>>(StringComparer.Ordinal);
         foreach (string line in NamedColorCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -374,13 +365,13 @@ public sealed class CssColorsTests
     private static void CheckNormalization<T>()
         where T : INumber<T>
     {
-        SRgba<T> raw = CssColors.CornflowerBlue.ToCodes().ConvertChecked<T>();
+        SRgba<T> raw = SRgba8.CornflowerBlue.ToCodes().ConvertChecked<T>();
         Assert.Equal(T.CreateChecked(255), raw.A);
         Assert.Equal(new SRgba<T>(T.CreateChecked(100), T.CreateChecked(149), T.CreateChecked(237), T.CreateChecked(255)), raw);
         Assert.Equal(new SRgba<double>(100d / 255, 149d / 255, 237d / 255, 1), raw.NormalizeUnorm<double>(T.CreateChecked(255)));
         Assert.Equal(new SRgba<decimal>(100m / 255, 149m / 255, 237m / 255, 1), raw.NormalizeUnorm<decimal>(T.CreateChecked(255)));
         Assert.Throws<ArithmeticException>(() => raw.NormalizeUnorm<int>(T.CreateChecked(255)));
         Assert.Throws<ArithmeticException>(() => raw.NormalizeUnorm<BigInteger>(T.CreateChecked(255)));
-        Assert.Equal(new SRgba<BigInteger>(1, 0, 0, 1), CssColors.Red.ToCodes().ConvertChecked<T>().NormalizeUnorm<BigInteger>(T.CreateChecked(255)));
+        Assert.Equal(new SRgba<BigInteger>(1, 0, 0, 1), SRgba8.Red.ToCodes().ConvertChecked<T>().NormalizeUnorm<BigInteger>(T.CreateChecked(255)));
     }
 }

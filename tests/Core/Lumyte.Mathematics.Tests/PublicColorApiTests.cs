@@ -14,6 +14,7 @@ public sealed class PublicColorApiTests
     {
         string[] exported = typeof(SRgba<>).Assembly.GetExportedTypes()
             .Where(type => type.Namespace == "Lumyte.Mathematics.Colors")
+            .Where(type => !NamedColorExtensionTests.IsContainer(type) && !IsNamedColorMetadata(type))
             .Select(type => type.Name).Order().ToArray();
         string[] expected = ["Color", "ColorByteOrder", "ColorComponentEncoding", "CssColors", "IColorPixel`1", "IPackedColorPixel`1", "SRgba8", "RawRgb565", "RawRgba4444", "RawRgba5551", "RawRgba1010102", "RawBgra1010102", "SGray`1", "SGrayAlpha`1", "SRgb`1", "SRgba`1", "SBgr`1", "SBgra`1", "SArgb`1", "SAbgr`1", "LGray`1", "LGrayAlpha`1", "LRgb`1", "LRgba`1", "LBgr`1", "LBgra`1", "LArgb`1", "LAbgr`1", "SHsla`1", "SHsva`1"];
         Assert.Equal(expected.Order(), exported);
@@ -88,6 +89,58 @@ public sealed class PublicColorApiTests
         Assert.Equal(typeof(SRgba<float>), Assert.Single(reverse.GetParameters()).ParameterType);
         Assert.DoesNotContain(typeof(SRgba<>).GetMethods(Flags), method => method.Name is "op_Implicit" or "op_Explicit");
         Assert.DoesNotContain(typeof(SRgba<byte>).GetMethods(Flags), method => method.Name is "op_Implicit" or "op_Explicit");
+    }
+
+    internal static bool IsNamedColorMetadata(Type type)
+    {
+        const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        bool Attribute(MemberInfo member, string name) => member.GetCustomAttributesData().Any(a => a.AttributeType.FullName == "System.Runtime.CompilerServices." + name);
+        bool GeneratedName(string name, string prefix) => name.StartsWith(prefix, StringComparison.Ordinal) && name.Length == prefix.Length + 32 && name[prefix.Length..].All(char.IsAsciiHexDigitUpper);
+        if (!type.IsNestedPublic || !type.IsSealed || !type.IsSpecialName || type.IsGenericType || type.BaseType != typeof(object))
+        {
+            return false;
+        }
+
+        if (GeneratedName(type.Name, "<G>$") && type.DeclaringType is { } container && NamedColorExtensionTests.IsContainer(container))
+        {
+            Assert.True(Attribute(container, "ExtensionAttribute"));
+            Assert.True(Attribute(type, "ExtensionAttribute"));
+            Assert.Empty(type.GetFields(Flags));
+            Assert.Empty(type.GetConstructors(Flags));
+            Type marker = Assert.Single(type.GetNestedTypes(BindingFlags.Public));
+            Assert.True(IsNamedColorMetadata(marker));
+            MethodInfo[] implementations = container.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
+            Assert.Equal(implementations.Select(m => m.Name).Order(), type.GetMethods(Flags).Select(m => m.Name).Order());
+            foreach (MethodInfo method in type.GetMethods(Flags))
+            {
+                CustomAttributeData attribute = Assert.Single(method.GetCustomAttributesData(), a => a.AttributeType.FullName == "System.Runtime.CompilerServices.ExtensionMarkerAttribute");
+                Assert.Equal(marker.Name, Assert.Single(attribute.ConstructorArguments).Value);
+                Assert.Empty(method.GetParameters());
+                Assert.Equal(Assert.Single(implementations, m => m.Name == method.Name).ReturnType, method.ReturnType);
+            }
+
+            return true;
+        }
+
+        if (GeneratedName(type.Name, "<M>$") && type.DeclaringType is { } group && GeneratedName(group.Name, "<G>$") && group.DeclaringType is { } owner && NamedColorExtensionTests.IsContainer(owner))
+        {
+            Assert.True(type.IsAbstract);
+            Assert.True(Attribute(group, "ExtensionAttribute"));
+            Assert.Empty(type.GetFields(Flags));
+            Assert.Empty(type.GetProperties(Flags));
+            Assert.Empty(type.GetConstructors(Flags));
+            Assert.Empty(type.GetNestedTypes(Flags));
+            MethodInfo marker = Assert.Single(type.GetMethods(Flags));
+            Assert.Equal("<Extension>$", marker.Name);
+            Assert.True(marker.IsPublic && marker.IsStatic && !marker.IsGenericMethod);
+            Assert.True(Attribute(marker, "CompilerGeneratedAttribute"));
+            Assert.Equal(typeof(void), marker.ReturnType);
+            Type receiver = Assert.Single(NamedColorExtensionTests.ReceiverMatrix(), pair => pair.Value == owner.Name).Key;
+            Assert.Equal(receiver, Assert.Single(marker.GetParameters()).ParameterType);
+            return true;
+        }
+
+        return false;
     }
 
     private static void AssertPublic(Type type)

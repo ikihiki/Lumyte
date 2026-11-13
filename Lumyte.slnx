@@ -223,4 +223,7 @@
     <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/colors/">
+    <Project Path="tools/colors/Lumyte.NamedColors.Generator/Lumyte.NamedColors.Generator.csproj" />
+  </Folder>
 </Solution>

@@ -177,55 +177,31 @@ alpha のない形式への書き出しは A=1 を要求し、透明度を黙っ
 
 ### 標準の名前付き色
 
-標準色は単一の `CssColors` catalog から `CssColors.Red`・`CssColors.CornflowerBlue` のように取り出す。CSS の148個の named color と gray/grey・aqua/cyan・fuchsia/magenta の別名を含め、共通の `SRgba8` 値型のstraight-alpha sRGB 8-bitコード値をimmutableなstatic readonly fieldとして提供する。C# の構造体は literal const にできないため readonly field を使い、opaque alphaは255とする。SRgba8は意味が明確な8-bit表現なので、`SRgba<float>`への代入では各byteを255fで一度除算し、自動で正規化する。sRGB decodeやpremultiplyは行わない。`SRgba<T>`全般の数値castを自動正規化へ変更しない。
+定義色は各formatへのC#14のstatic extension propertyで公開する。namespaceは既存のLumyte.Mathematics.Colorsとし、閉じたreceiverごとに一つのnon-generic logical extension containerを作る。同じcontainerへ同名Redを複数receiverで定義するとC#のget_Redが衝突するため分離し、consumer側のnamespaceと型.property構文は共通にする。`SRgb<byte>`.Redや`SRgba<float>`.Redを使い、従来の`SRgba<float>`.Redなどのglobal named fieldは残さない。型への通常のstatic member、instance extension、aliasで代用しない。CssColorsは単一の149件のreference catalogのAll/TryGetだけを持つ。
 
-`Transparent` は148色とは別の CSS keyword として RGBA=(0,0,0,0) を返す。currentColor と system/theme 色は利用文脈に依存するため固定値を登録しない。`All` は148色と transparent の149 keyword を小文字名で保持する変更不能な辞書として公開する。`TryGet` は ASCII の名前を ordinal case-insensitive で照合し、null・非ASCII・未知名では false と default を返す。空白除去や hex・関数構文の parse は行わない。catalog は名前付きデータだけを担当し、数値演算やテーマ管理を追加しない。Drawing2Dへは `CssColors.Red` を直接渡せる。専用のFromSrgbRgba8 bridgeは設けない。MathematicsからDrawing2Dへの依存や専用描画型への変換は作らず、SRgba8→`SRgba<float>`を共通数学内で完結させる。
+閉じたreceiver型ごとに表現を定める。byteはUNORM255、ushortはUNORM65535、対応するRGBAのsbyte/shortはSNORM127/32767、Half/float/double/decimalはnormalized値とする。任意の`INumber<T>`のコード上限や精度を推測するgeneric extensionは作らない。数学のraw cast/保存規則は変えない。実際に対応するreceiver/scalarの一覧を生成仕様と検証matrixで管理する。
 
-基準コードでは標準色のbyteコードを共通の名前で取り出す機能がなく、利用側が値を管理する。同じCornflowerBlueを既存の描画用constructorへ渡す場合は数値を繰り返す。
+alphaのないRGB/BGR等はopaque148色だけを持ちTransparentを持たない。RGBA等のalphaを持つ型はtransparent blackを加え149色とする。Gray/GrayAlphaはR=G=Bのachromatic名だけを持ち、色を明度へ黙って変換しない。SHsla/SHsvaは定義済みのnormalized sRGB変換を表現できるHalf/float/double/decimalだけを対象とする。整数の分数を実行時に拒否する名前を公開しない。Raw packed wordは色空間を持たないため、Redという曖昧なpropertyを作らず、SRed/LRedのように解釈を名で選ぶ。alphaのないraw wordにもTransparentは作らない。
 
-```csharp
-using Lumyte.Graphics.Drawing2D;
+149件の名前・byte値は単一のcanonical definitionを保守元とする。独立したoffline保守generatorが既存のmath kernelを利用して全対応formatの値を計算し、checked-in generated C#へ具体的な成分値・packed bitsを焼き込む。getterはprivate generated readonly値のcopyだけとし、lookup時に除算・Pow・gamma・量子化・generic dispatchやconstructorを実行しない。CLRの構造体の初期化とcopy自体は実行時処理であり、literal const fieldとは主張しない。
 
-var color = new Color2D(100f / 255, 149f / 255, 237f / 255, 1);
-```
+Halfの値は焼込みbinary16 bitsから初期化し、float/doubleはround-trip可能なliteralまたは焼込みbits、decimalは定数で表す。linear paletteのbinary32/64 reference bitsは指定した基準kernel/runtimeでoffline作成したchecked-in derived tableを固定し、通常の生成・verifyはそのtableから決定的に行う。reference更新は明示した保守操作だけとする。native Powのplatform差を数学kernelのoracle緩和で隠さず、別platformの一致未検証は制限として報告する。linear decimalはそのbinary64 referenceから既存のchecked decimal変換で生成する。
 
-変更後はcatalogの意味付きコードから自動正規化し、rawコードの取り出しや配置変換は名前で明示する。
+保守generatorは通常build後に実行する登録済みtoolで、verifyによりcanonical data・derived reference・generated C#の一致を検査する。MathをbuildするBeforeBuildへMath依存generatorを挿入する循環は作らない。公開されるC#14のcompiler-generated extension宣言/markerのmetadataは、その属性・構造・役割を検査する。任意のhelperを一括でpublic allowlistへ追加しない。
 
 ```csharp
 using Lumyte.Mathematics.Colors;
-
-// 利用側で数値コードを管理する代わりに名前から取得する。
-SRgba8 codes = CssColors.CornflowerBlue; // (100,149,237,255)
-SRgba<float> normalized = codes; // (100/255f,149/255f,237/255f,1)
-SBgra<float> layout = SBgra<float>.FromRgba(normalized);
-```
-
-Drawing2D では同じ色を名前から構築し、既存 canvas API へ渡せる。
-
-```csharp
 using Lumyte.Graphics.Drawing2D;
-using Lumyte.Mathematics.Colors;
 
-var canvas = new Canvas2D();
-canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.CornflowerBlue);
-DrawList2D list = canvas.End();
+SRgba<float> red = SRgba<float>.Red;
+SRgb<byte> codes = SRgb<byte>.Red;
+LRgba<float> linear = LRgba<float>.Red;
+canvas.FillRect(rect, SRgba<float>.CornflowerBlue);
+// 既にtargetの型なのでUiArgumentへの変換は一回だけ。
+var widget = Lumyte.UI.Compose.Rectangle(SRgba<float>.Red);
 ```
 
-Color2Dを前提とするFromSrgbRgba8の専用factoryも公開しない。パレットの意味付き8-bit値から共通float値への変換で正規化し、汎用の数学演算はRgbaへ置く。
-
-SRgba8はbyteのR/G/B/Aを保持し、RGBを指定するconstructorのalpha省略時は255、defaultは透明黒である。ネイティブ構造体やメモリ配置の互換を保証する型ではない。公開implicit変換はSRgba8→`SRgba<float>`だけに限定する。各成分のbyte/255fは、既存の厳密な`NormalizeUnorm<float>(255)`と全256コードで同じ最近接丸めを要求し、毎回の有理数構築や割り当てを伴わない。これは変換方向を明確にする形式であり、逆数乗算を使う別実装とのbit単位の一致を保証しない。逆方向は明示castでunit範囲を検証し、既存のQuantizeUnormによる最近接偶数へ量子化する。HDRのclamp、gamma変換、alpha associationを隠さない。
-
-rawコードはToCodes/FromCodesで`SRgba<byte>`と明示して往復する。`ToNormalized<TResult>`と`FromNormalized<T>`は名前付きの汎用変換であり、表現できない整数の分数などは既存の数値契約に従う。一般の`SRgba<byte>`→`SRgba<float>`にimplicit変換を追加せず、ConvertCheckedでは255が255fのままである。
-
-C#のgeneric推論や二つのuser-defined conversionの連鎖は拡張しない。`UiArgument<SRgba<float>>`を受ける生成factoryでは、`SRgba<float>`の変数への代入、`UiArgument<SRgba<float>>`.Constant、または明示した型のsignalを使う。propertyのFillやpaint/canvasの`SRgba<float>`引数にはSRgba8を直接渡せる。
-
-```csharp
-SRgba8 orange = new(255, 128, 0);
-SRgba<float> color = CssColors.Red;
-SRgba<byte> rawCodes = CssColors.Red.ToCodes();
-SRgba8 quantized = (SRgba8)color;
-```
+SRgba8のcustom code値からencoded floatへの従来のimplicit正規化は維持する。ただし名前付きfloat getterはこのoperatorを経ず、既に計算されたfloat値を返す。sRGB/linear間とalpha associationの変換は引き続き明示する。全149色の値・別名・Green/Lime区別・Transparent black・ASCII lookupとAllの不変性を保ち、CSS parse/theme/currentColorは追加しない。
 
 ### transfer、alpha、補間
 
@@ -336,11 +312,24 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 +}
 +public static class CssColors
 +{
-+    public static readonly SRgba8 Red;
-+    public static readonly SRgba8 CornflowerBlue;
-+    public static readonly SRgba8 Transparent;
 +    public static IReadOnlyDictionary<string, SRgba8> All { get; }
 +    public static bool TryGet(string? name, out SRgba8 color);
++}
++public static class SRgbByteNamedColorsExtensions
++{
++    extension(SRgb<byte>) { public static SRgb<byte> Red { get; } }
++}
++public static class SRgbaSingleNamedColorsExtensions
++{
++    extension(SRgba<float>) { public static SRgba<float> Red { get; } public static SRgba<float> Transparent { get; } }
++}
++public static class LRgbaSingleNamedColorsExtensions
++{
++    extension(LRgba<float>) { public static LRgba<float> Red { get; } }
++}
++public static class RawRgb565NamedColorsExtensions
++{
++    extension(RawRgb565) { public static RawRgb565 SRed { get; } public static RawRgb565 LRed { get; } }
 +}
 +public enum ColorByteOrder { LittleEndian, BigEndian }
 +public enum ColorComponentEncoding { Unorm8, Unorm16, Snorm8, Snorm16, Float16, Float32, Float64 }

@@ -107,17 +107,21 @@ packed は `RawRgb565`・`RawRgba4444`・`RawRgba5551`・`RawRgba1010102`・`Raw
 
 ## 標準色パレット
 
-`CssColors.Red`・`CssColors.CornflowerBlue`・`CssColors.RebeccaPurple` などは、CSS Color 4 の148 named colorを straight-alpha sRGB の `SRgba8` コード値として返します。opaque alphaは255です。構造体はC#のliteral constにできないため、各色は immutable な `static readonly` fieldです。意味付きの `SRgba8` だけは `SRgba<float>` へ暗黙に各 byte /255f で正規化します。gamma decode・premultiply は行いません。一般の `SRgba<T>` の raw 数値規則は変えません。
+C# 14 のstatic extension propertyをreceiver型で選びます。`SRgba<float>.Red` は正規化encoded、`LRgba<float>.Red` はlinear、`SRgb<byte>.Red` / `SRgba8.Red` はbyteコードです。namespaceは `Lumyte.Mathematics.Colors` です。`CssColors` は149件のreference catalogの `All/TryGet` だけを持ち、global named fieldはありません。
+
+閉じたreceiverごとにbyteは255、ushortは65535、対応するRGBAのsbyte/shortは127/32767、Half/float/double/decimalは1を上限とします。任意の `INumber<T>` の上限を推測するgeneric named propertyはありません。alphaなしの型にTransparentはなく、Gray系は無彩色名だけ、raw packed wordは `RawRgb565.SRed/LRed` のようにspaceを明示します。HSL/HSVはHalf/float/double/decimalが対象です。
+
+getterはoffline生成したprivate readonly値のcopyだけで、lookup時に除算・gamma・量子化・constructorを実行しません。CLRの初期化とcopyは実行時処理で、literal constではありません。customな `SRgba8` から `SRgba<float>` へのimplicit正規化は維持しますが、float named propertyはこの変換を経ません。一般の `SRgba<T>` はraw数値のままです。
 
 ```csharp
 using Lumyte.Mathematics.Colors;
 
-SRgba<byte> redCodes = CssColors.Red.ToCodes(); // (255,0,0,255)
-SRgba<float> red = CssColors.Red; // (1,0,0,1)
+SRgba<byte> redCodes = SRgba8.Red.ToCodes(); // (255,0,0,255)
+SRgba<float> red = SRgba<float>.Red; // (1,0,0,1)
 SBgra<float> bgra = SBgra<float>.FromRgba(red);
 var orange = new SRgba8(255, 128, 0); // alpha省略時は255。defaultは透明黒。
-SRgba<float> raw = CssColors.Red.ToCodes().ConvertChecked<float>(); // 255は255f。
-SRgba<double> unit = CssColors.Red.ToNormalized<double>();
+SRgba<float> raw = SRgba8.Red.ToCodes().ConvertChecked<float>(); // 255は255f。
+SRgba<double> unit = SRgba<double>.Red;
 SRgba8 quantized = (SRgba8)red; // unit検証、最近接偶数量子化。HDRをclampしない。
 bool found = CssColors.TryGet("cornflowerblue", out SRgba8 codes);
 ```

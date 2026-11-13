@@ -38,6 +38,7 @@ public sealed class SpacePublicApiTests
 
             foreach (Type type in assembly.GetExportedTypes())
             {
+                ValidateExtensionMetadata(type);
                 Inspect(type, visited);
                 foreach (ConstructorInfo constructor in type.GetConstructors())
                 {
@@ -99,6 +100,53 @@ public sealed class SpacePublicApiTests
         foreach (Type type in new[] { typeof(SRgba<float>), typeof(LRgba<float>) })
         {
             Assert.DoesNotContain(type.GetMethods(), method => method.Name == "op_Implicit");
+        }
+    }
+
+    private static void ValidateExtensionMetadata(Type type)
+    {
+        if (type.Namespace != "Lumyte.Mathematics.Colors" || !type.Name.StartsWith('<'))
+        {
+            return;
+        }
+
+        const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        bool Attribute(MemberInfo member, string name) => member.GetCustomAttributesData().Any(a => a.AttributeType.FullName == "System.Runtime.CompilerServices." + name);
+        bool Name(string value, string prefix) => value.StartsWith(prefix, StringComparison.Ordinal) && value.Length == prefix.Length + 32 && value[prefix.Length..].All(char.IsAsciiHexDigitUpper);
+        Assert.True(type.IsNestedPublic && type.IsSealed && type.IsSpecialName && !type.IsGenericType, type.FullName);
+        Type group = Name(type.Name, "<G>$") ? type : type.DeclaringType!;
+        Assert.True(Name(group.Name, "<G>$"));
+        Assert.True(Attribute(group, "ExtensionAttribute"));
+        Type container = group.DeclaringType!;
+        Assert.True(container.IsPublic && container.IsAbstract && container.IsSealed && !container.IsGenericType);
+        Assert.True(Attribute(container, "ExtensionAttribute"));
+        Assert.Equal("Lumyte.Mathematics.Colors", container.Namespace);
+        MethodInfo[] getters = container.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
+        Assert.NotEmpty(getters);
+        Type receiver = getters[0].ReturnType;
+        string expectedContainer = receiver.IsGenericType ? receiver.Name[..receiver.Name.IndexOf('`')] + receiver.GetGenericArguments()[0].Name + "NamedColorsExtensions" : receiver.Name + "NamedColorsExtensions";
+        Assert.Equal(expectedContainer, container.Name);
+        Assert.All(getters, getter =>
+        {
+            Assert.StartsWith("get_", getter.Name);
+            Assert.Equal(receiver, getter.ReturnType);
+            Assert.Empty(getter.GetParameters());
+        });
+        Assert.Empty(type.GetFields(Flags));
+        Assert.Empty(type.GetConstructors(Flags));
+        Type marker = Assert.Single(group.GetNestedTypes(BindingFlags.Public));
+        Assert.True(Name(marker.Name, "<M>$"));
+        Assert.True(marker.IsAbstract && marker.IsSealed && marker.IsSpecialName);
+        MethodInfo method = Assert.Single(marker.GetMethods(Flags));
+        Assert.Equal("<Extension>$", method.Name);
+        Assert.True(Attribute(method, "CompilerGeneratedAttribute"));
+        Assert.Equal(typeof(void), method.ReturnType);
+        Assert.Equal(receiver, Assert.Single(method.GetParameters()).ParameterType);
+        Assert.Equal(getters.Select(m => m.Name).Order(), group.GetMethods(Flags).Select(m => m.Name).Order());
+        foreach (MethodInfo getter in group.GetMethods(Flags))
+        {
+            CustomAttributeData attribute = Assert.Single(getter.GetCustomAttributesData(), a => a.AttributeType.FullName == "System.Runtime.CompilerServices.ExtensionMarkerAttribute");
+            Assert.Equal(marker.Name, Assert.Single(attribute.ConstructorArguments).Value);
         }
     }
 

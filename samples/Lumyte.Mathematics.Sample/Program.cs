@@ -8,19 +8,25 @@ internal static class Program
 {
     private static void Main()
     {
-        Require(new SRgba8(255, 0, 0) == CssColors.Red, "Named colors are byte codes, not unit components");
-        Require(CssColors.CornflowerBlue.ToNormalized<double>().R == 100d / 255, "Palette explicit normalization");
-        SRgba<float> paletteCodes = CssColors.Red.ToCodes().ConvertChecked<float>();
-        SRgba<float> paletteUnit = CssColors.Red;
+        Require(new SRgba8(255, 0, 0) == SRgba8.Red, "Named colors are byte codes, not unit components");
+        Require(SRgba8.CornflowerBlue.ToNormalized<double>().R == 100d / 255, "Palette explicit normalization");
+        SRgba<float> paletteCodes = SRgba8.Red.ToCodes().ConvertChecked<float>();
+        SRgba<float> paletteUnit = SRgba<float>.Red;
         Require(paletteCodes.R == 255f && paletteCodes.A == 255f, "Numeric cast preserves raw codes");
-        Require(paletteUnit == new SRgba<float>(1, 0, 0, 1), "SRgba8 implicitly becomes unit straight sRGB");
+        Require(paletteUnit == new SRgba<float>(1, 0, 0, 1), "Float palette is already unit straight sRGB");
         Require(new SRgba<float>(-2, 4, 0, 3).WithAlpha(2).A == 2, "Common storage retains finite raw/HDR and nonunit alpha");
-        Require(CssColors.Transparent == default, "CSS transparent is black with zero alpha");
+        Require(SRgba8.Transparent == default, "CSS transparent is black with zero alpha");
         Require(CssColors.TryGet("rebeccapurple", out SRgba8 rebecca) && rebecca.ToCodes().ToArgb32Codes() == 0xFF663399, "Named palette lookup");
         Require(CssColors.All.Count == 149 && !CssColors.TryGet("currentColor", out _), "Fixed keywords only, no contextual theme values");
-        Require(SBgra<byte>.FromRgba(CssColors.Red.ToCodes()).ToRgba() == CssColors.Red.ToCodes(), "Palette raw layout conversion");
-        Require(SGray<float>.FromRgba(CssColors.Gray).Value == 128 / 255f, "Palette normalized grayscale layout");
-        Require(CssColors.CornflowerBlue.ToCodes().ConvertChecked<ManagedDecimal>().NormalizeUnorm<decimal>(new(255)).R == 100m / 255, "Palette custom numeric conversion");
+        Require(SBgra<byte>.FromRgba(SRgba8.Red.ToCodes()).ToRgba() == SRgba8.Red.ToCodes(), "Palette raw layout conversion");
+        Require(SGray<float>.Gray.Value == 128 / 255f, "Palette normalized grayscale layout");
+        Require(SRgb<byte>.Red.R == 255 && SRgb<ushort>.Red.R == 65535, "UNORM palette code ranges");
+        Require(SRgba<sbyte>.Red.R == 127 && SRgba<short>.Red.A == 32767, "SNORM palette code ranges");
+        Require(SRgba<Half>.Red.R == (Half)1 && SRgba<double>.Red.A == 1 && SRgba<decimal>.Red.R == 1m, "Normalized palette scalar ranges");
+        Require(LRgba<float>.Red == new LRgba<float>(1, 0, 0, 1), "Linear receiver palette");
+        Require(RawRgb565.SRed.InterpretSrgb<float>() == SRgba<float>.Red, "Explicit packed sRGB palette");
+        Require(RawRgb565.LRed.InterpretLinear<float>() == LRgba<float>.Red, "Explicit packed linear palette");
+        Require(SRgba8.CornflowerBlue.ToCodes().ConvertChecked<ManagedDecimal>().NormalizeUnorm<decimal>(new(255)).R == 100m / 255, "Palette custom numeric conversion");
         var colorCodes = SRgba<byte>.FromArgb32Codes(0x80FF0000u);
         SRgba<double> normalizedColor = colorCodes.NormalizeUnorm<double>(byte.MaxValue);
         Require(normalizedColor.R == 1 && normalizedColor.A == 128d / 255, "Explicit code normalization");
