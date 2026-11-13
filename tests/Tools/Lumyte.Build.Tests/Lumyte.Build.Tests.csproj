@@ -14,6 +14,12 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <ProjectReference Include="FakeTool/FakeTool.csproj" ReferenceOutputAssembly="false" />
     <Compile Remove="FakeTool/**/*.cs" />
+    <Compile Include="../../../build/ScreeningCase.cs" Link="Build/ScreeningCase.cs" />
+    <Compile Include="../../../build/ScreeningFailure.cs" Link="Build/ScreeningFailure.cs" />
+    <Compile Include="../../../build/ComponentScreening.cs" Link="Build/ComponentScreening.cs" />
+    <Compile Include="../../../build/ComponentScreeningData.cs" Link="Build/ComponentScreeningData.cs" />
+    <Compile Include="../../../build/ComponentScreeningProcess.cs" Link="Build/ComponentScreeningProcess.cs" />
+    <Compile Include="../../../build/ComponentScreeningNotification.cs" Link="Build/ComponentScreeningNotification.cs" />
   </ItemGroup>
   <Target Name="CopyBuildTestExecutables" AfterTargets="Build">
     <PropertyGroup>

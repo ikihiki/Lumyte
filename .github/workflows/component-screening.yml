@@ -24,64 +24,39 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+
+      - name: Bootstrap local feed
+        run: mkdir -p artifacts/nuget
+
+      - name: Cache downloaded NuGet packages
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ~/.nuget/packages
+          key: component-nuget-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', '**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: component-nuget-v2-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Validate screening tooling
-        run: |
-          python3 -m unittest discover -s tools/benchmarks/component-screening -p 'test_*.py' -v
-          python3 -m unittest discover -s tools/ci -p 'test_component_screening*.py' -v
+        run: dotnet test tests/Tools/Lumyte.Build.Tests -c Release --filter FullyQualifiedName~ComponentScreening
 
       - name: Select bounded component cases
         id: plan
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          extra=()
-          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then extra+=(--all); fi
-          python3 tools/benchmarks/component-screening/screen.py plan "${extra[@]}" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" \
-            --output artifacts/component-screening
-
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
-        if: steps.plan.outputs.selected == 'true'
-        with:
-          global-json-file: global.json
-
-      - name: Cache downloaded NuGet packages
-        if: steps.plan.outputs.selected == 'true'
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: ~/.nuget/packages
-          key: component-nuget-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', '**/*.csproj', '**/packages.lock.json') }}
-          restore-keys: component-nuget-v1-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Prepare exact product revisions
-        if: steps.plan.outputs.selected == 'true'
-        env:
-          BASE_SHA: ${{ steps.plan.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/component-base" "$BASE_SHA"
-          git worktree add --detach "$RUNNER_TEMP/component-head" "$HEAD_SHA"
-          mkdir -p "$RUNNER_TEMP/component-base/artifacts/nuget" "$RUNNER_TEMP/component-head/artifacts/nuget"
+        run: >-
+          dotnet run --project build -c Release --
+          --target ComponentScreeningPlan --screening-base "$BASE_SHA" --screening-head "$HEAD_SHA"
+          --screening-all ${{ github.event_name == 'workflow_dispatch' }} --output artifacts/component-screening
 
       - name: Measure base and head serially
         if: steps.plan.outputs.selected == 'true'
-        run: |
-          python3 tools/benchmarks/component-screening/screen.py run \
-            --plan artifacts/component-screening/plan.json \
-            --base-dir "$RUNNER_TEMP/component-base" \
-            --head-dir "$RUNNER_TEMP/component-head" \
-            --output artifacts/component-screening --timeout-seconds 900
-
-      - name: Publish advisory summary
-        if: always()
-        run: |
-          if test -f artifacts/component-screening/summary.md; then
-            cat artifacts/component-screening/summary.md >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'Screening did not produce a summary. This is not a no-regression result; inspect the job logs.' >> "$GITHUB_STEP_SUMMARY"
-          fi
+        run: >-
+          dotnet run --project build -c Release --no-build --
+          --target ComponentScreeningRun --screening-plan artifacts/component-screening/plan.json
+          --output artifacts/component-screening --screening-timeout-seconds 900
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

@@ -20,6 +20,9 @@
         "Ci",
         "Clean",
         "Compile",
+        "ComponentScreeningNotify",
+        "ComponentScreeningPlan",
+        "ComponentScreeningRun",
         "ConfigureLavapipe",
         "DiagnosticGallery",
         "DiagnosticPreviews",
@@ -211,6 +214,34 @@
         "Rustup": {
           "type": "string",
           "description": "Rustup executable override for explicit setup targets"
+        },
+        "ScreeningAll": {
+          "type": "boolean",
+          "description": "Select all twelve representative cases, including A/A"
+        },
+        "ScreeningBase": {
+          "type": "string",
+          "description": "Exact base revision for advisory screening"
+        },
+        "ScreeningBaseDirectory": {
+          "type": "string",
+          "description": "Optional read-only base checkout; HEAD must match the plan"
+        },
+        "ScreeningHead": {
+          "type": "string",
+          "description": "Exact head revision for advisory screening"
+        },
+        "ScreeningHeadDirectory": {
+          "type": "string",
+          "description": "Optional read-only head checkout; HEAD must match the plan"
+        },
+        "ScreeningPlan": {
+          "type": "string",
+          "description": "Frozen screening plan JSON path"
+        },
+        "ScreeningTimeoutSeconds": {
+          "type": "number",
+          "description": "Total screening deadline in seconds, capped at 900"
         },
         "SkipParleyPackage": {
           "type": "boolean",

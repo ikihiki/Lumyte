@@ -28,7 +28,7 @@ component-screening workflowをPR作成・更新・再オープン・ready時に
 
 ## 比較契約
 
-PRのbase SHAとhead SHAを固定して個別のworktreeを作り、同じハーネス・入力・
+PRのbase SHAとhead SHAを固定して個別のarchive snapshotを作り、同じハーネス・入力・
 測定設定で両製品版を測る。基準の別マシンでの過去スコアとは直接比較しない。
 製品のJIT・PGO・GC既定値を維持し、Releaseの短縮BenchmarkDotNetジョブを使用する。
 既存の通常ベンチマーク設定は置き換えない。
@@ -47,8 +47,7 @@ BenchmarkDotNetのiteration推定値を個別フレームの遅延分布とは�
 Job Summaryと30日保持のcomponent-screening artifactに、選択plan、比較SHA、
 環境・ハーネス・実行ファイルの情報、生のBenchmarkDotNet出力と解析結果を保存する。
 生成された測定データはGitへ追加しない。
-再現用CLIとカタログの説明は
-[実行エンジン](../../tools/benchmarks/component-screening/README.md)を参照する。
+再現用CLIとカタログの説明は、この文書の[Fallout commands](#fallout-commands)を参照する。
 
 候補が出た場合は同じケース・入力・SDKで開発環境で再測定する。
 共有ランナーの過去値だけから恒久的な性能差を断定しない。
@@ -74,6 +73,151 @@ head更新との完全な原子的更新はGitHubコメントAPIでは行えな�
 投稿処理はネットワークなしの単体テストで、古い結果の排除、headの再確認、
 bot以外のコメント保護、関連PRなし、失敗・キャンセル・タイムアウトの区別を確認する。
 
-    python3 -m unittest discover -s tools/ci -p test_component_screening_comment.py -v
+~~~sh
+dotnet test tests/Tools/Lumyte.Build.Tests -c Release --filter FullyQualifiedName~ComponentScreening
+~~~
 
-測定エンジンの検証手順は実行エンジンのREADMEを参照する。
+測定・通知エンジンは既存のFallout runnerとC#テストに統合している。
+
+## Operational guide
+
+Advisory, CPU-only Signals microbenchmark screening, not an async UI component
+benchmark or a full-suite qualification. The fixed base
+70db1cd8144c22256505a433531efb0e37a4a7d0 has no benchmarks/Graphics suite.
+Mathematics, Execution, native rendering, real async scheduling, cold startup,
+and the other Signals workloads remain unmeasured. No native dependencies are
+required by this harness.
+
+## Fallout commands
+
+Run with the exact SDK from global.json. No Python or native dependencies are
+required. Fallout uses its normal SDK resolution; --dotnet-path selects an
+explicit SDK executable. The runner archives exact plan SHAs directly from the
+repository, so no shell worktree preparation is required. Dirty and untracked
+product files are not measured. Optional --screening-base-directory and
+--screening-head-directory accept read-only checkouts with matching HEAD SHAs.
+
+~~~sh
+dotnet run --project build -c Release -- --target ComponentScreeningPlan --screening-base BASE_SHA --screening-head HEAD_SHA --output artifacts/component-plan
+
+# Force all twelve cases, including A/A:
+dotnet run --project build -c Release -- --target ComponentScreeningPlan --screening-base SHA --screening-head SHA --screening-all true --output artifacts/component-plan-aa
+
+dotnet run --project build -c Release -- --target ComponentScreeningRun --screening-plan artifacts/component-plan/plan.json --output artifacts/component-result --screening-timeout-seconds 900
+
+dotnet test tests/Tools/Lumyte.Build.Tests -c Release --filter FullyQualifiedName~ComponentScreening
+
+# Trusted CI notification, with credentials/event metadata in environment:
+dotnet run --project build -c Release -- --target ComponentScreeningNotify
+~~~
+
+Use fresh run output directories. Both Release builds and all twelve semantic
+smoke cases complete before serial base/head BDN measurement. Do not run other
+builds or tests during measurement. One shared monotonic deadline covers all
+commands and is capped at 900 seconds. Timeout kills the child process tree;
+logs, raw partial files, result.json and summary.md survive ordinary failures.
+On Linux, the standard /usr/bin/setsid utility and libc group kill also terminate
+descendants retaining pipes after the direct child exits. Elsewhere .NET tree
+kill handles live descendants and cancellable reads bound retained-pipe cleanup.
+Filesystem exhaustion or forced host termination may prevent final reporting.
+There are no automatic retries or weekly runs.
+
+The plan target diffs the exact two commits (not their merge base), with
+--no-renames and NUL-delimited paths. --repository-root can select another source
+repository. GITHUB_OUTPUT receives selected, base_sha and head_sha. Documentation
+and empty diffs produce skipped reports; --screening-all true overrides the skip.
+Signals/common dependency changes select twelve cases; unknown changes select
+ReadValue only and explicitly preserve uncovered paths, including mixed changes.
+GITHUB_STEP_SUMMARY is appended by the C# reporter without shell orchestration.
+
+## Frozen workload and job contract
+
+Benchmarks use target-category layout, mirroring tests, with singular project
+suffix: benchmarks/Core/Lumyte.Signals.Benchmark and
+benchmarks/Core/Lumyte.Mathematics.Benchmark. Screening directly uses the existing
+Signals ScalarBenchmarks, AsyncBenchmarks and GraphBenchmarks; there is no generic
+screening project or duplicated Sources directory. Workload methods and lifecycle
+remain unchanged from the fixed base except for the singular namespace.
+
+The runner overlays the **whole same Signals.Benchmark project** from its own
+checkout into both archived product revisions, discarding any archived target
+harness first. It never uses each revision's changing benchmark implementation.
+The ../../../src project reference resolves in both old-layout base archives and
+new-layout revisions. BenchmarkDotNet remains 0.15.8. --screening explicitly selects
+the short SignalsScreening-v2 job; --screening-smoke verifies all 12 cases without
+timing. Without either flag the normal Signals job and --retention operation are
+preserved. Harness version component-screening-v3, schema version 2, case version 2, singular case
+identities and the v2 smoke marker reject old plans/results. Regenerate plans when
+changing a workload or comparison policy.
+
+The separate screening job uses 1 launch, 3 warmups, 8 measured iterations,
+150 ms target, MemoryDiagnoser, full JSON, and OutlierMode.DontRemove.
+Parser validation rejects missing/invalid/NaN data, missing allocations, unexpected
+or duplicate identities, fewer than 8 retained results, job/parameter mismatch,
+and incompatible runtime/CPU/SDK identities. Different global.json SDK policies,
+unavailable exact SDK, or plan/harness mismatches are incomparable, never a pass.
+
+The catalog is 12 unparameterized existing methods. Absolute latency floors in ns:
+
+- Scalar ReadValue 1, ReadPeek 1, WriteSame 1, WriteUnobserved 2.
+- Async CreateCompleted 20, ReloadCompleted 20, ReloadCompletedObserved 30,
+  SupersedeAndCancelPending 100.
+- Graph DiamondUpdate 20, SwitchBranch 20, CaptureEightReads 20, CheckReadSet 5.
+
+A latency candidate requires median increase >=10% **and** its absolute floor.
+These are pragmatic screening floors, not calibrated noise bounds or formal
+statistical significance. Every allocation increase is separately flagged;
+zero-base allocation increases have a null percentage and explicit bytes/op.
+Candidates exit zero (advisory); execution, unsupported, incomparable, invalid or
+missing data exits nonzero. no_candidates means only no candidate in these cases,
+not general performance health. Unknown changed paths add `partial_coverage` to the
+candidate/no-candidate status and remain explicit in the summary.
+
+## Evidence and CI integration
+
+The result includes exact SHAs and plan, case/harness versions and hash, runner
+hash, CPU/OS, SDK and runtime dotnet --info, timing-related DOTNET_/COMPlus_
+environment, and SHA-256 hashes of built harness/product/dependency DLLs.
+BDN full JSON adds actual runtime/host identity and all iteration measurements.
+Archive result.json, summary.md, *.log and raw/ even after a nonzero exit; scratch/
+is useful for local diagnosis but need not be uploaded. Plan and raw paths are
+local evidence, not trusted input to privileged workflows. GitHub workflow summary
+rendering and any notification are owned by the surrounding CI workflow.
+
+The original v1 exact-base A/A integration check completed all 12 cases on both sides
+with the frozen harness, exact SDK 10.0.403, and 8 retained measurements per case.
+It produced no candidates and identical allocation values. This verifies the
+pipeline, not stability or a product improvement. Generated local evidence is
+ignored under artifacts/component-screening-aa/ and is not committed.
+
+The v2 target-project integration A/A check also completed against exact product
+SHA 70db1cd8144c22256505a433531efb0e37a4a7d0 on both sides, using SDK 10.0.403.
+All 12 singular case identities had 8 retained measurements per side, with
+identical allocations and no candidates (91.46 seconds for the full engine).
+Both semantic smokes passed before timing. Evidence is ignored under
+artifacts/naming-integration/aa-result/. This is pipeline wiring verification,
+not calibrated noise or evidence of product improvement; Mathematics is built
+but is not measured by this Signals-only screening catalog.
+
+### Fallout v3 integration evidence
+
+The C# Fallout targets completed an exact-base A/A against
+70db1cd8144c22256505a433531efb0e37a4a7d0 on both sides with SDK 10.0.403.
+All twelve cases retained eight measurements per side, with identical allocations
+and no candidates. Both builds/smokes completed before base then head timing.
+The complete engine took 94.11 seconds. Local ignored evidence is under
+artifacts/fallout-screening-port/aa-plan and artifacts/fallout-screening-port/aa-result.
+This verifies wiring only, not calibrated noise, stability, or product improvement.
+
+Plans/results now use schema version 2 and engine component-screening-v3; case
+version 2 and the unchanged SignalsScreening-v2 BDN job/smoke contract are retained.
+Old engine plans are rejected rather than silently reinterpreted. The frozen
+harness is copied once into scratch/frozen-harness and overlaid identically into
+both exact product snapshots. Screening targets have no Compile/full-solution or
+native target dependencies. Snapshot local NuGet feeds are created in C#.
+
+After adding deadline-cancellable archive extraction, the final runner was checked
+again in artifacts/fallout-screening-port/aa-final: 92.91 seconds, all twelve
+cases with eight samples per side, identical allocations and no candidates.
+The earlier 94.11-second run is preserved separately; neither is a product
+improvement claim. All 88 existing and added Build.Tests passed with zero skips.

@@ -1,1 +1,0 @@
-"""Component screening fixture tests."""

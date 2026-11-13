@@ -76,4 +76,4 @@ dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --sc
 ```
 
 同じprojectのケースを使用し、独立したコピーは保持しません。比較エンジンはこのproject全体を両製品SHAへ同一に重ねます。
-詳細は[実行エンジン](../../../tools/benchmarks/component-screening/README.md)を参照してください。
+測定対象の選択・実行・解析・通知はFalloutへ統合しています。詳細は[運用と実行手順](../../../docs/performance/component-screening.md)を参照してください。

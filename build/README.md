@@ -77,6 +77,8 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
+| `ComponentScreeningPlan` / `ComponentScreeningRun` | PRの固定SHAから測定対象を選び、同一ハーネスで直列比較・解析・証拠保存。Pythonスクリプトは使用しない |
+| `ComponentScreeningNotify` | default branchの信頼済みrunnerで結果リンクをPRへ通知。測定workflowとは権限を分離 |
 | `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
 | `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
 | `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
