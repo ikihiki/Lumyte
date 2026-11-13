@@ -4,6 +4,56 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## 任意検証レイヤの追補（2026-11-13）
+
+以下は777a7e11後の任意検証レイヤを対象とする最新結果である。
+後続の節はそれぞれの変更時点の結果であり、Debug限定の旧検証方針は
+明示的なdevice単位の有効化へ置き換わっている。
+
+具体的なバックエンドのdeviceを生成した直後、子リソースを生成する前に
+EnableValidation()を呼ぶ。Debug・Releaseとも既定では無効であり、
+IGraphicDevice.ValidationEnabledで状態を確認できる。D3D12自身の
+EnableDebugLayerとは別の、Lumyteの管理側契約に対する診断である。
+
+- 有効時: 記録済み・実行中リソースの寿命、マッピング競合、親子関係、
+  記録時とSubmit時の登録失効、範囲別バッファアクセス、mip/layer別の
+  テクスチャ状態、コマンドをまたぐ依存、バリアの適用範囲、
+  Acquire/Submit/Presentのバイナリセマフォ、転送メタデータ順序を追跡する。
+- 無効時: nullable分岐とdeviceの生成状態フラグ以外の診断用追跡を作らない。
+  診断用コールバック、状態再生、生成フィールド表、配置検証用リフレクションは
+  実行しない。ホストメモリの範囲・オーバーフロー検査、必要なbinding情報、
+  ネイティブエラー処理は残す。
+- GPU内部の分岐・動的インデックス、直接のネイティブ操作、unsafeによる
+  stagingバイト列の書き換えは観測できない。アクセスは登録範囲と宣言した
+  ステージに基づいて保守的に扱う。実行の一部がネイティブへ発行された後の
+  失敗は巻き戻せず、非同期失敗では追跡したキュー状態を不明として扱う。
+
+公式Fallout runnerによる検証:
+
+    dotnet run --project build -c Release -- --target Test --host-only --configuration Release
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
+    LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
+    dotnet run --project build -c Release -- --target CheckMarkdown
+
+- 全ホストRelease: 2,972成功、失敗0、101スキップ。
+- Graphics Debug/Release: 各179成功、失敗0、80スキップ。
+- 実GPU Graphics Release: 255成功、既知のVulkan深度形式失敗2、
+  native presentationの2テストをスキップ。有効化したVulkan/Wgpu転送は成功。
+- Direct3D12の管理側Releaseコンパイルは成功。Windows実機は未検証。
+- Markdown検査、差分の空白検査は成功。
+
+native presentationは実行成功を主張しない。所有するWeston/Xwaylandでの
+検証を試みたが、Lumyte起動前のcompositor終了時クラッシュと、独立した
+Xwaylandのキーボード初期化失敗で有効な表示環境を確立できなかった。
+対応するVulkan/Wgpuテストは追加済みだが、動作する表示環境なしでは
+スキップする。Browser実行、Windows D3D12、NativeAOT、全ホストDebugも
+今回の実行範囲には含まない。
+
+実行ログはartifacts/validation2-{debug,fullhost,hardware,d3d,markdown}.logと
+同じartifacts内のcompositor/Xwaylandログに保持する。
+過去ADR0009/0015/0018/0022/0023はef61258fと同一のまま維持する。
+
 ## Registration-owned access follow-up (2026-11-13)
 
 Starting at 4e58e198, raw-buffer WriteBuffer selects ShaderBufferAccess.ReadOnly
