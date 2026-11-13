@@ -277,6 +277,28 @@ public sealed class GraphicsValidation
         _global = state.Value;
     }
 
+    /// <summary>Records partial native issuance without retiring any outstanding dependency.</summary>
+    public void MarkPartialSubmissionFailure() => _queueUnknown = true;
+
+    /// <summary>Publishes one native queue wait only after that operation succeeds.</summary>
+    /// <param name="submission">The consuming completion owner.</param>
+    /// <param name="semaphore">The successfully consumed signal.</param>
+    public void SubmittedWait(object submission, IGraphicsSemaphore semaphore)
+    {
+        _signals.Remove(semaphore);
+        _signalStates.Remove(semaphore);
+        SemaphoreUses(submission).Add(semaphore);
+    }
+
+    /// <summary>Publishes one native queue signal only after that operation succeeds.</summary>
+    /// <param name="submission">The producing completion owner.</param>
+    /// <param name="semaphore">The successfully issued signal.</param>
+    public void SubmittedSignal(object submission, IGraphicsSemaphore semaphore)
+    {
+        PresentationSignaled(submission, semaphore);
+        _signalStates[semaphore] = _global.Copy();
+    }
+
     /// <summary>Checks queue semaphore sequencing without mutating it.</summary>
     /// <param name="desc">The submission.</param>
     public void ValidateSemaphores(QueueSubmitDesc desc)
@@ -307,11 +329,14 @@ public sealed class GraphicsValidation
     /// <param name="desc">The submission.</param>
     public void SubmittedSemaphores(object submission, QueueSubmitDesc desc)
     {
-        PresentationWaited(submission, desc.WaitSemaphores.Select(wait => wait.Semaphore).ToArray());
+        foreach (SemaphoreWaitDesc wait in desc.WaitSemaphores)
+        {
+            SubmittedWait(submission, wait.Semaphore);
+        }
+
         foreach (IGraphicsSemaphore signal in desc.SignalSemaphores)
         {
-            PresentationSignaled(submission, signal);
-            _signalStates[signal] = _global.Copy();
+            SubmittedSignal(submission, signal);
         }
     }
 

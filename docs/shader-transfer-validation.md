@@ -54,6 +54,51 @@ Xwaylandのキーボード初期化失敗で有効な表示環境を確立でき
 同じartifacts内のcompositor/Xwaylandログに保持する。
 過去ADR0009/0015/0018/0022/0023はef61258fと同一のまま維持する。
 
+## D3D12部分提出の所有権修正（2026-11-13）
+
+wait・signalを個別に発行するD3D12経路では、最後のcompletion signalだけを
+成功境界にすると、途中まで成功した操作を失う。各native wait／signalが
+成功した直後に、その操作だけを同じcompletion ownerへ反映するよう修正した。
+未発行・失敗した操作を成功として公開せず、commandsが空でも、発行済み操作が
+あれば回復用ownerをdeviceへ保持する。producerの完了だけではconsumer waitの
+使用中状態を退役させない。
+
+部分発行後はqueue状態を不明として扱う。元の例外をそのまま返し、回復用markerの
+発行失敗やpending fenceのDispose拒否で上書きしない。回復用markerはGPU待機を
+強制せず、実際の完了観測まで依存を保持する。必要な場合の
+WaitForRetirementAsyncは明示的な回復待機、またはnative device removalの
+確認後にだけownerを退役させる。キャンセルや早期Disposeは完了の代わりにならない。
+最初のnative操作より前の失敗では、未発行fence専用の解放経路を使う。
+
+通常の無効経路に診断用collectionやcallbackは追加しない。部分発行時のnative
+cleanup所有権は既存submissionと既に作成したdescriptor配列、deviceのlinked ownerで
+維持し、失敗後のowner保存にも新しいlistやnodeを確保しない。native transportの
+内部seamにより、公開deviceをforwarding wrapperにせず実際のqueue経路を検査する。
+
+管理側のnative-call fault injectionによる24ケースを追加した。第2wait、第2signal、
+最終completion signal、semaphore-only提出、最初のwait／signal／executeの失敗、
+元の例外identity、未発行signalの非公開、producer完了後のconsumer保持、キャンセル、
+実完了または確認済みdevice removalでの退役を有効／無効の両方で検査する。
+既存のD3D12 parityテストに残っていたDebug限定期待値も、明示的な診断呼び出しが
+両構成で同じ契約になるよう揃えた。
+
+- 旧来の「最後に一括公開・commandsだけを見て保持」のqueue処理を同じnative seamで
+  一時的に復元したnegative control（HRESULT境界2ケースの追加前）は、
+  失敗19、成功7、Windows nativeスキップ7。
+  修正済みsourceへ戻したことを確認してから最終検証を実行した。
+- Direct3D12 Debug／Release: 各28成功、失敗0、Windows nativeスキップ7（35件）。
+- Graphics Debug／Release: 各179成功、失敗0、80スキップ。
+- 全ホストRelease: 2,972成功、失敗0、101スキップ。
+- Windowsの実D3D12実行は引き続き未検証。fault injectionはnative GPU命令を
+  発行しない管理側のqueue／semaphore／submission経路の検証である。
+
+実行コマンドは同じ公式runnerのTest targetへ、
+project=tests/Graphics/Lumyte.Graphics.Direct3D12.Testsと
+configuration=Debug／Releaseを渡す。ログは
+artifacts/validation3-{d3d-debug,d3d-release,graphics-debug,fullhost,negative-control}.logに
+保持する。negative controlのsourceと復元用sourceもignored artifacts内だけに保存し、
+実装・履歴には取り込まない。
+
 ## Registration-owned access follow-up (2026-11-13)
 
 Starting at 4e58e198, raw-buffer WriteBuffer selects ShaderBufferAccess.ReadOnly

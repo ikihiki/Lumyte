@@ -6,7 +6,7 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
 {
     public IGraphicsSubmission Submit(IReadOnlyList<IGraphicsCommandBuffer> commandBuffers) => Submit(new QueueSubmitDesc { CommandBuffers = commandBuffers });
 
-    public unsafe IGraphicsSubmission Submit(QueueSubmitDesc desc)
+    public IGraphicsSubmission Submit(QueueSubmitDesc desc)
     {
         owner.RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
@@ -74,21 +74,21 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
             handles[i] = command.Native;
         }
 
-        owner.Check(NativeMethods.FenceCreate(owner.Native, out nint fence));
-        var submission = new Direct3D12Submission(owner, commands, fence);
+        owner.QueueDriver.CreateFence(owner, out nint fence);
+        var submission = new Direct3D12Submission(owner, commands, fence, completionIssued: false, waits: waits, signals: signals);
         try
         {
             foreach (Direct3D12Semaphore wait in waits)
             {
                 wait.Wait();
+                submission.MarkNativeUse();
+                owner.Validation?.SubmittedWait(submission, wait);
             }
 
             if (handles.Length != 0)
             {
-                fixed (nint* data = handles)
-                {
-                    owner.Check(NativeMethods.CommandsExecute(owner.Native, data, (uint)handles.Length));
-                }
+                owner.QueueDriver.Execute(owner, handles);
+                submission.MarkCommandsIssued();
             }
 
             if (validationState != null)
@@ -104,29 +104,28 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
             foreach (Direct3D12Semaphore signal in signals)
             {
                 signal.Signal();
+                submission.MarkNativeUse();
+                owner.Validation?.SubmittedSignal(submission, signal);
             }
 
-            owner.Check(NativeMethods.QueueSignal(owner.Native, fence));
-            owner.Validation?.SubmittedSemaphores(submission, desc);
+            submission.EnsureCompletionSignal();
             return submission;
         }
         catch
         {
-            if (owner.Validation != null && commands.Any(command => command.State == CommandBufferState.Submitted))
+            if (submission.HasNativeUse)
+            {
+                owner.Validation?.MarkPartialSubmissionFailure();
+                owner.RetainFailedSubmission(submission);
+                submission.TrySignalRecoveryCompletion();
+            }
+            else if (!submission.TryAbandonUnissued())
             {
                 owner.RetainFailedSubmission(submission);
-                throw;
             }
 
-            foreach (Direct3D12CommandBuffer command in commands)
-            {
-                if (command.State == CommandBufferState.Submitted)
-                {
-                    command.Complete(false);
-                }
-            }
-
-            submission.Dispose();
+            // Never replace the native operation's original error with a pending
+            // fence disposal rejection or a secondary recovery signal failure.
             throw;
         }
     }

@@ -54,11 +54,9 @@ public sealed class ParityTests
         System.Text.Json.JsonElement binding = json.RootElement.GetProperty("parameters").EnumerateArray().Single(p => p.GetProperty("name").GetString() == "arguments").GetProperty("binding");
         Assert.Equal("constantBuffer", binding.GetProperty("kind").GetString());
         Assert.Equal(8, binding.GetProperty("index").GetInt32());
-#if DEBUG
+
+        // Explicit diagnostic calls have the same contract in both configurations.
         Assert.Throws<ArgumentException>(() => ShaderDataLayout.ValidateProgram(Target("binding-mismatch-vertex"), Target("binding-mismatch-fragment")));
-#else
-        ShaderDataLayout.ValidateProgram(Target("binding-mismatch-vertex"), Target("binding-mismatch-fragment"));
-#endif
         ShaderDataLayout.ValidateProgram(Target("binding-cycle-vertex"), Target("binding-cycle-fragment"));
     }
 

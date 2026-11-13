@@ -9,8 +9,20 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     private readonly GraphicsDeviceLifetime _lifetime;
 
     private readonly nint _native;
+    private readonly IDirect3D12QueueDriver? _queueDriver;
     private bool _hasCreatedResources;
-    private List<IGraphicsSubmission>? _failedSubmissions;
+    private Direct3D12Submission? _failedSubmissions;
+
+    internal Direct3D12Device(IDirect3D12QueueDriver driver, bool validation)
+    {
+        _queueDriver = driver;
+        _lifetime = new(this);
+        Queue = new Direct3D12Queue(this);
+        if (validation)
+        {
+            EnableValidation();
+        }
+    }
 
     private Direct3D12Device(nint native, bool partial)
     {
@@ -81,6 +93,20 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
     /// <summary>Gets a value indicating whether Preview partial programs were requested and validated on the selected driver.</summary>
     public bool PartialGraphicsProgramsEnabled { get; }
+
+    internal nint QueueNative
+    {
+        get
+        {
+            // Removal probes remain valid while lost, but never use a freed owner.
+            ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
+            return _native;
+        }
+    }
+
+    internal IDirect3D12QueueDriver QueueDriver => _queueDriver ?? NativeDirect3D12QueueDriver.Instance;
+
+    internal Direct3D12Submission? FailedSubmission => _failedSubmissions;
 
     internal nint Native
     {
@@ -194,41 +220,76 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
-    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        int removed = NativeMethods.DeviceRemoved(_native);
+        int removed = QueueDriver.DeviceRemoved(this);
         if (removed >= 0)
         {
-            throw new InvalidOperationException("Retirement requires confirmed native device removal.");
+            if (_failedSubmissions == null)
+            {
+                throw new InvalidOperationException("Retirement requires confirmed native device removal or a partially issued submission.");
+            }
+
+            try
+            {
+                while (_failedSubmissions is { } pending)
+                {
+                    if (!pending.HasNativeUse)
+                    {
+                        pending.AbandonUnissued();
+                    }
+                    else
+                    {
+                        pending.EnsureCompletionSignal();
+                        await pending.WaitAsync(cancellationToken).ConfigureAwait(false);
+                        pending.Dispose();
+                    }
+
+                    _failedSubmissions = pending.NextFailed;
+                    pending.NextFailed = null;
+                }
+
+                return;
+            }
+            catch (Exception error) when (error is not OperationCanceledException && QueueDriver.DeviceRemoved(this) < 0)
+            {
+                // Native removal during recovery is also an explicit retirement
+                // confirmation, not a reason to lose the retained owners.
+                removed = QueueDriver.DeviceRemoved(this);
+            }
         }
 
         _lifetime.ReportLoss($"0x{removed:X8}", "Direct3D 12 device was removed.");
-        if (_failedSubmissions != null)
+        while (_failedSubmissions is { } pending)
         {
-            foreach (IGraphicsSubmission submission in _failedSubmissions)
-            {
-                _ = submission.Status;
-                submission.Dispose();
-            }
-
-            _failedSubmissions.Clear();
+            pending.RetireAfterDeviceRemoval();
+            _failedSubmissions = pending.NextFailed;
+            pending.NextFailed = null;
         }
-
-        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
+        RetireCompletedFailedSubmissions();
+        if (_failedSubmissions != null)
+        {
+            throw new InvalidOperationException("Retire partial native submissions before device disposal.");
+        }
+
         Validation?.Release(this);
         if (Status == GraphicsDeviceStatus.Disposed)
         {
             return;
         }
 
-        NativeMethods.DeviceDestroy(_native);
+        if (_native != 0)
+        {
+            NativeMethods.DeviceDestroy(_native);
+        }
+
         _lifetime.Dispose();
     }
 
@@ -377,10 +438,54 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         return child;
     }
 
-    internal void RetainFailedSubmission(IGraphicsSubmission submission) => (_failedSubmissions ??= []).Add(submission);
+    internal void RetainFailedSubmission(Direct3D12Submission submission)
+    {
+        submission.NextFailed = _failedSubmissions;
+        _failedSubmissions = submission;
+    }
+
+    internal void RetireCompletedFailedSubmissions()
+    {
+        Direct3D12Submission? previous = null;
+        Direct3D12Submission? pending = _failedSubmissions;
+        while (pending != null)
+        {
+            Direct3D12Submission? next = pending.NextFailed;
+            if (!pending.HasNativeUse || pending.Status is SubmissionStatus.Completed or SubmissionStatus.Failed)
+            {
+                if (!pending.HasNativeUse)
+                {
+                    pending.AbandonUnissued();
+                }
+                else
+                {
+                    pending.Dispose();
+                }
+
+                if (previous == null)
+                {
+                    _failedSubmissions = next;
+                }
+                else
+                {
+                    previous.NextFailed = next;
+                }
+
+                pending.NextFailed = null;
+            }
+            else
+            {
+                previous = pending;
+            }
+
+            pending = next;
+        }
+    }
 
     internal void RequireReady()
     {
+        RetireCompletedFailedSubmissions();
+
         ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
         if (Status == GraphicsDeviceStatus.Lost)
         {
@@ -395,7 +500,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             return;
         }
 
-        int removed = NativeMethods.DeviceRemoved(_native);
+        int removed = QueueDriver.DeviceRemoved(this);
         if (removed < 0)
         {
             _lifetime.ReportLoss($"0x{removed:X8}", "Direct3D 12 device was removed.");
