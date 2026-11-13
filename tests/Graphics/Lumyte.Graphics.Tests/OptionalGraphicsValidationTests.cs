@@ -130,6 +130,7 @@ public sealed class OptionalGraphicsValidationTests
         }
 
         Assert.Equal(enabled, device.Validation != null);
+        Assert.Equal(enabled, ((IGraphicDevice)device).ValidationEnabled);
     }
 
     /// <summary>Checks repeated texture Before states without a native GPU call.</summary>
@@ -202,6 +203,54 @@ public sealed class OptionalGraphicsValidationTests
         {
             state.ValidateSubmit();
         }
+    }
+
+    /// <summary>Rejects enabling diagnostics after resources have escaped the untracked device.</summary>
+    [Fact]
+    public void LateEnableIsRejectedBeforeCreatingTracker()
+    {
+        var device = (Lumyte.Graphics.Vulkan.VulkanDevice)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Lumyte.Graphics.Vulkan.VulkanDevice));
+        typeof(Lumyte.Graphics.Vulkan.VulkanDevice).GetField("_hasCreatedResources", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(device, true);
+        Assert.Throws<InvalidOperationException>(device.EnableValidation);
+        Assert.Null(device.Validation);
+    }
+
+    /// <summary>Checks logical queue semaphore ownership at the real managed entry without reaching native code.</summary>
+    [Fact]
+    public void LogicalQueueRejectsForeignSemaphoreBeforeNativeCall()
+    {
+        Type deviceType = typeof(Lumyte.Graphics.Wgpu.WgpuDevice);
+        var owner = (Lumyte.Graphics.Wgpu.WgpuDevice)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(deviceType);
+        var foreign = (Lumyte.Graphics.Wgpu.WgpuDevice)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(deviceType);
+        owner.EnableValidation();
+        const System.Reflection.BindingFlags Constructors = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+        var queue = (IGraphicsQueue)Activator.CreateInstance(deviceType.Assembly.GetType("Lumyte.Graphics.Wgpu.WgpuQueue")!, Constructors, null, [owner], null)!;
+        var semaphore = (IGraphicsSemaphore)Activator.CreateInstance(deviceType.Assembly.GetType("Lumyte.Graphics.Wgpu.WgpuSemaphore")!, Constructors, null, [foreign], null)!;
+        Assert.Throws<ArgumentException>(() => queue.Submit(new QueueSubmitDesc { CommandBuffers = [], SignalSemaphores = [semaphore] }));
+        semaphore.Dispose();
+
+        // The wrappers are identities only: never dispose either uninitialized native device.
+    }
+
+    /// <summary>Rejected pending-map disposal must not publish a diagnostic release.</summary>
+    /// <param name="enabled">Whether diagnostics are enabled.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PendingMapDisposalDoesNotInvalidateBuffer(bool enabled)
+    {
+        var owner = (Lumyte.Graphics.Wgpu.WgpuDevice)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Lumyte.Graphics.Wgpu.WgpuDevice));
+        if (enabled)
+        {
+            owner.EnableValidation();
+        }
+
+        Type bufferType = owner.GetType().Assembly.GetType("Lumyte.Graphics.Wgpu.WgpuBuffer`1")!.MakeGenericType(typeof(uint));
+        object buffer = System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(bufferType);
+        bufferType.GetField("_owner", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(buffer, owner);
+        bufferType.GetField("_pending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(buffer, true);
+        Assert.Throws<InvalidOperationException>(() => ((IDisposable)buffer).Dispose());
+        owner.Validation?.Use(new object(), buffer);
     }
 
     private sealed class FakeDataSource : IShaderDataSource

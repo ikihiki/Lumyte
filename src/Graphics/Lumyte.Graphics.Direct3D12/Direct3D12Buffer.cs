@@ -119,6 +119,7 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
             throw new ArgumentException("Source exceeds the selected range.", nameof(source));
         }
 
+        Owner.Validation?.HostAccess(this, ResourceAccess.HostWrite, offset, (ulong)source.Length);
         source.CopyTo(new Span<byte>((byte*)_pointer + checked((int)offset), source.Length));
     }
 
@@ -131,6 +132,7 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
             throw new ArgumentException("Destination is smaller than the selected range.", nameof(destination));
         }
 
+        Owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         new ReadOnlySpan<byte>((byte*)_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
     }
 

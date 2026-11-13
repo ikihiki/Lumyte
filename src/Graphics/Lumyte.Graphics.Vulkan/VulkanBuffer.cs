@@ -176,12 +176,12 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             return;
         }
 
-        _owner.Validation?.Release(this);
-
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
         }
+
+        _owner.Validation?.Release(this);
 
         if (_mapped)
         {
@@ -202,6 +202,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostWrite, offset, (ulong)source.Length);
         source.CopyTo(new Span<byte>(_pointer + checked((int)offset), source.Length));
     }
 
@@ -214,6 +215,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         new ReadOnlySpan<byte>(_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
     }
 

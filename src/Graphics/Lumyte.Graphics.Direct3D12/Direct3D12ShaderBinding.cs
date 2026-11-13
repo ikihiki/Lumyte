@@ -8,7 +8,7 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 
     internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingSnapshot snapshot, ShaderTargetData target)
     {
-        byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, value => Direct3D12ShaderReferenceEncoding.Pack(owner, value));
+        byte[] root = ShaderDataLayout.PackRaw(snapshot.Root, value => Direct3D12ShaderReferenceEncoding.Pack(owner, value));
         Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));
         if (root.Length > 65536)
         {

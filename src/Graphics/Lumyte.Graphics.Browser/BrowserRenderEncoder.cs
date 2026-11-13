@@ -12,6 +12,8 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private RenderStateSnapshot? _state;
     private IndexFormat? _indexFormat;
     private ulong _indexCount;
+    private object? _indexBuffer;
+    private ulong _indexOffset;
     private bool _viewport;
     private bool _scissor;
     private bool _blend;
@@ -147,14 +149,17 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(false);
         BrowserInterop.Draw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
+        validationRecording?.Commit();
     }
 
     public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
         {
@@ -163,23 +168,32 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(true);
+        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), checked(_indexOffset + ((ulong)firstIndex * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul))), checked((ulong)indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         BrowserInterop.DrawIndexed(handle, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        validationRecording?.Commit();
     }
 
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         BrowserBuffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
+        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         BrowserInterop.DrawIndirect(handle, buffer.Native, arguments.OffsetInBytes, false);
+        validationRecording?.Commit();
     }
 
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         BrowserBuffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
+        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
+        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), _indexOffset, checked(_indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         BrowserInterop.DrawIndirect(handle, buffer.Native, arguments.OffsetInBytes, true);
+        validationRecording?.Commit();
     }
 
     public void End() => owner.EndRender(this, handle);
@@ -187,11 +201,18 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
         where T : unmanaged
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         BrowserBuffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
         BrowserInterop.SetIndexBuffer(handle, buffer.Native, (int)format, indices.OffsetInBytes, indices.SizeInBytes);
+        validationRecording?.Commit();
         _indexFormat = format;
         _indexCount = indices.Count;
+        if (owner.Owner.Validation != null)
+        {
+            _indexBuffer = buffer;
+            _indexOffset = indices.OffsetInBytes;
+        }
     }
 
     private BrowserBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -225,11 +246,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                foreach (IShaderReference reference in snapshot.References)
-                {
-                    ((IValidatedShaderReference)reference).ValidateRegistration();
-                    validation.Use(owner, reference.Resource);
-                }
+                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter));
             }
 
             bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter), owner.Owner.Caps);

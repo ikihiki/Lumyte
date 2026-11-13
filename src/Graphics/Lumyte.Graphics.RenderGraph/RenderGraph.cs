@@ -204,7 +204,7 @@ public sealed class RenderGraph : IDisposable
 
     /// <summary>Declares ordinary unmanaged shader storage through the existing raw graph buffer path.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
-    /// <param name="artifact">The artifact used only for Debug layout diagnostics.</param>
+    /// <param name="artifact">The artifact used only for explicitly enabled layout diagnostics.</param>
     /// <param name="count">The positive element count.</param>
     /// <param name="name">The optional diagnostic name.</param>
     /// <param name="usage">The permitted raw buffer usages.</param>
@@ -214,6 +214,10 @@ public sealed class RenderGraph : IDisposable
     {
         ArgumentNullException.ThrowIfNull(artifact);
         RequireDevice();
+        if (Device!.ValidationEnabled)
+        {
+            Lumyte.Graphics.Shared.ShaderDataLayout.ValidateUnmanaged<T>(artifact, Device!.Caps.ShaderTarget);
+        }
 
         return CreateBuffer<T>(new() { Count = count, Usage = usage }, name);
     }

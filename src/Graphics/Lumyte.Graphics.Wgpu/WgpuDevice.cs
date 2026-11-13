@@ -15,6 +15,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     private readonly object _requestGate = new();
     private readonly List<Func<bool>> _pendingRequests = [];
+    private bool _hasCreatedResources;
     private bool _disposed;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device, WgpuDeviceCreation creation)
@@ -75,6 +76,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
     public GraphicsValidation? Validation { get; private set; }
+
+    /// <inheritdoc />
+    public bool ValidationEnabled => Validation != null;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -171,7 +175,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         A.Surface native = _instance.CreateSurface(source);
         try
         {
-            return new WgpuSurface(this, native, _adapter);
+            var surface = new WgpuSurface(this, native, _adapter);
+            _hasCreatedResources = true;
+            return surface;
         }
         catch
         {
@@ -181,7 +187,15 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     }
 
     /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
-    public void EnableValidation() => Validation ??= new GraphicsValidation();
+    public void EnableValidation()
+    {
+        if (Validation == null && _hasCreatedResources)
+        {
+            throw new InvalidOperationException("Enable validation before creating device resources.");
+        }
+
+        Validation ??= new GraphicsValidation();
+    }
 
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
@@ -189,6 +203,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuGraphicsPipeline(this, desc);
+        _hasCreatedResources = true;
         Validation?.Register(program, this);
         return program;
     }
@@ -199,6 +214,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuComputePipeline(this, desc);
+        _hasCreatedResources = true;
         Validation?.Register(program, this);
         return program;
     }
@@ -208,6 +224,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new WgpuSemaphore(this);
+        _hasCreatedResources = true;
         Validation?.Register(semaphore, this);
         return semaphore;
     }
@@ -218,6 +235,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new WgpuCommandBuffer(this);
+        _hasCreatedResources = true;
         Validation?.Register(commands, this);
         return commands;
     }
@@ -273,6 +291,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new WgpuBuffer<T>(this, desc, layout, size);
+        _hasCreatedResources = true;
         Validation?.Register(buffer, this);
         return buffer;
     }
@@ -304,6 +323,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
+        _hasCreatedResources = true;
         Validation?.Register(buffer, this);
         return buffer;
     }
@@ -314,6 +334,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new WgpuTexture(this, desc);
+        Validation?.SetTextureState(texture, TextureState.Undefined);
+        _hasCreatedResources = true;
         Validation?.Register(texture, this);
         return texture;
     }
@@ -324,6 +346,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new WgpuSampler(this, desc);
+        _hasCreatedResources = true;
         Validation?.Register(sampler, this);
         return sampler;
     }
@@ -339,6 +362,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var table = new WgpuArgumentTable(this, desc);
+        _hasCreatedResources = true;
         Validation?.Register(table, this);
         return table;
     }
@@ -349,6 +373,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new WgpuShader(this, artifact);
+        _hasCreatedResources = true;
         Validation?.Register(shader, this);
         return shader;
     }

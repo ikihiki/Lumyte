@@ -19,7 +19,6 @@ public sealed class ShaderBindingData
     public ShaderBindingData(ShaderBindingSnapshot snapshot, ShaderTargetData target, DeviceCaps caps)
     {
         Snapshot = snapshot;
-        var rootLayout = ShaderDataLayout.Root(target, snapshot.Root.RootParameter);
         foreach (IShaderReference reference in snapshot.References)
         {
             object resource = reference.Resource;
@@ -47,7 +46,7 @@ public sealed class ShaderBindingData
             throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
         }
 
-        byte[] packedRoot = rootLayout.Pack(snapshot.Root, ReferenceBytes);
+        byte[] packedRoot = ShaderDataLayout.PackRaw(snapshot.Root, ReferenceBytes);
         Root = new byte[checked(((packedRoot.Length + 15) / 16) * 16)];
         packedRoot.CopyTo(Root, 0);
         uint capacity = snapshot.References.Count == 0 ? 0 : checked(snapshot.References.Max(r => r.Slot) + 1);

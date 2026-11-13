@@ -7,11 +7,12 @@ namespace Lumyte.Graphics.Shared;
 /// <summary>Reads and packs compiled shader structure layouts.</summary>
 public sealed partial class ShaderDataLayout : IShaderDataLayout
 {
-    private readonly Dictionary<string, ShaderMember> _members = [];
+    private readonly Dictionary<string, ShaderMember> _members = null!;
     private readonly JsonElement _referenceTargets;
 
     private ShaderDataLayout(JsonElement type, JsonElement metadata)
     {
+        _members = [];
         _referenceTargets = metadata.TryGetProperty("lumyteReferenceTargets", out JsonElement targets) ? targets.Clone() : default;
         Name = type.GetProperty("name").GetString()!;
         JsonElement storage = type.GetProperty("sizes").EnumerateArray().Single(s => s.GetProperty("kind").GetString() == "uniform");
@@ -58,7 +59,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     /// <param name="name">The shader data structure name.</param>
     /// <returns>The immutable layout shared by buffers using this artifact and target.</returns>
     public static ShaderDataLayout Data(ShaderArtifact artifact, ShaderTarget target, string name)
-        => _artifacts.GetValue(artifact, static _ => new()).Data(artifact, target, name);
+        => ArtifactTargets.Values.GetValue(artifact, static _ => new()).Data(artifact, target, name);
 
     /// <summary>Selects the shader stage declaring a root parameter.</summary>
     /// <param name="vertex">The vertex input.</param>
@@ -178,17 +179,11 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
         Data(artifact, target, name).ValidateTransfer(System.Runtime.CompilerServices.Unsafe.SizeOf<T>(), ShaderTransfer.Fields<T>(), name);
     }
 
-    /// <summary>Validates shader consistency in Debug and host-safe reference slot ranges in every configuration.</summary>
-    /// <param name="snapshot">The captured raw wire value.</param>
-    /// <param name="validateReferences">Whether Debug also diagnoses reference kind, element type and registered access.</param>
-    public void ValidateArguments(ShaderValueSnapshot snapshot, bool validateReferences = false)
+    /// <summary>Checks host-safe reference locations without loading shader reflection or diagnostic metadata.</summary>
+    /// <param name="snapshot">The C#-authoritative wire snapshot.</param>
+    public static void ValidateSnapshot(ShaderValueSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (validateReferences)
-        {
-            ValidateTransfer(snapshot.Data.Length, snapshot.DiagnosticFields?.Invoke() ?? snapshot.Fields, snapshot.ShaderTypeName);
-        }
-
         for (int index = 0; index < snapshot.Values.Count; index++)
         {
             ShaderValue value = snapshot.Values[index];
@@ -205,34 +200,16 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
                 throw new ArgumentException("Reference slot exceeds the C# wire value.", nameof(snapshot));
             }
         }
-
-        if (validateReferences && (snapshot.Values.Count != _members.Values.Count(member => member.Reference) || (snapshot.Values.Count != 0 && snapshot.ShaderTypeName != Name)))
-        {
-            throw new ArgumentException("Root type or resource count differs from the compiled schema.", nameof(snapshot));
-        }
-
-        if (!validateReferences)
-        {
-            return;
-        }
-
-        foreach (ShaderValue value in snapshot.Values)
-        {
-            ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
-            if (validateReferences && (member == null || !ReferenceMatches(value, member)))
-            {
-                throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(snapshot));
-            }
-        }
     }
 
-    /// <inheritdoc/>
-    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member);
-
-    /// <inheritdoc/>
-    public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
+    /// <summary>Packs C# wire bytes and reference fixups without reading shader schemas.</summary>
+    /// <param name="snapshot">The captured raw wire value.</param>
+    /// <param name="reference">The native reference encoder.</param>
+    /// <returns>An independent packed wire value.</returns>
+    public static byte[] PackRaw(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
     {
-        ValidateArguments(snapshot);
+        ArgumentNullException.ThrowIfNull(reference);
+        ValidateSnapshot(snapshot);
         byte[] result = snapshot.Data.ToArray();
         foreach (ShaderValue value in snapshot.Values)
         {
@@ -253,6 +230,46 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
         return result;
     }
+
+    /// <summary>Explicitly validates shader consistency and always checks host-safe reference slot ranges.</summary>
+    /// <param name="snapshot">The captured raw wire value.</param>
+    /// <param name="validateReferences">Whether to diagnose layout, reference kind, element type and registered access in any configuration.</param>
+    public void ValidateArguments(ShaderValueSnapshot snapshot, bool validateReferences = false)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (validateReferences)
+        {
+            ValidateTransfer(snapshot.Data.Length, snapshot.GetDiagnosticFields(), snapshot.ShaderTypeName);
+        }
+
+        ValidateSnapshot(snapshot);
+
+        if (validateReferences && (snapshot.Values.Count != _members.Values.Count(member => member.Reference) || (snapshot.Values.Count != 0 && snapshot.ShaderTypeName != Name)))
+        {
+            throw new ArgumentException("Root type or resource count differs from the compiled schema.", nameof(snapshot));
+        }
+
+        if (!validateReferences)
+        {
+            return;
+        }
+
+        foreach (ShaderValue value in snapshot.Values)
+        {
+            ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
+            if (member == null || !ReferenceMatches(value, member))
+            {
+                throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(snapshot));
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && ((_members == null && other._members == null) || (_members != null && other._members != null && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member)));
+
+    /// <inheritdoc/>
+    public byte[] Pack(ShaderValueSnapshot snapshot, Func<ShaderValue, byte[]> reference)
+        => PackRaw(snapshot, reference);
 
     private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
     {

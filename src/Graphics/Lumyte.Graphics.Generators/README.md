@@ -66,10 +66,12 @@ Generic/nested generator targets, managed structs, missing private unmanaged sto
 and missing or mistyped reference slots produce LUMG001 diagnostics. Handwritten
 implementations use the same bulk transfer contract.
 
-For ordinary structs, built-in backends diagnose named storage layouts in Debug using
-cached managed field reflection and managed-offset probes. These probes never choose
-or rewrite transferred bytes and are compiled out of Release. Where dynamic code is
-unavailable (e.g. Browser or Debug AOT), ordinary values still transfer directly;
-Debug diagnoses names and sizes but skips unavailable field-offset probes. The raw
-Release path has no field reflection or runtime code generation. Generated classes
-retain their AOT-safe static metadata path.
+For ordinary structs, built-in backends diagnose named storage layouts only after
+explicit per-device EnableValidation(), in both Debug and Release. Cached managed
+field reflection and offset probes never choose or rewrite transferred bytes.
+Where dynamic code is unavailable (Browser or AOT), names and sizes remain
+checkable while unavailable field offsets are skipped. Ordinary capture stores
+a type identity, not a diagnostic callback. Generated classes retain an unboxed
+metadata provider and initialize diagnostic field tables only when explicitly
+requested; packing never invokes the provider. The disabled path has no field
+reflection, diagnostic table initialization, or runtime code generation.

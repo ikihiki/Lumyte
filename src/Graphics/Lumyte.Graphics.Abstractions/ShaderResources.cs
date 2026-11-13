@@ -377,13 +377,7 @@ public class ShaderResources
     protected ShaderValueSnapshot ConstrainArguments(ShaderValueSnapshot arguments, IReadOnlyList<ShaderResources> candidates)
         => arguments with
         {
-            ExecutionReferenceValidation = references =>
-            {
-                if (!candidates.Any(candidate => references.All(candidate._reservation.ContainsReference)))
-                {
-                    throw new ArgumentException("A shader reference is outside the selected indivisible resource group.");
-                }
-            },
+            ExecutionAdmission = new ReferenceAdmission(candidates),
         };
 
     /// <summary>Connects a host's immutable collection boundary to every inherited registration path.</summary>
@@ -392,5 +386,16 @@ public class ShaderResources
     {
         ArgumentNullException.ThrowIfNull(validate);
         _reservation.AddCollectionGuard(validate);
+    }
+
+    private sealed class ReferenceAdmission(IReadOnlyList<ShaderResources> candidates) : IShaderReferenceAdmission
+    {
+        public void Admit(IReadOnlyCollection<IShaderReference> references)
+        {
+            if (!candidates.Any(candidate => references.All(candidate._reservation.ContainsReference)))
+            {
+                throw new ArgumentException("A shader reference is outside the selected indivisible resource group.");
+            }
+        }
     }
 }

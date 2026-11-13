@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource
+internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
     where T : IShaderData
 {
     private readonly ShaderValueSnapshot?[] _values;
@@ -29,6 +29,8 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         Count = count;
         _values = new ShaderValueSnapshot?[checked((int)count)];
     }
+
+    object IValidatedShaderDataStorage.ValidationStorage => Storage;
 
     public ulong Count { get; }
 
@@ -143,9 +145,11 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
             return;
         }
 
-        Owner.Validation?.Release(this);
+        Owner.Validation?.ValidateRelease(Storage);
+        Owner.Validation?.ValidateRelease(this);
 
         Storage.Dispose();
+        Owner.Validation?.Release(this);
         Array.Clear(_values);
         _disposed = true;
     }

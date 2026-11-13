@@ -90,7 +90,11 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             }
         }
 
-        Describe(wire, string.Empty, "0", fields, offsets, offsetNames);
+        // Diagnostic offsets and tables live in a separate lazy type. Only reference
+        // fixup offsets are initialized on the ordinary transfer path.
+        var diagnosticOffsets = new StringBuilder();
+        var diagnosticNames = new Dictionary<IFieldSymbol, string>(SymbolEqualityComparer.Default);
+        Describe(wire, string.Empty, "0", fields, diagnosticOffsets, diagnosticNames);
         foreach (ISymbol member in type.GetMembers().Where(m => !m.IsStatic))
         {
             ITypeSymbol? mt = member is IPropertySymbol p ? p.Type : member is IFieldSymbol f && !f.IsImplicitlyDeclared ? f.Type : null;
@@ -117,8 +121,11 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (isClass ? (type.IsRecord ? "record class " : "class ") : (type.IsRecord ? "record struct " : "struct ")) + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(name) + ";\n" : string.Empty) +
             "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferSize => global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + Full(wire) + ">();\n" +
-            offsets + "    private static readonly global::Lumyte.Graphics.Abstractions.ShaderTransferField[] __transferFields = [\n" + fields + "    ];\n" +
-            "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferFields => __transferFields;\n" +
+            offsets + "    private static class __TransferDiagnostics\n    {\n" +
+            "        static __TransferDiagnostics() { }\n" + diagnosticOffsets +
+            "        internal static readonly global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> Fields = global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderTransferField[] {\n" + fields + "        });\n    }\n" +
+            "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferFields => __TransferDiagnostics.Fields;\n" +
+            "    global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.GetTransferFields() => __TransferDiagnostics.Fields;\n" +
             "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n        writer.WriteBytes(in " + (isClass ? "this.@" + storage!.Name : "this") + ");\n" + refs + "    }\n" + properties + "}\n";
         output.AddSource("ShaderArguments_" + string.Concat(type.ToDisplayString().Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".g.cs", SourceText.From(source, Encoding.UTF8));
     }

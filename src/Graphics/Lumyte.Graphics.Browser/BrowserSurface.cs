@@ -13,6 +13,7 @@ internal sealed class BrowserSurface : IGraphicsSurface
     {
         _owner = owner;
         _native = BrowserInterop.CreateSurface(owner.Handle, context);
+        owner.Validation?.Register(this, owner);
     }
 
     internal BrowserDevice Owner => _owner;
@@ -47,6 +48,7 @@ internal sealed class BrowserSurface : IGraphicsSurface
             return;
         }
 
+        Owner.Validation?.Release(this);
         BrowserInterop.DestroySurface(_native);
         _native.Dispose();
         _disposed = true;

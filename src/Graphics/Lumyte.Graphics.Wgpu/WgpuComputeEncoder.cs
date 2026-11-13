@@ -81,6 +81,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
         if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
@@ -90,10 +91,12 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         PrepareDispatch();
         WGPU.wgpuComputePassEncoderDispatchWorkgroups(handle, groupCountX, groupCountY, groupCountZ);
+        validationRecording?.Commit();
     }
 
     public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
         {
@@ -102,7 +105,9 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         WgpuBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
+        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         WGPU.wgpuComputePassEncoderDispatchWorkgroupsIndirect(handle, buffer.Native.Handle, arguments.OffsetInBytes);
+        validationRecording?.Commit();
     }
 
     public void End() => owner.EndCompute(this, handle);
@@ -136,11 +141,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                foreach (IShaderReference reference in snapshot.References)
-                {
-                    ((IValidatedShaderReference)reference).ValidateRegistration();
-                    validation.Use(owner, reference.Resource);
-                }
+                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, PipelineStage.ComputeShader);
             }
 
             bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);

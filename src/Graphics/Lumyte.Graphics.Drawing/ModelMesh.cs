@@ -171,6 +171,10 @@ public sealed class ModelMesh : IDisposable
         where TIndex : unmanaged
     {
         ArgumentNullException.ThrowIfNull(device);
+        if (device.ValidationEnabled)
+        {
+            ModelVertex.ValidateShaderLayout(artifact, device.Caps.ShaderTarget);
+        }
 
         int vertexCount = vertexBytes.IsEmpty ? vertexData.Length : ModelVertex.AsVertices(vertexBytes.Span).Length;
         if (vertexCount == 0 || indexData.IsEmpty || indexData.Length % 3 != 0)

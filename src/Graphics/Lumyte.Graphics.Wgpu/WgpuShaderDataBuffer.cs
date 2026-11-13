@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource
+internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
     where T : IShaderData
 {
     private readonly ShaderValueSnapshot?[] _values;
@@ -29,6 +29,8 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         Count = count;
         _values = new ShaderValueSnapshot?[checked((int)count)];
     }
+
+    object IValidatedShaderDataStorage.ValidationStorage => Storage;
 
     public ulong Count { get; }
 
@@ -143,9 +145,11 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
             return;
         }
 
-        Owner.Validation?.Release(this);
+        Owner.Validation?.ValidateRelease(Storage);
+        Owner.Validation?.ValidateRelease(this);
 
         Storage.Dispose();
+        Owner.Validation?.Release(this);
         Array.Clear(_values);
         _disposed = true;
     }

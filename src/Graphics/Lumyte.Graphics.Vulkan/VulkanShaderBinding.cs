@@ -25,7 +25,7 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 
             byte[] PackReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(owner, value);
 
-            byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, PackReference);
+            byte[] root = ShaderDataLayout.PackRaw(snapshot.Root, PackReference);
 
             // Physical uint4 uniform lanes require complete 16-byte capacity, not a new C# stride.
             Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));

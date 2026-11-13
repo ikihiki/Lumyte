@@ -37,9 +37,13 @@ public sealed class UnmanagedShaderTransferTests
         var layout = new BufferLayout<PaddedValue>(32, 32, 4, 4);
         Assert.Equal(64UL, layout.GetSizeInBytes(2));
         Assert.Empty(snapshot.Fields);
-        IReadOnlyList<ShaderTransferField> fields = snapshot.DiagnosticFields!();
+        Assert.Null(snapshot.DiagnosticFields);
+        Assert.Null(snapshot.DiagnosticSource);
+        Assert.Equal(typeof(PaddedValue), snapshot.DiagnosticType);
+        IReadOnlyList<ShaderTransferField> fields = snapshot.GetDiagnosticFields();
         Assert.Contains(fields, field => field.Path == "Position" && field.Offset == 8 && field.Size == 12);
         Assert.Same(ShaderTransfer.Fields<PaddedValue>(), fields);
+        Assert.Same(ShaderTransfer.Fields(typeof(PaddedValue)), fields);
     }
 
     /// <summary>External System.Numerics types need neither registration nor generated implementations.</summary>

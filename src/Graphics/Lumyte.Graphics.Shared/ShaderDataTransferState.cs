@@ -7,10 +7,22 @@ public sealed class ShaderDataTransferState
 {
     private readonly Dictionary<(IShaderDataSource Source, ulong Element), ShaderValueSnapshot> _pending = [];
 
+    private GraphicsValidation? _diagnostics;
+    private object? _command;
     private List<(IShaderDataSource Source, ulong Index, ShaderValueSnapshot Value)>? _validation;
 
     /// <summary>Enables copy metadata revision checks for this command.</summary>
     public void EnableValidation() => _validation ??= [];
+
+    /// <summary>Associates optional ordered metadata diagnostics with a recording.</summary>
+    /// <param name="diagnostics">The enabled device tracker.</param>
+    /// <param name="command">The recording owner.</param>
+    public void ConfigureValidation(GraphicsValidation diagnostics, object command)
+    {
+        _diagnostics = diagnostics;
+        _command = command;
+        EnableValidation();
+    }
 
     /// <summary>Rejects changed source metadata before native submission.</summary>
     public void ValidateSubmit()
@@ -42,13 +54,15 @@ public sealed class ShaderDataTransferState
         for (ulong i = 0; i < count; i++)
         {
             values[checked((int)i)] = source.Read(checked(sourceOffset + i));
-            _validation?.Add((source, checked(sourceOffset + i), values[checked((int)i)]));
         }
 
         copy();
         for (ulong i = 0; i < count; i++)
         {
+            _validation?.Add((source, checked(sourceOffset + i), values[checked((int)i)]));
+            _diagnostics?.Metadata(_command!, source, checked(sourceOffset + i), values[checked((int)i)], false);
             _pending[(destination, checked(destinationOffset + i))] = values[checked((int)i)];
+            _diagnostics?.Metadata(_command!, destination, checked(destinationOffset + i), values[checked((int)i)], true);
         }
     }
 
@@ -60,10 +74,13 @@ public sealed class ShaderDataTransferState
     {
         if (_pending.TryGetValue((source, index), out ShaderValueSnapshot? value))
         {
+            _diagnostics?.Metadata(_command!, source, index, value, false);
             return value;
         }
 
-        return source.Read(index);
+        ShaderValueSnapshot snapshot = source.Read(index);
+        _diagnostics?.Metadata(_command!, source, index, snapshot, false);
+        return snapshot;
     }
 
     /// <summary>Publishes dependency metadata after native queue submission succeeds.</summary>

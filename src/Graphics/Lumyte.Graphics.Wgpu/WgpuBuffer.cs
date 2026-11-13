@@ -147,12 +147,12 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             return;
         }
 
-        _owner.Validation?.Release(this);
-
         if (_pending)
         {
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
         }
+
+        _owner.Validation?.Release(this);
 
         if (_mapped)
         {
@@ -174,6 +174,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostWrite, offset, (ulong)source.Length);
         source.CopyTo(GetMappedBytes().Slice(checked((int)offset), source.Length));
     }
 
@@ -186,6 +187,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         GetMappedBytes().Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
     }
 

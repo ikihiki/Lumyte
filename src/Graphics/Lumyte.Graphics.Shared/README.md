@@ -19,6 +19,10 @@ GPU同期とリソースの有効期間は利用者が管理します。この�
 
 `SurfaceFrameLifetime`は取得・提示の局所状態を扱い、ネイティブ取得・提示の明示的な完了待機を提供します。GPU submissionを自動収集せず、GPU使用の完了は利用者が別途確認します。semaphoreのsignal／wait履歴、使用中resourceの保持数、検証callbackは管理しません。
 
-共通の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)に従います。
+無効時の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を維持し、明示的な検証を許可する一部変更は[GRAPHICS-0035](../../../docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md)に記録します。
 
 参照fixupはC#オフセットと不透明な参照だけを保持します。Wgpu/Browserのstorage poolとremap laneはArgumentTable登録のShaderBufferAccessから決定し、BufferUsageやshaderの文字列パスから推定しません。同一範囲のread/write登録も別laneを使用します。シェーダーとの配置・参照種別の整合性は明示的に有効化する診断であり、Debug／Releaseとも既定無効です。binding分類には使いません。
+
+GraphicsValidationは、command記録をrollback可能な診断transactionとして保持し、Submit時にqueue状態の複製へアクセスを指定順で適用します。成功後だけ状態を公開するため、未提出・破棄・同期的に失敗したnative Submitは後続commandの状態を変えません。bufferはbyte範囲、textureはmip／layer別に追跡します。登録identity、親子、mapping、binary semaphoreとmetadata copyの順序も診断します。GPU内部の動的アクセスは登録範囲として保守的に扱い、直接のnative操作やstaging byte変更は観測できません。D3D12の部分発行済みnative操作や非同期GPU失敗を取り消す保証はありません。
+
+ShaderResourcesの不可分なresource groupへの所属確認は、有限のnative bindingを生成するための通常のadmission契約です。snapshotはgroupのmetadata objectを保持し、診断callbackを記録しません。これは任意の寿命・barrier・semaphore診断と分離して維持します。通常のcaptureも診断delegateを作らず、型identityまたは生成型の配置providerだけを保持します。

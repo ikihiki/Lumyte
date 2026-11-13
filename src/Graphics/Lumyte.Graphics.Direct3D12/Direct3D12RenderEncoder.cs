@@ -11,6 +11,8 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private RenderStateSnapshot? _state;
     private IndexFormat? _indexFormat;
     private ulong _indexCount;
+    private object? _indexBuffer;
+    private ulong _indexOffset;
     private bool _viewport;
     private bool _scissor;
     private bool _blend;
@@ -146,14 +148,17 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(false);
         NativeMethods.Draw(owner.Native, vertexCount, instanceCount, firstVertex, 0, firstInstance, 0);
+        validationRecording?.Commit();
     }
 
     public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
         {
@@ -162,23 +167,32 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(true);
+        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), checked(_indexOffset + ((ulong)firstIndex * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul))), checked((ulong)indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         NativeMethods.Draw(owner.Native, indexCount, instanceCount, firstIndex, baseVertex, firstInstance, 1);
+        validationRecording?.Commit();
     }
 
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
+        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         owner.Indirect(buffer.Native, arguments.OffsetInBytes, 0);
+        validationRecording?.Commit();
     }
 
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
+        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
+        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), _indexOffset, checked(_indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         owner.Indirect(buffer.Native, arguments.OffsetInBytes, 1);
+        validationRecording?.Commit();
     }
 
     public void End() => owner.EndRender(this);
@@ -186,11 +200,18 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
         where T : unmanaged
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
         NativeMethods.Indices(owner.Native, buffer.Native, indices.OffsetInBytes, checked((uint)indices.SizeInBytes), format == IndexFormat.Uint16 ? 57u : 42u);
+        validationRecording?.Commit();
         _indexFormat = format;
         _indexCount = indices.Count;
+        if (owner.Owner.Validation != null)
+        {
+            _indexBuffer = buffer;
+            _indexOffset = indices.OffsetInBytes;
+        }
     }
 
     private Direct3D12Buffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -224,11 +245,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                foreach (IShaderReference reference in snapshot.References)
-                {
-                    ((IValidatedShaderReference)reference).ValidateRegistration();
-                    validation.Use(owner, reference.Resource);
-                }
+                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.Root.RootParameter));
             }
 
             bindingSnapshot = snapshot;

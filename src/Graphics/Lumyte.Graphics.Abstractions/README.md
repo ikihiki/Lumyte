@@ -139,7 +139,7 @@ backendはbindingの収集時に、root引数とshader dataから間接的に辿
 同じresourceやslotを登録していても、別tableから発行された参照は使えません。
 tableを切り替えた後のdraw／dispatchにも現在のtableで検証を行います。値だけの引数にはtableは不要です。
 
-slotの置換・Release・table Dispose後の古い参照と派生要素は使用できません。その有効期間を利用者が管理し、登録世代やresourceの生存を走査して検証しません。登録・参照を使い終わってからbuffer／view／samplerを解放してください。tableを解放しても登録resource自体はDisposeしません。
+slotの置換・Release・table Dispose後の古い参照と派生要素は使用できません。既定ではその有効期間を利用者が管理します。backendの実deviceで子資源の作成前にEnableValidation()を明示すると、記録時とSubmit直前の登録identityとresourceの生存も診断します。登録・参照を使い終わってからbuffer／view／samplerを解放してください。tableを解放しても登録resource自体はDisposeしません。
 
 このAPIは登録と要素参照を提供します。IGpuRefをGPU dataへpackするserializerと、root参照から物理bindingを構築するshader／commandの接続はそのAPIで扱います。IGpuRefを含む論理structはunmanagedではないため、raw bufferのCopyFromへそのまま渡しません。登録はGPU copy・upload・bind group生成を行いません。
 
@@ -153,7 +153,7 @@ IGpuRef<uint> write = table.WriteBuffer(1, storage.SliceElements(0, 4), ShaderBu
 IGpuRef<uint> element = write.GetElement(2);
 ```
 
-この例のstorageはShaderReadとShaderWriteの両能力を持ちます。参照型はどちらも`IGpuRef<uint>`のままで、GetElementは元の登録を保持します。別スロットへの別アクセス登録は独立し、nativeの同時使用制約と寿命・同期責務は維持します。参照を含むShaderDataSliceは引き続き読み取り専用です。シェーダーとの種別・対象型の一致はDebugで診断し、Releaseの参照転送に文字列パスやシェーダーからのアクセス推定を使いません。
+この例のstorageはShaderReadとShaderWriteの両能力を持ちます。参照型はどちらも`IGpuRef<uint>`のままで、GetElementは元の登録を保持します。別スロットへの別アクセス登録は独立し、nativeの同時使用制約と寿命・同期責務は維持します。参照を含むShaderDataSliceは引き続き読み取り専用です。シェーダーとの種別・対象型の一致は明示的な検証でのみ診断し、通常の参照転送に文字列パスやシェーダーからのアクセス推定を使いません。
 
 ## シェーダー
 

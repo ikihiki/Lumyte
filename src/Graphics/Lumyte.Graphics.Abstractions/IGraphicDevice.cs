@@ -7,6 +7,9 @@ public interface IGraphicDevice
     /// <summary>Notifies loss once; subscribers must also check Status after subscribing.</summary>
     event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost;
 
+    /// <summary>Gets a value indicating whether explicit managed resource, synchronization and layout diagnostics are enabled; false by default.</summary>
+    bool ValidationEnabled => false;
+
     /// <summary>Gets the cached physical device state.</summary>
     GraphicsDeviceStatus Status { get; }
 

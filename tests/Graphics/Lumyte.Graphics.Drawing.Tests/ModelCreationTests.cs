@@ -37,6 +37,11 @@ public sealed class ModelCreationTests
         /// <inheritdoc/>
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
+            if (targetMethod?.Name == "get_ValidationEnabled")
+            {
+                return false;
+            }
+
             if (targetMethod?.Name == "get_Caps")
             {
                 return new DeviceCaps { ShaderTarget = ShaderTarget.Wgsl };

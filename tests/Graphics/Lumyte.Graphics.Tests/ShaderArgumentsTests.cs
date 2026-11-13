@@ -51,12 +51,12 @@ public sealed class ShaderArgumentsTests
         Assert.Equal("BindingCameraArguments", root.ShaderTypeName);
         Assert.Empty(root.Values);
         Assert.Empty(root.Fields);
-        Assert.Equal("ViewProjection", Assert.Single(root.DiagnosticFields!()).Path);
+        Assert.Equal("ViewProjection", Assert.Single(root.GetDiagnosticFields()).Path);
         Assert.Equal(64, root.Data.Length);
         Assert.Equal("BindingVector", element.ShaderTypeName);
         Assert.Empty(element.Values);
         Assert.Empty(element.Fields);
-        Assert.Equal("Value", Assert.Single(element.DiagnosticFields!()).Path);
+        Assert.Equal("Value", Assert.Single(element.GetDiagnosticFields()).Path);
         Assert.Equal(12, element.Data.Length);
     }
 
@@ -79,8 +79,8 @@ public sealed class ShaderArgumentsTests
         Assert.Equal(Unsafe.SizeOf<BulkNestedArguments>(), writer.Bytes);
         Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), snapshot.Data.ToArray());
         Assert.Empty(snapshot.Values);
-        Assert.Contains(snapshot.Fields, field => field.Path == "Nested.Position" && field.Offset == 4 && field.Size == 12);
-        Assert.Contains(snapshot.Fields, field => field.Path == "Transform" && field.Offset == 20 && field.Size == 64);
+        Assert.Contains(snapshot.GetDiagnosticFields(), field => field.Path == "Nested.Position" && field.Offset == 4 && field.Size == 12);
+        Assert.Contains(snapshot.GetDiagnosticFields(), field => field.Path == "Transform" && field.Offset == 20 && field.Size == 64);
     }
 
     /// <summary>Copies deliberately initialized C# padding rather than reconstructing numeric fields.</summary>
@@ -96,7 +96,7 @@ public sealed class ShaderArgumentsTests
 
         Assert.Equal(8, snapshot.Data.Length);
         Assert.Equal(new byte[] { 3, 0xA5, 0xA5, 0xA5, 0x40, 0x30, 0x20, 0x10 }, snapshot.Data.ToArray());
-        Assert.Equal(4, Assert.Single(snapshot.Fields, field => field.Path == "Value").Offset);
+        Assert.Equal(4, Assert.Single(snapshot.GetDiagnosticFields(), field => field.Path == "Value").Offset);
     }
 
     /// <summary>Private numeric storage forwards mutable properties without aliasing older snapshots.</summary>
@@ -125,11 +125,11 @@ public sealed class ShaderArgumentsTests
         Assert.Equal(68, before.Values[0].Offset);
         Assert.Equal(84, before.Data.Length);
         Assert.Equal(42u, value.Counter);
-        Assert.DoesNotContain(before.Fields, field => field.Path == nameof(value.Counter));
-        Assert.Contains(before.Fields, field => field.Path == "Number" && field.Offset == 0 && field.ValueType == typeof(uint));
-        Assert.Contains(before.Fields, field => field.Path == "Resource" && field.Offset == 68 && field.Size == 16 && field.IsReference);
+        Assert.DoesNotContain(before.GetDiagnosticFields(), field => field.Path == nameof(value.Counter));
+        Assert.Contains(before.GetDiagnosticFields(), field => field.Path == "Number" && field.Offset == 0 && field.ValueType == typeof(uint));
+        Assert.Contains(before.GetDiagnosticFields(), field => field.Path == "Resource" && field.Offset == 68 && field.Size == 16 && field.IsReference);
         Assert.Empty(typeof(MutableBulkArguments).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance));
-        Assert.DoesNotContain(before.Fields, field => field.Path.StartsWith("_data", StringComparison.Ordinal));
+        Assert.DoesNotContain(before.GetDiagnosticFields(), field => field.Path.StartsWith("_data", StringComparison.Ordinal));
     }
 
     private static void Write<T>(in T value, ref CountingWriter writer)

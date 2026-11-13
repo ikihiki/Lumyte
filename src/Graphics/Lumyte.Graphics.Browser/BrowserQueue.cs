@@ -13,7 +13,27 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        if (owner.Validation != null)
+        {
+            foreach (SemaphoreWaitDesc wait in desc.WaitSemaphores)
+            {
+                if (wait.Semaphore is not BrowserSemaphore semaphore || !ReferenceEquals(semaphore.Owner, owner))
+                {
+                    throw new ArgumentException("Validation: semaphore belongs to another device.");
+                }
+            }
+
+            foreach (IGraphicsSemaphore signal in desc.SignalSemaphores)
+            {
+                if (signal is not BrowserSemaphore semaphore || !ReferenceEquals(semaphore.Owner, owner))
+                {
+                    throw new ArgumentException("Validation: semaphore belongs to another device.");
+                }
+            }
+        }
+
         owner.Validation?.ValidateSemaphores(desc);
+        GraphicsValidation.SubmissionState? validationState = owner.Validation?.PrepareSubmission(desc);
         IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
         if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
@@ -39,6 +59,11 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
         }
 
         JSObject handle = BrowserInterop.SubmitCommands(owner.Handle, list);
+        if (validationState != null)
+        {
+            owner.Validation!.CommitSubmission(validationState);
+        }
+
         foreach (BrowserCommandBuffer command in commands)
         {
             command.MarkSubmitted();

@@ -14,10 +14,11 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
         owner.Validation?.ValidateSemaphores(desc);
-        var semaphores = new HashSet<Direct3D12Semaphore>();
+        GraphicsValidation.SubmissionState? validationState = owner.Validation?.PrepareSubmission(desc);
+        HashSet<Direct3D12Semaphore>? semaphores = owner.Validation == null ? null : [];
         Direct3D12Semaphore Own(IGraphicsSemaphore value)
         {
-            if (value is not Direct3D12Semaphore s || !ReferenceEquals(s.Owner, owner) || !semaphores.Add(s))
+            if (value is not Direct3D12Semaphore s || !ReferenceEquals(s.Owner, owner) || (semaphores != null && !semaphores.Add(s)))
             {
                 throw new ArgumentException("Each semaphore must be unique and belong to this device.");
             }
@@ -55,10 +56,10 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
 
         var commands = new Direct3D12CommandBuffer[desc.CommandBuffers.Count];
         nint[] handles = new nint[commands.Length];
-        var unique = new HashSet<Direct3D12CommandBuffer>();
+        HashSet<Direct3D12CommandBuffer>? unique = owner.Validation == null ? null : [];
         for (int i = 0; i < commands.Length; i++)
         {
-            if (desc.CommandBuffers[i] is not Direct3D12CommandBuffer command || !ReferenceEquals(command.Owner, owner) || !unique.Add(command))
+            if (desc.CommandBuffers[i] is not Direct3D12CommandBuffer command || !ReferenceEquals(command.Owner, owner) || (unique != null && !unique.Add(command)))
             {
                 throw new ArgumentException("Each command must be unique and belong to this device.", nameof(desc));
             }
@@ -90,6 +91,11 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
                 }
             }
 
+            if (validationState != null)
+            {
+                owner.Validation!.CommitSubmission(validationState);
+            }
+
             foreach (Direct3D12CommandBuffer command in commands)
             {
                 command.MarkSubmitted();
@@ -106,6 +112,12 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
         }
         catch
         {
+            if (owner.Validation != null && commands.Any(command => command.State == CommandBufferState.Submitted))
+            {
+                owner.RetainFailedSubmission(submission);
+                throw;
+            }
+
             foreach (Direct3D12CommandBuffer command in commands)
             {
                 if (command.State == CommandBufferState.Submitted)

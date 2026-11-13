@@ -12,8 +12,13 @@ public interface IShaderArguments
     /// <summary>Gets the C# wire size, independent of shader reflection and instances.</summary>
     static abstract int TransferSize { get; }
 
-    /// <summary>Gets C# field locations used only for layout diagnostics.</summary>
+    /// <summary>Gets C# field locations for explicit generic diagnostics; capture never calls or retains this getter.</summary>
     static virtual IReadOnlyList<ShaderTransferField> TransferFields => [];
+
+    /// <summary>Explicitly gets diagnostic field metadata for a reference-type provider.</summary>
+    /// <returns>The C# wire fields, or an empty list when no diagnostic provider is implemented.</returns>
+    /// <remarks>Capture retains reference-type providers without invoking this method. Value types use type-based diagnostics without boxing.</remarks>
+    IReadOnlyList<ShaderTransferField> GetTransferFields() => [];
 
     /// <summary>Copies one complete unmanaged wire value and records opaque reference fixups.</summary>
     /// <typeparam name="TWriter">The writer type, which can be a value type without boxing.</typeparam>
@@ -48,6 +53,10 @@ public interface IShaderArguments
             }
         }
 
-        return new(root, name, writer.Data, writer.Values?.AsReadOnly() ?? (IReadOnlyList<ShaderValue>)[], T.TransferFields);
+        return new(root, name, writer.Data, writer.Values?.AsReadOnly() ?? (IReadOnlyList<ShaderValue>)[], [])
+        {
+            DiagnosticType = typeof(T).IsValueType ? typeof(T) : null,
+            DiagnosticSource = typeof(T).IsValueType ? null : value,
+        };
     }
 }

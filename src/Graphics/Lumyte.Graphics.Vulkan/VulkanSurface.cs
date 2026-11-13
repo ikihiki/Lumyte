@@ -18,6 +18,8 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
         {
             throw new NotSupportedException("The device queue cannot present to this supplied surface.");
         }
+
+        owner.Validation?.Register(this, owner);
     }
 
     internal VulkanDevice Owner => _owner;
@@ -96,6 +98,7 @@ internal sealed unsafe class VulkanSurface : IGraphicsSurface
             return;
         }
 
+        Owner.Validation?.Release(this);
         _owner.Presentation.Surface.DestroySurface(_owner.NativeInstance, _native, null);
         _disposed = true;
     }

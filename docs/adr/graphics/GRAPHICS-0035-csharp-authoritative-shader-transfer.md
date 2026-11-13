@@ -4,8 +4,8 @@
 - 日付: 2026-11-13
 - 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`
 - 変更関係: 一部変更
-- 変更元: [GRAPHICS-0005](GRAPHICS-0005-argument-tables-and-gpu-references.md)の「登録API」と、[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)の「生成codecとbackendの接続」「MaterialData内のIGpuRefと明示的な転送」と、[GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)の型制約
-- 変更対象: 数値の転送表現、参照を含む型の宣言、転送サイズの基準、配置検証の実行構成、登録ごとのバッファアクセス選択
+- 変更元: [GRAPHICS-0005](GRAPHICS-0005-argument-tables-and-gpu-references.md)の「登録API」と、[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)の「生成codecとbackendの接続」「MaterialData内のIGpuRefと明示的な転送」と、[GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)の型制約と、[GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)の「取り除く処理」「維持する処理」
+- 変更対象: 数値の転送表現、参照を含む型の宣言、転送サイズの基準、配置検証の実行条件、登録ごとのバッファアクセス選択、任意の寿命・同期診断
 - 継続する判断: テーブルの明示選択、不透明な型付き参照、資源の所有権、明示転送・送信・完了待機
 - リソース検証方針の一部変更: [GRAPHICS-0014](GRAPHICS-0014-caller-managed-resource-validation.md)の「任意のvalidation modeへ移すAPIは追加しない」と検証追跡の除去を、明示的に有効化したdeviceに限って変更する。無効時の利用者責任、所有権、明示同期、ホスト範囲検査と必要なbinding metadataは継続する。
 - 明示的な操作を補助するAPI: [GRAPHICS-0023](GRAPHICS-0023-explicit-api-convenience.md)。
@@ -105,7 +105,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
 
 通常の数値データにはIShaderArgumentsもIShaderDataも不要である。`CreateShaderDataBufferのunmanagedオーバーロードは既存のIGraphicsBuffer<T>`を返し、`BufferSlice<T>`、`BufferBarrierDesc<T>`、CopyBuffer、WriteBufferとRenderGraphの通常のバッファ経路を使う。RenderGraph.CreateShaderDataBufferにもunmanagedオーバーロードを用意し、`RenderGraphBuffer<T>`を返す。`Lumyte.Resources.Graphicsでは既存のGraphicsBufferDefinition<T>`と生バッファのインポートをそのまま利用する。参照依存メタデータがないため、要素ごとの取得・符号化は行わず`ReadOnlySpan<T>`をそのままコピーする。既存のインターフェースを明示実装する数値型も互換経路として使用できる。IGpuRefを含む型はpartialクラスにする。数値データは1つの非公開unmanaged構造体に保持し、利用側には通常の読み書き可能なプロパティを提供する。.NET 10のpartialプロパティはジェネレーターで実装できる。利用者が定義する格納用構造体には、参照プロパティと同名の16バイトのShaderReferenceSlotフィールドも配置する。ジェネレーターは非公開の格納領域を一括コピーし、参照の識別情報とC#側のスロット位置を記録する。管理オブジェクト自体のメモリは転送しない。
 
-通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のクラスは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、任意の診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体では検証を明示的に有効にした場合に限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。無効時にはフィールド走査も実行時コード生成も実行しない。動的コード生成ができないBrowserやAOTでも、通常構造体を直接転送できる。その場合は名前とサイズを診断し、取得できないフィールドオフセットの診断だけを省略する。生成型の静的な配置情報はその環境でも使用する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
+通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のクラスは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、任意の診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体では検証を明示的に有効にした場合に限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。取得済みsnapshotは型またはinstanceの配置providerだけを保持し、通常の取得で診断delegateやfield tableを生成しない。生成型の診断情報も初めて明示的に要求したときだけ初期化する。無効時にはフィールド走査も実行時コード生成も実行しない。動的コード生成ができないBrowserやAOTでも、通常構造体を直接転送できる。その場合は名前とサイズを診断し、取得できないフィールドオフセットの診断だけを省略する。生成型の静的な配置情報はその環境でも使用する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
 
 旧フィールド単位のwriterと、リフレクションに従って数値を詰め直す処理は削除する。数値の書き込み操作はWriteBytesのみとし、Valuesには参照の差し替え情報だけを保持する。ShaderDataLayout.Packは取得済みのバイト列を複製し、C#側の各参照位置にある16バイトだけを差し替える。参照の種類は参照先リソースとArgumentTableの登録から解決する。シェーダーの名前やパスから実行時のアクセス種別を決めない。WriteReferenceはC#側のオフセットと不透明な参照だけを受け取る。
 
@@ -247,7 +247,7 @@ RenderGraphの同名オーバーロードも通常のバッファ型を返す。
 
 DebugとReleaseは同じ実行契約とし、検証は既定で無効にする。backendの実deviceを生成した直後、子資源を作る前にEnableValidation()を呼び出す場合だけ、有効期間・同期・配置の診断を追加する。D3D12のEnableDebugLayerは別のnative設定として維持する。
 
-変更は過去のGRAPHICS-0014の任意モードを追加しない判断と追跡の除去だけに限定する。生存期間と同期を利用者が明示管理する契約は継続する。無効時は診断trackerを生成せず、診断callbackの記録、状態表の走査、配置診断のためのリフレクションを行わない。ホストspanの範囲・overflow・参照ABI長・native失敗の処理と、実際のbinding生成に必要なmetadataは保持する。
+変更は過去のGRAPHICS-0014の任意モードを追加しない判断と追跡の除去だけに限定する。生存期間と同期を利用者が明示管理する契約は継続する。子資源の作成後に初めてEnableValidation()を呼ぶとInvalidOperationExceptionとなる。無効時はresource作成済みのboolだけをdeviceに保持し、診断trackerを生成せず、診断callbackの記録、状態表の走査、配置診断のためのリフレクションを行わない。ホストspanの範囲・overflow・参照ABI長・native失敗の処理と、実際のbinding生成に必要なmetadataは保持する。HasRootなどの必要なbinding探索とschema診断のcacheを分離し、無効時にroot／dataの診断dictionaryも生成しない。
 
 変更前はdevice生成後に構成による暗黙の検査を受けた。変更後は次のように指定する。
 
@@ -271,11 +271,26 @@ device.EnableValidation(); // 診断が必要な場合だけ、子資源を作�
  }
 ```
 
-WgpuDevice、BrowserDevice、Direct3D12Deviceも同じメンバーを追加する。
+WgpuDevice、BrowserDevice、Direct3D12Deviceも同じメンバーを追加する。上位のModelMeshとRenderGraphも同じdeviceの明示指定に従い、配置診断を暗黙に再有効化しない。
 
-検出対象は登録identity、記録／in-flight resource、親子、mapping、command内copy buffer scope、既知のtexture subresource Before状態、binary semaphore、copy source metadataのsnapshot identityである。最初のtexture Beforeは利用者の宣言として受け入れ、commandをまたぐtexture状態とbuffer範囲別hazard、全presentation経路は保証しない。
+```diff
+ namespace Lumyte.Graphics.Abstractions;
+ public interface IGraphicDevice
+ {
++    // 任意検証の状態。第三者backendでは既定false。
++    bool ValidationEnabled => false;
+ }
+```
 
-診断はCPUから観測できる明示操作を対象とし、GPU内の動的index、shader内部の実アクセス、native外部操作を完全には観測できない。検証を有効にしたdeviceの操作は外部で直列化する。
+検出対象は登録identity、記録中／提出済みresourceの寿命、device・surface・swapchain・frame・texture・viewとshader・pipelineの関係、CPU mappingとGPU使用の競合である。draw／dispatchの参照を記録時に保持し、Submit直前にも登録identityを照合する。登録の置換・Releaseが記録後に起きた場合もnative Submit前に拒否する。
+
+bufferはbyte範囲、textureはmip／layer単位でcopy、shader、index、indirect、attachmentのアクセスとbarrierのBefore／After scopeを照合する。textureの初期状態は生成・外部取得の契約から確立し、提出が成功した状態を後続commandに引き継ぐ。複数commandをまとめて提出する場合も指定順で照合する。barrierが覆わない範囲やstageのアクセスは残し、shader内部の動的indexは登録範囲として保守的に扱う。
+
+検証の記録は操作ごとにtransactionとし、native記録まで到達しなかった操作の依存を残さない。Submitの事前照合はqueue状態の複製で行い、同期的なnative失敗では公開しない。D3D12のようにwait・execute・signalを別々に発行する経路は、既に成功したnative操作を取り消せない。部分的に発行済みの依存は保持し、実際の完了またはnative device removalを確認するまで解放を許可しない。
+
+binary semaphoreはAcquire、queue Submit、Presentで同じsignal／wait履歴を使う。成功したnative操作だけを公開し、native fenceまたはbackendの明示的な完了境界まで使用中状態を保持する。取得画像の使用はacquire完了または適切なstageのacquire semaphore待機を必要とし、in-flight画像のPresentには生成元submissionのsemaphoreまたは観測済みのGPU完了を必要とする。キャンセルされた待機や早期Disposeは完了の代わりにならない。copy metadataもcommand内の順序とSubmit時のsource snapshot identityを照合し、成功した明示copyだけを後続へ公開する。
+
+診断はCPUから観測できる明示操作を対象とし、GPU内の動的index、shader内部の実アクセス、直接変更したstaging byte、native外部操作を完全には観測できない。WebGPUの非同期nativeエラーとdevice lossは実行結果として伝達し、GPU上で既に実行した操作の状態を巻き戻したとは扱わない。native実行失敗後はqueue状態を不明として再提出を拒否し、deviceの再生成を必要とする。検証を有効にしたdeviceの操作は外部で直列化する。
 
 ### 参照ABI
 

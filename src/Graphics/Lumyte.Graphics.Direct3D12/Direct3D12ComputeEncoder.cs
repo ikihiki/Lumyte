@@ -80,6 +80,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
 
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
         if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
@@ -89,10 +90,12 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
 
         PrepareDispatch();
         NativeMethods.Dispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
+        validationRecording?.Commit();
     }
 
     public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
     {
+        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
         {
@@ -101,7 +104,9 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
 
         Direct3D12Buffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
+        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         owner.Indirect(buffer.Native, arguments.OffsetInBytes, 2);
+        validationRecording?.Commit();
     }
 
     public void End() => owner.EndCompute(this);
@@ -126,11 +131,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
             var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                foreach (IShaderReference reference in snapshot.References)
-                {
-                    ((IValidatedShaderReference)reference).ValidateRegistration();
-                    validation.Use(owner, reference.Resource);
-                }
+                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, PipelineStage.ComputeShader);
             }
 
             bindingSnapshot = snapshot;

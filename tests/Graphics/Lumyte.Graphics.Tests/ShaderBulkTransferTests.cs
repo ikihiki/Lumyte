@@ -43,7 +43,7 @@ public sealed class ShaderBulkTransferTests
         Assert.Equal(0, Assert.Single(copy.Fields).Offset);
     }
 
-    /// <summary>All numeric schema mismatches are diagnostics only in Release.</summary>
+    /// <summary>All numeric schema mismatches require explicitly enabled diagnostics in either configuration.</summary>
     /// <param name="mismatch">The mismatching schema component.</param>
     [Theory]
     [InlineData("name")]
@@ -96,7 +96,7 @@ public sealed class ShaderBulkTransferTests
         Assert.Equal(Enumerable.Range(0, 24).Select(index => (byte)index).ToArray(), snapshot.Data.ToArray());
     }
 
-    /// <summary>Reference fixups use the C# offset even when Release shader metadata disagrees.</summary>
+    /// <summary>Reference fixups use the C# offset when optional shader diagnostics are disabled.</summary>
     [Fact]
     public void ReferenceOffsetMismatchIsOptIn()
     {
@@ -135,7 +135,7 @@ public sealed class ShaderBulkTransferTests
         Assert.Equal(12, ShaderDataLayout.Data<PaddedUnconstructibleData>(artifact, ShaderTarget.Wgsl).Size);
     }
 
-    /// <summary>Malformed offsets never reach backend encoders, even in Release.</summary>
+    /// <summary>Malformed offsets never reach backend encoders, in every configuration.</summary>
     /// <param name="offset">The invalid C# reference slot location.</param>
     [Theory]
     [InlineData(-1)]
@@ -154,7 +154,7 @@ public sealed class ShaderBulkTransferTests
         Assert.False(encoded);
     }
 
-    /// <summary>The common reference ABI cannot be shortened or enlarged in Release.</summary>
+    /// <summary>The common reference ABI cannot be shortened or enlarged in any configuration.</summary>
     /// <param name="length">The invalid encoded ABI size.</param>
     [Theory]
     [InlineData(15)]
@@ -166,7 +166,7 @@ public sealed class ShaderBulkTransferTests
         Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, _ => new byte[length]));
     }
 
-    /// <summary>Plain struct diagnostics use managed offsets, but Release never rearranges bytes.</summary>
+    /// <summary>Plain struct diagnostics use managed offsets, while raw packing never rearranges bytes.</summary>
     [Fact]
     public void OrdinaryStructLayoutMismatchIsOptIn()
     {

@@ -76,6 +76,11 @@ internal sealed class Direct3D12Submission(Direct3D12Device owner, Direct3D12Com
                 return;
             }
 
+            if (owner.Validation != null && Status == SubmissionStatus.Pending)
+            {
+                throw new InvalidOperationException("Validation: wait for actual submission completion before disposal.");
+            }
+
             NativeMethods.Release(fence);
             _status = SubmissionStatus.Disposed;
         }
