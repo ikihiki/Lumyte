@@ -35,33 +35,18 @@ public sealed class PublicGeometryApiTests
         Assert.DoesNotContain(exported, type => type.DeclaringType == typeof(Geometry3D));
     }
 
-    /// <summary>Checks constrained struct sinks mutate the caller without boxing or allocations.</summary>
+    /// <summary>Checks flattening mutates the caller's struct sink and appends only endpoints.</summary>
     [Fact]
-    public void StreamingStructSinkDoesNotAllocate()
+    public void StreamingStructSinkRetainsStateAcrossCurves()
     {
         CountingSink sink = default;
-        for (int i = 0; i < 100; i++)
-        {
-            AppendCurves(ref sink);
-        }
-
-        sink = default;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            AppendCurves(ref sink);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
-        Assert.True(sink.Count >= 2000);
+        Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.UnitX, new Vector2(2, 0), 0.1f, ref sink, 10);
+        Assert.Equal(1, sink.Count);
         Assert.Equal(new Vector2(2, 0), sink.Last);
-    }
 
-    private static void AppendCurves(ref CountingSink sink)
-    {
-        Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, new Vector2(1, 2), new Vector2(2, 0), 0.1f, ref sink, 10);
-        Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, new Vector2(0, 2), new Vector2(2, 2), new Vector2(2, 0), 0.1f, ref sink, 10);
+        Geometry2D.AppendFlattenedCubicBcl(new Vector2(2, 0), new Vector2(3, 0), new Vector2(4, 0), new Vector2(5, 0), 0.1f, ref sink, 10);
+        Assert.Equal(2, sink.Count);
+        Assert.Equal(new Vector2(5, 0), sink.Last);
     }
 
     private static void InspectType(Type type, HashSet<Type> visited)

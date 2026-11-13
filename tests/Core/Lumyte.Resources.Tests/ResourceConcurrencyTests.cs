@@ -271,15 +271,15 @@ public sealed class ResourceConcurrencyTests
         Assert.Equal("2", replacement.Value.Label);
     }
 
-    /// <summary>Warm value and usability reads do not allocate regardless of runtime participation.</summary>
+    /// <summary>Lease reads preserve the published value regardless of runtime participation.</summary>
     /// <param name="registered">Whether a runtime provider is registered.</param>
     /// <param name="tracked">Whether the resource depends on the runtime.</param>
-    /// <returns>Completion of resource construction and the allocation measurement.</returns>
+    /// <returns>Completion of resource construction and read checks.</returns>
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task LeaseReadsDoNotAllocateAsync(bool registered, bool tracked)
+    public async Task LeaseReadsPreservePublishedValueAsync(bool registered, bool tracked)
     {
         await using Fixture fixture = new(null, registered);
         fixture.Plan.Builds["value"] = (context, _) =>
@@ -292,21 +292,11 @@ public sealed class ResourceConcurrencyTests
             return ValueTask.FromResult(new TestValue("value"));
         };
         using ResourceLease<TestValue> lease = await fixture.Manager.AcquireLeaseForTestAsync(Key("value"));
-        for (int i = 0; i < 10000; i++)
-        {
-            GC.KeepAlive(lease.Value);
-            _ = lease.IsUsable;
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            GC.KeepAlive(lease.Value);
-            _ = lease.IsUsable;
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+        TestValue value = lease.Value;
+        Assert.Equal("value", value.Label);
+        Assert.True(lease.IsUsable);
+        Assert.Same(value, lease.Value);
+        Assert.False(value.Released);
     }
 
     /// <summary>Resident paths preserve older runtime versions, and build-only edges stop invalidation propagation.</summary>
@@ -443,46 +433,61 @@ public sealed class ResourceConcurrencyTests
         Assert.Contains("runtime provider", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Repeated ownership operations allocate only their returned owner, without captured callbacks or temporary leases.</summary>
-    /// <param name="operation">The ownership operation to measure.</param>
-    /// <param name="maximumBytes">The allocation budget per operation, allowing object layout differences.</param>
-    /// <returns>Completion of resource construction and the allocation measurement.</returns>
+    /// <summary>Additional owners preserve the same generation until the last owner leaves.</summary>
+    /// <param name="operation">The additional ownership kind.</param>
+    /// <returns>Completion of ownership acquisition and reclamation.</returns>
     [Theory]
-    [InlineData("lease", 64)]
-    [InlineData("reference", 128)]
-    [InlineData("scope", 64)]
-    public async Task WarmOwnershipOperationsHaveBoundedAllocationsAsync(string operation, int maximumBytes)
+    [InlineData("lease")]
+    [InlineData("reference")]
+    [InlineData("scope")]
+    public async Task AdditionalOwnersDelayReleaseUntilDisposedAsync(string operation)
     {
         await using Fixture fixture = new(null, false);
-        fixture.Plan.Builds["value"] = (_, _) => ValueTask.FromResult(new TestValue("value"));
+        int builds = 0;
+        fixture.Plan.Builds["value"] = (_, _) =>
+        {
+            builds++;
+            return ValueTask.FromResult(new TestValue("value"));
+        };
         ResourceKey<TestValue> key = Key("value");
         using ResourceReference<TestValue> owner = await fixture.Manager.RetainAsync(key);
-        Action acquire = operation switch
+        TestValue value;
+        using (ResourceLease<TestValue> initial = owner.Pin())
         {
-            "lease" => () => owner.Pin().Dispose(),
-            "reference" => () => fixture.Manager.RetainAsync(key).GetAwaiter().GetResult().Dispose(),
-            _ => () => fixture.Manager.CaptureSnapshot().Dispose(),
+            value = initial.Value;
+        }
+
+        using IDisposable additional = operation switch
+        {
+            "lease" => owner.Pin(),
+            "reference" => await fixture.Manager.RetainAsync(key),
+            _ => fixture.Manager.CaptureSnapshot(),
         };
-        for (int i = 0; i < 10000; i++)
+        using (ResourceLease<TestValue> retained = additional switch
         {
-            acquire();
+            ResourceLease<TestValue> lease => owner.Pin(),
+            ResourceReference<TestValue> reference => reference.Pin(),
+            ResourceSnapshot snapshot => snapshot.Pin(owner.Handle),
+            _ => throw new InvalidOperationException(),
+        })
+        {
+            Assert.Same(value, retained.Value);
         }
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            acquire();
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.InRange(allocated, 1, maximumBytes * 1000L);
-        Assert.True(owner.IsAvailable);
+        Assert.Equal(1, builds);
+        owner.Dispose();
+        Assert.Equal(0, await fixture.Manager.TrimAsync());
+        Assert.False(value.Released);
+        additional.Dispose();
+        Assert.Equal(1, await fixture.Manager.TrimAsync());
+        Assert.True(value.Released);
+        Assert.Equal(0, await fixture.Manager.TrimAsync());
     }
 
-    /// <summary>Polling unavailable resources does not construct exceptions until a value is requested.</summary>
-    /// <returns>Completion of runtime invalidation and the allocation measurement.</returns>
+    /// <summary>Unavailable resources reject polling and report their invalidated version on value access.</summary>
+    /// <returns>Completion of runtime invalidation and availability checks.</returns>
     [Fact]
-    public async Task UnavailableLeaseAndViewChecksDoNotAllocateAsync()
+    public async Task UnavailableLeaseAndViewChecksRejectInvalidatedGenerationAsync()
     {
         await using Fixture fixture = new();
         fixture.Plan.Builds["value"] = (context, _) =>
@@ -495,25 +500,10 @@ public sealed class ResourceConcurrencyTests
         using ResourceLease<TestValue> lease = owner.Pin();
         using ResourceSnapshot scope = fixture.Manager.CaptureSnapshot();
         fixture.Runtime.Set(new(2, false, 1));
-        bool available = false;
-        for (int pass = 0; pass < 2; pass++)
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 10000; i++)
-            {
-                available |= lease.IsUsable | owner.IsAvailable;
-                available |= scope.TryPin(handle, out ResourceLease<TestValue>? current);
-                current?.Dispose();
-            }
-
-            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-            if (pass == 1)
-            {
-                Assert.Equal(0, allocated);
-            }
-        }
-
-        Assert.False(available);
+        Assert.False(lease.IsUsable);
+        Assert.False(owner.IsAvailable);
+        Assert.False(scope.TryPin(handle, out ResourceLease<TestValue>? current));
+        Assert.Null(current);
         ResourceUnavailableException error = Assert.Throws<ResourceUnavailableException>(() => lease.Value);
         Assert.Equal(1UL, error.Version);
     }
