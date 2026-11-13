@@ -16,10 +16,28 @@ internal static class Program
         var cyan = Rgba<double>.FromHsvSrgbDegrees(180m, 1m, 1m, 1m);
         Require(cyan == new Rgba<double>(0, 1, 1, 1), "Exact HSV color factory");
         byte[] pixel = new byte[4];
-        cyan.WritePixel(pixel, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
-        var decodedPixels = new Rgba<double>[1];
-        Lumyte.Mathematics.Colors.Color.DecodePixels<double>(pixel, decodedPixels, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
-        Require(decodedPixels[0] == cyan, "Batch pixel API");
+        Bgra<double>.FromRgba(cyan).WritePixel(pixel, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        var decodedPixels = new Bgra<double>[1];
+        Lumyte.Mathematics.Colors.Color.DecodePixels<Bgra<double>>(pixel, decodedPixels, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        Require(decodedPixels[0].ToRgba() == cyan, "Typed batch pixel API");
+        var grayCodes = new Gray<byte>(128);
+        Require(grayCodes.ToRgba((byte)255) == new Rgba<byte>(128, 128, 128, 255), "Explicit opaque raw alpha");
+        Require(grayCodes.NormalizeUnorm<double>(255) == new Rgba<double>(128d / 255, 128d / 255, 128d / 255, 1), "Gray byte normalization");
+        Require(new Gray<double>(0.5).ToRgba(1) == new Rgba<double>(0.5, 0.5, 0.5, 1), "Gray double explicit alpha");
+        Require(new GrayAlpha<decimal>(0.25m, 0.5m).ToRgba() == new Rgba<decimal>(0.25m, 0.25m, 0.25m, 0.5m), "Gray alpha components");
+        Require(new Rgb<int>(1, 2, 3).ToRgba(255).A == 255, "RGB does not guess opaque code");
+        var packed = Rgb565.FromNormalized(cyan);
+        Require(packed.ToNormalized<double>() == cyan, "Concrete RGB565 value");
+        byte[] packedBytes = new byte[2];
+        Lumyte.Mathematics.Colors.Color.WritePackedPixels<Rgb565>(new[] { packed }, packedBytes, ColorByteOrder.BigEndian);
+        var packedCopy = new Rgb565[1];
+        Lumyte.Mathematics.Colors.Color.ReadPackedPixels<Rgb565>(packedBytes, packedCopy, ColorByteOrder.BigEndian);
+        Require(packedCopy[0] == packed, "Typed packed batch");
+        Require(new Hsla<decimal>(180, 1, 0.5m, 1).ToRgba<double>() == cyan, "HSLA value");
+        Require(new Hsva<decimal>(180, 1, 1, 1).ToRgba<double>() == cyan, "HSVA value");
+        var managedGray = new Gray<ManagedDecimal>(new(128));
+        Require(System.Runtime.CompilerServices.RuntimeHelpers.IsReferenceOrContainsReferences<Gray<ManagedDecimal>>(), "Reference-containing custom layout");
+        Require(managedGray.NormalizeUnorm<decimal>(new(255)).R == 128m / 255, "Custom INumber exact normalization");
         var colorMaximum = BigInteger.Pow(10, 400);
         Require(new Rgba<BigInteger>(0, colorMaximum, 0, colorMaximum).NormalizeUnorm<float>(colorMaximum).G == 1, "Huge exact UNORM maximum");
 
@@ -70,7 +88,7 @@ internal static class Program
         Require(closest == new Point3D<double>(1, 0, 0), "3D explicit-result projection");
         AxisAlignedBox3D<int> bounds = Geometry3D.GetBounds<int>(new[] { origin, endpoint });
         Require(bounds.Contains(new Point3D<int>(1, 2, 3)), "3D closed bounds reduction");
-        Console.WriteLine("Public geometry consumer: all assertions passed (int, decimal, BigInteger 10^400, streaming, spans, BCL/FMA, 3D).");
+        Console.WriteLine("Public mathematics consumer: all assertions passed (typed color layouts, packed words, HSL/HSV, custom numbers; geometry, spans, BCL/FMA, 3D).");
     }
 
     private static void CheckPolygon<T>(T size)

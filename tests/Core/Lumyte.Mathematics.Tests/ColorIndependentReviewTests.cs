@@ -33,10 +33,10 @@ public sealed class ColorIndependentReviewTests
     /// <param name="format">The IEEE storage format.</param>
     /// <param name="width">Bytes per component.</param>
     [Theory]
-    [InlineData(ColorPixelFormat.Rgba16Float, 2)]
-    [InlineData(ColorPixelFormat.Rgba32Float, 4)]
-    [InlineData(ColorPixelFormat.Rgba64Float, 8)]
-    public void FloatPixelDecodePreservesNegativeZero(ColorPixelFormat format, int width)
+    [InlineData(ColorComponentEncoding.Float16, 2)]
+    [InlineData(ColorComponentEncoding.Float32, 4)]
+    [InlineData(ColorComponentEncoding.Float64, 8)]
+    public void FloatPixelDecodePreservesNegativeZero(ColorComponentEncoding format, int width)
     {
         byte[] bytes = new byte[4 * width];
         bytes[width - 1] = 0x80;
@@ -81,10 +81,10 @@ public sealed class ColorIndependentReviewTests
     public void SignedQuantizationIsSymmetricAndAtomic()
     {
         byte[] output = [0xAB, 0xAB, 0xAB, 0xAB, 0xAB];
-        new Rgba<decimal>(-0.5m, 0.5m, -1m, 1m).WritePixel(output, ColorPixelFormat.Rgba8Snorm, ColorByteOrder.LittleEndian);
+        new Rgba<decimal>(-0.5m, 0.5m, -1m, 1m).WritePixel(output, ColorComponentEncoding.Snorm8, ColorByteOrder.LittleEndian);
         Assert.Equal(new byte[] { 192, 64, 129, 127, 0xAB }, output);
         byte[] before = (byte[])output.Clone();
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Rgba<double>(1, 2, double.MaxValue, 1).WritePixel(output.AsSpan(0, 4), ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Rgba<double>(1, 2, double.MaxValue, 1).WritePixel(output.AsSpan(0, 4), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
         Assert.Equal(before, output);
     }
 
@@ -92,13 +92,13 @@ public sealed class ColorIndependentReviewTests
     {
         ref byte first = ref Unsafe.As<Rgba<BigInteger>, byte>(ref pixels[0]);
         Span<byte> bytes = MemoryMarshal.CreateSpan(ref Unsafe.Add(ref first, offset), 8);
-        Color.WritePixels<BigInteger>(pixels, bytes, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        Color.WritePixels<Rgba<BigInteger>>(pixels, bytes, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
     }
 
     private static void DecodeAliased(Rgba<BigInteger>[] pixels, int offset)
     {
         ref byte first = ref Unsafe.As<Rgba<BigInteger>, byte>(ref pixels[0]);
         ReadOnlySpan<byte> bytes = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref first, offset), 8);
-        Color.DecodePixels<BigInteger>(bytes, pixels, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        Color.DecodePixels<Rgba<BigInteger>>(bytes, pixels, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
     }
 }

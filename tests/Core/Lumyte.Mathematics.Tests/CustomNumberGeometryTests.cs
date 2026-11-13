@@ -189,6 +189,17 @@ public sealed class CustomNumberGeometryTests
     public void ColorsSupportManagedCustomNumbers()
     {
         Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<Rgba<ManagedDecimal>>());
+        Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<Gray<ManagedDecimal>>());
+        var gray = new Gray<ManagedDecimal>(N(128));
+        Assert.Equal(new Rgba<decimal>(128m / 255, 128m / 255, 128m / 255, 1), gray.NormalizeUnorm<decimal>(N(255)));
+        Assert.Equal(N(255), gray.ToRgba(N(255)).A);
+        var rgba = new Rgba<ManagedDecimal>(N(0), N(1), N(0), N(1));
+        var bgra = Bgra<ManagedDecimal>.FromRgba(rgba);
+        byte[] encoded = new byte[4];
+        Lumyte.Mathematics.Colors.Color.WritePixels<Bgra<ManagedDecimal>>(new[] { bgra }, encoded, ColorComponentEncoding.Unorm8, ColorByteOrder.BigEndian);
+        var decoded = new Bgra<ManagedDecimal>[1];
+        Lumyte.Mathematics.Colors.Color.DecodePixels<Bgra<ManagedDecimal>>(encoded, decoded, ColorComponentEncoding.Unorm8, ColorByteOrder.BigEndian);
+        Assert.Equal(bgra, decoded[0]);
         var codes = Rgba<ManagedDecimal>.FromRgba8Codes(1, 2, 3, 4);
         Assert.Equal(new Rgba<decimal>(0.25m, 0.5m, 0.75m, 1), codes.NormalizeUnorm<decimal>(N(4)));
         Assert.Equal(new Rgba<int>(1, 2, 3, 4), codes.NormalizeUnorm<ManagedDecimal>(N(4)).QuantizeUnorm(4));

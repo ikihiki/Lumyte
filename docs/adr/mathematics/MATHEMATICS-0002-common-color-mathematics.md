@@ -14,7 +14,7 @@
 
 ## 決定
 
-既存パッケージ `Lumyte.Mathematics` の `Lumyte.Mathematics.Colors` に、数値成分を保持する `Rgba<T>` を追加し、一色の構築・成分変換・合成・補間をその static factory と instance method に置く。`Color` は複数画素の span 操作と既存 UI の raw 互換処理だけを担当する。色空間・alpha・量子化の意味はメソッド名と引数で明示し、実装の精度別・SIMD 別の分割は公開クラスとして露出しない。
+既存パッケージ `Lumyte.Mathematics` の `Lumyte.Mathematics.Colors` に、成分配置を表す `Gray<T>`・`Rgb<T>`・`Rgba<T>` などと packed・HSL/HSV の値型を追加する。一色の構築・配置変換は各型に置き、transfer・alpha・合成・補間の共通演算は `Rgba<T>` の static factory と instance method に集約する。`Color` は複数画素の span 操作と既存 UI の raw 互換処理だけを担当する。色空間・alpha・量子化の意味はメソッド名と引数で明示し、実装の精度別・SIMD 別の分割は公開クラスとして露出しない。
 
 ### 利用者の変更前・変更後
 
@@ -33,6 +33,15 @@ var output = new Vector4(Decode(input.R) * input.A,
 // RGB は約 0.10702057、alpha は 0.5。
 ```
 
+成分配置も型で保持する。基準コードでは灰色 byte コードと正規化色を区別する共通値型がなく、利用側で配置・正規化・opaque alpha を管理する。例えば同じ灰色を描画用の値へ渡す記述は次の通りである。
+
+```csharp
+using Lumyte.Graphics.Drawing2D;
+
+byte grayCode = 128;
+var grayColor = new Color2D(grayCode / 255f, grayCode / 255f, grayCode / 255f, 1);
+```
+
 変更後は、今回追加する共通 API に符号化と alpha の操作を明示する。以下は提案する呼び出しであり、基準コードに既存の API ではない。
 
 ```csharp
@@ -45,10 +54,14 @@ Rgba<float> output = straight.PremultiplyLinear<float>();
 Rgba<byte> codes = Rgba<byte>.FromArgb32Codes(0x80FF0000u);
 Rgba<double> normalized = codes.NormalizeUnorm<double>(byte.MaxValue);
 // A は 128/255、R は 1。これは数値 cast でも sRGB decode でもない。
-Rgba<float> pixel = Rgba<float>.DecodePixel(
-    new byte[] { 0, 0, 255, 128 }, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
+Bgra<float> pixel = Bgra<float>.DecodePixel(
+    new byte[] { 0, 0, 255, 128 }, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
 // BGRA byte 列を正規化 RGBA へ。R=1、A≈0.502。gamma と alpha association は変更しない。
-Rgba<double> cyan = Rgba<double>.FromHsvSrgbDegrees(180d, 1d, 1d, 1d);
+Rgba<double> cyan = new Hsva<double>(180d, 1d, 1d, 1d).ToRgba<double>();
+var grayCodes = new Gray<byte>(128);
+Rgba<float> gray = grayCodes.NormalizeUnorm<float>(255);
+var opaqueCodes = grayCodes.ToRgba((byte)255);
+Rgb565 packed = Rgb565.FromNormalized(cyan);
 ```
 
 既存の `Color2D`、clear、UI animation の公開呼び出しは維持する。利用側の薄い変換で共通 API を使い、単に private 関数の名前を置き換えるだけでなく、その本体の重複を取り除く。
@@ -68,7 +81,11 @@ Rgba<double> cyan = Rgba<double>.FromHsvSrgbDegrees(180d, 1d, 1d, 1d);
 
 ### 成分配置・格納形式・色モデル
 
-`ColorPixelFormat` は CPU 一画素の格納形式を指定する。Graphics の TextureFormat と ID を共有せず、以下の対応を数学側で提供することは GPU texture format の追加や全 backend での使用保証ではない。
+成分配置は `Gray<T>`・`GrayAlpha<T>`・`Rgb<T>`・`Rgba<T>`・`Bgr<T>`・`Bgra<T>`・`Argb<T>`・`Abgr<T>` の有限値型で表す。各型は `INumber<T>` を要求し unmanaged を要求しない。`Gray<byte>(128)` は raw 数値128であり、保存型から正規化・符号化を推測しない。`ToRgba(alpha)` は alpha のない型で明示 alpha を要求し、コード255と正規化1を勝手に選ばない。`FromRgba` は alpha のない配置で A=1 を、Gray 系では R=G=B を要求し、暗黙に透明度や色を捨てない。`NormalizeUnorm<TResult>(maximum)` は alpha のない配置に正規化後 A=1 を補い、alpha のある配置では全成分を正規化する。raw コードと正規化値の境界はこの名前で区別する。
+
+一画素の `DecodePixel` / `WritePixel` は配置を receiver 型で決め、`ColorComponentEncoding` は配置でなく UNORM8/16・SNORM8/16・IEEE16/32/64 の数値符号化だけを選ぶ。27種類の対応外の配置と符号化の組は `ArgumentException`、未知の符号化・byte 順は `ArgumentOutOfRangeException` とする。独立した packed 値型 `Rgb565`・`Rgba4444`・`Rgba5551`・`Rgba1010102`・`Bgra1010102` はそれぞれ ushort/uint の `PackedValue` を保持する。packed 型は `Read` / `Write` で整数語をそのまま入出力し、`FromNormalized<T>` / `ToNormalized<T>` で正規化 RGBA と変換する。型が bit 配置を指定するため公開 layout enum は不要であり、元の enum API は公開しない。
+
+型付き batch は `IColorPixel<TSelf>` の最小契約（PixelSize・DecodePixel・WritePixel）に従い、`Color.DecodePixels<TPixel>` / `WritePixels<TPixel>` で成分配置型の span を処理する。packed の raw batch は `Color.ReadPackedPixels<TPixel>` / `WritePackedPixels<TPixel>` と `IPackedColorPixel<TSelf>`（ByteSize・Read・Write）で区別する。内部の codec descriptor は公開しない。Graphics の TextureFormat と ID を共有せず、以下の対応を数学側で提供することは GPU texture format の追加や全 backend での使用保証ではない。
 
 | 形式群 | 対応する格納形式 | 正規化と配置 |
 | --- | --- | --- |
@@ -86,7 +103,7 @@ Rgba<double> cyan = Rgba<double>.FromHsvSrgbDegrees(180d, 1d, 1d, 1d);
 
 alpha のない形式への書き出しは A=1 を要求し、透明度を黙って捨てない。必要なら利用者が合成するか `WithAlpha(T.One)` で明示する。Gray への書き出しは R=G=B を要求し、勝手に luminance を計算しない。`ToLinearGrayscale<TResult>` は linear RGB の明度を `0.2126R+0.7152G+0.0722B` と定義し、同じ値を RGB に入れて alpha を保持する。sRGB の灰色を作る場合は decode と encode を明示する。
 
-HSL・HSV は格納 byte 形式と分け、正規化された straight sRGB に対する `FromHslSrgbDegrees`／`FromHsvSrgbDegrees` と `ToHslSrgbDegrees`／`ToHsvSrgbDegrees` を提供する。hue の単位は度で、構築時に有限な hue を [0,360) に周期化する。saturation・lightness/value・alpha は [0,1]。HSL→RGB は C=(1-|2L-1|)S、HSV→RGB は C=VS とし、X=C(1-|(H/60 mod 2)-1|)、sector 順に (C,X,0)/(X,C,0)/(0,C,X)/(0,X,C)/(X,0,C)/(C,0,X) を選ぶ。HSL では L-C/2、HSV では V-C を全 RGB 成分に加える。RGB→HSL/HSV は最大 M、最小 m、差 D を用い、V=M、L=(M+m)/2、HSV の S は M=0 なら 0・他は D/M、HSL の S は D=0 なら 0・他は D/(1-|2L-1|)。D=0 の hue は 0 とし、他は最大成分を R→G→B の優先順で選び、60×((G-B)/D)、60×((B-R)/D+2)、60×((R-G)/D+4) を周期化する。有限 hue の周期化は剰余で行い、360 の加減算を入力値の大きさだけ反復しない。結果への丸めで 360 になれば 0 に戻す。無彩色は hue=0、saturation=0 とする。HDR、linear RGB の物理的な明度、profile に依存する CMYK と混同しない。HSL/HSV の全式は、IEEE 入力も表現された二進有理数、decimal は十進有理数、整数は厳密な整数として評価し、中間の L・chroma・分母を先に丸めない。最終出力の各成分だけを対象の IEEE/decimal 精度へ最近接偶数で丸め、整数結果に表せない分数は `ArithmeticException` とする。独自 INumber の値を decimal/BigInteger との忠実な往復変換で抽出できなければ同じ例外で拒否する。例えば float RGB=(1,1,1-2^-24) の HSL saturation は 1 を保ち、丸めた L=1 によるゼロ除算を起こさない。必要な分数を表せる結果型を選ぶ。
+`Hsla<T>`・`Hsva<T>` は hue/S/LまたはV/A の型付き値を保持し、RGBA からの結果も tuple ではなくこの型で返す。モデル構築でも hue の周期化と unit 検証を行い、色変換の式と最終丸めは共通の厳密演算を再利用する。HSL・HSV は格納 byte 形式と分け、正規化された straight sRGB に対する `FromHslSrgbDegrees`／`FromHsvSrgbDegrees` と `ToHslSrgbDegrees`／`ToHsvSrgbDegrees` を提供する。hue の単位は度で、構築時に有限な hue を [0,360) に周期化する。saturation・lightness/value・alpha は [0,1]。HSL→RGB は C=(1-|2L-1|)S、HSV→RGB は C=VS とし、X=C(1-|(H/60 mod 2)-1|)、sector 順に (C,X,0)/(X,C,0)/(0,C,X)/(0,X,C)/(X,0,C)/(C,0,X) を選ぶ。HSL では L-C/2、HSV では V-C を全 RGB 成分に加える。RGB→HSL/HSV は最大 M、最小 m、差 D を用い、V=M、L=(M+m)/2、HSV の S は M=0 なら 0・他は D/M、HSL の S は D=0 なら 0・他は D/(1-|2L-1|)。D=0 の hue は 0 とし、他は最大成分を R→G→B の優先順で選び、60×((G-B)/D)、60×((B-R)/D+2)、60×((R-G)/D+4) を周期化する。有限 hue の周期化は剰余で行い、360 の加減算を入力値の大きさだけ反復しない。結果への丸めで 360 になれば 0 に戻す。無彩色は hue=0、saturation=0 とする。HDR、linear RGB の物理的な明度、profile に依存する CMYK と混同しない。HSL/HSV の全式は、IEEE 入力も表現された二進有理数、decimal は十進有理数、整数は厳密な整数として評価し、中間の L・chroma・分母を先に丸めない。最終出力の各成分だけを対象の IEEE/decimal 精度へ最近接偶数で丸め、整数結果に表せない分数は `ArithmeticException` とする。独自 INumber の値を decimal/BigInteger との忠実な往復変換で抽出できなければ同じ例外で拒否する。例えば float RGB=(1,1,1-2^-24) の HSL saturation は 1 を保ち、丸めた L=1 によるゼロ除算を起こさない。必要な分数を表せる結果型を選ぶ。
 
 一画素の DecodePixel は必要 byte 数以上の入力の先頭だけを消費する。WritePixel は成分の変換と長さを先に検証し、失敗時は出力を書き換えない。未知の形式・byte 順は `ArgumentOutOfRangeException`、短い span は `ArgumentException`、非有限入力・範囲外は従来の数値例外とする。複数画素操作は destination の画素数（Write は source の画素数）を処理数とし、必要な byte 数・画素数は checked で求める。長さ・checked サイズ計算・enum 値を最初に検査し、source/destination の重複は同じ開始位置を含め全て `ArgumentException` で拒否する。これらの事前検査失敗では全出力を維持する。データ変換に失敗した場合は完了した画素の prefix だけを更新し、失敗画素と未処理 suffix・未使用末尾は変更しない。画像の stride・圧縮・palette・codec はこの一画素形式の契約には含めない。
 
@@ -126,7 +143,7 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 +
 +namespace Lumyte.Mathematics.Colors;
 +
-+public readonly record struct Rgba<T> where T : INumber<T>
++public readonly record struct Rgba<T> : IColorPixel<Rgba<T>> where T : INumber<T>
 +{
 +    // 全成分 finite。色空間・alpha・コード上限は推測しない。
 +    public Rgba(T r, T g, T b, T a);
@@ -147,9 +164,9 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 +    // upper と各成分が整数値であることを検証する。
 +    public Rgba<TResult> NormalizeUnorm<TResult>(T maximum) where TResult : INumber<TResult>;
 +    public Rgba<TCode> QuantizeUnorm<TCode>(TCode maximum) where TCode : IBinaryInteger<TCode>;
-+    public static Rgba<T> DecodePixel(ReadOnlySpan<byte> source, ColorPixelFormat format, ColorByteOrder byteOrder);
++    public static Rgba<T> DecodePixel(ReadOnlySpan<byte> source, ColorComponentEncoding encoding, ColorByteOrder byteOrder);
 +    // 必要 byte 数を書いて返す。短い出力・変換失敗では書き込みなし。
-+    public int WritePixel(Span<byte> destination, ColorPixelFormat format, ColorByteOrder byteOrder);
++    public int WritePixel(Span<byte> destination, ColorComponentEncoding encoding, ColorByteOrder byteOrder);
 +    public Rgba<TResult> DecodeSrgb<TResult>() where TResult : IFloatingPointIeee754<TResult>;
 +    public Rgba<TResult> EncodeSrgb<TResult>() where TResult : IFloatingPointIeee754<TResult>;
 +    public Rgba<TResult> PremultiplyLinear<TResult>() where TResult : INumber<TResult>;
@@ -167,30 +184,83 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 +        where TModel : INumber<TModel>;
 +    public static Rgba<T> FromHsvSrgbDegrees<TModel>(TModel hue, TModel saturation, TModel value, TModel alpha)
 +        where TModel : INumber<TModel>;
-+    public (TResult HueDegrees, TResult Saturation, TResult Lightness, TResult Alpha) ToHslSrgbDegrees<TResult>()
++    public Hsla<TResult> ToHslSrgbDegrees<TResult>()
 +        where TResult : INumber<TResult>;
-+    public (TResult HueDegrees, TResult Saturation, TResult Value, TResult Alpha) ToHsvSrgbDegrees<TResult>()
++    public Hsva<TResult> ToHsvSrgbDegrees<TResult>()
 +        where TResult : INumber<TResult>;
 +}
 +
 +public enum ColorByteOrder { LittleEndian, BigEndian }
-+public enum ColorPixelFormat
++// 配置と数値符号化を分離し、配置 enum を公開しない。
++public enum ColorComponentEncoding { Unorm8, Unorm16, Snorm8, Snorm16, Float16, Float32, Float64 }
++public interface IColorPixel<TSelf> where TSelf : IColorPixel<TSelf>
 +{
-+    Rgb8Unorm, Bgr8Unorm, Rgba8Unorm, Bgra8Unorm, Argb8Unorm, Abgr8Unorm,
-+    Rgb16Unorm, Bgr16Unorm, Rgba16Unorm, Bgra16Unorm,
-+    Gray8Unorm, Gray16Unorm, GrayAlpha8Unorm, GrayAlpha16Unorm,
-+    Rgb565Unorm, Rgba4444Unorm, Rgba5551Unorm, Rgba1010102Unorm, Bgra1010102Unorm,
-+    Rgba8Snorm, Rgba16Snorm,
-+    Rgb16Float, Rgba16Float, Rgb32Float, Rgba32Float, Rgb64Float, Rgba64Float,
++    static abstract int PixelSize(ColorComponentEncoding encoding, ColorByteOrder byteOrder);
++    static abstract TSelf DecodePixel(ReadOnlySpan<byte> source, ColorComponentEncoding encoding, ColorByteOrder byteOrder);
++    int WritePixel(Span<byte> destination, ColorComponentEncoding encoding, ColorByteOrder byteOrder);
++}
++public readonly record struct Gray<T> : IColorPixel<Gray<T>> where T : INumber<T>
++{
++    public Gray(T value);
++    public T Value { get; }
++    // raw alpha を利用者が指定する。正規化1とbyte255を推測しない。
++    public Rgba<T> ToRgba(T alpha);
++    // RGBが等しくA=1の場合のみ受け入れる。
++    public static Gray<T> FromRgba(Rgba<T> color);
++    public Rgba<TResult> NormalizeUnorm<TResult>(T maximum) where TResult : INumber<TResult>;
++    public static Gray<T> DecodePixel(ReadOnlySpan<byte> source, ColorComponentEncoding encoding, ColorByteOrder byteOrder);
++    public int WritePixel(Span<byte> destination, ColorComponentEncoding encoding, ColorByteOrder byteOrder);
++}
++// GrayAlpha<T>, Rgb<T>, Bgr<T>, Bgra<T>, Argb<T>, Abgr<T> も有限な配置値。
++// 各配置型は IColorPixel<TSelf> を実装し、一色の操作を自身へ置く。
++public readonly record struct Rgb565 : IPackedColorPixel<Rgb565>
++{
++    public Rgb565(ushort packedValue);
++    public ushort PackedValue { get; }
++    public static int ByteSize { get; }
++    public static Rgb565 Read(ReadOnlySpan<byte> source, ColorByteOrder byteOrder);
++    public int Write(Span<byte> destination, ColorByteOrder byteOrder);
++    public static Rgb565 FromNormalized<T>(Rgba<T> color) where T : INumber<T>;
++    public Rgba<T> ToNormalized<T>() where T : INumber<T>;
++}
++// Rgba4444/Rgba5551/Rgba1010102/Bgra1010102 も各bit配置の整数語を保持。
++public interface IPackedColorPixel<TSelf> where TSelf : IPackedColorPixel<TSelf>
++{
++    static abstract int ByteSize { get; }
++    static abstract TSelf Read(ReadOnlySpan<byte> source, ColorByteOrder byteOrder);
++    int Write(Span<byte> destination, ColorByteOrder byteOrder);
++}
++// 正規化straight sRGBのモデル値。hueは度、S/L/V/Aはunit。
++public readonly record struct Hsla<T> where T : INumber<T>
++{
++    public Hsla(T hueDegrees, T saturation, T lightness, T alpha);
++    public T HueDegrees { get; }
++    public T Saturation { get; }
++    public T Lightness { get; }
++    public T Alpha { get; }
++    public Rgba<TResult> ToRgba<TResult>() where TResult : INumber<TResult>;
++}
++public readonly record struct Hsva<T> where T : INumber<T>
++{
++    public Hsva(T hueDegrees, T saturation, T value, T alpha);
++    public T HueDegrees { get; }
++    public T Saturation { get; }
++    public T Value { get; }
++    public T Alpha { get; }
++    public Rgba<TResult> ToRgba<TResult>() where TResult : INumber<TResult>;
 +}
 +
 +public static partial class Color
 +{
 +    // 長さと全ての重複を出力前に検査。空は許容、未使用末尾は保持。
-+    public static void DecodePixels<T>(ReadOnlySpan<byte> source, Span<Rgba<T>> destination,
-+        ColorPixelFormat format, ColorByteOrder byteOrder) where T : INumber<T>;
-+    public static void WritePixels<T>(ReadOnlySpan<Rgba<T>> source, Span<byte> destination,
-+        ColorPixelFormat format, ColorByteOrder byteOrder) where T : INumber<T>;
++    public static void DecodePixels<TPixel>(ReadOnlySpan<byte> source, Span<TPixel> destination,
++        ColorComponentEncoding encoding, ColorByteOrder byteOrder) where TPixel : IColorPixel<TPixel>;
++    public static void WritePixels<TPixel>(ReadOnlySpan<TPixel> source, Span<byte> destination,
++        ColorComponentEncoding encoding, ColorByteOrder byteOrder) where TPixel : IColorPixel<TPixel>;
++    public static void ReadPackedPixels<TPixel>(ReadOnlySpan<byte> source, Span<TPixel> destination,
++        ColorByteOrder byteOrder) where TPixel : IPackedColorPixel<TPixel>;
++    public static void WritePackedPixels<TPixel>(ReadOnlySpan<TPixel> source, Span<byte> destination,
++        ColorByteOrder byteOrder) where TPixel : IPackedColorPixel<TPixel>;
 +    // legacy mixed-precision。非有限値を含む Vector4 の raw 互換処理は有限値 Rgba に強制しない。
 +    public static Vector4 InterpolateSrgbLinearPremultipliedRaw(Vector4 from, Vector4 to, float amount);
 +}

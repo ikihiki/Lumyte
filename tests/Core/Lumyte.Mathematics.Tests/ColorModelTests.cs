@@ -24,8 +24,8 @@ public sealed class ColorModelTests
         var expected = new Rgba<double>(red, green, blue, 0.25);
         Assert.Equal(expected, Rgba<double>.FromHsvSrgbDegrees((double)hue, 1, 1, 0.25));
         Assert.Equal(expected, Rgba<double>.FromHslSrgbDegrees((double)hue, 1, 0.5, 0.25));
-        Assert.Equal(((double)hue, 1d, 1d, 0.25), expected.ToHsvSrgbDegrees<double>());
-        Assert.Equal(((double)hue, 1d, 0.5, 0.25), expected.ToHslSrgbDegrees<double>());
+        Assert.Equal(new Hsva<double>((double)hue, 1d, 1d, 0.25), expected.ToHsvSrgbDegrees<double>());
+        Assert.Equal(new Hsla<double>((double)hue, 1d, 0.5, 0.25), expected.ToHslSrgbDegrees<double>());
     }
 
     /// <summary>Verifies hue is periodic.</summary>
@@ -69,8 +69,8 @@ public sealed class ColorModelTests
     public void AchromaticHueAndSaturationAreZero(double gray)
     {
         var color = new Rgba<double>(gray, gray, gray, 0.75);
-        Assert.Equal((0d, 0d, gray, 0.75), color.ToHslSrgbDegrees<double>());
-        Assert.Equal((0d, 0d, gray, 0.75), color.ToHsvSrgbDegrees<double>());
+        Assert.Equal(new Hsla<double>(0d, 0d, gray, 0.75), color.ToHslSrgbDegrees<double>());
+        Assert.Equal(new Hsva<double>(0d, 0d, gray, 0.75), color.ToHsvSrgbDegrees<double>());
     }
 
     /// <summary>Verifies white neighbor does not round lightness before saturation.</summary>
@@ -78,9 +78,9 @@ public sealed class ColorModelTests
     public void WhiteNeighborDoesNotRoundLightnessBeforeSaturation()
     {
         var color = new Rgba<float>(1, 1, float.BitDecrement(1), 1);
-        Assert.Equal((60f, 1f, 1f, 1f), color.ToHslSrgbDegrees<float>());
+        Assert.Equal(new Hsla<float>(60f, 1f, 1f, 1f), color.ToHslSrgbDegrees<float>());
         var decimalColor = new Rgba<decimal>(1, 1, 0.9999999999999999999999999999m, 1);
-        Assert.Equal((60m, 1m, 1m, 1m), decimalColor.ToHslSrgbDegrees<decimal>());
+        Assert.Equal(new Hsla<decimal>(60m, 1m, 1m, 1m), decimalColor.ToHslSrgbDegrees<decimal>());
     }
 
     /// <summary>Verifies subnormals have exact chroma and final tie even rounding.</summary>
@@ -88,7 +88,7 @@ public sealed class ColorModelTests
     public void SubnormalsHaveExactChromaAndFinalTieEvenRounding()
     {
         var color = new Rgba<float>(3 * float.Epsilon, float.Epsilon, float.Epsilon, 1);
-        Assert.Equal((0f, 0.5f, 2 * float.Epsilon, 1f), color.ToHslSrgbDegrees<float>());
+        Assert.Equal(new Hsla<float>(0f, 0.5f, 2 * float.Epsilon, 1f), color.ToHslSrgbDegrees<float>());
         Assert.Equal(
             new Rgba<float>(2 * float.Epsilon, 0, 0, 1),
             Rgba<float>.FromHslSrgbDegrees(0f, 1f, float.Epsilon, 1f));
@@ -96,7 +96,7 @@ public sealed class ColorModelTests
             new Rgba<float>(0, float.Epsilon, 0, 1),
             Rgba<float>.FromHsvSrgbDegrees(90f, 1f, float.Epsilon, 1f));
         Assert.Equal(
-            (0d, 1d, double.Epsilon, 1d),
+            new Hsva<double>(0d, 1d, double.Epsilon, 1d),
             new Rgba<double>(double.Epsilon, 0, 0, 1).ToHsvSrgbDegrees<double>());
     }
 
@@ -115,7 +115,7 @@ public sealed class ColorModelTests
         var expected = new Rgba<decimal>(0.6m, 0.4m, 0.2m, 0.7m);
         Assert.Equal(expected, Rgba<decimal>.FromHsvSrgbDegrees(30m, 2m / 3m, 0.6m, 0.7m));
         Assert.Equal(expected, Rgba<decimal>.FromHslSrgbDegrees(30m, 0.5m, 0.4m, 0.7m));
-        Assert.Equal((30m, 0.5m, 0.4m, 0.7m), expected.ToHslSrgbDegrees<decimal>());
+        Assert.Equal(new Hsla<decimal>(30m, 0.5m, 0.4m, 0.7m), expected.ToHslSrgbDegrees<decimal>());
     }
 
     /// <summary>Verifies integral results reject fractions rather than truncate.</summary>
@@ -123,7 +123,7 @@ public sealed class ColorModelTests
     public void IntegralResultsRejectFractionsRatherThanTruncate()
     {
         Assert.Equal(new Rgba<int>(1, 0, 0, 1), Rgba<int>.FromHsvSrgbDegrees(0, 1, 1, 1));
-        Assert.Equal((0, 1, 1, 1), new Rgba<int>(1, 0, 0, 1).ToHsvSrgbDegrees<int>());
+        Assert.Equal(new Hsva<int>(0, 1, 1, 1), new Rgba<int>(1, 0, 0, 1).ToHsvSrgbDegrees<int>());
         Assert.Throws<ArithmeticException>(() => Rgba<int>.FromHsvSrgbDegrees(30d, 1, 1, 1));
         Assert.Throws<ArithmeticException>(() => Rgba<int>.FromHslSrgbDegrees(0d, 1, 0.5, 0.5));
         Assert.Throws<ArithmeticException>(() => new Rgba<int>(1, 0, 0, 1).ToHslSrgbDegrees<int>());

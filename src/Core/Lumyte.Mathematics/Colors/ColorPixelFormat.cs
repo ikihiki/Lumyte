@@ -11,7 +11,7 @@ public enum ColorByteOrder
 }
 
 /// <summary>CPU pixel storage; no transfer function or alpha association is implied.</summary>
-public enum ColorPixelFormat
+internal enum ColorPixelFormat
 {
     /// <summary>Rgb8Unorm storage.</summary>
     Rgb8Unorm,

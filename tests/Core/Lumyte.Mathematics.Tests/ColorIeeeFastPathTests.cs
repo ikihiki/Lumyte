@@ -17,7 +17,7 @@ public sealed class ColorIeeeFastPathTests
         Rgba<int> quantized = new Rgba<float>(0.3f, 0, 0, 1).QuantizeUnorm(255);
         Assert.Equal(77, quantized.R);
         byte[] pixel = new byte[4];
-        new Rgba<float>(0.3f, 0, 0, 1).WritePixel(pixel, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        new Rgba<float>(0.3f, 0, 0, 1).WritePixel(pixel, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
         Assert.Equal(77, pixel[0]);
         Assert.Throws<OverflowException>(() => new Rgba<double>(double.MaxValue, 0, 0, 0.5).UnpremultiplyLinear<double>());
         Assert.Equal(new Rgba<decimal>(0.15m, 0, 0, 0.5m), new Rgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<decimal>());

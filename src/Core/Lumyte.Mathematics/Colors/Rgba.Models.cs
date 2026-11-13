@@ -55,24 +55,34 @@ public readonly partial record struct Rgba<T>
     /// <summary>Converts normalized straight sRGB to HSL; achromatic hue is zero.</summary>
     /// <typeparam name="TResult">The result numeric representation.</typeparam>
     /// <returns>Hue in degrees and unit saturation, lightness, and alpha.</returns>
-    public (TResult HueDegrees, TResult Saturation, TResult Lightness, TResult Alpha) ToHslSrgbDegrees<TResult>()
+    public Hsla<TResult> ToHslSrgbDegrees<TResult>()
         where TResult : INumber<TResult>
     {
         (Rational h, Rational d, Rational maximum, Rational minimum, Rational a) = ModelToChroma();
         Rational l = (maximum + minimum) / ModelTwo;
         Rational s = d.Numerator.IsZero ? ModelZero : d / (ModelOne - ModelAbs((ModelTwo * l) - ModelOne));
-        return (ModelHueResult<TResult>(h), s.To<TResult>(), l.To<TResult>(), a.To<TResult>());
+        return new(ModelHueResult<TResult>(h), s.To<TResult>(), l.To<TResult>(), a.To<TResult>());
     }
 
     /// <summary>Converts normalized straight sRGB to HSV; achromatic hue is zero.</summary>
     /// <typeparam name="TResult">The result numeric representation.</typeparam>
     /// <returns>Hue in degrees and unit saturation, value, and alpha.</returns>
-    public (TResult HueDegrees, TResult Saturation, TResult Value, TResult Alpha) ToHsvSrgbDegrees<TResult>()
+    public Hsva<TResult> ToHsvSrgbDegrees<TResult>()
         where TResult : INumber<TResult>
     {
         (Rational h, Rational d, Rational maximum, _, Rational a) = ModelToChroma();
         Rational s = maximum.Numerator.IsZero ? ModelZero : d / maximum;
-        return (ModelHueResult<TResult>(h), s.To<TResult>(), maximum.To<TResult>(), a.To<TResult>());
+        return new(ModelHueResult<TResult>(h), s.To<TResult>(), maximum.To<TResult>(), a.To<TResult>());
+    }
+
+    internal static T CanonicalModelHue(T hue, string parameter) => ModelHueResult<T>(ModelHue(hue, parameter));
+
+    internal static void ValidateModelUnit(T value, string parameter)
+    {
+        if (!T.IsFinite(value) || value < T.Zero || value > T.One)
+        {
+            throw new ArgumentOutOfRangeException(parameter, "A finite value in [0,1] is required.");
+        }
     }
 
     private static Rational ModelAbs(Rational value) => new(BigInteger.Abs(value.Numerator), value.Denominator);
@@ -90,11 +100,7 @@ public readonly partial record struct Rgba<T>
     private static Rational ModelUnit<TValue>(TValue value, string parameter)
         where TValue : INumber<TValue>
     {
-        if (!TValue.IsFinite(value) || value < TValue.Zero || value > TValue.One)
-        {
-            throw new ArgumentOutOfRangeException(parameter, "A finite value in [0,1] is required.");
-        }
-
+        Rgba<TValue>.ValidateModelUnit(value, parameter);
         return Rational.From(value);
     }
 

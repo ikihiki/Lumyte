@@ -76,12 +76,29 @@ var input = new Rgba<float>(0.5f, 0.5f, 0.5f, 0.5f);
 Rgba<float> premultiplied = input.DecodeSrgb<float>().PremultiplyLinear<float>();
 Rgba<byte> codes = Rgba<byte>.FromArgb32Codes(0x80FF0000u);
 Rgba<double> normalized = codes.NormalizeUnorm<double>(byte.MaxValue);
-Rgba<float> pixel = Rgba<float>.DecodePixel(
-    new byte[] { 0, 0, 255, 128 }, ColorPixelFormat.Bgra8Unorm, ColorByteOrder.LittleEndian);
+Bgra<float> pixel = Bgra<float>.DecodePixel(
+    new byte[] { 0, 0, 255, 128 }, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+Rgba<float> rgba = pixel.ToRgba();
+var grayCodes = new Gray<byte>(128); // raw 128。自動で128/255にはしない。
+Rgba<double> gray = grayCodes.NormalizeUnorm<double>(255); // RGB=128/255、A=1。
+Rgba<byte> opaqueCodes = grayCodes.ToRgba((byte)255); // alphaもrawコードを明示。
+var packed = Rgb565.FromNormalized(new Rgba<float>(0, 1, 1, 1));
+ushort bits = packed.PackedValue;
+Rgba<double> cyan = packed.ToNormalized<double>();
+Hsla<double> model = cyan.ToHslSrgbDegrees<double>();
+Rgba<double> restored = model.ToRgba<double>();
+var typedPixels = new Bgra<float>[1];
+Lumyte.Mathematics.Colors.Color.DecodePixels<Bgra<float>>(
+    new byte[] { 0, 0, 255, 128 }, typedPixels,
+    ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
 ```
+
+成分配置は `Gray<T>`・`GrayAlpha<T>`・`Rgb<T>`・`Rgba<T>`・`Bgr<T>`・`Bgra<T>`・`Argb<T>`・`Abgr<T>` の別の値型です。有限な `INumber<T>` を保存し、BigIntegerや参照を含む独自型も扱います。型名はバイナリのblittable配置や色空間を保証しません。alphaのないraw値からRGBAへのコピーは明示alphaが必要です。`DecodePixel` は明示した数値符号化を正規化した配置値へ読み、`WritePixel` はその逆です。`ColorComponentEncoding` は数値符号化だけを指定し、layout enumは公開しません。
 
 27 種の格納形式は、RGB/BGR/RGBA/BGRA/ARGB/ABGR、8/16-bit UNORM、Gray/GrayAlpha、565/4444/5551/1010102 packed、8/16-bit SNORM、Half/float/double の RGB/RGBA 成分列です。`ColorByteOrder` は成分または packed word の byte 順を指定し、GPU texture format の対応とは別です。decode はコード値を正規化しますが、gamma と alpha association は変更しません。`FromArgb32Codes` の整数 bit 順は 0xAARRGGBB で、こちらは正規化しないコード値の factory です。
 
-HSL/HSV は正規化された straight sRGB に対する degree hue の変換です。hue は有限な値を周期化し、無彩色は hue=0 とします。分数を整数結果へ黙って切り捨てません。UNORM は厳密な比・積と最近接偶数で変換し、型 cast と区別します。
+packed は `Rgb565`・`Rgba4444`・`Rgba5551`・`Rgba1010102`・`Bgra1010102` の具体的な値型です。`Read` / `Write` は整数語のbitを保持し、`FromNormalized` / `ToNormalized` が正規化RGBAとの境界です。raw packed batchは `Color.ReadPackedPixels` / `WritePackedPixels`、正規化された成分配置batchは `DecodePixels` / `WritePixels` と区別します。
+
+`Hsla<T>` / `Hsva<T>` はhue/S/LまたはV/alphaを保持する値型です。HSL/HSV は正規化された straight sRGB に対する degree hue の変換です。hue は有限な値を周期化し、無彩色は hue=0 とします。分数を整数結果へ黙って切り捨てません。UNORM は厳密な比・積と最近接偶数で変換し、型 cast と区別します。
 
 一画素の `WritePixel` は失敗時に出力を変更しません。batch は長さ・enum・全重複を出力前に検査し、データ変換失敗では完了した prefix のみ更新します。RGB への書き出しは alpha=1、Gray は R=G=B を要求し、透明度や色を黙って捨てません。HDR・負の linear RGB を保つ演算と、RGB も clamp する演算を名前で区別します。ICC/profile 変換、画像 codec、GPU capability の追加は含みません。

@@ -12,7 +12,7 @@ public readonly partial record struct Rgba<T>
     /// <param name="format">The storage format.</param>
     /// <param name="byteOrder">Component or packed-word byte order.</param>
     /// <returns>The normalized or IEEE pixel.</returns>
-    public static Rgba<T> DecodePixel(ReadOnlySpan<byte> source, ColorPixelFormat format, ColorByteOrder byteOrder)
+    internal static Rgba<T> DecodePixel(ReadOnlySpan<byte> source, ColorPixelFormat format, ColorByteOrder byteOrder)
     {
         int size = PixelSize(format, byteOrder);
         if (source.Length < size)
@@ -64,7 +64,7 @@ public readonly partial record struct Rgba<T>
     /// <param name="format">The storage format.</param>
     /// <param name="byteOrder">Component or packed-word byte order.</param>
     /// <returns>The number of bytes written.</returns>
-    public int WritePixel(Span<byte> destination, ColorPixelFormat format, ColorByteOrder byteOrder)
+    internal int WritePixel(Span<byte> destination, ColorPixelFormat format, ColorByteOrder byteOrder)
     {
         int size = PixelSize(format, byteOrder);
         if (destination.Length < size)

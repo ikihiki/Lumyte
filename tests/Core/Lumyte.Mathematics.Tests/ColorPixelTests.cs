@@ -9,29 +9,54 @@ namespace Lumyte.Mathematics.Tests;
 /// <summary>Independent byte oracles for every format, endian and failure boundary.</summary>
 public sealed class ColorPixelTests
 {
+    private enum FormatCase
+    {
+        Rgb8Unorm,
+        Bgr8Unorm,
+        Rgba8Unorm,
+        Bgra8Unorm,
+        Argb8Unorm,
+        Abgr8Unorm,
+        Rgb16Unorm,
+        Bgr16Unorm,
+        Rgba16Unorm,
+        Bgra16Unorm,
+        Gray8Unorm,
+        Gray16Unorm,
+        GrayAlpha8Unorm,
+        GrayAlpha16Unorm,
+        Rgb565Unorm,
+        Rgba4444Unorm,
+        Rgba5551Unorm,
+        Rgba1010102Unorm,
+        Bgra1010102Unorm,
+        Rgba8Snorm,
+        Rgba16Snorm,
+        Rgb16Float,
+        Rgba16Float,
+        Rgb32Float,
+        Rgba32Float,
+        Rgb64Float,
+        Rgba64Float,
+    }
+
     /// <summary>All 27 storage layouts are checked against independently assembled channel words.</summary>
     [Fact]
     public void AllFormatsAndEndianMatchKnownBytes()
     {
-        Assert.Equal(27, Enum.GetValues<ColorPixelFormat>().Length);
+        Assert.Equal(27, Enum.GetValues<FormatCase>().Length);
         foreach (ColorByteOrder order in Enum.GetValues<ColorByteOrder>())
         {
-            foreach (ColorPixelFormat format in Enum.GetValues<ColorPixelFormat>())
+            foreach (FormatCase format in Enum.GetValues<FormatCase>())
             {
                 (byte[] bytes, Rgba<double> expected) = Oracle(format, order);
                 byte[] source = [.. bytes, 0xED, 0xFE];
-                Assert.Equal(expected, Rgba<double>.DecodePixel(source, format, order));
+                Assert.Equal(expected, Decode(source, format, order));
                 byte[] output = Enumerable.Repeat((byte)0xCD, bytes.Length + 3).ToArray();
-                Assert.Equal(bytes.Length, expected.WritePixel(output, format, order));
+                Assert.Equal(bytes.Length, Write(expected, output, format, order));
                 Assert.Equal(bytes, output[..bytes.Length]);
                 Assert.All(output[bytes.Length..], value => Assert.Equal(0xCD, value));
-                var decoded = new Rgba<double>[3];
-                Color.DecodePixels<double>([.. bytes, .. bytes, .. bytes, 0xEF], decoded, format, order);
-                Assert.All(decoded, value => Assert.Equal(expected, value));
-                byte[] batch = Enumerable.Repeat((byte)0xCD, (bytes.Length * 3) + 1).ToArray();
-                Color.WritePixels<double>(decoded, batch, format, order);
-                Assert.Equal(bytes.Concat(bytes).Concat(bytes), batch[..^1]);
-                Assert.Equal(0xCD, batch[^1]);
+                CheckBatch(format, order, bytes, expected);
             }
         }
     }
@@ -40,9 +65,9 @@ public sealed class ColorPixelTests
     /// <param name="format">The signed component format.</param>
     /// <param name="width">The component byte width.</param>
     [Theory]
-    [InlineData(ColorPixelFormat.Rgba8Snorm, 1)]
-    [InlineData(ColorPixelFormat.Rgba16Snorm, 2)]
-    public void SnormMinimumAndUnsignedFailure(ColorPixelFormat format, int width)
+    [InlineData(ColorComponentEncoding.Snorm8, 1)]
+    [InlineData(ColorComponentEncoding.Snorm16, 2)]
+    public void SnormMinimumAndUnsignedFailure(ColorComponentEncoding format, int width)
     {
         foreach (ColorByteOrder order in Enum.GetValues<ColorByteOrder>())
         {
@@ -64,7 +89,7 @@ public sealed class ColorPixelTests
     {
         foreach (ColorByteOrder order in Enum.GetValues<ColorByteOrder>())
         {
-            foreach ((ColorPixelFormat format, int width) in new[] { (ColorPixelFormat.Rgba16Float, 2), (ColorPixelFormat.Rgba32Float, 4), (ColorPixelFormat.Rgba64Float, 8) })
+            foreach ((ColorComponentEncoding format, int width) in new[] { (ColorComponentEncoding.Float16, 2), (ColorComponentEncoding.Float32, 4), (ColorComponentEncoding.Float64, 8) })
             {
                 double epsilon = width == 2 ? (double)Half.Epsilon : width == 4 ? float.Epsilon : double.Epsilon;
                 var color = new Rgba<double>(-2, 16, epsilon, -0d);
@@ -82,31 +107,31 @@ public sealed class ColorPixelTests
         }
 
         byte[] rounded = new byte[8];
-        new Rgba<decimal>(1.00048828125m, 1.00146484375m, 0, 1).WritePixel(rounded, ColorPixelFormat.Rgba16Float, ColorByteOrder.LittleEndian);
+        new Rgba<decimal>(1.00048828125m, 1.00146484375m, 0, 1).WritePixel(rounded, ColorComponentEncoding.Float16, ColorByteOrder.LittleEndian);
         Assert.Equal(Words([0x3C00, 0x3C02, 0, 0x3C00], 2, ColorByteOrder.LittleEndian), rounded);
-        Assert.Throws<ArithmeticException>(() => Rgba<int>.DecodePixel(Words([0x3E00, 0, 0, 0], 2, ColorByteOrder.LittleEndian), ColorPixelFormat.Rgba16Float, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArithmeticException>(() => Rgba<int>.DecodePixel(Words([0x3E00, 0, 0, 0], 2, ColorByteOrder.LittleEndian), ColorComponentEncoding.Float16, ColorByteOrder.LittleEndian));
     }
 
     /// <summary>Single-pixel validation is atomic for every format and endian.</summary>
     [Fact]
     public void SinglePixelFailuresAreAtomic()
     {
-        foreach (ColorPixelFormat format in Enum.GetValues<ColorPixelFormat>())
+        foreach (FormatCase format in Enum.GetValues<FormatCase>())
         {
             foreach (ColorByteOrder order in Enum.GetValues<ColorByteOrder>())
             {
                 (byte[] bytes, Rgba<double> color) = Oracle(format, order);
                 byte[] output = Enumerable.Repeat((byte)0xAB, bytes.Length + 1).ToArray();
                 byte[] before = (byte[])output.Clone();
-                Assert.Throws<ArgumentException>(() => color.WritePixel(output.AsSpan(0, bytes.Length - 1), format, order));
+                Assert.Throws<ArgumentException>(() => Write(color, output.AsSpan(0, bytes.Length - 1), format, order));
                 Assert.Equal(before, output);
-                Assert.Throws<ArgumentException>(() => Rgba<double>.DecodePixel(bytes.AsSpan(1), format, order));
-                Assert.Throws<ArgumentOutOfRangeException>(() => color.WritePixel(output, format, (ColorByteOrder)99));
-                Assert.Throws<ArgumentOutOfRangeException>(() => color.WritePixel(output, (ColorPixelFormat)99, order));
+                Assert.Throws<ArgumentException>(() => Decode(bytes.AsSpan(1), format, order));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Write(color, output, format, (ColorByteOrder)99));
+                Assert.Throws<ArgumentOutOfRangeException>(() => color.WritePixel(output, (ColorComponentEncoding)99, order));
                 Assert.Equal(before, output);
                 if (format.ToString().StartsWith("Gray", StringComparison.Ordinal))
                 {
-                    Assert.Throws<ArgumentOutOfRangeException>(() => new Rgba<double>(0, 1, 0, 1).WritePixel(output, format, order));
+                    Assert.Throws<ArgumentOutOfRangeException>(() => Write(new Rgba<double>(0, 1, 0, 1), output, format, order));
                     Assert.Equal(before, output);
                 }
 
@@ -115,12 +140,12 @@ public sealed class ColorPixelTests
                     && !format.ToString().Contains("Alpha", StringComparison.Ordinal);
                 if (noAlpha)
                 {
-                    Assert.Throws<ArgumentOutOfRangeException>(() => color.WithAlpha(0).WritePixel(output, format, order));
+                    Assert.Throws<ArgumentOutOfRangeException>(() => Write(color.WithAlpha(0), output, format, order));
                     Assert.Equal(before, output);
                 }
                 else if (!format.ToString().Contains("Float", StringComparison.Ordinal))
                 {
-                    Assert.Throws<ArgumentOutOfRangeException>(() => color.WithAlpha(2).WritePixel(output, format, order));
+                    Assert.Throws<ArgumentOutOfRangeException>(() => Write(color.WithAlpha(2), output, format, order));
                     Assert.Equal(before, output);
                 }
             }
@@ -134,26 +159,26 @@ public sealed class ColorPixelTests
         var good = new Rgba<double>(1, 0, 0, 1);
         Rgba<double>[] pixels = [good, new(1, 0, 0, 2), good];
         byte[] bytes = Enumerable.Repeat((byte)0xAB, 15).ToArray();
-        Assert.Throws<ArgumentOutOfRangeException>(() => Color.WritePixels<double>(pixels, bytes, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Color.WritePixels<Rgba<double>>(pixels, bytes, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
         Assert.Equal(new byte[] { 255, 0, 0, 255 }, bytes[..4]);
         Assert.All(bytes[4..], value => Assert.Equal(0xAB, value));
         byte[] before = (byte[])bytes.Clone();
-        Assert.Throws<ArgumentException>(() => Color.WritePixels<double>(pixels, bytes.AsSpan(0, 11), ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentException>(() => Color.WritePixels<Rgba<double>>(pixels, bytes.AsSpan(0, 11), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
         Assert.Equal(before, bytes);
         Rgba<int>[] destination = [new(7, 7, 7, 7), new(7, 7, 7, 7), new(7, 7, 7, 7)];
         byte[] codes = [255, 0, 0, 255, 255, 128, 0, 255, 0, 0, 0, 255];
-        Assert.Throws<ArithmeticException>(() => Color.DecodePixels<int>(codes, destination, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArithmeticException>(() => Color.DecodePixels<Rgba<int>>(codes, destination, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
         Assert.Equal(new Rgba<int>(1, 0, 0, 1), destination[0]);
         Assert.Equal(new Rgba<int>(7, 7, 7, 7), destination[1]);
         Assert.Equal(destination[1], destination[2]);
         var saved = (Rgba<int>[])destination.Clone();
-        Assert.Throws<ArgumentException>(() => Color.DecodePixels<int>(codes.AsSpan(1), destination, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Color.DecodePixels<int>(codes, destination, (ColorPixelFormat)99, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentException>(() => Color.DecodePixels<Rgba<int>>(codes.AsSpan(1), destination, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Color.DecodePixels<Rgba<int>>(codes, destination, (ColorComponentEncoding)99, ColorByteOrder.LittleEndian));
         Assert.Equal(saved, destination);
-        Color.DecodePixels<int>([], [], ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
-        Color.WritePixels<int>([], [], ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
-        Assert.Throws<ArgumentOutOfRangeException>(() => Color.DecodePixels<int>([], [], (ColorPixelFormat)99, ColorByteOrder.LittleEndian));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Color.WritePixels<int>([], [], ColorPixelFormat.Rgba8Unorm, (ColorByteOrder)99));
+        Color.DecodePixels<Rgba<int>>([], [], ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        Color.WritePixels<Rgba<int>>([], [], ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        Assert.Throws<ArgumentOutOfRangeException>(() => Color.DecodePixels<Rgba<int>>([], [], (ColorComponentEncoding)99, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Color.WritePixels<Rgba<int>>([], [], ColorComponentEncoding.Unorm8, (ColorByteOrder)99));
     }
 
     /// <summary>Same-start and shifted overlaps, including unused byte tails, fail before any writes.</summary>
@@ -164,15 +189,15 @@ public sealed class ColorPixelTests
         {
             byte[] storage = Enumerable.Repeat((byte)0xAB, 96).ToArray();
             byte[] before = (byte[])storage.Clone();
-            Assert.Throws<ArgumentException>(() => Color.DecodePixels<int>(storage.AsSpan(offset, 40), MemoryMarshal.Cast<byte, Rgba<int>>(storage.AsSpan(16, 32)), ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+            Assert.Throws<ArgumentException>(() => Color.DecodePixels<Rgba<int>>(storage.AsSpan(offset, 40), MemoryMarshal.Cast<byte, Rgba<int>>(storage.AsSpan(16, 32)), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
             Assert.Equal(before, storage);
-            Assert.Throws<ArgumentException>(() => Color.WritePixels<int>(MemoryMarshal.Cast<byte, Rgba<int>>(storage.AsSpan(16, 32)), storage.AsSpan(offset, 40), ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+            Assert.Throws<ArgumentException>(() => Color.WritePixels<Rgba<int>>(MemoryMarshal.Cast<byte, Rgba<int>>(storage.AsSpan(16, 32)), storage.AsSpan(offset, 40), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
             Assert.Equal(before, storage);
         }
 
         byte[] adjacent = new byte[48];
-        Color.DecodePixels<int>(adjacent.AsSpan(0, 4), MemoryMarshal.Cast<byte, Rgba<int>>(adjacent.AsSpan(4, 16)), ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
-        Color.WritePixels<int>(MemoryMarshal.Cast<byte, Rgba<int>>(adjacent.AsSpan(4, 16)), adjacent.AsSpan(20, 4), ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        Color.DecodePixels<Rgba<int>>(adjacent.AsSpan(0, 4), MemoryMarshal.Cast<byte, Rgba<int>>(adjacent.AsSpan(4, 16)), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        Color.WritePixels<Rgba<int>>(MemoryMarshal.Cast<byte, Rgba<int>>(adjacent.AsSpan(4, 16)), adjacent.AsSpan(20, 4), ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
     }
 
     /// <summary>UNORM ties use exact mathematical values, including decimal midpoint neighbors.</summary>
@@ -180,50 +205,228 @@ public sealed class ColorPixelTests
     public void QuantizationTiesAndIntegralDecode()
     {
         byte[] output = new byte[4];
-        new Rgba<decimal>(0.1m, 0.3m, 0.5m, 0.7m).WritePixel(output, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        new Rgba<decimal>(0.1m, 0.3m, 0.5m, 0.7m).WritePixel(output, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
         Assert.Equal(new byte[] { 26, 76, 128, 178 }, output);
-        Assert.Throws<ArithmeticException>(() => Rgba<int>.DecodePixel(new byte[] { 1, 0, 0, 255 }, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
-        Assert.Equal(new Rgba<BigInteger>(1, 0, 0, 1), Rgba<BigInteger>.DecodePixel(new byte[] { 255, 0, 0, 255 }, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian));
+        Assert.Throws<ArithmeticException>(() => Rgba<int>.DecodePixel(new byte[] { 1, 0, 0, 255 }, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
+        Assert.Equal(new Rgba<BigInteger>(1, 0, 0, 1), Rgba<BigInteger>.DecodePixel(new byte[] { 255, 0, 0, 255 }, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian));
     }
 
     /// <summary>Checked sizes fail before storage access, and reference-containing BigInteger is supported.</summary>
     [Fact]
     public void CheckedSizesAndReferenceContainingStorage()
     {
-        Assert.Throws<OverflowException>(() => Color.DecodePixels<double>([], OversizedPixels(), ColorPixelFormat.Rgba64Float, ColorByteOrder.LittleEndian));
-        Assert.Throws<OverflowException>(() => Color.WritePixels<double>(OversizedPixels(), [], ColorPixelFormat.Rgba64Float, ColorByteOrder.LittleEndian));
+        Assert.Throws<OverflowException>(() => Color.DecodePixels<Rgba<double>>([], OversizedPixels(), ColorComponentEncoding.Float64, ColorByteOrder.LittleEndian));
+        Assert.Throws<OverflowException>(() => Color.WritePixels<Rgba<double>>(OversizedPixels(), [], ColorComponentEncoding.Float64, ColorByteOrder.LittleEndian));
         Rgba<BigInteger>[] integers = [new(1, 0, 1, 1), new(0, 1, 0, 1)];
         Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<Rgba<BigInteger>>());
         byte[] bytes = new byte[8];
-        Color.WritePixels<BigInteger>(integers, bytes, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        Color.WritePixels<Rgba<BigInteger>>(integers, bytes, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
         var output = new Rgba<BigInteger>[2];
-        Color.DecodePixels<BigInteger>(bytes, output, ColorPixelFormat.Rgba8Unorm, ColorByteOrder.LittleEndian);
+        Color.DecodePixels<Rgba<BigInteger>>(bytes, output, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
         Assert.Equal(integers, output);
+    }
+
+    private static Rgba<double> Decode(ReadOnlySpan<byte> source, FormatCase format, ColorByteOrder order) => format switch
+    {
+        FormatCase.Rgb8Unorm => Rgb<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(1),
+        FormatCase.Bgr8Unorm => Bgr<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(1),
+        FormatCase.Rgba8Unorm => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Bgra8Unorm => Bgra<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(),
+        FormatCase.Argb8Unorm => Argb<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(),
+        FormatCase.Abgr8Unorm => Abgr<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(),
+        FormatCase.Rgb16Unorm => Rgb<double>.DecodePixel(source, ColorComponentEncoding.Unorm16, order).ToRgba(1),
+        FormatCase.Bgr16Unorm => Bgr<double>.DecodePixel(source, ColorComponentEncoding.Unorm16, order).ToRgba(1),
+        FormatCase.Rgba16Unorm => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Unorm16, order),
+        FormatCase.Bgra16Unorm => Bgra<double>.DecodePixel(source, ColorComponentEncoding.Unorm16, order).ToRgba(),
+        FormatCase.Gray8Unorm => Gray<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(1),
+        FormatCase.Gray16Unorm => Gray<double>.DecodePixel(source, ColorComponentEncoding.Unorm16, order).ToRgba(1),
+        FormatCase.GrayAlpha8Unorm => GrayAlpha<double>.DecodePixel(source, ColorComponentEncoding.Unorm8, order).ToRgba(),
+        FormatCase.GrayAlpha16Unorm => GrayAlpha<double>.DecodePixel(source, ColorComponentEncoding.Unorm16, order).ToRgba(),
+        FormatCase.Rgb565Unorm => Rgb565.Read(source, order).ToNormalized<double>(),
+        FormatCase.Rgba4444Unorm => Rgba4444.Read(source, order).ToNormalized<double>(),
+        FormatCase.Rgba5551Unorm => Rgba5551.Read(source, order).ToNormalized<double>(),
+        FormatCase.Rgba1010102Unorm => Rgba1010102.Read(source, order).ToNormalized<double>(),
+        FormatCase.Bgra1010102Unorm => Bgra1010102.Read(source, order).ToNormalized<double>(),
+        FormatCase.Rgba8Snorm => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Snorm8, order),
+        FormatCase.Rgba16Snorm => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Snorm16, order),
+        FormatCase.Rgb16Float => Rgb<double>.DecodePixel(source, ColorComponentEncoding.Float16, order).ToRgba(1),
+        FormatCase.Rgba16Float => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Float16, order),
+        FormatCase.Rgb32Float => Rgb<double>.DecodePixel(source, ColorComponentEncoding.Float32, order).ToRgba(1),
+        FormatCase.Rgba32Float => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Float32, order),
+        FormatCase.Rgb64Float => Rgb<double>.DecodePixel(source, ColorComponentEncoding.Float64, order).ToRgba(1),
+        FormatCase.Rgba64Float => Rgba<double>.DecodePixel(source, ColorComponentEncoding.Float64, order),
+        _ => throw new ArgumentOutOfRangeException(nameof(format)),
+    };
+
+    private static int Write(Rgba<double> color, Span<byte> destination, FormatCase format, ColorByteOrder order) => format switch
+    {
+        FormatCase.Rgb8Unorm => Rgb<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Bgr8Unorm => Bgr<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Rgba8Unorm => color.WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Bgra8Unorm => Bgra<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Argb8Unorm => Argb<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Abgr8Unorm => Abgr<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Rgb16Unorm => Rgb<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm16, order),
+        FormatCase.Bgr16Unorm => Bgr<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm16, order),
+        FormatCase.Rgba16Unorm => color.WritePixel(destination, ColorComponentEncoding.Unorm16, order),
+        FormatCase.Bgra16Unorm => Bgra<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm16, order),
+        FormatCase.Gray8Unorm => Gray<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.Gray16Unorm => Gray<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm16, order),
+        FormatCase.GrayAlpha8Unorm => GrayAlpha<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm8, order),
+        FormatCase.GrayAlpha16Unorm => GrayAlpha<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Unorm16, order),
+        FormatCase.Rgb565Unorm => Rgb565.FromNormalized(color).Write(destination, order),
+        FormatCase.Rgba4444Unorm => Rgba4444.FromNormalized(color).Write(destination, order),
+        FormatCase.Rgba5551Unorm => Rgba5551.FromNormalized(color).Write(destination, order),
+        FormatCase.Rgba1010102Unorm => Rgba1010102.FromNormalized(color).Write(destination, order),
+        FormatCase.Bgra1010102Unorm => Bgra1010102.FromNormalized(color).Write(destination, order),
+        FormatCase.Rgba8Snorm => color.WritePixel(destination, ColorComponentEncoding.Snorm8, order),
+        FormatCase.Rgba16Snorm => color.WritePixel(destination, ColorComponentEncoding.Snorm16, order),
+        FormatCase.Rgb16Float => Rgb<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Float16, order),
+        FormatCase.Rgba16Float => color.WritePixel(destination, ColorComponentEncoding.Float16, order),
+        FormatCase.Rgb32Float => Rgb<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Float32, order),
+        FormatCase.Rgba32Float => color.WritePixel(destination, ColorComponentEncoding.Float32, order),
+        FormatCase.Rgb64Float => Rgb<double>.FromRgba(color).WritePixel(destination, ColorComponentEncoding.Float64, order),
+        FormatCase.Rgba64Float => color.WritePixel(destination, ColorComponentEncoding.Float64, order),
+        _ => throw new ArgumentOutOfRangeException(nameof(format)),
+    };
+
+    private static void CheckBatch(FormatCase format, ColorByteOrder order, byte[] bytes, Rgba<double> expected)
+    {
+        switch (format)
+        {
+            case FormatCase.Rgb8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, Rgb<double>.FromRgba(expected));
+                break;
+            case FormatCase.Bgr8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, Bgr<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgba8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, expected);
+                break;
+            case FormatCase.Bgra8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, Bgra<double>.FromRgba(expected));
+                break;
+            case FormatCase.Argb8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, Argb<double>.FromRgba(expected));
+                break;
+            case FormatCase.Abgr8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, Abgr<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgb16Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm16, Rgb<double>.FromRgba(expected));
+                break;
+            case FormatCase.Bgr16Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm16, Bgr<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgba16Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm16, expected);
+                break;
+            case FormatCase.Bgra16Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm16, Bgra<double>.FromRgba(expected));
+                break;
+            case FormatCase.Gray8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, Gray<double>.FromRgba(expected));
+                break;
+            case FormatCase.Gray16Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm16, Gray<double>.FromRgba(expected));
+                break;
+            case FormatCase.GrayAlpha8Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm8, GrayAlpha<double>.FromRgba(expected));
+                break;
+            case FormatCase.GrayAlpha16Unorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Unorm16, GrayAlpha<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgb565Unorm:
+                CheckPackedBatch(bytes, order, Rgb565.FromNormalized(expected));
+                break;
+            case FormatCase.Rgba4444Unorm:
+                CheckPackedBatch(bytes, order, Rgba4444.FromNormalized(expected));
+                break;
+            case FormatCase.Rgba5551Unorm:
+                CheckPackedBatch(bytes, order, Rgba5551.FromNormalized(expected));
+                break;
+            case FormatCase.Rgba1010102Unorm:
+                CheckPackedBatch(bytes, order, Rgba1010102.FromNormalized(expected));
+                break;
+            case FormatCase.Bgra1010102Unorm:
+                CheckPackedBatch(bytes, order, Bgra1010102.FromNormalized(expected));
+                break;
+            case FormatCase.Rgba8Snorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Snorm8, expected);
+                break;
+            case FormatCase.Rgba16Snorm:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Snorm16, expected);
+                break;
+            case FormatCase.Rgb16Float:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Float16, Rgb<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgba16Float:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Float16, expected);
+                break;
+            case FormatCase.Rgb32Float:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Float32, Rgb<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgba32Float:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Float32, expected);
+                break;
+            case FormatCase.Rgb64Float:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Float64, Rgb<double>.FromRgba(expected));
+                break;
+            case FormatCase.Rgba64Float:
+                CheckTypedBatch(bytes, order, ColorComponentEncoding.Float64, expected);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(format));
+        }
+    }
+
+    private static void CheckTypedBatch<TPixel>(byte[] bytes, ColorByteOrder order, ColorComponentEncoding encoding, TPixel expected)
+        where TPixel : IColorPixel<TPixel>
+    {
+        var decoded = new TPixel[3];
+        Color.DecodePixels<TPixel>([.. bytes, .. bytes, .. bytes, 0xEF], decoded, encoding, order);
+        Assert.All(decoded, value => Assert.Equal(expected, value));
+        byte[] output = Enumerable.Repeat((byte)0xCD, (bytes.Length * 3) + 1).ToArray();
+        Color.WritePixels<TPixel>(decoded, output, encoding, order);
+        Assert.Equal(bytes.Concat(bytes).Concat(bytes), output[..^1]);
+        Assert.Equal(0xCD, output[^1]);
+    }
+
+    private static void CheckPackedBatch<TPixel>(byte[] bytes, ColorByteOrder order, TPixel expected)
+        where TPixel : IPackedColorPixel<TPixel>
+    {
+        var decoded = new TPixel[3];
+        Color.ReadPackedPixels<TPixel>([.. bytes, .. bytes, .. bytes, 0xEF], decoded, order);
+        Assert.All(decoded, value => Assert.Equal(expected, value));
+        byte[] output = Enumerable.Repeat((byte)0xCD, (bytes.Length * 3) + 1).ToArray();
+        Color.WritePackedPixels<TPixel>(decoded, output, order);
+        Assert.Equal(bytes.Concat(bytes).Concat(bytes), output[..^1]);
+        Assert.Equal(0xCD, output[^1]);
     }
 
     private static Span<Rgba<double>> OversizedPixels() => MemoryMarshal.CreateSpan(ref Unsafe.NullRef<Rgba<double>>(), (int.MaxValue / 32) + 1);
 
-    private static (byte[] Bytes, Rgba<double> Color) Oracle(ColorPixelFormat format, ColorByteOrder order)
+    private static (byte[] Bytes, Rgba<double> Color) Oracle(FormatCase format, ColorByteOrder order)
     {
         string name = format.ToString();
-        if (format is ColorPixelFormat.Rgb565Unorm)
+        if (format is FormatCase.Rgb565Unorm)
         {
             return (Words([(17UL << 11) | (42UL << 5) | 3], 2, order), new(17d / 31, 42d / 63, 3d / 31, 1));
         }
 
-        if (format is ColorPixelFormat.Rgba4444Unorm)
+        if (format is FormatCase.Rgba4444Unorm)
         {
             return (Words([0x1A3E], 2, order), new(1d / 15, 10d / 15, 3d / 15, 14d / 15));
         }
 
-        if (format is ColorPixelFormat.Rgba5551Unorm)
+        if (format is FormatCase.Rgba5551Unorm)
         {
             return (Words([(17UL << 11) | (10UL << 6) | (3UL << 1) | 1], 2, order), new(17d / 31, 10d / 31, 3d / 31, 1));
         }
 
-        if (format is ColorPixelFormat.Rgba1010102Unorm or ColorPixelFormat.Bgra1010102Unorm)
+        if (format is FormatCase.Rgba1010102Unorm or FormatCase.Bgra1010102Unorm)
         {
-            bool bgra = format == ColorPixelFormat.Bgra1010102Unorm;
+            bool bgra = format == FormatCase.Bgra1010102Unorm;
             return (Words([17UL | (666UL << 10) | (333UL << 20) | (2UL << 30)], 4, order), new((bgra ? 333d : 17d) / 1023, 666d / 1023, (bgra ? 17d : 333d) / 1023, 2d / 3));
         }
 
