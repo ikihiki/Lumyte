@@ -22,7 +22,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
     internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         RequireRecording();
         if (source.Buffer is not VulkanShaderDataBuffer<T> src || destination.Buffer is not VulkanShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
@@ -34,7 +34,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);

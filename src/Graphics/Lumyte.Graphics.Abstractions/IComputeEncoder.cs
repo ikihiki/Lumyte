@@ -11,7 +11,7 @@ public interface IComputeEncoder
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>
     void SetArguments<T>(in T arguments)
-        where T : struct, IShaderArguments;
+        where T : IShaderArguments;
 
     /// <summary>Copies a logical root snapshot for the selected program.</summary>
     /// <param name="arguments">The root member values and numeric payloads.</param>

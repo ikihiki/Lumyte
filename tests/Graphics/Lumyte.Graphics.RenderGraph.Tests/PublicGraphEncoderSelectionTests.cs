@@ -214,5 +214,5 @@ public sealed partial class PublicGraphEncoderConsumerTests
         commands.Dispose();
     }
 
-    private static float ReadFloat(ShaderValueSnapshot snapshot) => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span);
+    private static float ReadFloat(ShaderValueSnapshot snapshot) => MemoryMarshal.Read<float>(snapshot.Data.Span[snapshot.Fields.Single(field => field.Path == "Float").Offset..]);
 }

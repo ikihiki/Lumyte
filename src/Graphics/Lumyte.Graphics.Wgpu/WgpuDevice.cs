@@ -267,7 +267,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);

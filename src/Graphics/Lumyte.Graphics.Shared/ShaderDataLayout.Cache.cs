@@ -103,7 +103,7 @@ public sealed partial class ShaderDataLayout
                     throw new ArgumentException("The program does not declare this root parameter.", nameof(name));
                 }
 
-                layout = new(parameter.GetProperty("type").GetProperty("elementType"), _metadata, true);
+                layout = new(parameter.GetProperty("type").GetProperty("elementType"), _metadata);
                 _roots.Add(name, layout);
                 return layout;
             }

@@ -78,7 +78,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         Assert.Equal(1, commands.Encoder.Draws);
         Assert.Equal(1, commands.Encoder.IndexedDraws);
         Assert.Equal(2, reads);
-        Assert.Equal(new[] { 1f, 2f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span)));
+        Assert.Equal(new[] { 1f, 2f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Data.Span)));
         Assert.Equal(1, commands.Encoder.Ends);
         Assert.Throws<InvalidOperationException>(() => escaped!.SetPipeline(pipeline));
     }

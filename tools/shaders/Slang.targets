@@ -54,6 +54,36 @@
               }
             }
             reflection = reflection.Insert(start + 1, "\"lumyteAbi\":1,\"lumyteRootBinding\":8,\"lumyteReferenceTargets\":{" + string.Join(",", referenceTargets) + "},");
+            // Locate complete JSON object values without changing any numeric offsets.
+            System.Func<int, int> objectEnd = startIndex => {
+              int depth = 0; bool quoted = false; bool escaped = false;
+              for (int i = startIndex; i < reflection.Length; i++) {
+                char c = reflection[i];
+                if (quoted) {
+                  if (escaped) escaped = false;
+                  else if (c == '\\') escaped = true;
+                  else if (c == '"') quoted = false;
+                } else if (c == '"') quoted = true;
+                else if (c == '{') depth++;
+                else if (c == '}' && --depth == 0) return i + 1;
+              }
+              throw new System.InvalidOperationException("Incomplete Slang reflection object.");
+            };
+            var completedRoots = new HashSet<string>();
+            foreach (Match root in Regex.Matches(source, @"ConstantBuffer<LumyteRootWire<([^>]+)>>\s+__lumyte_wire_(\w+)")) {
+              string name = root.Groups[2].Value;
+              if (!completedRoots.Add(name)) continue;
+              int probe = reflection.IndexOf("\"name\": \"__lumyte_schema_" + root.Groups[1].Value.Trim() + "\"", System.StringComparison.Ordinal);
+              int value = reflection.IndexOf("\"valueType\"", probe, System.StringComparison.Ordinal);
+              int valueStart = reflection.IndexOf('{', value);
+              string logicalType = reflection.Substring(valueStart, objectEnd(valueStart) - valueStart);
+              string wireName = "\"name\": \"__lumyte_wire_" + name + "\"";
+              int wire = reflection.IndexOf(wireName, System.StringComparison.Ordinal);
+              int element = reflection.IndexOf("\"elementType\"", wire, System.StringComparison.Ordinal);
+              int elementStart = reflection.IndexOf('{', element);
+              reflection = reflection.Remove(elementStart, objectEnd(elementStart) - elementStart).Insert(elementStart, logicalType);
+              reflection = reflection.Replace(wireName, "\"name\": \"" + name + "\"");
+            }
             writer.Write(reflection);
           }
         }
@@ -70,18 +100,35 @@
       <Using Namespace="System.IO" />
       <Using Namespace="System.Text.RegularExpressions" />
       <Using Namespace="System.Text" />
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         string source = File.ReadAllText(Input);
-        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
-        if (source.Contains("lumyte.slang")) {
-          var probes = new StringBuilder();
-          foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{")) {
-            string name = type.Groups[1].Value;
-            probes.AppendLine("StructuredBuffer<Ptr<" + name + ">> __lumyte_schema_" + name + ";");
-          }
-          // Reflect the pointer's natural layout before same-name root uniform layouts.
-          source = probes.Append(source).ToString();
+        if (source.IndexOf("lumyte.slang", StringComparison.Ordinal) < 0)
+        {
+            source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
+            File.WriteAllText(Output, source);
+            return true;
         }
+
+        // A native aggregate uniform has backend-specific vector/struct alignment.
+        // Keep the logical schema for reflection, but read its bytes through
+        // portable uint4 uniform lanes. No CPU-side numeric repacking is allowed.
+        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", match =>
+        {
+            string type = match.Groups[1].Value.Trim();
+            string name = match.Groups[2].Value;
+            return $"\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
+        });
+
+        var probes = new StringBuilder();
+        foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{"))
+        {
+            string name = type.Groups[1].Value;
+            probes.AppendLine($"StructuredBuffer<Ptr<{name}>> __lumyte_schema_{name};");
+        }
+
+        source = probes.Append(source).ToString();
         File.WriteAllText(Output, source);
       ]]></Code>
     </Task>

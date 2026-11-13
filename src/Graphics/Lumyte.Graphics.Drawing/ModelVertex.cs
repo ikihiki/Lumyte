@@ -38,6 +38,7 @@ public readonly partial record struct ModelVertex(Vector3 Position, Vector3 Norm
     /// <summary>Verifies the compiled shader consumes the fixed C# vertex bytes exactly, without repacking.</summary>
     /// <param name="artifact">The model shader artifact.</param>
     /// <param name="target">The active backend target.</param>
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void ValidateShaderLayout(ShaderArtifact artifact, ShaderTarget target)
     {
         ArgumentNullException.ThrowIfNull(artifact);

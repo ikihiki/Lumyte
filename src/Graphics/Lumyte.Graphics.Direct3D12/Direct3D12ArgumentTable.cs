@@ -53,7 +53,7 @@ internal sealed class Direct3D12ArgumentTable(Direct3D12Device owner, ArgumentTa
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         ThrowIfDisposed();
         if (range.Buffer is not Direct3D12ShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)

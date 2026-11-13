@@ -41,11 +41,6 @@ public sealed class ShaderBindingSnapshot
     {
         foreach (ShaderValue member in value.Values)
         {
-            if (!member.IsReference)
-            {
-                continue;
-            }
-
             if (member.Reference is not IShaderReference reference)
             {
                 throw new ArgumentException("A shader reference must originate from an argument table.");

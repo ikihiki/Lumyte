@@ -9,6 +9,7 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
     internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingSnapshot snapshot, ShaderTargetData target)
     {
         byte[] root = ShaderDataLayout.Root(target, snapshot.Root.RootParameter).Pack(snapshot.Root, (value, kind) => Direct3D12ShaderReferenceEncoding.Pack(owner, value, kind));
+        Array.Resize(ref root, checked(((root.Length + 15) / 16) * 16));
         if (root.Length > 65536)
         {
             throw new NotSupportedException("Root data exceeds the D3D12 constant buffer limit.");

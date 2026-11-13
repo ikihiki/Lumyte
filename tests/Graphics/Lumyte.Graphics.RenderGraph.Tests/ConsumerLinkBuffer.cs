@@ -33,7 +33,7 @@ internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 
     public ShaderValueSnapshot Read(ulong index)
     {
         ValidateAlive();
-        return _values[checked((int)index)] ?? new("element", "ConsumerLink", []);
+        return _values[checked((int)index)] ?? new("element", "ConsumerLink", new byte[16], [], ConsumerLink.TransferFields);
     }
 
     public void SetTransferredValue(ulong index, ShaderValueSnapshot value) => _values[checked((int)index)] = value;

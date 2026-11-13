@@ -271,7 +271,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(artifact);

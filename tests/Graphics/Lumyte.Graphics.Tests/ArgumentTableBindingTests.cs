@@ -42,7 +42,7 @@ public sealed class ArgumentTableBindingTests
     [Fact]
     public void ValueOnlyArgumentsDoNotRequireTable()
     {
-        var root = new ShaderValueSnapshot("arguments", "Values", [new("Value", typeof(float), BitConverter.GetBytes(1f), null, false)]);
+        var root = new ShaderValueSnapshot("arguments", "Values", BitConverter.GetBytes(1f), [], [new("Value", 0, sizeof(float), typeof(float))]);
         var captured = ShaderBindingSnapshot.Capture(root, null);
         Assert.Empty(captured.References);
         Assert.Empty(captured.Elements);
@@ -131,12 +131,12 @@ public sealed class ArgumentTableBindingTests
     public void InvalidReferenceIsRejected()
     {
         using var table = new Table();
-        var root = new ShaderValueSnapshot("arguments", "Values", [new("Resource", typeof(object), ReadOnlyMemory<byte>.Empty, new object(), true)]);
+        var root = new ShaderValueSnapshot("arguments", "Values", new byte[16], [new("Resource", typeof(object), new object(), 0)], [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)]);
         Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(root, table));
     }
 
     private static ShaderValueSnapshot Snapshot(IShaderReference reference)
-        => new("arguments", "Values", [new("Resource", typeof(object), ReadOnlyMemory<byte>.Empty, reference, true)]);
+        => new("arguments", "Values", new byte[16], [new("Resource", typeof(object), reference, 0)], [new("Resource", 0, 16, typeof(ShaderReferenceSlot), true)]);
 
     private sealed class Reference(IArgumentTable table, object resource, ulong count = 1) : IShaderReference
     {
@@ -213,7 +213,7 @@ public sealed class ArgumentTableBindingTests
             where T : unmanaged => throw new NotSupportedException();
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : struct, IShaderData => throw new NotSupportedException();
+            where T : IShaderData => throw new NotSupportedException();
 
         public void ReleaseTexture(uint slot) => throw new NotSupportedException();
 

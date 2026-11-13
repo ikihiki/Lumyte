@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Browser;
 
 internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource
-    where T : struct, IShaderData
+    where T : IShaderData
 {
     private readonly ShaderValueSnapshot?[] _values;
     private bool _disposed;
@@ -15,9 +15,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
             throw new ArgumentException("Shader data supports GPU storage or upload staging only.", nameof(memory));
         }
 
-        T empty = default;
-        ShaderValueSnapshot codec = IShaderArguments.Capture(in empty);
-        Layout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, codec.ShaderTypeName);
+        Layout = ShaderDataLayout.Data<T>(artifact, owner.Caps.ShaderTarget);
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));

@@ -3,7 +3,7 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Owns typed shader storage and dependency metadata for explicit staging transfers.</summary>
 /// <typeparam name="T">The application shader data structure.</typeparam>
 public interface IGraphicsShaderDataBuffer<T> : IDisposable
-    where T : struct, IShaderData
+    where T : IShaderData
 {
     /// <summary>Gets the logical element count.</summary>
     ulong Count { get; }

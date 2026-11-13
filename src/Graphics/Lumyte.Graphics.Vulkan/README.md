@@ -154,7 +154,7 @@ textureとsamplerは種類別の論理slotをnative descriptor array indexとし
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
-shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+shader dataのstrideと配置はC# unmanaged structのTransferSizeと実際のfield offsetが正本です。pointee reflectionはDebug照合と参照access kindにのみ使用し、数値を再配置しません。physical addressからのshader load/storeはscalar wordsを使い、float3のalignment補正を必要としません。root uniformはuint4 wire lanesをinterpretし、allocation/binding capacityだけを16-byteへ切り上げます。C# wire sizeとoffsetは変更しません。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルは使用しません。native完了workerからのloss通知を安全に配送するための内部bridgeと回帰テストに限りInternalsVisibleToを使用します。
 

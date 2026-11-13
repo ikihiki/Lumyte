@@ -1,22 +1,47 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-// Ordinary application codecs used by both direct encoders and the external graph consumer fixture.
-internal readonly record struct ConsumerArguments(float Float, Func<float>? Read = null) : IShaderArguments
+// Explicit application wire layout shared by direct encoders and external graph consumers.
+internal sealed record class ConsumerArguments(float Float, Func<float>? Read = null) : IShaderArguments
 {
     public static string ShaderTypeName => "ConsumerInputs";
+
+    public static int TransferSize => 128;
+
+    public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Float", 0, 4, typeof(float)), new("Int", 4, 4, typeof(int)), new("UInt", 8, 4, typeof(uint)), new("Vector2", 16, 8, typeof(Vector2)), new("Vector3", 32, 12, typeof(Vector3)), new("Vector4", 48, 16, typeof(Vector4)), new("Matrix", 64, 64, typeof(Matrix4x4))];
 
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter
     {
-        writer.WriteValue("Float", Read?.Invoke() ?? Float);
-        writer.WriteValue("Int", -2);
-        writer.WriteValue("UInt", 3u);
-        writer.WriteValue("Vector2", Vector2.One);
-        writer.WriteValue("Vector3", Vector3.One);
-        writer.WriteValue("Vector4", Vector4.One);
-        writer.WriteValue("Matrix", Matrix4x4.Identity);
+        Wire wire = new() { Float = Read?.Invoke() ?? Float, Int = -2, UInt = 3, Vector2 = Vector2.One, Vector3 = Vector3.One, Vector4 = Vector4.One, Matrix = Matrix4x4.Identity };
+        writer.WriteBytes(in wire);
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 128)]
+    private struct Wire
+    {
+        [FieldOffset(0)]
+        public float Float;
+
+        [FieldOffset(4)]
+        public int Int;
+
+        [FieldOffset(8)]
+        public uint UInt;
+
+        [FieldOffset(16)]
+        public Vector2 Vector2;
+
+        [FieldOffset(32)]
+        public Vector3 Vector3;
+
+        [FieldOffset(48)]
+        public Vector4 Vector4;
+
+        [FieldOffset(64)]
+        public Matrix4x4 Matrix;
     }
 }

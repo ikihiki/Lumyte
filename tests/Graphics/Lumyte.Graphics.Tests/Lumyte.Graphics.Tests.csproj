@@ -7,6 +7,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI/Lumyte.UI.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics.Drawing2D/Lumyte.Resources.Graphics.Drawing2D.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Resources.Graphics.ImageEffects/Lumyte.Resources.Graphics.ImageEffects.csproj" />

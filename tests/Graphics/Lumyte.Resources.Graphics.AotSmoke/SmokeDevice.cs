@@ -53,7 +53,7 @@ internal sealed class SmokeDevice : IGraphicDevice, IGraphicsDeviceOwner
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData => throw new NotSupportedException();
+        where T : IShaderData => throw new NotSupportedException();
 
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

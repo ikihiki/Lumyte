@@ -22,7 +22,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         RequireRecording();
         if (source.Buffer is not Direct3D12ShaderDataBuffer<T> src || destination.Buffer is not Direct3D12ShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
@@ -34,7 +34,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);

@@ -122,7 +122,7 @@ WGSLだけを含むonline artifactも、このbackendの型schemaとhelper ABI�
 
 ## 構造体引数とWGSL binding生成
 
-SetArgumentsは生成codecでroot値をsnapshotします。利用者がprogramに対応する型を渡し、backendは確定したschemaに従ってpackします。shader dataは明示copyで伝播したCPU metadataを使って選択要素からIGpuRefを収集します。循環は要素の訪問済み集合で止めます。command内のpartial copyはmetadata overlayを更新し、submit成功後に後続commandへ公開します。
+SetArgumentsは生成transfer実装でC# wire bytes全体と参照identityをsnapshotします。数値はpaddingも含めて無変換でコピーし、参照だけをC#で定義した16-byte slotへ解決します。layout照合はDebugのみで、Releaseは不一致でもrepackしません。shader dataは明示copyで伝播したCPU metadataを使って選択要素からIGpuRefを収集します。循環は要素の訪問済み集合で止めます。command内のpartial copyはmetadata overlayを更新し、submit成功後に後続commandへ公開します。
 
 artifactのWGSLを直接編集し、texture・sampler・read-only buffer・writable bufferを独立して重複排除した数だけ宣言します。texture samplingとbuffer wordアクセスのABI-owned helperを生成し、論理slotを種類別の物理bindingへ変換するremapを渡します。root uniformとremap storageも含めて有効limitsを検証し、超過時は描画を分割せずNotSupportedExceptionにします。種類別resource数はprogram内のpipeline variant keyに含めます。
 
@@ -132,7 +132,7 @@ root値とdraw用remapだけをmappedAtCreationで初期化してunmapします�
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
-shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。WGSLのraw buffer load／storeと`sizeof(T)`が使うnatural layoutに合わせ、`float3`だけの構造体はstride 12、`uint`と`float3`を持つ構造体はoffset 0／4・stride 16でpackします。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+shader dataのstrideと配置はC# unmanaged structのTransferSizeと実際のfield offsetが正本です。pointee reflectionはDebug照合と参照access kindにのみ使用し、数値を再配置しません。root uniformはuint4 wire lanesをshader側でinterpretし、allocation/binding capacityだけを16-byteへ切り上げます。C# wire sizeとoffsetは変更しません。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
 

@@ -1,14 +1,50 @@
 # Lumyte.Graphics.Generators
 
-IShaderArgumentsと、それを継承するIShaderDataを実装するapplicationのpartial structへシリアライズ実装を生成します。生成するShaderTypeNameとWriteは型自身の明示的interface実装であり、登録やmodule initializerを必要としません。Writeはgenericなref writerを受け取り、snapshot writer本体を値型としてboxingせず使用します。保持するsnapshotと数値payloadのメモリ確保は残ります。
+The generator implements IShaderArguments and IShaderData on partial types.
+There is no codec registry, per-numeric-field serialization, or reflected repacking.
 
-数値、Vector、Matrix4x4、IGpuRef、入れ子structを扱います。custom getter、配列、任意class、genericまたはnestedな生成対象型はLUMG001で診断します。record structの自動propertyを扱います。partialでない生成対象型もLUMG001で診断します。shaderのlayoutはartifact reflectionからbackendが検証します。
+- Unmanaged structs (including record structs) transfer their **entire C# representation**
+  with one writer.WriteBytes(in this) call. Nested structs and padding are not rewritten.
+- Values containing IGpuRef are partial classes with one **private unmanaged storage
+  struct**. That explicitly authored struct determines field order, packing, padding
+  and stride. A same-named ShaderReferenceSlot reserves 16 bytes per reference.
+  The generator copies storage once, then records reference fixups.
+- Numeric properties can forward to private storage normally, or be public read/write
+  partial properties implemented by the generator (.NET 10).
+- Static TransferSize and TransferFields describe C# wire layout without creating an
+  instance. Generated unsafe field accessors calculate actual managed byte offsets;
+  they do not inspect or repack shader values.
+- Shader layout diagnostics run only in Debug. Release transfers original bytes even
+  for incompatible shaders. Reference bounds, ABI size, resource ownership, lifetime
+  and binding access-kind checks remain active in both configurations.
 
-project参照では次を追加します。
+Example (using System.Numerics and System.Runtime.InteropServices):
 
-```xml
-<ProjectReference Include="path/to/Lumyte.Graphics.Generators.csproj"
-                  OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-```
+    public sealed partial class DrawArguments : IShaderArguments
+    {
+        private WireData _data;
 
-生成したシリアライズ実装はGraphics.Abstractionsの`IShaderArguments.Capture<T>`から直接呼び出します。RootParameterは既定でargumentsとし、型の静的propertyで変更できます。managed reflectionやInternalsVisibleToは使いません。数値snapshotとIGpuRefのidentityを保持し、GPU addressやbinding番号をapplicationへ公開しません。shader sourceは共通helperのlumyte.slangをincludeし、offlineはSlang.targets、onlineはSlangShaderCompilerで同じABI metadataをartifactへ格納します。
+        public partial Matrix4x4 Transform { get; set; }
+        public IGpuRef<Vertex> Vertices { get; set; } = null!;
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        private struct WireData
+        {
+            public Matrix4x4 Transform;
+            public ShaderReferenceSlot Vertices;
+        }
+    }
+
+Keep shader declarations in the same order and with matching offsets. The generator
+never rearranges fields or chooses packing. GPU references remain opaque and non-owning.
+Snapshots copy wire bytes and reference identities, so later property writes do not change
+recorded values. Reference-containing classes themselves are never copied to GPU memory.
+
+Project reference:
+
+    <ProjectReference Include="path/to/Lumyte.Graphics.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+
+Generic/nested generator targets, managed structs, missing private unmanaged storage,
+and missing or mistyped reference slots produce LUMG001 diagnostics. Handwritten
+implementations use the same bulk transfer contract.

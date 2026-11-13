@@ -1,10 +1,12 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Holds generated member values without owning registrations or native resources.</summary>
+/// <summary>Holds raw C# bytes and non-owning resource reference identities.</summary>
 /// <param name="RootParameter">The logical root parameter name.</param>
 /// <param name="ShaderTypeName">The logical shader type name.</param>
-/// <param name="Values">The immutable member list.</param>
-public sealed record ShaderValueSnapshot(string RootParameter, string ShaderTypeName, IReadOnlyList<ShaderValue> Values)
+/// <param name="Data">The C# wire bytes.</param>
+/// <param name="Values">The immutable reference fixups.</param>
+/// <param name="Fields">The C# wire layout.</param>
+public sealed record ShaderValueSnapshot(string RootParameter, string ShaderTypeName, ReadOnlyMemory<byte> Data, IReadOnlyList<ShaderValue> Values, IReadOnlyList<ShaderTransferField> Fields)
 {
     internal Action<IReadOnlyCollection<IShaderReference>>? ExecutionReferenceValidation { get; init; }
 
@@ -18,7 +20,7 @@ public sealed record ShaderValueSnapshot(string RootParameter, string ShaderType
     public ShaderValueSnapshot Copy()
     {
         ArgumentNullException.ThrowIfNull(Values);
-        ShaderValue[] values = Values.Select(value => value with { Data = value.Data.ToArray() }).ToArray();
-        return this with { Values = Array.AsReadOnly(values) };
+        ShaderValue[] values = Values.ToArray();
+        return this with { Data = Data.ToArray(), Values = Array.AsReadOnly(values), Fields = Array.AsReadOnly(Fields.ToArray()) };
     }
 }

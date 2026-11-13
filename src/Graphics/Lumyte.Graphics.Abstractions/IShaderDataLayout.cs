@@ -19,7 +19,7 @@ public interface IShaderDataLayout
     /// <returns>Whether the layouts match.</returns>
     bool Matches(IShaderDataLayout layout);
 
-    /// <summary>Packs numeric values and backend-encoded resource references.</summary>
+    /// <summary>Copies C# wire bytes and fixes up backend-encoded resource reference slots.</summary>
     /// <param name="snapshot">The captured application values.</param>
     /// <param name="reference">The backend reference encoder.</param>
     /// <returns>The packed bytes.</returns>

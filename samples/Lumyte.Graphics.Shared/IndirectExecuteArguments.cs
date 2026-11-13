@@ -3,5 +3,25 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Supplies writable results for the indirect compute consumer.</summary>
-/// <param name="Output">The writable execution result.</param>
-public readonly partial record struct IndirectExecuteArguments(IGpuRef<uint> Output) : IShaderArguments;
+public sealed partial record class IndirectExecuteArguments : IShaderArguments
+{
+    private TransferData _data;
+
+    /// <summary>Initializes a new instance of the <see cref="IndirectExecuteArguments"/> class.</summary>
+    /// <param name="output">The writable execution result.</param>
+    public IndirectExecuteArguments(IGpuRef<uint> output)
+    {
+        _data = default;
+        Output = output;
+    }
+
+    /// <summary>Gets or sets the shader Output value.</summary>
+    public IGpuRef<uint> Output { get; set; }
+
+    // This declaration is the wire ABI. Keep shader declarations in exactly this order.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
+    private struct TransferData
+    {
+        public ShaderReferenceSlot Output;
+    }
+}

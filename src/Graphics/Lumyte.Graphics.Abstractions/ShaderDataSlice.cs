@@ -3,7 +3,7 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>References a nonempty shader data range; default is invalid.</summary>
 /// <typeparam name="T">The application shader data structure.</typeparam>
 public readonly struct ShaderDataSlice<T>
-    where T : struct, IShaderData
+    where T : IShaderData
 {
     /// <summary>Initializes a new instance of the <see cref="ShaderDataSlice{T}"/> struct.</summary>
     /// <param name="buffer">The logical allocation.</param>

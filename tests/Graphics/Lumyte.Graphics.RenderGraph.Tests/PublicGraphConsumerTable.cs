@@ -20,7 +20,7 @@ internal sealed class PublicGraphConsumerTable(ArgumentTableDesc desc) : IArgume
         where T : unmanaged => new PublicGraphConsumerRef<T>(this, range.Buffer, slot, range.Count, range.OffsetInBytes, range.SizeInBytes, range.OffsetInBytes, range.SizeInBytes);
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : struct, IShaderData => new PublicGraphConsumerRef<T>(this, range.Buffer, slot, range.Count, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes);
+        where T : IShaderData => new PublicGraphConsumerRef<T>(this, range.Buffer, slot, range.Count, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes);
 
     public void ReleaseTexture(uint slot)
     {

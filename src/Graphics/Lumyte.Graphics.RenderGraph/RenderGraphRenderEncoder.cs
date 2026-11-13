@@ -94,7 +94,7 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     /// <typeparam name="T">The existing application argument type and its ordinary shader codec.</typeparam>
     /// <param name="arguments">The application values, copied through their codec.</param>
     public void SetArguments<T>(in T arguments)
-        where T : struct, IShaderArguments
+        where T : IShaderArguments
     {
         EnsureActive();
         if (_pipeline is null)

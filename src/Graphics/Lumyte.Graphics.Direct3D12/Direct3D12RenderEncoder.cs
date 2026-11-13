@@ -34,7 +34,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     }
 
     public void SetArguments<T>(in T value)
-        where T : struct, IShaderArguments
+        where T : IShaderArguments
     {
         owner.ValidatePass(this);
         if (_pipeline == null)

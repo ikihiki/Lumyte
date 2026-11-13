@@ -31,7 +31,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     public void SetArgumentTable(IArgumentTable table) => _table = table;
 
     public void SetArguments<T>(in T arguments)
-        where T : struct, IShaderArguments => throw new NotSupportedException();
+        where T : IShaderArguments => throw new NotSupportedException();
 
     public void SetArguments(ShaderValueSnapshot arguments)
     {

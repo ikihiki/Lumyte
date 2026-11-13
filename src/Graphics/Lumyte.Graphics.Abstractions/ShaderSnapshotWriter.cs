@@ -1,25 +1,23 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace Lumyte.Graphics.Abstractions;
 
-internal readonly struct ShaderSnapshotWriter() : IShaderValueWriter
+internal struct ShaderSnapshotWriter : IShaderValueWriter
 {
-    internal List<ShaderValue> Values { get; } = [];
+    internal byte[]? Data;
+    internal List<ShaderValue>? Values;
 
-    public void WriteValue<T>(string path, in T value)
+    public void WriteBytes<T>(in T value)
         where T : unmanaged
     {
-        Type type = typeof(T);
-        if (type != typeof(int) && type != typeof(uint) && type != typeof(float) && type != typeof(Vector2) && type != typeof(Vector3) && type != typeof(Vector4) && type != typeof(Matrix4x4))
+        if (Data != null)
         {
-            throw new NotSupportedException("Unsupported numeric shader member type.");
+            throw new InvalidOperationException("A transfer must contain exactly one bulk numeric write.");
         }
 
-        T copy = value;
-        byte[] bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref copy, 1)).ToArray();
-        Values.Add(new(path, type, bytes, null, false));
+        Data = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray();
     }
 
-    public void WriteReference<T>(string path, IGpuRef<T>? value) => Values.Add(new(path, typeof(T), default, value, true));
+    public void WriteReference<T>(string path, int offset, IGpuRef<T>? value)
+        => (Values ??= []).Add(new(path, typeof(T), value, offset));
 }

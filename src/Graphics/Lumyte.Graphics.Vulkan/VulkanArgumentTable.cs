@@ -53,7 +53,7 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : struct, IShaderData
+        where T : IShaderData
     {
         ThrowIfDisposed();
         if (range.Buffer is not VulkanShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)

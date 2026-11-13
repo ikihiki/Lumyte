@@ -1,18 +1,18 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Connects generated application codecs to backend serializers without reflection.</summary>
+/// <summary>Copies a complete unmanaged wire value and records opaque references.</summary>
 public interface IShaderValueWriter
 {
-    /// <summary>Writes a supported numeric member.</summary>
-    /// <typeparam name="T">The numeric member type.</typeparam>
-    /// <param name="path">The logical member path.</param>
-    /// <param name="value">The numeric value.</param>
-    void WriteValue<T>(string path, in T value)
+    /// <summary>Copies the complete C# representation, including padding, exactly once.</summary>
+    /// <typeparam name="T">The unmanaged C# wire type.</typeparam>
+    /// <param name="value">The complete wire value.</param>
+    void WriteBytes<T>(in T value)
         where T : unmanaged;
 
-    /// <summary>Writes an opaque reference member without exposing its native representation.</summary>
-    /// <typeparam name="T">The referenced logical element type.</typeparam>
-    /// <param name="path">The logical member path.</param>
-    /// <param name="value">The registration reference.</param>
-    void WriteReference<T>(string path, IGpuRef<T>? value);
+    /// <summary>Records a reference and its C# wire slot offset (always 16 bytes).</summary>
+    /// <typeparam name="T">The referenced element type.</typeparam>
+    /// <param name="path">The logical reference name.</param>
+    /// <param name="offset">The C# wire slot offset.</param>
+    /// <param name="value">The non-owning reference.</param>
+    void WriteReference<T>(string path, int offset, IGpuRef<T>? value);
 }

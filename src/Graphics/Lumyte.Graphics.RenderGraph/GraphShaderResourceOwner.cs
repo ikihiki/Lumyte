@@ -183,7 +183,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         ShaderResources core = Lookup(pass).Core;
         ValidateExecution(core, pass, outputs, graphics);
         ValidateLookup(core, pass);
-        foreach (ShaderValue value in snapshot.Values.Where(value => value.IsReference))
+        foreach (ShaderValue value in snapshot.Values)
         {
             if (value.Reference is not IShaderReference reference || !((ModuleResources)core).Accepts(reference))
             {
@@ -257,7 +257,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         where T : unmanaged => Preparation().GetBuffer(Pass(resources), buffer, access);
 
     internal IGraphicsShaderDataBuffer<T> Buffer<T>(ShaderResources resources, RenderGraphShaderDataBuffer<T> buffer)
-        where T : struct, IShaderData => Preparation().GetShaderDataBuffer(Pass(resources), buffer);
+        where T : IShaderData => Preparation().GetShaderDataBuffer(Pass(resources), buffer);
 
     internal IGraphicsSampler Sampler(ShaderResources resources, RenderGraphSampler sampler) => Preparation().GetSampler(Pass(resources), sampler);
 

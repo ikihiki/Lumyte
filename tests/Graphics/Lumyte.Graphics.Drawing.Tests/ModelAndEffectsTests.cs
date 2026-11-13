@@ -16,7 +16,7 @@ public sealed class ModelAndEffectsTests
     {
         var vertex = new ModelVertex(Vector3.UnitX, Vector3.UnitY, new(1, 0, 0, -1), new(0.25f, 0.5f), Vector4.One);
         ModelMaterial material = ModelDrawing.DefaultMaterial;
-        ModelDrawArguments arguments = default(ModelDrawArguments) with
+        ModelDrawArguments arguments = new ModelDrawArguments(null!, default, default, default, default, default, default, default, default, default, default, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!) with
         {
             Material = material,
             World = Matrix4x4.Identity,
@@ -56,7 +56,7 @@ public sealed class ModelAndEffectsTests
     [Fact]
     public void CustomReferencePackingDoesNotRelaxNativeAdmission()
     {
-        ModelDrawArguments arguments = default;
+        ModelDrawArguments arguments = new(null!, default, default, default, default, default, default, default, default, default, default, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
@@ -87,7 +87,12 @@ public sealed class ModelAndEffectsTests
             JsonNode size = type["sizes"]!.AsArray().Single(entry => entry!["kind"]!.GetValue<string>() == "uniform")!;
             size["value"] = 68;
             var changed = ShaderArtifact.PackTarget(target, data.Stage, data.EntryPoint, data.CompilerVersion, data.Code, reflection.ToJsonString());
-            Assert.Throws<NotSupportedException>(() => ModelVertex.ValidateShaderLayout(changed, target));
+#if DEBUG
+            Assert.Throws<ArgumentException>(() => ModelVertex.ValidateShaderLayout(changed, target));
+#else
+            // The call is intentionally removed by ConditionalAttribute in Release.
+            ModelVertex.ValidateShaderLayout(changed, target);
+#endif
         }
     }
 

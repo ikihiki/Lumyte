@@ -13,11 +13,20 @@ public static class ShaderSourcePreparation
     public static string Prepare(string source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
         if (!source.Contains("lumyte.slang", StringComparison.Ordinal))
         {
-            return source;
+            return Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
         }
+
+        // A native aggregate uniform has backend-specific vector/struct alignment.
+        // Keep the logical schema for reflection, but read its bytes through
+        // portable uint4 uniform lanes. No CPU-side numeric repacking is allowed.
+        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", match =>
+        {
+            string type = match.Groups[1].Value.Trim();
+            string name = match.Groups[2].Value;
+            return $"\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
+        });
 
         var probes = new StringBuilder();
         foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{"))
@@ -46,6 +55,22 @@ public static class ShaderSourcePreparation
             foreach (Match field in Regex.Matches(structure.Groups[2].Value, @"Gpu(?:RW)?BufferRef\s*<\s*(\w+)\s*>\s+(\w+)\s*;"))
             {
                 targets[structure.Groups[1].Value + "." + field.Groups[2].Value] = field.Groups[1].Value;
+            }
+        }
+
+        // Reflection exposes the logical scalar schema while the compiled binding
+        // is an opaque word buffer. Its physical capacity rounds up to 16 bytes;
+        // TransferSize remains the exact C# size and is never rounded/repacked.
+        JsonArray parameters = metadata["parameters"]!.AsArray();
+        if (source.Contains("lumyte.slang", StringComparison.Ordinal))
+        {
+            foreach (Match root in Regex.Matches(source, @"ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;"))
+            {
+                string name = root.Groups[2].Value;
+                JsonObject wire = parameters.OfType<JsonObject>().Single(p => p["name"]!.GetValue<string>() == "__lumyte_wire_" + name);
+                JsonObject probe = parameters.OfType<JsonObject>().Single(p => p["name"]!.GetValue<string>() == "__lumyte_schema_" + root.Groups[1].Value.Trim());
+                wire["name"] = name;
+                wire["type"]!["elementType"] = probe["type"]!["resultType"]!["valueType"]!.DeepClone();
             }
         }
 

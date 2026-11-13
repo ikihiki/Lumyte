@@ -106,16 +106,33 @@ public sealed class TypedGraphArgumentsTests
         // The invalid execution was never emitted or submitted.
     }
 
-    private readonly record struct NativeGraphArguments(IGpuRef<uint> Output, uint Index, uint Value) : IShaderArguments
+    private sealed record class NativeGraphArguments(IGpuRef<uint> Output, uint Index, uint Value) : IShaderArguments
     {
         public static string ShaderTypeName => "NativeGraphArguments";
+
+        public static int TransferSize => 24;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Output", 0, 16, typeof(ShaderReferenceSlot), true), new("Index", 16, 4, typeof(uint)), new("Value", 20, 4, typeof(uint))];
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter
         {
-            writer.WriteReference("Output", Output);
-            writer.WriteValue("Index", Index);
-            writer.WriteValue("Value", Value);
+            Wire wire = new() { Index = Index, Value = Value };
+            writer.WriteBytes(in wire);
+            writer.WriteReference("Output", 0, Output);
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 24)]
+        private struct Wire
+        {
+            [System.Runtime.InteropServices.FieldOffset(0)]
+            public ShaderReferenceSlot Output;
+
+            [System.Runtime.InteropServices.FieldOffset(16)]
+            public uint Index;
+
+            [System.Runtime.InteropServices.FieldOffset(20)]
+            public uint Value;
         }
     }
 }

@@ -114,7 +114,7 @@ public sealed class ResourceRenderGraphImports
     /// <param name="cancellationToken">Cancels acquisition.</param>
     /// <returns>The graph-local handle.</returns>
     public async ValueTask<RenderGraphShaderDataBuffer<T>> ImportShaderDataBufferAsync<T>(ResourceKey<IGraphicsShaderDataBuffer<T>> key, BarrierScope initialScope, CancellationToken cancellationToken = default)
-        where T : struct, IShaderData => _graph.ImportShaderDataBuffer(await AcquireAsync(key, cancellationToken).ConfigureAwait(false), initialScope);
+        where T : IShaderData => _graph.ImportShaderDataBuffer(await AcquireAsync(key, cancellationToken).ConfigureAwait(false), initialScope);
 
     private void EnsureBuilding() => ObjectDisposedException.ThrowIf(!_graph.IsBuilding, this);
 

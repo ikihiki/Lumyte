@@ -103,4 +103,4 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.T
 GPU テストは upload から indexed model draw、HDR scene、フォグ、fullscreen effect、
 readback までの結果を確認します。透過 alpha、DAG の tone mapping、ビネット、
 Resources による世代保持と managed device loss を模擬した復旧も検証します。CPU テストは形状、material／render state、normal transform、
-生成 codec の compiled ABI を確認します。ファイル形式のインポーターは含みません。
+Debug構成でC# bulk transferとcompiled ABIの一致を確認します。Releaseでは数値layoutを検証・repackしません。ファイル形式のインポーターは含みません。

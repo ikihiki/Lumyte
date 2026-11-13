@@ -20,7 +20,8 @@ public sealed class DrawingTests
         AssertPositiveWinding(vertices);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in vertices[0]);
         Assert.Equal("DrawingVertex", snapshot.ShaderTypeName);
-        Assert.Equal(3, snapshot.Values.Count);
+        Assert.Empty(snapshot.Values);
+        Assert.Equal(36, snapshot.Data.Length);
     }
 
     /// <summary>Checks the circle closes exactly and all triangles face forward.</summary>

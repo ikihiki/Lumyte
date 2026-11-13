@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>Checks that public snapshots cannot bypass compiled root argument schemas.</summary>
+/// <summary>Checks that public snapshots cannot bypass compiled root reference schemas.</summary>
 public sealed class ShaderSnapshotValidationTests
 {
     private const string Source = """
@@ -33,7 +33,7 @@ public sealed class ShaderSnapshotValidationTests
         }
         """;
 
-    /// <summary>Rejects malformed logical values even when every supplied payload fits its wire size.</summary>
+    /// <summary>Rejects malformed resource metadata even when every supplied payload fits its wire size.</summary>
     /// <returns>The completion of shader schema compilation and packing checks.</returns>
     [Fact]
     public async Task PackRejectsMalformedRootSnapshotsAsync()
@@ -123,27 +123,17 @@ public sealed class ShaderSnapshotValidationTests
     }
 
     private static ShaderValueSnapshot Snapshot(object texture, object sampler, object output)
-        => new(
-        "arguments",
-        "SnapshotArguments",
-        [
-            new("Value", typeof(float), BitConverter.GetBytes(7f), null, false),
-            new("Texture", typeof(IGraphicsTextureView), ReadOnlyMemory<byte>.Empty, texture, true),
-            new("Sampler", typeof(IGraphicsSampler), ReadOnlyMemory<byte>.Empty, sampler, true),
-            new("Output", typeof(uint), ReadOnlyMemory<byte>.Empty, output, true),
-        ]);
+        => new("arguments", "SnapshotArguments", new byte[52], [new("Texture", typeof(IGraphicsTextureView), texture, 4), new("Sampler", typeof(IGraphicsSampler), sampler, 20), new("Output", typeof(uint), output, 36)], [new("Value", 0, 4, typeof(float)), new("Texture", 4, 16, typeof(ShaderReferenceSlot), true), new("Sampler", 20, 16, typeof(ShaderReferenceSlot), true), new("Output", 36, 16, typeof(ShaderReferenceSlot), true)]);
 
     private static IEnumerable<(string Name, ShaderValueSnapshot Snapshot)> InvalidSnapshots(ShaderValueSnapshot valid, object sampler)
     {
-        yield return ("missing numeric leaf", valid with { Values = valid.Values.Skip(1).ToArray() });
-        yield return ("duplicate leaf", valid with { Values = [.. valid.Values, valid.Values[0]] });
-        yield return ("wrong shader type name", valid with { ShaderTypeName = "AnotherArguments" });
-        ShaderValue[] wrongScalar = valid.Values.ToArray();
-        wrongScalar[0] = wrongScalar[0] with { ValueType = typeof(int), Data = BitConverter.GetBytes(7) };
-        yield return ("int payload for float leaf with the same four-byte size", valid with { Values = wrongScalar });
+        yield return ("missing resource slot", valid with { Values = valid.Values.Skip(1).ToArray() });
+        yield return ("duplicate resource slot", valid with { Values = [.. valid.Values, valid.Values[0]] });
+        yield return ("unknown resource path", valid with { Values = [valid.Values[0] with { Path = "Unknown" }, .. valid.Values.Skip(1)] });
+        yield return ("reference slot outside wire bytes", valid with { Values = [valid.Values[0] with { Offset = 52 }, .. valid.Values.Skip(1)] });
         ShaderValue[] wrongResource = valid.Values.ToArray();
-        wrongResource[1] = wrongResource[1] with { ValueType = typeof(IGraphicsSampler), Reference = sampler };
-        yield return ("real sampler reference for texture leaf in the selected table", valid with { Values = wrongResource });
+        wrongResource[0] = wrongResource[0] with { ValueType = typeof(IGraphicsSampler), Reference = sampler };
+        yield return ("real sampler reference for texture slot in the selected table", valid with { Values = wrongResource });
     }
 
     private static void AssertRejected(IEnumerable<(string Name, Exception? Error)> errors)

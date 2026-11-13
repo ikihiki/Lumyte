@@ -35,7 +35,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
     }
 
     public void SetArguments<T>(in T value)
-        where T : struct, IShaderArguments
+        where T : IShaderArguments
     {
         owner.ValidatePass(this);
         if (_pipeline == null)
