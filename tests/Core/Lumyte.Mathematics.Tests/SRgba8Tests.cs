@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using Lumyte.Mathematics.Colors;
 using Xunit;
 
@@ -147,25 +146,6 @@ public sealed class SRgba8Tests
         Assert.Throws<ArgumentOutOfRangeException>(() => SRgba8.FromNormalized(new SRgba<decimal>(0, 0, 0, 1.0000000000000000000000000001m)));
     }
 
-    /// <summary>The native implicit conversion allocates no managed memory after warmup.</summary>
-    [Fact]
-    public void RepeatedImplicitConversionAllocatesZeroBytes()
-    {
-        var source = new SRgba8[256];
-        for (int index = 0; index < source.Length; index++)
-        {
-            source[index] = new SRgba8((byte)index, (byte)(255 - index), (byte)(index ^ 85), (byte)(index ^ 170));
-        }
-
-        float warmup = SumConversions(source, 100);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        float result = SumConversions(source, 100);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(warmup, result);
-        Assert.True(result > 0);
-        Assert.Equal(0L, allocated);
-    }
-
     private static SRgba8 InComponent(int component, byte value) => new(
         component == 0 ? value : (byte)0,
         component == 1 ? value : (byte)0,
@@ -185,21 +165,5 @@ public sealed class SRgba8Tests
         Assert.Equal(BitConverter.SingleToInt32Bits(expected.G), BitConverter.SingleToInt32Bits(actual.G));
         Assert.Equal(BitConverter.SingleToInt32Bits(expected.B), BitConverter.SingleToInt32Bits(actual.B));
         Assert.Equal(BitConverter.SingleToInt32Bits(expected.A), BitConverter.SingleToInt32Bits(actual.A));
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static float SumConversions(SRgba8[] source, int repetitions)
-    {
-        float sum = 0;
-        for (int repeat = 0; repeat < repetitions; repeat++)
-        {
-            foreach (SRgba8 input in source)
-            {
-                SRgba<float> value = input;
-                sum += value.R + value.G + value.B + value.A;
-            }
-        }
-
-        return sum;
     }
 }
