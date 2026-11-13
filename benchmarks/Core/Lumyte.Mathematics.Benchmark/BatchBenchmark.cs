@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmarks;
+namespace Lumyte.Mathematics.Benchmark;
 
 internal static class BatchBenchmark
 {

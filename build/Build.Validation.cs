@@ -93,7 +93,7 @@ internal sealed partial class Build
         .DependsOn(TestSignals)
         .Executes(async () =>
         {
-            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore",
+            await DotNetAsync("run", "--project", "benchmarks/Core/Lumyte.Signals.Benchmark", "-c", Configuration, "--no-build", "--no-restore",
                 "--", "--filter", "*", "--artifacts", Path.Combine(ArtifactRoot, "signals-benchmarks")).ConfigureAwait(false);
         });
 

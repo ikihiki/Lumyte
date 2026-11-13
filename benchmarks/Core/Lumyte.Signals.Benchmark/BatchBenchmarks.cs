@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Compares complete transactions of sixteen writes, including final delivery.</summary>
 public class BatchBenchmarks

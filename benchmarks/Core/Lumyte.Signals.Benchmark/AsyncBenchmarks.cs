@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures asynchronous adapters with deterministic inline task completion.</summary>
 [MemoryDiagnoser]

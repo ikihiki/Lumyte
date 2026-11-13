@@ -1,7 +1,7 @@
 <Solution>
-  <Folder Name="/benchmarks/">
-    <Project Path="benchmarks/Lumyte.Mathematics.Benchmarks/Lumyte.Mathematics.Benchmarks.csproj" />
-    <Project Path="benchmarks/Lumyte.Signals.Benchmarks/Lumyte.Signals.Benchmarks.csproj" />
+  <Folder Name="/benchmarks/Core/">
+    <Project Path="benchmarks/Core/Lumyte.Mathematics.Benchmark/Lumyte.Mathematics.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Signals.Benchmark/Lumyte.Signals.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />

@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures branching, diamond propagation, and passive read set construction.</summary>
 public class GraphBenchmarks

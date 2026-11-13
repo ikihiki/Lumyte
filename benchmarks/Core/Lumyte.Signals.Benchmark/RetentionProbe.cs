@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 internal static class RetentionProbe
 {

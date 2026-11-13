@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Separates active cached reads from passive dependency validation and recomputation.</summary>
 public class ComputedBenchmarks
