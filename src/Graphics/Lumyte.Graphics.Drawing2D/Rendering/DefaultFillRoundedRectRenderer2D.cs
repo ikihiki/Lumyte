@@ -13,5 +13,5 @@ public sealed class DefaultFillRoundedRectRenderer2D : IFillRoundedRectRenderer2
         RenderPreparationContext2D context,
         ReadOnlyMemory<FillRoundedRectCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRecordBatch2D.PrepareAsync(context, commands, cancellationToken);
 }

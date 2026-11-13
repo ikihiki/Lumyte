@@ -16,6 +16,7 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks the complete 2D pipeline against independently specified GPU pixel results.</summary>
 public sealed partial class Drawing2DTests
 {
+    private static readonly AsyncLocal<bool> _fixedRecordEffects = new();
     private static readonly Color2D _white = new(1, 1, 1, 1);
     private static readonly Color2D _red = new(1, 0, 0, 1);
     private static readonly Color2D _blue = new(0, 0, 1, 1);
@@ -95,6 +96,18 @@ public sealed partial class Drawing2DTests
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
         await CheckComposedEffectsAsync(device);
+        _fixedRecordEffects.Value = true;
+        try
+        {
+            await CheckLayersAsync(device);
+            await CheckEffectsAsync(device);
+            await CheckBackdropAsync(device);
+            await CheckComposedEffectsAsync(device);
+        }
+        finally
+        {
+            _fixedRecordEffects.Value = false;
+        }
     }
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
@@ -107,6 +120,18 @@ public sealed partial class Drawing2DTests
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
         await CheckComposedEffectsAsync(device);
+        _fixedRecordEffects.Value = true;
+        try
+        {
+            await CheckLayersAsync(device);
+            await CheckEffectsAsync(device);
+            await CheckBackdropAsync(device);
+            await CheckComposedEffectsAsync(device);
+        }
+        finally
+        {
+            _fixedRecordEffects.Value = false;
+        }
     }
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
@@ -596,8 +621,9 @@ public sealed partial class Drawing2DTests
         AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
     }
 
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false)
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null)
     {
+        useDefaultResources |= _fixedRecordEffects.Value;
         using ExternalDrawingResources? resources = useDefaultResources ? null : new(device);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
@@ -642,7 +668,7 @@ public sealed partial class Drawing2DTests
         {
             plan = graph.Compile();
             commands = device.CreateCommandBuffer(new());
-            plan.Record(commands);
+            plan.Record(observe?.Invoke(commands) ?? commands);
             commands.Finish();
             submission = device.Queue.Submit([commands]);
             await submission.WaitAsync();

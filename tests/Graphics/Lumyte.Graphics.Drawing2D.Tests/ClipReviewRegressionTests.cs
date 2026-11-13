@@ -33,7 +33,8 @@ public sealed class ClipReviewRegressionTests
 
         // The public preparation must never upload the opaque red leaf after encountering A.
         Assert.DoesNotContain(device.Instructions, instruction => instruction.Kind == 0 && instruction.A == new Vector4(1, 0, 0, 1));
-        Assert.Contains(device.Instructions, instruction => instruction.Kind == 0 && instruction.A == Vector4.Zero);
+        Assert.All(device.Records, record => Assert.Equal(0u, record.PaintId));
+        Assert.NotEmpty(device.Records);
     }
 
     /// <summary>Completed and failed preparation cannot leave mask caches pinned by a captured context.</summary>
@@ -54,7 +55,7 @@ public sealed class ClipReviewRegressionTests
         var observer = new Observer(failure);
         var defaults = DrawingCommandRenderers2D.CreateDefault();
         var renderers = new DrawingCommandRenderers2D(defaults.FillRect, defaults.FillRoundedRect, defaults.FillCircle, defaults.DrawLine, observer, defaults.StrokePath, defaults.DrawImage, defaults.DrawCoverageMask, defaults.DrawDistanceField, defaults.DrawMesh, defaults.DrawPaintGraph);
-        using var renderer = new Renderer2D(new ProfilingDevice { FailWrite = failure == 3 ? 1 : 0 }, renderers, retentionOptions: new() { MaxCachedAssets = 1, MaxCachedBytes = 65536 });
+        using var renderer = new Renderer2D(new ProfilingDevice { FailWrite = failure == 3 ? 1 : 0 }, renderers, retentionOptions: new() { MaxCachedAssets = 1, MaxCachedBytes = 1048576 });
         using var texture = new DispatchTexture { Width = 512, Height = 512 };
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
@@ -115,7 +116,7 @@ public sealed class ClipReviewRegressionTests
                 Complete(frame);
                 Assert.Equal(update, renderer.RetentionStatistics.ReusedRuns);
                 Assert.Equal(1, renderer.RetentionStatistics.CachedAssets);
-                Assert.InRange(renderer.RetentionStatistics.CachedBytes, 1, 65536);
+                Assert.InRange(renderer.RetentionStatistics.CachedBytes, 1, 1048576);
             }
         }
     }
@@ -195,7 +196,7 @@ public sealed class ClipReviewRegressionTests
             if (mode == 0)
             {
                 AssertReleased(context);
-                Assert.Contains(device.Instructions, instruction => instruction.Kind == 17);
+                Assert.Contains(device.Records, record => record.ClipId != 0);
             }
 
             commands.Dispose();

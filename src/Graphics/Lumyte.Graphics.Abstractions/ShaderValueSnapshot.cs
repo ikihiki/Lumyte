@@ -6,6 +6,9 @@ namespace Lumyte.Graphics.Abstractions;
 /// <param name="Values">The immutable member list.</param>
 public sealed record ShaderValueSnapshot(string RootParameter, string ShaderTypeName, IReadOnlyList<ShaderValue> Values)
 {
+    /// <summary>Gets the C#-declared wire stride. Shader layouts must match it without repacking.</summary>
+    public int SizeInBytes { get; init; }
+
     internal Action<IReadOnlyCollection<IShaderReference>>? ExecutionReferenceValidation { get; init; }
 
     /// <summary>Applies host constraints to a reference at native command-local capture time.</summary>

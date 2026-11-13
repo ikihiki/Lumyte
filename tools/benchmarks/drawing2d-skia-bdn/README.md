@@ -172,3 +172,63 @@ No results or performance claims exist until those checks are performed.
 headline では profiling provider が無効なため frame Activity を生成しない。EventPipe extra run で Drawing2D provider が有効になった場合だけ、run ID と単調増加する diagnostic frame ID を付ける。setup は frame ID -1 として分離し、診断 frame を BDN の個別 iteration percentile と同一視しない。UI/RenderGraph provider も構成するが、この直接描画 fixture で未実行のモジュールのイベントが無いことを coverage と呼ばない。
 
 Lumyte の呼出しは実 GPU 完了を await し、command memory、prepared resources、submission の順で返す。失敗した wait や不明な Submit acceptance では owner を保持し、cleanup で明示的な device retirement 確認を行う。native command が安全に返せなければ dependent resource を破棄せず失敗を維持する。Skia は呼出し thread ごとに EGL を bind/release し、glFinish によって同じ完了境界を保証する。
+
+## Fixed logical record comparison
+
+`RecordFrameBenchmarks` is a separate selectable matrix using the same BDN
+framework. It retains the existing known 1,000-rectangle and 200-path fixtures,
+adds 341/342 count controls (not allocation or draw boundaries) and a
+200-command mixed-kind fixture, and separates
+completion-published prepared reuse from dynamic recording and preparation.
+The mixed fixture has a shared analytic gradient, a nonrectangular clip and a
+fractional rectangular clip. Its mask extent keeps both variants within the
+unchanged default retention budget.
+
+One operation records dynamic input when applicable, prepares, encodes,
+submits, awaits actual GPU completion, disposes commands and retires the frame.
+The adaptive job has 6–10 automatic warmup iterations and 15–30 automatic actual
+iterations, standard pilot/iteration-time policy, retained outliers,
+MemoryDiagnoser, median/P95 and full JSON. P95 describes normalized iteration
+estimates, not individual-frame latency percentiles. Independent matrix launches
+must run serially in the predeclared A1/B1/B2/A2 order with identical executable
+harness sources
+sources and no concurrent build/test/GPU workloads.
+
+```sh
+export TMPDIR="$HOME/.cache/lumyte-fixed-record-evidence/tmp"
+export LUMYTE_RECORD_BENCH=1
+# Keep the explicit Radeon ICD and activated SDK environment from above.
+dotnet tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll \
+  --filter '*' --artifacts "$HOME/.cache/lumyte-fixed-record-evidence/abba/A1"
+# Repeat on the frozen candidate for B1/B2, then the frozen baseline for A2.
+node tools/benchmarks/drawing2d-skia-bdn/summarize-records.mjs \
+  "$HOME/.cache/lumyte-fixed-record-evidence/abba" summary.json
+
+# Separate correctness processes, never benchmark invocations.
+dotnet tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll \
+  --record-quality-write "$HOME/.cache/lumyte-fixed-record-evidence/quality"
+# Run against the same directory with the frozen candidate.
+dotnet tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll \
+  --record-quality-compare "$HOME/.cache/lumyte-fixed-record-evidence/quality"
+
+# Diagnostic-only observed calls/transfers, payload buffer sizes and CPU intervals.
+dotnet tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll \
+  --record-diagnostics mixed200-dynamic
+# Candidate-only selection of five GPU-resident records beginning at index 16.
+dotnet tools/benchmarks/drawing2d-skia-bdn/bin/Release/net10.0/Drawing2DSkiaBdn.dll \
+  --record-range-diagnostics rect1000-cached
+```
+
+Quality capture checks 32 state positions per fixture, stores compressed full
+RGBA baseline images and compares all channels. Integer rectangles also require
+an exact independently constructed full-image oracle on each variant. Repeated
+state positions are preserved; the fixture geometries vary modulo four.
+Diagnostic inspection occurs after GPU completion and is excluded from the
+reported disposal interval. Observed payload backing sizes are public buffer
+sizes, not native driver heaps, pipeline scratch or total VRAM.
+
+`LUMYTE_RECORD_TRACE=1` adds EventPipeProfiler in a separate extra execution.
+Only that enabled execution creates per-frame diagnostic Activities; setup is
+frame -1. Native GPU timestamps are not provided by this harness. Performance
+results, qualifications and regressions belong in the implementation PR, not
+this runner documentation or the ADR.

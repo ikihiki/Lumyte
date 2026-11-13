@@ -30,7 +30,7 @@ struct ModelMaterial
     ModelTextureTransform NormalUv;
     ModelTextureTransform OcclusionUv;
     ModelTextureTransform EmissiveUv;
-    float EmissiveStrength;
+    float4 EmissiveStrength;
 };
 struct ModelDrawArguments
 {

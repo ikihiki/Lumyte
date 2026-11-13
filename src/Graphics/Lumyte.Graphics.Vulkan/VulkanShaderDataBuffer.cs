@@ -16,8 +16,9 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         }
 
         T empty = default;
-        ShaderValueSnapshot codec = IShaderArguments.Capture(in empty);
-        Layout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, codec.ShaderTypeName);
+        string name = typeof(IShaderNumericWireData).IsAssignableFrom(typeof(T)) ? T.ShaderTypeName : IShaderArguments.Capture(in empty).ShaderTypeName;
+        Layout = ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, name);
+        ((ShaderDataLayout)Layout).ValidateNumericWireData<T>();
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));
@@ -88,17 +89,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
             return;
         }
 
-        var snapshots = new ShaderValueSnapshot[source.Length];
-        for (int i = 0; i < source.Length; i++)
-        {
-            snapshots[i] = IShaderArguments.Capture(in source[i]);
-        }
-
-        byte[] bytes = new byte[checked(source.Length * Layout.Size)];
-        for (int i = 0; i < snapshots.Length; i++)
-        {
-            Layout.Pack(snapshots[i], PackReference).CopyTo(bytes, i * Layout.Size);
-        }
+        byte[] bytes = ((ShaderDataLayout)Layout).Pack(source, PackReference, out ShaderValueSnapshot[] snapshots);
 
         Storage.SliceElements(checked(elementOffset * (ulong)Layout.Size), (ulong)bytes.Length).CopyFrom(bytes);
         snapshots.CopyTo(_values, checked((int)elementOffset));

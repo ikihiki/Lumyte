@@ -170,7 +170,7 @@ public sealed class DrawingProfilingTests
 
         Event[] events = listener.Events.ToArray();
         Assert.Single(events, item => item.Id == 1 && Equals(item.Payload[4], 3));
-        Assert.Single(events, item => item.Id == 1 && Equals(item.Payload[4], 9));
+        Assert.Single(events, item => item.Id == 1 && Equals(item.Payload[4], 7));
         Assert.Contains(events, item => item.Id == 3 && Equals(item.Payload[4], 2) && Equals(item.Payload[5], 3) && Equals(item.Payload[6], 1L));
         Assert.Contains(events, item => item.Id == 3 && Equals(item.Payload[4], 2) && Equals(item.Payload[5], 4) && Equals(item.Payload[6], 1L));
         Assert.Contains(events, item => item.Id == 3 && Equals(item.Payload[4], 10) && Equals(item.Payload[5], 14) && Equals(item.Payload[6], 1L));
@@ -190,7 +190,7 @@ public sealed class DrawingProfilingTests
     {
         using var listener = new Listener((EventKeywords)6);
         var device = new ProfilingDevice();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        using var renderer = new Renderer2D(device, LegacyDrawRenderers2D.Create());
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
@@ -227,7 +227,7 @@ public sealed class DrawingProfilingTests
             Caps = new() { ShaderTarget = ShaderTarget.SpirV, MaxBufferSize = fallback ? 1UL : 1UL << 30 },
             FailCopy = failCopy,
         };
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        using var renderer = new Renderer2D(device, LegacyDrawRenderers2D.Create());
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();

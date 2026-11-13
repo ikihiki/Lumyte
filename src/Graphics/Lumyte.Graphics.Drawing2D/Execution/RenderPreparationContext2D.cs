@@ -54,5 +54,7 @@ public sealed class RenderPreparationContext2D
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);
 
+    internal DrawRecordResources2D? RecordResources() => _resources.Records();
+
     internal SolidRectangleResources2D? RectangleResources() => _resources.Rectangles();
 }

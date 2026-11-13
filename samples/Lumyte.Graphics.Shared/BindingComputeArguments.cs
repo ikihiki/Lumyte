@@ -8,4 +8,4 @@ namespace Lumyte.Graphics.Samples;
 /// <param name="Factor">The integer payload.</param>
 /// <param name="Node">The first linked data element.</param>
 /// <param name="Output">The writable raw output range.</param>
-public readonly partial record struct BindingComputeArguments(Matrix4x4 Camera, uint Factor, IGpuRef<BindingNode> Node, IGpuRef<uint> Output) : IShaderArguments;
+public readonly partial record struct BindingComputeArguments(Matrix4x4 Camera, uint Factor, [property: ShaderMemberOffset(80)] IGpuRef<BindingNode> Node, IGpuRef<uint> Output) : IShaderArguments;

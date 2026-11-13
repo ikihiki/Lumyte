@@ -24,11 +24,16 @@ public sealed class ShaderBindingData
         var write = new HashSet<IShaderReference>();
         void Uses(IShaderDataLayout layout, ShaderValueSnapshot values)
         {
+            if (ShaderDataLayout.IsNumericBatch(values))
+            {
+                return;
+            }
+
             foreach (ShaderValue value in values.Values)
             {
                 if (value.Reference is IShaderReference reference)
                 {
-                    string kind = layout.ReferenceKind(value.Path);
+                    string kind = layout.ReferenceKind(value.Offset);
                     if (kind == "GpuBufferRef")
                     {
                         read.Add(reference);

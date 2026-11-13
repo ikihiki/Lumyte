@@ -13,7 +13,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-    private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources);
+    private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources, retentionOptions?.MaxCachedBytes ?? 64 * 1024 * 1024);
     private readonly RetainedDrawingCache2D _retained = new(retentionOptions ?? new());
     private bool _disposed;
     private int _preparing;
@@ -55,6 +55,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             var batches = new List<IPreparedCommandBatch2D>();
             try
             {
+                _retained.BindStorageOwner(_resources);
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device);
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
@@ -67,21 +68,23 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                         while (index < list.Commands.Count)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
-                            IPreparedCommandBatch2D batch = list.Commands[index] switch
-                            {
-                                FillRectCommand2D => await _renderers.FillRect.PrepareAsync(context, TakeBatch<FillRectCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                FillRoundedRectCommand2D => await _renderers.FillRoundedRect.PrepareAsync(context, TakeBatch<FillRoundedRectCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                FillCircleCommand2D => await _renderers.FillCircle.PrepareAsync(context, TakeBatch<FillCircleCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                DrawLineCommand2D => await _renderers.DrawLine.PrepareAsync(context, TakeBatch<DrawLineCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                FillPathCommand2D => await _renderers.FillPath.PrepareAsync(context, TakeBatch<FillPathCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                StrokePathCommand2D => await _renderers.StrokePath.PrepareAsync(context, TakeBatch<StrokePathCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                DrawImageCommand2D => await _renderers.DrawImage.PrepareAsync(context, TakeBatch<DrawImageCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                DrawCoverageMaskCommand2D => await _renderers.DrawCoverageMask.PrepareAsync(context, TakeBatch<DrawCoverageMaskCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                DrawDistanceFieldCommand2D => await _renderers.DrawDistanceField.PrepareAsync(context, TakeBatch<DrawDistanceFieldCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                DrawMeshCommand2D => await _renderers.DrawMesh.PrepareAsync(context, TakeBatch<DrawMeshCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(context, TakeBatch<DrawPaintGraphCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
-                                _ => throw new NotSupportedException("Layer and effect commands require RenderGraphCanvas2D."),
-                            };
+                            IPreparedCommandBatch2D batch = IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
+                                ? await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
+                                : list.Commands[index] switch
+                                {
+                                    FillRectCommand2D => await _renderers.FillRect.PrepareAsync(context, TakeBatch<FillRectCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    FillRoundedRectCommand2D => await _renderers.FillRoundedRect.PrepareAsync(context, TakeBatch<FillRoundedRectCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    FillCircleCommand2D => await _renderers.FillCircle.PrepareAsync(context, TakeBatch<FillCircleCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    DrawLineCommand2D => await _renderers.DrawLine.PrepareAsync(context, TakeBatch<DrawLineCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    FillPathCommand2D => await _renderers.FillPath.PrepareAsync(context, TakeBatch<FillPathCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    StrokePathCommand2D => await _renderers.StrokePath.PrepareAsync(context, TakeBatch<StrokePathCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    DrawImageCommand2D => await _renderers.DrawImage.PrepareAsync(context, TakeBatch<DrawImageCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    DrawCoverageMaskCommand2D => await _renderers.DrawCoverageMask.PrepareAsync(context, TakeBatch<DrawCoverageMaskCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    DrawDistanceFieldCommand2D => await _renderers.DrawDistanceField.PrepareAsync(context, TakeBatch<DrawDistanceFieldCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    DrawMeshCommand2D => await _renderers.DrawMesh.PrepareAsync(context, TakeBatch<DrawMeshCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(context, TakeBatch<DrawPaintGraphCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
+                                    _ => throw new NotSupportedException("Layer and effect commands require RenderGraphCanvas2D."),
+                                };
                             ArgumentNullException.ThrowIfNull(batch);
                             batches.Add(batch);
                         }
@@ -203,5 +206,22 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
         }
 
         return list.GetCommands<T>(begin, index - begin);
+    }
+
+    private ReadOnlyMemory<DrawingCommand2D> TakeBuiltinBatch(DrawList2D list, ref int index, int end)
+    {
+        int first = index;
+        while (index < end && IsBuiltinRenderer(list.Commands[index]))
+        {
+            index++;
+        }
+
+        var selected = new DrawingCommand2D[index - first];
+        for (int i = 0; i < selected.Length; i++)
+        {
+            selected[i] = list.Commands[first + i];
+        }
+
+        return selected;
     }
 }

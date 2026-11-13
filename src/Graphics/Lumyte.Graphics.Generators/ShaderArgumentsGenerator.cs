@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -49,7 +50,10 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
 
         bool generateName = type.FindImplementationForInterfaceMember(contract.GetMembers("ShaderTypeName").Single()) == null;
         bool generateWrite = type.FindImplementationForInterfaceMember(contract.GetMembers("Write").Single()) == null;
-        if (!generateName && !generateWrite)
+        bool generateSize = generateWrite && type.FindImplementationForInterfaceMember(contract.GetMembers("WireSizeInBytes").Single()) == null;
+        INamedTypeSymbol? wireContract = type.AllInterfaces.FirstOrDefault(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderNumericWireData");
+        bool generateWire = wireContract != null && type.FindImplementationForInterfaceMember(wireContract.GetMembers("NumericWireLayout").Single()) == null;
+        if (!generateName && !generateWrite && !generateWire)
         {
             return;
         }
@@ -67,7 +71,26 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         }
 
         var body = new StringBuilder();
-        if (generateWrite && !Members(output, type, "this", string.Empty, body, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default)))
+        int wireSize = 0;
+        if (generateWrite && !Members(output, type, "this", string.Empty, 0, body, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default), out wireSize))
+        {
+            return;
+        }
+
+        if (!type.AllInterfaces.Any(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderData"))
+        {
+            long uniformSize = ((long)wireSize + 15) / 16 * 16;
+            if (uniformSize > int.MaxValue)
+            {
+                Report(output, type, "C# wire stride exceeds the Int32 byte range");
+                return;
+            }
+
+            wireSize = (int)uniformSize;
+        }
+
+        string? wireMetadata = generateWire ? WireMetadata(output, type) : string.Empty;
+        if (wireMetadata == null)
         {
             return;
         }
@@ -79,18 +102,67 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             (type.ContainingNamespace.IsGlobalNamespace ? string.Empty : "namespace " + type.ContainingNamespace.ToDisplayString() + ";\n") +
             (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(shaderName) + ";\n" : string.Empty) +
-            (generateWrite ? "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + body + "    }\n" : string.Empty) + "}\n";
+            (generateSize ? "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.WireSizeInBytes => " + wireSize.ToString(CultureInfo.InvariantCulture) + ";\n" : string.Empty) +
+            (generateWrite ? "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + body + "    }\n" : string.Empty) + wireMetadata + "}\n";
         output.AddSource("ShaderArguments_" + id + ".g.cs", SourceText.From(source, Encoding.UTF8));
     }
 
-    private static bool Members(SourceProductionContext output, INamedTypeSymbol type, string expression, string prefix, StringBuilder body, HashSet<ITypeSymbol> stack)
+    private static string? WireMetadata(SourceProductionContext output, INamedTypeSymbol type)
     {
+        AttributeData? layout = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.StructLayoutAttribute");
+        int size = layout?.NamedArguments.FirstOrDefault(pair => pair.Key == "Size").Value.Value is int value ? value : 0;
+        if (!type.IsUnmanagedType || ConstructorInt(layout) is not int kind || kind != 2 || size <= 0)
+        {
+            Report(output, type, "numeric wire requires unmanaged explicit C# StructLayout with a positive Size");
+            return null;
+        }
+
+        var fields = new StringBuilder();
+        var occupied = new List<KeyValuePair<int, int>>();
+        foreach (IFieldSymbol field in type.GetMembers().OfType<IFieldSymbol>().Where(field => !field.IsStatic))
+        {
+            AttributeData? offset = field.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.FieldOffsetAttribute");
+            if (!Numeric(field.Type) || ConstructorInt(offset) is not int position)
+            {
+                Report(output, field, "numeric wire fields require supported numeric types and explicit FieldOffset");
+                return null;
+            }
+
+            string name = field.AssociatedSymbol?.Name ?? field.Name;
+            int length = NumericSize(field.Type);
+            if (position < 0 || (long)position + length > size ||
+                occupied.Any(range => position < range.Value && (long)position + length > range.Key))
+            {
+                Report(output, field, "numeric wire fields must be nonoverlapping and contained in the declared Size");
+                return null;
+            }
+
+            occupied.Add(new KeyValuePair<int, int>(position, position + length));
+            fields.Append(", new global::Lumyte.Graphics.Abstractions.ShaderNumericWireMember(")
+                .Append(Quote(name)).Append(", typeof(").Append(field.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                .Append("), ").Append(position.ToString(CultureInfo.InvariantCulture)).Append(", ").Append(length.ToString(CultureInfo.InvariantCulture)).Append(")");
+        }
+
+        return "    private static readonly global::Lumyte.Graphics.Abstractions.ShaderNumericWireLayout __lumyteNumericWireLayout = __CreateNumericWireLayout();\n" +
+            "    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields, typeof(" + type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "))]\n" +
+            "    private static global::Lumyte.Graphics.Abstractions.ShaderNumericWireLayout __CreateNumericWireLayout() => new(" + size.ToString(CultureInfo.InvariantCulture) + fields + ");\n" +
+            "    global::Lumyte.Graphics.Abstractions.ShaderNumericWireLayout global::Lumyte.Graphics.Abstractions.IShaderNumericWireData.NumericWireLayout => __lumyteNumericWireLayout;\n";
+    }
+
+    // C# declarations alone determine placement: declaration order and four-byte
+    // scalar alignment for logical members, or explicitly declared C# offsets.
+    private static bool Members(SourceProductionContext output, INamedTypeSymbol type, string expression, string prefix, int start, StringBuilder body, HashSet<ITypeSymbol> stack, out int end)
+    {
+        end = start;
         if (!stack.Add(type))
         {
             Report(output, type, "inline member cycle");
             return false;
         }
 
+        AttributeData? layout = Attribute(type, "System.Runtime.InteropServices.StructLayoutAttribute");
+        bool explicitLayout = ConstructorInt(layout) == 2;
+        int declaredSize = layout?.NamedArguments.FirstOrDefault(pair => pair.Key == "Size").Value.Value is int size ? size : 0;
         foreach (ISymbol member in type.GetMembers().Where(m => !m.IsStatic && m.DeclaredAccessibility == Accessibility.Public))
         {
             ITypeSymbol? memberType = member is IFieldSymbol field ? field.Type : member is IPropertySymbol property && !property.IsIndexer && property.GetMethod != null ? property.Type : null;
@@ -99,26 +171,64 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
                 continue;
             }
 
-            if (member is IPropertySymbol p && p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is PropertyDeclarationSyntax syntax &&
-                (syntax.ExpressionBody != null || syntax.AccessorList?.Accessors.Any(a => a.Body != null || a.ExpressionBody != null) == true)))
+            if (member is IPropertySymbol p && (p.GetMethod?.DeclaredAccessibility != Accessibility.Public ||
+                p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is PropertyDeclarationSyntax syntax &&
+                    (syntax.ExpressionBody != null || syntax.AccessorList?.Accessors.Any(a => a.Body != null || a.ExpressionBody != null) == true))))
             {
-                Report(output, member, "custom getters are not supported");
+                Report(output, member, "custom or inaccessible getters are not supported");
                 return false;
             }
 
+            AttributeData? logicalOffset = Attribute(member, "Lumyte.Graphics.Abstractions.ShaderMemberOffsetAttribute");
+            AttributeData? fieldOffset = Attribute(member, "System.Runtime.InteropServices.FieldOffsetAttribute");
+            if (member is IPropertySymbol)
+            {
+                IFieldSymbol? backingField = type.GetMembers().OfType<IFieldSymbol>()
+                    .FirstOrDefault(candidate => SymbolEqualityComparer.Default.Equals(candidate.AssociatedSymbol, member));
+                if (backingField != null)
+                {
+                    fieldOffset = Attribute(backingField, "System.Runtime.InteropServices.FieldOffsetAttribute");
+                }
+            }
+
+            int? explicitOffset = explicitLayout ? ConstructorInt(fieldOffset) : null;
+            int? overrideOffset = ConstructorInt(logicalOffset);
+            if ((logicalOffset != null && overrideOffset == null) ||
+                (explicitLayout && explicitOffset == null) ||
+                (explicitOffset != null && overrideOffset != null && explicitOffset != overrideOffset))
+            {
+                Report(output, member, "wire offsets must be constant integers and agree with explicit C# FieldOffset");
+                return false;
+            }
+
+            long relativeOffset = overrideOffset ?? explicitOffset ?? ((long)end - start + 3) / 4 * 4;
+            long absoluteOffset = (long)start + relativeOffset;
+            if (relativeOffset < 0 || absoluteOffset < end || absoluteOffset > int.MaxValue)
+            {
+                Report(output, member, "wire offsets must be nonnegative, monotonic, nonoverlapping Int32 byte offsets in declaration order");
+                return false;
+            }
+
+            int position = (int)absoluteOffset;
             string path = prefix + member.Name;
             string access = expression + ".@" + member.Name;
-            if (memberType is INamedTypeSymbol reference && reference.OriginalDefinition.ToDisplayString() == "Lumyte.Graphics.Abstractions.IGpuRef<T>")
+            bool referenceMember = memberType is INamedTypeSymbol reference && reference.OriginalDefinition.ToDisplayString() == "Lumyte.Graphics.Abstractions.IGpuRef<T>";
+            int length = referenceMember ? 16 : NumericSize(memberType);
+            if (length != 0)
             {
-                body.Append("        writer.WriteReference(").Append(Quote(path)).Append(", ").Append(access).AppendLine(");");
-            }
-            else if (Numeric(memberType))
-            {
-                body.Append("        writer.WriteValue(").Append(Quote(path)).Append(", ").Append(access).AppendLine(");");
+                if ((long)position + length > int.MaxValue)
+                {
+                    Report(output, member, "wire member exceeds the Int32 byte offset range");
+                    return false;
+                }
+
+                body.Append(referenceMember ? "        writer.WriteReference(" : "        writer.WriteValue(")
+                    .Append(position.ToString(CultureInfo.InvariantCulture)).Append(", ").Append(Quote(path)).Append(", ").Append(access).AppendLine(");");
+                end = position + length;
             }
             else if (memberType is INamedTypeSymbol nested && nested.TypeKind == TypeKind.Struct && nested.SpecialType == SpecialType.None && !nested.IsGenericType)
             {
-                if (!Members(output, nested, access, path + ".", body, stack))
+                if (!Members(output, nested, access, path + ".", position, body, stack, out end))
                 {
                     return false;
                 }
@@ -130,12 +240,36 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             }
         }
 
+        if (explicitLayout && declaredSize > 0)
+        {
+            long declaredEnd = (long)start + declaredSize;
+            if (declaredEnd < end || declaredEnd > int.MaxValue)
+            {
+                Report(output, type, "explicit C# Size must contain all wire members within the Int32 byte offset range");
+                return false;
+            }
+
+            // Reserve C# trailing padding before the next outer member.
+            end = (int)declaredEnd;
+        }
+
         stack.Remove(type);
         return true;
     }
 
-    private static bool Numeric(ITypeSymbol type) => type.SpecialType is SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Single ||
-        type.ToDisplayString() is "System.Numerics.Vector2" or "System.Numerics.Vector3" or "System.Numerics.Vector4" or "System.Numerics.Matrix4x4";
+    private static AttributeData? Attribute(ISymbol symbol, string name) =>
+        symbol.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == name);
+
+    private static int? ConstructorInt(AttributeData? attribute) =>
+        attribute != null && attribute.ConstructorArguments.Length != 0 && attribute.ConstructorArguments[0].Value is int value ? value : (int?)null;
+
+    private static int NumericSize(ITypeSymbol type) => type.SpecialType is SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Single ? 4
+        : type.ToDisplayString() == "System.Numerics.Vector2" ? 8
+        : type.ToDisplayString() == "System.Numerics.Vector3" ? 12
+        : type.ToDisplayString() == "System.Numerics.Vector4" ? 16
+        : type.ToDisplayString() == "System.Numerics.Matrix4x4" ? 64 : 0;
+
+    private static bool Numeric(ITypeSymbol type) => NumericSize(type) != 0;
 
     private static string Quote(string value) => SymbolDisplay.FormatLiteral(value, true);
 

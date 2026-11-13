@@ -30,7 +30,7 @@ struct ModelMaterial
     ModelTextureTransform NormalUv;
     ModelTextureTransform OcclusionUv;
     ModelTextureTransform EmissiveUv;
-    float EmissiveStrength;
+    float4 EmissiveStrength;
 };
 struct ModelDrawArguments
 {
@@ -141,7 +141,7 @@ float4 main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
         float3 diffuse = (1 - fresnel) * (1 - metallic) * base.rgb / 3.14159265;
         float occlusion = lerp(1, LumyteSampleGrad(arguments.OcclusionTexture, arguments.OcclusionSampler, aoUv, aoDx, aoDy).r,
             arguments.Material.OcclusionStrength);
-        float3 emissive = arguments.Material.Emissive * arguments.Material.EmissiveStrength *
+        float3 emissive = arguments.Material.Emissive * arguments.Material.EmissiveStrength.x *
             LumyteSampleGrad(arguments.EmissiveTexture, arguments.EmissiveSampler, emissiveUv, emissiveDx, emissiveDy).rgb;
         result = (diffuse + distribution * visibility * fresnel) * arguments.LightColor * nl +
             base.rgb * (1 - metallic) * arguments.AmbientColor * occlusion + emissive;

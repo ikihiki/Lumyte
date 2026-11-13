@@ -39,6 +39,11 @@ public sealed class ShaderBindingSnapshot
 
     private void Collect(ShaderValueSnapshot value, IArgumentTable? table, ref Stack<ShaderValueSnapshot>? pending, Func<IShaderDataSource, ulong, ShaderValueSnapshot>? read)
     {
+        if (ShaderDataLayout.IsNumericBatch(value))
+        {
+            return;
+        }
+
         foreach (ShaderValue member in value.Values)
         {
             if (!member.IsReference)

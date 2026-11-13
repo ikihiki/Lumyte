@@ -7,5 +7,5 @@ internal readonly record struct ConsumerLink(IGpuRef<IGraphicsTextureView> Textu
     public static string ShaderTypeName => "ConsumerLink";
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter => writer.WriteReference("Texture", Texture);
+        where TWriter : IShaderValueWriter => writer.WriteReference(0, "Texture", Texture);
 }

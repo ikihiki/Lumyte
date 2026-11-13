@@ -44,6 +44,9 @@ public sealed partial class Drawing2DTests
             Vector4[] pixels = await RenderAsync(device, 2, 1, canvas => canvas.FillRect(new(0, 0, 1, 1), paint));
             AssertPixel(pixels, 2, 0, 0, new(1, 0, 0, 1));
             AssertPixel(pixels, 2, 1, 0, Vector4.Zero);
+            Vector4[] records = await RenderAsync(device, 2, 1, canvas => canvas.FillRect(new(0, 0, 1, 1), paint), useDefaultResources: true);
+            AssertPixel(records, 2, 0, 0, new(1, 0, 0, 1));
+            AssertPixel(records, 2, 1, 0, Vector4.Zero);
         }
     }
 }

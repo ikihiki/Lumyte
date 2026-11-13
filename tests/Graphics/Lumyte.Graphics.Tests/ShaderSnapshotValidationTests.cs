@@ -44,7 +44,7 @@ public sealed class ShaderSnapshotValidationTests
         Assert.Equal(layout.Size, layout.Pack(valid, (_, _) => new byte[16]).Length);
 
         var errors = new List<(string Name, Exception? Error)>();
-        foreach ((string name, ShaderValueSnapshot invalid) in InvalidSnapshots(valid, new object()).Take(4))
+        foreach ((string name, ShaderValueSnapshot invalid) in InvalidSnapshots(valid, new object()).Take(5))
         {
             errors.Add((name, Record.Exception(() => layout.Pack(invalid, (_, _) => new byte[16]))));
         }
@@ -127,11 +127,12 @@ public sealed class ShaderSnapshotValidationTests
         "arguments",
         "SnapshotArguments",
         [
-            new("Value", typeof(float), BitConverter.GetBytes(7f), null, false),
-            new("Texture", typeof(IGraphicsTextureView), ReadOnlyMemory<byte>.Empty, texture, true),
-            new("Sampler", typeof(IGraphicsSampler), ReadOnlyMemory<byte>.Empty, sampler, true),
-            new("Output", typeof(uint), ReadOnlyMemory<byte>.Empty, output, true),
-        ]);
+            new(0, "Value", typeof(float), BitConverter.GetBytes(7f), null, false),
+            new(16, "Texture", typeof(IGraphicsTextureView), ReadOnlyMemory<byte>.Empty, texture, true),
+            new(32, "Sampler", typeof(IGraphicsSampler), ReadOnlyMemory<byte>.Empty, sampler, true),
+            new(48, "Output", typeof(uint), ReadOnlyMemory<byte>.Empty, output, true),
+        ])
+        { SizeInBytes = 64 };
 
     private static IEnumerable<(string Name, ShaderValueSnapshot Snapshot)> InvalidSnapshots(ShaderValueSnapshot valid, object sampler)
     {
@@ -141,6 +142,7 @@ public sealed class ShaderSnapshotValidationTests
         ShaderValue[] wrongScalar = valid.Values.ToArray();
         wrongScalar[0] = wrongScalar[0] with { ValueType = typeof(int), Data = BitConverter.GetBytes(7) };
         yield return ("int payload for float leaf with the same four-byte size", valid with { Values = wrongScalar });
+        yield return ("wrong C# wire stride", valid with { SizeInBytes = valid.SizeInBytes + 16 });
         ShaderValue[] wrongResource = valid.Values.ToArray();
         wrongResource[1] = wrongResource[1] with { ValueType = typeof(IGraphicsSampler), Reference = sampler };
         yield return ("real sampler reference for texture leaf in the selected table", valid with { Values = wrongResource });
