@@ -68,7 +68,7 @@ var opaqueCodes = grayCodes.ToRgba((byte)255);
 Rgb565 packed = Rgb565.FromNormalized(cyan);
 ```
 
-変更後は、呼び出し側も `Rgba<float>` と明示したコード正規化を使う。Color2Dの型、alias、obsolete wrapper、FromSrgb8 bridgeは残さない。公開型の変更を伴うため、旧constructorの名前付き引数・init/with・分解構文との互換は保証しない。透明黒のdefaultと透明な非黒の成分は保持する。
+変更後は`Rgba<float>`を共通のtargetとする。rawコードは名前付き操作で正規化し、意味付きSrgb8からfloatへの変換だけは自動正規化する。Color2Dの型、alias、obsolete wrapper、FromSrgb8 bridgeは残さない。公開型の変更を伴うため、旧constructorの名前付き引数・init/with・分解構文との互換は保証しない。透明黒のdefaultと透明な非黒の成分は保持する。
 
 ### 描画・UIへの受入と失敗時の状態
 
@@ -154,9 +154,9 @@ alpha のない形式への書き出しは A=1 を要求し、透明度を黙っ
 
 ### 標準の名前付き色
 
-標準色は単一の `CssColors` catalog から `CssColors.Red`・`CssColors.CornflowerBlue` のように取り出す。CSS の148個の named color と gray/grey・aqua/cyan・fuchsia/magenta の別名を含め、`Rgba<byte>` の straight-alpha sRGB 8-bit コード値を immutable な static readonly field として提供する。C# の構造体は literal const にできないため readonly field を使い、値型ごとの暗黙な正規化や gamma 変換は行わない。opaque alpha は255であり、正規化値は `NormalizeUnorm<float>(255)` で明示する。
+標準色は単一の `CssColors` catalog から `CssColors.Red`・`CssColors.CornflowerBlue` のように取り出す。CSS の148個の named color と gray/grey・aqua/cyan・fuchsia/magenta の別名を含め、共通の `Srgb8` 値型のstraight-alpha sRGB 8-bitコード値をimmutableなstatic readonly fieldとして提供する。C# の構造体は literal const にできないため readonly field を使い、opaque alphaは255とする。Srgb8は意味が明確な8-bit表現なので、`Rgba<float>`への代入では各byteを255fで一度除算し、自動で正規化する。sRGB decodeやpremultiplyは行わない。`Rgba<T>`全般の数値castを自動正規化へ変更しない。
 
-`Transparent` は148色とは別の CSS keyword として RGBA=(0,0,0,0) を返す。currentColor と system/theme 色は利用文脈に依存するため固定値を登録しない。`All` は148色と transparent の149 keyword を小文字名で保持する変更不能な辞書として公開する。`TryGet` は ASCII の名前を ordinal case-insensitive で照合し、null・非ASCII・未知名では false と default を返す。空白除去や hex・関数構文の parse は行わない。catalog は名前付きデータだけを担当し、数値演算やテーマ管理を追加しない。Drawing2Dへは `CssColors.Red.NormalizeUnorm<float>(255)` の結果を直接渡す。専用のFromSrgb8 bridgeは設けない。Mathematics から Drawing2D への依存や暗黙変換は作らない。
+`Transparent` は148色とは別の CSS keyword として RGBA=(0,0,0,0) を返す。currentColor と system/theme 色は利用文脈に依存するため固定値を登録しない。`All` は148色と transparent の149 keyword を小文字名で保持する変更不能な辞書として公開する。`TryGet` は ASCII の名前を ordinal case-insensitive で照合し、null・非ASCII・未知名では false と default を返す。空白除去や hex・関数構文の parse は行わない。catalog は名前付きデータだけを担当し、数値演算やテーマ管理を追加しない。Drawing2Dへは `CssColors.Red` を直接渡せる。専用のFromSrgb8 bridgeは設けない。MathematicsからDrawing2Dへの依存や専用描画型への変換は作らず、Srgb8→`Rgba<float>`を共通数学内で完結させる。
 
 基準コードでは標準色のbyteコードを共通の名前で取り出す機能がなく、利用側が値を管理する。同じCornflowerBlueを既存の描画用constructorへ渡す場合は数値を繰り返す。
 
@@ -166,14 +166,14 @@ using Lumyte.Graphics.Drawing2D;
 var color = new Color2D(100f / 255, 149f / 255, 237f / 255, 1);
 ```
 
-変更後は catalog から取得し、必要な正規化と配置変換を明示する。
+変更後はcatalogの意味付きコードから自動正規化し、rawコードの取り出しや配置変換は名前で明示する。
 
 ```csharp
 using Lumyte.Mathematics.Colors;
 
 // 利用側で数値コードを管理する代わりに名前から取得する。
-Rgba<byte> codes = CssColors.CornflowerBlue; // (100,149,237,255)
-Rgba<float> normalized = codes.NormalizeUnorm<float>(255);
+Srgb8 codes = CssColors.CornflowerBlue; // (100,149,237,255)
+Rgba<float> normalized = codes; // (100/255f,149/255f,237/255f,1)
 Bgra<float> layout = Bgra<float>.FromRgba(normalized);
 ```
 
@@ -185,11 +185,24 @@ using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.CornflowerBlue.NormalizeUnorm<float>(255));
+canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.CornflowerBlue);
 DrawList2D list = canvas.End();
 ```
 
-Color2Dを前提とするFromSrgb8の専用factoryも公開しない。パレットからの正規化はRgbaの操作に統一する。
+Color2Dを前提とするFromSrgb8の専用factoryも公開しない。パレットの意味付き8-bit値から共通float値への変換で正規化し、汎用の数学演算はRgbaへ置く。
+
+Srgb8はbyteのR/G/B/Aを保持し、RGBを指定するconstructorのalpha省略時は255、defaultは透明黒である。ネイティブ構造体やメモリ配置の互換を保証する型ではない。公開implicit変換はSrgb8→`Rgba<float>`だけに限定する。各成分のbyte/255fは、既存の厳密な`NormalizeUnorm<float>(255)`と全256コードで同じ最近接丸めを要求し、毎回の有理数構築や割り当てを伴わない。これは変換方向を明確にする形式であり、逆数乗算を使う別実装とのbit単位の一致を保証しない。逆方向は明示castでunit範囲を検証し、既存のQuantizeUnormによる最近接偶数へ量子化する。HDRのclamp、gamma変換、alpha associationを隠さない。
+
+rawコードはToCodes/FromCodesで`Rgba<byte>`と明示して往復する。`ToNormalized<TResult>`と`FromNormalized<T>`は名前付きの汎用変換であり、表現できない整数の分数などは既存の数値契約に従う。一般の`Rgba<byte>`→`Rgba<float>`にimplicit変換を追加せず、ConvertCheckedでは255が255fのままである。
+
+C#のgeneric推論や二つのuser-defined conversionの連鎖は拡張しない。`UiArgument<Rgba<float>>`を受ける生成factoryでは、`Rgba<float>`の変数への代入、`UiArgument<Rgba<float>>`.Constant、または明示した型のsignalを使う。propertyのFillやpaint/canvasの`Rgba<float>`引数にはSrgb8を直接渡せる。
+
+```csharp
+Srgb8 orange = new(255, 128, 0);
+Rgba<float> color = CssColors.Red;
+Rgba<byte> rawCodes = CssColors.Red.ToCodes();
+Srgb8 quantized = (Srgb8)color;
+```
 
 ### transfer、alpha、補間
 
@@ -335,15 +348,33 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 +}
 +
 +// 148 named colorと、別keywordのtransparent。全fieldは8-bit sRGBコード。
++public readonly record struct Srgb8
++{
++    public Srgb8(byte r, byte g, byte b, byte a = 255);
++    public byte R { get; }
++    public byte G { get; }
++    public byte B { get; }
++    public byte A { get; }
++    public Srgb8 WithAlpha(byte alpha);
++    public Rgba<byte> ToCodes();
++    public static Srgb8 FromCodes(Rgba<byte> codes);
++    public Rgba<TResult> ToNormalized<TResult>() where TResult : INumber<TResult>;
++    public static Srgb8 FromNormalized<T>(Rgba<T> color) where T : INumber<T>;
++    // byte/255fだけを行う。gamma/association変更なし、割り当てなし。
++    public static implicit operator Rgba<float>(Srgb8 color);
++    // unit検証と最近接偶数量子化。範囲外はclampせず拒否する。
++    public static explicit operator Srgb8(Rgba<float> color);
++}
++
 +public static class CssColors
 +{
-+    public static readonly Rgba<byte> Red;
-+    public static readonly Rgba<byte> CornflowerBlue;
-+    public static readonly Rgba<byte> RebeccaPurple;
-+    public static readonly Rgba<byte> Transparent;
++    public static readonly Srgb8 Red;
++    public static readonly Srgb8 CornflowerBlue;
++    public static readonly Srgb8 RebeccaPurple;
++    public static readonly Srgb8 Transparent;
 +    // 全149keyword。変更不能、キーは小文字、ordinal case-insensitive照合。
-+    public static IReadOnlyDictionary<string, Rgba<byte>> All { get; }
-+    public static bool TryGet(string? name, out Rgba<byte> color);
++    public static IReadOnlyDictionary<string, Srgb8> All { get; }
++    public static bool TryGet(string? name, out Srgb8 color);
 +}
 
 +public static partial class Color

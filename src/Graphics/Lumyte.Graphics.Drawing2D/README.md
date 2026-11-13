@@ -4,7 +4,7 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
-色の公開APIは `Lumyte.Mathematics.Colors.Rgba<float>` を使います。Rgbaは有限なraw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットは `CssColors.Red.NormalizeUnorm<float>(255)` で明示的に正規化し、gamma変換や暗黙変換はしません。
+色の公開APIは `Lumyte.Mathematics.Colors.Rgba<float>` を使います。Rgbaは有限なraw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットの `Srgb8` は `Rgba<float>` 引数へ暗黙に byte /255f で正規化され、gamma変換・premultiplyはしません。一般の `Rgba<T>` はraw値のままです。rawコードのcastは `CssColors.Red.ToCodes().ConvertChecked<float>()`、明示した結果型への正規化は `ToNormalized<double>()` を使います。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
@@ -13,8 +13,10 @@ using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.Red.NormalizeUnorm<float>(255));
+canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.Red);
 DrawList2D list = canvas.End();
+PaintGraph2D paint = PaintGraph2D.Solid(CssColors.CornflowerBlue);
+Rgba<float> color = CssColors.Red; // 型付き変数でも自動正規化。
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new RenderTarget2D

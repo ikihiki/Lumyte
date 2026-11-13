@@ -105,15 +105,19 @@ packed は `Rgb565`・`Rgba4444`・`Rgba5551`・`Rgba1010102`・`Bgra1010102` �
 
 ## 標準色パレット
 
-`CssColors.Red`・`CssColors.CornflowerBlue`・`CssColors.RebeccaPurple` などは、CSS Color 4 の148 named colorを straight-alpha sRGB の `Rgba<byte>` コード値として返します。opaque alphaは255です。構造体はC#のliteral constにできないため、各色は immutable な `static readonly` fieldです。型ごとの暗黙の正規化やlinear化はしません。
+`CssColors.Red`・`CssColors.CornflowerBlue`・`CssColors.RebeccaPurple` などは、CSS Color 4 の148 named colorを straight-alpha sRGB の `Srgb8` コード値として返します。opaque alphaは255です。構造体はC#のliteral constにできないため、各色は immutable な `static readonly` fieldです。意味付きの `Srgb8` だけは `Rgba<float>` へ暗黙に各 byte /255f で正規化します。gamma decode・premultiply は行いません。一般の `Rgba<T>` の raw 数値規則は変えません。
 
 ```csharp
 using Lumyte.Mathematics.Colors;
 
-Rgba<byte> redCodes = CssColors.Red; // (255,0,0,255)
-Rgba<float> red = CssColors.Red.NormalizeUnorm<float>(255); // (1,0,0,1)
+Rgba<byte> redCodes = CssColors.Red.ToCodes(); // (255,0,0,255)
+Rgba<float> red = CssColors.Red; // (1,0,0,1)
 Bgra<float> bgra = Bgra<float>.FromRgba(red);
-bool found = CssColors.TryGet("cornflowerblue", out Rgba<byte> codes);
+var orange = new Srgb8(255, 128, 0); // alpha省略時は255。defaultは透明黒。
+Rgba<float> raw = CssColors.Red.ToCodes().ConvertChecked<float>(); // 255は255f。
+Rgba<double> unit = CssColors.Red.ToNormalized<double>();
+Srgb8 quantized = (Srgb8)red; // unit検証、最近接偶数量子化。HDRをclampしない。
+bool found = CssColors.TryGet("cornflowerblue", out Srgb8 codes);
 ```
 
 `CssColors.All` は148色と別keywordの `transparent` を含む変更不能な149要素の辞書です。gray/greyなどの別名を保持し、CSSのGreenは#008000、Limeは#00FF00です。Transparentは白ではなくRGBA=(0,0,0,0)です。`TryGet` はASCIIの名前をcase-insensitiveに照合するだけで、空白除去・hex/関数parse・currentColor/system/theme色の解決はしません。
