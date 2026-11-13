@@ -373,7 +373,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _mode = Cpu.IsSimple ? 4 : (Cpu.Masks.Count > 0 ? 1 : 0) | (Cpu.Images.Count > 0 ? 2 : 0);
 
             // This changes only private evaluator capacity, never storage, draw ranges or accepted work.
-            _mode = DrawRecordResources2D.SelectPipelineMode(_mode, Cpu.Paints.Count);
+            _mode = DrawRecordResources2D.SelectPipelineMode(_mode, _mode == 2 ? Cpu.PaintClosureBound : Cpu.Paints.Count);
 
             _pipeline = _batch._resources.GetPipeline(_mode);
             _records = Create<DrawRecord2D>(Cpu.Records.Count, 96);
@@ -404,7 +404,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     case 0: _basicMetadata = Create<DrawBasicMetadata2D>(1, 48); break;
                     case 1: _maskMetadata = Create<DrawMaskMetadata2D>(1, 64); break;
                     case 2:
-                    case 6: _imageMetadata = Create<DrawImageMetadata2D>(1, 64); break;
+                    case 6:
+                    case 7: _imageMetadata = Create<DrawImageMetadata2D>(1, 64); break;
                     default: _metadata = Create<DrawPageMetadata2D>(1, 80); break;
                 }
             }
@@ -452,7 +453,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     case 0: Draw(render, info, _basicMetadata!.Reference!, first, count); break;
                     case 1: Draw(render, info, _maskMetadata!.Reference!, first, count); break;
                     case 2:
-                    case 6: Draw(render, info, _imageMetadata!.Reference!, first, count); break;
+                    case 6:
+                    case 7: Draw(render, info, _imageMetadata!.Reference!, first, count); break;
                     default: Draw(render, info, _metadata!.Reference!, first, count); break;
                 }
             }
@@ -578,7 +580,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     {
                         0 => _basicMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!)]),
                         1 => _maskMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!)]),
-                        2 or 6 => _imageMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _images.Reference!)]),
+                        2 or 6 or 7 => _imageMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _images.Reference!)]),
                         _ => _metadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!, _images.Reference!)]),
                     };
                 }

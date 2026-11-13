@@ -1,4 +1,10 @@
 #include "lumyte.slang"
+#ifndef LUMYTE_SMALL_PAINT_GRAPH
+#define LUMYTE_SMALL_PAINT_GRAPH 0
+#endif
+#ifndef LUMYTE_MEDIUM_PAINT_GRAPH
+#define LUMYTE_MEDIUM_PAINT_GRAPH 0
+#endif
 #ifndef LUMYTE_RECORD_MASKS
 #define LUMYTE_RECORD_MASKS 1
 #endif
@@ -501,7 +507,9 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
         return result/16;
     }
     uint ids[256]; uint count=reachable(page,record.PaintId,ids);
-#if LUMYTE_SMALL_PAINT_GRAPH
+#if LUMYTE_MEDIUM_PAINT_GRAPH
+    return shadeGraph<16>(record,page,mask,outer,origin,ids,count);
+#elif LUMYTE_SMALL_PAINT_GRAPH
     return shadeGraph<8>(record,page,mask,outer,origin,ids,count);
 #else
     return count<=8 ? shadeGraph<8>(record,page,mask,outer,origin,ids,count)

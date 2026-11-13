@@ -84,7 +84,7 @@ ClipId は独立した clip directory を指し、payload と membership の配�
 
 各画素の s=(x+(i+0.5)/4,y+(j+0.5)/4)、i,j=0..3 について、**sum(shape(s) * paint(s) * clip(s)) / 16** を出力する。DrawMesh の coverage は基準 shader の Mode=1 と同じ画素中心で求め、その値と各サンプルの paint/clip を積にする。shape と clip の別々の平均を掛けない。record と descriptor の不変値を sample loop 外で取得し、毎サンプルで旧 144 B 式 record を読み直す構造を残さない。ただし実際の load 削減やレジスタ使用量は compiler/backend の検証事項である。
 
-image を含み mask を含まない参照集合で、transparent entry を含む immutable paint directory が 8 entry 以下なら、同じ評価器の private capacity=8 だけを含む shader を選べる。これは既存の小さい closure の評価と同じ演算・順序・サンプル位置を使い、stream、record、draw range、受理予算を変更しない。9 entry 以上と他の stream 集合は従来の 8/16/256 capacity dispatch を使い、容量に合わせて描画を分割しない。
+image を含み mask を含まない参照集合では、実際の各 record の paint root に到達する closure の保守的な上限を CPU で計算し、transparent zero を含む上限が 8 以下なら private capacity=8、16 以下なら capacity=16 だけを含む shader を選べる。共有 directory 全体の entry 数は個々の root の評価容量とは区別する。大きい closure と他の stream 集合は従来の 8/16/256 dispatch を保つ。同じ評価器の演算・順序・サンプル位置、stream、record、draw range、受理予算を変更せず、容量に合わせて描画を分割しない。
 
 ### 全 stream の byte 配置
 

@@ -24,6 +24,47 @@ internal sealed class DrawRecordPage2D
 
     internal List<DrawRecord2D> Records { get; } = [];
 
+    internal int PaintClosureBound
+    {
+        get
+        {
+            int[] costs = new int[Paints.Count];
+            for (int i = 1; i < Paints.Count; i++)
+            {
+                DrawDirectoryEntry2D entry = Paints[i];
+                uint first = 0, second = 0;
+                if (entry.Kind is 6 or 7 or 8)
+                {
+                    Vector4 cell = Numeric[checked((int)entry.PayloadOffset16)];
+                    first = BitConverter.SingleToUInt32Bits(cell.X);
+                    if (entry.Kind == 7)
+                    {
+                        second = BitConverter.SingleToUInt32Bits(cell.Y);
+                    }
+                }
+                else if (entry.Kind == 9)
+                {
+                    first = Images[checked((int)(entry.PayloadOffset16 / 8))].ChildId;
+                }
+
+                if (first >= i || second >= i)
+                {
+                    throw new InvalidOperationException("Paint children must precede their parent.");
+                }
+
+                costs[i] = Math.Min(255, checked(1 + costs[(int)first] + costs[(int)second]));
+            }
+
+            int maximum = 1;
+            foreach (DrawRecord2D record in Records)
+            {
+                maximum = Math.Max(maximum, checked(1 + costs[checked((int)record.PaintId)]));
+            }
+
+            return maximum;
+        }
+    }
+
     internal bool IsSimple => _simpleOnly && Clips.Count == 1;
 
     internal uint BufferCount => IsSimple ? 2u : 4u + (Clips.Count > 1 ? 1u : 0u) + (Images.Count > 0 ? 1u : 0u) + (Masks.Count > 0 ? 1u : 0u);

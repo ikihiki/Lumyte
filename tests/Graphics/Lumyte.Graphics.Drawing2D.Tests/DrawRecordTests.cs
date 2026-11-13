@@ -21,9 +21,9 @@ public sealed class DrawRecordTests
     [InlineData(ShaderTarget.Dxil)]
     public void EveryBackendMatchesCanonicalWire(ShaderTarget target)
     {
-        foreach (int mode in new[] { 0, 1, 2, 3, 4, 6 })
+        foreach (int mode in new[] { 0, 1, 2, 3, 4, 6, 7 })
         {
-            string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", _ => string.Empty };
+            string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
             foreach (string stage in new[] { "vertex", "fragment" })
             {
                 var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-" + stage + ".lshader");
@@ -54,18 +54,46 @@ public sealed class DrawRecordTests
 
     /// <summary>Private evaluator specialization changes neither accepted work nor physical allocation boundaries.</summary>
     /// <param name="mode">The required sparse stream set.</param>
-    /// <param name="entries">The immutable paint directory entry count, including transparent zero.</param>
+    /// <param name="entries">The conservative actual-root closure bound, including transparent zero.</param>
     /// <param name="expected">The compatible pipeline specialization.</param>
     [Theory]
     [InlineData(2, 1, 6)]
     [InlineData(2, 8, 6)]
-    [InlineData(2, 9, 2)]
+    [InlineData(2, 9, 7)]
+    [InlineData(2, 16, 7)]
+    [InlineData(2, 17, 2)]
     [InlineData(0, 8, 0)]
     [InlineData(1, 8, 1)]
     [InlineData(3, 8, 3)]
     [InlineData(4, 8, 4)]
     public void SmallImageEvaluatorHasExactEligibility(int mode, int entries, int expected)
         => Assert.Equal(expected, DrawRecordResources2D.SelectPipelineMode(mode, entries));
+
+    /// <summary>Shared directory size does not force a larger evaluator when each actual root has a small closure.</summary>
+    [Fact]
+    public void ClosureBoundUsesRootsRatherThanDirectoryCapacity()
+    {
+        var page = new DrawRecordPage2D();
+        for (int i = 0; i < 144; i++)
+        {
+            page.Paints.Add(new(1, 0, 1, 0));
+        }
+
+        var record = new DrawRecord2D(1, 0, 144, 0, default, default, default, default, 0, 0, 0, 0);
+        page.Records.Add(record);
+        Assert.Equal(2, page.PaintClosureBound);
+        for (uint depth = 1; depth <= 7; depth++)
+        {
+            uint child = checked((uint)page.Paints.Count - 1);
+            page.Numeric.Add(new(BitConverter.UInt32BitsToSingle(child), 0.5f, 0, 0));
+            page.Paints.Add(new(6, checked((uint)page.Numeric.Count - 1), 1, 0));
+            page.Records[0] = record with { PaintId = checked((uint)page.Paints.Count - 1) };
+        }
+
+        Assert.Equal(9, page.PaintClosureBound);
+        Assert.Equal(7, DrawRecordResources2D.SelectPipelineMode(2, page.PaintClosureBound));
+        Assert.Single(page.Records);
+    }
 
     /// <summary>Half-open empty/full selections are valid without overflow-prone addition.</summary>
     /// <param name="first">The page-relative start.</param>
