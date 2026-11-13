@@ -20,7 +20,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the fill, whose components are validated as unit straight sRGB before assignment.</summary>
             [ComposeParameter]
-            public SrgbRgba<float> Fill { get; set => field = UiColorPolicy.Unit(value, nameof(Fill)); }
+            public SRgba<float> Fill { get; set => field = UiColorPolicy.Unit(value, nameof(Fill)); }
 
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new RectangleElement(this);

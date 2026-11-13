@@ -9,19 +9,19 @@ namespace Lumyte.UI.TextEditing;
 /// <param name = "SelectedForeground">The selected foreground.</param>
 /// <param name = "Padding">The padding.</param>
 /// <param name = "RowSpacing">The row spacing.</param>
-public sealed record ImeCandidateStyle(SrgbRgba<float> Background, SrgbRgba<float> Foreground, SrgbRgba<float> SelectedBackground, SrgbRgba<float> SelectedForeground, float Padding = 6, float RowSpacing = 2)
+public sealed record ImeCandidateStyle(SRgba<float> Background, SRgba<float> Foreground, SRgba<float> SelectedBackground, SRgba<float> SelectedForeground, float Padding = 6, float RowSpacing = 2)
 {
     /// <summary>Gets the unit straight sRGB Background color.</summary>
-    public SrgbRgba<float> Background { get; init => field = UiColorPolicy.Unit(value, nameof(Background)); } = UiColorPolicy.Unit(Background, nameof(Background));
+    public SRgba<float> Background { get; init => field = UiColorPolicy.Unit(value, nameof(Background)); } = UiColorPolicy.Unit(Background, nameof(Background));
 
     /// <summary>Gets the unit straight sRGB Foreground color.</summary>
-    public SrgbRgba<float> Foreground { get; init => field = UiColorPolicy.Unit(value, nameof(Foreground)); } = UiColorPolicy.Unit(Foreground, nameof(Foreground));
+    public SRgba<float> Foreground { get; init => field = UiColorPolicy.Unit(value, nameof(Foreground)); } = UiColorPolicy.Unit(Foreground, nameof(Foreground));
 
     /// <summary>Gets the unit straight sRGB SelectedBackground color.</summary>
-    public SrgbRgba<float> SelectedBackground { get; init => field = UiColorPolicy.Unit(value, nameof(SelectedBackground)); } = UiColorPolicy.Unit(SelectedBackground, nameof(SelectedBackground));
+    public SRgba<float> SelectedBackground { get; init => field = UiColorPolicy.Unit(value, nameof(SelectedBackground)); } = UiColorPolicy.Unit(SelectedBackground, nameof(SelectedBackground));
 
     /// <summary>Gets the unit straight sRGB SelectedForeground color.</summary>
-    public SrgbRgba<float> SelectedForeground { get; init => field = UiColorPolicy.Unit(value, nameof(SelectedForeground)); } = UiColorPolicy.Unit(SelectedForeground, nameof(SelectedForeground));
+    public SRgba<float> SelectedForeground { get; init => field = UiColorPolicy.Unit(value, nameof(SelectedForeground)); } = UiColorPolicy.Unit(SelectedForeground, nameof(SelectedForeground));
 
     /// <summary>Gets the default.</summary>
     public static ImeCandidateStyle Default { get; } = new(new(1, 1, 1, 1), new(0, 0, 0, 1), new(0.2f, 0.4f, 0.8f, 1), new(1, 1, 1, 1));

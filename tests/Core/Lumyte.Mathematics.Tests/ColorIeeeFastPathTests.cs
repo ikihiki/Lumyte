@@ -14,21 +14,21 @@ public sealed class ColorIeeeFastPathTests
         Check<float>();
         Check<double>();
         Check<Half>();
-        LinearRgba<int> quantized = new LinearRgba<float>(0.3f, 0, 0, 1).QuantizeUnorm(255);
+        LRgba<int> quantized = new LRgba<float>(0.3f, 0, 0, 1).QuantizeUnorm(255);
         Assert.Equal(77, quantized.R);
         byte[] pixel = new byte[4];
-        new LinearRgba<float>(0.3f, 0, 0, 1).WritePixel(pixel, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
+        new LRgba<float>(0.3f, 0, 0, 1).WritePixel(pixel, ColorComponentEncoding.Unorm8, ColorByteOrder.LittleEndian);
         Assert.Equal(77, pixel[0]);
-        Assert.Throws<OverflowException>(() => new LinearRgba<double>(double.MaxValue, 0, 0, 0.5).UnpremultiplyLinear<double>());
-        Assert.Equal(new LinearRgba<decimal>(0.15m, 0, 0, 0.5m), new LinearRgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<decimal>());
-        Assert.Throws<ArithmeticException>(() => new LinearRgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<int>());
+        Assert.Throws<OverflowException>(() => new LRgba<double>(double.MaxValue, 0, 0, 0.5).UnpremultiplyLinear<double>());
+        Assert.Equal(new LRgba<decimal>(0.15m, 0, 0, 0.5m), new LRgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<decimal>());
+        Assert.Throws<ArithmeticException>(() => new LRgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<int>());
     }
 
     /// <summary>Migrated float paint and float-input/double clear must allocate no managed storage per color.</summary>
     [Fact]
     public void ProductionTransferAndAssociationDoNotAllocate()
     {
-        var input = new SrgbRgba<float>(0.3f, 0.02f, 0.8f, 0.7f);
+        var input = new SRgba<float>(0.3f, 0.02f, 0.8f, 0.7f);
         float paint = 0;
         double clear = 0;
         for (int i = 0; i < 1000; i++)
@@ -54,12 +54,12 @@ public sealed class ColorIeeeFastPathTests
     {
         T negativeZero = -T.Zero;
         T alpha = T.CreateChecked(0.5);
-        var input = new LinearRgba<T>(negativeZero, T.Epsilon, T.CreateChecked(0.3), alpha);
-        LinearRgba<T> associated = input.PremultiplyLinear<T>();
+        var input = new LRgba<T>(negativeZero, T.Epsilon, T.CreateChecked(0.3), alpha);
+        LRgba<T> associated = input.PremultiplyLinear<T>();
         Assert.True(T.IsNegative(associated.R));
         Assert.Equal(input.G * alpha, associated.G);
         Assert.Equal(input.B * alpha, associated.B);
-        LinearRgba<T> straight = input.UnpremultiplyLinear<T>();
+        LRgba<T> straight = input.UnpremultiplyLinear<T>();
         Assert.True(T.IsNegative(straight.R));
         Assert.Equal(input.G / alpha, straight.G);
         Assert.Equal(input.B / alpha, straight.B);

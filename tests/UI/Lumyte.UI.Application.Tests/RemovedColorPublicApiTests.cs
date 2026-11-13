@@ -94,9 +94,9 @@ public sealed class RemovedColorPublicApiTests
         }
 
         Assert.DoesNotContain(typeof(PaintGraph2D).Assembly.GetExportedTypes().SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)), method => method.Name == "FromSrgbRgba8");
-        Assert.Equal(typeof(SrgbRgba<float>), typeof(Lumyte.UI.Compose.Definitions.Rectangle).GetProperty("Fill")!.PropertyType);
-        Assert.Equal(typeof(SrgbRgba<float>), typeof(UiApplicationOptions).GetProperty("Background")!.PropertyType);
-        Assert.Equal(typeof(SrgbRgba<float>), typeof(ColorStop2D).GetProperty("Color")!.PropertyType);
+        Assert.Equal(typeof(SRgba<float>), typeof(Lumyte.UI.Compose.Definitions.Rectangle).GetProperty("Fill")!.PropertyType);
+        Assert.Equal(typeof(SRgba<float>), typeof(UiApplicationOptions).GetProperty("Background")!.PropertyType);
+        Assert.Equal(typeof(SRgba<float>), typeof(ColorStop2D).GetProperty("Color")!.PropertyType);
     }
 
     private static void InspectType(Type type, HashSet<Type> inspected)

@@ -21,7 +21,7 @@ public sealed class GraphLocalResourceTests
         RenderGraphTexture target = graph.CreateTexture(description);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
         using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), canvas.End(), new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear }, new DrawingGraphBindings2D(graph));
         using PreparedDrawingPasses2D prepared = await graph.Append2D(renderer);
         using CompiledRenderGraph compiled = graph.Compile();

@@ -19,7 +19,7 @@ public sealed class ProfilingTests
     public void RealOperationsEmitBranchCountersAndPairedStages()
     {
         using var listener = new Capture((EventKeywords)6);
-        using var surface = new UiSurface(Panel()[Rectangle(fill: new SrgbRgba<float>(1, 0, 0, 1))]);
+        using var surface = new UiSurface(Panel()[Rectangle(fill: new SRgba<float>(1, 0, 0, 1))]);
         surface.SetViewport(new(100, 80));
         using var drawing = new UiDrawingScene2D(surface);
         listener.Events.Clear();

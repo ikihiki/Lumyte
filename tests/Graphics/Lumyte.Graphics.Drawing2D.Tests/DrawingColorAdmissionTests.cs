@@ -30,9 +30,9 @@ public sealed class DrawingColorAdmissionTests
     {
         float[] values = [0.25f, 0.5f, 0.75f, 1];
         values[component] = invalid;
-        var raw = new SrgbRgba<float>(values[0], values[1], values[2], values[3]);
+        var raw = new SRgba<float>(values[0], values[1], values[2], values[3]);
         Assert.Equal(values, new[] { raw.R, raw.G, raw.B, raw.A });
-        var valid = new SrgbRgba<float>(0.25f, 0.5f, 0.75f, 1);
+        var valid = new SRgba<float>(0.25f, 0.5f, 0.75f, 1);
         var stop = new ColorStop2D(0, valid);
         var node = new SolidPaintNode2D(valid);
         Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.Solid(raw));
@@ -77,7 +77,7 @@ public sealed class DrawingColorAdmissionTests
             {
                 float[] values = [0, 0, 0, 1];
                 values[component] = invalid;
-                Assert.Throws<ArgumentOutOfRangeException>(() => new SrgbRgba<float>(values[0], values[1], values[2], values[3]));
+                Assert.Throws<ArgumentOutOfRangeException>(() => new SRgba<float>(values[0], values[1], values[2], values[3]));
             }
         }
     }
@@ -106,8 +106,8 @@ public sealed class DrawingColorAdmissionTests
     [Fact]
     public void TransparentStorageIsNotNormalizedAway()
     {
-        Assert.Equal(new SrgbRgba<float>(0, 0, 0, 0), default);
-        var hidden = new SrgbRgba<float>(1, 0.5f, 0.25f, 0);
+        Assert.Equal(new SRgba<float>(0, 0, 0, 0), default);
+        var hidden = new SRgba<float>(1, 0.5f, 0.25f, 0);
         Assert.Equal(hidden, new SolidPaintNode2D(hidden).Color);
         Assert.Equal(hidden, new ColorStop2D(0, hidden).Color);
         Assert.Equal(hidden, new RenderTarget2D { View = null!, ClearColor = hidden }.ClearColor);

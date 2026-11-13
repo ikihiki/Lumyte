@@ -14,10 +14,10 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void EveryColorOverloadRejectsBeforeRecordingAndPreservesState()
     {
-        var valid = new SrgbRgba<float>(1, 0.5f, 0.25f, 0);
+        var valid = new SRgba<float>(1, 0.5f, 0.25f, 0);
         Path2D path = new PathBuilder2D().Build();
         var style = new StrokeStyle2D();
-        Action<Canvas2D, SrgbRgba<float>>[] calls =
+        Action<Canvas2D, SRgba<float>>[] calls =
         [
             (c, color) => c.FillRect(new(0, 0, 1, 1), color),
             (c, color) => c.FillRoundedRect(new(0, 0, 1, 1), 1, color),
@@ -26,7 +26,7 @@ public sealed class ReviewColorAdmissionTests
             (c, color) => c.FillPath(path, color),
             (c, color) => c.StrokePath(path, color, style),
         ];
-        foreach (Action<Canvas2D, SrgbRgba<float>> call in calls)
+        foreach (Action<Canvas2D, SRgba<float>> call in calls)
         {
             var canvas = new Canvas2D();
             canvas.Begin();
@@ -39,7 +39,7 @@ public sealed class ReviewColorAdmissionTests
                 {
                     float[] v = [0, 0, 0, 0];
                     v[channel] = bad;
-                    var raw = new SrgbRgba<float>(v[0], v[1], v[2], v[3]);
+                    var raw = new SRgba<float>(v[0], v[1], v[2], v[3]);
                     Assert.Throws<ArgumentOutOfRangeException>(() => call(canvas, raw));
                 }
             }
@@ -56,7 +56,7 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void FailedInitAndWithLeavePublishedValuesIntact()
     {
-        var color = new SrgbRgba<float>(0.25f, 0.5f, 0.75f, 0);
+        var color = new SRgba<float>(0.25f, 0.5f, 0.75f, 0);
         var stop = new ColorStop2D(-2, color);
         var node = new SolidPaintNode2D(color);
         var target = new RenderTarget2D { View = null!, ClearColor = color, LoadOp = AttachmentLoadOp.Load };
@@ -68,7 +68,7 @@ public sealed class ReviewColorAdmissionTests
             {
                 float[] v = [0, 0, 0, 0];
                 v[channel] = bad;
-                var raw = new SrgbRgba<float>(v[0], v[1], v[2], v[3]);
+                var raw = new SRgba<float>(v[0], v[1], v[2], v[3]);
                 Assert.Throws<ArgumentOutOfRangeException>(() => new ColorStop2D(0, raw));
                 Assert.Throws<ArgumentOutOfRangeException>(() => new ColorStop2D { Color = raw });
                 Assert.Throws<ArgumentOutOfRangeException>(() => stop with { Color = raw });
@@ -96,7 +96,7 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void GradientFactoriesOwnStopsAndPreservePermittedOffsets()
     {
-        var hidden = new SrgbRgba<float>(1, 0.5f, 0.25f, 0);
+        var hidden = new SRgba<float>(1, 0.5f, 0.25f, 0);
         Func<ColorStop2D[], PaintGraph2D>[] factories =
         [
             stops => PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.One, stops),
@@ -137,7 +137,7 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void RawHdrAndDefaultRemainValidWithoutColorWrappers()
     {
-        var raw = new SrgbRgba<float>(-1, 2, -0.5f, 3);
+        var raw = new SRgba<float>(-1, 2, -0.5f, 3);
         Assert.Equal(3, raw.A);
         var clear = new ClearColor(-1, 2, -0.5, 3);
         Assert.Equal(-1, clear.Red);
@@ -151,7 +151,7 @@ public sealed class ReviewColorAdmissionTests
             {
                 float[] v = [0, 0, 0, 0];
                 v[channel] = bad;
-                Assert.Throws<ArgumentOutOfRangeException>(() => new SrgbRgba<float>(v[0], v[1], v[2], v[3]));
+                Assert.Throws<ArgumentOutOfRangeException>(() => new SRgba<float>(v[0], v[1], v[2], v[3]));
             }
         }
     }
@@ -162,18 +162,18 @@ public sealed class ReviewColorAdmissionTests
     {
         foreach (float value in new[] { 0f, float.Epsilon, MathF.BitDecrement(0.04045f), 0.04045f, MathF.BitIncrement(0.04045f), 0.1f, 0.5f, 1f })
         {
-            var color = new SrgbRgba<float>(value, value, value, 0.9f);
+            var color = new SRgba<float>(value, value, value, 0.9f);
             float paint = (value <= 0.04045f ? value / 12.92f : MathF.Pow((value + 0.055f) / 1.055f, 2.4f)) * color.A;
             Assert.Equal(new Vector4(paint, paint, paint, color.A), DrawingProgram2D.Linear(color));
             double clear = (value <= 0.04045f ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4)) * color.A;
             Assert.Equal(clear, color.ToLinear<double>().PremultiplyLinear<double>().R);
         }
 
-        SrgbRgba<float> middle = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.1f), new(0, 0, 0, 0.9f), 0.5f);
+        SRgba<float> middle = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.1f), new(0, 0, 0, 0.9f), 0.5f);
         Assert.Equal(0.49999997f, middle.A);
-        SrgbRgba<float> extrapolated = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.9f), new(0, 0, 0, 1), MathF.BitIncrement(1f));
+        SRgba<float> extrapolated = UiAnimationInterpolators.Color.Interpolate(new(0, 0, 0, 0.9f), new(0, 0, 0, 1), MathF.BitIncrement(1f));
         Assert.Equal(1f, extrapolated.A);
-        var hidden = new SrgbRgba<float>(1, 0.5f, 0.25f, 0);
+        var hidden = new SRgba<float>(1, 0.5f, 0.25f, 0);
         Assert.Equal(hidden, UiAnimationInterpolators.Color.Interpolate(hidden, default, 0));
     }
 }

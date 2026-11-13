@@ -11,11 +11,11 @@ internal static partial class Program
     private static void BuildBackendPaintChecks(DrawingCanvas2D canvas, ParleyTextEngine2D engine, ParleyTextOptions2D options)
     {
         _paintExpectations.Clear();
-        var ink = PaintGraph2D.Solid(new SrgbRgba<float>(0.1f, 0.15f, 0.25f, 1));
+        var ink = PaintGraph2D.Solid(new SRgba<float>(0.1f, 0.15f, 0.25f, 1));
         canvas.DrawText(engine.CreateLayout("COLRv1 / 28 isolated composite modes", options with { FontSize = 22 }, ink), new Vector2(36, 1000));
-        var sourceColor = new SrgbRgba<float>(0.82f, 0.23f, 0.12f, 0.53f);
-        var backdropColor = new SrgbRgba<float>(0.11f, 0.46f, 0.74f, 0.61f);
-        var targetColor = new SrgbRgba<float>(0.28f, 0.13f, 0.42f, 1);
+        var sourceColor = new SRgba<float>(0.82f, 0.23f, 0.12f, 0.53f);
+        var backdropColor = new SRgba<float>(0.11f, 0.46f, 0.74f, 0.61f);
+        var targetColor = new SRgba<float>(0.28f, 0.13f, 0.42f, 1);
         Vector4 source = Decode(sourceColor);
         Vector4 backdrop = Decode(backdropColor);
         Vector4 target = Decode(targetColor);
@@ -36,19 +36,19 @@ internal static partial class Program
             AddCompositeExpectation(x + 5, y + 22, Vector4.Zero, Vector4.Zero, target, mode, name + " / neither");
         }
 
-        AddBlendBoundary(0, "Dodge black / white", new SrgbRgba<float>(1, 1, 1, 1), new SrgbRgba<float>(0, 0, 0, 1), CompositeMode2D.ColorDodge);
-        AddBlendBoundary(1, "Dodge white / color", new SrgbRgba<float>(1, 1, 1, 1), new SrgbRgba<float>(0.3f, 0.6f, 0.2f, 1), CompositeMode2D.ColorDodge);
-        AddBlendBoundary(2, "Burn white / black", new SrgbRgba<float>(0, 0, 0, 1), new SrgbRgba<float>(1, 1, 1, 1), CompositeMode2D.ColorBurn);
-        AddBlendBoundary(3, "Burn black / color", new SrgbRgba<float>(0, 0, 0, 1), new SrgbRgba<float>(0.3f, 0.6f, 0.2f, 1), CompositeMode2D.ColorBurn);
-        AddBlendBoundary(4, "Gray hue", new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1), new SrgbRgba<float>(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.HslHue);
-        AddBlendBoundary(5, "Gray saturation", new SrgbRgba<float>(0.8f, 0.3f, 0.1f, 1), new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.HslSaturation);
-        AddBlendBoundary(6, "Gray color", new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1), new SrgbRgba<float>(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.HslColor);
-        AddBlendBoundary(7, "Gray luminosity", new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1), new SrgbRgba<float>(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.HslLuminosity);
-        AddBlendBoundary(8, "Transparent color", new SrgbRgba<float>(0, 1, 0, 0), backdropColor, CompositeMode2D.HslColor);
-        AddBlendBoundary(9, "Softlight black", new SrgbRgba<float>(1, 1, 1, 1), new SrgbRgba<float>(0, 0, 0, 1), CompositeMode2D.SoftLight);
+        AddBlendBoundary(0, "Dodge black / white", new SRgba<float>(1, 1, 1, 1), new SRgba<float>(0, 0, 0, 1), CompositeMode2D.ColorDodge);
+        AddBlendBoundary(1, "Dodge white / color", new SRgba<float>(1, 1, 1, 1), new SRgba<float>(0.3f, 0.6f, 0.2f, 1), CompositeMode2D.ColorDodge);
+        AddBlendBoundary(2, "Burn white / black", new SRgba<float>(0, 0, 0, 1), new SRgba<float>(1, 1, 1, 1), CompositeMode2D.ColorBurn);
+        AddBlendBoundary(3, "Burn black / color", new SRgba<float>(0, 0, 0, 1), new SRgba<float>(0.3f, 0.6f, 0.2f, 1), CompositeMode2D.ColorBurn);
+        AddBlendBoundary(4, "Gray hue", new SRgba<float>(0.5f, 0.5f, 0.5f, 1), new SRgba<float>(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.HslHue);
+        AddBlendBoundary(5, "Gray saturation", new SRgba<float>(0.8f, 0.3f, 0.1f, 1), new SRgba<float>(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.HslSaturation);
+        AddBlendBoundary(6, "Gray color", new SRgba<float>(0.5f, 0.5f, 0.5f, 1), new SRgba<float>(0.8f, 0.3f, 0.1f, 1), CompositeMode2D.HslColor);
+        AddBlendBoundary(7, "Gray luminosity", new SRgba<float>(0.5f, 0.5f, 0.5f, 1), new SRgba<float>(0.5f, 0.5f, 0.5f, 1), CompositeMode2D.HslLuminosity);
+        AddBlendBoundary(8, "Transparent color", new SRgba<float>(0, 1, 0, 0), backdropColor, CompositeMode2D.HslColor);
+        AddBlendBoundary(9, "Softlight black", new SRgba<float>(1, 1, 1, 1), new SRgba<float>(0, 0, 0, 1), CompositeMode2D.SoftLight);
         BuildGradientChecks(canvas, engine, options);
 
-        void AddBlendBoundary(int index, string name, SrgbRgba<float> sourceInput, SrgbRgba<float> backdropInput, CompositeMode2D mode)
+        void AddBlendBoundary(int index, string name, SRgba<float> sourceInput, SRgba<float> backdropInput, CompositeMode2D mode)
         {
             int x = 36 + (index * 80);
             canvas.FillRect(new Rect2D(x, 1374, 72, 10), PaintGraph2D.Composite(PaintGraph2D.Solid(sourceInput), PaintGraph2D.Solid(backdropInput), mode));
@@ -66,17 +66,17 @@ internal static partial class Program
 
     private static void BuildGradientChecks(DrawingCanvas2D canvas, ParleyTextEngine2D engine, ParleyTextOptions2D options)
     {
-        var ink = PaintGraph2D.Solid(new SrgbRgba<float>(0.1f, 0.15f, 0.25f, 1));
+        var ink = PaintGraph2D.Solid(new SRgba<float>(0.1f, 0.15f, 0.25f, 1));
         canvas.DrawText(engine.CreateLayout("Gradient edge cases / linear-light premultiplied color", options with { FontSize = 20 }, ink), new Vector2(36, 1400));
-        var red = new SrgbRgba<float>(1, 0, 0, 1);
-        var blue = new SrgbRgba<float>(0, 0, 1, 1);
+        var red = new SRgba<float>(1, 0, 0, 1);
+        var blue = new SRgba<float>(0, 0, 1, 1);
         Vector4 redLinear = Decode(red);
         Vector4 blueLinear = Decode(blue);
         Vector4 clear = Vector4.One;
         ColorStop2D[] stops = [new(0, red), new(1, blue)];
         ColorStop2D[] collapsedStops = [new(0.5f, red), new(0.5f, blue)];
         Place(0, "Linear light", PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(50, 0), stops), (25, 25, Vector4.Lerp(redLinear, blueLinear, 0.51f)));
-        Place(1, "Premul alpha", PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(50, 0), [new(0, red), new(1, new SrgbRgba<float>(0, 0, 1, 0))]), (25, 25, redLinear * 0.49f));
+        Place(1, "Premul alpha", PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(50, 0), [new(0, red), new(1, new SRgba<float>(0, 0, 1, 0))]), (25, 25, redLinear * 0.49f));
         Place(2, "Hard stop", PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(50, 0), [new(0, red), new(0.5f, red), new(0.5f, blue), new(1, blue)]), (24, 25, redLinear), (25, 25, blueLinear));
         Place(3, "Empty stops", PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(50, 0), []), (25, 25, Vector4.Zero));
         Place(4, "Degenerate", PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.Zero, Vector2.Zero, stops, ExtendMode2D.Pad), (25, 25, Vector4.Zero));
@@ -232,7 +232,7 @@ internal static partial class Program
         return path.Build();
     }
 
-    private static Vector4 Decode(SrgbRgba<float> color) => new(DecodeChannel(color.R) * color.A, DecodeChannel(color.G) * color.A, DecodeChannel(color.B) * color.A, color.A);
+    private static Vector4 Decode(SRgba<float> color) => new(DecodeChannel(color.R) * color.A, DecodeChannel(color.G) * color.A, DecodeChannel(color.B) * color.A, color.A);
 
     private static float DecodeChannel(float value) => value <= 0.04045f ? value / 12.92f : MathF.Pow((value + 0.055f) / 1.055f, 2.4f);
 

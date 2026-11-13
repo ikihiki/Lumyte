@@ -18,7 +18,7 @@ canvas.BeginLayer(new LayerOptions2D
     Effects = graph => graph.AppendGaussianBlur(graph.Source, 3, 3),
     Opacity = 0.8f,
 });
-canvas.FillRoundedRect(new Rect2D(40, 40, 100, 50), 8, new SrgbRgba<float>(1, 0, 0, 1));
+canvas.FillRoundedRect(new Rect2D(40, 40, 100, 50), 8, new SRgba<float>(1, 0, 0, 1));
 canvas.EndLayer();
 RenderGraphDrawList2D list = canvas.End();
 

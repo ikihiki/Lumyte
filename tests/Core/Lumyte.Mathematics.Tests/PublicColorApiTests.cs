@@ -12,17 +12,17 @@ public sealed class PublicColorApiTests
     [Fact]
     public void ExportedColorTypesAreCohesive()
     {
-        string[] exported = typeof(SrgbRgba<>).Assembly.GetExportedTypes()
+        string[] exported = typeof(SRgba<>).Assembly.GetExportedTypes()
             .Where(type => type.Namespace == "Lumyte.Mathematics.Colors")
             .Select(type => type.Name).Order().ToArray();
-        string[] expected = ["Color", "ColorByteOrder", "ColorComponentEncoding", "CssColors", "IColorPixel`1", "IPackedColorPixel`1", "SrgbRgba8", "RawRgb565", "RawRgba4444", "RawRgba5551", "RawRgba1010102", "RawBgra1010102", "SrgbGray`1", "SrgbGrayAlpha`1", "SrgbRgb`1", "SrgbRgba`1", "SrgbBgr`1", "SrgbBgra`1", "SrgbArgb`1", "SrgbAbgr`1", "LinearGray`1", "LinearGrayAlpha`1", "LinearRgb`1", "LinearRgba`1", "LinearBgr`1", "LinearBgra`1", "LinearArgb`1", "LinearAbgr`1", "SrgbHsla`1", "SrgbHsva`1"];
+        string[] expected = ["Color", "ColorByteOrder", "ColorComponentEncoding", "CssColors", "IColorPixel`1", "IPackedColorPixel`1", "SRgba8", "RawRgb565", "RawRgba4444", "RawRgba5551", "RawRgba1010102", "RawBgra1010102", "SGray`1", "SGrayAlpha`1", "SRgb`1", "SRgba`1", "SBgr`1", "SBgra`1", "SArgb`1", "SAbgr`1", "LGray`1", "LGrayAlpha`1", "LRgb`1", "LRgba`1", "LBgr`1", "LBgra`1", "LArgb`1", "LAbgr`1", "SHsla`1", "SHsva`1"];
         Assert.Equal(expected.Order(), exported);
         string[] methods = typeof(ColorMath).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).Order().ToArray();
         Assert.Equal(new[] { "DecodePixels", "InterpolateSrgbLinearPremultipliedRaw", "ReadPackedPixels", "WritePackedPixels", "WritePixels" }, methods);
-        Assert.DoesNotContain(typeof(SrgbRgba<>).Assembly.GetExportedTypes(), type => type.Name == "ColorPixelFormat");
-        Assert.DoesNotContain(typeof(SrgbRgba<>).GetGenericArguments()[0].GetCustomAttributesData(), attribute => attribute.AttributeType.Name == "IsUnmanagedAttribute");
-        foreach (Type type in typeof(SrgbRgba<>).Assembly.GetExportedTypes().Where(type => type.Namespace == "Lumyte.Mathematics.Colors"))
+        Assert.DoesNotContain(typeof(SRgba<>).Assembly.GetExportedTypes(), type => type.Name == "ColorPixelFormat");
+        Assert.DoesNotContain(typeof(SRgba<>).GetGenericArguments()[0].GetCustomAttributesData(), attribute => attribute.AttributeType.Name == "IsUnmanagedAttribute");
+        foreach (Type type in typeof(SRgba<>).Assembly.GetExportedTypes().Where(type => type.Namespace == "Lumyte.Mathematics.Colors"))
         {
             foreach (Type argument in type.GetGenericArguments())
             {
@@ -66,28 +66,28 @@ public sealed class PublicColorApiTests
     [Fact]
     public void ConversionOperatorsDoNotPoisonGenericStorage()
     {
-        Assert.True(typeof(SrgbRgba8).IsValueType);
-        Assert.False(typeof(SrgbRgba8).IsGenericType);
-        Assert.Contains(typeof(SrgbRgba8).GetCustomAttributesData(), attribute => attribute.AttributeType.FullName == "System.Runtime.CompilerServices.IsReadOnlyAttribute");
-        Assert.All(typeof(SrgbRgba8).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly), property =>
+        Assert.True(typeof(SRgba8).IsValueType);
+        Assert.False(typeof(SRgba8).IsGenericType);
+        Assert.Contains(typeof(SRgba8).GetCustomAttributesData(), attribute => attribute.AttributeType.FullName == "System.Runtime.CompilerServices.IsReadOnlyAttribute");
+        Assert.All(typeof(SRgba8).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly), property =>
         {
             Assert.Equal(typeof(byte), property.PropertyType);
             Assert.Null(property.SetMethod);
         });
         const BindingFlags Flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly;
-        MethodInfo[] operators = typeof(SrgbRgba8).GetMethods(Flags)
+        MethodInfo[] operators = typeof(SRgba8).GetMethods(Flags)
             .Where(method => method.Name is "op_Implicit" or "op_Explicit").ToArray();
         Assert.Equal(2, operators.Length);
         MethodInfo forward = Assert.Single(operators, method => method.Name == "op_Implicit");
         Assert.False(forward.IsGenericMethod);
-        Assert.Equal(typeof(SrgbRgba<float>), forward.ReturnType);
-        Assert.Equal(typeof(SrgbRgba8), Assert.Single(forward.GetParameters()).ParameterType);
+        Assert.Equal(typeof(SRgba<float>), forward.ReturnType);
+        Assert.Equal(typeof(SRgba8), Assert.Single(forward.GetParameters()).ParameterType);
         MethodInfo reverse = Assert.Single(operators, method => method.Name == "op_Explicit");
         Assert.False(reverse.IsGenericMethod);
-        Assert.Equal(typeof(SrgbRgba8), reverse.ReturnType);
-        Assert.Equal(typeof(SrgbRgba<float>), Assert.Single(reverse.GetParameters()).ParameterType);
-        Assert.DoesNotContain(typeof(SrgbRgba<>).GetMethods(Flags), method => method.Name is "op_Implicit" or "op_Explicit");
-        Assert.DoesNotContain(typeof(SrgbRgba<byte>).GetMethods(Flags), method => method.Name is "op_Implicit" or "op_Explicit");
+        Assert.Equal(typeof(SRgba8), reverse.ReturnType);
+        Assert.Equal(typeof(SRgba<float>), Assert.Single(reverse.GetParameters()).ParameterType);
+        Assert.DoesNotContain(typeof(SRgba<>).GetMethods(Flags), method => method.Name is "op_Implicit" or "op_Explicit");
+        Assert.DoesNotContain(typeof(SRgba<byte>).GetMethods(Flags), method => method.Name is "op_Implicit" or "op_Explicit");
     }
 
     private static void AssertPublic(Type type)

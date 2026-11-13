@@ -9,7 +9,7 @@ namespace Lumyte.UI.Application.Tests;
 /// <summary>Checks named color-space ownership in the compiled public dependency graph.</summary>
 public sealed class SpacePublicApiTests
 {
-    private static readonly HashSet<string> _forbiddenNames = ["Rgba`1", "Rgb`1", "Gray`1", "GrayAlpha`1", "Bgr`1", "Bgra`1", "Argb`1", "Abgr`1", "Hsla`1", "Hsva`1", "Srgb8", "Rgb565", "Rgba4444", "Rgba5551", "Rgba1010102", "Bgra1010102", "Color2D"];
+    private static readonly HashSet<string> _forbiddenNames = ["Rgba`1", "Rgb`1", "Gray`1", "GrayAlpha`1", "Bgr`1", "Bgra`1", "Argb`1", "Abgr`1", "Hsla`1", "Hsva`1", "Srgb8", "Rgb565", "Rgba4444", "Rgba5551", "Rgba1010102", "Bgra1010102", "Color2D", "SrgbGray`1", "LinearGray`1", "SrgbGrayAlpha`1", "LinearGrayAlpha`1", "SrgbRgb`1", "LinearRgb`1", "SrgbRgba`1", "LinearRgba`1", "SrgbBgr`1", "LinearBgr`1", "SrgbBgra`1", "LinearBgra`1", "SrgbArgb`1", "LinearArgb`1", "SrgbAbgr`1", "LinearAbgr`1", "SrgbHsla`1", "SrgbHsva`1", "SrgbRgba8"];
 
     /// <summary>Only explicitly space-named or raw-word data types escape through public member graphs.</summary>
     [Fact]
@@ -17,7 +17,7 @@ public sealed class SpacePublicApiTests
     {
         var assemblies = new Dictionary<string, Assembly>(StringComparer.Ordinal);
         var queue = new Queue<Assembly>();
-        queue.Enqueue(typeof(SrgbRgba<>).Assembly);
+        queue.Enqueue(typeof(SRgba<>).Assembly);
         queue.Enqueue(typeof(UiApplicationOptions).Assembly);
         queue.Enqueue(typeof(PaintGraph2D).Assembly);
         queue.Enqueue(typeof(ImeCandidateStyle).Assembly);
@@ -88,15 +88,15 @@ public sealed class SpacePublicApiTests
     [Fact]
     public void DrawingAndPaletteUseEncodedTypesOnly()
     {
-        Assert.Equal(typeof(SrgbRgba<float>), typeof(Lumyte.UI.Compose.Definitions.Rectangle).GetProperty("Fill")!.PropertyType);
-        Assert.Equal(typeof(SrgbRgba<float>), typeof(RenderTarget2D).GetProperty("ClearColor")!.PropertyType);
-        Assert.Equal(typeof(SrgbRgba<float>), typeof(PaintGraph2D).GetMethod("Solid")!.GetParameters()[0].ParameterType);
-        Assert.Equal(typeof(SrgbRgba<float>), Assert.Single(typeof(SrgbRgba8).GetMethods(), method => method.Name == "op_Implicit").ReturnType);
-        Assert.False(typeof(SrgbRgba<float>).IsAssignableFrom(typeof(LinearRgba<float>)));
+        Assert.Equal(typeof(SRgba<float>), typeof(Lumyte.UI.Compose.Definitions.Rectangle).GetProperty("Fill")!.PropertyType);
+        Assert.Equal(typeof(SRgba<float>), typeof(RenderTarget2D).GetProperty("ClearColor")!.PropertyType);
+        Assert.Equal(typeof(SRgba<float>), typeof(PaintGraph2D).GetMethod("Solid")!.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(SRgba<float>), Assert.Single(typeof(SRgba8).GetMethods(), method => method.Name == "op_Implicit").ReturnType);
+        Assert.False(typeof(SRgba<float>).IsAssignableFrom(typeof(LRgba<float>)));
         string[] linearOnly = ["PremultiplyLinear", "UnpremultiplyLinear", "SourceOverLinearPremultiplied", "AddLinearPremultiplied", "AddUnitLinearPremultiplied", "ApplyMatrixLinearPremultiplied", "ToLinearGrayscale"];
-        Assert.DoesNotContain(typeof(SrgbRgba<float>).GetMethods(), method => linearOnly.Contains(method.Name));
-        Assert.All(linearOnly, name => Assert.Contains(typeof(LinearRgba<float>).GetMethods(), method => method.Name == name));
-        foreach (Type type in new[] { typeof(SrgbRgba<float>), typeof(LinearRgba<float>) })
+        Assert.DoesNotContain(typeof(SRgba<float>).GetMethods(), method => linearOnly.Contains(method.Name));
+        Assert.All(linearOnly, name => Assert.Contains(typeof(LRgba<float>).GetMethods(), method => method.Name == name));
+        foreach (Type type in new[] { typeof(SRgba<float>), typeof(LRgba<float>) })
         {
             Assert.DoesNotContain(type.GetMethods(), method => method.Name == "op_Implicit");
         }

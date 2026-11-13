@@ -63,8 +63,8 @@ public sealed class ParleyLayoutTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "DejaVuSans.ttf");
-        var red = PaintGraph2D.Solid(new SrgbRgba<float>(1, 0, 0, 0.5f));
-        var blue = PaintGraph2D.Solid(new SrgbRgba<float>(0, 0, 1, 1));
+        var red = PaintGraph2D.Solid(new SRgba<float>(1, 0, 0, 0.5f));
+        var blue = PaintGraph2D.Solid(new SRgba<float>(0, 0, 1, 1));
         ParleyTextOptions2D options = Options(family) with { TextRuns = [new() { Start = 1, End = 2, FontSize = 64, Paint = red }] };
         TextLayout2D layout = engine.CreateLayout("A\u00e9B", options, blue);
         Assert.Equal(3, layout.Geometry.Count);
@@ -92,7 +92,7 @@ public sealed class ParleyLayoutTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "DejaVuSans.ttf");
-        var foreground = PaintGraph2D.Solid(new SrgbRgba<float>(0, 0.5f, 0, 0.5f));
+        var foreground = PaintGraph2D.Solid(new SRgba<float>(0, 0.5f, 0, 0.5f));
         ParleyTextOptions2D plainOptions = Options(family);
         TextLayout2D plain = engine.CreateLayout("A", plainOptions, foreground);
         ParleyTextOptions2D options = plainOptions with { Decorations = ParleyTextDecorations2D.Underline | ParleyTextDecorations2D.Strikethrough | ParleyTextDecorations2D.Overline };
@@ -110,7 +110,7 @@ public sealed class ParleyLayoutTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "DejaVuSans.ttf");
-        var foreground = PaintGraph2D.Solid(new SrgbRgba<float>(0.2f, 0.4f, 0.8f, 0.5f));
+        var foreground = PaintGraph2D.Solid(new SRgba<float>(0.2f, 0.4f, 0.8f, 0.5f));
         ParleyTextOptions2D options = Options(family);
         ParleyTextLayout2D plain = engine.CreateDetailedLayout("ABC", options, foreground);
         TextLayout2D full = engine.CreateLayout("ABC", options with { Decorations = ParleyTextDecorations2D.Overline }, foreground);
@@ -128,7 +128,7 @@ public sealed class ParleyLayoutTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "DejaVuSans.ttf");
-        var foreground = PaintGraph2D.Solid(new SrgbRgba<float>(0.2f, 0.4f, 0.8f, 0.5f));
+        var foreground = PaintGraph2D.Solid(new SRgba<float>(0.2f, 0.4f, 0.8f, 0.5f));
         ParleyTextOptions2D options = Options(family);
         ParleyTextLayout2D plain = engine.CreateDetailedLayout("ABC", options, foreground);
         options = options with { Decorations = ParleyTextDecorations2D.Overline };
@@ -292,7 +292,7 @@ public sealed class ParleyLayoutTests
     {
         var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "DejaVuSans.ttf");
-        var foreground = PaintGraph2D.Solid(new SrgbRgba<float>(0.2f, 0.4f, 0.8f, 0.5f));
+        var foreground = PaintGraph2D.Solid(new SRgba<float>(0.2f, 0.4f, 0.8f, 0.5f));
         ParleyTextLayout2D result = engine.CreateDetailedLayout("Snapshot", Options(family), foreground);
         PathSegment2D[][] segments = result.Layout.Geometry.Select(geometry => geometry.Path.Segments.ToArray()).ToArray();
         engine.Dispose();

@@ -31,9 +31,9 @@ internal sealed class TransitionScene
 
     internal string PopupCloseCode { get; set; } = string.Empty;
 
-    internal Signal<SrgbRgba<float>> GroupColor { get; } = Signal.Create(new SrgbRgba<float>(0, 0, 1, 1));
+    internal Signal<SRgba<float>> GroupColor { get; } = Signal.Create(new SRgba<float>(0, 0, 1, 1));
 
-    internal Signal<SrgbRgba<float>> PageColor { get; } = Signal.Create(new SrgbRgba<float>(1, 1, 0, 1));
+    internal Signal<SRgba<float>> PageColor { get; } = Signal.Create(new SRgba<float>(1, 1, 0, 1));
 
     internal Signal<bool> ShowGroup { get; } = Signal.Create(true);
 
@@ -56,7 +56,7 @@ internal sealed class TransitionScene
             Navigation = context.Activation.Navigation;
             return Stack()[
                 Rectangle(width: 80, height: 40, fill: PageColor),
-                Stack(orientation: UiOrientation.Horizontal, height: 40)[Rectangle(width: 100, height: 40, fill: new SrgbRgba<float>(1, 1, 1, 1)), Rectangle(width: 80, height: 40, fill: sameContent ? new SrgbRgba<float>(1, 0, 0, 0.5f) : new SrgbRgba<float>(0, 0, 1, 0.5f), sharedElementKey: new UiSharedElementKey("photo"))],
+                Stack(orientation: UiOrientation.Horizontal, height: 40)[Rectangle(width: 100, height: 40, fill: new SRgba<float>(1, 1, 1, 1)), Rectangle(width: 80, height: 40, fill: sameContent ? new SRgba<float>(1, 0, 0, 0.5f) : new SRgba<float>(0, 0, 1, 0.5f), sharedElementKey: new UiSharedElementKey("photo"))],
                 Button(width: 160, height: 40, testId: "quit", onClick: () => Application!.RequestStop())];
         });
         UiPageKey<UiNoArgs> home = builder.MapPage<PageLifetime>("/", (context, lifetime) =>
@@ -64,10 +64,10 @@ internal sealed class TransitionScene
             _ = lifetime;
             Navigation = context.Activation.Navigation;
             return Stack()[
-                Panel(width: 80, height: 40, testId: "fade", isPresent: ShowGroup, transitions: new UiElementTransitions { Enter = sameContent ? null : new(new() { Opacity = 0 }, new(), Duration.FromSeconds(1), easing: AnimationEasing.Linear), Exit = sameContent ? null : new(new(), new() { Opacity = 0 }, Duration.FromSeconds(1), easing: AnimationEasing.Linear) }, onEntered: () => Entered++, onExited: () => Exited++)[Rectangle(width: 80, height: 40, fill: new SrgbRgba<float>(1, 0, 0, 1)), Rectangle(width: 80, height: 40, fill: GroupColor)],
-                Panel(width: 180, height: 40)[Rectangle(width: 40, height: 40, fill: new SrgbRgba<float>(0, 1, 0, 1)), Rectangle(width: 40, height: 40, fill: new SrgbRgba<float>(1, 0, 0, 0.5f), sharedElementKey: new UiSharedElementKey("photo"))],
+                Panel(width: 80, height: 40, testId: "fade", isPresent: ShowGroup, transitions: new UiElementTransitions { Enter = sameContent ? null : new(new() { Opacity = 0 }, new(), Duration.FromSeconds(1), easing: AnimationEasing.Linear), Exit = sameContent ? null : new(new(), new() { Opacity = 0 }, Duration.FromSeconds(1), easing: AnimationEasing.Linear) }, onEntered: () => Entered++, onExited: () => Exited++)[Rectangle(width: 80, height: 40, fill: new SRgba<float>(1, 0, 0, 1)), Rectangle(width: 80, height: 40, fill: GroupColor)],
+                Panel(width: 180, height: 40)[Rectangle(width: 40, height: 40, fill: new SRgba<float>(0, 1, 0, 1)), Rectangle(width: 40, height: 40, fill: new SRgba<float>(1, 0, 0, 0.5f), sharedElementKey: new UiSharedElementKey("photo"))],
                 Button(key: "anchor-next", width: 160, height: 40, testId: "next", onClick: () => LastRequest = context.Activation.Navigation.RequestNavigate(details, default)),
-                Lumyte.UI.Windowing.Compose.Popup(key: "menu", anchor: "anchor-next", isOpen: PopupOpen, presentation: PopupPresentation.Hosted, onDismiss: _ => PopupOpen.Value = false, onClosed: PopupDidClose)[Panel(width: 80, height: 40, transitions: new UiElementTransitions { Exit = new(new(), new() { Opacity = 0 }, Duration.FromSeconds(1), easing: AnimationEasing.Linear) })[Rectangle(width: 80, height: 40, fill: new SrgbRgba<float>(0, 0, 1, 1))]]];
+                Lumyte.UI.Windowing.Compose.Popup(key: "menu", anchor: "anchor-next", isOpen: PopupOpen, presentation: PopupPresentation.Hosted, onDismiss: _ => PopupOpen.Value = false, onClosed: PopupDidClose)[Panel(width: 80, height: 40, transitions: new UiElementTransitions { Exit = new(new(), new() { Opacity = 0 }, Duration.FromSeconds(1), easing: AnimationEasing.Linear) })[Rectangle(width: 80, height: 40, fill: new SRgba<float>(0, 0, 1, 1))]]];
         });
         builder.UseWindows(_ => [Window("main", "Transitions", initialClientSize: new(240, 180), content: services => new Observed(Page(home, options: new() { Transitions = new() { Enter = sequential ? new(new() { Opacity = 0 }, new(), Duration.FromSeconds(1), easing: AnimationEasing.Linear) : null, Exit = sequential ? new(new(), new() { Opacity = 0 }, Duration.FromSeconds(1), easing: AnimationEasing.Linear) : null, Order = sequential ? UiPageTransitionOrder.ExitThenEnter : UiPageTransitionOrder.Together, ConnectSharedElements = true, ConnectedDuration = Duration.FromSeconds(1), ConnectedEasing = AnimationEasing.Linear } })(services), this))]);
     }

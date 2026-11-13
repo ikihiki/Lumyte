@@ -6,7 +6,7 @@ internal static class UiColorPolicy
 {
     internal static T Value<T>(T value, string parameterName)
     {
-        if ((typeof(T) == typeof(SrgbRgba<float>) || typeof(T) == typeof(SrgbRgba<float>?)) && value is SrgbRgba<float> color)
+        if ((typeof(T) == typeof(SRgba<float>) || typeof(T) == typeof(SRgba<float>?)) && value is SRgba<float> color)
         {
             Unit(color, parameterName);
         }
@@ -14,7 +14,7 @@ internal static class UiColorPolicy
         return value;
     }
 
-    internal static SrgbRgba<float> Unit(SrgbRgba<float> color, string parameterName)
+    internal static SRgba<float> Unit(SRgba<float> color, string parameterName)
     {
         Validate(color.R, color.G, color.B, color.A, parameterName);
         return color;

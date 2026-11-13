@@ -17,9 +17,9 @@ public sealed class ColorAdmissionTests
         {
             float[] channels = [0, 0, 0, 1];
             channels[component] = invalid;
-            var bad = new SrgbRgba<float>(channels[0], channels[1], channels[2], channels[3]);
+            var bad = new SRgba<float>(channels[0], channels[1], channels[2], channels[3]);
             ImeCandidateStyle original = ImeCandidateStyle.Default;
-            SrgbRgba<float> good = new(0, 0, 0, 1);
+            SRgba<float> good = new(0, 0, 0, 1);
             Assert.Throws<ArgumentOutOfRangeException>(() => new ImeCandidateStyle(bad, good, good, good));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ImeCandidateStyle(good, bad, good, good));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ImeCandidateStyle(good, good, bad, good));

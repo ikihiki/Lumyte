@@ -71,7 +71,7 @@ public sealed class RectanglePathTests
         canvas.Begin();
         canvas.ClipRect(new(0, 0, 64, 48));
         canvas.ClipRect(new(1.125f, 2.25f, 17.5f, 13.5f));
-        canvas.FillCircle(new(8, 8), 10, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8, 8), 10, new SRgba<float>(1, 0, 0, 1));
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         program.Compile(command);
@@ -94,7 +94,7 @@ public sealed class RectanglePathTests
         canvas.ClipRect(new(0, 0, 32, 32));
         canvas.Scale(new Vector2(1e24f));
         canvas.ClipRect(new(0, 0, 8, 8));
-        canvas.FillCircle(new(1, 1), 4, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(1, 1), 4, new SRgba<float>(1, 0, 0, 1));
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         Assert.False(Matrix3x2.Invert(command.State.Clip.Elements[0].Transform, out _));
         Assert.True(Matrix3x2.Invert(command.State.Transform, out _));

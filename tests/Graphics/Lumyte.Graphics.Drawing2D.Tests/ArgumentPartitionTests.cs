@@ -298,7 +298,7 @@ public sealed class ArgumentPartitionTests
         {
             canvas.Save();
             canvas.ClipRect(new(0, 0, 16, 16));
-            canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+            canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
             canvas.Restore();
         }
 

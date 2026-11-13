@@ -64,26 +64,26 @@ public readonly record struct RawBgra1010102 : IPackedColorPixel<RawBgra1010102>
     /// <typeparam name="T">The finite numeric component type.</typeparam>
     /// <param name="color">Unit sRGB components; alpha must be one for an alpha-less format.</param>
     /// <returns>The exact nearest-even UNORM packed word.</returns>
-    public static RawBgra1010102 FromSrgb<T>(SrgbRgba<T> color)
+    public static RawBgra1010102 FromSrgb<T>(SRgba<T> color)
         where T : INumber<T> => FromNormalized(color.Components);
 
     /// <summary>Quantizes unit linear components without transfer or alpha-association conversion.</summary>
     /// <typeparam name="T">The finite numeric component type.</typeparam>
     /// <param name="color">Unit linear components; alpha must be one for an alpha-less format.</param>
     /// <returns>The exact nearest-even UNORM packed word.</returns>
-    public static RawBgra1010102 FromLinear<T>(LinearRgba<T> color)
+    public static RawBgra1010102 FromLinear<T>(LRgba<T> color)
         where T : INumber<T> => FromNormalized(color.Components);
 
     /// <summary>Interprets the bits as normalized sRGB components without transfer or alpha-association conversion.</summary>
     /// <typeparam name="T">The result component type; fractional results must be representable.</typeparam>
     /// <returns>Normalized sRGB components, with alpha one for an alpha-less format.</returns>
-    public SrgbRgba<T> InterpretSrgb<T>()
+    public SRgba<T> InterpretSrgb<T>()
         where T : INumber<T> => new(ToNormalized<T>());
 
     /// <summary>Interprets the bits as normalized linear components without transfer or alpha-association conversion.</summary>
     /// <typeparam name="T">The result component type; fractional results must be representable.</typeparam>
     /// <returns>Normalized linear components, with alpha one for an alpha-less format.</returns>
-    public LinearRgba<T> InterpretLinear<T>()
+    public LRgba<T> InterpretLinear<T>()
         where T : INumber<T> => new(ToNormalized<T>());
 
     /// <summary>Quantizes normalized RGBA using exact nearest-even UNORM conversion.</summary>

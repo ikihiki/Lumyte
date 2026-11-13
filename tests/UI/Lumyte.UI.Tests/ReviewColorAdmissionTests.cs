@@ -31,8 +31,8 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void ColorProducerRejectsDetachedTargetUpdate()
     {
-        var target = Signal.Create(new SrgbRgba<float>(0, 0, 0, 1));
-        UiAnimated<SrgbRgba<float>> value = Compose.Animate(target, Duration.FromSeconds(1), UiAnimationInterpolators.Color);
+        var target = Signal.Create(new SRgba<float>(0, 0, 0, 1));
+        UiAnimated<SRgba<float>> value = Compose.Animate(target, Duration.FromSeconds(1), UiAnimationInterpolators.Color);
         target.Value = new(2, 0, 0, 1);
         Assert.Throws<ArgumentOutOfRangeException>(() => value.Peek());
     }
@@ -44,19 +44,19 @@ public sealed class ReviewColorAdmissionTests
     [InlineData(true)]
     public void ColorTweenRejectsEndpointRegistration(bool invalidLast)
     {
-        SrgbRgba<float> valid = new(0, 0, 0, 1);
-        SrgbRgba<float> invalid = new(2, 0, 0, 1);
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Tween<SrgbRgba<float>>(invalidLast ? valid : invalid, invalidLast ? invalid : valid, Duration.FromSeconds(1), UiAnimationInterpolators.Color, AnimationEasing.Linear));
+        SRgba<float> valid = new(0, 0, 0, 1);
+        SRgba<float> invalid = new(2, 0, 0, 1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Tween<SRgba<float>>(invalidLast ? valid : invalid, invalidLast ? invalid : valid, Duration.FromSeconds(1), UiAnimationInterpolators.Color, AnimationEasing.Linear));
     }
 
     /// <summary>A failed UI timeline initial-value registration must leave the channel available for a valid registration.</summary>
     [Fact]
     public void ClipRejectsInvalidInitialValueBeforeChannelRegistration()
     {
-        var channel = AnimationChannel<SrgbRgba<float>>.Create();
+        var channel = AnimationChannel<SRgba<float>>.Create();
         UiAnimationClip clip = Compose.Animate(new AnimationTimelineBuilder().Build());
-        Assert.Throws<ArgumentOutOfRangeException>(() => clip.Value(channel, new SrgbRgba<float>(2, 0, 0, 1)));
-        SrgbRgba<float> valid = new(0, 0, 0, 1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => clip.Value(channel, new SRgba<float>(2, 0, 0, 1)));
+        SRgba<float> valid = new(0, 0, 0, 1);
         Assert.Equal(valid, clip.Value(channel, valid).Peek());
     }
 
@@ -64,7 +64,7 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void ColorCurveRejectsKeyframeRegistration()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationCurve<SrgbRgba<float>>(
+        Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationCurve<SRgba<float>>(
             Duration.FromSeconds(1),
             [new(Duration.Zero, new(2, 0, 0, 1))],
             UiAnimationInterpolators.Color));
@@ -74,20 +74,20 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void BezierColorWrapperRejectsStoredEndpoints()
     {
-        SrgbRgba<float> valid = new(0, 0, 0, 1);
-        SrgbRgba<float> invalid = new(2, 0, 0, 1);
-        IAnimationInterpolator<SrgbRgba<float>> wrapped = AnimationInterpolators.CubicBezier(valid, valid, UiAnimationInterpolators.Color);
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Tween<SrgbRgba<float>>(invalid, valid, Duration.FromSeconds(1), wrapped, AnimationEasing.Linear));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new Tween<SrgbRgba<float>>(valid, invalid, Duration.FromSeconds(1), wrapped, AnimationEasing.Linear));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationCurve<SrgbRgba<float>>(Duration.FromSeconds(1), [new(Duration.Zero, invalid)], wrapped));
+        SRgba<float> valid = new(0, 0, 0, 1);
+        SRgba<float> invalid = new(2, 0, 0, 1);
+        IAnimationInterpolator<SRgba<float>> wrapped = AnimationInterpolators.CubicBezier(valid, valid, UiAnimationInterpolators.Color);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Tween<SRgba<float>>(invalid, valid, Duration.FromSeconds(1), wrapped, AnimationEasing.Linear));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Tween<SRgba<float>>(valid, invalid, Duration.FromSeconds(1), wrapped, AnimationEasing.Linear));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new AnimationCurve<SRgba<float>>(Duration.FromSeconds(1), [new(Duration.Zero, invalid)], wrapped));
     }
 
     /// <summary>Both Bezier controls require operation-specific validation before wrapper publication.</summary>
     [Fact]
     public void BezierColorWrapperRejectsInvalidControls()
     {
-        SrgbRgba<float> valid = new(0, 0, 0, 1);
-        SrgbRgba<float> invalid = new(2, 0, 0, 1);
+        SRgba<float> valid = new(0, 0, 0, 1);
+        SRgba<float> invalid = new(2, 0, 0, 1);
         Assert.Throws<ArgumentOutOfRangeException>(() => AnimationInterpolators.CubicBezier(invalid, valid, UiAnimationInterpolators.Color));
         Assert.Throws<ArgumentOutOfRangeException>(() => AnimationInterpolators.CubicBezier(valid, invalid, UiAnimationInterpolators.Color));
     }
@@ -96,7 +96,7 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void BoxedRawHdrDataDoesNotAcquireColorPropertySemantics()
     {
-        object raw = new LinearRgba<float>(-1, 2, 4, 3);
+        object raw = new LRgba<float>(-1, 2, 4, 3);
         var target = Signal.Create(raw);
         UiAnimated<object> projection = Compose.Animate(target, Duration.FromSeconds(1), AnimationInterpolators.Step<object>());
         Assert.Same(raw, projection.Peek());
@@ -106,11 +106,11 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void LinearHdrDataDoesNotAcquireEncodedColorAdmission()
     {
-        LinearRgba<float> raw = new(-1, 2, 4, 3);
+        LRgba<float> raw = new(-1, 2, 4, 3);
         var target = Signal.Create(raw);
-        UiAnimated<LinearRgba<float>> projection = Compose.Animate(target, Duration.FromSeconds(1), AnimationInterpolators.Step<LinearRgba<float>>());
+        UiAnimated<LRgba<float>> projection = Compose.Animate(target, Duration.FromSeconds(1), AnimationInterpolators.Step<LRgba<float>>());
         Assert.Equal(raw, projection.Peek());
-        var channel = AnimationChannel<LinearRgba<float>>.Create();
+        var channel = AnimationChannel<LRgba<float>>.Create();
         UiAnimationClip clip = Compose.Animate(new AnimationTimelineBuilder().Build());
         Assert.Equal(raw, clip.Value(channel, raw).Peek());
     }
@@ -119,13 +119,13 @@ public sealed class ReviewColorAdmissionTests
     [Fact]
     public void BoxedEncodedRawDataDoesNotAcquireColorAdmission()
     {
-        object raw = new SrgbRgba<float>(-1, 2, 4, 3);
+        object raw = new SRgba<float>(-1, 2, 4, 3);
         var target = Signal.Create(raw);
         UiAnimated<object> projection = Compose.Animate(target, Duration.FromSeconds(1), AnimationInterpolators.Step<object>());
         Assert.Same(raw, projection.Peek());
     }
 
-    private static SrgbRgba<float> Invalid(int component, float invalid)
+    private static SRgba<float> Invalid(int component, float invalid)
     {
         float[] channels = [0.25f, 0.5f, 0.75f, 1];
         channels[component] = invalid;

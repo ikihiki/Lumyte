@@ -33,9 +33,9 @@ internal sealed class DrawingProgram2D
 
     internal HashSet<IGraphicsTexture> Textures { get; } = new(ReferenceEqualityComparer.Instance);
 
-    internal static Vector4 Linear(SrgbRgba<float> color)
+    internal static Vector4 Linear(SRgba<float> color)
     {
-        LinearRgba<float> linear = color.ToLinear<float>().PremultiplyLinear<float>();
+        LRgba<float> linear = color.ToLinear<float>().PremultiplyLinear<float>();
         return new(linear.R, linear.G, linear.B, linear.A);
     }
 

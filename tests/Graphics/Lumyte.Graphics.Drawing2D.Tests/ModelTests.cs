@@ -29,13 +29,13 @@ public sealed class ModelTests
     [Fact]
     public void GradientFactoriesCopyStopsAndNormalizeGeometry()
     {
-        ColorStop2D[] stops = [new(-1, new SrgbRgba<float>(1, 0, 0, 1)), new(-1, new SrgbRgba<float>(0, 1, 0, 1)), new(2, new SrgbRgba<float>(0, 0, 1, 1))];
+        ColorStop2D[] stops = [new(-1, new SRgba<float>(1, 0, 0, 1)), new(-1, new SRgba<float>(0, 1, 0, 1)), new(2, new SRgba<float>(0, 0, 1, 1))];
         var paint = PaintGraph2D.LinearGradient(new Vector2(2, 3), new Vector2(5, 7), stops);
         LinearPaintNode2D linear = Assert.IsType<LinearPaintNode2D>(paint.Root);
         stops[0] = default;
         Assert.Equal(new Vector2(-2, 6), linear.P2);
         Assert.Equal(-1, linear.Stops[0].Offset);
-        Assert.Equal(new SrgbRgba<float>(0, 1, 0, 1), linear.Stops[1].Color);
+        Assert.Equal(new SRgba<float>(0, 1, 0, 1), linear.Stops[1].Color);
         RadialPaintNode2D radial = Assert.IsType<RadialPaintNode2D>(PaintGraph2D.RadialGradient(Vector2.One, 3, linear.Stops.ToArray()).Root);
         Assert.Equal(radial.C0, radial.C1);
         Assert.Equal(0, radial.R0);
@@ -48,7 +48,7 @@ public sealed class ModelTests
     [Fact]
     public void PaintDagPreservesSharingAndBoundsExpandedCost()
     {
-        var child = PaintGraph2D.Solid(new SrgbRgba<float>(1, 1, 1, 1));
+        var child = PaintGraph2D.Solid(new SRgba<float>(1, 1, 1, 1));
         PaintGraph2D[] input = [child, child];
         LayersPaintNode2D layers = Assert.IsType<LayersPaintNode2D>(PaintGraph2D.Layers(input).Root);
         input[0] = PaintGraph2D.Solid(default);
@@ -68,13 +68,13 @@ public sealed class ModelTests
     public void CanvasValidationIsTransactionalAndRecordingsAreIndependent()
     {
         var canvas = new Canvas2D();
-        Assert.Throws<InvalidOperationException>(() => canvas.FillRect(default, default(SrgbRgba<float>)));
+        Assert.Throws<InvalidOperationException>(() => canvas.FillRect(default, default(SRgba<float>)));
         canvas.Begin();
         canvas.Translate(new Vector2(10, 20));
         canvas.Scale(new Vector2(2, 3));
         Assert.Throws<ArgumentOutOfRangeException>(() => canvas.Translate(new Vector2(float.NaN, 0)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillRect(new Rect2D(0, 0, -1, 4), default(SrgbRgba<float>)));
-        canvas.FillRect(new Rect2D(1, 2, 3, 4), new SrgbRgba<float>(1, 0, 0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillRect(new Rect2D(0, 0, -1, 4), default(SRgba<float>)));
+        canvas.FillRect(new Rect2D(1, 2, 3, 4), new SRgba<float>(1, 0, 0, 1));
         DrawList2D first = canvas.End();
         FillRectCommand2D command = Assert.IsType<FillRectCommand2D>(Assert.Single(first.Commands));
         Assert.Equal(new Vector2(12, 26), Vector2.Transform(new Vector2(1, 2), command.State.Transform));
@@ -93,7 +93,7 @@ public sealed class ModelTests
         canvas.Translate(new Vector2(5, 6));
         canvas.ClipRect(new Rect2D(0.25f, 0.5f, 10, 20));
         canvas.Translate(new Vector2(30, 40));
-        canvas.FillCircle(Vector2.Zero, 3, default(SrgbRgba<float>));
+        canvas.FillCircle(Vector2.Zero, 3, default(SRgba<float>));
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         ClipElement2D clip = Assert.Single(command.State.Clip.Elements);
         Assert.Equal(new Vector2(5, 6), clip.Transform.Translation);
@@ -115,7 +115,7 @@ public sealed class ModelTests
         Assert.Throws<InvalidOperationException>(canvas.EndLayer);
         Assert.Throws<InvalidOperationException>(canvas.End);
         canvas.Restore();
-        canvas.FillRect(new Rect2D(-5, -5, 20, 20), new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new Rect2D(-5, -5, 20, 20), new SRgba<float>(1, 0, 0, 1));
         canvas.EndLayer();
         canvas.Restore();
         canvas.DrawBackdropEffect(new BackdropEffectOptions2D { OutputBounds = new Rect2D(0, 0, 10, 10), Effects = graph => graph.Source });
@@ -135,10 +135,10 @@ public sealed class ModelTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new Rect2D(1, 0, 1, 1), default(SrgbRgba<float>));
-        canvas.FillRect(new Rect2D(2, 0, 1, 1), default(SrgbRgba<float>));
-        canvas.FillCircle(Vector2.Zero, 2, default(SrgbRgba<float>));
-        canvas.FillRect(new Rect2D(3, 0, 1, 1), default(SrgbRgba<float>));
+        canvas.FillRect(new Rect2D(1, 0, 1, 1), default(SRgba<float>));
+        canvas.FillRect(new Rect2D(2, 0, 1, 1), default(SRgba<float>));
+        canvas.FillCircle(Vector2.Zero, 2, default(SRgba<float>));
+        canvas.FillRect(new Rect2D(3, 0, 1, 1), default(SRgba<float>));
         DrawList2D draws = canvas.End();
         ReadOnlyMemory<FillRectCommand2D> first = draws.GetCommands<FillRectCommand2D>(0, 2);
         Assert.True(first.Equals(draws.GetCommands<FillRectCommand2D>(0, 2)));

@@ -206,7 +206,7 @@ public sealed class SharedArgumentTableTests
         {
             canvas.Save();
             canvas.ClipRect(new(0, 0, 16, 16));
-            canvas.FillCircle(new(8, 8), 4, new SrgbRgba<float>(1, 0, 0, 1));
+            canvas.FillCircle(new(8, 8), 4, new SRgba<float>(1, 0, 0, 1));
             canvas.Restore();
         }
 
@@ -307,7 +307,7 @@ public sealed class SharedArgumentTableTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
         DrawList2D content = canvas.End();
         using var snapshot = new DrawingSnapshot2D(1, [new(default, content, Matrix3x2.Identity, [], 1, 1), new(default, content, Matrix3x2.CreateTranslation(1, 0), [], 1, 1)]);
         for (int frameIndex = 0; frameIndex < 2; frameIndex++)
@@ -343,7 +343,7 @@ public sealed class SharedArgumentTableTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
         using var snapshot = new DrawingSnapshot2D(1, [new(default, canvas.End(), Matrix3x2.Identity, [], 1, 1)]);
         var frames = new List<PreparedDrawingFrame2D>();
         try
@@ -381,7 +381,7 @@ public sealed class SharedArgumentTableTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
         await Assert.ThrowsAsync<AggregateException>(async () => await renderer.PrepareAsync(canvas.End(), new() { View = view }));
         Assert.Equal(1, device.ActiveTables);
         renderer.Dispose();
@@ -400,7 +400,7 @@ public sealed class SharedArgumentTableTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
         DrawList2D content = canvas.End();
         using var both = new DrawingSnapshot2D(1, [new(default, content, Matrix3x2.Identity, [], 1, 1), new(default, content, Matrix3x2.CreateTranslation(1, 0), [], 1, 1)]);
         using (PreparedDrawingFrame2D frame = await renderer.PrepareAsync(both, new() { View = view }))
@@ -444,8 +444,8 @@ public sealed class SharedArgumentTableTests
         using var renderer = new Renderer2D(device, renderers);
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 4, 4), new SrgbRgba<float>(1, 0, 0, 1));
-        canvas.FillCircle(new(8), 3, new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 4, 4), new SRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         Assert.True(custom.Materialized);
         Assert.Single(device.Tables);

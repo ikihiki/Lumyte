@@ -30,7 +30,7 @@ public sealed class PaintGraph2D
     /// <summary>Creates a spatially constant straight-alpha sRGB paint.</summary>
     /// <param name="color">The finite color with components between zero and one.</param>
     /// <returns>The immutable paint graph.</returns>
-    public static PaintGraph2D Solid(SrgbRgba<float> color)
+    public static PaintGraph2D Solid(SRgba<float> color)
     {
         ModelValidation2D.Color(color, nameof(color));
         return new PaintGraph2D(new SolidPaintNode2D(color));

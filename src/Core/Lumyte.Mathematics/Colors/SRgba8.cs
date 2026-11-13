@@ -4,14 +4,14 @@ namespace Lumyte.Mathematics.Colors;
 
 /// <summary>Stores straight-alpha sRGB eight-bit codes, with transparent black as the default value.</summary>
 /// <remarks>This semantic color representation does not guarantee a native ABI or memory layout. Conversions preserve hidden RGB at zero alpha.</remarks>
-public readonly record struct SrgbRgba8
+public readonly record struct SRgba8
 {
-    /// <summary>Initializes a new instance of the <see cref="SrgbRgba8"/> struct from eight-bit codes.</summary>
+    /// <summary>Initializes a new instance of the <see cref="SRgba8"/> struct from eight-bit codes.</summary>
     /// <param name="r">The red sRGB code.</param>
     /// <param name="g">The green sRGB code.</param>
     /// <param name="b">The blue sRGB code.</param>
     /// <param name="a">The alpha code, defaulting to opaque.</param>
-    public SrgbRgba8(byte r, byte g, byte b, byte a = 255)
+    public SRgba8(byte r, byte g, byte b, byte a = 255)
     {
         R = r;
         G = g;
@@ -34,37 +34,37 @@ public readonly record struct SrgbRgba8
     /// <summary>Normalizes each code by 255f without allocation, sRGB decoding, or premultiplication.</summary>
     /// <param name="color">The eight-bit sRGB color.</param>
     /// <returns>The normalized straight-alpha sRGB color.</returns>
-    public static implicit operator SrgbRgba<float>(SrgbRgba8 color) => new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+    public static implicit operator SRgba<float>(SRgba8 color) => new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
 
     /// <summary>Validates the unit interval and quantizes each component using nearest-even rounding without clamping.</summary>
     /// <param name="color">The normalized straight-alpha sRGB color.</param>
     /// <returns>The quantized eight-bit color.</returns>
-    public static explicit operator SrgbRgba8(SrgbRgba<float> color) => FromNormalized(color);
+    public static explicit operator SRgba8(SRgba<float> color) => FromNormalized(color);
 
     /// <summary>Replaces alpha without changing RGB.</summary>
     /// <param name="alpha">The replacement alpha code.</param>
     /// <returns>The color with the specified alpha.</returns>
-    public SrgbRgba8 WithAlpha(byte alpha) => new(R, G, B, alpha);
+    public SRgba8 WithAlpha(byte alpha) => new(R, G, B, alpha);
 
     /// <summary>Returns raw RGBA codes without normalization.</summary>
     /// <returns>The unchanged eight-bit components.</returns>
-    public SrgbRgba<byte> ToCodes() => new(R, G, B, A);
+    public SRgba<byte> ToCodes() => new(R, G, B, A);
 
     /// <summary>Constructs a color from raw RGBA codes without normalization.</summary>
     /// <param name="codes">The eight-bit components.</param>
     /// <returns>The color with the specified codes.</returns>
-    public static SrgbRgba8 FromCodes(SrgbRgba<byte> codes) => new(codes.R, codes.G, codes.B, codes.A);
+    public static SRgba8 FromCodes(SRgba<byte> codes) => new(codes.R, codes.G, codes.B, codes.A);
 
     /// <summary>Normalizes all codes without changing transfer or alpha association.</summary>
     /// <typeparam name="TResult">The result component type; fractional results must be representable.</typeparam>
     /// <returns>The normalized straight-alpha sRGB color.</returns>
-    public SrgbRgba<TResult> ToNormalized<TResult>()
+    public SRgba<TResult> ToNormalized<TResult>()
         where TResult : INumber<TResult> => ToCodes().NormalizeUnorm<TResult>(255);
 
     /// <summary>Quantizes normalized straight-alpha sRGB using exact nearest-even UNORM conversion without clamping.</summary>
     /// <typeparam name="T">The numeric component type.</typeparam>
     /// <param name="color">RGBA components in the unit interval.</param>
     /// <returns>The quantized eight-bit color.</returns>
-    public static SrgbRgba8 FromNormalized<T>(SrgbRgba<T> color)
+    public static SRgba8 FromNormalized<T>(SRgba<T> color)
         where T : INumber<T> => FromCodes(color.QuantizeUnorm<byte>(255));
 }

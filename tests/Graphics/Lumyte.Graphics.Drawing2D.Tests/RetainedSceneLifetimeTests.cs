@@ -81,7 +81,7 @@ public sealed class RetainedSceneLifetimeTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 1, 1), new SrgbRgba<float>(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 1, 1), new SRgba<float>(1, 0, 0, 1));
         return canvas.End();
     }
 }

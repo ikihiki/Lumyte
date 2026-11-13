@@ -9,7 +9,7 @@ namespace Lumyte.UI;
 public static class UiAnimationInterpolators
 {
     /// <summary>Gets the sRGB straight-alpha interpolator using linear premultiplied intermediate colors.</summary>
-    public static IAnimationInterpolator<SrgbRgba<float>> Color { get; } = new ColorInterpolator();
+    public static IAnimationInterpolator<SRgba<float>> Color { get; } = new ColorInterpolator();
 
     /// <summary>Interpolates non-null endpoints and switches intervals involving null at their endpoint.</summary>
     /// <typeparam name="T">The non-null value type.</typeparam>
@@ -42,11 +42,11 @@ public static class UiAnimationInterpolators
         public T? Interpolate(T? from, T? to, float amount) => from is { } first && to is { } last ? inner.Interpolate(first, last, amount) : amount >= 1 ? to : from;
     }
 
-    private sealed class ColorInterpolator : IAnimationInterpolator<SrgbRgba<float>>
+    private sealed class ColorInterpolator : IAnimationInterpolator<SRgba<float>>
     {
-        public void Validate(SrgbRgba<float> value) => UiColorPolicy.Unit(value, nameof(value));
+        public void Validate(SRgba<float> value) => UiColorPolicy.Unit(value, nameof(value));
 
-        public SrgbRgba<float> Interpolate(SrgbRgba<float> from, SrgbRgba<float> to, float amount)
+        public SRgba<float> Interpolate(SRgba<float> from, SRgba<float> to, float amount)
         {
             UiColorPolicy.Unit(from, nameof(from));
             UiColorPolicy.Unit(to, nameof(to));

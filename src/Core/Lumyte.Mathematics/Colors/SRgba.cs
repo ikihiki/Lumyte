@@ -2,22 +2,22 @@ using System.Numerics;
 
 namespace Lumyte.Mathematics.Colors;
 
-/// <summary>Stores finite LinearRgba components without inferring units or alpha association.</summary>
+/// <summary>Stores finite SRgba components without inferring units or alpha association.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
+public readonly record struct SRgba<T> : IColorPixel<SRgba<T>>
     where T : INumber<T>
 {
-    /// <summary>Initializes a new instance of the <see cref="LinearRgba{T}"/> struct with finite components.</summary>
+    /// <summary>Initializes a new instance of the <see cref="SRgba{T}"/> struct with finite components.</summary>
     /// <param name="r">The r value.</param>
     /// <param name="g">The g value.</param>
     /// <param name="b">The b value.</param>
     /// <param name="a">The a value.</param>
-    public LinearRgba(T r, T g, T b, T a)
+    public SRgba(T r, T g, T b, T a)
     {
         Components = new(r, g, b, a);
     }
 
-    internal LinearRgba(Rgba<T> value)
+    internal SRgba(Rgba<T> value)
     {
         Components = value;
     }
@@ -43,7 +43,7 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <param name="a">The a value.</param>
     /// <param name="result">The result value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public static bool TryCreate(T r, T g, T b, T a, out LinearRgba<T> result)
+    public static bool TryCreate(T r, T g, T b, T a, out SRgba<T> result)
     {
         bool success = Rgba<T>.TryCreate(r, g, b, a, out Rgba<T> value);
         result = success ? new(value) : default;
@@ -53,7 +53,7 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <summary>Reads exactly four components.</summary>
     /// <param name="values">The values value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public static LinearRgba<T> FromComponents(ReadOnlySpan<T> values) => new(Rgba<T>.FromComponents(values));
+    public static SRgba<T> FromComponents(ReadOnlySpan<T> values) => new(Rgba<T>.FromComponents(values));
 
     /// <summary>Stores raw byte codes without normalization.</summary>
     /// <param name="r">The r value.</param>
@@ -61,12 +61,12 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <param name="b">The b value.</param>
     /// <param name="a">The a value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public static LinearRgba<T> FromRgba8Codes(byte r, byte g, byte b, byte a) => new(Rgba<T>.FromRgba8Codes(r, g, b, a));
+    public static SRgba<T> FromRgba8Codes(byte r, byte g, byte b, byte a) => new(Rgba<T>.FromRgba8Codes(r, g, b, a));
 
     /// <summary>Stores raw codes with bit positions 0xAARRGGBB.</summary>
     /// <param name="argb">The argb value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public static LinearRgba<T> FromArgb32Codes(uint argb) => new(Rgba<T>.FromArgb32Codes(argb));
+    public static SRgba<T> FromArgb32Codes(uint argb) => new(Rgba<T>.FromArgb32Codes(argb));
 
     /// <summary>Gets the pixel size, validating encoding and byte order.</summary>
     /// <param name="encoding">The encoding value.</param>
@@ -79,7 +79,27 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <param name="encoding">The encoding value.</param>
     /// <param name="byteOrder">The byteOrder value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public static LinearRgba<T> DecodePixel(ReadOnlySpan<byte> source, ColorComponentEncoding encoding, ColorByteOrder byteOrder) => new(Rgba<T>.DecodePixel(source, encoding, byteOrder));
+    public static SRgba<T> DecodePixel(ReadOnlySpan<byte> source, ColorComponentEncoding encoding, ColorByteOrder byteOrder) => new(Rgba<T>.DecodePixel(source, encoding, byteOrder));
+
+    /// <summary>Converts a straight sRGB degree model with exact intermediate arithmetic.</summary>
+    /// <typeparam name="TModel">The explicit numeric result or model type.</typeparam>
+    /// <param name="hue">The hue value.</param>
+    /// <param name="saturation">The saturation value.</param>
+    /// <param name="lightness">The lightness value.</param>
+    /// <param name="alpha">The alpha value.</param>
+    /// <returns>The resulting color, code, byte count, or success flag.</returns>
+    public static SRgba<T> FromHslSrgbDegrees<TModel>(TModel hue, TModel saturation, TModel lightness, TModel alpha)
+        where TModel : INumber<TModel> => new(Rgba<T>.FromHslSrgbDegrees(hue, saturation, lightness, alpha));
+
+    /// <summary>Converts a straight sRGB degree model with exact intermediate arithmetic.</summary>
+    /// <typeparam name="TModel">The explicit numeric result or model type.</typeparam>
+    /// <param name="hue">The hue value.</param>
+    /// <param name="saturation">The saturation value.</param>
+    /// <param name="value">The value value.</param>
+    /// <param name="alpha">The alpha value.</param>
+    /// <returns>The resulting color, code, byte count, or success flag.</returns>
+    public static SRgba<T> FromHsvSrgbDegrees<TModel>(TModel hue, TModel saturation, TModel value, TModel alpha)
+        where TModel : INumber<TModel> => new(Rgba<T>.FromHsvSrgbDegrees(hue, saturation, value, alpha));
 
     /// <summary>Copies four components atomically on short output.</summary>
     /// <param name="destination">The destination value.</param>
@@ -88,12 +108,12 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <summary>Replaces alpha without changing RGB or units.</summary>
     /// <param name="alpha">The alpha value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<T> WithAlpha(T alpha) => new(Components.WithAlpha(alpha));
+    public SRgba<T> WithAlpha(T alpha) => new(Components.WithAlpha(alpha));
 
     /// <summary>Performs checked storage casts without normalization or transfer.</summary>
     /// <typeparam name="TTo">The explicit numeric result or model type.</typeparam>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<TTo> ConvertChecked<TTo>()
+    public SRgba<TTo> ConvertChecked<TTo>()
         where TTo : INumber<TTo> => new(Components.ConvertChecked<TTo>());
 
     /// <summary>Packs integral byte codes with bit positions 0xAARRGGBB.</summary>
@@ -104,14 +124,14 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <typeparam name="TResult">The explicit numeric result or model type.</typeparam>
     /// <param name="maximum">The maximum value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<TResult> NormalizeUnorm<TResult>(T maximum)
+    public SRgba<TResult> NormalizeUnorm<TResult>(T maximum)
         where TResult : INumber<TResult> => new(Components.NormalizeUnorm<TResult>(maximum));
 
     /// <summary>Quantizes unit values using exact nearest-even rounding.</summary>
     /// <typeparam name="TCode">The explicit numeric result or model type.</typeparam>
     /// <param name="maximum">The maximum value.</param>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<TCode> QuantizeUnorm<TCode>(TCode maximum)
+    public SRgba<TCode> QuantizeUnorm<TCode>(TCode maximum)
         where TCode : IBinaryInteger<TCode> => new(Components.QuantizeUnorm(maximum));
 
     /// <summary>Writes one pixel atomically without transfer or alpha conversion.</summary>
@@ -121,48 +141,29 @@ public readonly record struct LinearRgba<T> : IColorPixel<LinearRgba<T>>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
     public int WritePixel(Span<byte> destination, ColorComponentEncoding encoding, ColorByteOrder byteOrder) => Components.WritePixel(destination, encoding, byteOrder);
 
-    /// <summary>Encodes normalized straight linear RGB, preserving alpha.</summary>
+    /// <summary>Decodes normalized straight sRGB, preserving alpha.</summary>
     /// <typeparam name="TResult">The explicit numeric result or model type.</typeparam>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public SrgbRgba<TResult> ToSrgb<TResult>()
-        where TResult : IFloatingPointIeee754<TResult> => new(Components.EncodeSrgb<TResult>());
+    public LRgba<TResult> ToLinear<TResult>()
+        where TResult : IFloatingPointIeee754<TResult> => new(Components.DecodeSrgb<TResult>());
 
-    /// <summary>Associates linear RGB with unit alpha without clipping HDR.</summary>
+    /// <summary>Interpolates normalized sRGB through the complete linear premultiplied pipeline.</summary>
+    /// <typeparam name="TResult">The explicit numeric result or model type.</typeparam>
+    /// <param name="to">The to value.</param>
+    /// <param name="amount">The amount value.</param>
+    /// <returns>The resulting color, code, byte count, or success flag.</returns>
+    public SRgba<TResult> InterpolateSrgbLinearPremultiplied<TResult>(SRgba<T> to, TResult amount)
+        where TResult : IFloatingPointIeee754<TResult> => new(Components.InterpolateSrgbLinearPremultiplied(to.Components, amount));
+
+    /// <summary>Converts normalized straight sRGB to a typed degree model.</summary>
     /// <typeparam name="TResult">The explicit numeric result or model type.</typeparam>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<TResult> PremultiplyLinear<TResult>()
-        where TResult : INumber<TResult> => new(Components.PremultiplyLinear<TResult>());
+    public SHsla<TResult> ToHslSrgbDegrees<TResult>()
+        where TResult : INumber<TResult> => new(Components.ToHslSrgbDegrees<TResult>());
 
-    /// <summary>Unassociates linear RGB; zero alpha produces transparent black.</summary>
+    /// <summary>Converts normalized straight sRGB to a typed degree model.</summary>
     /// <typeparam name="TResult">The explicit numeric result or model type.</typeparam>
     /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<TResult> UnpremultiplyLinear<TResult>()
-        where TResult : INumber<TResult> => new(Components.UnpremultiplyLinear<TResult>());
-
-    /// <summary>Computes linear luminance with exact coefficients and preserves alpha.</summary>
-    /// <typeparam name="TResult">The explicit numeric result or model type.</typeparam>
-    /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<TResult> ToLinearGrayscale<TResult>()
-        where TResult : INumber<TResult> => new(Components.ToLinearGrayscale<TResult>());
-
-    /// <summary>Composites this linear premultiplied source over a destination.</summary>
-    /// <param name="destination">The destination value.</param>
-    /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<T> SourceOverLinearPremultiplied(LinearRgba<T> destination) => new(Components.SourceOverLinearPremultiplied(destination.Components));
-
-    /// <summary>Adds linear premultiplied colors, clipping alpha only.</summary>
-    /// <param name="destination">The destination value.</param>
-    /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<T> AddLinearPremultiplied(LinearRgba<T> destination) => new(Components.AddLinearPremultiplied(destination.Components));
-
-    /// <summary>Adds linear premultiplied colors, clipping all components.</summary>
-    /// <param name="destination">The destination value.</param>
-    /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<T> AddUnitLinearPremultiplied(LinearRgba<T> destination) => new(Components.AddUnitLinearPremultiplied(destination.Components));
-
-    /// <summary>Applies a straight-linear BCL row-vector matrix and bias, then associates the result.</summary>
-    /// <param name="matrix">The matrix value.</param>
-    /// <param name="offset">The offset value.</param>
-    /// <returns>The resulting color, code, byte count, or success flag.</returns>
-    public LinearRgba<float> ApplyMatrixLinearPremultiplied(Matrix4x4 matrix, Vector4 offset) => new(Components.ApplyMatrixLinearPremultiplied(matrix, offset));
+    public SHsva<TResult> ToHsvSrgbDegrees<TResult>()
+        where TResult : INumber<TResult> => new(Components.ToHsvSrgbDegrees<TResult>());
 }

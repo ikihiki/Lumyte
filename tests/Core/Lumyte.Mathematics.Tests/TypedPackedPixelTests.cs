@@ -27,15 +27,15 @@ public sealed class TypedPackedPixelTests
     [Fact]
     public void NormalizedConversionsMatchIndependentBitOracles()
     {
-        Assert.Equal(new SrgbRgba<double>(17d / 31, 42d / 63, 3d / 31, 1), new RawRgb565((17 << 11) | (42 << 5) | 3).InterpretSrgb<double>());
-        Assert.Equal(new SrgbRgba<double>(1d / 15, 10d / 15, 3d / 15, 14d / 15), new RawRgba4444(0x1A3E).InterpretSrgb<double>());
-        Assert.Equal(new SrgbRgba<double>(17d / 31, 10d / 31, 3d / 31, 1), new RawRgba5551((17 << 11) | (10 << 6) | (3 << 1) | 1).InterpretSrgb<double>());
+        Assert.Equal(new SRgba<double>(17d / 31, 42d / 63, 3d / 31, 1), new RawRgb565((17 << 11) | (42 << 5) | 3).InterpretSrgb<double>());
+        Assert.Equal(new SRgba<double>(1d / 15, 10d / 15, 3d / 15, 14d / 15), new RawRgba4444(0x1A3E).InterpretSrgb<double>());
+        Assert.Equal(new SRgba<double>(17d / 31, 10d / 31, 3d / 31, 1), new RawRgba5551((17 << 11) | (10 << 6) | (3 << 1) | 1).InterpretSrgb<double>());
         const uint Word = 17u | (666u << 10) | (333u << 20) | (2u << 30);
-        Assert.Equal(new SrgbRgba<double>(17d / 1023, 666d / 1023, 333d / 1023, 2d / 3), new RawRgba1010102(Word).InterpretSrgb<double>());
-        Assert.Equal(new SrgbRgba<double>(333d / 1023, 666d / 1023, 17d / 1023, 2d / 3), new RawBgra1010102(Word).InterpretSrgb<double>());
-        Assert.Equal((ushort)0x2A80, RawRgba4444.FromSrgb(new SrgbRgba<decimal>(0.1m, 0.7m, 0.5m, 0m)).PackedValue);
-        Assert.Equal((ushort)0xF800, RawRgb565.FromSrgb(new SrgbRgba<BigInteger>(1, 0, 0, 1)).PackedValue);
-        Assert.Throws<ArgumentOutOfRangeException>(() => RawRgb565.FromSrgb(new SrgbRgba<double>(0, 0, 0, 0)));
+        Assert.Equal(new SRgba<double>(17d / 1023, 666d / 1023, 333d / 1023, 2d / 3), new RawRgba1010102(Word).InterpretSrgb<double>());
+        Assert.Equal(new SRgba<double>(333d / 1023, 666d / 1023, 17d / 1023, 2d / 3), new RawBgra1010102(Word).InterpretSrgb<double>());
+        Assert.Equal((ushort)0x2A80, RawRgba4444.FromSrgb(new SRgba<decimal>(0.1m, 0.7m, 0.5m, 0m)).PackedValue);
+        Assert.Equal((ushort)0xF800, RawRgb565.FromSrgb(new SRgba<BigInteger>(1, 0, 0, 1)).PackedValue);
+        Assert.Throws<ArgumentOutOfRangeException>(() => RawRgb565.FromSrgb(new SRgba<double>(0, 0, 0, 0)));
         Assert.Throws<ArithmeticException>(() => new RawRgb565(1).InterpretSrgb<int>());
     }
 

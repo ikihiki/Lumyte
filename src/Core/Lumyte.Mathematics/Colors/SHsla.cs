@@ -2,22 +2,22 @@ using System.Numerics;
 
 namespace Lumyte.Mathematics.Colors;
 
-/// <summary>Stores a straight sRGB HSV model with periodic degree hue and unit components.</summary>
+/// <summary>Stores a straight sRGB HSL model with periodic degree hue and unit components.</summary>
 /// <typeparam name="T">The ordered numeric storage type.</typeparam>
-public readonly record struct SrgbHsva<T>
+public readonly record struct SHsla<T>
     where T : INumber<T>
 {
-    /// <summary>Initializes a new instance of the <see cref="SrgbHsva{T}"/> struct.</summary>
+    /// <summary>Initializes a new instance of the <see cref="SHsla{T}"/> struct.</summary>
     /// <param name="hueDegrees">A finite hue, reduced exactly to [0,360) before final rounding.</param>
     /// <param name="saturation">Saturation in [0,1].</param>
-    /// <param name="value">The value in [0,1].</param>
+    /// <param name="lightness">The lightness in [0,1].</param>
     /// <param name="alpha">Alpha in [0,1].</param>
-    public SrgbHsva(T hueDegrees, T saturation, T value, T alpha)
+    public SHsla(T hueDegrees, T saturation, T lightness, T alpha)
     {
-        Components = new(hueDegrees, saturation, value, alpha);
+        Components = new(hueDegrees, saturation, lightness, alpha);
     }
 
-    internal SrgbHsva(Hsva<T> value)
+    internal SHsla(Hsla<T> value)
     {
         Components = value;
     }
@@ -28,18 +28,18 @@ public readonly record struct SrgbHsva<T>
     /// <summary>Gets saturation in [0,1].</summary>
     public T Saturation => Components.Saturation;
 
-    /// <summary>Gets value in [0,1].</summary>
-    public T Value => Components.Value;
+    /// <summary>Gets lightness in [0,1].</summary>
+    public T Lightness => Components.Lightness;
 
     /// <summary>Gets alpha in [0,1].</summary>
     public T Alpha => Components.Alpha;
 
-    private Hsva<T> Components { get; }
+    private Hsla<T> Components { get; }
 
     /// <summary>Converts to normalized straight sRGB using exact intermediate arithmetic.</summary>
     /// <typeparam name="TResult">The result numeric representation.</typeparam>
     /// <returns>The RGBA color rounded only at final component conversion.</returns>
-    public SrgbRgba<TResult> ToRgba<TResult>()
+    public SRgba<TResult> ToRgba<TResult>()
         where TResult : INumber<TResult> =>
         new(Components.ToRgba<TResult>());
 }

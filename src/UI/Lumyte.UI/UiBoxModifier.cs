@@ -11,9 +11,9 @@ internal enum UiBoxModifierKind
     Constraints,
 }
 
-internal readonly record struct UiBoxModifier(UiBoxModifierKind Kind, float Left = 0, float Top = 0, float Right = 0, float Bottom = 0, SrgbRgba<float> Color = default, UiBoxConstraints Constraints = default)
+internal readonly record struct UiBoxModifier(UiBoxModifierKind Kind, float Left = 0, float Top = 0, float Right = 0, float Bottom = 0, SRgba<float> Color = default, UiBoxConstraints Constraints = default)
 {
-    public SrgbRgba<float> Color { get; init => field = UiColorPolicy.Unit(value, nameof(Color)); } = UiColorPolicy.Unit(Color, nameof(Color));
+    public SRgba<float> Color { get; init => field = UiColorPolicy.Unit(value, nameof(Color)); } = UiColorPolicy.Unit(Color, nameof(Color));
 
     internal UiBoxConstraints Forward(UiBoxConstraints parent)
     {

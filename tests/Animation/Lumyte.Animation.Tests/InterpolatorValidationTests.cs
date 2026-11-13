@@ -41,12 +41,12 @@ public sealed class InterpolatorValidationTests
     [Fact]
     public void DefaultHookPreservesLegacyImplementationsAndRawHdrStorage()
     {
-        var raw = new LinearRgba<float>(-4, 8, 2, 3);
+        var raw = new LRgba<float>(-4, 8, 2, 3);
         var interpolator = new LegacyRawInterpolator();
-        var tween = new Tween<LinearRgba<float>>(raw, raw, Duration.FromSeconds(1), interpolator, AnimationEasing.Linear);
+        var tween = new Tween<LRgba<float>>(raw, raw, Duration.FromSeconds(1), interpolator, AnimationEasing.Linear);
         Assert.Equal(raw, tween.Sample(Duration.Zero));
         Assert.Equal(raw, tween.Sample(Duration.FromSeconds(0.5)));
-        var curve = new AnimationCurve<LinearRgba<float>>(Duration.FromSeconds(1), [new(Duration.Zero, raw)], interpolator);
+        var curve = new AnimationCurve<LRgba<float>>(Duration.FromSeconds(1), [new(Duration.Zero, raw)], interpolator);
         Assert.Equal(raw, curve.Sample(Duration.FromSeconds(1)));
     }
 
@@ -68,8 +68,8 @@ public sealed class InterpolatorValidationTests
         public int Interpolate(int from, int to, float amount) => from;
     }
 
-    private sealed class LegacyRawInterpolator : IAnimationInterpolator<LinearRgba<float>>
+    private sealed class LegacyRawInterpolator : IAnimationInterpolator<LRgba<float>>
     {
-        public LinearRgba<float> Interpolate(LinearRgba<float> from, LinearRgba<float> to, float amount) => from;
+        public LRgba<float> Interpolate(LRgba<float> from, LRgba<float> to, float amount) => from;
     }
 }

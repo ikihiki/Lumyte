@@ -61,13 +61,13 @@ public sealed class ClipReviewRegressionTests
         var canvas = new Canvas2D();
         canvas.Begin();
         canvas.ClipPath(Triangle(512));
-        canvas.FillCircle(new(256), 256, new SrgbRgba<float>(1, 1, 1, 1));
+        canvas.FillCircle(new(256), 256, new SRgba<float>(1, 1, 1, 1));
         DrawList2D large = canvas.End();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 1, 1), new SrgbRgba<float>(1, 1, 1, 1));
+        canvas.FillRect(new(0, 0, 1, 1), new SRgba<float>(1, 1, 1, 1));
         DrawList2D small = canvas.End();
         canvas.Begin();
-        canvas.FillPath(Triangle(1), new SrgbRgba<float>(1, 1, 1, 1));
+        canvas.FillPath(Triangle(1), new SRgba<float>(1, 1, 1, 1));
         DrawList2D probe = canvas.End();
         using var snapshot = new DrawingSnapshot2D(1, [new(default, large, Matrix3x2.Identity, [], 1, 1), new(default, small, Matrix3x2.Identity, [], 1, 1), new(default, probe, Matrix3x2.Identity, [], 1, 1)]);
         async Task PrepareAsync()
@@ -151,12 +151,12 @@ public sealed class ClipReviewRegressionTests
         canvas.ClipPath(Triangle(512));
         if (mode == 5)
         {
-            canvas.FillRect(new(0, 0, 512, 512), new SrgbRgba<float>(1, 1, 1, 1));
-            canvas.FillRect(new(1, 1, 510, 510), new SrgbRgba<float>(1, 1, 1, 1));
+            canvas.FillRect(new(0, 0, 512, 512), new SRgba<float>(1, 1, 1, 1));
+            canvas.FillRect(new(1, 1, 510, 510), new SRgba<float>(1, 1, 1, 1));
         }
         else
         {
-            canvas.FillCircle(new(256), 256, new SrgbRgba<float>(1, 1, 1, 1));
+            canvas.FillCircle(new(256), 256, new SRgba<float>(1, 1, 1, 1));
         }
 
         using var renderer = new RenderGraphRenderer2D(table, canvas.End(), new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear }, new DrawingGraphBindings2D(graph));
