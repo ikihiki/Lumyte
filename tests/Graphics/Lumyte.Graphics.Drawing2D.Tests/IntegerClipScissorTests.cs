@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -126,8 +127,8 @@ public sealed class IntegerClipScissorTests
         canvas.Begin();
         canvas.ClipRect(new(1, 1, 1, 1));
         canvas.ClipRect(new(8, 8, 1, 1));
-        canvas.FillCircle(new(4), 8, new Color2D(1, 1, 1, 1));
-        canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 1, 1, 1));
+        canvas.FillCircle(new(4), 8, new Rgba<float>(1, 1, 1, 1));
+        canvas.FillRect(new(0, 0, 8, 8), new Rgba<float>(1, 1, 1, 1));
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         Assert.Equal(0, device.NativeBuffers);
         Assert.Empty(device.Tables);
@@ -239,7 +240,7 @@ public sealed class IntegerClipScissorTests
         var canvas = new Canvas2D();
         canvas.Begin();
         clip(canvas);
-        canvas.FillCircle(new(16, 16), 32, new Color2D(1, 0, 0, 1));
+        canvas.FillCircle(new(16, 16), 32, new Rgba<float>(1, 0, 0, 1));
         return Assert.Single(canvas.End().Commands);
     }
 

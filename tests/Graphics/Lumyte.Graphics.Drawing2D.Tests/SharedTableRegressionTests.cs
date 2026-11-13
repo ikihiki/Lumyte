@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -21,7 +22,7 @@ public sealed class SharedTableRegressionTests
         {
             canvas.Save();
             canvas.ClipRect(new(0, 0, 16, 16));
-            canvas.FillCircle(new(8), 3, new Color2D(1, 0, 0, 1));
+            canvas.FillCircle(new(8), 3, new Rgba<float>(1, 0, 0, 1));
             canvas.Restore();
         }
 

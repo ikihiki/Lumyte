@@ -2,6 +2,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Resources;
 using Lumyte.Resources.Graphics.Drawing2D;
 using static Lumyte.UI.Compose;
@@ -33,7 +34,7 @@ internal static class UiGraphExercise
             byte[]? first = null;
             for (int frame = 0; frame < 3; frame++)
             {
-                Definitions.Widget root = frame == 2 ? Panel() : Panel()[Stack(orientation: UiOrientation.Horizontal)[Rectangle(width: frame == 0 ? 8 : 28, height: 12), Rectangle(width: 16, height: 12, fill: new Color2D(1, 0, 0, 0.5f))]];
+                Definitions.Widget root = frame == 2 ? Panel() : Panel()[Stack(orientation: UiOrientation.Horizontal)[Rectangle(width: frame == 0 ? 8 : 28, height: 12), Rectangle(width: 16, height: 12, fill: new Rgba<float>(1, 0, 0, 0.5f))]];
                 using var surface = new UiSurface(root);
                 surface.SetViewport(new(64, 32));
                 surface.UpdateLayout();
@@ -74,7 +75,7 @@ internal static class UiGraphExercise
         Console.WriteLine($"UI {(resources ? "Resources + parent graph" : "parent graph")} passed: exact direct/graph pixels, DPI (1.5, 2), Clear/Load, moved/removed UI and background restoration.");
     }
 
-    internal static async Task<byte[]> DrawAsync(IGraphicDevice device, IGraphicsTexture texture, TextureDesc description, bool reused, DrawList2D? direct, RenderGraphDrawList2D? layered, ResourceReference<Renderer2DResource>? reference, bool load, Color2D? clearColor = null)
+    internal static async Task<byte[]> DrawAsync(IGraphicDevice device, IGraphicsTexture texture, TextureDesc description, bool reused, DrawList2D? direct, RenderGraphDrawList2D? layered, ResourceReference<Renderer2DResource>? reference, bool load, Rgba<float>? clearColor = null)
     {
         uint width = description.Width;
         uint height = description.Height;

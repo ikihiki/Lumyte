@@ -4,6 +4,7 @@ using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -43,7 +44,7 @@ public sealed partial class Drawing2DTests
         {
             for (int i = 0; i < 1030; i++)
             {
-                canvas.FillRect(new((i % 7) + 0.125f, (i % 5) + 0.25f, 2.5f, 2.75f), new Color2D(i % 2, 0, (i + 1) % 2, 0.5f));
+                canvas.FillRect(new((i % 7) + 0.125f, (i % 5) + 0.25f, 2.5f, 2.75f), new Rgba<float>(i % 2, 0, (i + 1) % 2, 0.5f));
             }
         }
 
@@ -80,7 +81,7 @@ public sealed partial class Drawing2DTests
             }
 
             var rect = new Rect2D(random.Next(30) + 0.125f, random.Next(20) + 0.25f, 5.5f, 6.75f);
-            canvas.FillRect(rect, new Color2D(i % 2, (i % 3) / 2f, (i % 5) / 4f, ((i % 4) + 1) / 4f));
+            canvas.FillRect(rect, new Rgba<float>(i % 2, (i % 3) / 2f, (i % 5) / 4f, ((i % 4) + 1) / 4f));
             canvas.Restore();
         }
     }

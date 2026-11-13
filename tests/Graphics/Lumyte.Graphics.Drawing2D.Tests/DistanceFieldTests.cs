@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -15,7 +16,7 @@ public sealed class DistanceFieldTests
         using IGraphicsTextureView view = atlas.CreateView();
         Matrix3x2 transform = Matrix3x2.CreateScale(2, 3) * Matrix3x2.CreateTranslation(5, 7);
         var pattern = new ImagePattern2D { View = view, Source = new Rect2D(2, 3, 7, 8), PatternToLocal = transform };
-        var ink = PaintGraph2D.Solid(new Color2D(0.1f, 0.2f, 0.3f, 0.5f));
+        var ink = PaintGraph2D.Solid(new Rgba<float>(0.1f, 0.2f, 0.3f, 0.5f));
         DistanceFieldPaintNode2D node = Assert.IsType<DistanceFieldPaintNode2D>(PaintGraph2D.DistanceField(pattern, 4, ink).Root);
         Assert.NotSame(pattern, node.Pattern);
         Assert.Same(view, node.Pattern.View);
@@ -41,7 +42,7 @@ public sealed class DistanceFieldTests
         using IGraphicsTextureView srgbView = srgb.CreateView();
         using IGraphicsTextureView unsampledView = unsampled.CreateView();
         var pattern = new ImagePattern2D { View = linearView, Source = new Rect2D(2, 3, 7, 8) };
-        var ink = PaintGraph2D.Solid(new Color2D(1, 0, 0, 0.5f));
+        var ink = PaintGraph2D.Solid(new Rgba<float>(1, 0, 0, 0.5f));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.DistanceField(pattern, 0, ink));
         Assert.Throws<ArgumentOutOfRangeException>(() => PaintGraph2D.DistanceField(pattern, -1, ink));
@@ -65,7 +66,7 @@ public sealed class DistanceFieldTests
         using IGraphicsTextureView view = atlas.CreateView();
         var patternTransform = new Matrix3x2(2, 0, 0, 3, 5, 7);
         var pattern = new ImagePattern2D { View = view, Source = new Rect2D(8, 4, 16, 12), PatternToLocal = patternTransform };
-        var ink = PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(40, 0), [new(0, new Color2D(1, 0, 0, 1)), new(1, new Color2D(0, 0, 1, 1))]);
+        var ink = PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(40, 0), [new(0, new Rgba<float>(1, 0, 0, 1)), new(1, new Rgba<float>(0, 0, 1, 1))]);
         var paint = PaintGraph2D.DistanceField(pattern, 6, ink, DistanceFieldMode2D.Mtsdf);
         var canvas = new Canvas2D();
         canvas.Begin();

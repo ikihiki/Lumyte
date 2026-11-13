@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Text.Parley.Tests;
@@ -74,7 +75,7 @@ public sealed class ParleyColorConformanceTests
     {
         using var engine = new ParleyTextEngine2D();
         string family = TestFonts.Add(engine, "ColorFontTest.ttf");
-        var foreground = PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(64, 0), [new(0, new Color2D(1, 0, 0, 0.25f)), new(1, new Color2D(0, 0, 1, 0.5f))]);
+        var foreground = PaintGraph2D.LinearGradient(Vector2.Zero, new Vector2(64, 0), [new(0, new Rgba<float>(1, 0, 0, 0.25f)), new(1, new Rgba<float>(0, 0, 1, 0.5f))]);
         TextPaintGeometry2D drawing = Assert.IsType<TextPaintGeometry2D>(Assert.Single(engine.CreateLayout(char.ConvertFromUtf32(0xf0b07), Options(family), foreground).Drawings));
         var center = new Vector2(drawing.Bounds.X + (drawing.Bounds.Width / 2), drawing.Bounds.Y + (drawing.Bounds.Height / 2));
         Vector4 expected = PaintAssertions.Evaluate(foreground.Root, center) * 0.3f;

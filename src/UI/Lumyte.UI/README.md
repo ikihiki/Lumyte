@@ -56,7 +56,7 @@ LayoutChildとSetChildOffsetは直接の子Elementを受け取り、各可視子
 
 Begin済みCanvasへsurface.Record(canvas)を呼ぶ。Clear・GPU投入・提示はhostが担当する。
 ElementのOnRecord / RecordOverride / RecordChildで描画し、独自の子描画順はruntime slotから定義する。
-RectangleのFillはWidgetの設定、Size / BoundsはElementの幾何を使う。色はColor2Dで検証する。
+RectangleのFillはWidgetの設定、Size / BoundsはElementの幾何を使う。色は`Rgba<float>`で保持し、UIへの受入時に全成分の[0,1]を検証する。
 成功した描画命令はWidget / Elementを遅延参照せず、後の再構築とは独立する。
 
 ## ポインター入力
@@ -165,7 +165,7 @@ using static Lumyte.UI.Compose;
 var save = Button(width: 120, height: 32, with: [
     Align.Center(),
     Padding.All(12),
-    Border.Stroke(new Color2D(1, 1, 1, 1), 1),
+    Border.Stroke(new Rgba<float>(1, 1, 1, 1), 1),
     ConstrainedBox.Limits(new UiBoxConstraints(0, 240, 0, 80))
 ])[Rectangle(width: 16, height: 16)];
 ```

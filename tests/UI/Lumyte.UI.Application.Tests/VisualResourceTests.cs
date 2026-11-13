@@ -2,6 +2,7 @@ using System.Numerics;
 using Lumyte.Core.Time;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Signals;
 using Lumyte.UI.Application.Headless;
 using Lumyte.UI.Windowing;
@@ -158,7 +159,7 @@ public sealed class VisualResourceTests
             var visible = Signal.Create(true);
             var clock = new ManualClock();
             var effects = new UiElementTransitions { Enter = SlideIn(new(30, 0), Duration.FromSeconds(1)), Exit = FadeOut(Duration.FromSeconds(1)) };
-            using var surface = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 1), isPresent: visible, transitions: effects));
+            using var surface = new UiSurface(Rectangle(fill: new Rgba<float>(1, 0, 0, 1), isPresent: visible, transitions: effects));
             surface.VisualHost = new MotionHost();
             surface.SetAnimationClock(clock);
             surface.SetViewport(new(10, 10));
@@ -223,7 +224,7 @@ public sealed class VisualResourceTests
             await app.Dispatcher.InvokeAsync(
             () =>
             {
-                using var surface = new UiSurface(Panel()[SizedBox(width: 8, height: 8, sharedElementKey: new UiSharedElementKey("c1"), transitions: new UiElementTransitions { Enter = FadeIn(Duration.FromSeconds(1)) }, with: [Padding.All(1)])[Separator(color: new Color2D(1, 0, 0, 1), with: [Border.Stroke(new(0, 1, 0, 1), 1)])]]);
+                using var surface = new UiSurface(Panel()[SizedBox(width: 8, height: 8, sharedElementKey: new UiSharedElementKey("c1"), transitions: new UiElementTransitions { Enter = FadeIn(Duration.FromSeconds(1)) }, with: [Padding.All(1)])[Separator(color: new Rgba<float>(1, 0, 0, 1), with: [Border.Stroke(new(0, 1, 0, 1), 1)])]]);
                 surface.VisualHost = new MotionHost();
                 surface.SetViewport(new(10, 10));
                 surface.UpdateLayout();
@@ -264,7 +265,7 @@ public sealed class VisualResourceTests
     [InlineData(3)]
     public void C1CaptureReuseRejectsChangedVisualConfiguration(int change)
     {
-        Definitions.SizedBox Create(bool changed) => SizedBox(width: 20, height: 20, with: [Border.Stroke(changed && change == 3 ? new(0, 1, 0, 1) : new(1, 0, 0, 1), 1)])[Separator(color: changed && change == 0 ? new Color2D(0, 1, 0, 1) : new Color2D(1, 0, 0, 1), thickness: changed && change == 1 ? 2 : 1, orientation: changed && change == 2 ? UiOrientation.Vertical : UiOrientation.Horizontal)];
+        Definitions.SizedBox Create(bool changed) => SizedBox(width: 20, height: 20, with: [Border.Stroke(changed && change == 3 ? new(0, 1, 0, 1) : new(1, 0, 0, 1), 1)])[Separator(color: changed && change == 0 ? new Rgba<float>(0, 1, 0, 1) : new Rgba<float>(1, 0, 0, 1), thickness: changed && change == 1 ? 2 : 1, orientation: changed && change == 2 ? UiOrientation.Vertical : UiOrientation.Horizontal)];
         using var before = new UiSurface(Create(false));
         using var same = new UiSurface(Create(false));
         using var changed = new UiSurface(Create(true));
@@ -302,9 +303,9 @@ public sealed class VisualResourceTests
     public void SharedRectangleResizeWithoutModifiersReusesVisualContent()
     {
         var key = new UiSharedElementKey("photo");
-        var color = new Color2D(1, 0, 0, 0.5f);
-        using var before = new UiSurface(Panel(width: 180, height: 40)[Rectangle(width: 40, height: 40, fill: new Color2D(0, 1, 0, 1)), Rectangle(width: 40, height: 40, fill: color, sharedElementKey: key)]);
-        using var after = new UiSurface(Stack(orientation: UiOrientation.Horizontal, height: 40)[Rectangle(width: 100, height: 40, fill: new Color2D(1, 1, 1, 1)), Rectangle(width: 80, height: 40, fill: color, sharedElementKey: key)]);
+        var color = new Rgba<float>(1, 0, 0, 0.5f);
+        using var before = new UiSurface(Panel(width: 180, height: 40)[Rectangle(width: 40, height: 40, fill: new Rgba<float>(0, 1, 0, 1)), Rectangle(width: 40, height: 40, fill: color, sharedElementKey: key)]);
+        using var after = new UiSurface(Stack(orientation: UiOrientation.Horizontal, height: 40)[Rectangle(width: 100, height: 40, fill: new Rgba<float>(1, 1, 1, 1)), Rectangle(width: 80, height: 40, fill: color, sharedElementKey: key)]);
         foreach (UiSurface surface in new[] { before, after })
         {
             surface.SetViewport(new(240, 180));
@@ -327,8 +328,8 @@ public sealed class VisualResourceTests
     public void SharedRectangleResizeWithModifiersRejectsChangedGeometry(bool border)
     {
         Action<Definitions.Widget>[] modifiers = border ? [Border.Stroke(new(1, 0, 0, 1), 2)] : [Padding.All(2)];
-        using var before = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 0.5f), with: modifiers));
-        using var after = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 0.5f), with: modifiers));
+        using var before = new UiSurface(Rectangle(fill: new Rgba<float>(1, 0, 0, 0.5f), with: modifiers));
+        using var after = new UiSurface(Rectangle(fill: new Rgba<float>(1, 0, 0, 0.5f), with: modifiers));
         before.SetViewport(new(40, 40));
         after.SetViewport(new(80, 40));
         before.UpdateLayout();

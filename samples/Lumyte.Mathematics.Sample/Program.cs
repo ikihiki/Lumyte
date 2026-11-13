@@ -10,6 +10,11 @@ internal static class Program
     {
         Require(new Rgba<byte>(255, 0, 0, 255) == CssColors.Red, "Named colors are byte codes, not unit components");
         Require(CssColors.CornflowerBlue.NormalizeUnorm<double>(255).R == 100d / 255, "Palette explicit normalization");
+        Rgba<float> paletteCodes = CssColors.Red.ConvertChecked<float>();
+        Rgba<float> paletteUnit = CssColors.Red.NormalizeUnorm<float>(255);
+        Require(paletteCodes.R == 255f && paletteCodes.A == 255f, "Numeric cast preserves raw codes");
+        Require(paletteUnit == new Rgba<float>(1, 0, 0, 1), "Palette explicitly becomes unit straight sRGB");
+        Require(new Rgba<float>(-2, 4, 0, 3).WithAlpha(2).A == 2, "Common storage retains finite raw/HDR and nonunit alpha");
         Require(CssColors.Transparent == default, "CSS transparent is black with zero alpha");
         Require(CssColors.TryGet("rebeccapurple", out Rgba<byte> rebecca) && rebecca.ToArgb32Codes() == 0xFF663399, "Named palette lookup");
         Require(CssColors.All.Count == 149 && !CssColors.TryGet("currentColor", out _), "Fixed keywords only, no contextual theme values");

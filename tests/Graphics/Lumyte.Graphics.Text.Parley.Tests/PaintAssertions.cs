@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Text.Parley.Tests;
 
@@ -104,7 +105,7 @@ internal static class PaintAssertions
         };
     }
 
-    private static Vector4 Premultiply(Color2D color) => new(Linear(color.R) * color.A, Linear(color.G) * color.A, Linear(color.B) * color.A, color.A);
+    private static Vector4 Premultiply(Rgba<float> color) => new(Linear(color.R) * color.A, Linear(color.G) * color.A, Linear(color.B) * color.A, color.A);
 
     private static float Linear(float value) => value <= 0.04045f ? value / 12.92f : MathF.Pow((value + 0.055f) / 1.055f, 2.4f);
 

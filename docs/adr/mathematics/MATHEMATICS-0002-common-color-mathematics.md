@@ -3,6 +3,10 @@
 - 状態: 採用
 - 日付: 2026-11-13
 - 基準コミット: `ef61258f27ec0f19240a5333d4388f1a3ac9de50`
+- 変更関係: 一部変更
+- 変更元: [ADR-GRAPHICS-0018 の色の共通化](../graphics/GRAPHICS-0018-2d-graphics-engine.md#座標clip色を共通化する)
+- 変更対象: Color2D の公開型と構築時の unit 検証を、`Rgba<float>` と描画・UI の受入時検証へ移す
+- 継続する判断: straight sRGB、linear premultiplied、HDR・合成・GPU/native の各境界規則
 
 ## 背景
 
@@ -10,11 +14,11 @@
 
 基準コードの `src/Graphics/Lumyte.Graphics.Drawing2D/Model/Color2D.cs` の `Color2D` は有限な [0,1] の straight-alpha sRGB である。同プロジェクトの `Rendering/DrawingProgram2D.cs` の `Linear` は float で decode・premultiply し、`Execution/PreparedDraw2D.cs` の `Linear` は clear 用に double で decode する。`src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/RenderGraphRenderer2D.cs` と `src/UI/Lumyte.UI/UiAnimationInterpolators.cs` にも同系統の変換がある。
 
-[ADR-MATHEMATICS-0001 の共通計算と利用側の責務](MATHEMATICS-0001-generic-geometry.md#共通計算と利用側の責務)の依存方向を色にも適用する。[ADR-GRAPHICS-0018 の色の契約](../graphics/GRAPHICS-0018-2d-graphics-engine.md#座標clip色を共通化する)と [ADR-GRAPHICS-0017 の詳細契約](../graphics/GRAPHICS-0017-image-effects.md#詳細契約)の描画結果・値域・alpha 規則は維持し、共通数学への委譲を独立して追加する。
+[ADR-MATHEMATICS-0001 の共通計算と利用側の責務](MATHEMATICS-0001-generic-geometry.md#共通計算と利用側の責務)の依存方向を色にも適用する。[ADR-GRAPHICS-0018 の色の契約](../graphics/GRAPHICS-0018-2d-graphics-engine.md#座標clip色を共通化する)と [ADR-GRAPHICS-0017 の詳細契約](../graphics/GRAPHICS-0017-image-effects.md#詳細契約)の描画結果・値域・alpha 規則は維持する。専用のColor2D型と構築時検証だけは変更し、共通値型と利用側の受入検証へ移す。
 
 ## 決定
 
-既存パッケージ `Lumyte.Mathematics` の `Lumyte.Mathematics.Colors` に、成分配置を表す `Gray<T>`・`Rgb<T>`・`Rgba<T>` などと packed・HSL/HSV の値型を追加する。一色の構築・配置変換は各型に置き、transfer・alpha・合成・補間の共通演算は `Rgba<T>` の static factory と instance method に集約する。`Color` は複数画素の span 操作と既存 UI の raw 互換処理だけを担当する。色空間・alpha・量子化の意味はメソッド名と引数で明示し、実装の精度別・SIMD 別の分割は公開クラスとして露出しない。
+既存パッケージ `Lumyte.Mathematics` の `Lumyte.Mathematics.Colors` に、成分配置を表す `Gray<T>`・`Rgb<T>`・`Rgba<T>` などと packed・HSL/HSV の値型を追加する。一色の構築・配置変換は各型に置き、transfer・alpha・合成・補間の共通演算は `Rgba<T>` の static factory と instance method に集約する。`Color2D` は削除し、Drawing2D・UI・text の公開引数、property、返却値、補間型を `Rgba<float>` へ移す。共通型はraw有限値のままとし、描画とUIは値を受け入れる境界で正規化straight sRGBのunit検証を行う。`Color` は複数画素の span 操作と既存 UI の raw 互換処理だけを担当する。色空間・alpha・量子化の意味はメソッド名と引数で明示し、実装の精度別・SIMD 別の分割は公開クラスとして露出しない。
 
 ### 利用者の変更前・変更後
 
@@ -64,7 +68,48 @@ var opaqueCodes = grayCodes.ToRgba((byte)255);
 Rgb565 packed = Rgb565.FromNormalized(cyan);
 ```
 
-既存の `Color2D`、clear、UI animation の公開呼び出しは維持する。利用側の薄い変換で共通 API を使い、単に private 関数の名前を置き換えるだけでなく、その本体の重複を取り除く。
+変更後は、呼び出し側も `Rgba<float>` と明示したコード正規化を使う。Color2Dの型、alias、obsolete wrapper、FromSrgb8 bridgeは残さない。公開型の変更を伴うため、旧constructorの名前付き引数・init/with・分解構文との互換は保証しない。透明黒のdefaultと透明な非黒の成分は保持する。
+
+### 描画・UIへの受入と失敗時の状態
+
+`Rgba<float>`を構築できることと、Drawing2D/UIへ渡せることを分ける。paint/stop/node/target clearやwidget/style/optionはunit色を要求し、公開constructor・setter・factory・command recordingで状態へ取り込む前に検証する。gradient offsetは有限で、範囲外と重複offsetは許し、並び順はgradient factoryが検証する。GPU prepareまでinvalid色を遅延保存しない。既存の内部validatorを再利用し、数学型へ描画のunit制約を追加しない。
+
+Animationのendpoint保持も受入境界に含める。`IAnimationInterpolator<T>.Validate(T value)` は既存の独自interpolatorへ新しい実装を要求しないdefault no-opとし、TweenとCurveが格納前に呼ぶ。UIのcolor interpolatorはこのhookでunit色を要求する。数学や汎用Animationの型判定へRgbaのunit制約を埋め込まず、独自interpolatorとraw/HDRの保存は維持する。Curveはdefault interpolatorの全key検証に加え、実行するsegment overrideの両端も検証する。Bezierとnullableのadapterも入力契約を委譲し、Bezierの両controlも公開前に検証する。
+
+UIの宣言型が `Rgba<float>` またはそのnullableであるanimation projectionは、初期値、detached読み出し、target更新、clipの初期channel登録、sampleのstage時にunit検証し、失敗時に表示値やchannel登録を公開しない。正確なendpointやholdはinterpolatorのsample本体を通らないため、sample時だけの検証には依存しない。object型などの一般のUIデータに入ったraw/HDR値は色propertyと推測して制約しない。
+
+```diff
+ namespace Lumyte.Animation;
+ public interface IAnimationInterpolator<T>
+ {
++    // 格納する値のoperation固有条件。既存の独自実装ではdefault no-op。
++    void Validate(T value) { }
+ }
+```
+
+変更する公開境界の代表例は次の通りである。
+
+```diff
++using Lumyte.Mathematics.Colors;
+ namespace Lumyte.Graphics.Drawing2D;
+-public readonly record struct Color2D(float R, float G, float B, float A);
+-public readonly record struct ColorStop2D(float Offset, Color2D Color);
++// constructor/initでfinite offsetとunit straight sRGBを検証する。
++public readonly record struct ColorStop2D(float Offset, Rgba<float> Color);
+-public sealed record SolidPaintNode2D(Color2D Color);
++// constructor/initでunit straight sRGBを検証する。
++public sealed record SolidPaintNode2D(Rgba<float> Color);
+-public static PaintGraph2D Solid(Color2D color);
++public static PaintGraph2D Solid(Rgba<float> color);
+-public Color2D ClearColor { get; init; }
++public Rgba<float> ClearColor { get; init; }
+ namespace Lumyte.UI;
+-public Color2D Fill { get; set; }
++// 失敗時は変更前の値を維持する。
++public Rgba<float> Fill { get; set; }
+-public static IAnimationInterpolator<Color2D> Color { get; }
++public static IAnimationInterpolator<Rgba<float>> Color { get; }
+```
 
 ### 数値成分、符号化、値域
 
@@ -111,7 +156,7 @@ alpha のない形式への書き出しは A=1 を要求し、透明度を黙っ
 
 標準色は単一の `CssColors` catalog から `CssColors.Red`・`CssColors.CornflowerBlue` のように取り出す。CSS の148個の named color と gray/grey・aqua/cyan・fuchsia/magenta の別名を含め、`Rgba<byte>` の straight-alpha sRGB 8-bit コード値を immutable な static readonly field として提供する。C# の構造体は literal const にできないため readonly field を使い、値型ごとの暗黙な正規化や gamma 変換は行わない。opaque alpha は255であり、正規化値は `NormalizeUnorm<float>(255)` で明示する。
 
-`Transparent` は148色とは別の CSS keyword として RGBA=(0,0,0,0) を返す。currentColor と system/theme 色は利用文脈に依存するため固定値を登録しない。`All` は148色と transparent の149 keyword を小文字名で保持する変更不能な辞書として公開する。`TryGet` は ASCII の名前を ordinal case-insensitive で照合し、null・非ASCII・未知名では false と default を返す。空白除去や hex・関数構文の parse は行わない。catalog は名前付きデータだけを担当し、数値演算やテーマ管理を追加しない。Drawing2D の `Color2D.FromSrgb8(Rgba<byte> codes)` は明示した8-bit sRGBコードを共通の `NormalizeUnorm<float>(255)` へ委譲してから既存 constructor で検証する。Mathematics から Drawing2D への依存や暗黙変換は作らない。
+`Transparent` は148色とは別の CSS keyword として RGBA=(0,0,0,0) を返す。currentColor と system/theme 色は利用文脈に依存するため固定値を登録しない。`All` は148色と transparent の149 keyword を小文字名で保持する変更不能な辞書として公開する。`TryGet` は ASCII の名前を ordinal case-insensitive で照合し、null・非ASCII・未知名では false と default を返す。空白除去や hex・関数構文の parse は行わない。catalog は名前付きデータだけを担当し、数値演算やテーマ管理を追加しない。Drawing2Dへは `CssColors.Red.NormalizeUnorm<float>(255)` の結果を直接渡す。専用のFromSrgb8 bridgeは設けない。Mathematics から Drawing2D への依存や暗黙変換は作らない。
 
 基準コードでは標準色のbyteコードを共通の名前で取り出す機能がなく、利用側が値を管理する。同じCornflowerBlueを既存の描画用constructorへ渡す場合は数値を繰り返す。
 
@@ -138,17 +183,13 @@ Drawing2D では同じ色を名前から構築し、既存 canvas API へ渡せ�
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Mathematics.Colors;
 
-var color = Color2D.FromSrgb8(CssColors.CornflowerBlue);
+var canvas = new Canvas2D();
+canvas.Begin();
+canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.CornflowerBlue.NormalizeUnorm<float>(255));
+DrawList2D list = canvas.End();
 ```
 
-```diff
-+namespace Lumyte.Graphics.Drawing2D;
-+public readonly record struct Color2D
-+{
-+    // 8-bit sRGBコードを共通数学で正規化する。alphaも0..255のコード。
-+    public static Color2D FromSrgb8(Lumyte.Mathematics.Colors.Rgba<byte> codes);
-+}
-```
+Color2Dを前提とするFromSrgb8の専用factoryも公開しない。パレットからの正規化はRgbaの操作に統一する。
 
 ### transfer、alpha、補間
 
@@ -160,17 +201,17 @@ float paint は float、clear は float 入力の閾値比較と double の係�
 
 sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremultiply → encode とする。新しい検証付き API は有限な amount と正規化入力を検証し、外挿を一律 clamp せず、結果が正規化 sRGB を表せない場合は拒否する。端点は型変換を除いて元の成分を保持し、内部の alpha==0 は透明黒とする。非ゼロの定数・subnormal・透明色で、不要な中間丸めによる成分消失を検証する。
 
-既存 UI はこの検証付き pipeline に無条件に通さない。互換用の `InterpolateSrgbLinearPremultipliedRaw` は Vector4 の float 入出力で上記 mixed-precision 式と端点・ゼロ alpha 分岐を評価し、入力・中間値の unit 検証をせず、最後の float 化までを共通層へ集約する。UI adapter は最終的な `Color2D` 構築だけで範囲を検証する。黒色の alpha 0.9f→1f、amount=1.0000001192092896f では中間 double alpha が 1 を超えても最終 float は 1f となる既存挙動を保持し、新 API の中間 unit 検証で拒否しない。raw 経路の非有限値は IEEE のまま伝播し、既存入口での例外を保持する。
+既存 UI はこの検証付き pipeline に無条件に通さない。互換用の `InterpolateSrgbLinearPremultipliedRaw` は Vector4 の float 入出力で上記 mixed-precision 式と端点・ゼロ alpha 分岐を評価し、入力・中間値の unit 検証をせず、最後の float 化までを共通層へ集約する。UI adapter は両endpointを受け入れる時点でunit検証し、raw計算後は最終float成分だけを検証してRgbaへ格納する。黒色の alpha 0.9f→1f、amount=1.0000001192092896f では中間 double alpha が 1 を超えても最終 float は 1f となる既存挙動を保持し、新 API の中間 unit 検証で拒否しない。raw 経路の非有限値は IEEE のまま伝播し、既存入口での例外を保持する。
 
 ### 合成、画像 effect、利用側の境界
 
-共通合成は linear premultiplied を入力とする。`SourceOverLinearPremultiplied` は RGB・alpha とも `source + destination * (1 - sourceAlpha)`。Plus は契約差を名前に表し、`AddLinearPremultiplied` は HDR RGB を保持して alpha のみ clamp、`AddUnitLinearPremultiplied` は RGB・alpha を単位区間へ clamp する。Color2D の通常描画と HDR effect のどちらかへ一律に合わせない。
+共通合成は linear premultiplied を入力とする。`SourceOverLinearPremultiplied` は RGB・alpha とも `source + destination * (1 - sourceAlpha)`。Plus は契約差を名前に表し、`AddLinearPremultiplied` は HDR RGB を保持して alpha のみ clamp、`AddUnitLinearPremultiplied` は RGB・alpha を単位区間へ clamp する。Drawing2D の通常描画と HDR effect のどちらかへ一律に合わせない。
 
 4×5 色行列は、alpha>0 で unpremultiply・その他 RGB=0 → straight linear RGBA へ行列と定数項 → alpha のみ clamp → premultiply の順を保持する。CPU の線形演算は BCL の `Vector4`・`Matrix4x4` と定数 `Vector4` を使い、新しい汎用ベクトル・行列を作らない。BCL の row-vector と既存 4×5 row-major の対応は adapter で明示する。行列係数が有限でも GPU の全出力画素が有限になる保証は追加しない。
 
 共通数学は描画・UI・OS・画像 codec を参照しない。既存の境界は次のように保持する。
 
-- `Color2D` の constructor・init・with の有限 [0,1] 検証、default・deconstruction を維持し、値は正規化された straight sRGB として渡す。clear の raw `ClearColor` と `BlendConstant` の GPU API 境界には同じ unit 制約を付けない。
+- Drawing2Dのpaint、gradient stop、solid node、target clear、UIのwidget/color setter・option・text style・animation endpointでは、受け入れたRgbaのRGBA全成分を有限[0,1]として検証する。公開値やrecordのinit/withも状態の変更・公開前に検証し、失敗時は旧状態を保持する。共通Rgbaのconstructorは有限性だけを要求し、負値/HDR/非unit alphaを保存できる。clear の raw `ClearColor` と `BlendConstant` の GPU API 境界にはunit制約を付けない。
 - `ModelMaterial` の linear な base/emissive、`ColorDrawArguments.Tint` の linear multiplier、`ModelVertex` の固定 shader layout は維持する。HDR は storage の形式と presentation の能力を区別する。
 - gradient stop は非減少順で、重複・範囲外 offset、empty、Pad/Repeat/Reflect を保持する。画像は各 tap の decode と必要な premultiply の後に補間し、premultiplied 入力へ alpha を再乗算しない。
 - native font palette は sRGB コード、foreground は paint を指す規則を維持する。currentColor を固定 RGBA へ潰さない。interop 配置と生成コードは数学型へ置換しない。
@@ -179,7 +220,7 @@ sRGB の色補間は decode → premultiply → linear RGBA 補間 → unpremult
 
 ### 公開 API 差分
 
-以下は基準コードに対する追加の主要宣言の抜粋であり、既存の型・シグネチャは削除しない。部品の保存・構築と一般の計算を分け、単一色の操作は `Rgba<T>` に集約する。From/Try は static factory、元の色を入力とする操作は instance method とする。`Color` の公開対象は複数画素操作と raw 互換処理だけに限定する。
+以下は基準コードに対する主要宣言の抜粋である。Color2Dの削除とその公開利用境界の型変更を含む。部品の保存・構築と一般の計算を分け、単一色の操作は `Rgba<T>` に集約する。From/Try は static factory、元の色を入力とする操作は instance method とする。`Color` の公開対象は複数画素操作と raw 互換処理だけに限定する。
 
 ```diff
 +using System.Numerics;
@@ -327,14 +368,14 @@ CSS 全構文、currentColor・system color の解決、ICC profile・広色域�
 
 ## 検討した代替案
 
-- **描画用 Color2D を全機能へ移す:** 呼び出しは少ないが、float・straight sRGB・unit 制約を HDR・clear・byte palette へ強制する。共通保存と操作を独立させ、既存の境界型は維持する。
+- **描画用Color2Dを残す、または改名したwrapperへ置き換える:** 型の変換と二重の色APIが利用側へ残る。専用型を廃止し、保存は共通Rgba、値域と描画上の意味は受入境界へ分ける。
 - **全色を Vector4 だけで扱う:** BCL の演算は再利用できるが、数値型と UNORM・gamma・alpha の意味が見えない。ベクトル演算は BCL、色の契約は Rgba と明示操作に分ける。
 - **色空間・精度・実装ごとに公開 utility を作る:** 実装は分類しやすいが、利用者へ backend 選択を漏らす。一色の操作は `Rgba<T>`、複数画素や raw 互換処理は `Color` に分け、実装 helper は隠す。
 - **全経路を double や GPU 式へ統一する:** 重複は減るが、float paint・double clear/UI・shader の丸めと閾値が変わる。共有できる数学だけを委譲し、既存の演算経路を検証する。
 
 ## 結果と影響
 
-色計算を描画依存なく使い、量子化・色空間・alpha の二重変換を明示的に避けられる。利用者は保存型だけで色の意味が決まらないことを理解し、正規化と cast、表示色と HDR を区別する必要がある。既存 API の意味を維持するための adapter と CPU/GPU の照合は残る。
+色計算を描画依存なく使い、量子化・色空間・alpha の二重変換を明示的に避けられる。利用者は保存型だけで色の意味が決まらないことを理解し、正規化と cast、表示色と HDR を区別する必要がある。公開色型を置き換えても、描画・UIの演算上の意味を保つ受入検証とCPU/GPUの照合は残る。独自widgetやstyleの色propertyも、その利用側の契約に応じて受入検証を持つ。
 
 受け入れ条件は、全格納形式の既知の bit/byte 列、両 endian、チャンネル順、alpha 補完と廃棄の拒否、Gray の等成分条件、SNORM の最小コードと正規化、IEEE HDR/subnormal/overflow、HSL/HSV の無彩色・hue 周期・分数結果・白近傍と subnormal での厳密な中間計算、batch の失敗画素/suffix 不変性を確認することである。sRGB の両閾値と隣接値、float/double の元計算との比較、量子化の端値・中点・往復・ulong 最大値・巨大整数上限、負値・NaN・infinity・overflow の拒否を検証することである。byte・各整数型・BigInteger・decimal・IEEE・参照を含む独自数値型の保存と、対応する結果型での操作を区別して確認する。透明な非黒の端点、alpha=0、UI の mixed-precision 中点と最終 float 化後に有効となる外挿、定数・subnormal の補間、HDR・負の RGB、Plus の二つの clamp 規則、行列の定数項を確認する。
 

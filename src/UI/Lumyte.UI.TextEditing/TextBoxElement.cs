@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text;
+using Lumyte.Mathematics.Colors;
 using Lumyte.TextEditing;
 
 namespace Lumyte.UI.TextEditing;
@@ -300,7 +301,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         int length = Math.Abs(snapshot.Selection.Active - snapshot.Selection.Anchor);
         foreach (Rect2D rect in _layout.GetRangeBounds(new(start, length)))
         {
-            canvas.FillRect(rect, new Color2D(0.65f, 0.8f, 1, 1));
+            canvas.FillRect(rect, new Rgba<float>(0.65f, 0.8f, 1, 1));
         }
 
         if (snapshot.Composition is { } preedit)
@@ -309,7 +310,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
             {
                 foreach (Rect2D rect in _layout.GetRangeBounds(selected.Range))
                 {
-                    canvas.FillRect(rect, new Color2D(0.65f, 0.8f, 1, 1));
+                    canvas.FillRect(rect, new Rgba<float>(0.65f, 0.8f, 1, 1));
                 }
             }
         }
@@ -333,12 +334,12 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
                         float right = MathF.Min(rect.X + rect.Width, _offset + ContentSize.X);
                         for (float x = MathF.Max(rect.X, _offset); x < right; x += 4)
                         {
-                            canvas.FillRect(new(x, y, MathF.Min(2, right - x), height), new Color2D(0, 0, 0, 1));
+                            canvas.FillRect(new(x, y, MathF.Min(2, right - x), height), new Rgba<float>(0, 0, 0, 1));
                         }
                     }
                     else
                     {
-                        canvas.FillRect(new(rect.X, y, rect.Width, height), new Color2D(0, 0, 0, 1));
+                        canvas.FillRect(new(rect.X, y, rect.Width, height), new Rgba<float>(0, 0, 0, 1));
                     }
                 }
             }
@@ -346,7 +347,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
 
         if (_focused)
         {
-            canvas.FillRect(_layout.GetCaretBounds(new(snapshot.Selection.Active, snapshot.Selection.ActiveAffinity)), new Color2D(0, 0, 0, 1));
+            canvas.FillRect(_layout.GetCaretBounds(new(snapshot.Selection.Active, snapshot.Selection.ActiveAffinity)), new Rgba<float>(0, 0, 0, 1));
         }
     }
 }

@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI.Windowing;
 using static Lumyte.UI.Compose;
 
@@ -106,7 +107,7 @@ internal sealed class UiPopupExercise : IAsyncDisposable
             Console.WriteLine($"Popup clicks: {Clicks}");
         }
 
-        Definitions.Widget BuildChild() => Button(width: 90, height: 30, testId: "child-save", onClick: Save)[Rectangle(width: 90, height: 30, fill: new Color2D(1, 0, 0, 1))];
+        Definitions.Widget BuildChild() => Button(width: 90, height: 30, testId: "child-save", onClick: Save)[Rectangle(width: 90, height: 30, fill: new Rgba<float>(1, 0, 0, 1))];
 
         void OpenChild()
         {
@@ -117,8 +118,8 @@ internal sealed class UiPopupExercise : IAsyncDisposable
         }
 
         Definitions.Widget BuildMenu() => Stack(orientation: UiOrientation.Vertical)[
-            Button(width: 160, height: 32, testId: "popup-save", automationName: "Popup save", onClick: Save)[Rectangle(width: 160, height: 32, fill: new Color2D(0, 1, 0, 1))],
-            Button(width: 160, height: 32, testId: "submenu", onClick: OpenChild)[Rectangle(width: 160, height: 32, fill: new Color2D(0.8f, 0.4f, 0, 1))]];
+            Button(width: 160, height: 32, testId: "popup-save", automationName: "Popup save", onClick: Save)[Rectangle(width: 160, height: 32, fill: new Rgba<float>(0, 1, 0, 1))],
+            Button(width: 160, height: 32, testId: "submenu", onClick: OpenChild)[Rectangle(width: 160, height: 32, fill: new Rgba<float>(0.8f, 0.4f, 0, 1))]];
 
         handle = Popups.RequestOpen(_owner, new(_anchor, new(180, 100), BuildMenu, policy: UiWindowPolicy.PreferNative, role: contextMenu ? UiWindowRole.ContextMenu : UiWindowRole.Popup));
         Current = handle;

@@ -6,6 +6,7 @@ RenderGraphCanvas2Dはレイヤーと背景効果を記録し、親RenderGraph.A
 ```csharp
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -17,7 +18,7 @@ canvas.BeginLayer(new LayerOptions2D
     Effects = graph => graph.AppendGaussianBlur(graph.Source, 3, 3),
     Opacity = 0.8f,
 });
-canvas.FillRoundedRect(new Rect2D(40, 40, 100, 50), 8, new Color2D(1, 0, 0, 1));
+canvas.FillRoundedRect(new Rect2D(40, 40, 100, 50), 8, new Rgba<float>(1, 0, 0, 1));
 canvas.EndLayer();
 RenderGraphDrawList2D list = canvas.End();
 

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -80,7 +81,7 @@ public sealed class RetainedSceneLifetimeTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 1, 1), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 1, 1), new Rgba<float>(1, 0, 0, 1));
         return canvas.End();
     }
 }

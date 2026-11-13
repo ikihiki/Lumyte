@@ -1,4 +1,4 @@
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI.Application;
 using Lumyte.UI.Application.Navigation;
 using Lumyte.UI.Navigation;
@@ -26,7 +26,7 @@ internal static class ExamplePages
             {
                 state.Width.Value = 140;
                 context.Activation.Navigation.RequestNavigate(details, new("Typed DI page"));
-            })[Rectangle(width: state.Width, height: 48, fill: new Color2D(0.5f, 0.5f, 0.5f, 1))];
+            })[Rectangle(width: state.Width, height: 48, fill: new Rgba<float>(0.5f, 0.5f, 0.5f, 1))];
         });
         builder.UseWindows(_ => [Window("main", "DI pages", content: services => new ObservedWindow(Page(home)(services), state, observe))]);
         return state;
@@ -54,7 +54,7 @@ internal static class ExamplePages
             }
 
             counter.State.Navigation = context.Activation.Navigation;
-            return Button(width: 160, height: 48, testId: "quit", onClick: counter.State.Stop)[Rectangle(width: 160, height: 48, fill: new Color2D(0.25f, 0.5f, 0.75f, 1))];
+            return Button(width: 160, height: 48, testId: "quit", onClick: counter.State.Stop)[Rectangle(width: 160, height: 48, fill: new Rgba<float>(0.25f, 0.5f, 0.75f, 1))];
         }
     }
 

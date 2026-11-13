@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.DependencyInjection;
+using Lumyte.Mathematics.Colors;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application;
@@ -8,7 +9,7 @@ namespace Lumyte.UI.Application;
 internal sealed partial class UiHostPresenter : IDisposable
 {
     private readonly IGraphicDevice _device;
-    private readonly Color2D _background;
+    private readonly Rgba<float> _background;
     private readonly UiIntermediateTexturePool _intermediates;
     private readonly Renderer2D _renderer;
     private readonly IGraphicsPipeline _pipeline;
@@ -17,10 +18,10 @@ internal sealed partial class UiHostPresenter : IDisposable
     private readonly List<Frame> _frames = [];
     private TextureFormat? _intermediate;
 
-    internal UiHostPresenter(IGraphicDevice device, Color2D background, int maximumFrames = 3)
+    internal UiHostPresenter(IGraphicDevice device, Rgba<float> background, int maximumFrames = 3)
     {
         _device = device;
-        _background = background;
+        _background = UiColorPolicy.Unit(background, nameof(background));
         _intermediates = new(CreateIntermediate);
         try
         {

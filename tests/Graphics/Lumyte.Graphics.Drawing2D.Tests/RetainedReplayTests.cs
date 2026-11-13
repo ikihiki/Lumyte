@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -14,7 +15,7 @@ public sealed class RetainedReplayTests
         child.Begin();
         child.Translate(new(2, 3));
         child.ClipRect(new(0, 0, 10, 10));
-        child.FillRect(new(0, 0, 8, 9), new Color2D(1, 0, 0, 1));
+        child.FillRect(new(0, 0, 8, 9), new Rgba<float>(1, 0, 0, 1));
         DrawList2D retained = child.End();
         DrawingState2D original = Assert.Single(retained.Commands).State;
         var canvas = new Canvas2D();

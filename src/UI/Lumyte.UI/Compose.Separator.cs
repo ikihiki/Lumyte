@@ -1,5 +1,5 @@
 using Lumyte.Composition;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -23,7 +23,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the line color; the default is transparent.</summary>
             [ComposeParameter]
-            public Color2D Color { get; set; }
+            public Rgba<float> Color { get; set => field = UiColorPolicy.Unit(value, nameof(Color)); }
 
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new SeparatorElement(this);

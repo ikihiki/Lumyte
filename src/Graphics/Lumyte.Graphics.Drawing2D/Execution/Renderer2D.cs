@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -187,7 +188,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 
     private static bool IsInteger(float value) => float.IsFinite(value) && value == MathF.Truncate(value) && value >= int.MinValue && (double)value <= int.MaxValue;
 
-    private static bool ValidColor(Color2D color) => ValidChannel(color.R) && ValidChannel(color.G) && ValidChannel(color.B) && ValidChannel(color.A);
+    private static bool ValidColor(Rgba<float> color) => ValidChannel(color.R) && ValidChannel(color.G) && ValidChannel(color.B) && ValidChannel(color.A);
 
     private static bool ValidChannel(float value) => float.IsFinite(value) && value >= 0 && value <= 1;
 

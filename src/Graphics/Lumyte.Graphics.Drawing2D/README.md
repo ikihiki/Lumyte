@@ -4,7 +4,7 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
-Color2Dは生成時と各成分のinit（withを含む）で、RGBAがfiniteかつ0〜1であることを検査します。不正値はArgumentOutOfRangeExceptionです。defaultは透明色として有効で、従来の名前付き引数・分解・値比較も使えます。UI側で同じ色検証を繰り返す必要はありません。`Color2D.FromSrgb8(CssColors.Red)` は標準パレットの8-bitコードを共通数学の `NormalizeUnorm<float>(255)` で正規化してから通常のColor2Dを構築します。暗黙変換やgamma変換はしません。
+色の公開APIは `Lumyte.Mathematics.Colors.Rgba<float>` を使います。Rgbaは有限なraw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットは `CssColors.Red.NormalizeUnorm<float>(255)` で明示的に正規化し、gamma変換や暗黙変換はしません。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
@@ -13,7 +13,7 @@ using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), Color2D.FromSrgb8(CssColors.Red));
+canvas.FillRect(new Rect2D(20, 20, 100, 50), CssColors.Red.NormalizeUnorm<float>(255));
 DrawList2D list = canvas.End();
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
@@ -124,7 +124,7 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 ```csharp
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(0, 0, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.FillRect(new Rect2D(0, 0, 100, 50), new Rgba<float>(1, 0, 0, 1));
 DrawList2D content = canvas.End();
 
 using var scene = new DrawingScene2D();

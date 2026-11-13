@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -129,8 +130,8 @@ public abstract class DrawingCanvas2D
 
     /// <summary>Records FillRect using a solid color.</summary>
     /// <param name="rect">The finite logical rectangle with nonnegative dimensions.</param>
-    /// <param name="color">The finite straight-alpha sRGB color.</param>
-    public void FillRect(Rect2D rect, Color2D color) => FillRect(rect, PaintGraph2D.Solid(color));
+    /// <param name="color">The finite unit straight-alpha sRGB color, validated before recording.</param>
+    public void FillRect(Rect2D rect, Rgba<float> color) => FillRect(rect, PaintGraph2D.Solid(color));
 
     /// <summary>Records FillRect using an immutable paint graph.</summary>
     /// <param name="rect">The finite logical rectangle with nonnegative dimensions.</param>
@@ -146,8 +147,8 @@ public abstract class DrawingCanvas2D
     /// <summary>Records FillRoundedRect using a solid color.</summary>
     /// <param name="rect">The finite logical rectangle with nonnegative dimensions.</param>
     /// <param name="radius">The finite nonnegative logical radius.</param>
-    /// <param name="color">The finite straight-alpha sRGB color.</param>
-    public void FillRoundedRect(Rect2D rect, float radius, Color2D color) => FillRoundedRect(rect, radius, PaintGraph2D.Solid(color));
+    /// <param name="color">The finite unit straight-alpha sRGB color, validated before recording.</param>
+    public void FillRoundedRect(Rect2D rect, float radius, Rgba<float> color) => FillRoundedRect(rect, radius, PaintGraph2D.Solid(color));
 
     /// <summary>Records FillRoundedRect using an immutable paint graph.</summary>
     /// <param name="rect">The finite logical rectangle with nonnegative dimensions.</param>
@@ -165,8 +166,8 @@ public abstract class DrawingCanvas2D
     /// <summary>Records FillCircle using a solid color.</summary>
     /// <param name="center">The finite logical center.</param>
     /// <param name="radius">The finite nonnegative logical radius.</param>
-    /// <param name="color">The finite straight-alpha sRGB color.</param>
-    public void FillCircle(Vector2 center, float radius, Color2D color) => FillCircle(center, radius, PaintGraph2D.Solid(color));
+    /// <param name="color">The finite unit straight-alpha sRGB color, validated before recording.</param>
+    public void FillCircle(Vector2 center, float radius, Rgba<float> color) => FillCircle(center, radius, PaintGraph2D.Solid(color));
 
     /// <summary>Records FillCircle using an immutable paint graph.</summary>
     /// <param name="center">The finite logical center.</param>
@@ -184,9 +185,9 @@ public abstract class DrawingCanvas2D
     /// <summary>Records DrawLine using a solid color.</summary>
     /// <param name="start">The finite logical start.</param>
     /// <param name="end">The finite logical end.</param>
-    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="color">The finite unit straight-alpha sRGB color, validated before recording.</param>
     /// <param name="style">The positive stroke width and join/cap settings.</param>
-    public void DrawLine(Vector2 start, Vector2 end, Color2D color, StrokeStyle2D style) => DrawLine(start, end, PaintGraph2D.Solid(color), style);
+    public void DrawLine(Vector2 start, Vector2 end, Rgba<float> color, StrokeStyle2D style) => DrawLine(start, end, PaintGraph2D.Solid(color), style);
 
     /// <summary>Records DrawLine using an immutable paint graph.</summary>
     /// <param name="start">The finite logical start.</param>
@@ -205,9 +206,9 @@ public abstract class DrawingCanvas2D
 
     /// <summary>Records FillPath using a solid color.</summary>
     /// <param name="path">The immutable logical path.</param>
-    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="color">The finite unit straight-alpha sRGB color, validated before recording.</param>
     /// <param name="rule">The contour fill rule.</param>
-    public void FillPath(Path2D path, Color2D color, FillRule2D rule = FillRule2D.NonZero) => FillPath(path, PaintGraph2D.Solid(color), rule);
+    public void FillPath(Path2D path, Rgba<float> color, FillRule2D rule = FillRule2D.NonZero) => FillPath(path, PaintGraph2D.Solid(color), rule);
 
     /// <summary>Records FillPath using an immutable paint graph.</summary>
     /// <param name="path">The immutable logical path.</param>
@@ -224,9 +225,9 @@ public abstract class DrawingCanvas2D
 
     /// <summary>Records StrokePath using a solid color.</summary>
     /// <param name="path">The immutable logical path.</param>
-    /// <param name="color">The finite straight-alpha sRGB color.</param>
+    /// <param name="color">The finite unit straight-alpha sRGB color, validated before recording.</param>
     /// <param name="style">The positive stroke width and join/cap settings.</param>
-    public void StrokePath(Path2D path, Color2D color, StrokeStyle2D style) => StrokePath(path, PaintGraph2D.Solid(color), style);
+    public void StrokePath(Path2D path, Rgba<float> color, StrokeStyle2D style) => StrokePath(path, PaintGraph2D.Solid(color), style);
 
     /// <summary>Records StrokePath using an immutable paint graph.</summary>
     /// <param name="path">The immutable logical path.</param>

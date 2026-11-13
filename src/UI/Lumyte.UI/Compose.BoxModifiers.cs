@@ -1,5 +1,5 @@
 using Lumyte.Composition;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -32,8 +32,9 @@ public static partial class Compose
         public partial class Border
         {
             [ComposeAction]
-            private static void Stroke(Widget target, Color2D color, float width)
+            private static void Stroke(Widget target, Rgba<float> color, float width)
             {
+                UiColorPolicy.Unit(color, nameof(color));
                 UiLayoutMath.ValidateDimension(width, nameof(width));
                 target.AddModifier(new(UiBoxModifierKind.Border, width, width, width, width, color));
             }

@@ -2,6 +2,7 @@ using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -27,7 +28,7 @@ public sealed class ExtensionDispatchTests
         var canvas = new Canvas2D();
         Path2D path = Triangle();
         var rect = new Rect2D(0, 0, 8, 8);
-        var color = new Color2D(1, 0, 0, 0.5f);
+        var color = new Rgba<float>(1, 0, 0, 0.5f);
         var paint = PaintGraph2D.Solid(color);
         var style = new StrokeStyle2D();
         var mesh = new Mesh2D(
@@ -78,7 +79,7 @@ public sealed class ExtensionDispatchTests
         using var target = new DispatchTexture();
         using IGraphicsTextureView view = target.CreateView();
         Path2D path = Triangle();
-        var paint = PaintGraph2D.Solid(new Color2D(0, 1, 0, 1));
+        var paint = PaintGraph2D.Solid(new Rgba<float>(0, 1, 0, 1));
         var canvas = new Canvas2D();
         canvas.Begin();
         canvas.FillPath(path, paint);
@@ -104,7 +105,7 @@ public sealed class ExtensionDispatchTests
         using IGraphicsTextureView view = target.CreateView();
         var canvas = new Canvas2D();
         var rect = new Rect2D(0, 0, 8, 8);
-        var color = new Color2D(1, 1, 1, 1);
+        var color = new Rgba<float>(1, 1, 1, 1);
         canvas.Begin();
         canvas.FillRect(rect, color);
         canvas.FillRect(rect, color);
@@ -246,7 +247,7 @@ public sealed class ExtensionDispatchTests
     {
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillRect(new Rect2D(0, 0, 8, 8), new Color2D(1, 1, 1, 1));
+        canvas.FillRect(new Rect2D(0, 0, 8, 8), new Rgba<float>(1, 1, 1, 1));
         return canvas.End();
     }
 
@@ -254,7 +255,7 @@ public sealed class ExtensionDispatchTests
     {
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        var color = new Color2D(1, 1, 1, 1);
+        var color = new Rgba<float>(1, 1, 1, 1);
         canvas.FillRect(new Rect2D(0, 0, 8, 8), color);
         canvas.FillPath(Triangle(), color);
         return canvas.End();

@@ -4,6 +4,7 @@ using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -59,7 +60,7 @@ public sealed partial class Drawing2DTests
 
                         path.LineTo(new(-8, 14));
                         path.Close();
-                        canvas.FillPath(path.Build(), new Color2D(i % 2, 0.5f, (i % 3) / 2f, 0.25f), rule);
+                        canvas.FillPath(path.Build(), new Rgba<float>(i % 2, 0.5f, (i % 3) / 2f, 0.25f), rule);
                         canvas.Restore();
                     }
                 }
@@ -77,8 +78,8 @@ public sealed partial class Drawing2DTests
             path.LineTo(new(7, 7));
             path.LineTo(new(1, 7));
             path.Close();
-            canvas.FillPath(path.Build(), new Color2D(1, 0, 0, 0.5f));
-            canvas.FillPath(path.Build(), new Color2D(0, 0, 1, 0.5f));
+            canvas.FillPath(path.Build(), new Rgba<float>(1, 0, 0, 0.5f));
+            canvas.FillPath(path.Build(), new Rgba<float>(0, 0, 1, 0.5f));
         }
 
         using IGraphicsTexture red = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });

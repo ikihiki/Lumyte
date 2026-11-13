@@ -3,6 +3,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Tests;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI.Windowing;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -19,7 +20,7 @@ public sealed class HostedRetainedPixelTests
     {
         using var device = WgpuDevice.Create();
         using var presenter = new UiHostPresenter(device, default);
-        using var surface = new UiSurface(Rectangle(fill: new Color2D(1, 0, 0, 1)));
+        using var surface = new UiSurface(Rectangle(fill: new Rgba<float>(1, 0, 0, 1)));
         surface.SetViewport(new(16, 16));
         using UiDrawingScene2D retained = surface.CreateDrawingScene();
         retained.Update();
@@ -47,8 +48,8 @@ public sealed class HostedRetainedPixelTests
         using var device = WgpuDevice.Create();
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
         using var directRenderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
-        using var surface = new UiSurface(Panel()[Rectangle(width: 14, height: 12, fill: new Color2D(1, 0, 0, 1)), Rectangle(width: 9, height: 18, fill: new Color2D(0, 0, 1, 0.5f))]);
-        using var overlay = new UiSurface(Rectangle(fill: new Color2D(0, 1, 0, 0.5f)));
+        using var surface = new UiSurface(Panel()[Rectangle(width: 14, height: 12, fill: new Rgba<float>(1, 0, 0, 1)), Rectangle(width: 9, height: 18, fill: new Rgba<float>(0, 0, 1, 0.5f))]);
+        using var overlay = new UiSurface(Rectangle(fill: new Rgba<float>(0, 1, 0, 0.5f)));
         surface.SetViewport(new(20, 20));
         overlay.SetViewport(new(10, 10));
         var state = new UiWindowSourceSnapshot(1, null, new(64, 48), Vector2.One, true, true, false, Guid.NewGuid());
@@ -61,7 +62,7 @@ public sealed class HostedRetainedPixelTests
         {
             if (frame == 2)
             {
-                surface.Rebuild(Panel(clipToBounds: true)[Rectangle(width: 12, height: 9, fill: new Color2D(0, 0, 1, 1))]);
+                surface.Rebuild(Panel(clipToBounds: true)[Rectangle(width: 12, height: 9, fill: new Rgba<float>(0, 0, 1, 1))]);
                 view = view with { BoundsInPresentation = new(7, 4, 20, 20), ClipInPresentation = new(9, 1, 12, 16), Scale = new(2, 1.5f) };
                 one.Update(view);
             }

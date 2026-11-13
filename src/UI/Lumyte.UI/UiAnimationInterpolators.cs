@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Lumyte.Animation;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -9,7 +9,7 @@ namespace Lumyte.UI;
 public static class UiAnimationInterpolators
 {
     /// <summary>Gets the sRGB straight-alpha interpolator using linear premultiplied intermediate colors.</summary>
-    public static IAnimationInterpolator<Color2D> Color { get; } = new ColorInterpolator();
+    public static IAnimationInterpolator<Rgba<float>> Color { get; } = new ColorInterpolator();
 
     /// <summary>Interpolates non-null endpoints and switches intervals involving null at their endpoint.</summary>
     /// <typeparam name="T">The non-null value type.</typeparam>
@@ -31,15 +31,28 @@ public static class UiAnimationInterpolators
     private sealed class NullableInterpolator<T>(IAnimationInterpolator<T> inner) : IAnimationInterpolator<T?>
         where T : struct
     {
+        public void Validate(T? value)
+        {
+            if (value is { } present)
+            {
+                inner.Validate(present);
+            }
+        }
+
         public T? Interpolate(T? from, T? to, float amount) => from is { } first && to is { } last ? inner.Interpolate(first, last, amount) : amount >= 1 ? to : from;
     }
 
-    private sealed class ColorInterpolator : IAnimationInterpolator<Color2D>
+    private sealed class ColorInterpolator : IAnimationInterpolator<Rgba<float>>
     {
-        public Color2D Interpolate(Color2D from, Color2D to, float amount)
+        public void Validate(Rgba<float> value) => UiColorPolicy.Unit(value, nameof(value));
+
+        public Rgba<float> Interpolate(Rgba<float> from, Rgba<float> to, float amount)
         {
+            UiColorPolicy.Unit(from, nameof(from));
+            UiColorPolicy.Unit(to, nameof(to));
             Vector4 result = Lumyte.Mathematics.Colors.Color.InterpolateSrgbLinearPremultipliedRaw(
                 new(from.R, from.G, from.B, from.A), new(to.R, to.G, to.B, to.A), amount);
+            UiColorPolicy.Validate(result.X, result.Y, result.Z, result.W, nameof(amount));
             return new(result.X, result.Y, result.Z, result.W);
         }
     }

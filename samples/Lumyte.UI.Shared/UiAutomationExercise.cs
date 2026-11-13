@@ -1,5 +1,5 @@
-using Lumyte.Graphics.Drawing2D;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI.Automation;
 using static Lumyte.UI.Compose;
 
@@ -14,7 +14,7 @@ internal static class UiAutomationExercise
         surface = new(Build());
         return surface;
 
-        Definitions.Widget Build() => Panel()[Stack(spacing: 8)[Button(testId: "save", automationName: "保存", width: 160, height: 80, onClick: Save)[Rectangle(width: 160, height: 80, fill: new Color2D(0.2f, 0.5f, 0.9f, 1))], new UiSavedIndicator { IsVisible = saved }]];
+        Definitions.Widget Build() => Panel()[Stack(spacing: 8)[Button(testId: "save", automationName: "保存", width: 160, height: 80, onClick: Save)[Rectangle(width: 160, height: 80, fill: new Rgba<float>(0.2f, 0.5f, 0.9f, 1))], new UiSavedIndicator { IsVisible = saved }]];
 
         void Save()
         {

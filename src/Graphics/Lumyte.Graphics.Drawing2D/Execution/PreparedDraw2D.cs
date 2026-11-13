@@ -88,8 +88,8 @@ public sealed class PreparedDraw2D : IDisposable
             _recorded = true;
             if (_target.LoadOp == AttachmentLoadOp.Clear)
             {
-                Color2D color = _target.ClearColor;
-                Rgba<double> linear = new Rgba<float>(color.R, color.G, color.B, color.A).DecodeSrgb<double>().PremultiplyLinear<double>();
+                Rgba<float> color = _target.ClearColor;
+                Rgba<double> linear = color.DecodeSrgb<double>().PremultiplyLinear<double>();
                 IRenderEncoder pass = commands.BeginRenderPass(new()
                 {
                     ColorAttachments = [new() { View = _target.View, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store, ClearValue = new(linear.R, linear.G, linear.B, linear.A) }],

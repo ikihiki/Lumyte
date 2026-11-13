@@ -143,7 +143,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private static bool IsInteger(float value) => float.IsFinite(value) && value == MathF.Truncate(value) && value >= int.MinValue && (double)value <= int.MaxValue;
 
-    private static bool ValidColor(Color2D color) => ValidChannel(color.R) && ValidChannel(color.G) && ValidChannel(color.B) && ValidChannel(color.A);
+    private static bool ValidColor(Rgba<float> color) => ValidChannel(color.R) && ValidChannel(color.G) && ValidChannel(color.B) && ValidChannel(color.A);
 
     private static bool ValidChannel(float value) => float.IsFinite(value) && value >= 0 && value <= 1;
 
@@ -154,8 +154,8 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             return;
         }
 
-        Color2D color = target.ClearColor;
-        Rgba<double> linear = new Rgba<float>(color.R, color.G, color.B, color.A).DecodeSrgb<double>().PremultiplyLinear<double>();
+        Rgba<float> color = target.ClearColor;
+        Rgba<double> linear = color.DecodeSrgb<double>().PremultiplyLinear<double>();
         var clear = new ClearColor(linear.R, linear.G, linear.B, linear.A);
         graph.AddPass("drawing2d.clear", context =>
         {

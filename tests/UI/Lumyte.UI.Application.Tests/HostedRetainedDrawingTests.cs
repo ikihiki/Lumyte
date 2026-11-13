@@ -2,6 +2,7 @@ using System.Numerics;
 using Lumyte.Animation;
 using Lumyte.Core.Time;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Signals;
 using Lumyte.UI.Application.Headless;
 using Lumyte.UI.Windowing;
@@ -19,8 +20,8 @@ public sealed class HostedRetainedDrawingTests
     [Fact]
     public async Task OrdinaryCoordinatorSharesUnchangedFragmentsAsync()
     {
-        var color = Signal.Create(new Color2D(1, 0, 0, 1));
-        using UiSurface surface = Surface(Panel()[Rectangle(key: "changing", fill: color), Rectangle(key: "stable", fill: new Color2D(0, 0, 1, 1))]);
+        var color = Signal.Create(new Rgba<float>(1, 0, 0, 1));
+        using UiSurface surface = Surface(Panel()[Rectangle(key: "changing", fill: color), Rectangle(key: "stable", fill: new Rgba<float>(0, 0, 1, 1))]);
         await using UiApplication app = UiApplication.CreateBuilder().UseHeadless().UseRoot(_ => Panel()).Build();
         var coordinator = new UiVisualCoordinator(app, surface, () => null);
         surface.VisualHost = coordinator;
@@ -41,7 +42,7 @@ public sealed class HostedRetainedDrawingTests
         Assert.Empty(next[0].Content.Commands);
         Assert.NotSame(initial[1].Content, next[1].Content);
         Assert.Same(initial[2].Content, next[2].Content);
-        Assert.Equal(new Color2D(0, 1, 0, 1), Color(next[1]));
+        Assert.Equal(new Rgba<float>(0, 1, 0, 1), Color(next[1]));
         Assert.Equal(view, source.Presented(view.Window));
         using DrawingSnapshot2D generation = Frame(source, 1);
         Assert.NotSame(next[2].Content, Entries(generation)[2].Content);
@@ -52,8 +53,8 @@ public sealed class HostedRetainedDrawingTests
     [Fact]
     public async Task PlacementChangesKeepContentAndMatchDirectGeometryAsync()
     {
-        using UiSurface first = Surface(Rectangle(fill: new Color2D(1, 0, 0, 1), clipToBounds: true));
-        using UiSurface second = Surface(Rectangle(fill: new Color2D(0, 1, 0, 1)));
+        using UiSurface first = Surface(Rectangle(fill: new Rgba<float>(1, 0, 0, 1), clipToBounds: true));
+        using UiSurface second = Surface(Rectangle(fill: new Rgba<float>(0, 1, 0, 1)));
         UiHostedDrawingSource source = Source();
         UiWindowPresentationView view = View(source);
         await using IUiWindowPresentation one = await source.PreparePresentationAsync(view, first, default);
@@ -64,7 +65,7 @@ public sealed class HostedRetainedDrawingTests
         one.Update(moved);
         using DrawingSnapshot2D next = Frame(source);
         DrawingSceneEntry2D[] entries = Entries(next);
-        Assert.Equal(new Color2D(0, 1, 0, 1), Color(entries[0]));
+        Assert.Equal(new Rgba<float>(0, 1, 0, 1), Color(entries[0]));
         Assert.Same(content, entries[1].Content);
         Assert.Equal(Matrix3x2.CreateTranslation(3, 4) * Matrix3x2.CreateScale(2, 3), entries[1].Transform);
         var canvas = new Canvas2D();
@@ -110,7 +111,7 @@ public sealed class HostedRetainedDrawingTests
     [Fact]
     public async Task LaterValidationAndRecordingFailuresRecoverAsync()
     {
-        using UiSurface first = Surface(Rectangle(fill: new Color2D(1, 0, 0, 1)));
+        using UiSurface first = Surface(Rectangle(fill: new Rgba<float>(1, 0, 0, 1)));
         using UiSurface second = Surface(Panel());
         UiHostedDrawingSource source = Source();
         await using IUiWindowPresentation one = await source.PreparePresentationAsync(View(source), first, default);
@@ -121,11 +122,11 @@ public sealed class HostedRetainedDrawingTests
             if (ReferenceEquals(surface, second) && change)
             {
                 change = false;
-                first.Rebuild(Rectangle(fill: new Color2D(0, 1, 0, 1)));
+                first.Rebuild(Rectangle(fill: new Rgba<float>(0, 1, 0, 1)));
             }
         };
         using DrawingSnapshot2D frame = Frame(source);
-        Assert.Equal(new Color2D(0, 1, 0, 1), Color(Entries(frame)[0]));
+        Assert.Equal(new Rgba<float>(0, 1, 0, 1), Color(Entries(frame)[0]));
         source.ValidateSurface = null;
         first.Rebuild(new CustomPanel(() => throw new ArithmeticException()));
         Assert.Throws<ArithmeticException>(() => source.RecordRetainedFrame(0));
@@ -155,21 +156,21 @@ public sealed class HostedRetainedDrawingTests
     [Fact]
     public async Task RetainedDependencyHookRevisitsEarlierSurfaceAsync()
     {
-        using UiSurface first = Surface(Rectangle(fill: new Color2D(1, 0, 0, 1)));
+        using UiSurface first = Surface(Rectangle(fill: new Rgba<float>(1, 0, 0, 1)));
         bool change = true;
         using UiSurface second = Surface(new ValidationPanel(() =>
         {
             if (change)
             {
                 change = false;
-                first.Rebuild(Rectangle(fill: new Color2D(0, 1, 0, 1)));
+                first.Rebuild(Rectangle(fill: new Rgba<float>(0, 1, 0, 1)));
             }
         }));
         UiHostedDrawingSource source = Source();
         await using IUiWindowPresentation one = await source.PreparePresentationAsync(View(source), first, default);
         await using IUiWindowPresentation two = await source.PreparePresentationAsync(View(source) with { Window = new(source.SourceId, 2) }, second, default);
         using DrawingSnapshot2D frame = Frame(source);
-        Assert.Equal(new Color2D(0, 1, 0, 1), Color(Entries(frame)[0]));
+        Assert.Equal(new Rgba<float>(0, 1, 0, 1), Color(Entries(frame)[0]));
     }
 
     /// <summary>Checks animation registrations can be added and removed without a structural rebuild.</summary>
@@ -219,7 +220,7 @@ public sealed class HostedRetainedDrawingTests
 
     private static DrawingSceneEntry2D[] Entries(DrawingSnapshot2D snapshot) => ((IDrawingSceneSource2D)snapshot).Entries.ToArray();
 
-    private static Color2D Color(DrawingSceneEntry2D entry) => Assert.IsType<SolidPaintNode2D>(Assert.IsType<FillRectCommand2D>(entry.Content.Commands.Single()).Paint.Root).Color;
+    private static Rgba<float> Color(DrawingSceneEntry2D entry) => Assert.IsType<SolidPaintNode2D>(Assert.IsType<FillRectCommand2D>(entry.Content.Commands.Single()).Paint.Root).Color;
 
     private static UiSurface Surface(Widget widget)
     {

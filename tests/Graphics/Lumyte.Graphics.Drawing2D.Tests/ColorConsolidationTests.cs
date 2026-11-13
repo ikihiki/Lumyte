@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -13,7 +14,7 @@ public sealed class ColorConsolidationTests
         float[] values = [0, float.Epsilon, MathF.BitDecrement(0.04045f), 0.04045f, MathF.BitIncrement(0.04045f), 0.1f, 0.5f, 1];
         foreach (float value in values)
         {
-            var color = new Color2D(value, value, value, 0.9f);
+            var color = new Rgba<float>(value, value, value, 0.9f);
             float expected = (value <= 0.04045f ? value / 12.92f : MathF.Pow((value + 0.055f) / 1.055f, 2.4f)) * color.A;
             Assert.Equal(new Vector4(expected, expected, expected, color.A), DrawingProgram2D.Linear(color));
         }
