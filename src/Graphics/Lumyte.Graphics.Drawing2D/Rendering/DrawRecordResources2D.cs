@@ -19,6 +19,8 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
         }
     }
 
+    internal static int SelectPipelineMode(int mode, int paintEntries) => mode == 2 && paintEntries <= 8 ? 6 : mode;
+
     internal IGraphicsPipeline GetPipeline(int mode)
     {
         if (_pipelines.TryGetValue(mode, out IGraphicsPipeline? existing))
@@ -26,7 +28,7 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
             return existing;
         }
 
-        string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", _ => string.Empty };
+        string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", _ => string.Empty };
         IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-vertex.lshader")));
         IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-fragment.lshader")));
         DrawRecordAbi2D.Validate(vertex.Artifact, device.Caps.ShaderTarget, mode);

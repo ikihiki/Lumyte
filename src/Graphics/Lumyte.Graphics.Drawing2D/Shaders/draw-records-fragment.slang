@@ -501,9 +501,13 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
         return result/16;
     }
     uint ids[256]; uint count=reachable(page,record.PaintId,ids);
+#if LUMYTE_SMALL_PAINT_GRAPH
+    return shadeGraph<8>(record,page,mask,outer,origin,ids,count);
+#else
     return count<=8 ? shadeGraph<8>(record,page,mask,outer,origin,ids,count)
         : count<=16 ? shadeGraph<16>(record,page,mask,outer,origin,ids,count)
         : shadeGraph<256>(record,page,mask,outer,origin,ids,count);
+#endif
 }
 
 #endif

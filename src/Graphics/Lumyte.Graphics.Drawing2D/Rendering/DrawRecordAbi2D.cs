@@ -21,6 +21,7 @@ internal static class DrawRecordAbi2D
                 Check<DrawMaskMetadata2D>(parameters, 64, [0, 16, 32, 48]);
                 break;
             case 2:
+            case 6:
                 Check<DrawImageMetadata2D>(parameters, 64, [0, 16, 32, 48]);
                 break;
             default:
