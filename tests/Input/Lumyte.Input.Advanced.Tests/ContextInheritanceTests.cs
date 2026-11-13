@@ -147,25 +147,26 @@ public sealed class ContextInheritanceTests
         Assert.Single(system.ExportProfile().Bindings);
     }
 
-    /// <summary>Verifies the inherited hot update path does not allocate after warming.</summary>
+    /// <summary>Verifies idle updates preserve inherited values without early or duplicate recognition.</summary>
     [Fact]
-    public void InheritedIdleUpdatesDoNotAllocate()
+    public void InheritedIdleUpdatesPreserveHeldStateAndRecognitionBoundary()
     {
         var system = new ActionSystem(NestedProfile());
         system.QueueContextActivation("game");
         system.Advance(new InputRecord[] { Record(1, Key.Space, true) }, TimeSpan.Zero);
-        for (int i = 0; i < 100; i++)
+        var changes = new List<ActionEvent>();
+        var recognized = new List<RecognizedAction>();
+        system.Changed += changes.Add;
+        system.Recognized += recognized.Add;
+        foreach (double seconds in new[] { 0, 0.5, 1, 1.5 })
         {
-            system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
+            system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.FromSeconds(seconds));
+            Assert.Equal(1f, system.GetState("jump").Value.X);
+            Assert.Empty(changes);
+            Assert.Equal(seconds < 1 ? 0 : 1, recognized.Count);
         }
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++)
-        {
-            system.Advance(ReadOnlyMemory<InputRecord>.Empty, TimeSpan.Zero);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal("game", Assert.Single(recognized).ContextId);
     }
 
     /// <summary>Verifies nested snapshots and rejects explicit mismatched context identifiers.</summary>

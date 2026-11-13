@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.UI.IntegrationTests;
@@ -11,8 +12,8 @@ public sealed class BoxModifierDrawingTests
     [Fact]
     public void OrderedBordersAndBodyUseTheirOwnRectangles()
     {
-        using var first = new UiSurface(Compose.Panel()[Compose.Rectangle(width: 10, height: 8, fill: new Color2D(0, 1, 0, 1), with: [Compose.Padding.All(3), Compose.Border.Stroke(new(1, 0, 0, 1), 2)])]);
-        using var second = new UiSurface(Compose.Panel()[Compose.Rectangle(width: 10, height: 8, fill: new Color2D(0, 1, 0, 1), with: [Compose.Border.Stroke(new(1, 0, 0, 1), 2), Compose.Padding.All(3)])]);
+        using var first = new UiSurface(Compose.Panel()[Compose.Rectangle(width: 10, height: 8, fill: new SRgba<float>(0, 1, 0, 1), with: [Compose.Padding.All(3), Compose.Border.Stroke(new(1, 0, 0, 1), 2)])]);
+        using var second = new UiSurface(Compose.Panel()[Compose.Rectangle(width: 10, height: 8, fill: new SRgba<float>(0, 1, 0, 1), with: [Compose.Border.Stroke(new(1, 0, 0, 1), 2), Compose.Padding.All(3)])]);
         first.SetViewport(new(100, 100));
         second.SetViewport(new(100, 100));
         FillRectCommand2D[] padded = Record(first).Commands.Cast<FillRectCommand2D>().ToArray();
@@ -30,7 +31,7 @@ public sealed class BoxModifierDrawingTests
     [Fact]
     public void RetainedAndDirectNestedBodyCoordinatesAgree()
     {
-        using var surface = new UiSurface(Compose.Panel(with: [Compose.Padding.Sides(11, 7, 0, 0)])[Compose.Rectangle(width: 10, height: 8, fill: new Color2D(1, 0, 0, 1), with: [Compose.Padding.All(2)])]);
+        using var surface = new UiSurface(Compose.Panel(with: [Compose.Padding.Sides(11, 7, 0, 0)])[Compose.Rectangle(width: 10, height: 8, fill: new SRgba<float>(1, 0, 0, 1), with: [Compose.Padding.All(2)])]);
         surface.SetViewport(new(100, 100));
         FillRectCommand2D direct = Assert.IsType<FillRectCommand2D>(Assert.Single(Record(surface).Commands));
         using UiDrawingScene2D scene = surface.CreateDrawingScene();

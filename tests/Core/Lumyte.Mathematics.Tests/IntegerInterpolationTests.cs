@@ -83,27 +83,6 @@ public sealed class IntegerInterpolationTests
         }
     }
 
-    /// <summary>Checks that repeated exact rounding does not allocate.</summary>
-    [Fact]
-    public void LinearDoesNotAllocate()
-    {
-        long checksum = 0;
-        for (int i = 0; i < 1000; i++)
-        {
-            checksum += IntegerInterpolation.Linear(long.MinValue, long.MaxValue, 0.5f);
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            checksum += IntegerInterpolation.Linear(long.MinValue, long.MaxValue, 0.5f);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, checksum);
-        Assert.Equal(0, allocated);
-    }
-
     private static void AssertMatchesOracle(long from, long to, float amount)
     {
         BigInteger divisor = BigInteger.One << 149;

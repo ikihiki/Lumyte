@@ -2,6 +2,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -37,7 +38,7 @@ public sealed class RectanglePoolTests
         canvas.Begin();
         for (int i = 0; i < 1000; i++)
         {
-            canvas.FillRect(new(0, 0, 2, 2), new Color2D(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(1, 0, 0, 1));
         }
 
         DrawList2D list = canvas.End();

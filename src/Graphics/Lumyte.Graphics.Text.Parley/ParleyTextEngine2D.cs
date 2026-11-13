@@ -1,6 +1,7 @@
 using System.Text;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text.Parley.Interop;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Text.Parley;
 
@@ -128,7 +129,7 @@ public sealed unsafe class ParleyTextEngine2D : IDisposable
         };
         var source = new Utf8Text2D(text);
         ValidateOptions(options);
-        paint ??= PaintGraph2D.Solid(new Color2D(0, 0, 0, 1));
+        paint ??= PaintGraph2D.Solid(new SRgba<float>(0, 0, 0, 1));
 
         lock (_sync)
         {

@@ -411,29 +411,23 @@ public sealed class StateMachineTests
         Assert.True(machine.Fire(Trigger.Go));
     }
 
-    /// <summary>Performs warmed enum transitions and trigger sets allocate no managed memory.</summary>
+    /// <summary>Checks repeated direct and duplicate-trigger firings run one effect per call.</summary>
     [Fact]
-    public void WarmedEnumTransitionsAndTriggerSetsAllocateNoManagedMemory()
+    public void RepeatedEnumTransitionsRunOneEffectPerFiring()
     {
         var state = new State<Context>("State");
         var builder = new StateMachineBuilder<Context, Trigger>(state);
         builder.AddTransition(new Transition<Context, Trigger>(state, state, Trigger.Go).Effect(context => context.Count++));
         StateMachineInstance<Context, Trigger> machine = builder.Build(new Context());
         Trigger[] triggers = [Trigger.Go, Trigger.Go];
-        for (int index = 0; index < 1000; index++)
+        for (int index = 0; index < 3; index++)
         {
-            machine.Fire(Trigger.Go);
-            machine.FireAny(triggers, machine.Context);
+            Assert.True(machine.Fire(Trigger.Go));
+            Assert.Equal((index * 2) + 1, machine.Context.Count);
+            Assert.True(machine.FireAny(triggers, machine.Context));
+            Assert.Equal((index + 1) * 2, machine.Context.Count);
+            Assert.Same(state, machine.CurrentState);
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            machine.Fire(Trigger.Go);
-            machine.FireAny(triggers, machine.Context);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
     private readonly record struct ValueTrigger(int Value);

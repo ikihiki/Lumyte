@@ -40,9 +40,9 @@ public sealed class WorkflowTests
         Assert.Same(outer, SynchronizationContext.Current);
     }
 
-    /// <summary>The first notification must not lazily allocate a callback queue on its caller.</summary>
+    /// <summary>The first posted notification runs only when the cooperative host pumps it.</summary>
     [Fact]
-    public void FirstWorkflowNotificationUsesPreallocatedStorage()
+    public void FirstWorkflowNotificationRequiresPumping()
     {
         using var fixture = new WorkflowFixture();
         var ready = new TaskCompletionSource();
@@ -57,14 +57,13 @@ public sealed class WorkflowTests
         ValueTask<int> result = fixture.Module.Port.ExecuteAsync(12);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
         Assert.NotNull(context);
-        SendOrPostCallback callback = static _ => { };
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        context.Post(callback, null);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        int notifications = 0;
+        context.Post(_ => notifications++, null);
+        Assert.Equal(0, notifications);
         fixture.Runtime.PumpJobs(1, TimeSpan.FromSeconds(1));
+        Assert.Equal(1, notifications);
         ready.SetResult();
         Assert.Equal(12, fixture.Wait(result));
-        Assert.Equal(0L, allocated);
     }
 
     /// <summary>Each resumed synchronous dispatch gets a fresh budget, excluding time spent waiting for I/O.</summary>

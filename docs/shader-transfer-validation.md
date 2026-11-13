@@ -4,9 +4,57 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## 任意検証レイヤの追補（2026-11-13）
+## main同期後の最新検証（2026-11-13）
 
-以下は777a7e11後の任意検証レイヤを対象とする最新結果である。
+同期元mainは70db1cd8144c22256505a433531efb0e37a4a7d0、同期前のPR先端は
+7e2c3208d7de7c3e8c5498bbac86fc217b511f08である。開始済みの通常mergeを
+引き継ぎ、conflictのない統合結果を検査した。SDKはglobal.jsonの10.0.403を
+維持し、既存activationで.NET runtime10.0.14を確認した。
+以降の旧セクションは各revision時点の履歴であり、最新結果ではない。
+
+mainのColor2D廃止とSRgba／LRgba導入は、Drawing2D／UIの明示的な
+linear・premultiplied変換境界を維持する。実際のshader wireは引き続きVector4などの
+既存numeric構造体であり、generic色型の内部表現をshader float4と暗黙に同一視しない。
+追加したColorShaderTransferTestsは、`SRgba<float>`／`LRgba<float>`がcodecや
+IShaderArgumentsを必要とせず、C#の実バイト列・strideのままcapture／明示copyを
+行うことを検査する。色変換は描画側の明示処理であり、raw転送には混入しない。
+生成されたreference classのprivate numeric backing、任意検証のDebug／Release既定無効、
+無効経路で診断状態を作らない契約は変更しない。
+
+mainの決定的テスト方針に合わせ、PR側に残っていたGC割当量と100回ループの
+判定を廃止した。代わりに最初の実行でcollectionのCount参照・列挙と登録probeが
+すべて0であることを直接確認する。mainで削除されたwarmup／JIT依存の割当量テストは
+復活させず、必要な所有権・弱参照の検査は維持する。
+
+公式Fallout runnerによる結果:
+
+- 全ホストRelease: 3,145成功、失敗0、103スキップ（3,248件）。
+- Graphics Debug／Release: 各181成功、失敗0、82スキップ（263件）。
+- Direct3D12 Debug／Release: 各28成功、失敗0、Windows nativeスキップ7（35件）。
+- Markdown・差分の空白検査は成功。mergeで入ったmainのschema変更は保持し、
+  runner由来のworktree差分だけをindexへ戻す。
+
+同じRelease成果物へ、tests/README.mdで許可された直接実行のfilterを使い、
+転送fixtureだけを実GPUで追加検査した。11成功、失敗0、スキップ0である。
+この11件にはCPU検査も含み、Vulkan／WgpuのVector3転送と、新しい色型の
+検証有効／無効でのraw copyを含む。driver discoveryはRadeon8060S Graphics、
+RADV、Mesa26.0.8-1ubuntu0.3で成功した。presentationや全GPU suiteは再実行していない。
+
+    dotnet run --project build -c Release -- --target Test --host-only --configuration Release
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
+    LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet test tests/Graphics/Lumyte.Graphics.Tests --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~UnmanagedShaderTransferTests|FullyQualifiedName~ColorShaderTransferTests' --logger trx --results-directory artifacts/test-results
+    dotnet run --project build -c Release -- --target CheckMarkdown
+
+ログはartifacts/validation4-{fullhost,graphics-debug,d3d-debug,d3d-release,transfer-hardware,vulkaninfo,markdown}.logに
+保持する。Windows実D3D12、Browser実WebGPU、NativeAOT、物理画面／presentationの
+検証は今回の範囲外であり、compileやbuffer copy成功から推論しない。
+過去Graphics ADR0009/0015/0018/0022/0023はef61258fと同一のまま維持する。
+
+## 同期前の任意検証レイヤの検証履歴（2026-11-13）
+
+以下は777a7e11後、main同期前の任意検証レイヤを対象とする履歴である。
 再レビューで見つかったD3D12のnative device removal照会も、Lost状態を許す
 QueueNative参照へ修正した。これにより喪失後のretirement確認と元HRESULTの保持を妨げない。
 Windows nativeでの実行確認は未実施であり、管理側テストとは区別する。

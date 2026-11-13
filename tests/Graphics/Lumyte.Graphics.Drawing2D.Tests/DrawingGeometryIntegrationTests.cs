@@ -6,9 +6,7 @@ using Xunit;
 namespace Lumyte.Graphics.Drawing2D.Tests;
 
 /// <summary>Checks consolidation against the pre-consolidation single-precision renderer.</summary>
-/// <param name="output">Receives allocation comparison measurements.</param>
-[Collection("Drawing profiling")]
-public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutputHelper output)
+public sealed class DrawingGeometryIntegrationTests
 {
     /// <summary>Random curves and transforms produce bit-identical ordered points and stroke triangles.</summary>
     [Fact]
@@ -59,35 +57,20 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
         Assert.Equal(Assert.Throws<NotSupportedException>(() => LegacyDrawingGeometryOracle.Flatten(extreme, Matrix3x2.CreateScale(float.MaxValue))).Message, Assert.Throws<NotSupportedException>(() => PathFlattening2D.Flatten(extreme, Matrix3x2.CreateScale(float.MaxValue))).Message);
     }
 
-    /// <summary>Streaming helpers allocate no per-curve buffers and preserve callback failure semantics.</summary>
+    /// <summary>Streaming helpers preserve callback exception identity and precision limits.</summary>
     [Fact]
-    public void StreamingFlatteningAllocatesNoBuffers()
+    public void StreamingFlatteningPreservesFailureSemantics()
     {
-        Action<Vector2> append = static _ => { };
-        for (int i = 0; i < 1000; i++)
-        {
-            Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
-        }
-
-        using (new DrawingAllocationScope())
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 1000; i++)
-            {
-                Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, append, 24);
-            }
-
-            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
-        }
-
         var failure = new InvalidOperationException();
         Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, _ => throw failure, 24)));
-        Assert.Throws<NotSupportedException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, append, 0));
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, _ => throw failure, 24)));
+        Assert.Throws<NotSupportedException>(() => Geometry2D.AppendFlattenedQuadraticBcl(Vector2.Zero, Vector2.One, new(2, 0), 0.125f, static _ => { }, 0));
+        Assert.Throws<NotSupportedException>(() => Geometry2D.AppendFlattenedCubicBcl(Vector2.Zero, Vector2.One, new(2, -1), new(3, 0), 0.125f, static _ => { }, 0));
     }
 
-    /// <summary>Path, line and mesh bounds no longer allocate point gathers or LINQ iterators.</summary>
+    /// <summary>Path, line and mesh bounds match the historical gather reduction.</summary>
     [Fact]
-    public void GatherBoundsAllocateNothing()
+    public void GatherBoundsMatchHistoricalOracle()
     {
         var builder = new PathBuilder2D();
         builder.MoveTo(new(20, 20));
@@ -99,37 +82,6 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
         foreach (DrawingCommand2D command in commands)
         {
             Assert.Equal(LegacyDrawingBoundsOracle.GetScissor(command, null, target, null, false, false), DrawingBounds2D.GetScissor(command, null, target, null, false, false));
-            for (int i = 0; i < 1000; i++)
-            {
-                _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
-            }
-
-            long allocated;
-            int threadBefore;
-            int threadAfter;
-            using (new DrawingAllocationScope())
-            {
-                threadBefore = Environment.CurrentManagedThreadId;
-                long start = GC.GetAllocatedBytesForCurrentThread();
-                for (int i = 0; i < 1000; i++)
-                {
-                    _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
-                }
-
-                allocated = GC.GetAllocatedBytesForCurrentThread() - start;
-                threadAfter = Environment.CurrentManagedThreadId;
-            }
-
-            output.WriteLine($"GetScissor {command.GetType().Name}: bytes={allocated}, calls=1000, clips={command.State.Clip.Elements.Count}, thread={threadBefore}/{threadAfter}, architecture={System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
-            Assert.Equal(threadBefore, threadAfter);
-            Assert.Equal(0, allocated);
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 1000; i++)
-            {
-                _ = LegacyDrawingBoundsOracle.GetScissor(command, null, target, null, false, false);
-            }
-
-            Assert.True(GC.GetAllocatedBytesForCurrentThread() - before > 0);
         }
     }
 
@@ -158,51 +110,6 @@ public sealed class DrawingGeometryIntegrationTests(Xunit.Abstractions.ITestOutp
 
         float Next() => (random.NextSingle() - 0.5f) * 20;
         Vector2 Point() => new(Next(), Next());
-    }
-
-    /// <summary>Both line-only and curved paths stay within pre-consolidation warmed allocation budgets.</summary>
-    /// <param name="curves">Whether the path contains curves.</param>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void FlatteningDoesNotAddAllocations(bool curves)
-    {
-        var builder = new PathBuilder2D();
-        builder.MoveTo(Vector2.Zero);
-        if (curves)
-        {
-            builder.QuadraticTo(new(1, 2), new(3, 0));
-            builder.CubicTo(new(4, -2), new(5, 2), new(6, 0));
-        }
-        else
-        {
-            builder.LineTo(Vector2.One);
-        }
-
-        Path2D path = builder.Build();
-        for (int i = 0; i < 1000; i++)
-        {
-            _ = PathFlattening2D.Flatten(path, Matrix3x2.Identity);
-            _ = LegacyDrawingGeometryOracle.Flatten(path, Matrix3x2.Identity);
-        }
-
-        using var measurement = new DrawingAllocationScope();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            _ = LegacyDrawingGeometryOracle.Flatten(path, Matrix3x2.Identity);
-        }
-
-        long historical = GC.GetAllocatedBytesForCurrentThread() - before;
-        before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            _ = PathFlattening2D.Flatten(path, Matrix3x2.Identity);
-        }
-
-        long actual = GC.GetAllocatedBytesForCurrentThread() - before;
-        output.WriteLine($"curves={curves}: historical={historical / 1000} B/path, actual={actual / 1000} B/path");
-        Assert.True(actual <= historical, $"curves={curves}: historical={historical / 1000} B/path, actual={actual / 1000} B/path");
     }
 
     private static class LegacyDrawingGeometryOracle

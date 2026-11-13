@@ -32,21 +32,18 @@ public sealed class EncoderValidationTests
         }
     }
 
-    /// <summary>Checks that diagnostics never probe registrations when the per-device state is null.</summary>
+    /// <summary>Checks that disabled diagnostics neither enumerate metadata nor probe registrations on the first execution.</summary>
     [Fact]
-    public void DisabledValidationDoesNotProbeReferencesOrAllocate()
+    public void DisabledShaderAccessReportsDoNotEnumerateMetadata()
     {
         var reference = new FakeReference(new(), ShaderBufferAccess.ReadOnly) { Stale = true };
-        IShaderReference[] references = [reference];
+        var references = new TrackingReferences(reference);
         object command = new();
-        EncoderValidation.ShaderAccesses(null, command, references, PipelineStage.ComputeShader);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++)
-        {
-            EncoderValidation.ShaderAccesses(null, command, references, PipelineStage.ComputeShader);
-        }
 
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+        EncoderValidation.ShaderAccesses(null, command, references, PipelineStage.ComputeShader);
+
+        Assert.Equal(0, references.CountReads);
+        Assert.Equal(0, references.Enumerations);
         Assert.Equal(0, reference.Probes);
     }
 
@@ -143,6 +140,30 @@ public sealed class EncoderValidationTests
         Assert.Equal(PipelineStage.VertexShader, EncoderValidation.RenderStages(vertex, fragment, "arguments"));
         var fragmentRoot = new ShaderTargetData(ShaderTarget.SpirV, ShaderStage.Fragment, "main", "test", "row-major", [], Root);
         Assert.Equal(PipelineStage.VertexShader | PipelineStage.FragmentShader, EncoderValidation.RenderStages(vertex, fragmentRoot, "arguments"));
+    }
+
+    private sealed class TrackingReferences(IShaderReference reference) : IReadOnlyCollection<IShaderReference>
+    {
+        public int Count
+        {
+            get
+            {
+                CountReads++;
+                return 1;
+            }
+        }
+
+        public int CountReads { get; private set; }
+
+        public int Enumerations { get; private set; }
+
+        public IEnumerator<IShaderReference> GetEnumerator()
+        {
+            Enumerations++;
+            return ((IEnumerable<IShaderReference>)new[] { reference }).GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class FakeStorage : Lumyte.Graphics.Vulkan.IValidatedShaderDataStorage

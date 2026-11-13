@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -279,9 +280,9 @@ public sealed class GraphArgumentOwnershipTests
         RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 2, new Color2D(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 2, new SRgba<float>(1, 0, 0, 1));
         canvas.BeginLayer(new() { ContentBounds = new(0, 0, 16, 16), Effects = scope => scope.AppendOpacity(scope.Source, 0.5f) });
-        canvas.FillCircle(new(8), 3, new Color2D(0, 1, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(0, 1, 0, 1));
         canvas.EndLayer();
         using var renderer = new RenderGraphRenderer2D(
             DrawingCommandRenderers2D.CreateDefault(),

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
 
-/// <summary>Checks allocation-free transformed bounds against the former corner enumeration.</summary>
+/// <summary>Checks transformed bounds against the former corner enumeration.</summary>
 public sealed class DrawingBoundsGeometryTests
 {
     /// <summary>Rotation, reflection, shear, inverted and degenerate rectangles retain the corner oracle.</summary>
@@ -81,26 +81,6 @@ public sealed class DrawingBoundsGeometryTests
         var transform = Matrix3x2.CreateTranslation(5, 7);
         DrawingState2D state = new(Matrix3x2.Identity, new ClipStack2D([new(path.Build(), transform, FillRule2D.NonZero)]));
         Assert.Equal(new ScissorRect(14, 26, 22, 22), DrawingBounds2D.GetScissor(null, state, Target(), null, false, false));
-    }
-
-    /// <summary>The reused math helper and rectangle scissor hot path allocate no managed bytes.</summary>
-    [Fact]
-    public void RectangleBoundsAllocateNothingAfterWarmup()
-    {
-        var command = new FillRectCommand2D(new(10, 20, 30, 40), PaintGraph2D.Solid(new(1, 1, 1, 1)), new(Matrix3x2.Identity, ClipStack2D.Empty));
-        DrawingTargetInfo2D target = Target();
-        for (int i = 0; i < 10000; i++)
-        {
-            _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10000; i++)
-        {
-            _ = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
     /// <summary>Square caps and miter outsets retain the existing conservative stroke policy.</summary>

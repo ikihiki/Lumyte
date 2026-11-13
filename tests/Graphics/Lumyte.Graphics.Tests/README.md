@@ -67,7 +67,7 @@ dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter FullyQualif
 
 ## 任意のmanaged検証
 
-OptionalGraphicsValidationTests、ValidationSubmissionTests、EncoderValidationTests、PresentationValidationTests、OptionalLayoutCostTestsはnative GPUへ不正な操作を渡さず、同じfixtureで有効／無効の契約を確認します。DebugとReleaseの両方で実行してください。検証を無効にした場合の診断割り当て・probe呼び出しの省略、部分範囲、複数command、事前照合失敗、記録rollback、キャンセルされた完了待機も対象です。
+OptionalGraphicsValidationTests、ValidationSubmissionTests、EncoderValidationTests、PresentationValidationTests、OptionalLayoutCostTestsはnative GPUへ不正な操作を渡さず、同じfixtureで有効／無効の契約を確認します。DebugとReleaseの両方で実行してください。検証を無効にした最初の操作での診断状態・metadata列挙・probe呼び出しの省略、部分範囲、複数command、事前照合失敗、記録rollback、キャンセルされた完了待機も対象です。
 
 ```sh
 dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug

@@ -212,3 +212,15 @@ Rustupのbootstrapは[RustBootstrap.json](RustBootstrap.json)の公式URLとSHA-
 初回の復元・tool取得にはネットワーク接続が必要です。
 
 設計は[ADR-0004](../docs/adr/0004-build-orchestration.md)、文字描画は[GRAPHICS-0024](../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。
+
+## 名前付き色の保守
+
+Mathの通常compile後に、登録済みoffline toolでchecked-in sourceを生成・検証します。
+BeforeBuildでMath依存toolを起動する循環はありません。他の検証gateは変更しません。
+
+```sh
+dotnet run --project build -c Release -- --target GenerateNamedColors --project src/Core/Lumyte.Mathematics
+dotnet run --project build -c Release -- --target VerifyNamedColors --project src/Core/Lumyte.Mathematics
+```
+
+値の規則と明示的なreference更新は[保守tool](../tools/colors/Lumyte.NamedColors.Generator/README.md)を参照してください。

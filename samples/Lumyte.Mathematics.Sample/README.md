@@ -1,9 +1,17 @@
-# Public geometry consumer
+# Public mathematics consumer
 
-An ordinary console project references Mathematics without friend-assembly access. It exercises the public `Geometry2D` / `Geometry3D` entry points, generic integer/decimal/BigInteger geometry, float BCL versus double FMA arithmetic, streaming struct sinks, and SIMD span operations.
+An ordinary console project references Mathematics without friend-assembly access. It exercises the public `Geometry2D` / `Geometry3D` entry points, generic integer/decimal/BigInteger geometry, float BCL versus double FMA arithmetic, streaming struct sinks, and SIMD span operations. It also exercises explicit `SGray<byte>`, `SGray<double>`, `SGrayAlpha<decimal>`, `SRgb<int>`, `SBgra<double>` layouts, `RawRgb565` packed bits, typed component/packed batches, `SHsla<T>` / `SHsva<T>`, the explicit encoded → linear → premultiply → unpremultiply → encoded pipeline. Raw packed words expose FromSrgb / FromLinear and InterpretSrgb / InterpretLinear without hidden transfer. Both Srgb and Linear families retain custom numeric storage. Raw alpha is supplied explicitly; UNORM normalization adds opaque normalized alpha only at that named boundary. A reference-containing decimal-backed custom `INumber<T>` proves ordinary consumer support without assuming blittable storage.
 
 ```sh
 dotnet run --project samples/Lumyte.Mathematics.Sample -c Release
 ```
 
 Assertions fail the process if a public operation returns an unexpected result. Shape-specific operations remain available on their value types. Arithmetic and boundary policies are explicit in method names, including `ContainsPolygonClosed`, `ContainsHalfOpenEdges`, `TransformAffineFused`, `TransformAffineChecked`, and BCL single-precision helpers.
+
+The sample checks C# 14 static extension properties in `Lumyte.Mathematics.Colors`: `SRgba<float>.Red` is already normalized encoded sRGB, `LRgba<float>.Red` is linear, and `SRgba8.Red` / `SRgb<byte>.Red` are byte codes. Getters copy offline-precomputed readonly values; lookup performs no gamma, normalization or quantization. CLR initialization and struct copies are runtime operations, not literal constants. `CssColors.All/TryGet` retain the immutable 149-entry reference catalog; global named fields are removed. CSS parsing and contextual theme values remain out of scope.
+
+Known receiver scalars use byte 255, ushort 65535, supported RGBA sbyte/short 127/32767, or normalized Half/float/double/decimal 1. Alpha-free receivers have no Transparent; Gray receivers expose only achromatic names; packed words spell the space explicitly, for example `RawRgb565.SRed/LRed`. Arbitrary generic/custom numeric types use `SRgba8.CornflowerBlue.ToCodes().ConvertChecked<T>()` rather than an unsupported generic palette property. This preserves raw code magnitudes; normalize explicitly if needed.
+
+Drawing consumers use `canvas.FillRect(rect, SRgba<float>.Red)` or `PaintGraph2D.Solid(SRgba<float>.CornflowerBlue)`. UI properties and actual generated factories accept `widget.Fill = SRgba<float>.Red` and `Compose.Rectangle(SRgba<float>.Red)` directly: the value already has the target type, so the factory needs exactly one UiArgument conversion. Signals and animation use `Signal.Create<SRgba<float>>(SRgba<float>.Red)` and `Tween<SRgba<float>>`; nullable keys use `AnimationKey<SRgba<float>?>`. No manual normalization or explicit UiArgument constant wrapper is needed.
+
+Custom `new SRgba8(255, 128, 0)` still implicitly normalizes into `SRgba<float>` without gamma or premultiplication. `default(SRgba8)` is transparent black. Explicit reverse casts validate unit components and quantize nearest-even, never clamp HDR. Common storage still accepts finite raw/HDR values; drawing and UI validate unit colors when accepting them.

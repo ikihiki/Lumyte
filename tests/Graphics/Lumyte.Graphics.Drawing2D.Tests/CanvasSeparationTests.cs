@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.ImageEffects;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -46,7 +47,7 @@ public sealed class CanvasSeparationTests
                 throw new InvalidOperationException("The user callback failed.");
             },
         });
-        canvas.FillRect(new(2, 3, 4, 5), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(2, 3, 4, 5), new SRgba<float>(1, 0, 0, 1));
         canvas.EndLayer();
         RenderGraphDrawList2D list = canvas.End();
         Assert.Equal(0, calls);

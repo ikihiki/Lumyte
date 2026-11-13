@@ -1,4 +1,4 @@
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using static Lumyte.UI.Compose;
 using Widget = Lumyte.UI.Compose.Definitions.Widget;
 
@@ -45,11 +45,11 @@ internal sealed class ExamplePages(Action requestStop) : IUiPageActivationProvid
         {
             if (context.Destination.Route == Home.Value)
             {
-                return Button(width: 160, height: 48, testId: "next", onClick: () => context.Navigation.RequestNavigate(Details, new("Prepared details")))[Rectangle(width: 160, height: 48, fill: new Color2D(0.5f, 0.5f, 0.5f, 1))];
+                return Button(width: 160, height: 48, testId: "next", onClick: () => context.Navigation.RequestNavigate(Details, new("Prepared details")))[Rectangle(width: 160, height: 48, fill: new SRgba<float>(0.5f, 0.5f, 0.5f, 1))];
             }
 
             _ = context.Destination.GetArguments<DetailArguments>();
-            return Button(width: 160, height: 48, testId: "quit", onClick: requestStop)[Rectangle(width: 160, height: 48, fill: new Color2D(0.25f, 0.5f, 0.75f, 1))];
+            return Button(width: 160, height: 48, testId: "quit", onClick: requestStop)[Rectangle(width: 160, height: 48, fill: new SRgba<float>(0.25f, 0.5f, 0.75f, 1))];
         }
     }
 }

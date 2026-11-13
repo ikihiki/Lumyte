@@ -7,6 +7,8 @@
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Headless/Lumyte.UI.Application.Headless.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Diagnostics/Lumyte.UI.Application.Diagnostics.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/Lumyte.Graphics.Drawing2D.RenderGraph.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <Compile Include="../../Graphics/Lumyte.Graphics.Tests/GpuFactAttribute.cs" Link="Fixtures/GpuFactAttribute.cs" />
   </ItemGroup>
 </Project>

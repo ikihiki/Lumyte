@@ -1,5 +1,5 @@
 using Lumyte.Composition;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -18,9 +18,9 @@ public static partial class Compose
             {
             }
 
-            /// <summary>Gets or sets the fill, whose components are validated by Color2D.</summary>
+            /// <summary>Gets or sets the fill, whose components are validated as unit straight sRGB before assignment.</summary>
             [ComposeParameter]
-            public Color2D Fill { get; set; }
+            public SRgba<float> Fill { get; set => field = UiColorPolicy.Unit(value, nameof(Fill)); }
 
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new RectangleElement(this);
