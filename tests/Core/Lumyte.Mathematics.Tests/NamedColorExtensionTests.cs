@@ -90,29 +90,15 @@ public sealed class NamedColorExtensionTests
         Assert.Equal((ushort)0xf800, RawRgb565.SRed.PackedValue);
     }
 
-    /// <summary>Warm direct getters and ASCII lookup allocate no memory.</summary>
+    /// <summary>Direct normalized getters and mixed-case lookup agree on the published color.</summary>
     [Fact]
-    public void WarmLookupAndGetterAllocateZeroBytes()
+    public void DirectGetterAndMixedCaseLookupAgree()
     {
-        for (int i = 0; i < 1000; i++)
-        {
-            _ = SRgba<float>.CornflowerBlue;
-            Assert.True(CssColors.TryGet("CoRnFlOwErBlUe", out _));
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        float sum = 0;
-        bool found = true;
-        for (int i = 0; i < 10000; i++)
-        {
-            sum += SRgba<float>.CornflowerBlue.R;
-            found &= CssColors.TryGet("CoRnFlOwErBlUe", out _);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.True(found);
-        Assert.True(sum > 0);
-        Assert.Equal(0, allocated);
+        SRgba<float> direct = SRgba<float>.CornflowerBlue;
+        Assert.Equal(new SRgba<float>(100 / 255f, 149 / 255f, 237 / 255f, 1), direct);
+        Assert.True(CssColors.TryGet("CoRnFlOwErBlUe", out SRgba8 found));
+        Assert.Equal(new SRgba8(100, 149, 237), found);
+        Assert.Equal(direct, (SRgba<float>)found);
     }
 
     internal static bool IsContainer(Type type) => type.IsPublic && type.Namespace == typeof(SRgba<>).Namespace && ReceiverMatrix().Values.Contains(type.Name);

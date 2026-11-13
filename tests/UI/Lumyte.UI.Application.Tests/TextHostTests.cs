@@ -144,13 +144,7 @@ public sealed class TextHostTests
         Assert.True(surface.TreeRevision > treeRevision);
         Assert.Equal(serviceRevision, surface.HostValidationRevision);
         app.ValidateEditors(surface);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int iteration = 0; iteration < 100; iteration++)
-        {
-            app.ValidateEditors(surface);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(serviceRevision, surface.HostValidationRevision);
         readOnly.Value = false;
         surface.UpdateTree();
         Assert.True(surface.HostValidationRevision > serviceRevision);

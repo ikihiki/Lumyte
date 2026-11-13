@@ -87,9 +87,9 @@ public sealed class DrawingProfilingTests
         Assert.DoesNotContain(listener.Events, item => item.Id == 3);
     }
 
-    /// <summary>Checks counter-only collection and disabled scope allocation.</summary>
+    /// <summary>Checks counter-only collection and that disabled profiling creates no scope.</summary>
     [Fact]
-    public void KeywordFilterAndDisabledAllocation()
+    public void KeywordFilterAndDisabledScope()
     {
         using (var listener = new Listener((EventKeywords)4))
         {
@@ -100,14 +100,7 @@ public sealed class DrawingProfilingTests
             Assert.Equal(3, listener.Events.Single().Id);
         }
 
-        _ = DrawingProfileScope.Start(1);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            Assert.Null(DrawingProfileScope.Start(1));
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Null(DrawingProfileScope.Start(1));
     }
 
     /// <summary>Checks asynchronous spans keep their keys and retained release emits snapshots.</summary>

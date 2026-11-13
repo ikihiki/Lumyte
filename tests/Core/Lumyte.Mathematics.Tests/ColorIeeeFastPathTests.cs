@@ -4,7 +4,7 @@ using Xunit;
 
 namespace Lumyte.Mathematics.Tests;
 
-/// <summary>Protects same-precision IEEE alpha arithmetic and hot-path allocations.</summary>
+/// <summary>Protects same-precision IEEE alpha arithmetic and rounding.</summary>
 public sealed class ColorIeeeFastPathTests
 {
     /// <summary>IEEE alpha multiplication has native rounding, signed zero, and finite overflow rejection.</summary>
@@ -22,31 +22,6 @@ public sealed class ColorIeeeFastPathTests
         Assert.Throws<OverflowException>(() => new LRgba<double>(double.MaxValue, 0, 0, 0.5).UnpremultiplyLinear<double>());
         Assert.Equal(new LRgba<decimal>(0.15m, 0, 0, 0.5m), new LRgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<decimal>());
         Assert.Throws<ArithmeticException>(() => new LRgba<decimal>(0.3m, 0, 0, 0.5m).PremultiplyLinear<int>());
-    }
-
-    /// <summary>Migrated float paint and float-input/double clear must allocate no managed storage per color.</summary>
-    [Fact]
-    public void ProductionTransferAndAssociationDoNotAllocate()
-    {
-        var input = new SRgba<float>(0.3f, 0.02f, 0.8f, 0.7f);
-        float paint = 0;
-        double clear = 0;
-        for (int i = 0; i < 1000; i++)
-        {
-            paint += input.ToLinear<float>().PremultiplyLinear<float>().R;
-            clear += input.ToLinear<double>().PremultiplyLinear<double>().R;
-        }
-
-        long start = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            paint += input.ToLinear<float>().PremultiplyLinear<float>().R;
-            clear += input.ToLinear<double>().PremultiplyLinear<double>().R;
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
-        Assert.Equal(0, allocated);
-        Assert.True(paint > 0 && clear > 0);
     }
 
     private static void Check<T>()

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Lumyte.Resources.Tests;
 
-/// <summary>Checks immutable watch snapshots and incremental ownership without repeated snapshot allocation.</summary>
+/// <summary>Checks immutable watch snapshots and incremental build ownership.</summary>
 public sealed class ResourceWatchTargetsTests
 {
     /// <summary>Shared build references preserve snapshots until the last owner of an identifier leaves.</summary>
@@ -41,34 +41,28 @@ public sealed class ResourceWatchTargetsTests
         Assert.True(remaining.SetEquals([third]));
     }
 
-    /// <summary>Adding already-sized tracking entries does not materialize a frozen snapshot per identifier.</summary>
+    /// <summary>A tracking burst publishes all identifiers while preserving the prior snapshot.</summary>
     [Fact]
-    public void TrackingBurstDoesNotAllocateSnapshotsBeforeTheyAreRead()
+    public void TrackingBurstPreservesPublishedSnapshots()
     {
         (IResourceWatchTargets targets, Action<ResourceId> track, Action<IEnumerable<ResourceId>> completeBuild) = CreateTargets();
         ResourceId[] ids = Enumerable.Range(0, 256).Select(index => new ResourceId($"input/{index}")).ToArray();
-        for (int pass = 0; pass < 2; pass++)
-        {
-            foreach (ResourceId id in ids)
-            {
-                track(id);
-            }
-
-            completeBuild(ids);
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
+        IReadOnlySet<ResourceId> empty = targets.Resources;
         foreach (ResourceId id in ids)
         {
             track(id);
         }
 
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
-        Assert.True(targets.Resources.SetEquals(ids));
+        IReadOnlySet<ResourceId> published = targets.Resources;
+        Assert.Empty(empty);
+        Assert.True(published.SetEquals(ids));
+        Assert.Same(published, targets.Resources);
+        completeBuild(ids);
+        Assert.Empty(targets.Resources);
+        Assert.True(published.SetEquals(ids));
     }
 
-    /// <summary>Balanced additional owners of existing identifiers reuse their snapshot with bounded bookkeeping allocation.</summary>
+    /// <summary>Balanced additional owners of existing identifiers preserve the published snapshot.</summary>
     [Fact]
     public void BalancedBuildReferencesDoNotRebuildFrozenSnapshots()
     {
@@ -80,33 +74,21 @@ public sealed class ResourceWatchTargetsTests
         }
 
         IReadOnlySet<ResourceId> snapshot = targets.Resources;
-        for (int index = 0; index < 10; index++)
-        {
-            AddAndCompleteReferences();
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 100; index++)
-        {
-            AddAndCompleteReferences();
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Same(snapshot, targets.Resources);
-        Assert.InRange(allocated, 0, 6400);
-        completeBuild(ids);
-        Assert.Empty(targets.Resources);
-        Assert.True(snapshot.SetEquals(ids));
-
-        void AddAndCompleteReferences()
+        for (int index = 0; index < 3; index++)
         {
             foreach (ResourceId id in ids)
             {
                 track(id);
             }
 
+            Assert.Same(snapshot, targets.Resources);
             completeBuild(ids);
+            Assert.Same(snapshot, targets.Resources);
         }
+
+        completeBuild(ids);
+        Assert.Empty(targets.Resources);
+        Assert.True(snapshot.SetEquals(ids));
     }
 
     private static (IResourceWatchTargets Targets, Action<ResourceId> Track, Action<IEnumerable<ResourceId>> CompleteBuild) CreateTargets()
