@@ -29,7 +29,7 @@ internal sealed unsafe class NativeDirect3D12QueueDriver : IDirect3D12QueueDrive
     public ulong Completed(nint fence) => NativeMethods.FenceCompleted(fence);
 
     /// <inheritdoc />
-    public int DeviceRemoved(Direct3D12Device owner) => NativeMethods.DeviceRemoved(owner.Native);
+    public int DeviceRemoved(Direct3D12Device owner) => NativeMethods.DeviceRemoved(owner.QueueNative);
 
     /// <inheritdoc />
     public Task WaitForCompletion(Direct3D12Device owner, nint fence) => new Direct3D12FenceWait(owner, fence).Completion;

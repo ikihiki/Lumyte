@@ -7,6 +7,9 @@ The breaking contract is documented in
 ## 任意検証レイヤの追補（2026-11-13）
 
 以下は777a7e11後の任意検証レイヤを対象とする最新結果である。
+再レビューで見つかったD3D12のnative device removal照会も、Lost状態を許す
+QueueNative参照へ修正した。これにより喪失後のretirement確認と元HRESULTの保持を妨げない。
+Windows nativeでの実行確認は未実施であり、管理側テストとは区別する。
 後続の節はそれぞれの変更時点の結果であり、Debug限定の旧検証方針は
 明示的なdevice単位の有効化へ置き換わっている。
 
