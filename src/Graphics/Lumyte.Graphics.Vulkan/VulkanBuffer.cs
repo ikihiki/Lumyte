@@ -80,6 +80,10 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public object ShaderHandle => Native;
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }

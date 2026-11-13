@@ -269,11 +269,27 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         return new Direct3D12ComputePipeline(this, desc);
     }
 
+    /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The compiled shader artifact.</param>
+    /// <param name="count">The element count.</param>
+    /// <param name="memory">The memory preference.</param>
+    /// <param name="usage">The GPU usages; upload staging uses CopySource.</param>
+    /// <returns>The typed raw buffer, without conversion or dependency metadata.</returns>
+    public IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
+    }
+
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : IShaderData
     {
         RequireReady();
+
         ArgumentNullException.ThrowIfNull(artifact);
         return new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
     }

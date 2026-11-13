@@ -18,7 +18,7 @@ public sealed class DrawingTests
         Assert.Equal(new Vector2(0, 1), vertices[0].TexCoord);
         Assert.Equal(new Vector2(1, 0), vertices[2].TexCoord);
         AssertPositiveWinding(vertices);
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in vertices[0]);
+        ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in vertices[0]);
         Assert.Equal("DrawingVertex", snapshot.ShaderTypeName);
         Assert.Empty(snapshot.Values);
         Assert.Equal(36, snapshot.Data.Length);

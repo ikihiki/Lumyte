@@ -45,16 +45,24 @@ public sealed class ShaderArgumentsTests
     {
         var camera = new BindingCameraArguments(Matrix4x4.Identity);
         var data = new BindingVector(new Vector3(11, 12, 13));
-        ShaderValueSnapshot root = IShaderArguments.Capture(in camera);
-        ShaderValueSnapshot element = IShaderArguments.Capture(in data);
+        ShaderValueSnapshot root = ShaderTransfer.Capture(in camera);
+        ShaderValueSnapshot element = ShaderTransfer.Capture(in data);
 
         Assert.Equal("BindingCameraArguments", root.ShaderTypeName);
         Assert.Empty(root.Values);
+#if DEBUG
         Assert.Equal("ViewProjection", Assert.Single(root.Fields).Path);
+#else
+        Assert.Empty(root.Fields);
+#endif
         Assert.Equal(64, root.Data.Length);
         Assert.Equal("BindingVector", element.ShaderTypeName);
         Assert.Empty(element.Values);
+#if DEBUG
         Assert.Equal("Value", Assert.Single(element.Fields).Path);
+#else
+        Assert.Empty(element.Fields);
+#endif
         Assert.Equal(12, element.Data.Length);
     }
 

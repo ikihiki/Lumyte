@@ -82,12 +82,12 @@ internal static class BindingRegressionExercise
         ShaderArtifact artifact = Artifact("binding-layout");
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
-        using IGraphicsShaderDataBuffer<BindingVector> vectors = device.CreateShaderDataBuffer<BindingVector>(artifact, 2);
-        using IGraphicsShaderDataBuffer<BindingPackedVector> packed = device.CreateShaderDataBuffer<BindingPackedVector>(artifact, 2);
-        using IGraphicsShaderDataBuffer<BindingNestedVector> nested = device.CreateShaderDataBuffer<BindingNestedVector>(artifact, 2);
-        using IGraphicsShaderDataBuffer<BindingVector> vectorStaging = device.CreateShaderDataBuffer<BindingVector>(artifact, 2, MemoryPreference.Upload);
-        using IGraphicsShaderDataBuffer<BindingPackedVector> packedStaging = device.CreateShaderDataBuffer<BindingPackedVector>(artifact, 2, MemoryPreference.Upload);
-        using IGraphicsShaderDataBuffer<BindingNestedVector> nestedStaging = device.CreateShaderDataBuffer<BindingNestedVector>(artifact, 2, MemoryPreference.Upload);
+        using IGraphicsBuffer<BindingVector> vectors = device.CreateShaderDataBuffer<BindingVector>(artifact, 2);
+        using IGraphicsBuffer<BindingPackedVector> packed = device.CreateShaderDataBuffer<BindingPackedVector>(artifact, 2);
+        using IGraphicsBuffer<BindingNestedVector> nested = device.CreateShaderDataBuffer<BindingNestedVector>(artifact, 2);
+        using IGraphicsBuffer<BindingVector> vectorStaging = device.CreateShaderDataBuffer<BindingVector>(artifact, 2, MemoryPreference.Upload);
+        using IGraphicsBuffer<BindingPackedVector> packedStaging = device.CreateShaderDataBuffer<BindingPackedVector>(artifact, 2, MemoryPreference.Upload);
+        using IGraphicsBuffer<BindingNestedVector> nestedStaging = device.CreateShaderDataBuffer<BindingNestedVector>(artifact, 2, MemoryPreference.Upload);
         await WriteAsync(vectorStaging, [new(new(11, 12, 13)), new(new(21, 22, 23))]);
         await WriteAsync(packedStaging, [new(31, new(32, 33, 34)), new(41, new(42, 43, 44))]);
         await WriteAsync(nestedStaging, [new(new(new(51, 52, 53)), 54), new(new(new(61, 62, 63)), 64)]);
@@ -202,6 +202,22 @@ internal static class BindingRegressionExercise
         compute.End();
         uint[] values = await ReadOutputAsync(device, commands, output, readback);
         Require(values[0] == 44, "Separate registered ranges or their selected element offsets did not resolve within the backing allocation.");
+    }
+
+    private static async Task WriteAsync<T>(IGraphicsBuffer<T> staging, T[] values)
+        where T : unmanaged
+    {
+        await staging.MapAsync();
+        staging.CopyFrom(values);
+        staging.Unmap();
+    }
+
+    private static void RecordUpload<T>(IGraphicsCommandBuffer commands, IGraphicsBuffer<T> staging, IGraphicsBuffer<T> gpu, ulong destinationOffset = 0)
+        where T : unmanaged
+    {
+        commands.Barrier(new BufferBarrierDesc<T> { Buffer = staging.SliceElements(0, staging.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(staging.SliceElements(0, staging.Count), gpu.SliceElements(destinationOffset, staging.Count));
+        commands.Barrier(new BufferBarrierDesc<T> { Buffer = gpu.SliceElements(destinationOffset, staging.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead) });
     }
 
     private static async Task WriteAsync<T>(IGraphicsShaderDataBuffer<T> staging, T[] values)

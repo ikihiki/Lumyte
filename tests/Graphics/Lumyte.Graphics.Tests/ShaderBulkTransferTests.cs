@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
@@ -69,8 +70,10 @@ public sealed class ShaderBulkTransferTests
         };
         var snapshot = new ShaderValueSnapshot("arguments", mismatch == "name" ? "Other" : "Wire", bytes, [], mismatch == "count" ? [] : fields);
 #if DEBUG
+        Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
         Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
 #else
+        layout.ValidateArguments(snapshot, validateReferences: true);
         Assert.Equal(bytes, layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
 #endif
     }
@@ -176,6 +179,20 @@ public sealed class ShaderBulkTransferTests
         Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => new byte[length]));
     }
 
+    /// <summary>Plain struct diagnostics use managed offsets, but Release never rearranges bytes.</summary>
+    [Fact]
+    public void OrdinaryStructLayoutMismatchIsDebugOnly()
+    {
+        var value = new OrdinaryWire { First = 17, Last = 29 };
+        ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value, shaderTypeName: "Wire");
+        var layout = ShaderDataLayout.Root(Target(), "arguments");
+#if DEBUG
+        Assert.Throws<ArgumentException>(() => layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
+#else
+        Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray(), layout.Pack(snapshot, (_, _) => throw new InvalidOperationException()));
+#endif
+    }
+
     private static ShaderTransferField[] Fields() => [new("First", 0, 4, typeof(uint)), new("Last", 4, 4, typeof(uint))];
 
     private static ShaderTargetData Target(bool reference = false)
@@ -209,6 +226,16 @@ public sealed class ShaderBulkTransferTests
             },
         });
         return new(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [32], json);
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 8)]
+    private struct OrdinaryWire
+    {
+        [FieldOffset(4)]
+        public uint First;
+
+        [FieldOffset(0)]
+        public uint Last;
     }
 
     private sealed class PaddedUnconstructibleData : IShaderData

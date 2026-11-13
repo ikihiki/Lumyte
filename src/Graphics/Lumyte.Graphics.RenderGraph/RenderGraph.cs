@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph;
 
@@ -200,6 +201,22 @@ public sealed class RenderGraph : IDisposable
         var resource = new RenderGraphShaderDataBuffer<T>(this, artifact, count, ResourceName(name));
         Register(resource);
         return resource;
+    }
+
+    /// <summary>Declares ordinary unmanaged shader storage through the existing raw graph buffer path.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The artifact used only for Debug layout diagnostics.</param>
+    /// <param name="count">The positive element count.</param>
+    /// <param name="name">The optional diagnostic name.</param>
+    /// <param name="usage">The permitted raw buffer usages.</param>
+    /// <returns>A plan-owned raw graph buffer without reference dependency metadata.</returns>
+    public RenderGraphBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, string? name = null, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        RequireDevice();
+        ShaderDataLayout.ValidateUnmanaged<T>(artifact, Device!.Caps.ShaderTarget);
+        return CreateBuffer<T>(new() { Count = count, Usage = usage }, name);
     }
 
     /// <summary>Retains the last producer of a resource as an observable graph output.</summary>

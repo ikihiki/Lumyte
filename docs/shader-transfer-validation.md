@@ -4,6 +4,72 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## Ordinary unmanaged transfer follow-up (2026-11-13)
+
+This follow-up starts at b27fce00 on the same isolated main-based branch. Ordinary
+nonpartial structs now use the existing `IGraphicsBuffer<T>`/`BufferSlice<T>` path,
+not an IShaderData wrapper, generated codec, registration, or per-element snapshot.
+`CreateShaderDataBuffer<T>` selects this unmanaged overload and returns raw storage;
+classes implementing IShaderData retain the metadata-bearing allocation path.
+The overloads have different parameter lists, not constraints-only signatures.
+Native and graph SetArguments accept ordinary unmanaged root structs as well.
+
+DrawingVertex, ModelVertex, ModelMaterial, BindingVector, BindingPackedVector,
+BindingNestedVector and BindingCameraArguments no longer need transfer interfaces
+or partial declarations. ModelMesh exercises the ordinary factory in production.
+The GPU binding regression loads two elements of the ordinary vector, packed and
+nested sample structs, checking scalar/vector offsets and array stride. New public
+API regressions compare explicit padding and raw bytes, immediate capture, plain
+root overload resolution, Debug-only layout errors, graph-owned raw allocations,
+and two-element external System.Numerics.Vector3 upload/copy/readback on both
+native backends. Generated reference-containing class tests remain intact.
+
+Environment: .NET SDK 10.0.403, Slang 2026.19, Linux x64, Radeon 8060S Graphics
+(RADV STRIX_HALO), Mesa 26.0.8-1ubuntu0.3. Hardware was reverified using
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json; the identity is retained
+in artifacts/shader-transfer/unmanaged-hardware.txt. Activation and TMPDIR are
+the same as the commands below. All commands use the official Fallout runner.
+
+- Hardware Graphics Debug and Release: each 165 passed, 2 failed, 0 skipped
+  (167 total). The only failures are the existing VulkanAdvancedCommandsAsync
+  and VulkanUncachedAdvancedCommandsAsync unsupported depth-format paths.
+  Both new external-vector GPU transfer tests and ordinary-struct shader loads pass.
+- RenderGraph Debug and Release: each 124 passed, 0 failed/skipped.
+- Drawing Debug and Release (CPU): each 12 passed, 0 failed, 10 GPU tests skipped.
+- Direct3D12 Debug and Release (Linux CPU parity): each 4 passed, 0 failed,
+  7 Windows-native tests skipped (11 total). Managed backend source compiled.
+- Full host Release compile: 0 warnings/errors.
+- Final full host Release suite: 2,884 passed, 0 failed, 97 skipped (2,981 total,
+  40 test projects). The official runner restored, compiled and tested successfully.
+- Official CheckMarkdown: 311 files linted, 0 issues. git diff whitespace validation
+  passed; runner-generated build schema drift was restored before committing.
+
+The initial host run caught two test-fixture assumptions: a cleanup proxy
+intercepted only CreateBuffer rather than the new factory, and graph reflection
+expected only one SetArguments overload. Those fixtures now preserve and check
+both overload contracts; the cleanup failure and retry assertions are unchanged.
+The old numeric-layout rejection test now asserts Debug rejection and exact raw
+bytes in Release, matching the authorized diagnostic-only contract. Resource-reference
+rejection tests remain unchanged. The new graph raw-byte accessor now reads its known C# offset rather than
+requiring diagnostic Fields in Release. The initial failed log is retained separately.
+
+Ordinary struct Debug diagnostics cache managed field metadata and actual managed
+offsets when dynamic code is supported. Without it (Browser/Debug AOT), ordinary
+values still transfer and Debug checks names/sizes without field-offset probes.
+Release compiles out the probes and has no per-field reflection or runtime code generation. No conversion or shader
+layout repair is performed. Generated class metadata remains AOT-safe. Actual
+NativeAOT, Browser WebGPU and Windows D3D12 execution remain unverified; ModelMesh
+3D GPU pixels were not run in this follow-up. No performance claim is made.
+
+Reproduction uses the existing commands below, with these additional targeted runs:
+
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
+
+All follow-up logs use the unmanaged- prefix under artifacts/shader-transfer.
+Protected historical ADRs 0009/0015/0018/0022/0023 remain byte-identical to ef61258f.
+Only the current GRAPHICS-0035 ADR is revised; its fixed baseline metadata is retained.
+
 ## PR branch provenance
 
 The isolated PR is based on origin/main `ef61258f27ec0f19240a5333d4388f1a3ac9de50`,

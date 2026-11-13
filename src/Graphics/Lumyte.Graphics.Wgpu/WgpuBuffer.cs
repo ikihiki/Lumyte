@@ -66,6 +66,10 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public unsafe object ShaderHandle => (nint)Native.Handle;
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }

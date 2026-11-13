@@ -17,10 +17,19 @@ public sealed partial class PublicGraphEncoderConsumerTests
 
         static void Check(Type graph, Type ordinary, string[] names)
         {
-            MethodInfo setter = Assert.Single(graph.GetMethods(), method => method.Name == "SetArguments");
+            MethodInfo[] setters = graph.GetMethods().Where(method => method.Name == "SetArguments").ToArray();
+            Assert.Equal(2, setters.Length);
+            MethodInfo setter = Assert.Single(setters, method => method.GetParameters().Length == 1);
             Assert.True(setter.IsGenericMethodDefinition);
             Assert.True(Assert.Single(setter.GetParameters()).ParameterType.IsByRef);
             Assert.Contains(typeof(IShaderArguments), Assert.Single(setter.GetGenericArguments()).GetGenericParameterConstraints());
+            MethodInfo numeric = Assert.Single(setters, method => method.GetParameters().Length == 3);
+            Assert.True(numeric.IsGenericMethodDefinition);
+            Assert.True(numeric.GetParameters()[0].ParameterType.IsByRef);
+            Type numericParameter = Assert.Single(numeric.GetGenericArguments());
+            Assert.True((numericParameter.GenericParameterAttributes & GenericParameterAttributes.NotNullableValueTypeConstraint) != 0);
+            MethodInfo ordinaryNumeric = Assert.Single(ordinary.GetMethods(), method => method.Name == "SetArguments" && method.GetParameters().Length == 3);
+            Assert.Equal(ordinaryNumeric.GetParameters().Skip(1).Select(Parameter), numeric.GetParameters().Skip(1).Select(Parameter));
             foreach (string name in names)
             {
                 MethodInfo actual = Assert.Single(graph.GetMethods(), method => method.Name == name);

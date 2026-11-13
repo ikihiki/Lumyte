@@ -13,6 +13,14 @@ public interface IComputeEncoder
     void SetArguments<T>(in T arguments)
         where T : IShaderArguments;
 
+    /// <summary>Snapshots an ordinary unmanaged value without an interface or generated code.</summary>
+    /// <typeparam name="T">The unmanaged argument type.</typeparam>
+    /// <param name="arguments">The raw C# value, including padding.</param>
+    /// <param name="rootParameter">The shader root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => SetArguments(ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName));
+
     /// <summary>Copies a logical root snapshot for the selected program.</summary>
     /// <param name="arguments">The root member values and numeric payloads.</param>
     void SetArguments(ShaderValueSnapshot arguments) => throw new NotSupportedException("This encoder does not support logical argument snapshots.");

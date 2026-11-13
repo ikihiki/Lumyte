@@ -20,7 +20,31 @@ C#のunmanaged構造体の配置を正とし、数値を一括コピーする。
 
 ### 利用者の変更前・変更後
 
-変更前は、利用側で参照を含む引数構造体を宣言し、数値メンバーを個別に書き出していた。変更後は、数値だけのunmanaged構造体を1回のWriteBytes呼び出しで転送する。参照を含む引数は、非公開のunmanaged格納領域と通常の公開プロパティを持つpartialクラスにする。値の取得、明示的なコピー、送信、完了待機、解放の境界は変更しない。
+変更前は、利用側で参照を含む引数構造体を宣言し、数値メンバーを個別に書き出していた。変更後は、数値だけの通常のunmanaged構造体を、インターフェース、partial宣言、ジェネレーター、登録なしでそのまま転送する。参照を含む引数は、非公開のunmanaged格納領域と通常の公開プロパティを持つpartialクラスにする。値の取得、明示的なコピー、送信、完了待機、解放の境界は変更しない。
+
+数値だけのバッファ要素は、変更前にはpartial構造体へのIShaderData実装を必要とした。変更後は通常の構造体でよく、同じ準備と書き込みは次のように変わる。後続のバリア、コピー、送信、完了待機と解放は両例とも省略している。
+
+```csharp
+// 変更前（基準コミット）
+public readonly partial record struct Vertex(Vector3 Position) : IShaderData;
+using IGraphicsShaderDataBuffer<Vertex> upload =
+    device.CreateShaderDataBuffer<Vertex>(artifact, 2, MemoryPreference.Upload);
+await upload.MapAsync();
+upload.CopyFrom(vertices);
+upload.Unmap();
+```
+
+```csharp
+// 変更後
+public readonly record struct Vertex(Vector3 Position);
+using IGraphicsBuffer<Vertex> upload =
+    device.CreateShaderDataBuffer<Vertex>(artifact, 2, MemoryPreference.Upload);
+await upload.MapAsync();
+upload.CopyFrom(vertices);
+upload.Unmap();
+```
+
+数値だけのルート引数も通常の構造体でよい。record struct CameraArguments(Matrix4x4 ViewProjection)を宣言し、選択済みのencoderへSetArguments(in cameraArguments)で渡す。必要ならrootParameterとshaderTypeNameを明示する。System.NumericsのVector3やMatrix4x4など外部のunmanaged型も、生のバッファAPIへ直接渡せる。
 
 変更前の呼び出し例（基準コミットのIShaderArgumentsに従う）。初期化済みのpipeline、table、materialRefとcameraを使用し、資源の生成・解放は省略する。
 
@@ -67,9 +91,9 @@ encoder.Draw(vertexCount);
 
 C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時には、実際のパディングを含むメモリ表現全体を一括コピーする。数値メンバーの個別シリアライズ、並べ替え、行列の転置、型変換、リフレクションのオフセットに合わせた再配置は行わない。入れ子の構造体とMatrix4x4も元のバイト列を維持する。シェーダー側はC#のフィールド順、オフセット、パッキング、要素間隔を一致させる。どちらかの変更もABIの変更となる。
 
-IShaderArgumentsとIShaderDataは、数値だけの値についてunmanagedなpartial構造体を受け付ける。IGpuRefを含む型はpartialクラスにする。数値データは1つの非公開unmanaged構造体に保持し、利用側には通常の読み書き可能なプロパティを提供する。.NET 10のpartialプロパティはジェネレーターで実装できる。利用者が定義する格納用構造体には、参照プロパティと同名の16バイトのShaderReferenceSlotフィールドも配置する。ジェネレーターは非公開の格納領域を一括コピーし、参照の識別情報とC#側のスロット位置を記録する。管理オブジェクト自体のメモリは転送しない。
+通常の数値データにはIShaderArgumentsもIShaderDataも不要である。`CreateShaderDataBufferのunmanagedオーバーロードは既存のIGraphicsBuffer<T>`を返し、`BufferSlice<T>`、`BufferBarrierDesc<T>`、CopyBuffer、WriteBufferとRenderGraphの通常のバッファ経路を使う。RenderGraph.CreateShaderDataBufferにもunmanagedオーバーロードを用意し、`RenderGraphBuffer<T>`を返す。`Lumyte.Resources.Graphicsでは既存のGraphicsBufferDefinition<T>`と生バッファのインポートをそのまま利用する。参照依存メタデータがないため、要素ごとの取得・符号化は行わず`ReadOnlySpan<T>`をそのままコピーする。既存のインターフェースを明示実装する数値型も互換経路として使用できる。IGpuRefを含む型はpartialクラスにする。数値データは1つの非公開unmanaged構造体に保持し、利用側には通常の読み書き可能なプロパティを提供する。.NET 10のpartialプロパティはジェネレーターで実装できる。利用者が定義する格納用構造体には、参照プロパティと同名の16バイトのShaderReferenceSlotフィールドも配置する。ジェネレーターは非公開の格納領域を一括コピーし、参照の識別情報とC#側のスロット位置を記録する。管理オブジェクト自体のメモリは転送しない。
 
-静的なTransferSizeで、シェーダーデータバッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。静的なTransferFieldsは、Debug診断に使う実際の管理メモリ上のオフセットを表し、管理リフレクションを使わずに生成する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
+通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のクラスは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、Debug診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体ではDebugに限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。Releaseにはフィールド走査も実行時コード生成も含めない。動的コード生成ができないBrowserやDebug AOTでも、通常構造体を直接転送できる。その場合は名前とサイズを診断し、取得できないフィールドオフセットの診断だけを省略する。生成型の静的な配置情報はその環境でも使用する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
 
 旧フィールド単位のwriterと、リフレクションに従って数値を詰め直す処理は削除する。数値の書き込み操作はWriteBytesのみとし、Valuesには参照の差し替え情報だけを保持する。ShaderDataLayout.Packは取得済みのバイト列を複製し、C#側の各参照位置にある16バイトだけを差し替える。参照の種類（読み取り専用または書き込み可能なストレージ、テクスチャ、サンプラー）は、実行時に必要なシェーダーメタデータとして維持する。
 
@@ -99,17 +123,53 @@ IShaderArgumentsとIShaderDataは、数値だけの値についてunmanagedなpa
 -            where T : struct, IShaderArguments;
 +            where T : IShaderArguments;
      }
++    public static class ShaderTransfer
++    {
++        // パディング込みのバイト列を即座に複製する。参照を含む型は受け付けない。
++        public static ShaderValueSnapshot Capture<T>(in T value,
++            string rootParameter = "arguments", string? shaderTypeName = null) where T : unmanaged;
++    }
+     public interface IShaderRawBuffer
+     {
++        // バッファ参照の型と用途の受け入れ判定に使用する。フィールド走査はしない。
++        Type ElementType { get; }
++        string ShaderTypeName { get; }
+     }
+     public interface IGraphicDevice
+     {
++        // C#サイズと要素間隔を持つ生バッファ。UploadではCopySourceを使う。
++        IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count,
++            MemoryPreference memory = MemoryPreference.Automatic,
++            BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination) where T : unmanaged;
+     }
+     public class ShaderResources
+     {
++        public void Draw<T>(IRenderEncoder encoder, in T arguments, uint vertexCount,
++            uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0,
++            string rootParameter = "arguments", string? shaderTypeName = null) where T : unmanaged;
++        public void DrawIndexed<T>(IRenderEncoder encoder, in T arguments, uint indexCount,
++            uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0,
++            string rootParameter = "arguments", string? shaderTypeName = null) where T : unmanaged;
++        public void Dispatch<T>(IComputeEncoder encoder, in T arguments, uint x,
++            uint y = 1, uint z = 1, string rootParameter = "arguments",
++            string? shaderTypeName = null) where T : unmanaged;
+     }
      public interface IRenderEncoder
      {
          void SetArguments<T>(in T arguments)
 -            where T : struct, IShaderArguments;
 +            where T : IShaderArguments;
++        // 引数の個数が異なるため制約だけで区別するオーバーロードではない。
++        void SetArguments<T>(in T arguments, string rootParameter = "arguments",
++            string? shaderTypeName = null) where T : unmanaged;
      }
      public interface IComputeEncoder
      {
          void SetArguments<T>(in T arguments)
 -            where T : struct, IShaderArguments;
 +            where T : IShaderArguments;
++        void SetArguments<T>(in T arguments, string rootParameter = "arguments",
++            string? shaderTypeName = null) where T : unmanaged;
      }
 +    // 非公開の格納用構造体で使う16バイトの参照領域。
 +    [StructLayout(LayoutKind.Sequential, Size = 16, Pack = 4)]
@@ -120,6 +180,30 @@ IShaderArgumentsとIShaderDataは、数値だけの値についてunmanagedなpa
 -    public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : struct, IShaderData
 +    public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : IShaderData
      {
+     }
+ }
+```
+
+RenderGraphの同名オーバーロードも通常のバッファ型を返す。数値だけの引数は、ShaderResourcesのDraw、DrawIndexed、Dispatchでも末尾にrootParameterとshaderTypeNameを持つunmanagedオーバーロードを使える。インターフェースを明示実装した型の従来の呼び出しは、短い引数リストの既存オーバーロードを選ぶ。通常の型をラップしたり、型を登録したりする必要はない。
+
+```diff
+ namespace Lumyte.Graphics.RenderGraph
+ {
+     public sealed class RenderGraph
+     {
++        public RenderGraphBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact,
++            ulong count, string? name = null,
++            BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination) where T : unmanaged;
+     }
+     public sealed class RenderGraphRenderEncoder
+     {
++        public void SetArguments<T>(in T arguments, string rootParameter = "arguments",
++            string? shaderTypeName = null) where T : unmanaged;
+     }
+     public sealed class RenderGraphComputeEncoder
+     {
++        public void SetArguments<T>(in T arguments, string rootParameter = "arguments",
++            string? shaderTypeName = null) where T : unmanaged;
      }
  }
 ```
@@ -138,11 +222,11 @@ Releaseでは数値スキーマの不一致を拒否せず、バイト列も補�
 - WgpuとBrowser: 論理登録スロットと、登録範囲を基準としたバイトオフセット。
 - Direct3D12: ディスクリプターの識別情報と、バッファ内の絶対バイトオフセット。
 
-参照は不透明で、所有権を持たず、型付きのままとする。参照や引数値を保持してもGPU登録の所有権は取得しない。シェーダーデータバッファに対して、生の別名参照やシェーダーからの書き込み経路は追加しない。
+参照は不透明で、所有権を持たず、型付きのままとする。参照や引数値を保持してもGPU登録の所有権は取得しない。参照を含むシェーダーデータバッファには、生の別名参照やシェーダーからの書き込み経路を追加しない。通常のunmanagedバッファでは既存の生バッファの用途・同期契約を維持する。
 
 ### 値の取得・転送・寿命
 
-SetArgumentsと、マップ済みアップロード領域へのCopyFromは、呼び出し時点のバイト列のコピーと参照の識別情報を即座に取得する。その後に元のクラスを変更しても、記録済みの値は変化しない。ステージング領域のバイト列やメタデータを置き換える前に、全要素の取得と符号化を完了する。数値のバイト列と参照メタデータは、明示的なコピーでも一緒に転送する。
+SetArgumentsと、マップ済みアップロード領域へのCopyFromは、呼び出し時点のバイト列のコピーと参照の識別情報を即座に取得する。その後に元のクラスを変更しても、記録済みの値は変化しない。参照を含むクラスでは、ステージング領域のバイト列やメタデータを置き換える前に、全要素の取得と符号化を完了する。通常のunmanagedバッファは依存メタデータを作らず、範囲全体を直接コピーする。数値のバイト列と参照メタデータは、明示的なコピーでも一緒に転送する。
 
 MemoryPreference.UploadのバッファはCPUステージング領域、AutomaticのバッファはGPUのシェーダーデータとする。マップ、書き込み、アンマップ、バリア、コピー、送信、完了待機、再利用の同期は引き続き明示的に行う。コピーの記録時には、コマンド内だけで有効なメタデータの上書き情報を作る。送信が成功した場合に限ってGPUバッファへメタデータを反映し、破棄したコマンドや未送信のコマンドからは反映しない。部分コピーは転送先の対象要素だけを置き換える。転送元の変更とリソース寿命には、既存のコマンドと登録の契約を適用する。
 
@@ -150,10 +234,12 @@ MemoryPreference.UploadのバッファはCPUステージング領域、Automatic
 
 ### 検証方針
 
-テストでは、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、クラスの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、Debugでの不一致検出、Releaseでのバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。
+テストでは、インターフェースもpartial宣言もない構造体と外部の数値型、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、クラスの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、Debugでの不一致検出、Releaseでのバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。
 
 ## 検討した代替案
 
+- 数値型にもインターフェースと生成コードを必須にする: 外部のunmanaged型や通常の構造体をそのまま使えないため採用しない。
+- 型制約だけを外して任意の管理型を受け付ける: 参照を含む値と生のunmanagedバイト列の境界が不明確になるため採用しない。生バッファはunmanaged制約、参照を含む値は既存のインターフェース制約で分離する。
 - 数値ごとのwriterを維持する: バイト列を再構築し、ABIの定義が重複するため採用しない。
 - Releaseでリフレクションのオフセットに詰め直す: 不整合な宣言によってC#のメモリ表現を暗黙に変更しない方針のため採用しない。
 - 管理クラスのメモリを直接転送する: 転送可能な領域は非公開のunmanaged格納領域だけとし、採用しない。

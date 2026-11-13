@@ -15,6 +15,10 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
         owner.Check(NativeMethods.BufferCreate(owner.Native, size, Memory == MemoryPreference.Upload ? 1 : Memory == MemoryPreference.Readback ? 2 : 0, (Usage & BufferUsage.ShaderWrite) != 0 ? 1 : 0, out _native));
     }
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }

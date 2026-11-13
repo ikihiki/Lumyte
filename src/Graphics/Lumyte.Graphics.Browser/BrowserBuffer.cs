@@ -28,6 +28,10 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public object ShaderHandle => Native;
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }

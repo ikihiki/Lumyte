@@ -173,6 +173,45 @@ public class ShaderResources
         encoder.Dispatch(x, y, z);
     }
 
+    /// <summary>Selects this set's native bindings and root arguments, then records a draw.</summary>
+    /// <typeparam name="T">The ordinary unmanaged root argument type.</typeparam>
+    /// <param name="encoder">The render encoder with a selected pipeline and render state.</param>
+    /// <param name="arguments">The root argument values.</param>
+    /// <param name="vertexCount">The vertex count.</param>
+    /// <param name="instanceCount">The instance count.</param>
+    /// <param name="firstVertex">The first vertex.</param>
+    /// <param name="firstInstance">The first instance.</param>
+    /// <param name="rootParameter">The shader root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    public void Draw<T>(IRenderEncoder encoder, in T arguments, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => Draw(encoder, ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName), vertexCount, instanceCount, firstVertex, firstInstance);
+
+    /// <summary>Selects this set's native bindings and root arguments, then records an indexed draw.</summary>
+    /// <typeparam name="T">The ordinary unmanaged root argument type.</typeparam>
+    /// <param name="encoder">The render encoder with a selected pipeline, state, and index buffer.</param>
+    /// <param name="arguments">The root argument values.</param>
+    /// <param name="indexCount">The index count.</param>
+    /// <param name="instanceCount">The instance count.</param>
+    /// <param name="firstIndex">The first index relative to the selected range.</param>
+    /// <param name="baseVertex">The signed vertex offset.</param>
+    /// <param name="firstInstance">The first instance.</param>
+    /// <param name="rootParameter">The shader root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    public void DrawIndexed<T>(IRenderEncoder encoder, in T arguments, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => DrawIndexed(encoder, ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName), indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+
+    /// <summary>Selects this set's native bindings and root arguments, then records compute workgroups.</summary>
+    /// <typeparam name="T">The ordinary unmanaged root argument type.</typeparam>
+    /// <param name="encoder">The compute encoder with a selected pipeline.</param>
+    /// <param name="arguments">The root argument values.</param>
+    /// <param name="x">The X workgroup count.</param>
+    /// <param name="y">The Y workgroup count.</param>
+    /// <param name="z">The Z workgroup count.</param>
+    /// <param name="rootParameter">The shader root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    public void Dispatch<T>(IComputeEncoder encoder, in T arguments, uint x, uint y = 1, uint z = 1, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged => Dispatch(encoder, ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName), x, y, z);
+
     /// <summary>Selects this set's bindings and snapshot, then records Draw work.</summary>
     /// <param name="encoder">The native encoder with a selected pipeline.</param>
     /// <param name="arguments">The logical root snapshot.</param>

@@ -93,3 +93,13 @@ CI は Linux／Windows の x64／aarch64 で、mise セットアップ後に同�
 診断サーバーの[同梱Web UI](src/Diagnostics/Lumyte.Diagnostics.Server/README.md#web-ui)はサーバーのURLから利用できる。[配信・認証・更新の設計](docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
 診断画面の見た目は [GitHub Pagesの画面プレビュー](https://ikihiki.github.io/Lumyte/) でmain・PRごとに確認できます。
+
+## Shader data transfer
+
+Ordinary unmanaged C# structs need no IShaderData/IShaderArguments, partial declaration,
+generator or registration. `CreateShaderDataBuffer<T>` returns raw `IGraphicsBuffer<T>`
+storage; CopyFrom preserves C# bytes, padding and stride. Use BufferBarrierDesc,
+CopyBuffer and argument-table WriteBuffer explicitly. SetArguments(in value) also
+accepts unmanaged root structs. Reference-containing classes remain generated partial
+IShaderData/IShaderArguments types with private unmanaged storage. Shader layout must
+match C#; diagnostics are Debug-only. See the [transfer contract](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md).

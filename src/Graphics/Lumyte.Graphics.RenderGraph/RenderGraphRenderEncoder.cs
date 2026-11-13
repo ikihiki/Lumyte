@@ -110,6 +110,28 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         _argumentPipeline = _pipeline;
     }
 
+    /// <summary>Snapshots an ordinary unmanaged root with the existing graph declaration rules.</summary>
+    /// <typeparam name="T">The unmanaged argument type.</typeparam>
+    /// <param name="arguments">The C# value to copy without conversion.</param>
+    /// <param name="rootParameter">The logical root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged
+    {
+        EnsureActive();
+        if (_pipeline is null)
+        {
+            throw new InvalidOperationException("Select a pipeline before setting its arguments.");
+        }
+
+        ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+        (IReadOnlyList<ShaderResources>? resources, ShaderValueSnapshot selected) = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
+        _native.SetArguments(selected);
+        _arguments = resources;
+        _hasArguments = true;
+        _argumentPipeline = _pipeline;
+    }
+
     /// <summary>Records Draw with the previously selected arguments.</summary>
     /// <param name="vertexCount">The vertexCount value.</param>
     /// <param name="instanceCount">The instanceCount value.</param>

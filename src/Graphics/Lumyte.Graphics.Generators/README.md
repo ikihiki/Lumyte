@@ -1,6 +1,17 @@
 # Lumyte.Graphics.Generators
 
-The generator implements IShaderArguments and IShaderData on partial types.
+Ordinary unmanaged structs do not need IShaderData, IShaderArguments, partial,
+a generator reference, or registration. Use `device.CreateShaderDataBuffer<T>`(artifact,
+count) to obtain `IGraphicsBuffer<T>`; CopyFrom copies the complete span without conversion.
+Use `BufferSlice<T>`, `BufferBarrierDesc<T>`, CopyBuffer and WriteBuffer, including
+RenderGraph's raw buffer paths (its `CreateShaderDataBuffer<T>` overload returns
+`RenderGraphBuffer<T>`). Resources use the existing `GraphicsBufferDefinition<T>`. System.Numerics elements work directly as well.
+SetArguments(in value) accepts ordinary unmanaged root structs on native and graph encoders.
+The C# type name is the default shader structure name (intrinsic numeric types use
+their shader names, e.g. Vector3 maps to float3); root calls can override it.
+
+The generator is for reference-containing classes, or explicitly opted-in legacy
+IShaderArguments/IShaderData implementations on partial types.
 There is no codec registry, per-numeric-field serialization, or reflected repacking.
 
 - Unmanaged structs (including record structs) transfer their **entire C# representation**
@@ -15,8 +26,9 @@ There is no codec registry, per-numeric-field serialization, or reflected repack
   instance. Generated unsafe field accessors calculate actual managed byte offsets;
   they do not inspect or repack shader values.
 - Shader layout diagnostics run only in Debug. Release transfers original bytes even
-  for incompatible shaders. Reference bounds, ABI size, resource ownership, lifetime
-  and binding access-kind checks remain active in both configurations.
+  for incompatible shaders. Reference bounds, ABI size, same-device admission
+  and binding access-kind checks remain active. Callers own resource lifetime and
+  CPU/GPU synchronization under GRAPHICS-0014; no lifetime rescan is introduced.
 
 Example (using System.Numerics and System.Runtime.InteropServices):
 
@@ -48,3 +60,11 @@ Project reference:
 Generic/nested generator targets, managed structs, missing private unmanaged storage,
 and missing or mistyped reference slots produce LUMG001 diagnostics. Handwritten
 implementations use the same bulk transfer contract.
+
+For ordinary structs, built-in backends diagnose named storage layouts in Debug using
+cached managed field reflection and managed-offset probes. These probes never choose
+or rewrite transferred bytes and are compiled out of Release. Where dynamic code is
+unavailable (e.g. Browser or Debug AOT), ordinary values still transfer directly;
+Debug diagnoses names and sizes but skips unavailable field-offset probes. The raw
+Release path has no field reflection or runtime code generation. Generated classes
+retain their AOT-safe static metadata path.

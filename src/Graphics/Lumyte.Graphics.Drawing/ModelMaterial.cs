@@ -1,5 +1,4 @@
 using System.Numerics;
-using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing;
 
@@ -13,7 +12,7 @@ namespace Lumyte.Graphics.Drawing;
 /// <param name="AlphaCutoff">The mask threshold.</param>
 /// <param name="AlphaMode">Zero for opaque, one for mask, two for blend.</param>
 /// <param name="Unlit">One to bypass lighting, zero for metallic-roughness shading.</param>
-public readonly partial record struct ModelMaterial(Vector4 BaseColor, Vector3 Emissive, float Metallic, float Roughness, float NormalScale, float OcclusionStrength, float AlphaCutoff, uint AlphaMode, uint Unlit) : IShaderData
+public readonly record struct ModelMaterial(Vector4 BaseColor, Vector3 Emissive, float Metallic, float Roughness, float NormalScale, float OcclusionStrength, float AlphaCutoff, uint AlphaMode, uint Unlit)
 {
     /// <summary>Gets the base-color texture coordinate transform.</summary>
     public ModelTextureTransform BaseColorUv { get; init; } = ModelTextureTransform.Identity;

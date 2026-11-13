@@ -33,14 +33,14 @@ public sealed class ModelAndEffectsTests
             ShaderTargetData fs = DrawingShaders.LoadModelFragment().GetTarget(target);
             ShaderDataLayout.ValidateProgram(vs, fs);
             var layout = ShaderDataLayout.Data(vs, "ModelVertex");
-            byte[] packed = layout.Pack(IShaderArguments.Capture(in vertex), (_, _) => throw new InvalidOperationException());
+            byte[] packed = layout.Pack(ShaderTransfer.Capture(in vertex), (_, _) => throw new InvalidOperationException());
             Assert.Equal(ModelVertex.SizeInBytes, packed.Length);
             Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref vertex, 1)).ToArray(), packed);
             Assert.Equal(vertex, ModelVertex.AsVertices(packed)[0]);
             Assert.True(layout.Matches(ShaderDataLayout.Data(fs, "ModelVertex")));
             Assert.Equal(1, BitConverter.ToSingle(packed, 0));
             var materialLayout = ShaderDataLayout.Data(vs, "ModelMaterial");
-            Assert.NotEmpty(materialLayout.Pack(IShaderArguments.Capture(in material), (_, _) => throw new InvalidOperationException()));
+            Assert.NotEmpty(materialLayout.Pack(ShaderTransfer.Capture(in material), (_, _) => throw new InvalidOperationException()));
             int references = 0;
             var root = ShaderDataLayout.Root(vs, "arguments");
             Assert.NotEmpty(root.Pack(IShaderArguments.Capture(in arguments), (_, _) =>

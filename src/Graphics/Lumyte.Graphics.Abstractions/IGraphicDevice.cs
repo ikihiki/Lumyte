@@ -89,4 +89,14 @@ public interface IGraphicDevice
     /// <returns>The backend's shader data allocation.</returns>
     IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : IShaderData;
+
+    /// <summary>Creates ordinary unmanaged shader storage without generated code or conversion.</summary>
+    /// <typeparam name="T">The unmanaged element type; its C# layout is the shader ABI.</typeparam>
+    /// <param name="artifact">The compiled shader used for Debug layout diagnostics.</param>
+    /// <param name="count">The positive element count.</param>
+    /// <param name="memory">The allocation memory preference.</param>
+    /// <param name="usage">The raw buffer usages; upload staging uses CopySource instead.</param>
+    /// <returns>Raw typed storage with exactly the C# element size and stride.</returns>
+    IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged => CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
 }
