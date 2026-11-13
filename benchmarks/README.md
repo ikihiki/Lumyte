@@ -4,7 +4,8 @@
 
 | 対象 | 配置・手順 | 測定するもの |
 | --- | --- | --- |
-| Signals | [Lumyte.Signals.Benchmarks](Lumyte.Signals.Benchmarks/README.md) | 読出し、依存グラフ、配送、非同期変換の時間と割当量。保持メモリのprobeも含む |
+| Mathematics | [Lumyte.Mathematics.Benchmark](Core/Lumyte.Mathematics.Benchmark/README.md) | 境界計算とbatchのCPU時間・割当量 |
+| Signals | [Lumyte.Signals.Benchmark](Core/Lumyte.Signals.Benchmark/README.md) | 読出し、依存グラフ、配送、非同期変換の時間と割当量。保持メモリのprobeも含む |
 | Execution | [Execution sample](../samples/Lumyte.Execution.Sample/README.md#ベンチマーク) | 直接実行、delegate、型付きcommand、batchの配送費用 |
 | Vulkan | [Vulkanの比較手順](../src/Graphics/Lumyte.Graphics.Vulkan/README.md#pso生成費用の比較方法) | pipeline cache有無によるdraw記録・submit・破棄の費用 |
 
@@ -14,6 +15,8 @@ ExecutionとVulkanはsampleの起動・device構築を使用するため、測�
 
 非同期のPR部品スクリーニングは[運用と測定範囲](../docs/performance/component-screening.md)を参照してください。
 通常のCIやマージを待たせず、退行候補と未測定範囲をActionsに保存します。
+
+対象別projectはテストと同じカテゴリ構成の`benchmarks/<カテゴリ>/<対象project>.Benchmark`へ配置します。
 
 ## 実行
 

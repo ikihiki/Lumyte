@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures scheduler reservation coalescing without operating system dispatch latency.</summary>
 public class SchedulerBenchmarks

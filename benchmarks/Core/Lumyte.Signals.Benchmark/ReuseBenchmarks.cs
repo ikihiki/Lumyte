@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Separates repeated dependency map reuse from short-lived observer creation.</summary>
 public class ReuseBenchmarks

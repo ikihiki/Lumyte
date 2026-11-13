@@ -1,13 +1,20 @@
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
+using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
-using Lumyte.Signals.Benchmarks;
+using Lumyte.Signals.Benchmark;
 using Perfolizer.Horology;
 using Perfolizer.Mathematics.OutlierDetection;
 
-if (args.Contains("--smoke", StringComparer.Ordinal))
+if (args.Contains("--retention", StringComparer.Ordinal))
+{
+    RetentionProbe.Run();
+    return;
+}
+
+if (args.Contains("--screening-smoke", StringComparer.Ordinal))
 {
     var scalar = new ScalarBenchmarks();
     if (scalar.ReadValue() != 42 || scalar.ReadPeek() != 42)
@@ -48,19 +55,26 @@ if (args.Contains("--smoke", StringComparer.Ordinal))
         asynchronous.Cleanup();
     }
 
-    Console.WriteLine("screening-smoke-ok:v1:12");
+    Console.WriteLine("screening-smoke-ok:v2:12");
     return;
 }
 
+bool screening = args.Contains("--screening", StringComparer.Ordinal);
+args = args.Where(argument => argument != "--screening").ToArray();
+Job job = Job.Default
+    .WithId(screening ? "SignalsScreening-v2" : "Signals")
+    .WithLaunchCount(1)
+    .WithWarmupCount(3)
+    .WithIterationCount(8)
+    .WithIterationTime(TimeInterval.FromMilliseconds(150));
+if (screening)
+{
+    job = job.WithOutlierMode(OutlierMode.DontRemove);
+}
+
 IConfig config = ManualConfig.Create(DefaultConfig.Instance)
-    .AddJob(Job.Default
-        .WithId("ComponentScreening-v1")
-        .WithLaunchCount(1)
-        .WithWarmupCount(3)
-        .WithIterationCount(8)
-        .WithIterationTime(TimeInterval.FromMilliseconds(150))
-        .WithOutlierMode(OutlierMode.DontRemove))
+    .AddJob(job)
     .AddDiagnoser(MemoryDiagnoser.Default)
-    .AddExporter(JsonExporter.Full);
+    .AddExporter(JsonExporter.Full, MarkdownExporter.GitHub);
 
 BenchmarkSwitcher.FromAssembly(typeof(ScalarBenchmarks).Assembly).Run(args, config);

@@ -1,3 +1,4 @@
+using Lumyte.Signals.Benchmark;
 using Xunit;
 
 namespace Lumyte.Signals.Benchmarks.Tests;

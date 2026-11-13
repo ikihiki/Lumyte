@@ -25,7 +25,7 @@ def fixture():
         },
         "Benchmarks": [{
             "FullName": CASE["id"], "Parameters": "", "HardwareIntrinsics": "fixture",
-            "DisplayInfo": "ComponentScreening-v1(OutlierMode=DontRemove, IterationCount=8, IterationTime=150ms, LaunchCount=1, WarmupCount=3)",
+            "DisplayInfo": "SignalsScreening-v2(OutlierMode=DontRemove, IterationCount=8, IterationTime=150ms, LaunchCount=1, WarmupCount=3)",
             "Statistics": {"Median": 10, "Mean": 10, "StandardDeviation": 0.1, "N": 8},
             "Memory": {"BytesAllocatedPerOperation": 0},
             "Measurements": [{"IterationStage": "Result", "IterationMode": "Workload",
@@ -96,6 +96,72 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(json.loads((output / "result.json").read_text())['status'], "skipped")
 
 
+class LayoutTests(unittest.TestCase):
+    def test_target_projects_and_relative_references(self):
+        import xml.etree.ElementTree as xml
+        for target in ('Signals', 'Mathematics'):
+            directory = screen.ROOT / 'benchmarks/Core' / f'Lumyte.{target}.Benchmark'
+            project = directory / f'Lumyte.{target}.Benchmark.csproj'
+            self.assertTrue(project.is_file())
+            for reference in xml.parse(project).findall('.//ProjectReference'):
+                self.assertTrue(reference.attrib['Include'].startswith('../../../src/'))
+                self.assertTrue((directory / reference.attrib['Include']).resolve().is_file())
+            self.assertFalse(list((screen.ROOT / f'benchmarks/Lumyte.{target}.Benchmarks').glob('*.csproj')))
+        self.assertFalse((screen.ROOT / 'benchmarks/Lumyte.Component.Screening').exists())
+        self.assertFalse((screen.ROOT / screen.HARNESS / 'Sources').exists())
+        self.assertTrue(all(c['id'].startswith('Lumyte.Signals.Benchmark.') for c in screen.CATALOG))
+
+    def test_old_and_new_paths_select_same_catalog(self):
+        for prefix in ('src/Core/Lumyte.Signals/', 'benchmarks/Lumyte.Signals.Benchmarks/',
+                       'benchmarks/Core/Lumyte.Signals.Benchmark/'):
+            cases, uncovered, _ = screen.select([prefix + 'ScalarBenchmarks.cs'])
+            self.assertEqual(cases, screen.CATALOG)
+            self.assertFalse(uncovered)
+        for prefix in ('src/Core/Lumyte.Mathematics/', 'benchmarks/Lumyte.Mathematics.Benchmarks/',
+                       'benchmarks/Core/Lumyte.Mathematics.Benchmark/'):
+            path = prefix + 'Program.cs'
+            cases, uncovered, _ = screen.select([path])
+            self.assertEqual(cases, [CASE])
+            self.assertEqual(uncovered, [path])
+
+    def test_explicit_cli_modes_keep_normal_job_and_retention(self):
+        program = (screen.ROOT / screen.HARNESS / 'Program.cs').read_text()
+        for token in ('--retention', '--screening-smoke', '--screening',
+                      'screening ? "SignalsScreening-v2" : "Signals"', 'OutlierMode.DontRemove'):
+            self.assertIn(token, program)
+        self.assertIn('argument != "--screening"', program)
+        source = Path(screen.__file__).read_text()
+        self.assertIn('binary, "--screening", "--filter"', source)
+        self.assertIn('binary, "--screening-smoke"', source)
+
+    def test_snapshot_overlays_whole_frozen_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / 'repo'
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(repo), *args], text=True)
+            git('init', '-q')
+            git('config', 'user.email', 'fixture@example.invalid')
+            git('config', 'user.name', 'fixture')
+            product = repo / 'src/Core/Lumyte.Signals'
+            product.mkdir(parents=True)
+            (product / 'Lumyte.Signals.csproj').write_text('<Project />')
+            stale = repo / screen.HARNESS
+            stale.mkdir(parents=True)
+            (stale / 'stale.cs').write_text('stale harness')
+            git('add', '.')
+            git('commit', '-qm', 'fixture')
+            runner = screen.Runner(root, 10)
+            for label in ('base', 'head'):
+                project = screen.snapshot(repo, root / label, runner, label)
+                self.assertEqual(project.name, 'Lumyte.Signals.Benchmark.csproj')
+                self.assertEqual(screen.tree_hash(project.parent), screen.tree_hash(screen.ROOT / screen.HARNESS))
+                self.assertFalse((project.parent / 'stale.cs').exists())
+                self.assertTrue((project.parent / '../../../src/Core/Lumyte.Signals/Lumyte.Signals.csproj').resolve().exists())
+                self.assertTrue((project.parent / 'RetentionProbe.cs').exists())
+
+
 class DataTests(unittest.TestCase):
     def read_fixture(self, data):
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,7 +222,7 @@ class DataTests(unittest.TestCase):
             self.read_fixture(data)
 
     def test_wrong_job_and_parameters(self):
-        for field, value in [("DisplayInfo", "Default"), ("Parameters", "Depth=1")]:
+        for field, value in [("DisplayInfo", "Default"), ("DisplayInfo", "ComponentScreening-v1"), ("Parameters", "Depth=1")]:
             data = fixture()
             data['Benchmarks'][0][field] = value
             with self.assertRaises(screen.Failure) as error:
@@ -223,13 +289,26 @@ class ExecutionTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 output = Path(tmp)
                 plan = output / 'plan.json'
-                screen.dump(plan, {'harness_version': screen.VERSION, 'harness_sha256': screen.tree_hash(screen.ROOT / screen.HARNESS),
+                screen.dump(plan, {'case_version': 2, 'harness_version': screen.VERSION, 'harness_sha256': screen.tree_hash(screen.ROOT / screen.HARNESS),
                                    'selected': True, 'cases': [CASE], 'base_sha': 'expected', 'head_sha': 'expected'})
                 args = argparse.Namespace(output=output, plan=plan, base_dir=output, head_dir=output, timeout_seconds=5)
                 with patch.object(screen.Runner, 'call', side_effect=screen.Failure(status, 'fixture failure')):
                     self.assertEqual(screen.run(args), 1)
                 self.assertEqual(json.loads((output / 'result.json').read_text())['status'], status)
                 self.assertIn(status, (output / 'summary.md').read_text())
+
+    def test_legacy_case_version_is_incomparable_before_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            plan = output / 'plan.json'
+            screen.dump(plan, {'harness_version': screen.VERSION, 'case_version': 1,
+                               'harness_sha256': screen.tree_hash(screen.ROOT / screen.HARNESS)})
+            args = argparse.Namespace(output=output, plan=plan, base_dir=output,
+                                      head_dir=output, timeout_seconds=5)
+            with patch.object(screen.Runner, 'call') as call:
+                self.assertEqual(screen.run(args), 1)
+                call.assert_not_called()
+            self.assertEqual(json.loads((output / 'result.json').read_text())['status'], 'incomparable')
 
     def test_deadline_capped(self):
         import time

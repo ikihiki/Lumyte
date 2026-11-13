@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Compares cached reads through shared dependency paths with and without an active observer.</summary>
 public class SharedDagBenchmarks

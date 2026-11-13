@@ -13,11 +13,11 @@ import subprocess
 import sys
 import time
 
-VERSION = "component-screening-v1"
-HARNESS = Path("benchmarks/Lumyte.Component.Screening")
+VERSION = "component-screening-v2"
+HARNESS = Path("benchmarks/Core/Lumyte.Signals.Benchmark")
 ROOT = Path(__file__).resolve().parents[3]
 CATALOG = [
-    {"id": f"Lumyte.Signals.Benchmarks.{group}.{method}", "min_delta_ns": floor}
+    {"id": f"Lumyte.Signals.Benchmark.{group}.{method}", "min_delta_ns": floor}
     for group, methods in [
         ("ScalarBenchmarks", [("ReadValue", 1), ("ReadPeek", 1), ("WriteSame", 1), ("WriteUnobserved", 2)]),
         ("AsyncBenchmarks", [("CreateCompleted", 20), ("ReloadCompleted", 20),
@@ -53,11 +53,11 @@ def select(paths, force_all=False):
     relevant = [p for p in paths if not (p.startswith("docs/") or p.endswith(".md"))]
     if not relevant and not force_all:
         return [], [], []
-    signals = any(p.startswith(("src/Core/Lumyte.Signals/", "benchmarks/Lumyte.Signals.Benchmarks/")) for p in relevant)
+    signals = any(p.startswith(("src/Core/Lumyte.Signals/", "benchmarks/Lumyte.Signals.Benchmarks/", "benchmarks/Core/Lumyte.Signals.Benchmark/")) for p in relevant)
     common = any(p in {"global.json", "NuGet.config", "mise.toml", "mise.lock", ".editorconfig"}
                  or p.startswith(("Directory.", "build/", "tools/", ".github/", "benchmarks/Lumyte.Component.Screening/"))
                  or p.endswith((".props", ".targets", ".slnx")) for p in relevant)
-    uncovered = [p for p in relevant if not p.startswith(("src/Core/Lumyte.Signals/", "benchmarks/Lumyte.Signals.Benchmarks/", "benchmarks/Lumyte.Component.Screening/", "tools/", "build/", ".github/"))
+    uncovered = [p for p in relevant if not p.startswith(("src/Core/Lumyte.Signals/", "benchmarks/Lumyte.Signals.Benchmarks/", "benchmarks/Core/Lumyte.Signals.Benchmark/", "benchmarks/Lumyte.Component.Screening/", "tools/", "build/", ".github/"))
                  and p not in {"global.json", "NuGet.config", "mise.toml", "mise.lock", ".editorconfig"}
                  and not p.startswith("Directory.") and not p.endswith((".props", ".targets", ".slnx"))]
     cases = CATALOG if signals or common or force_all else [CATALOG[0]]
@@ -73,7 +73,7 @@ def plan(args):
     # --no-renames includes both deleted and added paths, including changed dependencies.
     paths = subprocess.check_output(["git", "-C", str(repo), "diff", "--no-renames", "--name-only", "-z", base, head], text=True).split("\0")
     cases, uncovered, omissions = select([p for p in paths if p], args.all)
-    data = {"schema_version": 1, "harness_version": VERSION, "case_version": 1,
+    data = {"schema_version": 1, "harness_version": VERSION, "case_version": 2,
             "harness_sha256": tree_hash(ROOT / HARNESS), "base_sha": base, "head_sha": head,
             "selected": bool(cases), "changed_paths": [p for p in paths if p], "cases": cases,
             "uncovered_paths": uncovered, "omissions": omissions,
@@ -152,7 +152,7 @@ def read_bdn(directory, cases):
             identity = row.get("FullName")
             if identity not in expected or identity in rows:
                 raise Failure("incomparable", f"Unexpected/duplicate benchmark identity: {identity}")
-            required_job = ("ComponentScreening-v1", "OutlierMode=DontRemove", "IterationCount=8",
+            required_job = ("SignalsScreening-v2", "OutlierMode=DontRemove", "IterationCount=8",
                             "IterationTime=150ms", "LaunchCount=1", "WarmupCount=3")
             if row.get("Parameters") != "" or any(part not in row.get("DisplayInfo", "") for part in required_job):
                 raise Failure("incomparable", f"{identity}: unexpected parameters or job configuration")
@@ -209,7 +209,7 @@ def snapshot(source, dest, runner, label):
         shutil.rmtree(target)
     shutil.copytree(ROOT / HARNESS, target, ignore=shutil.ignore_patterns("bin", "obj"))
     (dest / "artifacts/nuget").mkdir(parents=True, exist_ok=True)
-    return target / "Lumyte.Component.Screening.csproj"
+    return target / "Lumyte.Signals.Benchmark.csproj"
 
 
 def report(output, result):
@@ -249,7 +249,7 @@ def run(args):
             raise Failure("execution_error", "Timeout must be finite and positive")
         data = json.loads(Path(args.plan).read_text())
         result["plan"] = data
-        if data.get("harness_version") != VERSION or data.get("harness_sha256") != tree_hash(ROOT / HARNESS):
+        if data.get("case_version") != 2 or data.get("harness_version") != VERSION or data.get("harness_sha256") != tree_hash(ROOT / HARNESS):
             raise Failure("incomparable", "Plan and runner harness versions/hashes differ")
         if not data["selected"]:
             result["status"] = "skipped"
@@ -276,7 +276,7 @@ def run(args):
                               "cpuinfo": Path("/proc/cpuinfo").read_text() if Path("/proc/cpuinfo").exists() else "unavailable",
                               "environment": {k: v for k, v in os.environ.items() if k.startswith(("DOTNET_", "COMPlus_")) or k in {"LANG", "TZ"}},
                               "dotnet": dotnet, "sdk_policy": sdk_configs[0], "harness_sha256": tree_hash(ROOT / HARNESS),
-                              "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "case_version": 1}
+                              "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "case_version": 2}
         scratch = output / "scratch"
         if scratch.exists() or (output / "raw").exists():
             raise Failure("execution_error", "Output scratch/raw already exists; use a fresh output directory")
@@ -297,9 +297,9 @@ def run(args):
         # BOTH build and semantic smoke complete before the first timed job.
         for label, project in projects.items():
             runner.call([dotnet, "build", project, "-c", "Release", "--nologo"], project.parent, label + "-build")
-            binary = project.parent / "bin/Release/net10.0/Lumyte.Component.Screening.dll"
-            smoke = runner.call([dotnet, binary, "--smoke"], project.parent, label + "-smoke")
-            if smoke != "screening-smoke-ok:v1:12":
+            binary = project.parent / "bin/Release/net10.0/Lumyte.Signals.Benchmark.dll"
+            smoke = runner.call([dotnet, binary, "--screening-smoke"], project.parent, label + "-smoke")
+            if smoke != "screening-smoke-ok:v2:12":
                 raise Failure("execution_error", f"{label} smoke marker absent")
             binaries[label] = binary
             result["metadata"][label + "_binary_hashes"] = {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
@@ -307,7 +307,7 @@ def run(args):
         measurements = {}
         for label, binary in binaries.items():
             raw = output / "raw" / label
-            runner.call([dotnet, binary, "--filter", *[c["id"] for c in cases], "--artifacts", raw], binary.parent, label + "-timed")
+            runner.call([dotnet, binary, "--screening", "--filter", *[c["id"] for c in cases], "--artifacts", raw], binary.parent, label + "-timed")
             measurements[label] = read_bdn(raw, cases)
             result[label + "_measurements"] = measurements[label]
         result["comparisons"] = compare(measurements["base"], measurements["head"], cases)

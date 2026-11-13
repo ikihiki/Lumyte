@@ -31,8 +31,8 @@ python3 tools/benchmarks/component-screening/screen.py run \
 
 python3 -m unittest discover -s tools/benchmarks/component-screening/tests -v
 
-dotnet build benchmarks/Lumyte.Component.Screening -c Release
-dotnet benchmarks/Lumyte.Component.Screening/bin/Release/net10.0/Lumyte.Component.Screening.dll --smoke
+dotnet build benchmarks/Core/Lumyte.Signals.Benchmark -c Release
+dotnet benchmarks/Core/Lumyte.Signals.Benchmark/bin/Release/net10.0/Lumyte.Signals.Benchmark.dll --screening-smoke
 ~~~
 
 Use a fresh run output directory on a filesystem with enough space. Both revisions
@@ -55,16 +55,23 @@ recorded; no selection implies coverage of unrelated components.
 
 ## Frozen workload and job contract
 
-Sources/ScalarBenchmarks.cs, AsyncBenchmarks.cs and GraphBenchmarks.cs in
-benchmarks/Lumyte.Component.Screening are byte-for-byte copies of the existing
-benchmarks/Lumyte.Signals.Benchmarks sources at the fixed base above. Their
-benchmark methods and setup/cleanup are unchanged. The new project compiles these
-files with explicit Compile links, references the product Signals project by
-relative path, and uses BenchmarkDotNet 0.15.8. The runner overlays the **same**
-harness from its own checkout into both archived product revisions; it does not
-use either revision's changing benchmark implementation. Normal Signals benchmark
-configuration is untouched. Update the harness/case version deliberately if
-changing a workload or comparison policy, and regenerate plans.
+Benchmarks use target-category layout, mirroring tests, with singular project
+suffix: benchmarks/Core/Lumyte.Signals.Benchmark and
+benchmarks/Core/Lumyte.Mathematics.Benchmark. Screening directly uses the existing
+Signals ScalarBenchmarks, AsyncBenchmarks and GraphBenchmarks; there is no generic
+screening project or duplicated Sources directory. Workload methods and lifecycle
+remain unchanged from the fixed base except for the singular namespace.
+
+The runner overlays the **whole same Signals.Benchmark project** from its own
+checkout into both archived product revisions, discarding any archived target
+harness first. It never uses each revision's changing benchmark implementation.
+The ../../../src project reference resolves in both old-layout base archives and
+new-layout revisions. BenchmarkDotNet remains 0.15.8. --screening explicitly selects
+the short SignalsScreening-v2 job; --screening-smoke verifies all 12 cases without
+timing. Without either flag the normal Signals job and --retention operation are
+preserved. Harness version component-screening-v2, case version 2, singular case
+identities and the v2 smoke marker reject old plans/results. Regenerate plans when
+changing a workload or comparison policy.
 
 The separate screening job uses 1 launch, 3 warmups, 8 measured iterations,
 150 ms target, MemoryDiagnoser, full JSON, and OutlierMode.DontRemove.
@@ -100,8 +107,17 @@ is useful for local diagnosis but need not be uploaded. Plan and raw paths are
 local evidence, not trusted input to privileged workflows. GitHub workflow summary
 rendering and any notification are owned by the surrounding CI workflow.
 
-The initial exact-base A/A integration check completed all 12 cases on both sides
+The original v1 exact-base A/A integration check completed all 12 cases on both sides
 with the frozen harness, exact SDK 10.0.403, and 8 retained measurements per case.
 It produced no candidates and identical allocation values. This verifies the
 pipeline, not stability or a product improvement. Generated local evidence is
 ignored under artifacts/component-screening-aa/ and is not committed.
+
+The v2 target-project integration A/A check also completed against exact product
+SHA 70db1cd8144c22256505a433531efb0e37a4a7d0 on both sides, using SDK 10.0.403.
+All 12 singular case identities had 8 retained measurements per side, with
+identical allocations and no candidates (91.46 seconds for the full engine).
+Both semantic smokes passed before timing. Evidence is ignored under
+artifacts/naming-integration/aa-result/. This is pipeline wiring verification,
+not calibrated noise or evidence of product improvement; Mathematics is built
+but is not measured by this Signals-only screening catalog.

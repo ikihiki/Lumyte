@@ -32,6 +32,9 @@ PRのbase SHAとhead SHAを固定して個別のworktreeを作り、同じハー
 測定設定で両製品版を測る。基準の別マシンでの過去スコアとは直接比較しない。
 製品のJIT・PGO・GC既定値を維持し、Releaseの短縮BenchmarkDotNetジョブを使用する。
 既存の通常ベンチマーク設定は置き換えない。
+対象別のSignals.Benchmarkへ統合し、--screeningで短縮ジョブ、
+--screening-smokeで12ケースの意味検証を選ぶ。重複ソースは持たず、このproject全体を
+実行側checkoutから両製品SHAのarchiveへ同じように重ねる。通常ジョブと--retentionは維持する。
 
 時間は中央値の相対差10%以上とケース別の最小絶対差の両方を超えたら退行候補とする。
 単一launchの候補抽出であり、統計的に確定した退行とは表示しない。

@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmarks;
+namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures primitive operations with values and callbacks created outside timed code.</summary>
 public class ScalarBenchmarks

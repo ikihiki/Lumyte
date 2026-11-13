@@ -6,8 +6,6 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Lumyte.Signals.Benchmarks.Tests" />
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <ProjectReference Include="../../src/Core/Lumyte.Signals/Lumyte.Signals.csproj" />
+    <ProjectReference Include="../../../src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
   </ItemGroup>
 </Project>
