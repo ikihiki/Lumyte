@@ -12,7 +12,7 @@ byteと要素の範囲指定が同じ名前を使い、shader ABI bufferとraw b
 
 ### 利用者の変更前・変更後
 
-変更前は数値メンバーごとのwriterと参照を含むstructを使用していた。変更後は数値専用のunmanaged structを一括転送し、参照を含む引数はprivate unmanaged storageを持つpartial classにする。公開プロパティで値を設定し、既存の明示的なprepare・copy・submit・GPU完了待機と資源所有の呼び出し順は維持する。転送契約は[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)を参照する。
+変更前は数値メンバーごとの書き込み処理と、参照を含む構造体を使用していた。変更後は数値専用のunmanaged構造体を一括転送し、参照を含む引数は非公開のunmanaged格納領域を持つpartialクラスにする。公開プロパティで値を設定し、既存の明示的な準備・コピー・送信・GPU完了待機と、資源の所有権に関する呼び出し順は維持する。転送契約は[GRAPHICS-0009](GRAPHICS-0009-shader-argument-binding.md)を参照する。
 
 単位と生成物を明示する名前を正式なinterfaceメンバーにする。旧名と転送専用の拡張メソッドは削除し、実装と利用側を移行する。
 
