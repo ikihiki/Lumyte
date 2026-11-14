@@ -109,7 +109,7 @@ ShaderTransfer helpers call value.Write(ref writer) directly for Set and typed
 CopyFrom, not through a shared writer or reference-encoding callback. They guard remaining capacity
 by subtraction and require position == expectedTransferSize at Complete. References
 are encoded inline into a cleared stackalloc byte[16], then passed directly to
-root storage.Write or upload CopyBytesFrom; borrowed spans never escape. Numeric-only
+the Vulkan/D3D12 root span, Wgpu/Browser root storage.Write, or upload CopyBytesFrom; borrowed spans never escape. Numeric-only
 codecs call WriteValue once over the complete unmanaged value, including padding.
 
 Reference-containing classes first copy the complete private unmanaged wire to a
@@ -167,9 +167,13 @@ and GPU copy commands are unchanged; no performance measurements are claimed.
 ## Root transport is not the codec ABI
 
 The same two-method writer and 16-byte reference ABI feed backend-private opaque
-root payloads. Vulkan/D3D12 freeze private CPU arrays and emit native push/root
-constants after binding resolution at Draw/Dispatch, with no per-Set GPU uniform/CBV
-or oversized-root fallback. Wgpu/Browser keep uniform emulation entirely private.
+root payloads. Vulkan/D3D12 ref-struct writers use cleared bounded stack spans
+of ceil(wireSize/4) words and emit native push/root constants before Set returns.
+Complete, optional diagnostics, reference preparation, metadata creation and
+KeepBinding all precede emission. The driver command buffer owns the numeric copy,
+not the transient stack. Draw/Dispatch never re-emit it; retained owners hold
+references/admission with null storage, not CPU numeric arrays or ArrayPool rentals.
+There is no per-Set GPU uniform/CBV or oversized-root fallback. Wgpu/Browser keep uniform emulation entirely private.
 Shader target emitters necessarily choose VkPushConstants, D3DRoot32BitConstants or
 UniformBuffer metadata; common runtime state, metadata and lifetimes stay neutral.
 The uint4 declaration is padded, but Load reads only ceil(sizeof(T)/4) scalar words.
@@ -184,4 +188,31 @@ shader-module creation, and all D3D12 pipeline/partial paths check before native
 pipeline creation. Both inspect every app ConstantBuffer using the actual root
 name and logical ShaderDataLayout.Root.Size, excluding lumyteDrawInfo and
 __lumyte_schema_ entries. No zero-allocation
-or zero-copy claim follows: CPU payload arrays, metadata and retained owners remain.
+or zero-copy claim follows: metadata, retained owners, execute-time bindings and
+descriptor heaps still allocate; Wgpu/Browser keep existing uniform owners.
+
+`Write<TWriter>` uses `where TWriter : IShaderValueWriter, allows ref struct` to
+accept stack-only writers without boxing. Handwritten and generated implementations
+require C# 13+ and the pinned .NET 10 SDK. Only the anti-constraint is added;
+the public writer retains exactly two one-value-parameter methods and no offsets.
+Vulkan fixes offset-zero, physical-capacity push ranges per bind point: Compute
+for every compute variant, Vertex|Fragment for every graphics/partial variant.
+Set emits exactly the selected range’s stage mask, preserving separate native
+compute/graphics push state. Descriptor visibility can independently include all
+three stages; differing descriptor counts do not change this fixed root contract.
+A backend host guard rejects roots above 64 KiB
+without fallback on pathological physical limits; 256 bytes is device-specific.
+D3D12 initializes one thread-safe cached root signature per device before Set,
+using 58 app + 1 + 1 tables + 2 draw + 2 SRV = 64 DWORDs. Separate graphics/compute
+root pointer tracking conditionally binds this same signature for PSO/SetProgram
+changes without resetting constants. Validation/preparation failures emit no native
+constants and preserve the old selection; issued driver commands are not rollbackable.
+
+Vulkan/D3D12 render and compute encoders guard codec/preparation with
+_settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
+rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
+After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
+pipeline-identity check all precede KeepBinding and native emission, rejecting
+raw command-buffer or pipeline disposal before native use. Host failure preserves
+the old root selection, but cannot undo caller-requested resource disposal, table
+autobinding, or already-issued driver commands.

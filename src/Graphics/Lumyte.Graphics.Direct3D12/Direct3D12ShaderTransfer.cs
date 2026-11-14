@@ -6,7 +6,8 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal static class Direct3D12ShaderTransfer
 {
-    internal static ShaderRootArguments CreateRoot<T>(Direct3D12Device owner, in T value, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    // The caller owns the exact DWORD-rounded stack span until commands_root_constants returns.
+    internal static ShaderRootArguments CreateRoot<T>(Direct3D12Device owner, in T value, Span<byte> payload, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
         where T : IShaderArguments
     {
         if (!typeof(T).IsValueType)
@@ -18,42 +19,24 @@ internal static class Direct3D12ShaderTransfer
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
         ValidateRootSize(size);
-        IShaderRootStorage storage = ShaderRootArguments.Allocate(root, name, size, factory);
-        try
-        {
-            var writer = new Direct3D12ShaderValueWriter(owner, size, storage, null, 0, diagnostic);
-            value.Write(ref writer);
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            return ShaderRootArguments.Create(root, name, size, storage, references, prepare);
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
+        var writer = new Direct3D12ShaderValueWriter(owner, size, payload, null, 0, diagnostic);
+        value.Write(ref writer);
+        IShaderReferenceMetadata references = writer.Complete();
+        diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
+        return ShaderRootArguments.Create(root, name, size, null, references, prepare);
     }
 
-    internal static ShaderRootArguments CreateUnmanaged<T>(Direct3D12Device owner, in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static ShaderRootArguments CreateUnmanaged<T>(Direct3D12Device owner, in T value, string rootParameter, string? shaderTypeName, Span<byte> payload, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
         ValidateRootSize(size);
-        IShaderRootStorage storage = ShaderRootArguments.Allocate(rootParameter, name, size, factory);
-        try
-        {
-            var writer = new Direct3D12ShaderValueWriter(owner, size, storage, null, 0, diagnostic);
-            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            return ShaderRootArguments.Create(rootParameter, name, size, storage, references, prepare);
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
+        var writer = new Direct3D12ShaderValueWriter(owner, size, payload, null, 0, diagnostic);
+        writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
+        IShaderReferenceMetadata references = writer.Complete();
+        diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
+        return ShaderRootArguments.Create(rootParameter, name, size, null, references, prepare);
     }
 
     internal static void CopyFrom<T>(Direct3D12Device owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)
@@ -91,7 +74,7 @@ internal static class Direct3D12ShaderTransfer
                     ArgumentNullException.ThrowIfNull(source[i]);
                 }
 
-                var writer = new Direct3D12ShaderValueWriter(owner, stride, null, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
+                var writer = new Direct3D12ShaderValueWriter(owner, stride, default, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();
                 diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
@@ -115,17 +98,5 @@ internal static class Direct3D12ShaderTransfer
         }
 
         return words;
-    }
-
-    private static void DisposeFailed(IShaderRootStorage storage)
-    {
-        try
-        {
-            storage.Dispose();
-        }
-        catch
-        {
-            // Preserve the original transfer or selection failure.
-        }
     }
 }

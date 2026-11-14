@@ -12,7 +12,7 @@ internal sealed class ManualBadAbiValue(NativeAbiValue value, int mode = 0) : IS
     public IReadOnlyList<ShaderTransferField> GetTransferFields() => ((IShaderArguments)value).GetTransferFields();
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter
+        where TWriter : IShaderValueWriter, allows ref struct
     {
         if (mode == 0)
         {

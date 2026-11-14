@@ -121,7 +121,7 @@ public sealed class GraphicsApiConvenienceTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private sealed class ShaderBuffer : IGraphicsShaderDataBuffer<SampleData>

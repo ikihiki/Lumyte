@@ -1,34 +1,21 @@
 struct Binding
 {
     ComPtr<ID3D12DescriptorHeap> resources, samplers;
-    std::vector<DWORD> root_words;
     UINT resource_stride = 0, sampler_stride = 0;
 };
-API HRESULT binding_create_root(Device* device, const DWORD* words, UINT word_count, Binding** output) noexcept
+API HRESULT binding_create(Device* device, Binding** output) noexcept
 {
     if (!output)
     {
         return E_INVALIDARG;
     }
     *output = nullptr;
-    if (!device || word_count > app_root_dword_capacity || (word_count && !words))
+    if (!device)
     {
         return E_INVALIDARG;
     }
     auto binding = std::unique_ptr<Binding>(new (std::nothrow) Binding());
     if (!binding)
-    {
-        return E_OUTOFMEMORY;
-    }
-    // Borrow the managed payload only for this synchronous immutable CPU copy.
-    try
-    {
-        if (word_count)
-        {
-            binding->root_words.assign(words, words + word_count);
-        }
-    }
-    catch (const std::bad_alloc&)
     {
         return E_OUTOFMEMORY;
     }
@@ -155,21 +142,11 @@ API void commands_binding(Commands* commands, Binding* binding, int compute) noe
     commands->list->SetDescriptorHeaps(2, heaps);
     if (compute)
     {
-        if (!binding->root_words.empty())
-        {
-            commands->list->SetComputeRoot32BitConstants(0, static_cast<UINT>(binding->root_words.size()),
-                                                         binding->root_words.data(), 0);
-        }
         commands->list->SetComputeRootDescriptorTable(1, binding->resources->GetGPUDescriptorHandleForHeapStart());
         commands->list->SetComputeRootDescriptorTable(2, binding->samplers->GetGPUDescriptorHandleForHeapStart());
     }
     else
     {
-        if (!binding->root_words.empty())
-        {
-            commands->list->SetGraphicsRoot32BitConstants(0, static_cast<UINT>(binding->root_words.size()),
-                                                          binding->root_words.data(), 0);
-        }
         commands->list->SetGraphicsRootDescriptorTable(1, binding->resources->GetGPUDescriptorHandleForHeapStart());
         commands->list->SetGraphicsRootDescriptorTable(2, binding->samplers->GetGPUDescriptorHandleForHeapStart());
     }

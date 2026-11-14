@@ -12,7 +12,7 @@ internal sealed record class ConsumerLinkArguments(IGpuRef<ConsumerLink> Data, f
     public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Data", 0, 16, typeof(ShaderReferenceSlot), true), new("Float", 16, 4, typeof(float))];
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter
+        where TWriter : IShaderValueWriter, allows ref struct
     {
         var wire = new Wire { Float = Float };
         ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));

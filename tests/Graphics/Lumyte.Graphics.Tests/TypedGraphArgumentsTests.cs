@@ -116,7 +116,7 @@ public sealed class TypedGraphArgumentsTests
         public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Output", 0, 16, typeof(ShaderReferenceSlot), true), new("Index", 16, 4, typeof(uint)), new("Value", 20, 4, typeof(uint))];
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             Wire wire = new() { Index = Index, Value = Value };
             ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));

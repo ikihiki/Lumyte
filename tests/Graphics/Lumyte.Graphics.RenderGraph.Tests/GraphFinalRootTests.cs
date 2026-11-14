@@ -360,7 +360,7 @@ public sealed class GraphFinalRootTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("Unexpected diagnostic probe.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             if (typeof(TWriter).Name.Contains("Snapshot", StringComparison.Ordinal))
             {

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Lumyte.Graphics.Abstractions;
 using V = Silk.NET.Vulkan;
 
@@ -22,10 +23,12 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
+    private bool _settingArguments;
     private VulkanArgumentTable? _table;
 
     public void SetArgumentTable(IArgumentTable table)
     {
+        // Graph admission legitimately autobinds its table here; it does not change root bytes.
         owner.ValidatePass(this);
         ArgumentNullException.ThrowIfNull(table);
         if (table is not VulkanArgumentTable selected || !selected.BelongsTo(owner.Owner))
@@ -40,6 +43,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         _argumentValidation = prepare;
     }
@@ -48,20 +52,45 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        ShaderRootArguments root = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
-        SelectRoot(root);
+        VulkanGraphicsPipeline pipeline = _pipeline!;
+        _settingArguments = true;
+        try
+        {
+            int size = VulkanPushConstants.ValidateStackSize(owner.Owner, T.TransferSize);
+            Span<byte> payload = stackalloc byte[size];
+            payload.Clear();
+            ShaderRootArguments root = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            SelectRoot(root, payload, pipeline);
+        }
+        finally
+        {
+            _settingArguments = false;
+        }
     }
 
     public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
         where T : unmanaged
     {
         ValidateRootSelection();
-        ShaderRootArguments root = VulkanShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
-        SelectRoot(root);
+        VulkanGraphicsPipeline pipeline = _pipeline!;
+        _settingArguments = true;
+        try
+        {
+            int size = VulkanPushConstants.ValidateStackSize(owner.Owner, Unsafe.SizeOf<T>());
+            Span<byte> payload = stackalloc byte[size];
+            payload.Clear();
+            ShaderRootArguments root = VulkanShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+            SelectRoot(root, payload, pipeline);
+        }
+        finally
+        {
+            _settingArguments = false;
+        }
     }
 
     public void SetPipeline(IGraphicsPipeline pipeline)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         ArgumentNullException.ThrowIfNull(pipeline);
         if (pipeline is not VulkanGraphicsPipeline program || !ReferenceEquals(program.Owner, owner.Owner))
@@ -76,6 +105,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void SetRenderState(GraphicsRenderStateDesc state)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         RenderStateSnapshot snapshot = PipelineValidation.State(state, owner.Owner.Caps);
         _state = snapshot;
@@ -83,6 +113,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void SetViewport(Viewport viewport)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         PipelineValidation.Viewport(viewport);
         if (viewport.X < 0 || viewport.Y < 0 || viewport.Width > _size.Width - viewport.X || viewport.Height > _size.Height - viewport.Y)
@@ -97,6 +128,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void SetScissor(ScissorRect scissor)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         PipelineValidation.Scissor(scissor, _size.Width, _size.Height);
         var native = new V.Rect2D(new(checked((int)scissor.X), checked((int)scissor.Y)), new(scissor.Width, scissor.Height));
@@ -106,6 +138,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void SetBlendConstant(BlendConstant value)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         if (!float.IsFinite(value.Red) || !float.IsFinite(value.Green) || !float.IsFinite(value.Blue) || !float.IsFinite(value.Alpha))
         {
@@ -119,6 +152,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void SetStencilReference(uint reference)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         if (reference > 255)
         {
@@ -135,6 +169,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
+        ThrowIfSettingArguments();
         using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
@@ -145,6 +180,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
+        ThrowIfSettingArguments();
         using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
@@ -161,6 +197,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
+        ThrowIfSettingArguments();
         using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         VulkanBuffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
@@ -172,6 +209,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
+        ThrowIfSettingArguments();
         using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         VulkanBuffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
@@ -182,11 +220,16 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         validationRecording?.Commit();
     }
 
-    public void End() => owner.EndRender(this);
+    public void End()
+    {
+        ThrowIfSettingArguments();
+        owner.EndRender(this);
+    }
 
     private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
         where T : unmanaged
     {
+        ThrowIfSettingArguments();
         using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         VulkanBuffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
@@ -212,8 +255,17 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         return owner.Buffer(arguments, BufferUsage.Indirect);
     }
 
+    private void ThrowIfSettingArguments()
+    {
+        if (_settingArguments)
+        {
+            throw new InvalidOperationException("Encoder mutation is not allowed while setting arguments.");
+        }
+    }
+
     private void ValidateRootSelection()
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         if (_pipeline == null)
         {
@@ -223,14 +275,21 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         _pipeline.ValidateAlive();
     }
 
-    private IShaderRootStorage CreateRootStorage(int size) => new VulkanRootStorage(owner.Owner, size);
-
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 
-    private void SelectRoot(ShaderRootArguments root)
+    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanGraphicsPipeline pipeline)
     {
         try
         {
+            // User codecs and admission hooks can dispose the command owner or pipeline.
+            // Revalidate the captured selection before retaining metadata or issuing commands.
+            owner.ValidatePass(this);
+            pipeline.ValidateAlive();
+            if (!ReferenceEquals(_pipeline, pipeline))
+            {
+                throw new InvalidOperationException("The selected program changed while setting arguments.");
+            }
+
             owner.KeepBinding(root);
         }
         catch
@@ -239,8 +298,9 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             throw;
         }
 
+        VulkanPushConstants.Emit(owner, pipeline.ArgumentPipelineLayout, VulkanPushConstants.GraphicsStages, payload);
         _arguments = root;
-        _argumentProgram = _pipeline;
+        _argumentProgram = pipeline;
     }
 
     private void PrepareDraw(bool indexed)
@@ -285,7 +345,6 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         {
             var binding = new VulkanShaderBinding(owner.Owner, bindingDependencies, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingDependencies.RootParameter), _pipeline.ArgumentLayout);
             owner.KeepBinding(binding);
-            VulkanPushConstants.Emit(owner, _pipeline.ArgumentPipelineLayout, bindingDependencies.Arguments);
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }

@@ -112,7 +112,8 @@ references encode 16 bytes inline. Cursor/emitter APIs and WriteWire are removed
 Vulkan, Direct3D12, Wgpu and Browser each implement an internal backend-native
 IShaderValueWriter for both Set and typed CopyFrom. Each writer owns position,
 bounds and cleared stack-local 16-byte reference encoding, and writes directly to
-root storage or mapped upload storage; no shared encoding callback is involved.
+a transient root span (Vulkan/D3D12), private root storage
+(Wgpu/Browser), or mapped upload storage; no shared encoding callback is involved.
 Reference metadata owners, collections, native buffers and some delegates still
 allocate, and Browser span-to-JS copies remain: this is not a zero-allocation or
 zero-copy claim. No new performance result is asserted here.
@@ -126,9 +127,12 @@ use declarations in the consuming pass; shared table identity alone declares no 
 Native Vulkan roots now use vkCmdPushConstants; Direct3D12 uses graphics/compute
 root 32-bit constants, not per-Set GPU uniform/CBV allocation or an oversized-root
 fallback. Query VulkanDevice.MaxPushConstantsSize; D3D12 exposes
-RootConstantDwordCapacity=58 and RootConstantByteCapacity=232. Set freezes a private
-CPU payload for command lifetime so Draw/Dispatch can choose the program/layout variant
-and record the actual native constants command; small arrays and metadata still allocate.
+RootConstantDwordCapacity=58 and RootConstantByteCapacity=232. Set writes a cleared, bounded ceil(wireSize/4)-word stack span and records
+native constants before returning. Complete, optional diagnostics, reference preparation,
+metadata creation and KeepBinding all precede emission. The driver command buffer
+owns the numeric copy, not the temporary stack. Draw/Dispatch never re-emit it;
+retained owners hold reference/admission metadata with null storage, not numeric
+CPU heap arrays or ArrayPool rentals. Metadata and execute-time bindings still allocate.
 Artifact-capacity preflight is mandatory ABI safety, independent of EnableValidation:
 Vulkan checks against the owning device before shader-module creation; all D3D12
 pipeline/partial paths check before native pipeline creation. Both inspect every app
@@ -141,3 +145,33 @@ APIs or dependency upgrades. Shared/Graph lifetimes and metadata remain transpor
 target-specific shader emission is inherently target-aware, not runtime feature dispatch.
 The archived writer measurements describe checkpoint 3582af8a, not this newer
 constant-root implementation; see the [pinned report](docs/performance/backend-native-writers.md).
+
+Vulkan fixes push ranges per bind point: offset zero and physical capacity, with
+Compute for every compute variant and Vertex|Fragment for every graphics/partial
+variant. Each Set emits exactly its range’s stage mask, preserving separate native
+compute/graphics push state. Descriptor visibility may independently include all
+three stages; descriptor-count layouts may vary, not the bind-point root contract.
+A backend host guard rejects roots above 64 KiB
+without fallback even on pathological physical limits (256 bytes is device-specific).
+D3D12 initializes one thread-safe cached fixed root signature per device before Set:
+58 app + 1 + 1 tables + 2 draw + 2 SRV = 64 DWORDs. Separate graphics/compute
+root pointer tracking conditionally binds the same signature for PSO/SetProgram
+changes without resetting constants. Validation/preparation failure emits no
+native constants and preserves the old selection; issued void driver commands
+and device failures are not rollbackable. Ref-struct writers require C# 13+ and
+the pinned .NET 10 SDK; `Write<TWriter>` adds only allows ref struct to its constraint.
+
+Vulkan/D3D12 render and compute encoders guard codec/preparation with
+_settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
+rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
+After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
+pipeline-identity check all precede KeepBinding and native emission, rejecting
+raw command-buffer or pipeline disposal before native use. Host failure preserves
+the old root selection, but cannot undo caller-requested resource disposal, table
+autobinding, or already-issued driver commands.
+
+Vulkan correctness review includes source-level range/stage-mask checks against
+VUID-vkCmdPushConstants-offset-01796 and actual hardware tests. The optional
+VK_LAYER_KHRONOS_validation layer is absent here; hardware success is not a native
+validation-layer result. RootRecordNative belongs to Set, not mutable PSO state;
+Const_Metadata stays reference-only, with No_Frame_Source retention.

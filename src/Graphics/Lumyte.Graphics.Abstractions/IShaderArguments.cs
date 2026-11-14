@@ -21,10 +21,10 @@ public interface IShaderArguments
     IReadOnlyList<ShaderTransferField> GetTransferFields() => [];
 
     /// <summary>Copies one complete unmanaged wire value and records opaque reference fixups.</summary>
-    /// <typeparam name="TWriter">The writer type, which can be a value type without boxing.</typeparam>
+    /// <typeparam name="TWriter">The writer type, which can be a value type or ref struct without boxing.</typeparam>
     /// <param name="writer">The snapshot destination.</param>
     void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter;
+        where TWriter : IShaderValueWriter, allows ref struct;
 
     /// <summary>Captures values through the type's implementation without codec registration.</summary>
     /// <typeparam name="T">The application transfer type.</typeparam>

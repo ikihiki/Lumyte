@@ -22,11 +22,6 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
                 throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
             }
 
-            if (dependencies.Arguments.Storage is not VulkanRootStorage)
-            {
-                throw new ArgumentException("Root storage belongs to another backend.", nameof(dependencies));
-            }
-
             dependencies.Arguments.Seal();
 
             DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[2];

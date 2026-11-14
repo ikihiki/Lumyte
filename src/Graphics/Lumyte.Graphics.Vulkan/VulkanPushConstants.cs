@@ -6,7 +6,12 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal static class VulkanPushConstants
 {
-    internal const ShaderStageFlags Stages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit | ShaderStageFlags.ComputeBit;
+    // One fixed range per bind point; updates include every stage of its overlapping range.
+    internal const ShaderStageFlags GraphicsStages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
+    internal const ShaderStageFlags ComputeStages = ShaderStageFlags.ComputeBit;
+
+    // Descriptor visibility is independent of the bind-point push-constant range.
+    internal const ShaderStageFlags Stages = GraphicsStages | ComputeStages;
 
     internal static uint ValidateSize(VulkanDevice owner, int size)
     {
@@ -18,6 +23,20 @@ internal static class VulkanPushConstants
         }
 
         return (uint)rounded;
+    }
+
+    internal static int ValidateStackSize(VulkanDevice owner, int size)
+    {
+        uint rounded = ValidateSize(owner, size);
+
+        // Reject implausibly large payloads explicitly rather than risking a stack overflow.
+        // The physical limit remains unchanged and is still advertised and used by layouts.
+        if (rounded > 64 * 1024)
+        {
+            throw new NotSupportedException("Root arguments above 64 KiB cannot be recorded with bounded stack storage.");
+        }
+
+        return checked((int)rounded);
     }
 
     internal static void ValidateStorage(VulkanDevice owner, ShaderTargetData target)
@@ -51,23 +70,16 @@ internal static class VulkanPushConstants
         }
     }
 
-    internal static unsafe void Emit(VulkanCommandBuffer owner, PipelineLayout layout, ShaderRootArguments arguments)
+    internal static unsafe void Emit(VulkanCommandBuffer owner, PipelineLayout layout, ShaderStageFlags stages, ReadOnlySpan<byte> payload)
     {
-        uint size = ValidateSize(owner.Owner, arguments.WireSize);
-        if (arguments.Storage is not VulkanRootStorage storage)
-        {
-            throw new ArgumentException("Root storage belongs to another backend.", nameof(arguments));
-        }
-
-        arguments.Seal();
-        if (size == 0)
+        if (payload.IsEmpty)
         {
             return;
         }
 
-        fixed (byte* payload = storage.Data)
+        fixed (byte* data = payload)
         {
-            owner.Owner.Api.CmdPushConstants(owner.Native, layout, Stages, 0, size, payload);
+            owner.Owner.Api.CmdPushConstants(owner.Native, layout, stages, 0, checked((uint)payload.Length), data);
         }
     }
 }

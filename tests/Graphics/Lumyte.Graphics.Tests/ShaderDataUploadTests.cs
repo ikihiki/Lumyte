@@ -251,7 +251,7 @@ public sealed class ShaderDataUploadTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             Writes++;
             if (Failure != null)
@@ -281,7 +281,7 @@ public sealed class ShaderDataUploadTests
         public static int TransferSize => int.MaxValue;
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => throw new InvalidOperationException("Overflow must precede codec execution.");
+            where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Overflow must precede codec execution.");
     }
 
     private sealed class TestReference(ulong count) : IGpuRef<uint>, IShaderReference

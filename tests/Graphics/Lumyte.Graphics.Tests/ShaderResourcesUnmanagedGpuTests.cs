@@ -119,6 +119,7 @@ public sealed class ShaderResourcesUnmanagedGpuTests
                 DrawColor(new(1, 0, 0, 1));
                 encoder.SetScissor(new(1, 0, 1, 1));
                 DrawColor(new(0, 1, 0, 1));
+                encoder.Draw(3);
                 Assert.Equal(2, encoder.RawSetCount);
                 renderBodyCompleted = true;
 
@@ -129,12 +130,14 @@ public sealed class ShaderResourcesUnmanagedGpuTests
                         var root = new HelperColorRoot(color);
                         resources.Draw(encoder, in root, 3, rootParameter: "arguments", shaderTypeName: "HelperColorRoot");
                         root = new HelperColorRoot(new(0, 0, 1, 1));
+                        encoder.Draw(3);
                     }
                     else
                     {
                         var root = new UniformColorRoot(color);
                         resources.Draw(encoder, in root, 3, rootParameter: "arguments", shaderTypeName: "HelperColorRoot");
                         root = new UniformColorRoot(new(0, 0, 1, 1));
+                        encoder.Draw(3);
                     }
                 }
             }

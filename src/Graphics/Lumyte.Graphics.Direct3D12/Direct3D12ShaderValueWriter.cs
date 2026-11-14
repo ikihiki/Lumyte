@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal struct Direct3D12ShaderValueWriter : IShaderValueWriter
+internal ref struct Direct3D12ShaderValueWriter : IShaderValueWriter
 {
     private readonly Direct3D12Device _owner;
     private readonly int _size;
-    private readonly IShaderRootStorage? _root;
+    private readonly Span<byte> _root;
     private readonly IGraphicsBuffer<byte>? _upload;
     private readonly ulong _baseOffset;
     private readonly ShaderDataLayout? _diagnostic;
@@ -17,18 +17,23 @@ internal struct Direct3D12ShaderValueWriter : IShaderValueWriter
     private bool _written;
     private bool _completed;
 
-    internal Direct3D12ShaderValueWriter(Direct3D12Device owner, int size, IShaderRootStorage? root, IGraphicsBuffer<byte>? upload, ulong baseOffset, ShaderDataLayout? diagnostic)
+    internal Direct3D12ShaderValueWriter(Direct3D12Device owner, int size, Span<byte> root, IGraphicsBuffer<byte>? upload, ulong baseOffset, ShaderDataLayout? diagnostic)
     {
         this = default;
-        (_owner, _size, _root, _upload, _baseOffset, _diagnostic) = (owner, size, root, upload, baseOffset, diagnostic);
+        _owner = owner;
+        _size = size;
+        _root = root;
+        _upload = upload;
+        _baseOffset = baseOffset;
+        _diagnostic = diagnostic;
     }
 
-    public void WriteValue(ReadOnlySpan<byte> value)
+    public void WriteValue(scoped ReadOnlySpan<byte> value)
     {
         ValidateWrite(value.Length);
-        if (_root != null)
+        if (_upload == null)
         {
-            _root.Write(value, _position);
+            value.CopyTo(_root.Slice(_position));
         }
         else
         {

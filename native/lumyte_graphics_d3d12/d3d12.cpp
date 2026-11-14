@@ -8,6 +8,7 @@
 #include <new>
 #include <cstring>
 #include <cstdio>
+#include <mutex>
 
 using Microsoft::WRL::ComPtr;
 #define API extern "C" __declspec(dllexport)
@@ -24,15 +25,22 @@ struct Device
     ComPtr<ID3D12DeviceFactory> factory;
     ComPtr<ID3D12Device> device;
     ComPtr<ID3D12CommandQueue> queue;
+    std::mutex root_mutex;
+    ComPtr<ID3D12RootSignature> root;
 };
 struct Commands
 {
+    Device* owner = nullptr;
+    ID3D12RootSignature* graphics_root = nullptr;
+    ID3D12RootSignature* compute_root = nullptr;
     ComPtr<ID3D12CommandAllocator> allocator;
     ComPtr<ID3D12GraphicsCommandList> list;
     ComPtr<ID3D12GraphicsCommandList7> barriers;
     ComPtr<ID3D12DescriptorHeap> render_targets;
     ComPtr<ID3D12DescriptorHeap> depth_target;
 };
+
+static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcept;
 
 static HRESULT report_failure(Device* device, HRESULT result) noexcept
 {
@@ -137,6 +145,8 @@ API HRESULT device_create(UINT adapter_index, int warp, int debug, int partial, 
     D3D12_COMMAND_QUEUE_DESC queue{};
     queue.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     CHECK(owner->device->CreateCommandQueue(&queue, IID_PPV_ARGS(&owner->queue)));
+    ComPtr<ID3D12RootSignature> root;
+    CHECK(create_root(owner.get(), &root));
     *output = owner.release();
     return S_OK;
 }
@@ -208,6 +218,7 @@ API HRESULT commands_create(Device* device, Commands** output) noexcept
     {
         return E_OUTOFMEMORY;
     }
+    commands->owner = device;
     CHECK(device->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commands->allocator)));
     CHECK(device->device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commands->allocator.Get(), nullptr,
                                             IID_PPV_ARGS(&commands->list)));

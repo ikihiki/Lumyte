@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal unsafe struct VulkanShaderValueWriter : IShaderValueWriter
+internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
 {
     private readonly VulkanDevice _owner;
     private readonly int _size;
-    private readonly IShaderRootStorage? _root;
+    private readonly Span<byte> _root;
     private readonly IGraphicsBuffer<byte>? _upload;
     private readonly ulong _baseOffset;
     private readonly ShaderDataLayout? _diagnostic;
@@ -17,18 +17,27 @@ internal unsafe struct VulkanShaderValueWriter : IShaderValueWriter
     private bool _written;
     private bool _completed;
 
-    internal VulkanShaderValueWriter(VulkanDevice owner, int size, IShaderRootStorage? root, IGraphicsBuffer<byte>? upload, ulong baseOffset, ShaderDataLayout? diagnostic)
+    internal VulkanShaderValueWriter(VulkanDevice owner, int size, Span<byte> root, ShaderDataLayout? diagnostic)
     {
         this = default;
-        (_owner, _size, _root, _upload, _baseOffset, _diagnostic) = (owner, size, root, upload, baseOffset, diagnostic);
+        _owner = owner;
+        _size = size;
+        _root = root;
+        _diagnostic = diagnostic;
     }
 
-    public void WriteValue(ReadOnlySpan<byte> value)
+    internal VulkanShaderValueWriter(VulkanDevice owner, int size, IGraphicsBuffer<byte> upload, ulong baseOffset, ShaderDataLayout? diagnostic)
+    {
+        this = default;
+        (_owner, _size, _upload, _baseOffset, _diagnostic) = (owner, size, upload, baseOffset, diagnostic);
+    }
+
+    public void WriteValue(scoped ReadOnlySpan<byte> value)
     {
         ValidateWrite(value.Length);
-        if (_root != null)
+        if (_upload == null)
         {
-            _root.Write(value, _position);
+            value.CopyTo(_root.Slice(_position, value.Length));
         }
         else
         {

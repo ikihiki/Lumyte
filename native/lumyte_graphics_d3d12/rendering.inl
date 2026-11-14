@@ -26,6 +26,15 @@ static_assert(app_root_dword_capacity + fixed_root_dword_cost == 64,
 
 static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcept
 {
+    if (!device || !output)
+    {
+        return E_INVALIDARG;
+    }
+    std::lock_guard<std::mutex> lock(device->root_mutex);
+    if (device->root)
+    {
+        return device->root.CopyTo(output);
+    }
     D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
     CHECK(device->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options)));
     D3D12_FEATURE_DATA_SHADER_MODEL shader{D3D_SHADER_MODEL_6_6};
@@ -56,8 +65,9 @@ static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcep
                                    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
     ComPtr<ID3DBlob> blob, errors;
     CHECK(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &errors));
-    return device->device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                                               IID_PPV_ARGS(output));
+    CHECK(device->device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
+                                              IID_PPV_ARGS(&device->root)));
+    return device->root.CopyTo(output);
 }
 #include "partial_programs.inl"
 
@@ -103,13 +113,10 @@ API HRESULT graphics_create(Device* device, const void* vs, UINT64 vs_size, cons
     {
         return E_OUTOFMEMORY;
     }
-    if (partial)
+    CHECK(report_failure(device, create_root(device, &pipeline->root)));
+    if (partial && partial->root.Get() != pipeline->root.Get())
     {
-        pipeline->root = partial->root;
-    }
-    else
-    {
-        CHECK(report_failure(device, create_root(device, &pipeline->root)));
+        return E_INVALIDARG;
     }
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = pipeline->root.Get();
@@ -171,12 +178,68 @@ API HRESULT graphics_create(Device* device, const void* vs, UINT64 vs_size, cons
     *output = pipeline.release();
     return S_OK;
 }
+// Root state is tracked independently for graphics and compute. Never redundantly bind:
+// even an identical layout with a different object identity would invalidate arguments.
+static void bind_root_signature(Commands* commands, ID3D12RootSignature* root, int compute) noexcept
+{
+    auto& selected = compute ? commands->compute_root : commands->graphics_root;
+    if (selected != root)
+    {
+        if (compute)
+        {
+            commands->list->SetComputeRootSignature(root);
+        }
+        else
+        {
+            commands->list->SetGraphicsRootSignature(root);
+        }
+        selected = root;
+    }
+}
+
+API HRESULT commands_root_constants(Commands* commands, const DWORD* words, UINT word_count, int compute) noexcept
+{
+    if (!commands || !commands->owner || !commands->list || !commands->owner->root ||
+        word_count > app_root_dword_capacity || (word_count && !words) || (compute != 0 && compute != 1))
+    {
+        return E_INVALIDARG;
+    }
+    // Every fallible precondition precedes mutation. D3D12 copies the borrowed words
+    // into command-list storage synchronously; no CPU payload is retained here.
+    bind_root_signature(commands, commands->owner->root.Get(), compute);
+    if (word_count)
+    {
+        if (compute)
+        {
+            commands->list->SetComputeRoot32BitConstants(0, word_count, words, 0);
+        }
+        else
+        {
+            commands->list->SetGraphicsRoot32BitConstants(0, word_count, words, 0);
+        }
+    }
+    // These void driver calls cannot be rolled back if device failure is reported later.
+    return S_OK;
+}
+
 API HRESULT commands_pipeline(Commands* commands, Pipeline* pipeline, int compute) noexcept
 {
+    if (!commands || !commands->owner || !pipeline || !commands->list || !commands->owner->root ||
+        pipeline->root.Get() != commands->owner->root.Get() || (compute != 0 && compute != 1) ||
+        (!pipeline->executable && !pipeline->state) || (compute && pipeline->executable))
+    {
+        return E_INVALIDARG;
+    }
+    ComPtr<ID3D12GraphicsCommandList10> list;
     if (pipeline->executable)
     {
-        ComPtr<ID3D12GraphicsCommandList10> list;
         CHECK(commands->list.As(&list));
+    }
+    // Also covers pipelines without SetArguments. Generic programs inherit the same
+    // device-global signature through their partial collection; identity checked above.
+    bind_root_signature(commands, pipeline->root.Get(), compute);
+    if (pipeline->executable)
+    {
         D3D12_SET_PROGRAM_DESC desc{};
         desc.Type = D3D12_PROGRAM_TYPE_GENERIC_PIPELINE;
         desc.GenericPipeline.ProgramIdentifier = pipeline->identifier;
@@ -185,14 +248,6 @@ API HRESULT commands_pipeline(Commands* commands, Pipeline* pipeline, int comput
     else
     {
         commands->list->SetPipelineState(pipeline->state.Get());
-    }
-    if (compute)
-    {
-        commands->list->SetComputeRootSignature(pipeline->root.Get());
-    }
-    else
-    {
-        commands->list->SetGraphicsRootSignature(pipeline->root.Get());
     }
     return S_OK;
 }

@@ -178,7 +178,7 @@ public sealed class ShaderBulkTransferTests
         public static IReadOnlyList<ShaderTransferField> TransferFields => Fields();
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => throw new InvalidOperationException("Static sizing must not capture values.");
+            where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Static sizing must not capture values.");
     }
 
     private sealed class UnconstructibleData : IShaderArguments
@@ -195,6 +195,6 @@ public sealed class ShaderBulkTransferTests
         public static IReadOnlyList<ShaderTransferField> TransferFields => Fields();
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => throw new InvalidOperationException("Must not serialize shader values to determine stride.");
+            where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Must not serialize shader values to determine stride.");
     }
 }

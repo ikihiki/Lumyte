@@ -429,7 +429,7 @@ public sealed class ShaderFlatWriterTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             Writes++;
             var wire = new CursorWire { Number = 17 };
@@ -463,7 +463,7 @@ public sealed class ShaderFlatWriterTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             Writes++;
             if (first > 0)

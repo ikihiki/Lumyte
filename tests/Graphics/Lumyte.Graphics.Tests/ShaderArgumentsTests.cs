@@ -133,6 +133,25 @@ public sealed class ShaderArgumentsTests
         Assert.DoesNotContain(before.GetDiagnosticFields(), field => field.Path.StartsWith("_data", StringComparison.Ordinal));
     }
 
+    /// <summary>Handwritten and generated producers accept stack-only writers through generic interface dispatch.</summary>
+    [Fact]
+    public void StackOnlyWriterAcceptsHandwrittenAndGeneratedArguments()
+    {
+        Span<byte> bytes = stackalloc byte[64];
+        var writer = new StackWriter(bytes);
+        var manual = new ManualArguments(17);
+        WriteStack(in manual, ref writer);
+        Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(bytes));
+        var generated = new BulkNestedArguments { Header = 23 };
+        Span<byte> generatedBytes = stackalloc byte[Unsafe.SizeOf<BulkNestedArguments>()];
+        var generatedWriter = new StackWriter(generatedBytes);
+        WriteStack(in generated, ref generatedWriter);
+        Assert.Equal(23u, BinaryPrimitives.ReadUInt32LittleEndian(generatedBytes));
+    }
+
+    private static void WriteStack<T>(in T value, ref StackWriter writer)
+        where T : IShaderArguments => value.Write(ref writer);
+
     private static void Write<T>(in T value, ref CountingWriter writer)
         where T : IShaderArguments => value.Write(ref writer);
 
@@ -143,7 +162,7 @@ public sealed class ShaderArgumentsTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private readonly record struct CustomRootArguments(uint Value) : IShaderArguments
@@ -155,7 +174,7 @@ public sealed class ShaderArgumentsTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private struct CountingWriter(int capacity) : IShaderValueWriter
@@ -187,6 +206,15 @@ public sealed class ShaderArgumentsTests
             ReferenceCount++;
             Bytes += 16;
         }
+    }
+
+    private ref struct StackWriter(Span<byte> destination) : IShaderValueWriter
+    {
+        private Span<byte> _destination = destination;
+
+        public void WriteValue(ReadOnlySpan<byte> value) => value.CopyTo(_destination);
+
+        public void WriteReference<T>(IGpuRef<T>? value) => throw new InvalidOperationException("Numeric-only test writer.");
     }
 
     private sealed class TestReference : IGpuRef<uint>

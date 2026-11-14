@@ -14,7 +14,7 @@ internal sealed record class ConsumerArguments(float Float, Func<float>? Read = 
     public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Float", 0, 4, typeof(float)), new("Int", 4, 4, typeof(int)), new("UInt", 8, 4, typeof(uint)), new("Vector2", 16, 8, typeof(Vector2)), new("Vector3", 32, 12, typeof(Vector3)), new("Vector4", 48, 16, typeof(Vector4)), new("Matrix", 64, 64, typeof(Matrix4x4))];
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter
+        where TWriter : IShaderValueWriter, allows ref struct
     {
         var wire = new Wire { Float = Read?.Invoke() ?? Float, Int = -2, UInt = 3, Vector2 = Vector2.One, Vector3 = Vector3.One, Vector4 = Vector4.One, Matrix = Matrix4x4.Identity };
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1)));

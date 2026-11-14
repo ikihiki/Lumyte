@@ -172,9 +172,9 @@ graph.AddPass("sample", context =>
 - UseSampler(desc) declares a graph-owned immutable sampler; UseSampler(sampler) declares a borrowed identity. Samplers create neither GPU barriers nor write roots. GetGpuRef accepts the same desc or object key.
 - Distinct views/ranges retain their exact identities, while hazards and culling remain conservatively allocation-wide. GetGpuRef only looks up admitted keys during the declaring callback; it cannot append slots or widen access.
 
-SetArguments(in arguments) invokes the ordinary codec once through the selected backend’s internal IShaderValueWriter and writes a new command-owned backend-owned opaque root generation. The same backend writer serves typed CopyFrom; it owns bounds, position and cleared stack-local 16-byte encoding and writes directly to storage, not through a Shared encoding callback. The reference-only Graph preparation hook below is unchanged and is not a codec/encoding callback. Graph caches one PrepareArguments delegate per graph encoder, installs it through existing native IRenderEncoder/IComputeEncoder.SetArgumentValidation only around ordinary SetArguments, and clears it in try/finally and before End. RenderGraphContext.SelectArguments delegates root checks to GraphShaderResourceOwner.SelectArguments: each reference must fit the pass’s existing allowed native resource identity, byte offset/size and access. BindResources automatically selects the native table before publishing the new root. EnsureActive rejects reentrant End, nested Set and pipeline mutation while SetArguments is active. There is no public Graph SetArgumentTable; native manual SetArgumentTable remains available. No numeric snapshot or legacy fallback is used. Numeric bytes remain frozen until another successful selection. Failed encoding/schema/preparation/native replacement cleans up unpublished storage, preserves the original exception and leaves the previous root selection unchanged. Switching pipelines requires a new selection unless switching back before another successful SetArguments; there is one last selection, not a per-pipeline cache. Numeric-only arguments and argument-free programs need no dummy resource declaration.
+SetArguments(in arguments) invokes the ordinary codec once through the selected backend’s internal IShaderValueWriter and fixes the Set-time value. Vulkan/D3D12 record native constants before Set returns using a cleared bounded stack span; Wgpu/Browser keep existing backend-private uniform owners. The same backend writer serves typed CopyFrom; it owns bounds, position and cleared stack-local 16-byte encoding and writes directly to storage, not through a Shared encoding callback. The reference-only Graph preparation hook below is unchanged and is not a codec/encoding callback. Graph caches one PrepareArguments delegate per graph encoder, installs it through existing native IRenderEncoder/IComputeEncoder.SetArgumentValidation only around ordinary SetArguments, and clears it in try/finally and before End. RenderGraphContext.SelectArguments delegates root checks to GraphShaderResourceOwner.SelectArguments: each reference must fit the pass’s existing allowed native resource identity, byte offset/size and access. BindResources automatically selects the native table before publishing the new root. EnsureActive rejects reentrant End, nested Set and pipeline mutation while SetArguments is active. There is no public Graph SetArgumentTable; native manual SetArgumentTable remains available. No numeric snapshot or legacy fallback is used. Numeric bytes remain frozen until another successful selection. Failed encoding/schema/preparation emits no native constants and preserves the old selection and original exception. All managed preparation and KeepBinding precede native emission; issued void driver commands and device failure are not rollbackable. Switching pipelines requires a new selection unless switching back before another successful SetArguments; there is one last selection, not a per-pipeline cache. Numeric-only arguments and argument-free programs need no dummy resource declaration.
 
-Preparation returns the single detached Action cached per prepared pass. It captures only an immutable allowed array, never the owner, context, pass or original input. ShaderRootArguments retains it; every native Draw/Dispatch refreshes the complete root/transitive reference set through its latest command-local CopyFrom/CopyBuffer metadata overlay and checks it once against the same native resource/range/access permissions. Numeric bytes are not snapshotted or re-encoded. Metadata owners and collections, backend-private root payloads and cached delegates still exist; Browser interop still performs span copies. This does not claim zero allocation, zero GPU copy or new measured performance. A failed admission blocks native recording; it does not promise rollback of CPU state.
+Preparation returns the single detached Action cached per prepared pass. It captures only an immutable allowed array, never the owner, context, pass or original input. ShaderRootArguments retains it; every native Draw/Dispatch refreshes the complete root/transitive reference set through its latest command-local CopyFrom/CopyBuffer metadata overlay and checks it once against the same native resource/range/access permissions. Numeric bytes are not snapshotted or re-encoded. Metadata owners and collections, Wgpu/Browser uniform payloads, execute-time bindings/descriptor heaps and cached delegates still allocate; Browser interop still performs span copies. This does not claim zero allocation, zero GPU copy or new measured performance. A failed admission blocks native recording; it does not promise rollback of CPU state.
 
 This minimal hook is needed even with device validation disabled. JoinTable can merge native table identity across passes, but that identity does not describe a pass declaration-range boundary. Sharing a table does not itself declare resource use. Graph cannot directly observe native command-local metadata, so table affinity and declared resource/range/access admission remain separate checks. Ordinary native SetArguments remains direct, with no hook allocation on the null path. IShaderRootEncoder, IShaderArgumentScope, GraphRootArgumentScope and the nested ReferenceAdmission class are removed; no new public types, friend access, InternalsVisibleTo or Graph copy-overlay proxy are added.
 
@@ -184,12 +184,16 @@ Actual BeginRenderPass attachments must match declared roles/access and cannot c
 
 Built-in payload mapping/finalization uses an assembly-private bridge driven by the same exact view/range/sampler declarations. No additional module resource factory is part of the public Graph API. Direct Canvas remains graph-independent. Existing raw Commands remain the low-level interoperability escape; do not mix raw passes with an open dedicated graph encoder.
 
-Graph admission and metadata are root-transport-neutral. Vulkan/D3D12 retain a private
-CPU payload per successful Set, then emit native push/root constants after binding
-resolution at Draw/Dispatch. They allocate no per-Set GPU uniform/CBV and do not
-fall back for oversized roots. CPU retention until Draw/Dispatch is needed to
-resolve the selected program/layout variant and record the actual native command,
-not to impose a common GPU-uniform lifetime. Set-time capacity checks reject before
+Graph admission and metadata are root-transport-neutral. Vulkan/D3D12 record native
+push/root constants during Set, after Complete, optional diagnostics, preparation,
+metadata creation and KeepBinding. A cleared bounded stack span holds
+ceil(wireSize/4) words until the driver command buffer copies them; it is not
+the final payload owner. Draw/Dispatch refresh references/admission only and never
+re-emit numeric roots. No numeric CPU heap arrays, ArrayPool rentals, per-Set GPU
+uniform/CBV or oversized-root fallback remain. Shared accepts nullable opaque storage
+without backend feature dispatch; Vulkan/D3D12 retain references/admission with null
+storage. Storage throws when absent; Seal/Dispose maintain metadata owner state.
+Set-time capacity checks reject before
 allocation/publication, preserving the previous selection. Mandatory artifact
 preflight is separate ABI safety, active without validation tracking: Vulkan checks
 the owning device before shader-module creation; all D3D12 pipeline/partial paths
@@ -200,3 +204,12 @@ valid because it loads only 58 DWORDs. Wgpu/Browser uniform emulation,
 padding and native binding limits remain backend-private. Shared/Graph add no
 Wgpu/Browser feature dispatch; target-aware shader emission is a separate concern.
 No public hierarchy, friend assembly or immediate API is added.
+
+Vulkan/D3D12 render and compute encoders guard codec/preparation with
+_settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
+rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
+After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
+pipeline-identity check all precede KeepBinding and native emission, rejecting
+raw command-buffer or pipeline disposal before native use. Host failure preserves
+the old root selection, but cannot undo caller-requested resource disposal, table
+autobinding, or already-issued driver commands.

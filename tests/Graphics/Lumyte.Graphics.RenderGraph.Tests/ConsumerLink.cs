@@ -11,5 +11,5 @@ internal sealed record class ConsumerLink(IGpuRef<IGraphicsTextureView> Texture)
     public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Texture", 0, 16, typeof(ShaderReferenceSlot), true)];
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter => writer.WriteReference(Texture);
+        where TWriter : IShaderValueWriter, allows ref struct => writer.WriteReference(Texture);
 }

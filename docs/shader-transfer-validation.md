@@ -4,6 +4,65 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## SetArguments内でのnative定数command記録（2026-11-14）
+
+2aa25f99までのDraw時payload再送を廃止し、Vulkan／D3D12はSetArgumentsが戻る前にnative commandへ定数を記録する。
+PSO objectを書き換えるのではなく、選択されたpipeline契約に対するcommand state更新である。
+
+1. pass／pipeline／容量を検査し、DWORD-roundedの小さいstack spanを確保、tailをゼロにする。
+2. backend ref-struct writerでraw C# wireとtyped referenceを同期符号化し、Complete、診断、prepareを完了する。
+3. callback後にcommand ownerと捕捉済みpipelineの生存／identityを再検査し、参照metadataの所有を確保する。
+4. Vulkan CmdPushConstants、D3D12 SetGraphicsRoot32BitConstants／SetComputeRoot32BitConstantsを呼び、その後に選択metadataをpublishする。
+
+VulkanRootStorage／Direct3D12RootStorageとDraw用payloadを削除した。
+数値byte array／ArrayPool／native vectorをDrawまで保持せず、driver command bufferがnative copyを持つ。
+Draw／Dispatch側は参照metadata収集・admissionとdescriptor bindingを行うだけで、数値を再送しない。
+残るroot objectは型名／論理size／参照metadata／detached admissionだけで、opaque storageはnullである。
+共通ownerはnull storageも扱うgenericなmetadata ownerであり、backend分岐やuniform知識を持たない。
+Wgpu／Browserはbackend-private uniform emulationと世代所有を変更していない。
+
+公開IShaderValueWriterの二つの値一引数methodは変更しない。
+stack-only writerを渡すためIShaderArguments.Writeのgeneric constraintへallows ref structを追加した。
+生成実装と手書きconsumerを移行し、C#13以降／pinned .NET10で検証した。SpanはSet呼び出しを越えて保持しない。
+
+固定契約とnative state:
+
+- Vulkanはoffset0／device capacityが固定。compute layoutはCompute、graphics layoutはVertex|Fragmentという
+  bind-point別の固定stage rangeを使い、更新maskをそのrangeと一致させる。
+  VUID-vkCmdPushConstants-offset-01796に従い、全stage単一rangeへsubset maskで更新する旧案は採用しない。
+  descriptor数で全PipelineLayout instanceは変わり得るが、同一bind-pointの全variantはpush-compatibleである。
+  Compute Setがgraphicsの値を更新しない。物理上限は実機256 B、病的なimplementation向けstack guardは64 KiB。
+- D3D12はDeviceで一度作るcached root signatureをcompute／graphics／partial／generic PSOが共有する。
+  58 app DWORD＋table1＋table1＋draw2＋SRV2＝64を維持する。
+  Commandsはgraphics／computeそれぞれのroot identityを追跡し、Draw時に同一signatureを再bindして定数を無効化しない。
+  Setは実PSO variantの確定や新しいroot signature作成を待たない。
+
+codec／prepare中の再入Set、pipeline変更、End、実行・render/index変更をnative encoderで拒否する。
+Graph prepareに必要なSetArgumentTable autobindだけは許可する。
+callbackが直接command owner／pipelineをDisposeした場合も、直後の生存検査でnative発行前に停止する。
+host検査／codec／prepare失敗は以前の選択とnative定数を書き換えない。
+ただしcaller自身によるDisposeや、既に発行したvoid driver commandのdevice failureはrollbackできない。
+
+回帰と最終gate:
+
+- immediacyのmanaged IL/order guardは旧2aaでVulkan graphics／compute、D3D graphics／computeの四case全て失敗し、現行で成功。
+  旧failureはartifacts/validation14-negative-control-{vulkan,d3d}.logに保存した。
+- 実Vulkan／Wgpuでcaller変更後もSet値を使うこと、二Set／二Drawと再Drawのred／green readback、
+  pipeline切り替え、容量境界、prepare失敗後の以前の値、Graph／transitive参照を検査した。
+- 独立reviewがstage mask不整合とcallback後UAF経路を検出し、修正後のreviewはblockerなし。
+  修正前のgate値を最終証拠として流用せず、全gateを最終sourceで再実行した。
+- Graphics Debug／Release各271成功・失敗0・95skip（366件）、Graph各133成功・失敗0・skip0。
+- 全ホストRelease3,244成功・失敗0・116skip。targeted Debug／Release各42成功・失敗0・skip0。
+- D3D12管理／source-order検査50成功・Windows依存7skip。Browser Release compile／JS syntax成功。
+- Khronos validation layerがhostにないため、native VUID layer実行は未検証。GraphicsValidationと同一視しない。
+  Windows native／Browser実行・AOT／presentationも未検証。D3D generic SetProgramはsource-order reviewのみ。
+
+最終ログはartifacts/validation14-final-{fullhost,debug,hardware-debug,hardware-release,graph-debug,d3d-release,browser-release}.log。
+この変更の性能再測定はしておらず、f27→3582の凍結結果を最新Setへ読み替えない。
+CI／workflow変更、過去ADR変更、binary／gzip復元はない。
+
+以下は2aa時点までの履歴であり、Draw時payload送信の記述は最新Set契約ではない。
+
 ## native定数rootとbackend-private WebGPU emulation（2026-11-14）
 
 直前のbackend-native writer／uniform root checkpointは3582af8ada8c00ff38553eebc216bc64527171c1。
@@ -646,100 +705,3 @@ Final targeted results:
   in both modes; shader-schema checks alone are Debug-only.
 
 The initial host compile exposed remaining callback fixture signatures and test
-analyzer diagnostics; those were corrected before the final full-host run. Generated
-build-schema drift is restored before committing. No CI/configuration files changed.
-
-Logs use the registration- prefix under artifacts/shader-transfer. Hardware was
-reverified with the Radeon ICD: Radeon 8060S Graphics (RADV STRIX_HALO), Mesa
-26.0.8-1ubuntu0.3; .NET SDK 10.0.403 and Slang 2026.19. Actual Browser/WASM WebGPU,
-Windows native D3D12, NativeAOT and simultaneous read/write alias GPU execution are
-not validated by the CPU remap test. Native alias-use constraints still apply.
-No performance claim is made. Protected historical ADRs 0009/0015/0018/0022/0023
-remain byte-identical to ef61258f; only the unmerged ADR0035 is revised.
-
-## Ordinary unmanaged transfer follow-up (2026-11-13)
-
-This follow-up starts at b27fce00 on the same isolated main-based branch. Ordinary
-nonpartial structs now use the existing `IGraphicsBuffer<T>`/`BufferSlice<T>` path,
-not an IShaderData wrapper, generated codec, registration, or per-element snapshot.
-`CreateShaderDataBuffer<T>` selects this unmanaged overload and returns raw storage;
-classes implementing IShaderData retain the metadata-bearing allocation path.
-The overloads have different parameter lists, not constraints-only signatures.
-Native and graph SetArguments accept ordinary unmanaged root structs as well.
-
-DrawingVertex, ModelVertex, ModelMaterial, BindingVector, BindingPackedVector,
-BindingNestedVector and BindingCameraArguments no longer need transfer interfaces
-or partial declarations. ModelMesh exercises the ordinary factory in production.
-The GPU binding regression loads two elements of the ordinary vector, packed and
-nested sample structs, checking scalar/vector offsets and array stride. New public
-API regressions compare explicit padding and raw bytes, immediate capture, plain
-root overload resolution, Debug-only layout errors, graph-owned raw allocations,
-and two-element external System.Numerics.Vector3 upload/copy/readback on both
-native backends. Generated reference-containing class tests remain intact.
-
-Environment: .NET SDK 10.0.403, Slang 2026.19, Linux x64, Radeon 8060S Graphics
-(RADV STRIX_HALO), Mesa 26.0.8-1ubuntu0.3. Hardware was reverified using
-VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json; the identity is retained
-in artifacts/shader-transfer/unmanaged-hardware.txt. Activation and TMPDIR are
-the same as the commands below. All commands use the official Fallout runner.
-
-- Hardware Graphics Debug and Release: each 165 passed, 2 failed, 0 skipped
-  (167 total). The only failures are the existing VulkanAdvancedCommandsAsync
-  and VulkanUncachedAdvancedCommandsAsync unsupported depth-format paths.
-  Both new external-vector GPU transfer tests and ordinary-struct shader loads pass.
-- RenderGraph Debug and Release: each 124 passed, 0 failed/skipped.
-- Drawing Debug and Release (CPU): each 12 passed, 0 failed, 10 GPU tests skipped.
-- Direct3D12 Debug and Release (Linux CPU parity): each 4 passed, 0 failed,
-  7 Windows-native tests skipped (11 total). Managed backend source compiled.
-- Full host Release compile: 0 warnings/errors.
-- Final full host Release suite: 2,884 passed, 0 failed, 97 skipped (2,981 total,
-  40 test projects). The official runner restored, compiled and tested successfully.
-- Official CheckMarkdown: 311 files linted, 0 issues. git diff whitespace validation
-  passed; runner-generated build schema drift was restored before committing.
-
-The initial host run caught two test-fixture assumptions: a cleanup proxy
-intercepted only CreateBuffer rather than the new factory, and graph reflection
-expected only one SetArguments overload. Those fixtures now preserve and check
-both overload contracts; the cleanup failure and retry assertions are unchanged.
-The old numeric-layout rejection test now asserts Debug rejection and exact raw
-bytes in Release, matching the authorized diagnostic-only contract. Resource-reference
-rejection tests remain unchanged. The new graph raw-byte accessor now reads its known C# offset rather than
-requiring diagnostic Fields in Release. The initial failed log is retained separately.
-
-Ordinary struct Debug diagnostics cache managed field metadata and actual managed
-offsets when dynamic code is supported. Without it (Browser/Debug AOT), ordinary
-values still transfer and Debug checks names/sizes without field-offset probes.
-Release compiles out the probes and has no per-field reflection or runtime code generation. No conversion or shader
-layout repair is performed. Generated class metadata remains AOT-safe. Actual
-NativeAOT, Browser WebGPU and Windows D3D12 execution remain unverified; ModelMesh
-3D GPU pixels were not run in this follow-up. No performance claim is made.
-
-Reproduction uses the existing commands below, with these additional targeted runs:
-
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
-
-All follow-up logs use the unmanaged- prefix under artifacts/shader-transfer.
-Protected historical ADRs 0009/0015/0018/0022/0023 remain byte-identical to ef61258f.
-Only the current GRAPHICS-0035 ADR is revised; its fixed baseline metadata is retained.
-
-## PR branch provenance
-
-The isolated PR is based on origin/main `ef61258f27ec0f19240a5333d4388f1a3ac9de50`,
-not the original development base. It cherry-picks only the shader migration, adapting
-main's existing graph ownership and argument-partition contracts without importing
-unmerged UI, benchmark or render-graph optimization commits.
-
-Fresh PR-branch verification is recorded below separately. The historical full-suite
-results in this document are **not evidence for the new main-based branch**.
-
-## Fresh main-based PR verification
-
-On 2026-11-13 the isolated checkout used .NET SDK **10.0.403** (selected by
-its current mise definition), Slang 2026.19 and the Radeon/Mesa adapter above.
-The worktree restored its own NuGet/build/native artifacts rather than reusing
-another checkout's bin/obj. Hardware identity is retained in
-artifacts/shader-transfer/hardware.txt. Commands use the activation and TMPDIR
-shown above and the official Fallout runner.
-
-    dotnet run --project build -c Release -- --target Compile --host-only --configuration Release

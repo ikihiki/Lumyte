@@ -31,14 +31,7 @@ public sealed class RootConstantCapacityTests
     [Fact]
     public void OversizeFailsBeforeAllocationOrPreparation()
     {
-        bool allocated = false;
         bool prepared = false;
-        IShaderRootStorage Factory(int size)
-        {
-            allocated = true;
-            throw new InvalidOperationException();
-        }
-
         Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata metadata)
         {
             prepared = true;
@@ -46,15 +39,14 @@ public sealed class RootConstantCapacityTests
         }
 
         Oversize value = default;
-        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateRoot(null!, value, Factory, prepare: Prepare));
+        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateRoot(null!, value, Span<byte>.Empty, prepare: Prepare));
         OversizeWire raw = default;
-        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateUnmanaged(null!, raw, "arguments", null, Factory, prepare: Prepare));
-        Assert.False(allocated);
+        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateUnmanaged(null!, raw, "arguments", null, Span<byte>.Empty, prepare: Prepare));
         Assert.False(prepared);
         Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.ValidateRootSize(int.MaxValue));
     }
 
-    /// <summary>Checks source mutation, repeat sealing, tail zeroing and independent generations.</summary>
+    /// <summary>Checks stack payloads, DWORD tail zeroing and metadata-only ownership.</summary>
     /// <param name="bytes">The logical wire byte count.</param>
     [Theory]
     [InlineData(1)]
@@ -62,31 +54,27 @@ public sealed class RootConstantCapacityTests
     [InlineData(4)]
     [InlineData(20)]
     [InlineData(232)]
-    public void CpuPayloadIsIndependentAndTailIsZero(int bytes)
+    public void StackPayloadHasZeroTailAndNoRetainedStorage(int bytes)
     {
         using var device = new Direct3D12Device(null!, false);
-        byte[] source = Enumerable.Repeat((byte)37, bytes).ToArray();
-        int capacity = ((bytes + 3) / 4) * 4;
-        using var first = new Direct3D12RootStorage(device, bytes);
-        first.Write(source, 0);
-        source.AsSpan().Fill(99);
-        first.Seal();
-        first.Seal();
-        Assert.Throws<InvalidOperationException>(() => first.Write(source, 0));
-        using var second = new Direct3D12RootStorage(device, capacity);
-        second.Write(source, 0);
-        second.Seal();
-        Assert.All(first.Payload[..bytes].ToArray(), value => Assert.Equal((byte)37, value));
-        Assert.All(second.Payload[..bytes].ToArray(), value => Assert.Equal((byte)99, value));
-        Assert.All(first.Payload[bytes..].ToArray(), value => Assert.Equal((byte)0, value));
         int words = Direct3D12ShaderTransfer.ValidateRootSize(bytes);
-        Assert.Equal(words * 4, first.Size);
-        Assert.Equal(words * 4, capacity);
-        if (bytes == 232)
-        {
-            Assert.Equal(232, capacity);
-            Assert.Equal(58, words);
-        }
+        Span<byte> payload = stackalloc byte[words * 4];
+        payload.Clear();
+        BytesRoot.TransferSize = bytes;
+        var value = new BytesRoot();
+        using ShaderRootArguments root = Direct3D12ShaderTransfer.CreateRoot(device, in value, payload);
+        Assert.All(payload[..bytes].ToArray(), item => Assert.Equal((byte)37, item));
+        Assert.All(payload[bytes..].ToArray(), item => Assert.Equal((byte)0, item));
+        Assert.Throws<InvalidOperationException>(() => root.Storage);
+        Assert.Empty(root.References.References);
+        root.Seal();
+        root.Seal();
+        payload.Fill(99);
+        root.Dispose();
+        root.Dispose();
+        Assert.Throws<ObjectDisposedException>(root.Seal);
+        Assert.Null(typeof(Direct3D12Device).Assembly.GetType("Lumyte.Graphics.Direct3D12.Direct3D12RootStorage"));
+        Assert.True(typeof(Direct3D12Device).Assembly.GetType("Lumyte.Graphics.Direct3D12.Direct3D12ShaderValueWriter", true)!.IsByRefLike);
     }
 
     /// <summary>Validates compiled logical schemas before pipeline creation, without a Windows device.</summary>
@@ -127,22 +115,6 @@ public sealed class RootConstantCapacityTests
         Assert.Throws<NotSupportedException>(() => PipelineValidation.RootCapacity(Target(Parameter("first", 4), Parameter("second", 236))));
     }
 
-    /// <summary>Sealing and disposal require no native allocation or native lifetime operations.</summary>
-    [Fact]
-    public void CpuStorageRejectsUseAfterDisposal()
-    {
-        using var device = new Direct3D12Device(null!, false);
-        var storage = new Direct3D12RootStorage(device, 16);
-        Assert.Throws<InvalidOperationException>(() => storage.Payload.ToArray());
-        storage.Write([1, 2, 3], 0);
-        storage.Seal();
-        storage.Dispose();
-        storage.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => storage.Payload.ToArray());
-        Assert.Throws<ObjectDisposedException>(() => storage.Write([4], 0));
-        Assert.Throws<ObjectDisposedException>(storage.Seal);
-    }
-
     /// <summary>Guards the native command transport and full fixed root-signature budget.</summary>
     [Fact]
     public void NativeSourceUsesRootConstantsWithoutUploadFallback()
@@ -157,13 +129,21 @@ public sealed class RootConstantCapacityTests
         string native = Path.Combine(directory.FullName, "native", "lumyte_graphics_d3d12");
         string binding = string.Join(" ", File.ReadAllText(Path.Combine(native, "binding.inl")).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         string rendering = File.ReadAllText(Path.Combine(native, "rendering.inl"));
-        Assert.Contains("SetGraphicsRoot32BitConstants(0, static_cast<UINT>(binding->root_words.size()), binding->root_words.data(), 0)", binding);
-        Assert.Contains("SetComputeRoot32BitConstants(0, static_cast<UINT>(binding->root_words.size()), binding->root_words.data(), 0)", binding);
+        Assert.Contains("SetGraphicsRoot32BitConstants(0, word_count, words, 0)", rendering);
+        Assert.Contains("SetComputeRoot32BitConstants(0, word_count, words, 0)", rendering);
         Assert.DoesNotContain("RootConstantBufferView", binding);
         Assert.DoesNotContain("buffer_create(", binding);
         Assert.DoesNotContain("root_create(", binding);
-        Assert.Contains("std::vector<DWORD> root_words", binding);
-        Assert.Contains("word_count > app_root_dword_capacity", binding);
+        Assert.DoesNotContain("root_words", binding);
+        Assert.DoesNotContain("Root32BitConstants", binding);
+        Assert.Contains("word_count > app_root_dword_capacity", rendering);
+        Assert.Contains("if (selected != root)", rendering);
+        Assert.Contains("compute ? commands->compute_root : commands->graphics_root", rendering);
+        Assert.Contains("return device->root.CopyTo(output)", rendering);
+        int rootCommand = rendering.IndexOf("API HRESULT commands_root_constants", StringComparison.Ordinal);
+        int bind = rendering.IndexOf("bind_root_signature(commands, commands->owner->root.Get(), compute)", rootCommand, StringComparison.Ordinal);
+        int copy = rendering.IndexOf("SetComputeRoot32BitConstants", rootCommand, StringComparison.Ordinal);
+        Assert.True(rootCommand >= 0 && bind > rootCommand && copy > bind);
         Assert.Contains("parameters[0].Constants = {8, 0, app_root_dword_capacity}", rendering);
         Assert.Contains("app_root_dword_capacity + fixed_root_dword_cost == 64", rendering);
         Assert.Contains("parameters[3].Constants = {9, 0, draw_info_dword_cost}", rendering);
@@ -203,6 +183,20 @@ public sealed class RootConstantCapacityTests
 
         /// <inheritdoc />
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => throw new InvalidOperationException("Must reject before writing.");
+            where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Must reject before writing.");
+    }
+
+    private sealed class BytesRoot : IShaderArguments
+    {
+        public static string ShaderTypeName => "Bytes";
+
+        public static int TransferSize { get; set; }
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            byte[] bytes = Enumerable.Repeat((byte)37, TransferSize).ToArray();
+            writer.WriteValue(bytes);
+        }
     }
 }

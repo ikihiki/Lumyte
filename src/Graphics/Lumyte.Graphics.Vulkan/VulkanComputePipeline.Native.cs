@@ -90,7 +90,7 @@ internal sealed unsafe partial class VulkanComputePipeline
     {
         _argumentLayout = VulkanShaderBinding.CreateLayout(_owner, textures, samplers);
         DescriptorSetLayout group = _argumentLayout;
-        var range = new PushConstantRange { StageFlags = VulkanPushConstants.Stages, Offset = 0, Size = _owner.MaxPushConstantsSize };
+        var range = new PushConstantRange { StageFlags = VulkanPushConstants.ComputeStages, Offset = 0, Size = _owner.MaxPushConstantsSize };
         var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &group, PushConstantRangeCount = 1, PPushConstantRanges = &range };
         Result result = _owner.Api.CreatePipelineLayout(_owner.NativeDevice, &info, null, out _layout);
         if (result == Result.ErrorDeviceLost)

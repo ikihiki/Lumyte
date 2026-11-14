@@ -34,16 +34,8 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
 
         Assert.Throws<NotSupportedException>(() => Invoke(validate, device, checked((int)device.MaxPushConstantsSize + 1)));
         Assert.Throws<NotSupportedException>(() => Invoke(validate, device, checked((int)device.MaxPushConstantsSize + 4)));
-        Type storageType = typeof(VulkanDevice).Assembly.GetType("Lumyte.Graphics.Vulkan.VulkanRootStorage", throwOnError: true)!;
-        Assert.DoesNotContain(storageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic), field => field.FieldType.GetInterfaces().Append(field.FieldType).Any(type => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IGraphicsBuffer<>)));
-        using var storage = (IShaderRootStorage)Activator.CreateInstance(storageType, BindingFlags.Instance | BindingFlags.NonPublic, null, [device, 16], null)!;
-        byte[] borrowed = [7, 8, 9];
-        storage.Write(borrowed, 0);
-        borrowed.AsSpan().Clear();
-        storage.Seal();
-        FieldInfo payload = storageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Single(field => field.FieldType == typeof(byte[]));
-        Assert.Equal(new byte[] { 7, 8, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, (byte[])payload.GetValue(storage)!);
-        Assert.Throws<InvalidOperationException>(() => storage.Write(new byte[1], 0));
+        Assert.Null(typeof(VulkanDevice).Assembly.GetType("Lumyte.Graphics.Vulkan.VulkanRootStorage"));
+        Assert.True(typeof(VulkanDevice).Assembly.GetType("Lumyte.Graphics.Vulkan.VulkanShaderValueWriter", true)!.IsByRefLike);
     }
 
     /// <summary>Dispatches small roots and the actual native limit with diagnostics off and on.</summary>
@@ -67,6 +59,60 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
         {
             throw new NotSupportedException($"Add an immutable boundary marker for this adapter's {probe.MaxPushConstantsSize}-byte push limit.");
         }
+    }
+
+    /// <summary>Admission cannot end or retarget recording; direct pipeline disposal is caught before emission.</summary>
+    /// <returns>The completed native guard checks.</returns>
+    [GpuFact]
+    public async Task AdmissionCannotInvalidateNativeSelectionAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        ShaderArtifact artifact = await new SlangShaderCompiler().CompileAsync(
+            new()
+            {
+                Source = "struct Payload { uint Value0; }; ConstantBuffer<Payload> arguments; [numthreads(1,1,1)] void main() { if (arguments.Value0 == 123) return; }",
+                Stage = ShaderStage.Compute,
+                Target = ShaderTarget.SpirV,
+            },
+            timeout.Token);
+        using var device = VulkanDevice.Create();
+        using IGraphicsShader shader = device.CreateShader(artifact);
+        using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsComputePipeline other = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        IComputeEncoder encoder = commands.BeginComputePass(new());
+        encoder.SetPipeline(pipeline);
+        uint value = 7;
+        encoder.SetArguments(in value);
+        foreach (Action mutation in new Action[] { encoder.End, () => encoder.SetPipeline(other), () => encoder.SetArguments(in value), () => encoder.Dispatch(1), () => encoder.SetArgumentValidation(null) })
+        {
+            encoder.SetArgumentValidation(_ =>
+            {
+                mutation();
+                return null;
+            });
+            Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in value));
+        }
+
+        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 1 });
+        encoder.SetArgumentValidation(_ =>
+        {
+            encoder.SetArgumentTable(table);
+            return null;
+        });
+        encoder.SetArguments(in value);
+        encoder.SetArgumentValidation(_ =>
+        {
+            pipeline.Dispose();
+            return null;
+        });
+        Exception disposed = Record.Exception(() => encoder.SetArguments(in value))!;
+        Assert.True(disposed is ObjectDisposedException or InvalidOperationException, $"Unexpected disposal result: {disposed}");
+        encoder.SetArgumentValidation(null);
+        encoder.SetPipeline(other);
+        encoder.SetArguments(in value);
+        encoder.End();
+        commands.Finish();
     }
 
     /// <summary>Rejects an oversized artifact before any Set call or native pipeline creation.</summary>
@@ -259,7 +305,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             WriteCount++;
             int count = TSize.Size == 4 ? 1 : (TSize.Size - 16) / 4;

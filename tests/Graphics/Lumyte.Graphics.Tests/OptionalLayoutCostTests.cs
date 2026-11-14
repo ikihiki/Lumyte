@@ -204,7 +204,7 @@ public sealed class OptionalLayoutCostTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("No boxed provider expected.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private readonly record struct PlainValue(uint Value);
@@ -226,7 +226,7 @@ public sealed class OptionalLayoutCostTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             uint value = 17;
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));

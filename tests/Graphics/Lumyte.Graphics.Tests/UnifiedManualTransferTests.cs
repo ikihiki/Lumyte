@@ -62,7 +62,7 @@ public sealed class UnifiedManualTransferTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in _value, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in _value, 1)));
     }
 
     private sealed class MappedBuffer(int size) : IGraphicsBuffer<byte>

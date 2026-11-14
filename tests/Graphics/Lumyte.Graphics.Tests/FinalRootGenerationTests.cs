@@ -105,6 +105,13 @@ public sealed class FinalRootGenerationTests
 
             // This is deliberately the first generic Set: a Snapshot writer throws in the codec.
             compute.SetArguments(in root);
+            if (device is VulkanDevice)
+            {
+                var selected = (Lumyte.Graphics.Shared.ShaderRootArguments)compute.GetType().GetField("_arguments", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(compute)!;
+                Assert.Throws<InvalidOperationException>(() => selected.Storage);
+                Assert.Equal(2, selected.References.References.Count);
+            }
+
             Assert.Equal(1, root.Writes);
             Assert.Equal(validation ? 1 : 0, root.Probes);
             root.Number = 9;
@@ -248,7 +255,7 @@ public sealed class FinalRootGenerationTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             if (typeof(TWriter).Name.Contains("Snapshot", StringComparison.Ordinal))
             {

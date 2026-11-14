@@ -96,7 +96,7 @@ public sealed class ShaderRootArgumentsTests
 
     /// <summary>Invalid backend capacities fail before metadata preparation without transferring ownership.</summary>
     [Fact]
-    public void InvalidCapacityAndNullStorageAreRejected()
+    public void InvalidCapacityAndNullFactoryStorageAreRejected()
     {
         var metadata = new ShaderDependencyMetadata([]);
         var negative = new InvalidCapacityStorage();
@@ -108,7 +108,38 @@ public sealed class ShaderRootArgumentsTests
         Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create("arguments", "Wire", 3, shortStorage, metadata, _ => throw new Exception("Must not prepare.")));
         Assert.Equal(0, shortStorage.Disposes);
         Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Allocate("arguments", "Wire", 0, _ => null!));
-        Assert.Throws<ArgumentNullException>(() => ShaderRootArguments.Create("arguments", "Wire", 0, null!, metadata));
+    }
+
+    /// <summary>Already-recorded payloads retain only metadata while preserving admission and lifecycle checks.</summary>
+    [Fact]
+    public void MetadataOnlyRootPreservesAdmissionAndLifecycle()
+    {
+        var metadata = new ShaderDependencyMetadata([]);
+        IReadOnlyCollection<IShaderReference> references = Array.Empty<IShaderReference>();
+        int admissions = 0;
+        using var root = ShaderRootArguments.Create("arguments", "Wire", 20, null, metadata, prepared =>
+        {
+            Assert.Same(metadata, prepared);
+            return admitted =>
+            {
+                Assert.Same(references, admitted);
+                admissions++;
+            };
+        });
+        Assert.Equal("arguments", root.RootParameter);
+        Assert.Equal("Wire", root.ShaderTypeName);
+        Assert.Equal(20, root.WireSize);
+        Assert.Same(metadata, root.References);
+        Assert.Throws<InvalidOperationException>(() => root.Storage);
+        root.Seal();
+        root.Seal();
+        root.Admit(references);
+        root.Admit(references);
+        Assert.Equal(2, admissions);
+        root.Dispose();
+        root.Dispose();
+        Assert.Throws<ObjectDisposedException>(root.Seal);
+        Assert.Throws<ObjectDisposedException>(() => root.Admit(references));
     }
 
     /// <summary>Each selection writes once straight into independently owned final storage.</summary>
@@ -459,7 +490,7 @@ public sealed class ShaderRootArgumentsTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("Do not box diagnostic providers.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private sealed class Arguments : IShaderArguments
@@ -489,7 +520,7 @@ public sealed class ShaderRootArgumentsTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             if (typeof(TWriter).Name.Contains("Snapshot", StringComparison.Ordinal))
             {
@@ -562,7 +593,7 @@ public sealed class ShaderRootArgumentsTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             uint value = Value;
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));

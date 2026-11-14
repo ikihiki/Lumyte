@@ -100,7 +100,7 @@ public sealed class ShaderUploadDiagnosticTests
             => throw new InvalidOperationException("Value-type diagnostics must not query an instance provider.");
 
         public readonly void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in Number, 1)));
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in Number, 1)));
     }
 
     private sealed class InstanceData : IShaderArguments
@@ -120,7 +120,7 @@ public sealed class ShaderUploadDiagnosticTests
         }
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             uint number = Number;
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in number, 1)));

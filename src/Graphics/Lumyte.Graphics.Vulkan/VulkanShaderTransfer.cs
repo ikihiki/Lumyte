@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal static class VulkanShaderTransfer
 {
-    internal static ShaderRootArguments CreateRoot<T>(VulkanDevice owner, in T value, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static ShaderRootArguments CreateRoot<T>(VulkanDevice owner, in T value, Span<byte> destination, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
         where T : IShaderArguments
     {
         if (!typeof(T).IsValueType)
@@ -18,42 +18,24 @@ internal static class VulkanShaderTransfer
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
         VulkanPushConstants.ValidateSize(owner, size);
-        IShaderRootStorage storage = ShaderRootArguments.Allocate(root, name, size, factory);
-        try
-        {
-            var writer = new VulkanShaderValueWriter(owner, size, storage, null, 0, diagnostic);
-            value.Write(ref writer);
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            return ShaderRootArguments.Create(root, name, size, storage, references, prepare);
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
+        var writer = new VulkanShaderValueWriter(owner, size, destination, diagnostic);
+        value.Write(ref writer);
+        IShaderReferenceMetadata references = writer.Complete();
+        diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
+        return ShaderRootArguments.Create(root, name, size, storage: null, references, prepare);
     }
 
-    internal static ShaderRootArguments CreateUnmanaged<T>(VulkanDevice owner, in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static ShaderRootArguments CreateUnmanaged<T>(VulkanDevice owner, in T value, string rootParameter, string? shaderTypeName, Span<byte> destination, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
         VulkanPushConstants.ValidateSize(owner, size);
-        IShaderRootStorage storage = ShaderRootArguments.Allocate(rootParameter, name, size, factory);
-        try
-        {
-            var writer = new VulkanShaderValueWriter(owner, size, storage, null, 0, diagnostic);
-            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            return ShaderRootArguments.Create(rootParameter, name, size, storage, references, prepare);
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
+        var writer = new VulkanShaderValueWriter(owner, size, destination, diagnostic);
+        writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
+        IShaderReferenceMetadata references = writer.Complete();
+        diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
+        return ShaderRootArguments.Create(rootParameter, name, size, storage: null, references, prepare);
     }
 
     internal static void CopyFrom<T>(VulkanDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)
@@ -91,7 +73,7 @@ internal static class VulkanShaderTransfer
                     ArgumentNullException.ThrowIfNull(source[i]);
                 }
 
-                var writer = new VulkanShaderValueWriter(owner, stride, null, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
+                var writer = new VulkanShaderValueWriter(owner, stride, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();
                 diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
@@ -102,18 +84,6 @@ internal static class VulkanShaderTransfer
         {
             Array.Clear(metadata, start, source.Length);
             throw;
-        }
-    }
-
-    private static void DisposeFailed(IShaderRootStorage storage)
-    {
-        try
-        {
-            storage.Dispose();
-        }
-        catch
-        {
-            // Preserve the original transfer or selection failure.
         }
     }
 }

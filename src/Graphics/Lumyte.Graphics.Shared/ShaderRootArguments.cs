@@ -2,19 +2,20 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Owns a selected root generation in backend-owned opaque payload storage, retaining only reference metadata.</summary>
+/// <summary>Owns a selected root generation with optional backend-owned opaque payload storage, retaining only reference metadata.</summary>
 public sealed class ShaderRootArguments : IDisposable
 {
+    private readonly IShaderRootStorage? _storage;
     private readonly Action<IReadOnlyCollection<IShaderReference>>? _admit;
     private bool _sealed;
     private bool _disposed;
 
-    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, Action<IReadOnlyCollection<IShaderReference>>? admit)
+    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage? storage, IShaderReferenceMetadata references, Action<IReadOnlyCollection<IShaderReference>>? admit)
     {
         RootParameter = rootParameter;
         ShaderTypeName = shaderTypeName;
         WireSize = wireSize;
-        Storage = storage;
+        _storage = storage;
         References = references;
         _admit = admit;
     }
@@ -28,8 +29,9 @@ public sealed class ShaderRootArguments : IDisposable
     /// <summary>Gets the exact logical C# wire byte count, independent of backend storage capacity.</summary>
     public int WireSize { get; }
 
-    /// <summary>Gets the backend-owned opaque payload storage whose logical bytes remain stable for this generation.</summary>
-    public IShaderRootStorage Storage { get; }
+    /// <summary>Gets the backend-owned opaque payload storage, when this generation has retained storage.</summary>
+    /// <exception cref="InvalidOperationException">The backend already recorded the payload and this owner retains only metadata.</exception>
+    public IShaderRootStorage Storage => _storage ?? throw new InvalidOperationException("This root generation retains only metadata and has no payload storage.");
 
     /// <summary>Gets immutable, non-owning root resource dependencies.</summary>
     public IShaderReferenceMetadata References { get; }
@@ -38,19 +40,18 @@ public sealed class ShaderRootArguments : IDisposable
     /// <param name="rootParameter">The logical root parameter name.</param>
     /// <param name="shaderTypeName">The logical shader type name.</param>
     /// <param name="wireSize">The exact C# wire byte count.</param>
-    /// <param name="storage">Completed native storage, transferred only on success.</param>
+    /// <param name="storage">Completed native storage, transferred only on success, or null when the backend already recorded the payload.</param>
     /// <param name="references">The immutable backend-owned dependency metadata.</param>
     /// <param name="prepare">Optional reference-only preparation returning detached execution admission.</param>
     /// <returns>The independently owned root generation.</returns>
     /// <remarks>The caller retains storage ownership when validation or preparation throws.</remarks>
-    public static ShaderRootArguments Create(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    public static ShaderRootArguments Create(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage? storage, IShaderReferenceMetadata references, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootParameter);
         ArgumentException.ThrowIfNullOrWhiteSpace(shaderTypeName);
         ArgumentOutOfRangeException.ThrowIfNegative(wireSize);
-        ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(references);
-        if (storage.Size < 0 || storage.Size < wireSize)
+        if (storage is not null && (storage.Size < 0 || storage.Size < wireSize))
         {
             throw new InvalidOperationException("The root storage capacity must be nonnegative and cover the logical wire bytes.");
         }
@@ -97,7 +98,7 @@ public sealed class ShaderRootArguments : IDisposable
             return;
         }
 
-        Storage.Seal();
+        _storage?.Seal();
         _sealed = true;
     }
 
@@ -118,7 +119,7 @@ public sealed class ShaderRootArguments : IDisposable
         }
 
         _disposed = true;
-        Storage.Dispose();
+        _storage?.Dispose();
     }
 
     private static void DisposeFailed(IShaderRootStorage storage)

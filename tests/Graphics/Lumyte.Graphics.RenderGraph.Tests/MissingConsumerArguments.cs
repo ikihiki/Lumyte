@@ -10,7 +10,7 @@ internal readonly struct MissingConsumerArguments : IShaderArguments
     public static int TransferSize => 4;
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter
+        where TWriter : IShaderValueWriter, allows ref struct
     {
         float value = 1;
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
