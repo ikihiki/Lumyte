@@ -12,6 +12,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
     private readonly HashSet<ShaderResources> _moduleScopes = [];
     private readonly Dictionary<RenderGraphPass, IReadOnlyList<RenderGraphUse>> _uses = [];
     private readonly Dictionary<RenderGraphPass, List<(object Resource, ulong Offset, ulong Size, ArgumentBufferAccess Access)>> _allowed = [];
+    private readonly Dictionary<RenderGraphPass, Action<IReadOnlyCollection<IShaderReference>>> _admissions = [];
     private readonly Dictionary<SamplerDesc, IGraphicsSampler> _samplers = [];
     private readonly List<IDisposable> _owned = [];
     private RenderGraphPreparationContext? _preparation;
@@ -104,6 +105,10 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
 
             _collectingDeclarations = false;
             _registrations.MaterializeResources(active);
+            foreach (RenderGraphPass pass in context.LivePasses)
+            {
+                _admissions.Add(pass, CreateAdmission(_allowed[pass].ToArray()));
+            }
         }
         catch
         {
@@ -129,6 +134,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         _samplers.Clear();
         _lookups.Clear();
         _allowed.Clear();
+        _admissions.Clear();
         _uses.Clear();
         _byResources.Clear();
         _modules.Clear();
@@ -150,7 +156,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         return _lookups.GetValueOrDefault(pass) ?? throw new ArgumentException("This pass has no prepared shader declarations.");
     }
 
-    internal IShaderArgumentScope Scope(IReadOnlyList<ShaderResources> resources) => ((ModuleResources)resources[0]).Scope(resources);
+    internal Action<IReadOnlyCollection<IShaderReference>> Admission(IReadOnlyList<ShaderResources> resources) => _admissions[Pass(resources[0])];
 
     internal void Bind(ShaderResources resources, IRenderEncoder encoder) => ((ModuleResources)resources).BindRender(encoder);
 
@@ -270,6 +276,39 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         }
     }
 
+    // This callback outlives recording selection: retain only a private immutable declaration snapshot.
+    private static Action<IReadOnlyCollection<IShaderReference>> CreateAdmission((object Resource, ulong Offset, ulong Size, ArgumentBufferAccess Access)[] declarations)
+        => references =>
+        {
+            foreach (IShaderReference reference in references)
+            {
+                CheckAllowed(declarations, reference);
+            }
+        };
+
+    private static void CheckAllowed(IReadOnlyList<(object Resource, ulong Offset, ulong Size, ArgumentBufferAccess Access)> declarations, IShaderReference reference)
+    {
+        ArgumentBufferAccess access = reference.BufferAccess switch
+        {
+            ShaderBufferAccess.ReadOnly => ArgumentBufferAccess.Read,
+            ShaderBufferAccess.ReadWrite => ArgumentBufferAccess.Write,
+            _ => throw new ArgumentException("The shader reference has an unsupported binding access."),
+        };
+        foreach ((object Resource, ulong Offset, ulong Size, ArgumentBufferAccess Access) declaration in declarations)
+        {
+            if (ReferenceEquals(declaration.Resource, reference.Resource) &&
+                reference.OffsetInBytes >= declaration.Offset &&
+                reference.OffsetInBytes - declaration.Offset <= declaration.Size &&
+                reference.SizeInBytes <= declaration.Size - (reference.OffsetInBytes - declaration.Offset) &&
+                (access & ~declaration.Access) == 0)
+            {
+                return;
+            }
+        }
+
+        throw new ArgumentException("A shader reference uses a view, sampler, range or access absent from this pass's declarations.");
+    }
+
     private IReadOnlyList<ShaderResources> SelectArguments(IReadOnlyList<IShaderReference> references, RenderGraphPass pass, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
         ShaderResources core = Lookup(pass).Core;
@@ -277,13 +316,10 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         ValidateLookup(core, pass);
         foreach (IShaderReference reference in references)
         {
-            if (!((ModuleResources)core).Accepts(reference))
-            {
-                throw new ArgumentException("Root references must originate from this pass's shader declarations.");
-            }
+            CheckAllowed(_allowed[pass], reference);
         }
 
-        return [core];
+        return Array.AsReadOnly(new[] { core });
     }
 
     private void CheckAllowed(RenderGraphPass pass, object resource, ulong offset, ulong size, ArgumentBufferAccess access)
@@ -311,15 +347,11 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
 
         public override ShaderResources CreateSibling() => _owner.CreateModule();
 
-        internal bool Accepts(IShaderReference reference) => ContainsReference(reference);
-
         internal void Inspect(Action<object, ulong, ulong, ArgumentBufferAccess> inspect) => InspectBindingRanges(inspect);
 
         internal void CoRecord(ShaderResources other) => JoinOperation(other);
 
         internal void SameTable(ShaderResources other) => JoinTable(other);
-
-        internal IShaderArgumentScope Scope(IReadOnlyList<ShaderResources> candidates) => CreateArgumentScope(candidates);
 
         internal void BindRender(IRenderEncoder encoder) => Bind(encoder);
 

@@ -256,17 +256,17 @@ public sealed class RenderGraphContext
         }
     }
 
-    internal (IReadOnlyList<ShaderResources>? Resources, IShaderArgumentScope? Scope) SelectArguments(IShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    internal (IReadOnlyList<ShaderResources>? Resources, Action<IReadOnlyCollection<IShaderReference>>? Admit) SelectArguments(IShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
         EnsureActive();
-        if (references.References.Count == 0)
+        if (references.References.Count == 0 && !_uses.Any(use => use.Bindings is { Count: > 0 }))
         {
             return (null, null);
         }
 
         GraphShaderResourceOwner owner = _plan.ShaderResourceOwner ?? throw new ArgumentException("Declare shader resources on this pass before resolving references.");
         IReadOnlyList<ShaderResources> resources = owner.SelectArguments(references, Pass, outputs, graphics);
-        return (resources, owner.Scope(resources));
+        return (resources, owner.Admission(resources));
     }
 
     internal void BindResources(IReadOnlyList<ShaderResources> resources, IRenderEncoder encoder, IReadOnlyList<RenderGraphTexture> outputs)

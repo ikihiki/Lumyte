@@ -143,6 +143,10 @@ public sealed class ShaderResourcesUnmanagedTests
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => throw new InvalidOperationException("Unexpected interface serializer.");
 
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+        {
+        }
+
         public void SetArgumentTable(IArgumentTable table)
         {
             TableSetCount++;

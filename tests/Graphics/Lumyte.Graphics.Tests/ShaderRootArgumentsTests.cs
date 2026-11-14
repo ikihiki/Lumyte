@@ -51,7 +51,7 @@ public sealed class ShaderRootArgumentsTests
         Assert.NotSame(factory.Items[0].Bytes, factory.Items[1].Bytes);
         Assert.Equal(17u, Read(factory.Items[0]));
         Assert.Equal(29u, Read(factory.Items[1]));
-        Assert.All(factory.Items, storage => Assert.Equal(1, storage.Writes));
+        Assert.All(factory.Items, storage => Assert.Equal(2, storage.Writes));
         Assert.Equal(0, value.Probes);
         AssertNoRetainedInput(first, value);
         AssertNoRetainedInput(second, value);
@@ -75,24 +75,31 @@ public sealed class ShaderRootArgumentsTests
 
     /// <summary>Selection encodes references and prepares identities; execution admits and seals only once.</summary>
     [Fact]
-    public void ScopePreparesBeforeAdmissionAndSealDoesNotRewrite()
+    public void PrepareRunsBeforeAdmissionAndSealDoesNotRewrite()
     {
         using var table = new Table();
         var reference = new Reference(table, new object());
-        var scope = new Scope();
+        var prepared = new List<IShaderReferenceMetadata>();
+        var admitted = new List<IReadOnlyCollection<IShaderReference>>();
+        Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata references)
+        {
+            prepared.Add(references);
+            return admitted.Add;
+        }
+
         var factory = new StorageFactory();
         var value = new Arguments { Value = 7, Reference = reference };
-        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, scope: scope);
+        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare);
         Storage storage = Assert.Single(factory.Items);
-        Assert.Same(root.References, Assert.Single(scope.Prepared));
+        Assert.Same(root.References, Assert.Single(prepared));
         Assert.Same(reference, Assert.Single(root.References.References));
-        Assert.Empty(scope.Admitted);
+        Assert.Empty(admitted);
         Assert.Equal(0, storage.Seals);
         byte[] sealedBytes = storage.Bytes.ToArray();
         root.Seal();
         root.Seal();
         root.Admit([reference]);
-        Assert.Same(reference, Assert.Single(Assert.Single(scope.Admitted)));
+        Assert.Same(reference, Assert.Single(Assert.Single(admitted)));
         Assert.Equal(2, storage.Writes);
         Assert.Equal(1, storage.Seals);
         Assert.Equal(sealedBytes, storage.Bytes);
@@ -100,21 +107,22 @@ public sealed class ShaderRootArgumentsTests
         Assert.All(storage.Bytes[16..32], item => Assert.Equal((byte)0x5a, item));
     }
 
-    /// <summary>Codec and scope failures dispose only the failed generation and preserve the original error.</summary>
-    /// <param name="failScope">Whether scope preparation, rather than codec writing, fails.</param>
+    /// <summary>Codec and preparation failures dispose only the failed generation and preserve the original error.</summary>
+    /// <param name="failPrepare">Whether preparation, rather than codec writing, fails.</param>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void FailedSelectionPreservesPreviousRootAndOriginalException(bool failScope)
+    public void FailedSelectionPreservesPreviousRootAndOriginalException(bool failPrepare)
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 11 };
         using var previous = ShaderRootArguments.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Selection failed.");
         factory.ThrowOnDispose = true;
-        var scope = new Scope { Failure = failScope ? failure : null };
-        value.Failure = failScope ? null : failure;
-        Exception? actual = Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, Encode, scope: scope));
+        Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata references)
+            => failPrepare ? throw failure : null;
+        value.Failure = failPrepare ? null : failure;
+        Exception? actual = Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare));
         Assert.Same(failure, actual);
         Assert.Equal(1, factory.Items[1].Disposes);
         Assert.Equal(0, factory.Items[0].Disposes);
@@ -153,9 +161,8 @@ public sealed class ShaderRootArgumentsTests
     /// <summary>Mandatory bounds and bulk-write invariants do not depend on optional diagnostics.</summary>
     /// <param name="mode">The codec invariant violation to exercise.</param>
     [Theory]
-    [InlineData("duplicate")]
-    [InlineData("negative")]
-    [InlineData("outside")]
+    [InlineData("extra-reference")]
+    [InlineData("overflow-prefix")]
     [InlineData("wrong-size")]
     [InlineData("twice")]
     [InlineData("missing")]
@@ -171,7 +178,7 @@ public sealed class ShaderRootArgumentsTests
             return Encode(slot);
         }
 
-        if (mode is "duplicate" or "negative" or "outside")
+        if (mode is "extra-reference" or "overflow-prefix" or "twice")
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => ShaderRootArguments.Create(in value, factory.Create, EncodeSlot));
         }
@@ -181,9 +188,9 @@ public sealed class ShaderRootArgumentsTests
         }
 
         Storage storage = Assert.Single(factory.Items);
-        bool validFirstWire = mode is "duplicate" or "twice";
+        bool validFirstWire = mode is "extra-reference" or "twice";
         Assert.Equal(validFirstWire ? 1 : 0, encodes);
-        Assert.Equal(validFirstWire ? 2 : 0, storage.Writes);
+        Assert.Equal(validFirstWire || mode == "overflow-prefix" ? 2 : mode == "wrong-size" ? 1 : 0, storage.Writes);
         if (validFirstWire)
         {
             Assert.Equal(17u, Read(storage));
@@ -249,8 +256,15 @@ public sealed class ShaderRootArgumentsTests
         var secondReference = new Reference(table, new object());
         var value = new Arguments { Reference = rootReference };
         var factory = new StorageFactory();
-        var scope = new Scope();
-        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, scope: scope);
+        var prepared = new List<IShaderReferenceMetadata>();
+        var admitted = new List<IReadOnlyCollection<IShaderReference>>();
+        Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata references)
+        {
+            prepared.Add(references);
+            return admitted.Add;
+        }
+
+        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare);
         IShaderReferenceMetadata current = new ShaderDependencyMetadata([firstReference]);
         int reads = 0;
         IShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer, ulong index)
@@ -271,12 +285,41 @@ public sealed class ShaderRootArgumentsTests
         Assert.Same(rootReference, Assert.Single(root.References.References));
         Assert.NotSame(first.Elements[(source, 0)], second.Elements[(source, 0)]);
         Assert.Equal(2, reads);
-        Assert.Equal(2, scope.Admitted.Count);
+        Assert.Equal(2, admitted.Count);
         Assert.Equal(1, value.Writes);
         Assert.Equal(2, factory.Items[0].Writes);
         Assert.Equal(0, source.Reads);
-        Assert.Contains(firstReference, scope.Admitted[0]);
-        Assert.Contains(secondReference, scope.Admitted[1]);
+        Assert.Contains(firstReference, admitted[0]);
+        Assert.Contains(secondReference, admitted[1]);
+    }
+
+    /// <summary>Execution rejection preserves the selected storage and propagates the admission error.</summary>
+    [Fact]
+    public void AdmissionFailurePreservesRootAndOriginalException()
+    {
+        var factory = new StorageFactory();
+        var value = new Arguments { Value = 37 };
+        var failure = new InvalidOperationException("Admission failed.");
+        int prepares = 0;
+        int admissions = 0;
+        Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata references)
+        {
+            prepares++;
+            return _ =>
+            {
+                admissions++;
+                throw failure;
+            };
+        }
+
+        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare);
+        Assert.Same(failure, Record.Exception(() => ShaderBindingSnapshot.Capture(root, null)));
+        Assert.Same(failure, Record.Exception(() => ShaderBindingSnapshot.Capture(root, null)));
+        Assert.Equal(1, prepares);
+        Assert.Equal(2, admissions);
+        Assert.Equal(1, value.Writes);
+        Assert.Equal(0, factory.Items[0].Disposes);
+        Assert.Equal(37u, Read(factory.Items[0]));
     }
 
     /// <summary>Root disposal is idempotent and prevents subsequent execution.</summary>
@@ -339,7 +382,7 @@ public sealed class ShaderRootArgumentsTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("Do not box diagnostic providers.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
+            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private sealed class Arguments : IShaderArguments
@@ -390,32 +433,30 @@ public sealed class ShaderRootArgumentsTests
             if (Mode == "wrong-size")
             {
                 uint small = Value;
-                ShaderWire.Write(in small, ref writer);
+                writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in small, 1)));
                 return;
             }
 
             var wire = new Wire { Value = Value };
-            var emitter = new References(this);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
-            if (Mode == "twice")
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            writer.WriteValue(bytes[..16]);
+            if (Mode == "overflow-prefix")
             {
-                ShaderWire.Write(in wire, ref emitter, ref writer);
+                writer.WriteValue(bytes[..1]);
             }
-        }
 
-        private readonly struct References(Arguments owner) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
+            if (Reference != null)
             {
-                if (owner.Reference != null || owner.Mode is "duplicate" or "negative" or "outside")
-                {
-                    cursor.WriteReference(owner.Mode == "negative" ? -1 : owner.Mode == "outside" ? 17 : 16, owner.Reference);
-                    if (owner.Mode == "duplicate")
-                    {
-                        cursor.WriteReference(16, owner.Reference);
-                    }
-                }
+                writer.WriteReference(Reference);
+            }
+            else
+            {
+                writer.WriteValue(bytes[16..]);
+            }
+
+            if (Mode is "extra-reference" or "twice")
+            {
+                writer.WriteReference(Reference);
             }
         }
     }
@@ -447,7 +488,7 @@ public sealed class ShaderRootArgumentsTests
             where TWriter : IShaderValueWriter
         {
             uint value = Value;
-            ShaderWire.Write(in value, ref writer);
+            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         }
     }
 
@@ -510,27 +551,6 @@ public sealed class ShaderRootArgumentsTests
             Items.Add(storage);
             return storage;
         }
-    }
-
-    private sealed class Scope : IShaderArgumentScope
-    {
-        internal List<IShaderReferenceMetadata> Prepared { get; } = [];
-
-        internal List<IReadOnlyCollection<IShaderReference>> Admitted { get; } = [];
-
-        internal Exception? Failure { get; init; }
-
-        public void Prepare(IShaderReferenceMetadata references)
-        {
-            if (Failure is { } failure)
-            {
-                throw failure;
-            }
-
-            Prepared.Add(references);
-        }
-
-        public void Admit(IReadOnlyCollection<IShaderReference> references) => Admitted.Add(references);
     }
 
     private sealed class Reference(IArgumentTable table, object resource) : IGpuRef<object>, IShaderReference

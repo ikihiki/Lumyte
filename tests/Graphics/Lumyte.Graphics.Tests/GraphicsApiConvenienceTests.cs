@@ -121,7 +121,7 @@ public sealed class GraphicsApiConvenienceTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
+            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private sealed class ShaderBuffer : IGraphicsShaderDataBuffer<SampleData>
@@ -261,6 +261,10 @@ public sealed class GraphicsApiConvenienceTests
         {
             Stencil = reference;
             SetterCalls++;
+        }
+
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+        {
         }
 
         public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();

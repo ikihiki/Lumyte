@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject handle, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder, IShaderRootEncoder
+internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject handle, RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) : IRenderEncoder
 {
     private readonly TextureFormat[] _formats = attachments.Select(a => a.View.Info.Format).ToArray();
     private readonly (uint Width, uint Height) _size = (attachments.FirstOrDefault()?.View ?? depth!.View).Texture.GetMipSize((attachments.FirstOrDefault()?.View ?? depth!.View).Info.BaseMipLevel);
@@ -19,6 +19,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private bool _blend;
     private bool _stencil;
 
+    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private BrowserArgumentTable? _table;
@@ -37,25 +38,25 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         _table = selected;
     }
 
+    public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+    {
+        owner.ValidatePass(this);
+        _argumentValidation = prepare;
+    }
+
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments => SetRootArguments(in value);
-
-    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
-        where T : unmanaged => SetRootArguments(in value, rootParameter, shaderTypeName);
-
-    public void SetRootArguments<T>(in T value, IShaderArgumentScope? scope = null)
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope: scope, encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
         SelectRoot(root);
     }
 
-    public void SetRootArguments<T>(in T value, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), scope: scope, encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: BrowserReferenceMetadata.Create);
         SelectRoot(root);
     }
 

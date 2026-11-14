@@ -102,4 +102,16 @@ storage; CopyFrom preserves C# bytes, padding and stride. Use BufferBarrierDesc,
 CopyBuffer and argument-table WriteBuffer explicitly. SetArguments(in value) also
 accepts unmanaged root structs. Reference-containing classes remain generated partial
 IShaderArguments types with private unmanaged storage. Shader layout must
-match C#; diagnostics are Debug-only. See the [transfer contract](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md).
+match C#; diagnostics require explicit per-device EnableValidation() in both Debug and Release. See the [transfer contract](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md).
+
+IShaderArguments is the sole transfer interface for generated/handwritten codecs.
+IShaderValueWriter requires only `WriteValue(ReadOnlySpan<byte> value)` and
+`WriteReference<T>(IGpuRef<T>? value)`, one value parameter each. Writers own implicit
+position and exact completion size; numeric-only values use one whole raw write,
+references encode 16 bytes inline. Cursor/emitter APIs and WriteWire are removed.
+Capture is CPU inspection only, never a Set/upload input. Graph temporarily uses
+SetArgumentValidation on existing native encoder contracts to check root references
+before publication and refreshed transitive references on execution against the
+pass’s native resource identity, byte range and access declarations. References
+cached from another callback are usable with a compatible native table and matching
+use declarations in the consuming pass; shared table identity alone declares no use.

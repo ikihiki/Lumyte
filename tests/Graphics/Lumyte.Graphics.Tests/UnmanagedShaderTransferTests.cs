@@ -169,6 +169,10 @@ public sealed class UnmanagedShaderTransferTests
         public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
             where T : unmanaged => Root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new TestRootStorage(size));
 
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+        {
+        }
+
         public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();
 
         public void SetPipeline(IGraphicsComputePipeline pipeline) => throw new NotSupportedException();

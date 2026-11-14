@@ -1,36 +1,57 @@
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-
 namespace Lumyte.Graphics.Abstractions;
 
 // Explicit CPU inspection only. Snapshots are not a native upload destination.
-internal struct ShaderSnapshotWriter : IShaderValueWriter, IShaderWireSink
+internal struct ShaderSnapshotWriter : IShaderValueWriter
 {
-    internal byte[]? Data;
+    internal readonly byte[] Data;
     internal List<ShaderValue>? Values;
+    private int _position;
+    private bool _written;
+    private bool _completed;
 
-    public void WriteWire<TWire, TEmitter>(in TWire wire, ref TEmitter emitter)
-        where TWire : unmanaged
-        where TEmitter : struct, IShaderReferenceEmitter
+    internal ShaderSnapshotWriter(int size)
     {
-        if (Data != null)
-        {
-            throw new InvalidOperationException("A snapshot must contain exactly one wire value.");
-        }
-
-        Data = new byte[Unsafe.SizeOf<TWire>()];
-        ReadOnlySpan<byte> source = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
-        var cursor = new ShaderWireCursor<ShaderSnapshotWriter>(source, ref this);
-        emitter.Emit(ref cursor);
-        cursor.Complete();
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        Data = new byte[size];
     }
 
-    void IShaderWireSink.WriteRaw(ReadOnlySpan<byte> source, int offset)
-        => source.CopyTo(Data!.AsSpan(offset, source.Length));
-
-    void IShaderWireSink.WriteReference<T>(int offset, IGpuRef<T>? value)
+    public void WriteValue(ReadOnlySpan<byte> value)
     {
-        (Values ??= []).Add(new(typeof(T), value, offset));
-        Data!.AsSpan(offset, 16).Clear();
+        ValidateWrite(value.Length);
+        value.CopyTo(Data.AsSpan(_position, value.Length));
+        _position += value.Length;
+        _written = true;
+    }
+
+    public void WriteReference<T>(IGpuRef<T>? value)
+    {
+        ValidateWrite(16);
+        (Values ??= []).Add(new(typeof(T), value, _position));
+        Data.AsSpan(_position, 16).Clear();
+        _position += 16;
+        _written = true;
+    }
+
+    internal void Complete()
+    {
+        if (_completed || !_written || _position != Data.Length)
+        {
+            throw new InvalidOperationException("The snapshot must contain exactly the static C# wire size and be completed once.");
+        }
+
+        _completed = true;
+    }
+
+    private readonly void ValidateWrite(int size)
+    {
+        if (_completed)
+        {
+            throw new InvalidOperationException("The snapshot is already complete.");
+        }
+
+        if (size > Data.Length - _position)
+        {
+            throw new ArgumentOutOfRangeException(nameof(size), "The write exceeds the static C# wire size.");
+        }
     }
 }

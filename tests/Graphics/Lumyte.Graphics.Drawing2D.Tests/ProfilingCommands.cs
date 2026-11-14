@@ -43,18 +43,16 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
 
     internal void Submit() => State = CommandBufferState.Submitted;
 
-    private sealed class Encoder(ProfilingCommands owner) : IRenderEncoder, IShaderRootEncoder
+    private sealed class Encoder(ProfilingCommands owner) : IRenderEncoder
     {
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+        {
+        }
+
         public void SetArgumentTable(IArgumentTable table) => owner.Events.Add(table);
 
         public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
             where T : unmanaged => owner.Events.Add(arguments);
-
-        public void SetRootArguments<T>(in T arguments, IShaderArgumentScope? scope = null)
-            where T : IShaderArguments => SetArguments(in arguments);
-
-        public void SetRootArguments<T>(in T arguments, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
-            where T : unmanaged => SetArguments(in arguments, rootParameter, shaderTypeName);
 
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => owner.Events.Add(arguments);
@@ -100,18 +98,16 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
         }
     }
 
-    private sealed class ComputeEncoder(ProfilingCommands owner) : IComputeEncoder, IShaderRootEncoder
+    private sealed class ComputeEncoder(ProfilingCommands owner) : IComputeEncoder
     {
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+        {
+        }
+
         public void SetArgumentTable(IArgumentTable table) => owner.Events.Add(table);
 
         public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
             where T : unmanaged => owner.Events.Add(arguments);
-
-        public void SetRootArguments<T>(in T arguments, IShaderArgumentScope? scope = null)
-            where T : IShaderArguments => SetArguments(in arguments);
-
-        public void SetRootArguments<T>(in T arguments, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
-            where T : unmanaged => SetArguments(in arguments, rootParameter, shaderTypeName);
 
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments => owner.Events.Add(arguments);

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
@@ -203,7 +204,7 @@ public sealed class OptionalLayoutCostTests
         public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("No boxed provider expected.");
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
+            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private readonly record struct PlainValue(uint Value);
@@ -228,7 +229,7 @@ public sealed class OptionalLayoutCostTests
             where TWriter : IShaderValueWriter
         {
             uint value = 17;
-            ShaderWire.Write(in value, ref writer);
+            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         }
     }
 }

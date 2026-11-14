@@ -4,7 +4,66 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## 転送interfaceの統合（2026-11-14）
+## 値だけを渡すwriterとGraph連携の簡素化（2026-11-14）
+
+最新の明示要求により、旧cursor-only契約を次の単一writerへ置き換えた。
+
+- `WriteValue(ReadOnlySpan<byte> value)`
+- `WriteReference<T>(IGpuRef<T>? value)`
+
+両methodは値一つだけを受け、offset／size／pathを渡さない。writerが内部の書き込み位置を進め、
+参照は常に16-byte、その場でbackend固有に符号化する。容量は減算で検査し、完了時に
+TransferSizeとの一致を検査する。生成codecはprivate unmanaged wireをローカルに固定した後、
+C#上の参照位置順にpadding込みraw区間・型付き参照・raw tailを直接書く。
+numeric field別の変換、source Spanの保持、参照second passは行わない。
+
+ShaderWire、ShaderWireCursor、IShaderReferenceCursor、IShaderReferenceEmitter、IShaderWireSinkと
+WriteWireを削除した。生成側には型固有のprivateなoffset順planと診断情報だけを残す。
+明示CPU検査のSnapshotWriterも同じ二methodを使い、参照slotはゼロにする。
+raw buffer memcpy／GPU copyと内部destinationへのbyte書き込みは下位primitiveとして残す。
+
+Graph専用のIShaderRootEncoder、IShaderArgumentScope、GraphRootArgumentScopeも削除した。
+既存IRenderEncoder／IComputeEncoder上のSetArgumentValidation一methodだけを必要な橋渡しとする。
+prepareはroot依存metadataだけを受け、実行時の全参照を検査するdetached Actionを返す。
+GraphはSet中だけprepareを設定しfinallyで解除する。native rootは許可範囲の配列だけを捕捉する
+callbackを保持し、RenderGraphContextや入力classを保持しない。通常nativeのnull経路は
+callback／scope objectを生成しない。Graph公開encoderに手動SetArgumentTableはなく、
+下位nativeのSetArgumentTableは手動記録用に維持する。
+
+このhookはJoinTableが異なるpassのnative tableを共有し得るため必要である。
+table一致だけではpassの宣言範囲を保証せず、最新の間接参照はnative command-local copy overlayにある。
+Graphにoverlay／command proxyを複製せず、準備時のroot依存と実行時に更新された全transitive依存を検査する。
+新public型、friend／InternalsVisibleTo、callback由来を記録する仕組みは追加しない。
+
+参照のcallback間持ち越し自体は禁止しない。Bで取得した参照をAで使う場合も、Aの既存宣言に
+native resource・範囲・accessが含まれれば許可する。取得元callback／slot／登録tokenで拒否しない。
+Aが未宣言、範囲外、access不一致なら使用時に拒否する。native table affinityは別に検査する。
+passごとに一つのimmutable宣言配列とcallbackを準備し、Setごとに追加の宣言配列を作らない。
+
+準備失敗時の以前のroot選択、完了までの世代保持、Graph codec中の再入・End／pipeline変更拒否、
+CopyFromの部分更新と要求範囲metadata無効化／元例外を維持する。取得元が異なるがAの宣言に含まれる
+cached subrangeの許可、未宣言resourceと更新されたtransitive別範囲の拒否を追加検査した。
+API不在guardは旧9caでbuild成功後に旧WriteWireを検出して失敗し、現行の二methodで成功した。
+
+最新sourceの検証:
+
+- Graphics Debug／Release各241成功・失敗0・88skip（329件）。旧offset APIだけのテストは、
+  容量超過／未完了total・生成plan不正・API不在・padding／write順の検査へ置換した。
+- RenderGraph Debug／Release各133成功・失敗0・skip0。cached B→Aの許可／拒否、
+  command-local copy overlay上の間接参照別範囲拒否と回復を検査した。
+- 全ホストRelease3,214成功・失敗0・109skip。host consumer／samples buildも成功。
+- Vulkan／Wgpu native subset Debug／Release各18成功・失敗0・skip0。
+  新prepare拒否後の旧世代readback、Graph自動table binding、同一class root／buffer転送、
+  mutable入力変更、table／pipeline／transitive依存とvalidation off/onを含む。
+- D3D12管理側Release28成功・Windows native7skip、Browser Release compile成功。
+- Windows native／Browser実行・AOT／presentationは未検証。新しい性能測定やzero allocationの主張なし。
+- 独立read-only source reviewでblockerなし。API不在guardの旧9ca failureログを保存した。
+
+ログはartifacts/validation11-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,negative-control,markdown}.log。
+
+以下はinterface統合・cursor導入時の履歴であり、最新writer／Graph APIとは区別する。
+
+## 9ca時点の転送interface統合履歴（2026-11-14）
 
 旧IShaderData markerを削除し、IShaderArgumentsをrootとtyped shader-data bufferの単一契約とした。
 4 backend、buffer／slice／factory、Graph／resource宣言、samplesとtest consumerの制約を統一し、

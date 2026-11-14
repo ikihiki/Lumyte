@@ -177,6 +177,45 @@ public sealed class UnifiedTransferInterfaceTests
         }
 
         await CheckGraphCopyAsync(device, bufferArtifact, upload);
+        await CheckGraphAutomaticBindingAsync(device, uniformPipeline);
+    }
+
+    private static async Task CheckGraphAutomaticBindingAsync(IGraphicDevice device, IGraphicsComputePipeline pipeline)
+    {
+        using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.CopySource });
+        using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        using var graph = new global::Lumyte.Graphics.RenderGraph.RenderGraph(device);
+        RenderGraphBuffer<uint> target = graph.ImportBuffer(output, default);
+        graph.AddPass("same class automatically binds graph root", context =>
+        {
+            var value = new UnifiedTransferValue { Value = 29, Output = context.GetGpuRef(target) };
+            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
+            encoder.SetPipeline(pipeline);
+            encoder.SetArguments(in value);
+            value.Value = 99;
+            encoder.Dispatch(1);
+        }).UseBuffer(target, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite)).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        plan.Record(commands);
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 1), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(output.SliceElements(0, 1), readback.SliceElements(0, 1));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 1), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Finish();
+        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await submission.WaitAsync(timeout.Token);
+        await readback.MapAsync(timeout.Token);
+        try
+        {
+            uint[] actual = new uint[1];
+            readback.CopyTo(actual);
+            Assert.Equal(29u, actual[0]);
+        }
+        finally
+        {
+            readback.Unmap();
+        }
     }
 
     private static async Task CheckGraphCopyAsync(IGraphicDevice device, ShaderArtifact artifact, IGraphicsShaderDataBuffer<UnifiedTransferValue> upload)

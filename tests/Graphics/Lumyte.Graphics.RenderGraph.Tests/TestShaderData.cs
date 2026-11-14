@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
@@ -9,5 +10,5 @@ internal readonly struct TestShaderData : IShaderArguments
     public static int TransferSize => System.Runtime.CompilerServices.Unsafe.SizeOf<TestShaderData>();
 
     public void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
+        where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
 }

@@ -15,14 +15,14 @@ IShaderArguments implementations on partial types.
 There is no codec registry, per-numeric-field serialization, or reflected repacking.
 
 - Unmanaged structs (including record structs) transfer their **entire C# representation**
-  through `ShaderWire.Write(in this, ref writer)` and its empty reference emitter.
-  The cursor copies one raw range; nested structs and padding are not rewritten.
+  through one `writer.WriteValue` over the whole unmanaged representation.
+  Nested structs and padding are not rewritten.
 - Values containing IGpuRef are partial classes with one **private unmanaged storage
   struct**. That explicitly authored struct determines field order, packing, padding
   and stride. A same-named ShaderReferenceSlot reserves 16 bytes per reference.
   The generator takes a value copy of storage at the beginning of Write, then passes
-  that local and a reference emitter to `ShaderWire.Write`. The cursor interleaves
-  raw ranges with inline 16-byte reference encodings; no shader path is passed at runtime.
+  raw ranges from that local to WriteValue, interleaved with value-only
+  WriteReference calls encoding 16-byte slots inline; no shader path is passed at runtime.
 - Numeric properties can forward to private storage normally, or be public read/write
   partial properties implemented by the generator (.NET 10).
 - Static TransferSize and TransferFields describe C# wire layout without creating an
@@ -69,7 +69,7 @@ Project reference:
 
 Generic/nested generator targets, managed structs, missing private unmanaged storage,
 and missing or mistyped reference slots produce LUMG001 diagnostics. Handwritten
-implementations must implement the same mandatory cursor transfer contract.
+implementations must implement the same mandatory value-only writer contract.
 
 For ordinary structs, built-in backends diagnose named storage layouts only after
 explicit per-device EnableValidation(), in both Debug and Release. Cached managed
@@ -84,7 +84,7 @@ reflection, diagnostic table initialization, or runtime code generation.
 The generated `Write<TWriter>` seam also supports direct reference-bearing uploads.
 CopyFrom uses a streaming writer, not an implicit Capture: private unmanaged bytes
 are copied synchronously and only immutable resource identities remain on the CPU.
-Explicit Capture remains a CPU-only inspection/diagnostic API: its cursor copies
+Explicit Capture remains a CPU-only inspection/diagnostic API: its writer copies
 raw ranges into independent bytes and records logical references, clearing each
 16-byte reference slot rather than exposing its source representation. Snapshots
 are not native write inputs or upload backdoors. SetArguments
@@ -93,48 +93,60 @@ uniform generation; it does not allocate an intermediate numeric snapshot.
 A failed upload may partially modify bytes and invalidates the requested reference
 metadata range; it does not roll back values or retain a hidden numeric history.
 
-## Mandatory wire cursor
+## Mandatory value-only writer
 
-Every generated Write uses ShaderWire, including numeric-only types. There is no
-writer capability check, bulk WriteBytes/WriteReference contract, default throwing
-implementation, or compatibility fallback. Third-party IShaderValueWriter
-implementations must implement WriteWire<TWire, TEmitter>(in TWire wire,
-ref TEmitter emitter), synchronously borrow the source, construct a
-ShaderWireCursor over their IShaderWireSink, call emitter.Emit(ref cursor), and
-complete the cursor before publishing output. Source spans and cursors must not
-escape the call. The raw-only ShaderWire overload is only for values without
-reference slots; it uses a private empty emitter and still copies through a cursor.
+IShaderValueWriter has exactly two mandatory abstract methods, each with one value parameter:
 
-All generated reference emitters use a static functional plan sorted by actual
-managed physical offsets, independent of optional diagnostic reflection. Slots
-must be ascending, disjoint, and within the complete wire value. The Emit API has
-no ordering flag or declaration-order alternative. Padding and numeric bytes are
-copied as raw ranges, never serialized per field.
+    void WriteValue(ReadOnlySpan<byte> value);
+    void WriteReference<T>(IGpuRef<T>? value);
 
-Reference fields, auto-properties, virtual properties, and custom getters all use
-this same path. Getters run once per reference, in physical slot order, not source
-declaration order. Before any getter runs, generated Write takes a value copy of
-the complete private wire storage. Getter mutations of that storage therefore do
-not change the current transfer's raw bytes. Mutations to reference properties
-are observed by subsequent getters in physical order; later transfers observe
-subsequent storage state. This deterministic rule intentionally replaces the old
-legacy getter evaluation order; custom getters never select a fallback.
+There is no offset, size, path, seek, skip or WriteAt parameter. Root/upload writers
+own their implicit position and expectedTransferSize. They guard remaining capacity
+by subtraction and require position == expectedTransferSize at Complete. References
+are always encoded inline as 16 bytes; borrowed spans never escape. Numeric-only
+codecs call WriteValue once over the complete unmanaged value, including padding.
 
-The local wire copy preserves the entire unmanaged representation, including padding.
-It is borrowed synchronously, not retained as a CPU snapshot. Invalid overlapping or
-out-of-range generated slot plans are rejected before any reference getter runs.
-Handwritten codecs must provide a typed struct IShaderReferenceEmitter and invoke
-ShaderWire.Write once; their emitters obey the same physical ordering contract.
+Reference-containing classes first copy the complete private unmanaged wire to a
+local value. A private static plan uses actual C# offsets only for physical order
+and slot validity, independently of optional diagnostic field tables. Invalid,
+overlapping or out-of-range slots are rejected before getters. Raw ranges alternate
+with WriteReference calls; no emitter structs are generated. IShaderWireSink,
+IShaderReferenceCursor, IShaderReferenceEmitter, ShaderWire, ShaderWireCursor and
+WriteWire are removed without compatibility aliases.
 
-SetArguments(ShaderValueSnapshot), CreateSnapshot, Pack/SharedPackRaw and snapshot
-execution admission are removed. IRenderEncoder/IComputeEncoder require unmanaged
-SetArguments implementations without a default Capture adapter; RenderGraph requires
-IShaderRootEncoder and rejects unsupported encoders. Explicit inspection Fields,
-reflection and handwritten static metadata helpers are diagnostics, not alternative
-shader writing paths. ModelVertex checks size and Fields directly without Capture.
-ShaderBindingSnapshot.Capture(rootArguments, …) captures dependency metadata only;
-it has no numeric Root. Backend metadata owners retain resource identities, not wire
-offsets; dynamic WGSL bindings/remaps still refresh at Draw/Dispatch. Invalid reference
-encoding fails during Set without replacing the previously selected generation.
-Ordinary unmanaged buffer memcpy and GPU copy commands are unchanged. No new
-performance measurements are claimed by this contract update.
+Reference fields, auto-properties, virtual properties and custom getters all use
+this path. Each getter runs once in physical slot order after the local wire copy.
+Getter mutations of numeric storage do not change this transfer; mutations of
+reference properties remain visible to subsequent getters. The local preserves
+padding and is borrowed synchronously, not retained as a CPU snapshot. Handwritten
+IShaderArguments implementations use the same two writer methods. IShaderArguments
+is the sole transfer interface; the old IShaderData marker is removed.
+
+Explicit Capture uses a size-constructed ShaderSnapshotWriter implementing these
+same methods, storing zeroed reference slots and logical identities. It remains
+read-only inspection, never a native write backdoor. SetArguments(ShaderValueSnapshot),
+CreateSnapshot and Pack/SharedPackRaw remain removed. Native Set writes a fresh
+final uniform generation and preserves the old selection if encoding or preparation
+fails; it does not re-run the codec on Draw/Dispatch.
+
+Graph caches one preparation delegate per graph encoder and installs it through
+existing IRenderEncoder/IComputeEncoder.SetArgumentValidation only around ordinary
+SetArguments, clearing it in finally and before End. Preparation checks root
+references against declared native resource identity, byte range and access, then
+selects the native table before publishing the new root. One detached Action cached
+per prepared pass captures only an immutable allowed array, never the owner,
+context, pass or input. Each native execution refreshes the full root/transitive
+set, including command-local copy overlays, and applies the same check once.
+Set-time reentrancy cannot End or mutate the pipeline. A reference cached from
+callback B can be used in A when A declares its native resource, range and access
+and the native table is compatible. Callback origin, registration group and slot
+do not define use permission; JoinTable alone declares no use. Admission remains
+active with validation disabled. No extra root
+encoder/scope types, public types, friend access or graph copy overlay proxy is needed.
+A failed admission blocks native recording, not a promise of CPU rollback. Native
+manual SetArgumentTable remains available; Graph selects its table automatically.
+
+Inspection Fields/reflection remain diagnostics only; ModelVertex checks size and
+Fields without Capture. ShaderBindingSnapshot.Capture(rootArguments, …) gathers
+reference metadata only, with no numeric Root. Ordinary unmanaged buffer memcpy
+and GPU copy commands are unchanged; no performance measurements are claimed.

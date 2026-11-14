@@ -30,18 +30,10 @@ public sealed class GraphFinalRootTests
             ShaderRootArguments root = commands.Encoder.Selected!;
             Assert.Equal(17u, MemoryMarshal.Read<uint>(((MemoryStorage)root.Storage).Bytes.AsSpan(16)));
             AssertNoInputFields(root, arguments);
-            object scope = typeof(ShaderRootArguments).GetField("_scope", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(root)!;
-            Assert.Equal("GraphRootArgumentScope", scope.GetType().Name);
-            Assert.All(scope.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic), field =>
-            {
-                Assert.False(typeof(ShaderValueSnapshot).IsAssignableFrom(field.FieldType));
-                Assert.False(typeof(IShaderArguments).IsAssignableFrom(field.FieldType));
-                Assert.False(field.FieldType == typeof(byte[]) || field.FieldType == typeof(ReadOnlyMemory<byte>));
-                if (field.FieldType == typeof(RenderGraphContext))
-                {
-                    Assert.Null(field.GetValue(scope));
-                }
-            });
+            var admit = (Action<IReadOnlyCollection<IShaderReference>>?)typeof(ShaderRootArguments)
+                .GetField("_admit", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(root);
+            Assert.Null(admit);
+            Assert.Null(commands.Encoder.Prepare);
         }).KeepAlive();
         using CompiledRenderGraph plan = graph.Compile();
 
@@ -88,10 +80,12 @@ public sealed class GraphFinalRootTests
             arguments.Failure = new ApplicationException("codec failed");
             Assert.Same(arguments.Failure, Assert.Throws<ApplicationException>(() => encoder.SetArguments(arguments)));
             Assert.Same(previous, commands.Encoder.Selected);
+            Assert.Null(commands.Encoder.Prepare);
             Assert.Same(previousResources, selectionField.GetValue(encoder));
             arguments.Failure = null;
             arguments.Data = foreign;
             Assert.Throws<ArgumentException>(() => encoder.SetArguments(arguments));
+            Assert.Null(commands.Encoder.Prepare);
             Assert.Same(previous, commands.Encoder.Selected);
             Assert.Same(previousResources, selectionField.GetValue(encoder));
             encoder.Dispatch(1);
@@ -152,6 +146,144 @@ public sealed class GraphFinalRootTests
         Assert.Equal(1, commands.Encoder.FactoryCalls);
         Assert.Equal(2, commands.Encoder.Bindings.Count);
         Assert.NotSame(commands.Encoder.Bindings[0].Elements.Values.Single(), commands.Encoder.Bindings[1].Elements.Values.Single());
+    }
+
+    /// <summary>A shared physical table never admits an undeclared transitive buffer range.</summary>
+    [Fact]
+    public void TransitiveAdmissionRejectsOtherRangeOfSameBufferAndTable()
+    {
+        var device = new PublicGraphConsumerDevice();
+        using var graph = new RenderGraph(device);
+        using var data = new ConsumerLinkBuffer(Artifact(element: true));
+        using var staging = new ConsumerLinkBuffer(Artifact(element: true), memory: MemoryPreference.Upload);
+        using var buffer = new TestTypedBuffer<uint>(new() { Count = 2, Usage = BufferUsage.ShaderRead }, []);
+        RenderGraphShaderDataBuffer<ConsumerLink> links = graph.ImportShaderDataBuffer(data, default);
+        RenderGraphShaderDataBuffer<ConsumerLink> upload = graph.ImportShaderDataBuffer(staging, default);
+        RenderGraphBuffer<uint> values = graph.ImportBuffer(buffer, default);
+        IGpuRef<uint>? wrong = null;
+        RenderGraphPass producer = graph.AddPass("other range", context => wrong = context.GetGpuRef(values, 1, 1))
+            .UseBuffer(values, 1, 1, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+            .UseShaderDataBuffer(links, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        using var pipeline = new PublicGraphConsumerComputePipeline(Artifact());
+        var commands = new RootCommands();
+        graph.AddPass("transitive range admission", context =>
+        {
+            IGpuRef<uint> valid = context.GetGpuRef(values, 0, 1);
+            IShaderReference validReference = Assert.IsAssignableFrom<IShaderReference>(valid);
+            IShaderReference wrongReference = Assert.IsAssignableFrom<IShaderReference>(wrong);
+            Assert.Same(validReference.Table, wrongReference.Table);
+            Assert.Same(validReference.Resource, wrongReference.Resource);
+            Assert.NotEqual(validReference.OffsetInBytes, wrongReference.OffsetInBytes);
+            data.SetTransferredReferences(0, new ShaderDependencyMetadata([validReference]));
+            var arguments = new RootInput { Data = context.GetGpuRef(links) };
+            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
+            encoder.SetPipeline(pipeline);
+            encoder.SetArguments(arguments);
+            encoder.Dispatch(1);
+            IShaderReferenceMetadata original = data.ReadReferences(0);
+            staging.SetTransferredReferences(0, new ShaderDependencyMetadata([wrongReference]));
+            commands.CopyBuffer(staging.SliceElements(0, 1), data.SliceElements(0, 1));
+            Assert.Same(original, data.ReadReferences(0));
+            Assert.Throws<ArgumentException>(() => encoder.Dispatch(1));
+            staging.SetTransferredReferences(0, new ShaderDependencyMetadata([validReference]));
+            commands.CopyBuffer(staging.SliceElements(0, 1), data.SliceElements(0, 1));
+            encoder.Dispatch(1);
+            Assert.Equal(1, arguments.Writes);
+        }).UseShaderDataBuffer(links, new(PipelineStage.ComputeShader | PipelineStage.Copy, ResourceAccess.ShaderRead | ResourceAccess.CopyWrite))
+          .UseShaderDataBuffer(upload, new(PipelineStage.Copy, ResourceAccess.CopyRead))
+          .UseBuffer(values, 0, 1, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .DependsOn(producer).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using RootCommands commandLifetime = commands;
+        plan.Record(commands);
+        Assert.Equal(2, commands.Encoder.Bindings.Count);
+        Assert.Equal(1, commands.Encoder.FactoryCalls);
+    }
+
+    /// <summary>A cached reference is admitted by the consuming pass's resource range, not its registration token.</summary>
+    [Fact]
+    public void CachedReferenceFromAnotherCallbackUsesConsumingPassDeclaration()
+    {
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var data = new ConsumerLinkBuffer(Artifact(element: true), count: 3);
+        RenderGraphShaderDataBuffer<ConsumerLink> buffer = graph.ImportShaderDataBuffer(data, default);
+        IGpuRef<ConsumerLink>? cached = null;
+        bool producerRan = false;
+        RenderGraphPass producer = graph.AddPass("cache registered subrange", context =>
+        {
+            cached = context.GetGpuRef(buffer, 1, 2).GetElement(0);
+            producerRan = true;
+        }).UseShaderDataBuffer(buffer, 1, 2, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        using var pipeline = new PublicGraphConsumerComputePipeline(Artifact());
+        var commands = new RootCommands();
+        graph.AddPass("consume cached subrange", context =>
+        {
+            Assert.True(producerRan);
+            IGpuRef<ConsumerLink> declared = context.GetGpuRef(buffer, 0, 3);
+            IShaderReference expected = Assert.IsAssignableFrom<IShaderReference>(cached);
+            IShaderReference own = Assert.IsAssignableFrom<IShaderReference>(declared);
+            Assert.Same(own.Table, expected.Table);
+            Assert.Same(own.Resource, expected.Resource);
+            Assert.NotEqual(own.OffsetInBytes, expected.OffsetInBytes);
+            Assert.True(own.SizeInBytes > expected.SizeInBytes);
+            Assert.NotEqual(own.RegistrationOffsetInBytes, expected.RegistrationOffsetInBytes);
+            Assert.NotEqual(own.RegistrationSizeInBytes, expected.RegistrationSizeInBytes);
+            var arguments = new RootInput { Data = cached };
+            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
+            encoder.SetPipeline(pipeline);
+            encoder.SetArguments(arguments);
+            encoder.Dispatch(1);
+            Assert.Contains(expected, Assert.Single(commands.Encoder.Bindings).References);
+            Assert.Equal(1, arguments.Writes);
+        }).UseShaderDataBuffer(buffer, 0, 3, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .DependsOn(producer).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using RootCommands commandLifetime = commands;
+        plan.Record(commands);
+        Assert.Equal(1, commands.Encoder.FactoryCalls);
+        Assert.Single(commands.Encoder.Bindings);
+    }
+
+    /// <summary>Sharing a table does not admit a cached root whose resource the consumer never declared.</summary>
+    [Fact]
+    public void CachedReferenceFromAnotherCallbackRejectsUndeclaredResource()
+    {
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var joined = new ConsumerLinkBuffer(Artifact(element: true));
+        using var other = new ConsumerLinkBuffer(Artifact(element: true));
+        RenderGraphShaderDataBuffer<ConsumerLink> shared = graph.ImportShaderDataBuffer(joined, default);
+        RenderGraphShaderDataBuffer<ConsumerLink> undeclared = graph.ImportShaderDataBuffer(other, default);
+        IGpuRef<ConsumerLink>? cached = null;
+        bool producerRan = false;
+        RenderGraphPass producer = graph.AddPass("cache undeclared resource", context =>
+        {
+            cached = context.GetGpuRef(undeclared);
+            producerRan = true;
+        }).UseShaderDataBuffer(shared, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .UseShaderDataBuffer(undeclared, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        using var pipeline = new PublicGraphConsumerComputePipeline(Artifact());
+        var commands = new RootCommands();
+        graph.AddPass("reject cached undeclared resource", context =>
+        {
+            Assert.True(producerRan);
+            IGpuRef<ConsumerLink> declared = context.GetGpuRef(shared);
+            Assert.Same(((IShaderReference)declared).Table, ((IShaderReference)cached!).Table);
+            Assert.NotSame(((IShaderReference)declared).Resource, ((IShaderReference)cached!).Resource);
+            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
+            encoder.SetPipeline(pipeline);
+            encoder.SetArguments(new RootInput { Data = declared });
+            ShaderRootArguments previous = commands.Encoder.Selected!;
+            Assert.Throws<ArgumentException>(() => encoder.SetArguments(new RootInput { Data = cached }));
+            Assert.Same(previous, commands.Encoder.Selected);
+            encoder.Dispatch(1);
+            Assert.DoesNotContain((IShaderReference)cached!, Assert.Single(commands.Encoder.Bindings).References);
+        }).UseShaderDataBuffer(shared, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+          .DependsOn(producer).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using RootCommands commandLifetime = commands;
+        plan.Record(commands);
+        Assert.Equal(2, commands.Encoder.FactoryCalls);
+        Assert.Single(commands.Encoder.Bindings);
     }
 
     /// <summary>The unmanaged public overload also selects final storage rather than compatibility snapshots.</summary>
@@ -242,8 +374,16 @@ public sealed class GraphFinalRootTests
             }
 
             Wire wire = new() { Value = Value };
-            var emitter = new Emitter(Data);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            if (Data is { } data)
+            {
+                writer.WriteReference(data);
+                writer.WriteValue(bytes[16..]);
+            }
+            else
+            {
+                writer.WriteValue(bytes);
+            }
         }
 
         [StructLayout(LayoutKind.Explicit, Size = 32)]
@@ -251,18 +391,6 @@ public sealed class GraphFinalRootTests
         {
             [FieldOffset(16)]
             public uint Value;
-        }
-
-        private readonly struct Emitter(IGpuRef<ConsumerLink>? data) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
-            {
-                if (data is not null)
-                {
-                    cursor.WriteReference(0, data);
-                }
-            }
         }
     }
 
@@ -289,17 +417,24 @@ public sealed class GraphFinalRootTests
         public void Dispose() => Disposed = true;
     }
 
-    private sealed class RootEncoder : IComputeEncoder, IShaderRootEncoder, IDisposable
+    private sealed class RootEncoder : IComputeEncoder, IDisposable
     {
         private IArgumentTable? _table;
+        private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepare;
 
         internal ShaderRootArguments? Selected { get; private set; }
+
+        internal Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? Prepare => _prepare;
 
         internal List<MemoryStorage> Storages { get; } = [];
 
         internal List<ShaderBindingSnapshot> Bindings { get; } = [];
 
+        internal Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? ReadShaderData { get; set; }
+
         internal int FactoryCalls { get; private set; }
+
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => _prepare = prepare;
 
         public void SetArgumentTable(IArgumentTable table) => _table = table;
 
@@ -308,22 +443,16 @@ public sealed class GraphFinalRootTests
         }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => SetRootArguments(in arguments);
+            where T : IShaderArguments
+            => Selected = ShaderRootArguments.Create(in arguments, Allocate, Encode, prepare: _prepare);
 
         public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
-            where T : unmanaged => SetRootArguments(in arguments, rootParameter, shaderTypeName);
-
-        public void SetRootArguments<T>(in T arguments, IShaderArgumentScope? scope = null)
-            where T : IShaderArguments
-            => Selected = ShaderRootArguments.Create(in arguments, Allocate, Encode, scope: scope);
-
-        public void SetRootArguments<T>(in T arguments, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
             where T : unmanaged
-            => Selected = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, Allocate, scope: scope);
+            => Selected = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, Allocate, prepare: _prepare);
 
         public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
         {
-            var binding = ShaderBindingSnapshot.Capture(Selected!, _table);
+            var binding = ShaderBindingSnapshot.Capture(Selected!, _table, ReadShaderData);
             Selected!.Seal();
             Bindings.Add(binding);
         }
@@ -351,6 +480,7 @@ public sealed class GraphFinalRootTests
     private sealed class RootCommands : IGraphicsCommandBuffer
     {
         private readonly PublicGraphConsumerCommands _inner = new();
+        private readonly ShaderDataTransferState _transfers = new();
 
         public CommandBufferState State => _inner.State;
 
@@ -371,7 +501,7 @@ public sealed class GraphFinalRootTests
             where TDestination : unmanaged => _inner.CopyBuffer(source, destination);
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : IShaderArguments => _inner.CopyBuffer(source, destination);
+            where T : IShaderArguments => _transfers.Record((IShaderDataSource)source.Buffer, source.Offset, (IShaderDataSource)destination.Buffer, destination.Offset, source.Count, () => _inner.CopyBuffer(source, destination));
 
         public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => _inner.CopyTexture(source, destination);
 
@@ -381,7 +511,11 @@ public sealed class GraphFinalRootTests
 
         public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => _inner.BeginRenderPass(desc);
 
-        public IComputeEncoder BeginComputePass(ComputePassDesc desc) => Encoder;
+        public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+        {
+            Encoder.ReadShaderData = _transfers.ReadReferences;
+            return Encoder;
+        }
 
         public void Finish() => _inner.Finish();
 

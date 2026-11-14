@@ -8,18 +8,20 @@ public sealed class RenderGraphComputeEncoder : IDisposable
 {
     private readonly RenderGraphContext _context;
     private readonly IComputeEncoder _native;
+    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?> _prepareArguments;
     private IGraphicsComputePipeline? _pipeline;
     private IReadOnlyList<ShaderResources>? _arguments;
     private bool _hasArguments;
     private object? _argumentPipeline;
     private bool _ended;
+    private IReadOnlyList<ShaderResources>? _pendingResources;
+    private bool _settingArguments;
 
     internal RenderGraphComputeEncoder(RenderGraphContext context, IComputeEncoder native)
     {
         _context = context;
-        _native = native is IShaderRootEncoder
-            ? native
-            : throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
+        _native = native;
+        _prepareArguments = PrepareArguments;
     }
 
     /// <summary>Selects the compute pipeline.</summary>
@@ -44,21 +46,27 @@ public sealed class RenderGraphComputeEncoder : IDisposable
             throw new InvalidOperationException("Select a pipeline before setting its arguments.");
         }
 
-        IReadOnlyList<ShaderResources>? resources;
-        if (_native is IShaderRootEncoder rootEncoder)
+        _settingArguments = true;
+        try
         {
-            var scope = new GraphRootArgumentScope(_context, [], graphics: false);
-            rootEncoder.SetRootArguments(in arguments, scope);
-            resources = scope.Resources;
+            _native.SetArgumentValidation(_prepareArguments);
+            _native.SetArguments(in arguments);
+            _arguments = _pendingResources;
+            _hasArguments = true;
+            _argumentPipeline = _pipeline;
         }
-        else
+        finally
         {
-            throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
+            try
+            {
+                _native.SetArgumentValidation(null);
+            }
+            finally
+            {
+                _pendingResources = null;
+                _settingArguments = false;
+            }
         }
-
-        _arguments = resources;
-        _hasArguments = true;
-        _argumentPipeline = _pipeline;
     }
 
     /// <summary>Snapshots an ordinary unmanaged root with the existing graph declaration rules.</summary>
@@ -75,21 +83,27 @@ public sealed class RenderGraphComputeEncoder : IDisposable
             throw new InvalidOperationException("Select a pipeline before setting its arguments.");
         }
 
-        IReadOnlyList<ShaderResources>? resources;
-        if (_native is IShaderRootEncoder rootEncoder)
+        _settingArguments = true;
+        try
         {
-            var scope = new GraphRootArgumentScope(_context, [], graphics: false);
-            rootEncoder.SetRootArguments(in arguments, rootParameter, shaderTypeName, scope);
-            resources = scope.Resources;
+            _native.SetArgumentValidation(_prepareArguments);
+            _native.SetArguments(in arguments, rootParameter, shaderTypeName);
+            _arguments = _pendingResources;
+            _hasArguments = true;
+            _argumentPipeline = _pipeline;
         }
-        else
+        finally
         {
-            throw new NotSupportedException("The native encoder must implement IShaderRootEncoder.");
+            try
+            {
+                _native.SetArgumentValidation(null);
+            }
+            finally
+            {
+                _pendingResources = null;
+                _settingArguments = false;
+            }
         }
-
-        _arguments = resources;
-        _hasArguments = true;
-        _argumentPipeline = _pipeline;
     }
 
     /// <summary>Records Dispatch with the previously selected arguments.</summary>
@@ -117,6 +131,7 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         _ended = true;
         try
         {
+            _native.SetArgumentValidation(null);
             _native.End();
         }
         finally
@@ -139,6 +154,19 @@ public sealed class RenderGraphComputeEncoder : IDisposable
                 _context.DeferEncoderCleanup(cleanupError);
             }
         }
+    }
+
+    private Action<IReadOnlyCollection<IShaderReference>>? PrepareArguments(IShaderReferenceMetadata references)
+    {
+        (IReadOnlyList<ShaderResources>? resources, Action<IReadOnlyCollection<IShaderReference>>? admit) =
+            _context.SelectArguments(references, [], graphics: false);
+        if (resources is not null)
+        {
+            _context.BindResources(resources, _native);
+        }
+
+        _pendingResources = resources;
+        return admit;
     }
 
     private void ValidateExecution()
@@ -178,6 +206,11 @@ public sealed class RenderGraphComputeEncoder : IDisposable
 
     private void EnsureActive()
     {
+        if (_settingArguments)
+        {
+            throw new InvalidOperationException("Argument selection cannot be reentered.");
+        }
+
         _context.EnsureActive();
         if (_ended)
         {

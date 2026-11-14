@@ -132,16 +132,37 @@ public sealed class FinalRootGenerationTests
             compute.SetArgumentTable(otherTable);
             Assert.Throws<ArgumentException>(() => compute.Dispatch(1));
             compute.SetArgumentTable(table);
-            compute.Dispatch(1);
             Assert.Equal(3, root.Writes);
+
+            // A rejecting metadata-only hook must not consume or replace the selected generation.
+            var preparationFailure = new InvalidOperationException("Preparation rejected final metadata.");
+            int prepares = 0;
+            compute.SetArgumentValidation(metadata =>
+            {
+                prepares++;
+                Assert.Equal(2, metadata.References.Count);
+                throw preparationFailure;
+            });
+            try
+            {
+                Assert.Same(preparationFailure, Record.Exception(() => compute.SetArguments(in root)));
+            }
+            finally
+            {
+                compute.SetArgumentValidation(null);
+            }
+
+            Assert.Equal(1, prepares);
+            compute.Dispatch(1);
+            Assert.Equal(4, root.Writes);
 
             // A new typed selection owns numeric bytes independently of later source mutation.
             root.Number = 13;
             compute.SetArguments(in root);
             root.Number = 999;
             compute.Dispatch(1);
-            Assert.Equal(4, root.Writes);
-            Assert.Equal(validation ? 3 : 0, root.Probes);
+            Assert.Equal(5, root.Writes);
+            Assert.Equal(validation ? 4 : 0, root.Probes);
         }
         finally
         {
@@ -214,8 +235,16 @@ public sealed class FinalRootGenerationTests
 
             Writes++;
             var wire = new Wire { Number = Number, Output = default, Input = default, Padding = 0 };
-            var emitter = new References(this);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            writer.WriteValue(bytes[..4]);
+            if (Failure is { } failure)
+            {
+                throw failure;
+            }
+
+            writer.WriteReference(Output);
+            writer.WriteReference(Input);
+            writer.WriteValue(bytes[36..]);
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -228,21 +257,6 @@ public sealed class FinalRootGenerationTests
             public ShaderReferenceSlot Input;
 
             public uint Padding;
-        }
-
-        private readonly struct References(Arguments owner) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
-            {
-                if (owner.Failure is { } failure)
-                {
-                    throw failure;
-                }
-
-                cursor.WriteReference(4, owner.Output);
-                cursor.WriteReference(20, owner.Input);
-            }
         }
     }
 }

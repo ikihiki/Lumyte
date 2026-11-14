@@ -38,20 +38,9 @@ public interface IShaderArguments
         string name = T.ShaderTypeName;
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ShaderSnapshotWriter writer = default;
+        ShaderSnapshotWriter writer = new(T.TransferSize);
         value.Write(ref writer);
-        if (writer.Data == null || writer.Data.Length != T.TransferSize)
-        {
-            throw new InvalidOperationException("The bulk transfer must match the static C# wire size.");
-        }
-
-        foreach (ShaderValue reference in writer.Values ?? [])
-        {
-            if (reference.Offset < 0 || reference.Offset > writer.Data.Length - 16)
-            {
-                throw new ArgumentException("A reference slot is outside the C# wire value.");
-            }
-        }
+        writer.Complete();
 
         return new(root, name, writer.Data, writer.Values?.AsReadOnly() ?? (IReadOnlyList<ShaderValue>)[], [])
         {

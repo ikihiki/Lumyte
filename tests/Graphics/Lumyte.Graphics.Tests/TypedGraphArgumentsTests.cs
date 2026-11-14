@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Shaders;
@@ -118,8 +119,9 @@ public sealed class TypedGraphArgumentsTests
             where TWriter : IShaderValueWriter
         {
             Wire wire = new() { Index = Index, Value = Value };
-            var emitter = new References(Output);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            writer.WriteReference(Output);
+            writer.WriteValue(bytes[16..]);
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 24)]
@@ -133,12 +135,6 @@ public sealed class TypedGraphArgumentsTests
 
             [System.Runtime.InteropServices.FieldOffset(20)]
             public uint Value;
-        }
-
-        private readonly struct References(IGpuRef<uint> output) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct => cursor.WriteReference(0, output);
         }
     }
 }

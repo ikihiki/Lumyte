@@ -143,20 +143,18 @@ public sealed class ShaderDataUploadTests
         }
     }
 
-    /// <summary>Malformed slots fail before encoding or any out-of-bounds write, without demanding byte rollback.</summary>
-    /// <param name="slot">The invalid reference offset, including a duplicate valid slot.</param>
+    /// <summary>Extra reference values fail before encoding or unsafe writes, without demanding byte rollback.</summary>
+    /// <param name="extra">Whether to append a reference or raw byte past capacity.</param>
     [Theory]
-    [InlineData(-1)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(int.MaxValue)]
-    public void InvalidSlotsClearMetadataWithoutUnsafeWrites(int slot)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OverflowClearsMetadataWithoutUnsafeWrites(bool extra)
     {
         using var storage = new MappedBuffer(4 * UploadValue.TransferSize);
         IShaderReferenceMetadata?[] metadata = SeedMetadata();
         IShaderReferenceMetadata? before = metadata[0];
         IShaderReferenceMetadata? after = metadata[3];
-        var value = new UploadValue { ExtraSlot = slot };
+        var value = new UploadValue { ExtraReference = extra };
         int encoded = 0;
         byte[] Encode(ShaderValue reference)
         {
@@ -241,7 +239,7 @@ public sealed class ShaderDataUploadTests
 
         public Exception? Failure { get; set; }
 
-        public int? ExtraSlot { get; set; }
+        public bool? ExtraReference { get; set; }
 
         public int Writes { get; set; }
 
@@ -263,20 +261,16 @@ public sealed class ShaderDataUploadTests
             }
 
             var wire = new WireValue { Number = Number, Reference = default };
-            var emitter = new References(this);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
-        }
-
-        private readonly struct References(UploadValue owner) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            writer.WriteValue(bytes[..4]);
+            writer.WriteReference(Reference);
+            if (ExtraReference is true)
             {
-                cursor.WriteReference(4, owner.Reference);
-                if (owner.ExtraSlot is int slot)
-                {
-                    cursor.WriteReference(slot, owner.Reference);
-                }
+                writer.WriteReference(Reference);
+            }
+            else if (ExtraReference is false)
+            {
+                writer.WriteValue(bytes[..1]);
             }
         }
     }

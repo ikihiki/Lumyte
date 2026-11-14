@@ -387,6 +387,8 @@ public sealed partial class Drawing2DTests
         private IArgumentTable? _table;
         private ShaderValueSnapshot? _arguments;
 
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
+
         public void SetArgumentTable(IArgumentTable table)
         {
             _table = table;

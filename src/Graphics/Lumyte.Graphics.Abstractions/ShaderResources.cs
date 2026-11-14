@@ -286,32 +286,11 @@ public class ShaderResources
     /// <returns>Whether its registered range belongs to this reservation.</returns>
     protected bool ContainsReference(IShaderReference reference) => _reservation.ContainsReference(reference);
 
-    /// <summary>Creates reference-only admission for this indivisible resource group.</summary>
-    /// <param name="candidates">Groups individually covering the complete reference set.</param>
-    /// <returns>The command-local argument scope without numeric root data.</returns>
-    protected IShaderArgumentScope CreateArgumentScope(IReadOnlyList<ShaderResources> candidates) => new ReferenceAdmission(candidates);
-
     /// <summary>Connects a host's immutable collection boundary to every inherited registration path.</summary>
     /// <param name="validate">The serial host collection guard.</param>
     protected void ValidateBeforeCollection(Action validate)
     {
         ArgumentNullException.ThrowIfNull(validate);
         _reservation.AddCollectionGuard(validate);
-    }
-
-    private sealed class ReferenceAdmission(IReadOnlyList<ShaderResources> candidates, IShaderArgumentScope? parent = null) : IShaderArgumentScope
-    {
-        public void Prepare(IShaderReferenceMetadata references)
-        {
-        }
-
-        public void Admit(IReadOnlyCollection<IShaderReference> references)
-        {
-            parent?.Admit(references);
-            if (!candidates.Any(candidate => references.All(candidate._reservation.ContainsReference)))
-            {
-                throw new ArgumentException("A shader reference is outside the selected indivisible resource group.");
-            }
-        }
     }
 }

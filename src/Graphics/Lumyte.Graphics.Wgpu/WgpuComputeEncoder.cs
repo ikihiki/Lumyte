@@ -3,10 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUComputePassEncoderImpl* handle) : IComputeEncoder, IShaderRootEncoder
+internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUComputePassEncoderImpl* handle) : IComputeEncoder
 {
     private WgpuComputePipeline? _pipeline;
 
+    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private WgpuArgumentTable? _table;
@@ -25,25 +26,25 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         _table = selected;
     }
 
+    public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+    {
+        owner.ValidatePass(this);
+        _argumentValidation = prepare;
+    }
+
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments => SetRootArguments(in value);
-
-    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
-        where T : unmanaged => SetRootArguments(in value, rootParameter, shaderTypeName);
-
-    public void SetRootArguments<T>(in T value, IShaderArgumentScope? scope = null)
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), scope: scope, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
+        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
         SelectRoot(root);
     }
 
-    public void SetRootArguments<T>(in T value, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), scope: scope, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
+        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
         SelectRoot(root);
     }
 

@@ -15,8 +15,10 @@ internal sealed record class ConsumerTextureArguments(IGpuRef<IGraphicsTextureVi
         where TWriter : IShaderValueWriter
     {
         var wire = new Wire { Float = Float };
-        var emitter = new Emitter(Input, Backdrop);
-        ShaderWire.Write(in wire, ref emitter, ref writer);
+        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+        writer.WriteReference(Input);
+        writer.WriteReference(Backdrop);
+        writer.WriteValue(bytes[32..]);
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 48)]
@@ -30,15 +32,5 @@ internal sealed record class ConsumerTextureArguments(IGpuRef<IGraphicsTextureVi
 
         [FieldOffset(32)]
         public float Float;
-    }
-
-    private readonly struct Emitter(IGpuRef<IGraphicsTextureView> input, IGpuRef<IGraphicsTextureView> backdrop) : IShaderReferenceEmitter
-    {
-        public void Emit<TCursor>(ref TCursor cursor)
-            where TCursor : IShaderReferenceCursor, allows ref struct
-        {
-            cursor.WriteReference(0, input);
-            cursor.WriteReference(16, backdrop);
-        }
     }
 }

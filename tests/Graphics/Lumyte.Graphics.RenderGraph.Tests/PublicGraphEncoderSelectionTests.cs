@@ -19,13 +19,25 @@ public sealed partial class PublicGraphEncoderConsumerTests
             Assert.DoesNotContain(type.GetMethods(), method => method.Name.Contains("Snapshot", StringComparison.Ordinal));
         }
 
-        Assert.All(typeof(IShaderRootEncoder).GetMethods(), method => Assert.True(method.IsAbstract));
-        MethodInfo[] factories = typeof(IShaderRootEncoder).GetMethods();
-        Assert.Equal(2, factories.Length);
-        Assert.All(factories, method => Assert.Equal("SetRootArguments", method.Name));
-        MethodInfo raw = Assert.Single(factories, method => method.GetParameters().Length == 4);
-        Assert.False(raw.GetParameters()[1].IsOptional);
-        Assert.False(raw.GetParameters()[2].IsOptional);
+        Assert.Null(typeof(IComputeEncoder).Assembly.GetType("Lumyte.Graphics.Abstractions.IShaderRootEncoder"));
+        Assert.Null(typeof(IComputeEncoder).Assembly.GetType("Lumyte.Graphics.Abstractions.IShaderArgumentScope"));
+        Assert.Null(typeof(RenderGraphContext).Assembly.GetType("Lumyte.Graphics.RenderGraph.GraphRootArgumentScope"));
+        foreach (Type native in new[] { typeof(IRenderEncoder), typeof(IComputeEncoder) })
+        {
+            MethodInfo hook = Assert.Single(native.GetMethods(), method => method.Name == "SetArgumentValidation");
+            Assert.True(hook.IsAbstract);
+            Assert.Equal(typeof(void), hook.ReturnType);
+            Assert.Equal(typeof(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>>), Assert.Single(hook.GetParameters()).ParameterType);
+            Assert.NotNull(native.GetMethod("SetArgumentTable"));
+            Assert.DoesNotContain(native.GetMethods(), method => method.Name == "SetRootArguments");
+        }
+
+        foreach (Type graph in new[] { typeof(RenderGraphRenderEncoder), typeof(RenderGraphComputeEncoder) })
+        {
+            Assert.Null(graph.GetMethod("SetArgumentTable"));
+            Assert.Null(graph.GetMethod("SetArgumentValidation"));
+        }
+
         Assert.Null(typeof(Lumyte.Graphics.Shared.ShaderBindingSnapshot).GetProperty("Root"));
         Assert.DoesNotContain(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "CreateSnapshot");
         MethodInfo create = Assert.Single(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "Create");

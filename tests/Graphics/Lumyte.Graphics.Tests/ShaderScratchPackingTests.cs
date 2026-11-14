@@ -5,19 +5,34 @@ using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>Guards the mandatory cursor-only public writing surface.</summary>
+/// <summary>Guards the mandatory flat sequential public writing surface.</summary>
 public sealed class ShaderScratchPackingTests
 {
     /// <summary>No optional capability or snapshot writing backdoor remains.</summary>
     [Fact]
-    public void PublicWritingSurfaceRequiresCursor()
+    public void PublicWritingSurfaceRequiresFlatSequentialValues()
     {
-        MethodInfo method = Assert.Single(typeof(IShaderValueWriter).GetMethods());
-        Assert.Equal("WriteWire", method.Name);
-        Assert.True(method.IsAbstract);
+        MethodInfo[] methods = typeof(IShaderValueWriter).GetMethods();
+        Assert.Equal(new[] { "WriteReference", "WriteValue" }, methods.Select(method => method.Name).Order());
+        Assert.All(methods, method =>
+        {
+            Assert.True(method.IsAbstract);
+            Assert.Equal(typeof(void), method.ReturnType);
+            Assert.Single(method.GetParameters());
+        });
+        MethodInfo raw = Assert.Single(methods, method => method.Name == "WriteValue");
+        Assert.False(raw.IsGenericMethod);
+        Assert.Equal(typeof(ReadOnlySpan<byte>), raw.GetParameters()[0].ParameterType);
+        MethodInfo reference = Assert.Single(methods, method => method.Name == "WriteReference");
+        Type argument = Assert.Single(reference.GetGenericArguments());
+        Assert.Equal(typeof(IGpuRef<>).MakeGenericType(argument), reference.GetParameters()[0].ParameterType);
         Assert.Empty(typeof(IShaderValueWriter).GetProperties());
-        Assert.Equal("Emit", Assert.Single(typeof(IShaderReferenceEmitter).GetMethods()).Name);
-        Assert.Single(Assert.Single(typeof(IShaderReferenceEmitter).GetMethods()).GetParameters());
+        foreach (string name in new[] { "ShaderWire", "ShaderWireCursor`1", "IShaderReferenceCursor", "IShaderReferenceEmitter", "IShaderWireSink" })
+        {
+            Assert.Null(typeof(IShaderValueWriter).Assembly.GetType($"Lumyte.Graphics.Abstractions.{name}"));
+        }
+
+        Assert.DoesNotContain(methods, method => method.Name == "WriteWire");
         Assert.DoesNotContain(typeof(ShaderDataLayout).GetMethods(), m => m.Name.StartsWith("Pack", StringComparison.Ordinal));
         Assert.DoesNotContain(typeof(ShaderRootArguments).GetMethods(), m => m.Name == "CreateSnapshot");
         Assert.All(typeof(ShaderRootArguments).GetMethods().Where(m => m.Name == "Seal"), m => Assert.Empty(m.GetParameters()));

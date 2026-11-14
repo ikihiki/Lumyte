@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
@@ -6,18 +7,18 @@ namespace Lumyte.Graphics.Shared;
 /// <summary>Owns a selected root generation in final native storage, retaining only reference metadata.</summary>
 public sealed class ShaderRootArguments : IDisposable
 {
-    private readonly IShaderArgumentScope? _scope;
+    private readonly Action<IReadOnlyCollection<IShaderReference>>? _admit;
     private bool _sealed;
     private bool _disposed;
 
-    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, IShaderArgumentScope? scope)
+    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, Action<IReadOnlyCollection<IShaderReference>>? admit)
     {
         RootParameter = rootParameter;
         ShaderTypeName = shaderTypeName;
         WireSize = wireSize;
         Storage = storage;
         References = references;
-        _scope = scope;
+        _admit = admit;
     }
 
     /// <summary>Gets the logical root parameter name.</summary>
@@ -41,10 +42,10 @@ public sealed class ShaderRootArguments : IDisposable
     /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
     /// <param name="encode">The stable synchronous backend reference encoder.</param>
     /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
-    /// <param name="scope">Optional selection preparation and execution admission.</param>
+    /// <param name="prepare">Optional reference-only selection preparation returning detached execution admission.</param>
     /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
     /// <returns>The independently owned root generation.</returns>
-    public static ShaderRootArguments Create<T>(in T value, Func<int, IShaderRootStorage> factory, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic = null, IShaderArgumentScope? scope = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
+    public static ShaderRootArguments Create<T>(in T value, Func<int, IShaderRootStorage> factory, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
         where T : IShaderArguments
     {
         if (!typeof(T).IsValueType)
@@ -63,8 +64,8 @@ public sealed class ShaderRootArguments : IDisposable
             value.Write(ref writer);
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            scope?.Prepare(references);
-            return new(root, name, size, storage, references, scope);
+            Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
+            return new(root, name, size, storage, references, admit);
         }
         catch
         {
@@ -80,11 +81,11 @@ public sealed class ShaderRootArguments : IDisposable
     /// <param name="shaderTypeName">The shader type name, or the conventional C# type name.</param>
     /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
     /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
-    /// <param name="scope">Optional selection preparation and execution admission.</param>
+    /// <param name="prepare">Optional reference-only selection preparation returning detached execution admission.</param>
     /// <param name="encode">The stable synchronous backend reference encoder.</param>
     /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
     /// <returns>The independently owned root generation.</returns>
-    public static ShaderRootArguments CreateUnmanaged<T>(in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, IShaderArgumentScope? scope = null, Func<ShaderValue, byte[]>? encode = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
+    public static ShaderRootArguments CreateUnmanaged<T>(in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null, Func<ShaderValue, byte[]>? encode = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
@@ -93,12 +94,12 @@ public sealed class ShaderRootArguments : IDisposable
         try
         {
             var writer = new ShaderTransferWriter<ShaderRootDestination>(new(storage), size, encode ?? RejectReference, metadataFactory, diagnostic);
-            ShaderWire.Write(in value, ref writer);
+            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
             diagnostic?.ValidateReferenceCount(0);
-            scope?.Prepare(references);
-            return new(rootParameter, name, size, storage, references, scope);
+            Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
+            return new(rootParameter, name, size, storage, references, admit);
         }
         catch
         {
@@ -125,7 +126,7 @@ public sealed class ShaderRootArguments : IDisposable
     public void Admit(IReadOnlyCollection<IShaderReference> references)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _scope?.Admit(references);
+        _admit?.Invoke(references);
     }
 
     /// <inheritdoc/>

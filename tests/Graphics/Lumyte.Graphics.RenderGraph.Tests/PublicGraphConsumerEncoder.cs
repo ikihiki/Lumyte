@@ -3,10 +3,11 @@ using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncoder, IShaderRootEncoder
+internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncoder
 {
     private ShaderTargetData? _target;
     private IArgumentTable? _table;
+    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepare;
     private ShaderRootArguments? _selected;
 
     internal List<ShaderValueSnapshot> Snapshots { get; } = [];
@@ -29,30 +30,26 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     internal Exception? EndException { get; init; }
 
+    public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => _prepare = prepare;
+
     public void SetArgumentTable(IArgumentTable table) => _table = table;
 
     public void SetArguments<T>(in T arguments)
-        where T : IShaderArguments => SetRootArguments(in arguments);
-
-    public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
-        where T : unmanaged => SetRootArguments(in arguments, rootParameter, shaderTypeName);
-
-    public void SetRootArguments<T>(in T arguments, IShaderArgumentScope? scope = null)
         where T : IShaderArguments
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, T.RootParameter);
-        var root = ShaderRootArguments.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, scope: scope);
+        var root = ShaderRootArguments.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, prepare: _prepare);
         _selected = root;
         RecordSelection(root, ShaderTransfer.Fields(in arguments));
     }
 
-    public void SetRootArguments<T>(in T arguments, string rootParameter, string? shaderTypeName, IShaderArgumentScope? scope = null)
+    public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
         where T : unmanaged
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, rootParameter);
-        var root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, scope: scope);
+        var root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, prepare: _prepare);
         _selected = root;
         RecordSelection(root, ShaderTransfer.Fields<T>());
     }

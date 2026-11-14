@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
@@ -12,6 +13,6 @@ internal readonly struct MissingConsumerArguments : IShaderArguments
         where TWriter : IShaderValueWriter
     {
         float value = 1;
-        ShaderWire.Write(in value, ref writer);
+        writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
     }
 }

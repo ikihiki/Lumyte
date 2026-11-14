@@ -70,7 +70,7 @@ public sealed class ShaderArgumentsTests
             Nested = new() { Position = new(11, 12, 13), Index = 19 },
             Transform = Matrix4x4.CreateTranslation(21, 22, 23),
         };
-        CountingWriter writer = default;
+        var writer = new CountingWriter(Unsafe.SizeOf<BulkNestedArguments>());
         Write(in value, ref writer);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
 
@@ -111,11 +111,12 @@ public sealed class ShaderArgumentsTests
         value.Transform = Matrix4x4.CreateScale(2);
         value.Resource = second;
         ShaderValueSnapshot after = IShaderArguments.Capture(in value);
-        CountingWriter writer = default;
+        var writer = new CountingWriter(after.Data.Length);
         Write(in value, ref writer);
 
         Assert.Equal(1, writer.Count);
         Assert.Equal(1, writer.ReferenceCount);
+        Assert.Equal(after.Data.Length, writer.Bytes);
         Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(before.Data.Span));
         Assert.Equal(29u, BinaryPrimitives.ReadUInt32LittleEndian(after.Data.Span));
         Assert.Equal(Matrix4x4.Identity, MemoryMarshal.Read<Matrix4x4>(before.Data.Span[4..]));
@@ -142,7 +143,7 @@ public sealed class ShaderArgumentsTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
+            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private readonly record struct CustomRootArguments(uint Value) : IShaderArguments
@@ -154,10 +155,10 @@ public sealed class ShaderArgumentsTests
         public static int TransferSize => sizeof(uint);
 
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => ShaderWire.Write(in this, ref writer);
+            where TWriter : IShaderValueWriter => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
-    private struct CountingWriter : IShaderValueWriter
+    private struct CountingWriter(int capacity) : IShaderValueWriter
     {
         public int Count { get; private set; }
 
@@ -165,22 +166,26 @@ public sealed class ShaderArgumentsTests
 
         public int ReferenceCount { get; private set; }
 
-        public void WriteWire<TWire, TEmitter>(in TWire value, ref TEmitter emitter)
-            where TWire : unmanaged
-            where TEmitter : struct, IShaderReferenceEmitter
+        public void WriteValue(ReadOnlySpan<byte> value)
         {
+            if (value.Length > capacity - Bytes)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+
             Count++;
-            Bytes += Unsafe.SizeOf<TWire>();
-            CountingCursor cursor = default;
-            emitter.Emit(ref cursor);
-            ReferenceCount += cursor.Count;
+            Bytes += value.Length;
         }
 
-        private struct CountingCursor : IShaderReferenceCursor
+        public void WriteReference<T>(IGpuRef<T>? value)
         {
-            public int Count;
+            if (capacity - Bytes < 16)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
 
-            public void WriteReference<T>(int offset, IGpuRef<T>? value) => Count++;
+            ReferenceCount++;
+            Bytes += 16;
         }
     }
 

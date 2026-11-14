@@ -7,7 +7,11 @@ public interface IComputeEncoder
     /// <param name="table">The live argument table containing all directly and transitively referenced resources.</param>
     void SetArgumentTable(IArgumentTable table);
 
-    /// <summary>Copies application root values directly through their cursor writer.</summary>
+    /// <summary>Configures reference preparation and detached execution admission for subsequently selected arguments.</summary>
+    /// <param name="prepare">The metadata preparation callback, or null to disable argument validation.</param>
+    void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare);
+
+    /// <summary>Copies application root values directly through their value writer.</summary>
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>
     void SetArguments<T>(in T arguments)

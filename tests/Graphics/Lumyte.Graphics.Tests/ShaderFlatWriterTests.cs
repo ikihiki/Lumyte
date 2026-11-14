@@ -7,9 +7,9 @@ using Xunit;
 namespace Lumyte.Graphics.Tests;
 
 /// <summary>Deterministic wire-order, compatibility and ownership regressions.</summary>
-public sealed class ShaderWireCursorTests
+public sealed class ShaderFlatWriterTests
 {
-    /// <summary>Generated cursors write raw gaps and encoded slots directly into final storage.</summary>
+    /// <summary>Generated writers write raw gaps and encoded slots directly into final storage.</summary>
     [Fact]
     public void GeneratedUploadInterleavesPhysicalSlotsAndPreservesEveryPaddingByte()
     {
@@ -52,7 +52,7 @@ public sealed class ShaderWireCursorTests
         Assert.Equal(new IShaderReference[] { a, b }, Assert.IsType<IdentityMetadata>(metadata[0]).References);
         Assert.Equal(original, value.RawBytes());
 
-        // Readonly capture also uses physical cursor order and zeroes reference slots.
+        // Readonly capture also uses physical sequential order and zeroes reference slots.
         ShaderValueSnapshot captured = IShaderArguments.Capture(in value);
         byte[] diagnostic = original.ToArray();
         Array.Clear(diagnostic, 8, 16);
@@ -109,9 +109,9 @@ public sealed class ShaderWireCursorTests
         Assert.Equal(5, buffer.WriteCount);
     }
 
-    /// <summary>Handwritten codecs invoke the mandatory cursor once in physical reference order.</summary>
+    /// <summary>Handwritten codecs invoke the mandatory writer directly in physical reference order.</summary>
     [Fact]
-    public void HandwrittenCursorPreservesEmissionOrder()
+    public void HandwrittenWriterPreservesEmissionOrder()
     {
         var events = new List<string>();
         var value = new CursorValue(events);
@@ -133,85 +133,61 @@ public sealed class ShaderWireCursorTests
         Assert.Equal(new uint[] { 1, 2 }, metadata[0]!.References.Select(reference => reference.Slot));
     }
 
-    /// <summary>Handwritten cursor rejects malformed slots without diagnostics or metadata publication.</summary>
-    /// <param name="first">The first emitted reference offset.</param>
-    /// <param name="second">The second emitted reference offset.</param>
+    /// <summary>Capacity and incomplete totals fail without metadata publication or unsafe writes.</summary>
+    /// <param name="prefix">Raw bytes preceding reference writes.</param>
+    /// <param name="references">The number of sequential reference values.</param>
     [Theory]
-    [InlineData(8, 16)]
-    [InlineData(16, 8)]
-    [InlineData(8, -1)]
-    [InlineData(8, 17)]
-    [InlineData(-1, 0)]
-    [InlineData(17, 0)]
-    [InlineData(int.MaxValue, 0)]
-    public void HandwrittenCursorRejectsMalformedSlots(int first, int second)
+    [InlineData(1, 2)]
+    [InlineData(17, 1)]
+    [InlineData(33, 0)]
+    [InlineData(0, 1)]
+    public void HandwrittenWriterRejectsIncorrectTotals(int prefix, int references)
     {
-        var value = new CursorSlotValue(first, second);
-        var unvisited = new CursorSlotValue(0, 16);
+        var value = new CursorSlotValue(prefix, references);
+        var unvisited = new CursorSlotValue(0, 2);
         var old = new IdentityMetadata([]);
         IShaderReferenceMetadata?[] metadata = [old, old, old, old];
         using var buffer = new MappedBuffer(128, []);
-        int encodes = 0;
-        int factories = 0;
-
-        byte[] EncodeSlot(ShaderValue slot)
+        Exception? failure = Record.Exception(() => ShaderDataUpload.CopyFrom<CursorSlotValue>([value, unvisited], buffer, 1, metadata, Encode, null));
+        if (prefix == 0)
         {
-            encodes++;
-            return Encode(slot);
+            Assert.IsType<InvalidOperationException>(failure);
+        }
+        else
+        {
+            Assert.IsType<ArgumentOutOfRangeException>(failure);
         }
 
-        IShaderReferenceMetadata CreateMetadata(IEnumerable<IShaderReference> references)
-        {
-            factories++;
-            return new IdentityMetadata(references);
-        }
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => ShaderDataUpload.CopyFrom<CursorSlotValue>([value, unvisited], buffer, 1, metadata, EncodeSlot, null, CreateMetadata));
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
         Assert.Equal(0, unvisited.Writes);
-        bool validFirst = first is >= 0 and <= 16;
-        Assert.Equal(validFirst ? 1 : 0, encodes);
-        Assert.Equal(0, factories);
         Assert.Null(metadata[1]);
         Assert.Null(metadata[2]);
         Assert.Same(old, metadata[0]);
         Assert.Same(old, metadata[3]);
-        Assert.Equal(validFirst ? 2 : 0, buffer.WriteCount);
-        if (validFirst)
-        {
-            Assert.Equal(17u, MemoryMarshal.Read<uint>(buffer.Bytes.AsSpan(32)));
-            Assert.All(buffer.Bytes.AsSpan(32 + first, 16).ToArray(), item => Assert.Equal((byte)1, item));
-        }
-
         Assert.All(buffer.Bytes[..32], item => Assert.Equal((byte)0xCD, item));
         Assert.All(buffer.Bytes[64..], item => Assert.Equal((byte)0xCD, item));
     }
 
-    /// <summary>Adjacent physically ordered cursor slots remain valid.</summary>
-    /// <param name="first">The first emitted reference offset.</param>
-    /// <param name="second">The adjacent reference offset.</param>
-    [Theory]
-    [InlineData(0, 16)]
-    public void HandwrittenCursorAcceptsAdjacentSlots(int first, int second)
+    /// <summary>Each reference advances the implicit position by exactly sixteen bytes.</summary>
+    [Fact]
+    public void HandwrittenWriterAcceptsAdjacentSlots()
     {
-        var value = new CursorSlotValue(first, second);
+        var value = new CursorSlotValue(0, 2);
         using var buffer = new MappedBuffer(32, []);
         var metadata = new IShaderReferenceMetadata?[1];
-
         ShaderDataUpload.CopyFrom<CursorSlotValue>([value], buffer, 0, metadata, Encode, null);
-
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
         Assert.Equal(2, buffer.WriteCount);
-        Assert.All(buffer.Bytes.AsSpan(first, 16).ToArray(), item => Assert.Equal((byte)1, item));
-        Assert.All(buffer.Bytes.AsSpan(second, 16).ToArray(), item => Assert.Equal((byte)2, item));
+        Assert.All(buffer.Bytes[..16], item => Assert.Equal((byte)1, item));
+        Assert.All(buffer.Bytes[16..], item => Assert.Equal((byte)2, item));
         Assert.Equal(new uint[] { 1, 2 }, metadata[0]!.References.Select(reference => reference.Slot));
     }
 
     /// <summary>Malformed generated layouts repeatedly fail before getters, encoding or destination writes.</summary>
     [Fact]
-    public void GeneratedCustomGetterRejectsOverlappingCursorSlots()
+    public void GeneratedCustomGetterRejectsOverlappingReferenceSlots()
     {
         var value = new WireCursorOverlapGetterValue(new Reference(1), new Reference(2));
         var old = new IdentityMetadata([]);
@@ -246,7 +222,7 @@ public sealed class ShaderWireCursorTests
         Assert.All(buffer.Bytes[64..], item => Assert.Equal((byte)0xCD, item));
     }
 
-    /// <summary>Overlapping generated cursor slots cannot publish a replacement root.</summary>
+    /// <summary>Overlapping generated reference slots cannot publish a replacement root.</summary>
     [Fact]
     public void GeneratedCustomGetterOverlapLeavesSelectedRootUntouched()
     {
@@ -278,74 +254,6 @@ public sealed class ShaderWireCursorTests
         Assert.True(candidate.Disposed);
         Assert.Equal(0, candidate.WriteCount);
         Assert.All(candidate.Bytes, item => Assert.Equal((byte)0, item));
-    }
-
-    /// <summary>Invalid direct-cursor slots are rejected before any corresponding sink operation.</summary>
-    /// <param name="first">An optional previously emitted slot.</param>
-    /// <param name="invalid">The negative, overflowing, overlapping, aliased or unordered slot.</param>
-    [Theory]
-    [InlineData(-1, -1)]
-    [InlineData(-1, 49)]
-    [InlineData(-1, int.MaxValue)]
-    [InlineData(8, 8)]
-    [InlineData(8, 16)]
-    [InlineData(32, 8)]
-    public void DirectCursorRejectsInvalidSlotsBeforeSinkWrites(int first, int invalid)
-    {
-        var events = new List<string>();
-        var sink = new TraceSink(events);
-        var cursor = new ShaderWireCursor<TraceSink>(new byte[64], ref sink);
-        if (first >= 0)
-        {
-            cursor.WriteReference<uint>(first, null);
-        }
-
-        string[] before = events.ToArray();
-        bool rejected = false;
-        try
-        {
-            cursor.WriteReference<uint>(invalid, null);
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            rejected = true;
-        }
-
-        Assert.True(rejected);
-        Assert.Equal(before, events);
-    }
-
-    /// <summary>Completion copies the tail once and permanently closes the cursor.</summary>
-    [Fact]
-    public void DirectCursorCompletesExactlyOnce()
-    {
-        var events = new List<string>();
-        var sink = new TraceSink(events);
-        var cursor = new ShaderWireCursor<TraceSink>(new byte[64], ref sink);
-        cursor.WriteReference<uint>(8, null);
-        cursor.Complete();
-        Assert.Equal(new[] { "R:0:8", "E:8", "R:24:40" }, events);
-        int rejected = 0;
-        try
-        {
-            cursor.Complete();
-        }
-        catch (InvalidOperationException)
-        {
-            rejected++;
-        }
-
-        try
-        {
-            cursor.WriteReference<uint>(32, null);
-        }
-        catch (InvalidOperationException)
-        {
-            rejected++;
-        }
-
-        Assert.Equal(2, rejected);
-        Assert.Equal(3, events.Count);
     }
 
     /// <summary>A failed generated upload invalidates only its requested metadata range.</summary>
@@ -467,22 +375,8 @@ public sealed class ShaderWireCursorTests
 
     private static string Copy(int offset, byte[] bytes) => $"W:{offset}:{bytes.Length}:{Convert.ToHexString(bytes)}";
 
-    private readonly struct TraceSink(List<string> events) : IShaderWireSink
-    {
-        public void WriteRaw(ReadOnlySpan<byte> bytes, int offset) => events.Add($"R:{offset}:{bytes.Length}");
-
-        public void WriteReference<T>(int offset, IGpuRef<T>? value) => events.Add($"E:{offset}");
-    }
-
     [StructLayout(LayoutKind.Explicit, Size = 64)]
     private struct CursorWire
-    {
-        [FieldOffset(0)]
-        public uint Number;
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 32)]
-    private struct CursorSlotWire
     {
         [FieldOffset(0)]
         public uint Number;
@@ -539,20 +433,14 @@ public sealed class ShaderWireCursorTests
         {
             Writes++;
             var wire = new CursorWire { Number = 17 };
-            var emitter = new References(events);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
-        }
-
-        private readonly struct References(List<string> events) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
-            {
-                events.Add("G:8");
-                cursor.WriteReference<uint>(8, new Reference(1));
-                events.Add("G:32");
-                cursor.WriteReference<uint>(32, new Reference(2));
-            }
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            writer.WriteValue(bytes[..8]);
+            events.Add("G:8");
+            writer.WriteReference<uint>(new Reference(1));
+            writer.WriteValue(bytes[24..32]);
+            events.Add("G:32");
+            writer.WriteReference<uint>(new Reference(2));
+            writer.WriteValue(bytes[48..]);
         }
     }
 
@@ -578,18 +466,14 @@ public sealed class ShaderWireCursorTests
             where TWriter : IShaderValueWriter
         {
             Writes++;
-            var wire = new CursorSlotWire { Number = 17 };
-            var emitter = new References(first, second);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
-        }
-
-        private readonly struct References(int first, int second) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
+            if (first > 0)
             {
-                cursor.WriteReference<uint>(first, new Reference(1));
-                cursor.WriteReference<uint>(second, new Reference(2));
+                writer.WriteValue(new byte[first]);
+            }
+
+            for (int index = 0; index < second; index++)
+            {
+                writer.WriteReference<uint>(new Reference((uint)index + 1));
             }
         }
     }

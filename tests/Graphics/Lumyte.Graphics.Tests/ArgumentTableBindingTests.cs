@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
@@ -236,26 +237,22 @@ public sealed class ArgumentTableBindingTests
             where TWriter : IShaderValueWriter
         {
             Wire wire = default;
-            var emitter = new References(references);
-            ShaderWire.Write(in wire, ref emitter, ref writer);
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            foreach (IGpuRef<uint> reference in references)
+            {
+                writer.WriteReference(reference);
+            }
+
+            if (references.Length < 4)
+            {
+                writer.WriteValue(bytes[(references.Length * 16)..]);
+            }
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Size = 64)]
         private struct Wire
         {
             public uint Padding;
-        }
-
-        private readonly struct References(IGpuRef<uint>[] references) : IShaderReferenceEmitter
-        {
-            public void Emit<TCursor>(ref TCursor cursor)
-                where TCursor : IShaderReferenceCursor, allows ref struct
-            {
-                for (int i = 0; i < references.Length; i++)
-                {
-                    cursor.WriteReference(i * 16, references[i]);
-                }
-            }
         }
     }
 
