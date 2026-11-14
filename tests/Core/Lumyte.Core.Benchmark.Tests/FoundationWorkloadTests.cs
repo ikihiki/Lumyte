@@ -1,16 +1,15 @@
-using System.Reflection;
-using BenchmarkDotNet.Attributes;
-using Lumyte.Mathematics.Benchmark;
+using Lumyte.Mathematics.Benchmark.GeometryQueries;
 using Lumyte.Mathematics.Geometry;
-using Lumyte.Settings.Benchmark;
+using Lumyte.Settings.Benchmark.FileSettingsStorage;
+using Lumyte.Settings.Benchmark.PersistedSettings;
 using Lumyte.TextEditing;
-using Lumyte.TextEditing.Benchmark;
+using Lumyte.TextEditing.Benchmark.TextDocuments;
 using Xunit;
 
 namespace Lumyte.Core.Benchmark.Tests;
 
 /// <summary>Functional acceptance of independently selectable foundation workloads.</summary>
-public class StandaloneFoundationTests
+public class FoundationWorkloadTests
 {
     /// <summary>Checks spatial queries against analytic, nontrivial expected results.</summary>
     [Fact]
@@ -37,7 +36,7 @@ public class StandaloneFoundationTests
     [InlineData(65536)]
     public async Task DirectStoreOraclesAsync(int bytes)
     {
-        var benchmark = new StandaloneStoreBenchmarks { Bytes = bytes };
+        var benchmark = new JsonFileSettingsStoreBenchmarks { Bytes = bytes };
         benchmark.Setup();
         try
         {
@@ -70,7 +69,7 @@ public class StandaloneFoundationTests
     [InlineData("Missing", 16)]
     public async Task SettingsSourceOraclesAsync(string profile, int items)
     {
-        var benchmark = new StandaloneSourceBenchmarks { Profile = profile, Items = items };
+        var benchmark = new PersistedSettingsSourceBenchmarks { Profile = profile, Items = items };
         benchmark.Setup();
         for (int i = 0; i < 3; i++)
         {
@@ -106,38 +105,5 @@ public class StandaloneFoundationTests
             Assert.Equal(new TextSelection(1, 1), committed.Selection);
             Assert.True(committed.Revision >= 2);
         }
-    }
-
-    /// <summary>Checks standalone classification on actual BDN methods, including compile-time generators.</summary>
-    [Fact]
-    public void FoundationCategories()
-    {
-        Type[] anchors =
-        [
-            typeof(TimeBenchmarks), typeof(MathBenchmarks), typeof(TextBenchmarks),
-            typeof(Lumyte.Composition.Benchmark.CompositionBenchmarks),
-            typeof(Lumyte.Composition.Generators.Benchmark.GeneratorBenchmarks),
-            typeof(Lumyte.Execution.Generators.Benchmark.GeneratorBenchmarks),
-        ];
-        foreach (Assembly assembly in anchors.Select(type => type.Assembly))
-        {
-            foreach (Type type in assembly.GetExportedTypes())
-            {
-                foreach (MethodInfo method in type.GetMethods().Where(method => method.IsDefined(typeof(BenchmarkAttribute))))
-                {
-                    string[] categories = type.GetCustomAttributes<BenchmarkCategoryAttribute>().Concat(method.GetCustomAttributes<BenchmarkCategoryAttribute>()).SelectMany(attribute => attribute.Categories).ToArray();
-                    Assert.Contains("Standalone", categories);
-                    if (assembly.GetName().Name!.Contains("Generators", StringComparison.Ordinal))
-                    {
-                        Assert.Contains("CompileTime", categories);
-                        Assert.DoesNotContain("SteadyState", categories);
-                    }
-                }
-            }
-        }
-
-        Assert.Contains("Standalone", typeof(StandaloneStoreBenchmarks).GetCustomAttributes<BenchmarkCategoryAttribute>().SelectMany(attribute => attribute.Categories));
-        Assert.DoesNotContain("Standalone", typeof(SettingsBenchmarks).GetCustomAttributes<BenchmarkCategoryAttribute>().SelectMany(attribute => attribute.Categories));
-        Assert.DoesNotContain("Standalone", typeof(FileSettingsBenchmarks).GetCustomAttributes<BenchmarkCategoryAttribute>().SelectMany(attribute => attribute.Categories));
     }
 }

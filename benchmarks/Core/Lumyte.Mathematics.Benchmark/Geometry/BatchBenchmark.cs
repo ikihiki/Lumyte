@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Seed-9417 SIMD batches retaining the original scalar distance oracle.</summary>
-[BenchmarkCategory("Standalone", "Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class BatchBenchmark
 {
     private float[] _x = [];
@@ -41,7 +41,6 @@ public class BatchBenchmark
     /// <summary>Computes all single-precision distances into reused output.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public float[] Single()
     {
         Geometry2D.SquaredDistancesBcl(_x, _y, 1.25f, -3.75f, _output);
@@ -51,7 +50,6 @@ public class BatchBenchmark
     /// <summary>Computes all double-precision distances into reused output.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public double[] Double()
     {
         Geometry2D.SquaredDistancesBcl(_dx, _dy, 1.25, -3.75, _doubleOutput);
@@ -61,7 +59,6 @@ public class BatchBenchmark
     /// <summary>Computes the original scalar formula over the identical single-precision batch.</summary>
     /// <returns>The complete reused scalar output.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public float[] ScalarSingle()
     {
         for (int i = 0; i < Length; i++)

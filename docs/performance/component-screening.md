@@ -221,3 +221,10 @@ again in artifacts/fallout-screening-port/aa-final: 92.91 seconds, all twelve
 cases with eight samples per side, identical allocations and no candidates.
 The earlier 94.11-second run is preserved separately; neither is a product
 improvement claim. All 88 existing and added Build.Tests passed with zero skips.
+
+### 型階層によるケース識別
+
+現在のスクリーニングengineは`component-screening-v5`。12ケースの操作・入力・閾値・jobとsmoke markerは維持し、
+型名を`Values.ScalarBenchmarks`、`Async.AsyncBenchmarks`、`Computed.GraphBenchmarks`の名前空間階層へ更新する。
+古いengine／旧ハーネスのplanは拒否し、現在のカタログから再作成する。
+測定目的以外の機能・範囲・操作性質のカテゴリは使わず、通常の型／メソッドglobで選ぶ。

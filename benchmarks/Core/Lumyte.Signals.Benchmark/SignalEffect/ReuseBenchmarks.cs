@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Effects;
 
 /// <summary>Separates repeated dependency map reuse from short-lived observer creation.</summary>
-[BenchmarkCategory("Lifetime", "Standalone", "Core", "Signals", "Effects", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ReuseBenchmarks
 {
     private Signal<int>[] _inputs = [];

@@ -1,14 +1,13 @@
-using System.Reflection;
-using BenchmarkDotNet.Attributes;
-using Lumyte.Memory.Benchmark;
-using Lumyte.Resources.Benchmark;
-using Lumyte.Signals.Benchmark;
+using Lumyte.Memory.Benchmark.Management;
+using Lumyte.Resources.Benchmark.Streaming;
+using Lumyte.Signals.Benchmark.Async;
+using Lumyte.Signals.Benchmark.Scheduling;
 using Xunit;
 
 namespace Lumyte.Core.Benchmark.Tests;
 
 /// <summary>Deterministic contracts for independent runtime workloads and category boundaries.</summary>
-public class StandaloneRuntimeTests
+public class RuntimeWorkloadTests
 {
     /// <summary>Every new stream cursor must restart, consume all elements and close before cleanup.</summary>
     /// <param name="length">The finite stream length.</param>
@@ -19,7 +18,7 @@ public class StandaloneRuntimeTests
     [InlineData(65536)]
     public async Task IndependentStreamsRestartAndCompleteAsync(int length)
     {
-        var benchmark = new StandaloneStreamingBenchmarks { Length = length };
+        var benchmark = new ResourceStreamBenchmarks { Length = length };
         benchmark.Setup();
         try
         {
@@ -102,39 +101,8 @@ public class StandaloneRuntimeTests
     [Fact]
     public void AdmittedCancellationReleasesCapacity()
     {
-        var benchmark = new Execution.Benchmark.LifecycleBenchmarks();
+        var benchmark = new Execution.Benchmark.Runtime.LifecycleBenchmarks();
         Assert.Equal(1, benchmark.CancelAdmitted());
         Assert.Equal(1, benchmark.CancelAdmitted());
-    }
-
-    /// <summary>Standalone labels never leak onto DI, embedded, Execution-adapter or Composition integration cases.</summary>
-    [Fact]
-    public void RuntimeCategoriesSeparateExcludedIntegrations()
-    {
-        Assembly[] assemblies =
-        [
-            typeof(Execution.Benchmark.ExecutionBenchmarks).Assembly,
-            typeof(Worlds.Benchmark.WorldsBenchmarks).Assembly,
-            typeof(ScalarBenchmarks).Assembly,
-            typeof(StateMachines.Benchmark.StateMachinesBenchmarks).Assembly,
-            typeof(MemoryBenchmarks).Assembly,
-            typeof(ResourcesBenchmarks).Assembly,
-        ];
-        int standalone = 0;
-        int excluded = 0;
-        foreach (Type type in assemblies.SelectMany(assembly => assembly.GetTypes()))
-        {
-            foreach (MethodInfo method in type.GetMethods().Where(method => method.IsDefined(typeof(BenchmarkAttribute))))
-            {
-                string[] categories = type.GetCustomAttributes<BenchmarkCategoryAttribute>().Concat(method.GetCustomAttributes<BenchmarkCategoryAttribute>()).SelectMany(attribute => attribute.Categories).ToArray();
-                bool isExcluded = categories.Contains("Integration") || categories.Contains("DependencyInjection");
-                Assert.Equal(!isExcluded, categories.Contains("Standalone"));
-                standalone += isExcluded ? 0 : 1;
-                excluded += isExcluded ? 1 : 0;
-            }
-        }
-
-        Assert.True(standalone > 80);
-        Assert.True(excluded >= 10);
     }
 }

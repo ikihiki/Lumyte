@@ -1,3 +1,4 @@
+using Lumyte.Composition.Generators.Benchmark.CompositionGeneration;
 using Microsoft.CodeAnalysis;
 
 namespace Lumyte.Composition.Generators.Benchmark;

@@ -3,12 +3,12 @@ using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.Configuration;
 
-namespace Lumyte.Settings.Benchmark;
+namespace Lumyte.Settings.Benchmark.PersistedSettings;
 
 /// <summary>Public persisted source JSON loading and provider flattening without DI registration.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Settings", "SettingsSource", "Standalone", "Screening", "Comparison", "Diagnostic")]
-public class StandaloneSourceBenchmarks
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
+public class PersistedSettingsSourceBenchmarks
 {
     private PayloadStore _store = null!;
     private IConfigurationProvider _provider = null!;
@@ -37,13 +37,11 @@ public class StandaloneSourceBenchmarks
     /// <summary>Reads and validates a fresh settings envelope, including recovery-to-default branches.</summary>
     /// <returns>The actual product source; no independent parser is substituted.</returns>
     [Benchmark]
-    [BenchmarkCategory("Construction")]
     public Task<PersistedSettingsSource> Load() => PersistedSettingsSource.LoadAsync(_store);
 
     /// <summary>Republishes parsed nested section values into the source's own configuration provider.</summary>
     /// <returns>The last section array element, or null for recovered/default envelopes.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public string? FlattenSections()
     {
         _provider.Load();

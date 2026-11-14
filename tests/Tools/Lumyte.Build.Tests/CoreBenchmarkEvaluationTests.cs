@@ -6,21 +6,20 @@ namespace Lumyte.Build.Tests;
 /// <summary>Deterministic Core evaluation policy, BDN report and coverage contracts.</summary>
 public sealed class CoreBenchmarkEvaluationTests
 {
-    /// <summary>Mandatory Standalone is ANDed with semantic category and mode.</summary>
+    /// <summary>Selection combines only an optional purpose and mode; all compiled cases are eligible for listing.</summary>
     [Fact]
-    public void ScopeCannotBeReintroducedByCategory()
+    public void ExclusionUsesPurposeAndModeOnly()
     {
         JsonObject benchmark = Case();
-        Assert.Null(CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Time"));
-        Assert.Equal("excluded-mode", CoreBenchmarkEvaluation.Exclusion(benchmark, "compare", "Time"));
-        Assert.Equal("excluded-category", CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Geometry"));
-        benchmark["Categories"] = new JsonArray("Time", "Screening");
-        Assert.Equal("excluded-scope", CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Time"));
-        Assert.Equal("excluded-scope", CoreBenchmarkEvaluation.Exclusion(benchmark, null, null));
-        benchmark["Categories"] = new JsonArray("Standalone", "Integration", "Time");
-        Assert.Equal("excluded-scope", CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Time"));
-        benchmark["Categories"] = new JsonArray("Standalone", "DependencyInjection", "Time");
-        Assert.Equal("excluded-scope", CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Time"));
+        Assert.Null(CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Screening"));
+        Assert.Equal("excluded-mode", CoreBenchmarkEvaluation.Exclusion(benchmark, "compare", "Screening"));
+        Assert.Equal("excluded-category", CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", "Diagnostic"));
+        Assert.Null(CoreBenchmarkEvaluation.Exclusion(benchmark, null, null));
+        benchmark["Categories"] = new JsonArray("Diagnostic");
+        benchmark["Modes"] = new JsonArray("diagnose");
+        Assert.Null(CoreBenchmarkEvaluation.Exclusion(benchmark, "diagnose", "Diagnostic"));
+        Assert.Equal("excluded-mode", CoreBenchmarkEvaluation.Exclusion(benchmark, "screen", null));
+        Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Exclusion(benchmark, null, "Geometry"));
     }
 
     /// <summary>Missing, extra, duplicate and empty observations fail exact expanded coverage.</summary>
@@ -40,13 +39,29 @@ public sealed class CoreBenchmarkEvaluationTests
         Assert.True(CoreBenchmarkEvaluation.Coverage(["A"], ["A"], false)["full_category_complete"]!.GetValue<bool>());
     }
 
-    /// <summary>Policy rejects generic method globs and invalid deadlines without changing BenchmarkCore.</summary>
+    /// <summary>Policy accepts native namespace/class/method globs and rejects empty filters or invalid deadlines.</summary>
     [Fact]
     public void EvaluationPolicyFailsClosed()
     {
         CoreBenchmarkEvaluation.Validate("Release", "*", 900);
         Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Validate("Debug", "*", 900));
-        Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Validate("Release", "*Method*", 900));
+        foreach (string filter in new[] { "*Method*", "Example.Geometry.*", "*Fixture.*", "Example.Fixture.Measure" })
+        {
+            CoreBenchmarkEvaluation.Validate("Release", filter, 900);
+        }
+
+        foreach (string filter in new[] { string.Empty, " " })
+        {
+            Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Validate("Release", filter, 900));
+        }
+
+        foreach (string purpose in new[] { "Screening", "Comparison", "Diagnostic" })
+        {
+            CoreBenchmarkEvaluation.Validate("Release", "*", 900, purpose);
+        }
+
+        Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Validate("Release", "*", 900, "Geometry"));
+        Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Validate("Release", "*", 900, string.Empty));
         foreach (double limit in new[] { 0, -1, 901, double.NaN, double.PositiveInfinity })
         {
             Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.Validate("Release", "*", limit));
@@ -77,7 +92,6 @@ public sealed class CoreBenchmarkEvaluationTests
         Assert.Equal(1.5, row["iqr_ns"]!.GetValue<double>());
         Assert.Equal(Math.Sqrt(5.0 / 3), row["standard_deviation_ns"]!.GetValue<double>(), 10);
         Assert.Equal(0, row["bytes_per_operation"]!.GetValue<double>());
-        Assert.Null(row["budget_share_percent"]);
         Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.ParseReports([file, file]));
         JsonObject report = Report();
         report["Benchmarks"]![0]!["Memory"]!["BytesAllocatedPerOperation"] = 96;
@@ -139,26 +153,15 @@ public sealed class CoreBenchmarkEvaluationTests
         Assert.Throws<ArgumentException>(() => CoreBenchmarkEvaluation.ParseReports([WriteReport(directory.Path, report)], "compare"));
     }
 
-    /// <summary>Only semantic steady-state cases may show an optional 120 Hz operation budget share.</summary>
-    [Fact]
-    public void BudgetShareIsOptionalAndSteadyStateOnly()
-    {
-        JsonObject benchmark = Case();
-        Assert.Null(CoreBenchmarkEvaluation.BudgetShare(benchmark, 100, false));
-        Assert.Equal(100, CoreBenchmarkEvaluation.BudgetShare(benchmark, 1_000_000_000d / 120, true));
-        benchmark["Categories"] = new JsonArray("Standalone", "Construction");
-        Assert.Null(CoreBenchmarkEvaluation.BudgetShare(benchmark, 100, true));
-    }
-
     /// <summary>The real Fallout entry point rejects unsupported selection before starting builds.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
-    public async Task ActualRunnerRejectsMethodGlobBeforeBuildAsync()
+    public async Task ActualRunnerRejectsInvalidPurposeBeforeBuildAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCoreEvaluate", "--benchmark-mode", "screen", "--benchmark-filter", "*Measure*");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCoreEvaluate", "--benchmark-mode", "screen", "--benchmark-category", "Geometry");
         Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("requires --benchmark-filter", result.Output + result.Error, StringComparison.Ordinal);
+        Assert.Contains("category must be Screening, Comparison, or Diagnostic", result.Output + result.Error, StringComparison.Ordinal);
         Assert.False(Directory.Exists(fixture.Log));
     }
 
@@ -173,7 +176,7 @@ public sealed class CoreBenchmarkEvaluationTests
         Assert.Contains("Explicit benchmark mode", result.Output + result.Error, StringComparison.Ordinal);
     }
 
-    private static JsonObject Case() => JsonNode.Parse("""{"Type":"Example.Fixture","Method":"Measure","Parameters":[],"Categories":["Standalone","Time","SteadyState","Screening"],"Modes":["screen"]}""")!.AsObject();
+    private static JsonObject Case() => JsonNode.Parse("""{"Type":"Example.Fixture","Method":"Measure","Parameters":[],"Categories":["Screening"],"Modes":["screen"]}""")!.AsObject();
 
     private static JsonObject Report() => JsonNode.Parse("""{"Benchmarks":[{"FullName":"Example.Fixture.Measure","Namespace":"Example","Type":"Fixture","Method":"Measure","Parameters":"","Statistics":{"OriginalValues":[1,2,3,4],"N":4},"Memory":{"BytesAllocatedPerOperation":0},"Measurements":[{"IterationMode":"Workload","IterationStage":"Warmup","Operations":1,"Nanoseconds":999999},{"IterationMode":"Workload","IterationStage":"Result","Operations":10,"Nanoseconds":10}]}]}""")!.AsObject();
 

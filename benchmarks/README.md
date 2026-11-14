@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | Mathematics | [Lumyte.Mathematics.Benchmark](Core/Lumyte.Mathematics.Benchmark/README.md) | 境界計算とbatchのCPU時間・割当量 |
 | Signals | [Lumyte.Signals.Benchmark](Core/Lumyte.Signals.Benchmark/README.md) | 読出し、依存グラフ、配送、非同期変換の時間と割当量。保持メモリのprobeも含む |
-| Core全体 | [独立評価](Core/README.md) | DI・連携を除く13対象の実行、構築、寿命、I/O、コード生成 |
-| Execution | [独立評価](Core/README.md) | 直接実行、delegate、型付きcommand、batch、graph、range、workflowの配送費用 |
+| Core全体 | [カテゴリ評価](Core/README.md) | DI・連携を除く13対象の実行、構築、寿命、I/O、コード生成 |
+| Execution | [カテゴリ評価](Core/README.md) | 直接実行、delegate、型付きcommand、batch、graph、range、workflowの配送費用 |
 | Vulkan | [Vulkanの比較手順](../src/Graphics/Lumyte.Graphics.Vulkan/README.md#pso生成費用の比較方法) | pipeline cache有無によるdraw記録・submit・破棄の費用 |
 
 Executionは対象別の`Core/Lumyte.Execution.Benchmark`で測定します。Vulkanのpipeline測定はsampleのdevice構築を使用します。

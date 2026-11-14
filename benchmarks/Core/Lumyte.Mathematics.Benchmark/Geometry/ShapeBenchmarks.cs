@@ -1,11 +1,11 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Closed curved-shape queries with inside, boundary and outside controls.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Mathematics", "Shapes", "Standalone", "SteadyState", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ShapeBenchmarks
 {
     private readonly Circle2D<double> _circle = new(new(0, 0), 5);

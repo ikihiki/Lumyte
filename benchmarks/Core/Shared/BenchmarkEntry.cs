@@ -32,7 +32,7 @@ internal static class BenchmarkEntry
             EntryOptions options = Parse(args);
             if (options.Catalog)
             {
-                Console.WriteLine(CreateCatalog(assembly));
+                Console.WriteLine(CreateCatalog(assembly, options.CatalogFilter));
                 return 0;
             }
 
@@ -126,9 +126,17 @@ internal static class BenchmarkEntry
             }
         }
 
+        string? catalogFilter = null;
         if (catalog && remaining.Count > 0)
         {
-            throw new ArgumentException("--catalog enumerates the complete assembly; do not combine it with BDN options.");
+            if (remaining.Count != 2 || remaining[0] != "--filter" || string.IsNullOrWhiteSpace(remaining[1])
+                || remaining[1].StartsWith("-", StringComparison.Ordinal))
+            {
+                throw new ArgumentException("--catalog accepts only --filter followed by one nonempty native BDN glob.");
+            }
+
+            catalogFilter = remaining[1];
+            remaining.Clear();
         }
 
         bool informational = remaining.Any(argument => argument is "--help" or "-h" or "--list");
@@ -137,7 +145,7 @@ internal static class BenchmarkEntry
             throw new ArgumentException("Benchmark options require an explicit --mode screen, compare, or diagnose.");
         }
 
-        return new EntryOptions(mode, catalog || args.Length == 0, remaining.ToArray());
+        return new EntryOptions(mode, catalog || args.Length == 0, remaining.ToArray(), catalogFilter);
     }
 
     internal static IConfig CreateConfig(string mode, string? projectFile = null)
@@ -183,8 +191,15 @@ internal static class BenchmarkEntry
         };
     }
 
-    internal static string CreateCatalog(Assembly assembly)
+    internal static string CreateCatalog(Assembly assembly, string? filter = null)
     {
+        var config = ManualConfig.Create(DefaultConfig.Instance);
+        if (filter is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(filter);
+            config.AddFilter(new GlobFilter([filter]));
+        }
+
         var cases = new List<CatalogCase>();
         foreach (Type type in assembly.GetTypes().OrderBy(type => type.FullName, StringComparer.Ordinal))
         {
@@ -194,8 +209,8 @@ internal static class BenchmarkEntry
             }
 
             // Catalog discovery includes cases without any measurement purpose too.
-            using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(type, DefaultConfig.Instance);
-            foreach (BenchmarkCase benchmark in run.BenchmarksCases)
+            using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(type, config);
+            foreach (BenchmarkCase benchmark in run.BenchmarksCases.Where(benchmark => config.GetFilters().All(candidate => candidate.Predicate(benchmark))))
             {
                 string resultKey = FullNameProvider.GetBenchmarkName(benchmark) + "|" + benchmark.Parameters.PrintInfo;
                 cases.Add(new CatalogCase(
@@ -320,7 +335,7 @@ internal static class BenchmarkEntry
             => standard.Validate(benchmarkCase, resolver);
     }
 
-    internal sealed record EntryOptions(string? Mode, bool Catalog, string[] Arguments);
+    internal sealed record EntryOptions(string? Mode, bool Catalog, string[] Arguments, string? CatalogFilter = null);
 
     internal sealed record CatalogCase(string Type, string Method, string[] Categories, CatalogParameter[] Parameters, string[] Modes, string ResultKey);
 

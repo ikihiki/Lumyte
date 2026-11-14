@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.TextEditing.Benchmark;
+namespace Lumyte.TextEditing.Benchmark.TextDocuments;
 
 /// <summary>Single-line model work with bounded change history and nonidentical edits.</summary>
-[BenchmarkCategory("Standalone", "Core", "TextEditing", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class TextBenchmarks
 {
     private readonly LogicalNavigator _navigator = new();
@@ -30,25 +30,21 @@ public class TextBenchmarks
     /// <summary>Constructs a normalized document.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Construction")]
     public TextDocument Construct() => new(_input, Length + 64);
 
     /// <summary>Normalizes line endings without changing normalization form.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public string Normalize() => TextDocument.Normalize(_input);
 
     /// <summary>Finds extended grapheme boundaries.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public int[] Boundaries() => TextDocument.GraphemeBoundaries(_input);
 
     /// <summary>Commits an equal-length content-changing transaction and drains its record.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public ulong Replace()
     {
         using TextDocumentTransaction edit = _document.BeginEdit(TextEditOrigin.Keyboard);
@@ -61,7 +57,6 @@ public class TextBenchmarks
 
     /// <summary>Abandons a candidate change without publishing state.</summary>
     [Benchmark]
-    [BenchmarkCategory("Lifetime")]
     public void Rollback()
     {
         using TextDocumentTransaction edit = _document.BeginEdit(TextEditOrigin.Keyboard);
@@ -71,7 +66,6 @@ public class TextBenchmarks
     /// <summary>Starts and cancels a composition lifetime from a fresh checkpoint.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Lifetime")]
     public string CompositionLifetime()
     {
         var document = new TextDocument(_input, Length + 64);
@@ -94,7 +88,6 @@ public class TextBenchmarks
     /// <summary>Publishes changed composing text, then commits the composition checkpoint.</summary>
     /// <returns>The committed snapshot with no active composition.</returns>
     [Benchmark]
-    [BenchmarkCategory("Lifetime")]
     public TextDocumentSnapshot CompositionCommit()
     {
         var document = new TextDocument(_input, Length + 64);
@@ -117,7 +110,6 @@ public class TextBenchmarks
     /// <summary>Deletes a known combined grapheme on a fresh document.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Lifetime")]
     public string DeleteGrapheme()
     {
         var document = new TextDocument("ae\u0301日");
@@ -129,7 +121,6 @@ public class TextBenchmarks
     /// <summary>Navigates logically to alternating document endpoints.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public TextSelection Navigate()
     {
         _alternate = !_alternate;
@@ -141,13 +132,11 @@ public class TextBenchmarks
     /// <summary>Captures an immutable published snapshot.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public TextDocumentSnapshot Snapshot() => _document.CaptureSnapshot();
 
     /// <summary>Generates and drains a finite batch of 32 distinct changes.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public int Changes()
     {
         for (int i = 0; i < 32; i++)

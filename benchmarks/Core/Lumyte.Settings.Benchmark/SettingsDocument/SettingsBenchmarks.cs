@@ -3,10 +3,9 @@ using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Lumyte.Settings.Benchmark;
+namespace Lumyte.Settings.Benchmark.PersistedSettings;
 
-/// <summary>Measures memory-backed settings transactions, separate from file integration.</summary>
-[BenchmarkCategory("Core", "Settings", "Screening", "Comparison", "Diagnostic")]
+/// <summary>Verification helper for DI-backed memory settings transactions; not a measured workload.</summary>
 public class SettingsBenchmarks
 {
     private ServiceProvider _provider = null!;
@@ -29,7 +28,6 @@ public class SettingsBenchmarks
     public void Cleanup() => _provider.Dispose();
 
     /// <summary>Registers and validates the complete module.</summary>
-    [Benchmark]
     public void RegisterAndValidate()
     {
         using ServiceProvider provider = CreateProvider(new MemoryStore(), Items);
@@ -38,17 +36,14 @@ public class SettingsBenchmarks
 
     /// <summary>Deep copies the committed snapshot.</summary>
     /// <returns>The copied collection length.</returns>
-    [Benchmark]
     public int Snapshot() => _settings.Current.Value.Values.Count;
 
     /// <summary>Creates a detached editable candidate.</summary>
     /// <returns>The copied collection length.</returns>
-    [Benchmark]
     public int BeginEdit() => _settings.BeginEdit().Value.Values.Count;
 
     /// <summary>Loads a partial section over configured collection defaults.</summary>
     /// <returns>The preserved collection length.</returns>
-    [Benchmark]
     public int Overlay()
     {
         var store = new MemoryStore { Data = Encoding.UTF8.GetBytes("""{"documentVersion":1,"sections":{"sample":{"schemaVersion":1,"values":{"Number":7}}}}""") };
@@ -58,7 +53,6 @@ public class SettingsBenchmarks
 
     /// <summary>Rejects implicit overwrite of malformed input.</summary>
     /// <returns>The protection status.</returns>
-    [Benchmark]
     public SettingsSaveStatus CorruptionProtection()
     {
         using ServiceProvider provider = CreateProvider(new MemoryStore { Data = "{"u8.ToArray() }, Items);
@@ -68,7 +62,6 @@ public class SettingsBenchmarks
 
     /// <summary>Round-trips and atomically commits a changing candidate to memory.</summary>
     /// <returns>The commit status.</returns>
-    [Benchmark]
     public SettingsSaveStatus Save()
     {
         SettingsEdit<BenchmarkModel> edit = _settings.BeginEdit();
@@ -78,7 +71,6 @@ public class SettingsBenchmarks
 
     /// <summary>Rejects invalid values before writing.</summary>
     /// <returns>The validation status.</returns>
-    [Benchmark]
     public SettingsSaveStatus Invalid()
     {
         SettingsEdit<BenchmarkModel> edit = _settings.BeginEdit();
@@ -88,7 +80,6 @@ public class SettingsBenchmarks
 
     /// <summary>Commits one edit before attempting a stale edit.</summary>
     /// <returns>The stale edit status.</returns>
-    [Benchmark]
     public SettingsSaveStatus Conflict()
     {
         SettingsEdit<BenchmarkModel> stale = _settings.BeginEdit();
@@ -98,7 +89,6 @@ public class SettingsBenchmarks
 
     /// <summary>Resets the module transactionally.</summary>
     /// <returns>The reset status.</returns>
-    [Benchmark]
     public SettingsSaveStatus Reset() => _settings.ResetAsync(_settings.Revision).GetAwaiter().GetResult().Status;
 
     internal static ServiceProvider CreateProvider(ISettingsStore store, int items)

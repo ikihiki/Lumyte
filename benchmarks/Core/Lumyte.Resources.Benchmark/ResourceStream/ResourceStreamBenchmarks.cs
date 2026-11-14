@@ -1,11 +1,11 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Memory;
 
-namespace Lumyte.Resources.Benchmark;
+namespace Lumyte.Resources.Benchmark.Streaming;
 
 /// <summary>Consumes finite ordered streams with a controlled ThreadPool executor, without Execution integration.</summary>
-[BenchmarkCategory("Standalone", "SteadyState", "Core", "Resources", "Streaming", "Screening", "Comparison", "Diagnostic")]
-public class StandaloneStreamingBenchmarks
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
+public class ResourceStreamBenchmarks
 {
     private MemoryManager _memory = null!;
     private ResourceManager _manager = null!;
@@ -87,14 +87,14 @@ public class StandaloneStreamingBenchmarks
             => new(Task.Run(async () => await work.ExecuteAsync(cancellationToken), cancellationToken));
     }
 
-    private sealed class FactoryStage(int length, StandaloneStreamingBenchmarks owner) : IResourceSourceStage<Factory>
+    private sealed class FactoryStage(int length, ResourceStreamBenchmarks owner) : IResourceSourceStage<Factory>
     {
         public ValueTask<Factory> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken) => ValueTask.FromResult(new Factory(length, owner));
 
         public ValueTask ReleaseAsync(Factory resource) => ValueTask.CompletedTask;
     }
 
-    private sealed class Factory(int length, StandaloneStreamingBenchmarks owner) : IResourceStream<int>
+    private sealed class Factory(int length, ResourceStreamBenchmarks owner) : IResourceStream<int>
     {
         public ValueTask<IResourceStreamReader<int>> OpenReaderAsync(ResourceStreamOptions options, IMemoryScope memory, CancellationToken cancellationToken = default)
         {
@@ -103,7 +103,7 @@ public class StandaloneStreamingBenchmarks
         }
     }
 
-    private sealed class Reader(int length, StandaloneStreamingBenchmarks owner) : IResourceStreamReader<int>
+    private sealed class Reader(int length, ResourceStreamBenchmarks owner) : IResourceStreamReader<int>
     {
         private int _position;
 

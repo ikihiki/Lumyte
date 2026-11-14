@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.StateMachines.Benchmark;
+namespace Lumyte.StateMachines.Benchmark.Machines;
 
 /// <summary>Exercises immutable construction, candidate selection and successful bounded transitions.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "StateMachines", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class StateMachinesBenchmarks
 {
     private readonly int[] _context = new int[2];
@@ -44,22 +44,15 @@ public class StateMachinesBenchmarks
     /// <summary>Registers fresh mutable states and transitions and freezes the definition.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("Construction")]
     public StateMachine<int[], int> RegisterAndFreeze() => CreateBuilder(States, MixedPriority).BuildDefinition();
 
     /// <summary>Creates an independent executor from an already frozen shared definition.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("Construction")]
     public StateMachineInstance<int[], int> CreateInstance() => new(_definition, new int[2]);
 
     /// <summary>Builds through the generated Composition consumer factory and content initializer.</summary>
     /// <returns>The observed operation result.</returns>
-    [Benchmark]
-    [BenchmarkCategory("Integration")]
-    [BenchmarkCategory("Construction")]
     public StateMachine<int[], int> ComposeDefinition()
     {
         var a = new State<int[]>("a");
@@ -70,8 +63,6 @@ public class StateMachinesBenchmarks
     /// <summary>Alternates external context values to exercise accepting and rejecting guard paths.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("SteadyState")]
     public bool CanFire()
     {
         _context[0] ^= 1;
@@ -81,29 +72,21 @@ public class StateMachinesBenchmarks
     /// <summary>Captures duplicate inputs and selects by transition priority rather than input order.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("SteadyState")]
     public bool CanFireAny() => _instance.CanFireAny(_triggers);
 
     /// <summary>Captures inputs and takes one valid transition on every invocation.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("SteadyState")]
     public bool FireAny() => _instance.FireAny(_triggers);
 
     /// <summary>Takes a transition around the closed ring, including exit, effect and entry.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("SteadyState")]
     public bool Fire() => _instance.Fire(3);
 
     /// <summary>Executes exit and entry even when source and destination are identical.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Standalone")]
-    [BenchmarkCategory("SteadyState")]
     public bool SelfTransition() => _self.Fire(3);
 
     internal static StateMachineBuilder<int[], int> CreateBuilder(int count, bool priorities)

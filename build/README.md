@@ -78,7 +78,7 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
 | `BenchmarkCore` / `BenchmarkAnimation` / `BenchmarkInput` | 対象別のカタログ列挙・method選択・BenchmarkDotNet測定 |
-| `BenchmarkCoreEvaluate` | [Coreの独立評価](../benchmarks/Core/README.md)。DI・連携を除外し、分割直列測定と予定／実測ケースの集計を実施 |
+| `BenchmarkCoreEvaluate` | [Coreのカテゴリ評価](../benchmarks/Core/README.md)。DI・連携を除外し、分割直列測定と予定／実測ケースの集計を実施 |
 | `ComponentScreeningPlan` / `ComponentScreeningRun` | PRの固定SHAから測定対象を選び、同一ハーネスで直列比較・解析・証拠保存。Pythonスクリプトは使用しない |
 | `ComponentScreeningNotify` | default branchの信頼済みrunnerで結果リンクをPRへ通知。測定workflowとは権限を分離 |
 | `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |

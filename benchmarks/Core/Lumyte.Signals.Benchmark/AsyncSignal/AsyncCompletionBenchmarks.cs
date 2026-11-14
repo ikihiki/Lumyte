@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Async;
 
 /// <summary>Exercises genuinely pending completion and failed-load recovery.</summary>
-[BenchmarkCategory("Standalone", "Core", "Signals", "Async", "Lifetime", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class AsyncCompletionBenchmarks
 {
     /// <summary>Publishes a pending load after its loader is explicitly completed.</summary>

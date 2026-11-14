@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Memory;
 
-namespace Lumyte.Resources.Benchmark;
+namespace Lumyte.Resources.Benchmark.Management;
 
 /// <summary>Exercises real manager construction, caching and generation ownership.</summary>
-[BenchmarkCategory("Standalone", "Core", "Resources", "Acquisition", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ResourcesBenchmarks
 {
     private readonly ResourceKey<int> _key = new("asset/root");
@@ -37,13 +37,11 @@ public class ResourcesBenchmarks
     /// <summary>Validates an ordinal logical key.</summary>
     /// <returns>The constructed identifier.</returns>
     [Benchmark]
-    [BenchmarkCategory("Construction")]
     public ResourceId ConstructKey() => new("asset/material/diffuse");
 
     /// <summary>Acquires and returns a reference to an already published generation.</summary>
     /// <returns>The retained value.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public int CacheHit()
     {
         using ResourceReference<int> reference = _manager.RetainAsync(_key).AsTask().GetAwaiter().GetResult();
@@ -54,7 +52,6 @@ public class ResourcesBenchmarks
     /// <summary>Builds a fresh dependency chain and releases it, with no growing key set.</summary>
     /// <returns>The root value.</returns>
     [Benchmark]
-    [BenchmarkCategory("Construction", "Lifetime")]
     public async Task<int> BuildChainAsync()
     {
         await using ResourceManager manager = CreateManager(_memory, Depth);
@@ -66,7 +63,6 @@ public class ResourcesBenchmarks
     /// <summary>Retains an existing handle and returns both reference and lease.</summary>
     /// <returns>The pinned scalar.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public int RetainHandle()
     {
         if (!_manager.TryRetain(_resident.Handle, out ResourceReference<int>? reference))
@@ -84,7 +80,6 @@ public class ResourcesBenchmarks
     /// <summary>Captures a consistent generation map and pins its resident handle.</summary>
     /// <returns>The captured scalar.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public int Snapshot()
     {
         using ResourceSnapshot snapshot = _manager.CaptureSnapshot();
@@ -102,7 +97,6 @@ public class ResourcesBenchmarks
     /// <summary>Builds a finite graph, releases external ownership, then trims real outputs.</summary>
     /// <returns>The number of released graph outputs.</returns>
     [Benchmark]
-    [BenchmarkCategory("Construction", "Lifetime")]
     public async Task<int> BuildAndTrimAsync()
     {
         await using ResourceManager manager = CreateManager(_memory, Depth);

@@ -1,11 +1,11 @@
 using BenchmarkDotNet.Attributes;
 using Microsoft.CodeAnalysis;
 
-namespace Lumyte.Composition.Generators.Benchmark;
+namespace Lumyte.Composition.Generators.Benchmark.CompositionGeneration;
 
 /// <summary>Measures only warm driver reruns with distinct change profiles.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Standalone", "CompileTime", "Core", "Composition.Generators", "SourceGeneration", "IncrementalGeneration", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class IncrementalBenchmarks
 {
     private GeneratorBenchmarks _driver = null!;

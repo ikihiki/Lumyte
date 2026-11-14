@@ -1,3 +1,6 @@
+using Lumyte.Mathematics.Benchmark.ColorOperations;
+using Lumyte.Mathematics.Benchmark.GeometryQueries;
+using Lumyte.Mathematics.Benchmark.InterpolationFunctions;
 using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Mathematics.Benchmark;

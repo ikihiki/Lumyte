@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Colors;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.ColorOperations;
 
 /// <summary>Warm exact, case-insensitive and missing color lookup profiles.</summary>
-[BenchmarkCategory("Standalone", "Core", "Mathematics", "Colors", "ColorLookup", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ColorLookupBenchmarks
 {
     /// <summary>Gets or sets lookup input.</summary>
@@ -14,6 +14,5 @@ public class ColorLookupBenchmarks
     /// <summary>Executes the NamedLookup color operation.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public bool NamedLookup() => CssColors.TryGet(Name, out _);
 }

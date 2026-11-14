@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.StateMachines.Benchmark;
+namespace Lumyte.StateMachines.Benchmark.Machines;
 
 /// <summary>Isolates exception recovery and listener-enabled diagnostic operations.</summary>
-[BenchmarkCategory("DiagnosticPath", "Standalone", "Core", "StateMachines", "Diagnostics", "Diagnostic")]
+[BenchmarkCategory("Diagnostic")]
 public class StateFailureBenchmarks
 {
     private readonly bool[] _fail = [true];

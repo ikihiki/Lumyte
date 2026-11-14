@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Computed;
 
 /// <summary>Checks passive shared graphs after related or unrelated mutation generations change.</summary>
-[BenchmarkCategory("SteadyState", "Standalone", "Core", "Signals", "Computed", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ValidationBenchmarks
 {
     private Signal<int> _source = null!;

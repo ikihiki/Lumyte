@@ -7,17 +7,19 @@ namespace Lumyte.Build;
 // Data policy for BenchmarkCoreEvaluate. No clocks or benchmark execution lives here.
 internal static class CoreBenchmarkEvaluation
 {
-    internal static void Validate(string configuration, string filter, double timeout)
+    internal static void Validate(string configuration, string filter, double timeout, string? category = null)
     {
         if (configuration != "Release")
         {
             throw new ArgumentException("Core evaluation requires Release configuration.");
         }
 
-        if (filter != "*")
+        if (string.IsNullOrWhiteSpace(filter))
         {
-            throw new ArgumentException("BenchmarkCoreEvaluate requires --benchmark-filter '*'; use BenchmarkCore for method globs.");
+            throw new ArgumentException("BenchmarkCoreEvaluate requires a nonempty native BDN benchmark filter.");
         }
+
+        ValidateCategory(category);
 
         if (!double.IsFinite(timeout) || timeout <= 0 || timeout > 900)
         {
@@ -32,17 +34,24 @@ internal static class CoreBenchmarkEvaluation
     internal static bool Has(JsonNode item, string field, string value)
         => item[field]!.AsArray().Any(entry => entry!.GetValue<string>() == value);
 
+    internal static void ValidateCategory(string? category)
+    {
+        if (category is not null && category is not ("Screening" or "Comparison" or "Diagnostic"))
+        {
+            throw new ArgumentException("Core evaluation category must be Screening, Comparison, or Diagnostic.");
+        }
+    }
+
     internal static string? Exclusion(JsonNode item, string? mode, string? category)
-        => !Has(item, "Categories", "Standalone") || Has(item, "Categories", "DependencyInjection") || Has(item, "Categories", "Integration") ? "excluded-scope"
-        : !string.IsNullOrWhiteSpace(category) && !Has(item, "Categories", category) ? "excluded-category"
-        : mode is not null && !Has(item, "Modes", mode) ? "excluded-mode" : null;
+    {
+        ValidateCategory(category);
+        return category is not null && !Has(item, "Categories", category) ? "excluded-category"
+            : mode is not null && !Has(item, "Modes", mode) ? "excluded-mode" : null;
+    }
 
     internal static string Partition(JsonNode item) => RequiredString(item, "Type") + "." + RequiredString(item, "Method");
 
     internal static string CaseKey(JsonNode item) => RequiredString(item, "ResultKey");
-
-    internal static double? BudgetShare(JsonNode benchmark, double medianNanoseconds, bool enabled)
-        => enabled && Has(benchmark, "Categories", "SteadyState") ? medianNanoseconds / (1_000_000_000d / 120) * 100 : null;
 
     internal static string EnvironmentIdentity(JsonNode? environment)
         => string.Join("|", new[] { "BenchmarkDotNetVersion", "OsVersion", "ProcessorName", "RuntimeVersion", "Architecture", "Configuration", "DotNetCliVersion" }
@@ -168,7 +177,7 @@ internal static class CoreBenchmarkEvaluation
             ["unexpected"] = JsonSerializer.SerializeToNode(extra),
             ["selected_coverage_complete"] = complete,
             ["full_category_complete"] = complete && !filtered,
-            ["scope"] = filtered ? "filtered-subset" : "all-standalone-mode-eligible-core",
+            ["scope"] = filtered ? "filtered-subset" : "all-mode-eligible-core",
         };
     }
 
@@ -182,15 +191,15 @@ internal static class CoreBenchmarkEvaluation
 
     internal static string Markdown(JsonObject manifest)
     {
-        var text = new StringBuilder("# Standalone Core evaluation\n\n");
+        var text = new StringBuilder("# Core evaluation\n\n");
         text.AppendLine("Status: " + manifest["status"] + ". Scope: " + manifest["coverage"]?["scope"] + ".");
         text.AppendLine("\nBDN iteration estimates (ns/op), not individual frame latency p95. No summed frame time or real-frame percentile is implied.");
         text.AppendLine("\nCoverage: " + manifest["coverage"]?.ToJsonString());
-        text.AppendLine("\n| Case | Median ns | p95 iteration ns | SD ns | IQR ns | Bytes/op | 8.333 ms share % (SteadyState only) |");
-        text.AppendLine("|---|---:|---:|---:|---:|---:|---:|");
+        text.AppendLine("\n| Case | Median ns | p95 iteration ns | SD ns | IQR ns | Bytes/op |");
+        text.AppendLine("|---|---:|---:|---:|---:|---:|");
         foreach (JsonNode? row in manifest["results"]!.AsArray())
         {
-            string[] fields = ["key", "median_ns", "p95_iteration_ns", "standard_deviation_ns", "iqr_ns", "bytes_per_operation", "budget_share_percent"];
+            string[] fields = ["key", "median_ns", "p95_iteration_ns", "standard_deviation_ns", "iqr_ns", "bytes_per_operation"];
             text.AppendLine("| " + string.Join(" | ", fields.Select(field => (row?[field]?.ToString() ?? "—").Replace("|", "\\|", StringComparison.Ordinal))) + " |");
         }
 

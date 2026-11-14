@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Computed;
 
 /// <summary>Separates active cached reads from passive dependency validation and recomputation.</summary>
-[BenchmarkCategory("SteadyState", "Standalone", "Core", "Signals", "Computed", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ComputedBenchmarks
 {
     private Signal<int> _observedSource = null!;

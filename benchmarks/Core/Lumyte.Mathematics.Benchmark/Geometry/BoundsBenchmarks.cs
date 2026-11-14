@@ -2,10 +2,10 @@ using System.Numerics;
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Original seed-9417 transformed-corner workload without a stopwatch runner.</summary>
-[BenchmarkCategory("Standalone", "Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class BoundsBenchmarks
 {
     private readonly Vector2[] _first = new Vector2[256];
@@ -30,7 +30,6 @@ public class BoundsBenchmarks
     /// <summary>Reduces four transformed corners through the production API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public Vector4 TransformedBounds()
     {
         Vector4 result = default;

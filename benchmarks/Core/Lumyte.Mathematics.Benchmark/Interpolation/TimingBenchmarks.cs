@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.InterpolationFunctions;
 
 /// <summary>Inverse timing solver uses its legal unit-interval domain.</summary>
-[BenchmarkCategory("Standalone", "Core", "Mathematics", "Interpolation", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class TimingBenchmarks
 {
     private readonly CubicBezierTiming _timing = new(0.25, 0.1, 0.25, 1);
@@ -15,12 +15,10 @@ public class TimingBenchmarks
     /// <summary>Solves the inverse cubic timing curve.</summary>
     /// <returns>The transformed amount.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public double Solve() => _timing.Transform(Amount);
 
     /// <summary>Executes Hermite through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public float Hermite() => HermiteInterpolation.Interpolate(-15f, 42f, 3f, -2f, 2, (float)Amount);
 }

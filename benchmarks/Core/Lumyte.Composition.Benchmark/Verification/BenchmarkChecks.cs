@@ -1,3 +1,5 @@
+using Lumyte.Composition.Benchmark.CompositionModel;
+
 namespace Lumyte.Composition.Benchmark;
 
 /// <summary>Checks snapshot ownership and generated consumer semantics.</summary>

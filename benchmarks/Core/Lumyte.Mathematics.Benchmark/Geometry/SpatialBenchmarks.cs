@@ -1,11 +1,11 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Independent spatial queries, distinct from the existing 2D drawing workloads.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Mathematics", "Geometry3D", "Standalone", "SteadyState", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class SpatialBenchmarks
 {
     private readonly Point3D<double>[] _points = [new(-2, 3, 1), new(4, -5, 7), new(1, 2, -3)];

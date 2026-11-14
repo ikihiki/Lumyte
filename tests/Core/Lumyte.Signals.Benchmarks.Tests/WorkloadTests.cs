@@ -1,4 +1,8 @@
-using Lumyte.Signals.Benchmark;
+using Lumyte.Signals.Benchmark.Async;
+using Lumyte.Signals.Benchmark.Computed;
+using Lumyte.Signals.Benchmark.Effects;
+using Lumyte.Signals.Benchmark.Scheduling;
+using Lumyte.Signals.Benchmark.Values;
 using Xunit;
 
 namespace Lumyte.Signals.Benchmarks.Tests;

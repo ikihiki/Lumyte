@@ -21,11 +21,11 @@ dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --fi
 
 ベンチマークの動作確認は`tests/Core/Lumyte.Signals.Benchmarks.Tests`へ集約しています。結果値、通知回数、購読解除、非同期処理の失効、共有依存グラフの鮮度をxUnitで確認し、時間の良否は判定しません。旧`--smoke`の代わりに上記の`dotnet test`を使用してください。
 
-共通カテゴリrunnerでは、独立したCore評価を明示的に選択できます（旧`--screening`等の互換入口は残しています）。
+共通runnerでは、測定目的をmode、測定する機能を名前空間・クラス・メソッドのglobで選択します（旧`--screening`等の互換入口は残しています）。
 
 ```sh
 dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --catalog
-dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --mode screen --allCategories Standalone --filter '*ScalarBenchmarks*'
+dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --mode screen --filter '*Values.ScalarBenchmarks*'
 ```
 
 ## ケースと1操作の意味

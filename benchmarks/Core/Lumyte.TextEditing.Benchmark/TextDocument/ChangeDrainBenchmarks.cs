@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.TextEditing.Benchmark;
+namespace Lumyte.TextEditing.Benchmark.TextDocuments;
 
 /// <summary>Separates destructive drain from untimed replenishment of real changes.</summary>
-[BenchmarkCategory("Standalone", "Core", "TextEditing", "ChangeNotifications", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ChangeDrainBenchmarks
 {
     private TextDocument _document = null!;
@@ -28,6 +28,5 @@ public class ChangeDrainBenchmarks
     /// <summary>Drains a nonempty batch once; setup prevents subsequent empty-drain measurements.</summary>
     /// <returns>The complete published change batch.</returns>
     [Benchmark]
-    [BenchmarkCategory("SteadyState")]
     public IReadOnlyList<TextDocumentChange> Drain() => _document.DrainChanges();
 }

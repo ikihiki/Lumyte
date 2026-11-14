@@ -19,12 +19,12 @@ public sealed class ExecutionCompositionTests
     [Fact]
     public void TargetMutationsInvalidateGeneratedOutput()
     {
-        var execution = new Execution.Generators.Benchmark.GeneratorBenchmarks { Count = 1, Change = "Target" };
+        var execution = new Execution.Generators.Benchmark.ExecutionGeneration.GeneratorBenchmarks { Count = 1, Change = "Target" };
         execution.Setup();
         Assert.True(execution.TargetOutputChanges());
         Assert.Equal(0, execution.ConsumerCompile());
         Assert.Equal(0, execution.ChangedConsumerCompile());
-        var composition = new Composition.Generators.Benchmark.GeneratorBenchmarks { Count = 1, Change = "Target" };
+        var composition = new Composition.Generators.Benchmark.CompositionGeneration.GeneratorBenchmarks { Count = 1, Change = "Target" };
         composition.Setup();
         Assert.True(composition.TargetOutputChanges());
         Assert.Equal(0, composition.ConsumerCompile());
@@ -39,7 +39,7 @@ public sealed class ExecutionCompositionTests
         var scheduler = new ConcurrentExclusiveSchedulerPair(TaskScheduler.Default, maxConcurrencyLevel: 1);
         try
         {
-            var benchmark = new Execution.Benchmark.LifecycleBenchmarks();
+            var benchmark = new Execution.Benchmark.Runtime.LifecycleBenchmarks();
             Task<int> result = Task.Factory.StartNew(benchmark.DedicatedProducers, CancellationToken.None, TaskCreationOptions.None, scheduler.ExclusiveScheduler);
             Assert.Equal(240, await result);
         }
@@ -54,7 +54,7 @@ public sealed class ExecutionCompositionTests
     [Fact]
     public void AdmissionBoundaries()
     {
-        var benchmark = new Execution.Benchmark.LifecycleBenchmarks();
+        var benchmark = new Execution.Benchmark.Runtime.LifecycleBenchmarks();
         Assert.Equal(Execution.CommandEnqueueStatus.QueueFull, benchmark.RetainedCapacity());
         Assert.Equal(Execution.CommandEnqueueStatus.Canceled, benchmark.PreCanceled());
         Assert.Equal(14, benchmark.GateRelease());
@@ -64,12 +64,12 @@ public sealed class ExecutionCompositionTests
     [Fact]
     public void LegacySenderControlsAndBatchSixteen()
     {
-        var controls = new Execution.Benchmark.SenderControlBenchmarks();
+        var controls = new Execution.Benchmark.Commands.SenderControlBenchmarks();
         controls.Setup();
         Assert.Equal(14, controls.Direct());
         Assert.Equal(14, controls.CachedDelegate());
         Assert.Equal(14, controls.CapturedDelegate());
-        var benchmark = new Execution.Benchmark.ExecutionBenchmarks { Count = 16 };
+        var benchmark = new Execution.Benchmark.Runtime.ExecutionBenchmarks { Count = 16 };
         benchmark.Setup();
         try
         {
@@ -87,7 +87,7 @@ public sealed class ExecutionCompositionTests
     {
         Assert.Equal(7, Composition.Benchmark.Compose.Item().Value);
         Assert.Equal(0, Composition.Benchmark.Compose.Item(value: 0).Value);
-        var benchmark = new Composition.Benchmark.CompositionBenchmarks { Count = 1 };
+        var benchmark = new Composition.Benchmark.CompositionModel.CompositionBenchmarks { Count = 1 };
         benchmark.Setup();
         int[] first = benchmark.Apply();
         first[0] = -1;

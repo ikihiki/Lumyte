@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Memory.Benchmark;
+namespace Lumyte.Memory.Benchmark.Management;
 
 /// <summary>Exercises finite hard-budget rejection and estimated external accounting.</summary>
-[BenchmarkCategory("Standalone", "Core", "Memory", "Budgets", "SteadyState", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class BudgetBenchmarks
 {
     private readonly MemoryPoolId _pool = new("bounded-budget");

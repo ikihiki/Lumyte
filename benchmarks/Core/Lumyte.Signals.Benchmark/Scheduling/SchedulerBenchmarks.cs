@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Scheduling;
 
 /// <summary>Measures scheduler reservation coalescing without operating system dispatch latency.</summary>
-[BenchmarkCategory("SteadyState", "Standalone", "Core", "Signals", "Scheduling", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class SchedulerBenchmarks
 {
     private readonly ManualScheduler _scheduler = new();

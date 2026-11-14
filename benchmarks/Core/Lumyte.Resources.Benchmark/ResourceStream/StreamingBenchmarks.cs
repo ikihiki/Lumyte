@@ -3,10 +3,9 @@ using Lumyte.Execution;
 using Lumyte.Memory;
 using Lumyte.Resources.Execution;
 
-namespace Lumyte.Resources.Benchmark;
+namespace Lumyte.Resources.Benchmark.Verification;
 
 /// <summary>Consumes finite ordered streams through actual Execution dispatch.</summary>
-[BenchmarkCategory("Integration", "Core", "Resources", "Streaming", "Screening", "Comparison", "Diagnostic")]
 public class StreamingBenchmarks
 {
     private MemoryManager _memory = null!;
@@ -40,7 +39,6 @@ public class StreamingBenchmarks
 
     /// <summary>Opens, fully consumes and closes a new finite cursor on each invocation.</summary>
     /// <returns>The ordered element checksum.</returns>
-    [Benchmark]
     public async Task<long> ReadAllAsync()
     {
         await using ResourceStreamSession<int> session = await OpenAsync();
@@ -60,7 +58,6 @@ public class StreamingBenchmarks
 
     /// <summary>Seeks a fresh cursor and completes the next valid read.</summary>
     /// <returns>The first element after seeking, or minus one for an empty stream.</returns>
-    [Benchmark]
     public async Task<int> SeekAndReadAsync()
     {
         await using ResourceStreamSession<int> session = await OpenAsync();

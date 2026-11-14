@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Execution.Benchmark;
+namespace Lumyte.Execution.Benchmark.Runtime;
 
 /// <summary>Measures bounded cooperative command, graph, range, and workflow execution.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Standalone", "Core", "Execution", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ExecutionBenchmarks
 {
     private Fixture _fixture = null!;
@@ -35,15 +35,11 @@ public class ExecutionBenchmarks
     /// <summary>Submits, delivers on the fixed host, and observes one result.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Commands")]
-    [BenchmarkCategory("SteadyState")]
     public int Single() => _fixture.Read(_fixture.Module.Port.ExecuteAsync(7));
 
     /// <summary>Stages, accepts, observes, disposes, and resets one whole Count-command batch; one invocation is one batch, not one command.</summary>
     /// <returns>The last typed command result, equal to twice Count minus two.</returns>
     [Benchmark]
-    [BenchmarkCategory("Batches")]
-    [BenchmarkCategory("SteadyState")]
     public int Batch()
     {
         using var batch = new CommandBatch(Count);
@@ -65,8 +61,6 @@ public class ExecutionBenchmarks
     /// <summary>Builds an immutable command dependency chain without scheduling it.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Graphs")]
-    [BenchmarkCategory("Construction")]
     public JobGraph<Input> BuildGraph()
     {
         var builder = new JobGraphBuilder<Input>();
@@ -88,8 +82,6 @@ public class ExecutionBenchmarks
     /// <summary>Schedules a prepared chain and consumes the actual node side effects.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Graphs")]
-    [BenchmarkCategory("SteadyState")]
     public int Graph()
     {
         Array.Clear(_input.Values);
@@ -100,8 +92,6 @@ public class ExecutionBenchmarks
     /// <summary>Schedules disjoint chunks and observes every written element.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Ranges")]
-    [BenchmarkCategory("SteadyState")]
     public int Range()
     {
         Array.Clear(_input.Values);
@@ -112,15 +102,11 @@ public class ExecutionBenchmarks
     /// <summary>Runs a synchronous workflow entry to actual result observation.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Workflows")]
-    [BenchmarkCategory("SteadyState")]
     public int Workflow() => _fixture.Read(_fixture.Module.Workflow.ExecuteAsync(7));
 
     /// <summary>Suspends a workflow once and resumes through its actual cooperative context.</summary>
     /// <returns>The resumed workflow result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Workflows")]
-    [BenchmarkCategory("SteadyState")]
     public int SuspendedWorkflow()
     {
         var resume = new TaskCompletionSource();
@@ -139,15 +125,11 @@ public class ExecutionBenchmarks
     /// <summary>Awaits a child command on the same runtime with one cooperative worker.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Workflows")]
-    [BenchmarkCategory("SteadyState")]
     public int ChildWorkflow() => _fixture.Read(_fixture.Module.Workflow.ExecuteAsync(-7));
 
     /// <summary>Runs a bounded host turn containing commands and a real update.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("HostPhases")]
-    [BenchmarkCategory("SteadyState")]
     public int HostTurn()
     {
         var pending = new ValueTask<int>[Count];

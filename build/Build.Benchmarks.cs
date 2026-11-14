@@ -30,14 +30,11 @@ internal sealed partial class Build
 
     private Target BenchmarkInput => definition => definition.Executes(() => RunBenchmarksAsync("Input"));
 
-    [Parameter("Include median share of 8.333 ms for explicitly SteadyState cases only (not frame latency).")]
-    public bool BenchmarkBudgetShare { get; set; }
-
     private Target BenchmarkCoreEvaluate => definition => definition.Executes(EvaluateCoreAsync);
 
     private async Task EvaluateCoreAsync()
     {
-        CoreBenchmarkEvaluation.Validate(Configuration, BenchmarkFilter, BenchmarkTimeoutSeconds);
+        CoreBenchmarkEvaluation.Validate(Configuration, BenchmarkFilter, BenchmarkTimeoutSeconds, BenchmarkCategory);
         string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
         if (NoBuild)
         {
@@ -68,7 +65,6 @@ internal sealed partial class Build
             ["schema"] = "core-benchmark-evaluation-v1",
             ["status"] = "incomplete",
             ["plan_complete"] = false,
-            ["required_scope"] = "Standalone",
             ["mode"] = mode,
             ["list_only"] = BenchmarkList,
             ["project_filter"] = BenchmarkProject,
@@ -78,14 +74,14 @@ internal sealed partial class Build
             ["deadline_policy"] = "Each build/catalog command and each serial Type.Method partition has its own bounded deadline; no retries. All builds/catalogs finish before timing.",
             ["repository"] = RepositoryDirectory,
             ["output"] = root,
-            ["max_preparation_process_seconds"] = (2 + (projects.Length * 2)) * BenchmarkTimeoutSeconds,
+            ["max_preparation_process_seconds"] = (2 + (projects.Length * (BenchmarkFilter == "*" ? 2 : 3))) * BenchmarkTimeoutSeconds,
             ["projects"] = records,
             ["partitions"] = partitions,
             ["results"] = results,
         };
         var expected = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
-        bool filtered = BenchmarkProject != "*" || !string.IsNullOrWhiteSpace(BenchmarkCategory);
-        // A finite plan, no retry loops: at most one build + catalog per project and one call per partition.
+        bool filtered = BenchmarkProject != "*" || BenchmarkFilter != "*" || BenchmarkCategory is not null;
+        // A finite plan, no retry loops: at most one build + two catalogs per project and one call per partition.
         async Task<string> CallAsync(IEnumerable<string> arguments, string label, string directory, Dictionary<string, string?> child)
         {
             var bounded = new ComponentScreeningProcess(root, BenchmarkTimeoutSeconds);
@@ -111,12 +107,12 @@ internal sealed partial class Build
                 };
             }
 
-            bool allStandaloneEligible = manifest["plan_complete"]!.GetValue<bool>() && !records.SelectMany(record => record!["catalog"]?["Cases"]?.AsArray() ?? []).Any(item =>
+            bool allCasesEligible = manifest["plan_complete"]!.GetValue<bool>() && !records.SelectMany(record => record!["catalog"]?["Cases"]?.AsArray() ?? []).Any(item =>
                 item!["evaluation_status"]?.GetValue<string>() == "excluded-mode");
-            manifest["coverage"]!["all_standalone_cases_mode_eligible"] = allStandaloneEligible;
+            manifest["coverage"]!["all_cases_mode_eligible"] = allCasesEligible;
             bool executionComplete = manifest["status"]!.GetValue<string>() is "completed" or "completed-subset";
             manifest["coverage"]!["full_mode_eligible_scope_complete"] = executionComplete && manifest["coverage"]!["full_category_complete"]!.GetValue<bool>();
-            if (!allStandaloneEligible || !executionComplete)
+            if (!allCasesEligible || !executionComplete)
             {
                 manifest["coverage"]!["full_category_complete"] = false;
             }
@@ -186,6 +182,22 @@ internal sealed partial class Build
                 string json = await CallAsync([entry.Binary, "--catalog"], name + "-catalog", Path.GetDirectoryName(entry.Project)!, BenchmarkEnvironment(environment, entry.Project)).ConfigureAwait(false);
                 JsonObject catalog = BenchmarkCatalog.ParseCatalog(json);
                 entry.Record["catalog"] = catalog;
+                HashSet<string>? filteredKeys = null;
+                if (BenchmarkFilter != "*")
+                {
+                    string filteredJson = await CallAsync([entry.Binary, "--catalog", "--filter", BenchmarkFilter], name + "-filtered-catalog",
+                        Path.GetDirectoryName(entry.Project)!, BenchmarkEnvironment(environment, entry.Project)).ConfigureAwait(false);
+                    JsonObject filteredCatalog = BenchmarkCatalog.ParseCatalog(filteredJson);
+                    string[] keys = filteredCatalog["Cases"]!.AsArray().Select(item => CoreBenchmarkEvaluation.CaseKey(item!)).ToArray();
+                    filteredKeys = new HashSet<string>(keys, StringComparer.Ordinal);
+                    if (filteredKeys.Count != keys.Length || filteredKeys.Except(catalog["Cases"]!.AsArray().Select(item => CoreBenchmarkEvaluation.CaseKey(item!)), StringComparer.Ordinal).Any())
+                    {
+                        throw new ArgumentException("Filtered catalog must contain unique identities from the full compiled catalog.");
+                    }
+
+                    entry.Record["filtered_catalog"] = filteredCatalog;
+                }
+
                 var catalogKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (JsonNode? item in catalog["Cases"]!.AsArray())
                 {
@@ -194,7 +206,8 @@ internal sealed partial class Build
                         throw new ArgumentException("Duplicate compiled catalog identity in " + name);
                     }
 
-                    string? exclusion = CoreBenchmarkEvaluation.Exclusion(item!, mode, BenchmarkCategory);
+                    string? exclusion = filteredKeys is not null && !filteredKeys.Contains(CoreBenchmarkEvaluation.CaseKey(item!))
+                        ? "excluded-filter" : CoreBenchmarkEvaluation.Exclusion(item!, mode, BenchmarkCategory);
                     item!["evaluation_status"] = exclusion ?? "selected";
                     if (exclusion is not null)
                     {
@@ -233,7 +246,7 @@ internal sealed partial class Build
 
             if (expected.Count == 0)
             {
-                throw new ArgumentException("No eligible Standalone Core cases match the requested project/category/mode selection.");
+                throw new ArgumentException("No eligible Core cases match the requested project/filter/purpose/mode selection.");
             }
 
             foreach ((string Project, string Binary, string Inputs, string Outputs, JsonObject Record) entry in entries)
@@ -247,7 +260,7 @@ internal sealed partial class Build
             manifest["plan_complete"] = true;
             manifest["max_timed_process_seconds"] = BenchmarkList ? 0 : partitions.Count * BenchmarkTimeoutSeconds;
             // Includes two source identity commands, builds and catalogs; excludes local hashing/report IO.
-            manifest["max_child_process_seconds"] = (2 + (projects.Length * 2) + (BenchmarkList ? 0 : partitions.Count)) * BenchmarkTimeoutSeconds;
+            manifest["max_child_process_seconds"] = (2 + (projects.Length * (BenchmarkFilter == "*" ? 2 : 3)) + (BenchmarkList ? 0 : partitions.Count)) * BenchmarkTimeoutSeconds;
             Save();
             if (BenchmarkList)
             {
@@ -273,7 +286,7 @@ internal sealed partial class Build
                 Directory.CreateDirectory(output);
                 partition["status"] = "running";
                 Save();
-                await CallAsync(BenchmarkCatalog.Arguments(entry.Binary, mode, partition["filter"]!.GetValue<string>(), "Standalone", output, false),
+                await CallAsync(BenchmarkCatalog.Arguments(entry.Binary, mode, partition["filter"]!.GetValue<string>(), BenchmarkCategory, output, false),
                     "partition-" + id, Path.GetDirectoryName(entry.Project)!, BenchmarkEnvironment(environment, entry.Project)).ConfigureAwait(false);
                 JsonArray observed = CoreBenchmarkEvaluation.ParseReports(Directory.GetFiles(output, "*-report-full.json", SearchOption.AllDirectories), mode);
                 foreach (JsonNode? row in observed)
@@ -291,7 +304,6 @@ internal sealed partial class Build
                     if (expected.TryGetValue(key, out JsonNode? benchmark))
                     {
                         row["categories"] = benchmark["Categories"]!.DeepClone();
-                        row["budget_share_percent"] = CoreBenchmarkEvaluation.BudgetShare(benchmark, row["median_ns"]!.GetValue<double>(), BenchmarkBudgetShare);
                     }
 
                     results.Add(row.DeepClone());

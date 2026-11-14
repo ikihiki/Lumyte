@@ -158,10 +158,6 @@
           "type": "string",
           "description": "Restored Microsoft.Direct3D.D3D12 package directory containing the selected Agility SDK"
         },
-        "BenchmarkBudgetShare": {
-          "type": "boolean",
-          "description": "Include median share of 8.333 ms for explicitly SteadyState cases only (not frame latency)"
-        },
         "BenchmarkCategory": {
           "type": "string",
           "description": "Optional BenchmarkDotNet category filter across selected projects"
