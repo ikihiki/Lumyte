@@ -1,4 +1,11 @@
 <Solution>
+  <Folder Name="/benchmarks/Input/">
+    <Project Path="benchmarks/Input/Lumyte.Input.Benchmark/Lumyte.Input.Benchmark.csproj" />
+    <Project Path="benchmarks/Input/Lumyte.Input.Actions.Benchmark/Lumyte.Input.Actions.Benchmark.csproj" />
+    <Project Path="benchmarks/Input/Lumyte.Input.Diagnostics.Benchmark/Lumyte.Input.Diagnostics.Benchmark.csproj" />
+    <Project Path="benchmarks/Input/Lumyte.Input.Processing.Benchmark/Lumyte.Input.Processing.Benchmark.csproj" />
+    <Project Path="benchmarks/Input/Lumyte.Input.Settings.Benchmark/Lumyte.Input.Settings.Benchmark.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/Animation/">
     <Project Path="benchmarks/Animation/Lumyte.Animation.Benchmark/Lumyte.Animation.Benchmark.csproj" />
   </Folder>
@@ -217,6 +224,7 @@
     <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Input/">
+    <Project Path="tests/Input/Lumyte.Input.Benchmark.Tests/Lumyte.Input.Benchmark.Tests.csproj" />
     <Project Path="tests/Input/Lumyte.Input.Advanced.Tests/Lumyte.Input.Advanced.Tests.csproj" />
     <Project Path="tests/Input/Lumyte.Input.Tests/Lumyte.Input.Tests.csproj" />
   </Folder>

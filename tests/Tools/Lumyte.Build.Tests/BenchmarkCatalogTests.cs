@@ -292,6 +292,42 @@ public sealed class BenchmarkCatalogTests
         Assert.Equal(commands, fixture.Records("dotnet").Length);
     }
 
+    /// <summary>Input no-build provenance covers both its products and the Diagnostics consumer dependencies.</summary>
+    /// <param name="changedArea">The product dependency changed after the build.</param>
+    /// <returns>The stale-source rejection assertion.</returns>
+    [Theory]
+    [InlineData("Input")]
+    [InlineData("Diagnostics")]
+    public async Task InputTargetRejectsChangedDependenciesAsync(string changedArea)
+    {
+        using var fixture = new BuildFixture();
+        string projectRoot = Path.Combine(fixture.Root, "benchmarks", "Input", "Lumyte.Input.Benchmark");
+        Directory.CreateDirectory(projectRoot);
+        File.WriteAllText(Path.Combine(projectRoot, "Lumyte.Input.Benchmark.csproj"), "<Project />");
+        foreach (string area in new[] { "Core", "Input", "Diagnostics" })
+        {
+            string source = Path.Combine(fixture.Root, "src", area);
+            Directory.CreateDirectory(source);
+            File.WriteAllText(Path.Combine(source, "Product.cs"), "original");
+        }
+
+        string shared = Path.Combine(fixture.Root, "benchmarks", "Core", "Shared");
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(Path.Combine(shared, "BenchmarkEntry.cs"), "shared fixture");
+        string output = Path.Combine(projectRoot, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "Lumyte.Input.Benchmark.dll"), "fixture output");
+        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkInput", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(first.ExitCode == 0, first.Output + first.Error);
+        int commands = fixture.Records("dotnet").Length;
+        Assert.Equal(2, commands);
+        File.WriteAllText(Path.Combine(fixture.Root, "src", changedArea, "Product.cs"), "changed dependency");
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkInput", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, stale.ExitCode);
+        Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
+        Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
     private static void AddProject(string root, string name)
     {
         string directory = Path.Combine(root, "benchmarks", "Core", name + ".Benchmark");
