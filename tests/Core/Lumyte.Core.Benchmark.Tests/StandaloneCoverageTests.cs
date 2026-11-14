@@ -100,6 +100,22 @@ public sealed class StandaloneCoverageTests
         }
     }
 
+    /// <summary>Resident acquisitions stay selectable without including new graph construction.</summary>
+    [Fact]
+    public void ResourceHotPathsAreSeparateFromGraphConstruction()
+    {
+        using var document = JsonDocument.Parse(BenchmarkEntry.CreateCatalog(typeof(Lumyte.Resources.Benchmark.BenchmarkChecks).Assembly));
+        JsonElement[] cases = document.RootElement.GetProperty("Cases").EnumerateArray()
+            .Where(benchmark => benchmark.GetProperty("Type").GetString() == "Lumyte.Resources.Benchmark.ResourcesBenchmarks").ToArray();
+        foreach (JsonElement benchmark in cases)
+        {
+            string method = benchmark.GetProperty("Method").GetString()!;
+            bool hot = method is "CacheHit" or "RetainHandle" or "Snapshot";
+            Assert.Equal(hot, Categories(benchmark).Contains("SteadyState", StringComparer.Ordinal));
+            Assert.Equal(!hot, Categories(benchmark).Contains("Construction", StringComparer.Ordinal));
+        }
+    }
+
     private static string Identity(JsonElement benchmark) => benchmark.GetProperty("Type").GetString() + "."
         + benchmark.GetProperty("Method").GetString() + ":" + benchmark.GetProperty("Parameters").GetRawText();
 
