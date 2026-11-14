@@ -6,19 +6,17 @@ using Lumyte.Memory;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Publishes source changes through the public automatic reload path.</summary>
-[BenchmarkCategory("Core", "Resources", "Reload")]
+[BenchmarkCategory("Core", "Resources", "Reload", "Screening", "Comparison", "Diagnostic")]
 public class ReloadBenchmarks
 {
     /// <summary>Rebuilds one changed source while retaining exactly one old generation lease.</summary>
     /// <returns>The newly published checksum.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-06")]
     public Task<int> ChangeAndPublishAsync() => ReloadAsync(fail: false);
 
     /// <summary>Fails a replacement build and verifies the old publication remains available.</summary>
     /// <returns>The preserved old checksum.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-07")]
     public Task<int> FailedReloadPreservesPublishedAsync() => ReloadAsync(fail: true);
 
     private static async Task<int> ReloadAsync(bool fail)

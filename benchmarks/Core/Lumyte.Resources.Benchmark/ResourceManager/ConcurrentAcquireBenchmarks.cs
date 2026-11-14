@@ -4,7 +4,7 @@ using Lumyte.Memory;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Overlaps bounded callers against one gated construction.</summary>
-[BenchmarkCategory("Core", "Resources", "Acquisition", "Concurrency")]
+[BenchmarkCategory("Core", "Resources", "Acquisition", "Concurrency", "Screening", "Comparison", "Diagnostic")]
 public class ConcurrentAcquireBenchmarks
 {
     /// <summary>Gets or sets the number of concurrent retain requests.</summary>
@@ -14,7 +14,6 @@ public class ConcurrentAcquireBenchmarks
     /// <summary>Starts all callers before releasing construction, then returns all ownership.</summary>
     /// <returns>The number of actual shared builds.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-04")]
     public async Task<int> SharedBuildAsync()
     {
         await using var memory = new MemoryManager();

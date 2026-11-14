@@ -4,7 +4,7 @@ namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures asynchronous adapters with deterministic inline task completion.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Signals", "Async")]
+[BenchmarkCategory("Core", "Signals", "Async", "Screening", "Comparison", "Diagnostic")]
 public class AsyncBenchmarks
 {
     private static readonly Task<int> _completed = Task.FromResult(42);
@@ -49,7 +49,6 @@ public class AsyncBenchmarks
     /// <summary>Measures creation, a synchronously completed load, and disposal.</summary>
     /// <returns>The loaded result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-09")]
     public int CreateCompleted()
     {
         using AsyncSignal<int> signal = Signal.FromAsync(_completedLoader);
@@ -59,13 +58,11 @@ public class AsyncBenchmarks
     /// <summary>Measures a reload's Pending and Succeeded transitions without observers.</summary>
     /// <returns>The loaded result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-09")]
     public int ReloadCompleted() => _plain.ReloadAsync().GetAwaiter().GetResult().Result;
 
     /// <summary>Measures the same reload with one synchronous observer notified twice.</summary>
     /// <returns>The result last delivered to the observer.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-09")]
     public int ReloadCompletedObserved()
     {
         _ = _observed.ReloadAsync().GetAwaiter().GetResult();
@@ -76,7 +73,6 @@ public class AsyncBenchmarks
     /// <remarks>Includes allocating two loader task sources; their continuations run inline without ThreadPool scheduling.</remarks>
     /// <returns>The number of canceled operation completion tasks.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-10")]
     public int SupersedeAndCancelPending()
     {
         var first = new TaskCompletionSource<int>();

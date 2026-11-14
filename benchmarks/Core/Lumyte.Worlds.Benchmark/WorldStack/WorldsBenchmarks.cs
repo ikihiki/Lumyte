@@ -4,7 +4,7 @@ namespace Lumyte.Worlds.Benchmark;
 
 /// <summary>Measures CPU scene ownership, boundary commits and independent frame dispatch phases.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Worlds")]
+[BenchmarkCategory("Core", "Worlds", "Screening", "Comparison", "Diagnostic")]
 public class WorldsBenchmarks
 {
     private readonly CpuDrawContext _draw = new();
@@ -45,13 +45,11 @@ public class WorldsBenchmarks
     /// <summary>Constructs owned worlds and scenes, without activating them.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-01")]
     public WorldManager ConstructOwnership() => Create(Layers, 8);
 
     /// <summary>Adds and removes the same detached scene, leaving bounded inactive ownership.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-01")]
     public bool EditInactive()
     {
         _inactive.AddScene(_editable);
@@ -61,7 +59,6 @@ public class WorldsBenchmarks
     /// <summary>Queues a cancelling push/pop pair and commits its final snapshot.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-02")]
     public int CancelledBatch()
     {
         _manager.Stack.Push(_alternate);
@@ -73,7 +70,6 @@ public class WorldsBenchmarks
     /// <summary>Applies a real replacement, alternating between two legal world identities.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-02")]
     public int ReplaceBoundary()
     {
         _replace = !_replace;
@@ -85,7 +81,6 @@ public class WorldsBenchmarks
     /// <summary>Computes snapshots and execution states even with no queued requests.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-02")]
     public int UnchangedBoundary()
     {
         _manager.BeginFrame();
@@ -95,7 +90,6 @@ public class WorldsBenchmarks
     /// <summary>Dispatches input top-down until consumed or blocked.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-03")]
     public int HandleInput()
     {
         _manager.Stack.HandleInput();
@@ -105,7 +99,6 @@ public class WorldsBenchmarks
     /// <summary>Dispatches exactly one positive fixed simulation step.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-04")]
     public int FixedUpdate()
     {
         _manager.Stack.FixedUpdate(TimeSpan.FromTicks(166667));
@@ -115,7 +108,6 @@ public class WorldsBenchmarks
     /// <summary>Dispatches every ordinary update before any late update.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-04")]
     public int Update()
     {
         _manager.Stack.Update(TimeSpan.Zero);
@@ -125,7 +117,6 @@ public class WorldsBenchmarks
     /// <summary>Dispatches a shared CPU-only context, without any GPU work.</summary>
     /// <returns>The observed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-WORLD-05")]
     public int Draw()
     {
         _manager.Stack.Draw(_draw);

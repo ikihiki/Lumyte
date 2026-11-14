@@ -196,7 +196,8 @@ internal static class BenchmarkEntry
                 continue;
             }
 
-            using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(type, CreateConfig("diagnose"));
+            // Catalog discovery must include verify-only and non-diagnostic purposes too.
+            using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(type, DefaultConfig.Instance);
             foreach (BenchmarkCase benchmark in run.BenchmarksCases)
             {
                 cases.Add(new CatalogCase(
@@ -232,8 +233,27 @@ internal static class BenchmarkEntry
         return JsonSerializer.Serialize(catalog, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    internal static string[] GetModes(BenchmarkCase benchmark) =>
-        benchmark.Descriptor.HasCategory("diagnostic-only") ? ["verify", "diagnose"] : _modes;
+    internal static string[] GetModes(BenchmarkCase benchmark)
+    {
+        var modes = new List<string> { "verify" };
+        bool diagnosticOnly = benchmark.Descriptor.HasCategory("diagnostic-only");
+        if (!diagnosticOnly && benchmark.Descriptor.HasCategory("Screening"))
+        {
+            modes.Add("screen");
+        }
+
+        if (!diagnosticOnly && benchmark.Descriptor.HasCategory("Comparison"))
+        {
+            modes.Add("compare");
+        }
+
+        if (benchmark.Descriptor.HasCategory("Diagnostic"))
+        {
+            modes.Add("diagnose");
+        }
+
+        return modes.ToArray();
+    }
 
     internal static void EnsureTraceSupported()
     {

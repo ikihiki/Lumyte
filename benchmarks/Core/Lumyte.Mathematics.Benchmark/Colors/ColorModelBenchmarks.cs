@@ -4,7 +4,7 @@ using Lumyte.Mathematics.Colors;
 namespace Lumyte.Mathematics.Benchmark;
 
 /// <summary>Independent hue-sector profiles.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Colors", "ColorModels")]
+[BenchmarkCategory("Core", "Mathematics", "Colors", "ColorModels", "Screening", "Comparison", "Diagnostic")]
 public class ColorModelBenchmarks
 {
     /// <summary>Gets or sets hue sectors and a wrapped value.</summary>
@@ -14,12 +14,10 @@ public class ColorModelBenchmarks
     /// <summary>Executes the Hsl color operation.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-COLOR-04")]
     public SRgba<float> Hsl() => SRgba<float>.FromHslSrgbDegrees(Hue, 0.8f, 0.4f, 1f);
 
     /// <summary>Executes the Hsv color operation.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-COLOR-04")]
     public SRgba<float> Hsv() => SRgba<float>.FromHsvSrgbDegrees(Hue, 0.8f, 0.4f, 1f);
 }

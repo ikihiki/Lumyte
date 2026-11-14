@@ -1,5 +1,8 @@
 using System.Reflection;
 using System.Text.Json;
+using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Filters;
+using BenchmarkDotNet.Running;
 using Lumyte.Benchmarks;
 using Xunit;
 
@@ -39,6 +42,7 @@ public sealed class BenchmarkCategoryTests
                 string[] categories = Categories(benchmark);
                 Assert.Contains("Core", categories);
                 Assert.Contains(owner, categories);
+                Assert.DoesNotContain(categories, category => category.StartsWith("CORE-", StringComparison.Ordinal));
             });
         }
     }
@@ -80,6 +84,17 @@ public sealed class BenchmarkCategoryTests
             using var catalog = JsonDocument.Parse(BenchmarkEntry.CreateCatalog(assembly));
             Assert.All(catalog.RootElement.GetProperty("Cases").EnumerateArray(), benchmark => Assert.Contains("SourceGeneration", Categories(benchmark)));
         }
+    }
+
+    /// <summary>Individual selection uses BDN method globs rather than a separate category identifier.</summary>
+    [Fact]
+    public void MethodFilterSelectsCaptureDirectly()
+    {
+        IConfig config = ManualConfig.Create(BenchmarkEntry.CreateConfig("screen"))
+            .AddFilter(new GlobFilter(["*CompositionBenchmarks.Capture"]));
+        using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(typeof(Lumyte.Composition.Benchmark.CompositionBenchmarks), config);
+        Assert.NotEmpty(run.BenchmarksCases);
+        Assert.All(run.BenchmarksCases, benchmark => Assert.Equal("Capture", benchmark.Descriptor.WorkloadMethod.Name));
     }
 
     private static string[] Categories(JsonElement benchmark) => benchmark.GetProperty("Categories").EnumerateArray().Select(value => value.GetString()!).ToArray();

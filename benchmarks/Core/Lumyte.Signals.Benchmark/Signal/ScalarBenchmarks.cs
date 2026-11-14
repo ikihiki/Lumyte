@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures primitive operations with values and callbacks created outside timed code.</summary>
-[BenchmarkCategory("Core", "Signals", "Values")]
+[BenchmarkCategory("Core", "Signals", "Values", "Screening", "Comparison", "Diagnostic")]
 public class ScalarBenchmarks
 {
     private readonly Signal<int> _read = Signal.Create(42);
@@ -14,22 +14,18 @@ public class ScalarBenchmarks
     /// <summary>Reads a mutable value outside dependency tracking.</summary>
     /// <returns>The current value.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-01")]
     public int ReadValue() => _read.Value;
 
     /// <summary>Reads without dependency tracking.</summary>
     /// <returns>The current value.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-01")]
     public int ReadPeek() => _read.Peek();
 
     /// <summary>Assigns an equal value with no observers.</summary>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-01")]
     public void WriteSame() => _same.Value = 42;
 
     /// <summary>Assigns a different value with no observers.</summary>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-01")]
     public void WriteUnobserved() => _changed.Value = ++_next;
 }

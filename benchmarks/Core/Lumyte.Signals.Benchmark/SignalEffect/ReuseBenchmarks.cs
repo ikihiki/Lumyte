@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Separates repeated dependency map reuse from short-lived observer creation.</summary>
-[BenchmarkCategory("Core", "Signals", "Effects")]
+[BenchmarkCategory("Core", "Signals", "Effects", "Screening", "Comparison", "Diagnostic")]
 public class ReuseBenchmarks
 {
     private Signal<int>[] _inputs = [];
@@ -38,7 +38,6 @@ public class ReuseBenchmarks
     /// <summary>Mutates one input and reevaluates an existing observer with stable dependencies.</summary>
     /// <returns>The latest observed sum.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-02")]
     public int ReevaluateStable()
     {
         _inputs[0].Value = ++_next;
@@ -48,7 +47,6 @@ public class ReuseBenchmarks
     /// <summary>Creates and disposes one observer while reusing the same callback and inputs.</summary>
     /// <returns>The sum read by the temporary observer.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-05")]
     public int CreateAndDisposeEffect()
     {
         using SignalEffect temporary = Signal.Effect(_observe);

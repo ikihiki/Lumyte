@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.TextEditing.Benchmark;
 
 /// <summary>Candidate-list validation and defensive ownership independent of document length.</summary>
-[BenchmarkCategory("Core", "TextEditing", "ImeCandidates")]
+[BenchmarkCategory("Core", "TextEditing", "ImeCandidates", "Screening", "Comparison", "Diagnostic")]
 public class CandidateBenchmarks
 {
     private ImeCandidateSnapshot _candidates = null!;
@@ -19,6 +19,5 @@ public class CandidateBenchmarks
     /// <summary>Copies and validates a paged candidate snapshot.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-TEXT-07")]
     public ImeCandidateSnapshot Candidates() => ImeCandidateValidation.Copy(_candidates);
 }

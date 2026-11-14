@@ -215,6 +215,65 @@ public sealed class BenchmarkEntryTests
         Assert.All(filtered.BenchmarksCases, benchmark => Assert.Equal(nameof(CatalogFixture.DiagnosticWork), benchmark.Descriptor.WorkloadMethod.Name));
     }
 
+    /// <summary>Only explicitly declared purposes admit measurement, including inherited class categories.</summary>
+    /// <param name="fixture">The benchmark fixture type.</param>
+    /// <param name="method">The selected method.</param>
+    /// <param name="expectedModes">The eligible modes in catalog order.</param>
+    [Theory]
+    [InlineData(typeof(UncategorizedFixture), nameof(UncategorizedFixture.Work), new[] { "verify" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Untagged), new[] { "verify" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Screen), new[] { "verify", "screen" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Compare), new[] { "verify", "compare" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Diagnose), new[] { "verify", "diagnose" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Multiple), new[] { "verify", "screen", "compare" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.LegacyMarker), new[] { "verify" })]
+    [InlineData(typeof(InheritedPurposeFixture), nameof(InheritedPurposeFixture.Work), new[] { "verify", "screen", "diagnose" })]
+    public void PurposeCategoriesDetermineModes(Type fixture, string method, string[] expectedModes)
+    {
+        // Do not apply the mode filter while discovering fixtures: verify-only cases must remain visible.
+        using BenchmarkRunInfo all = BenchmarkConverter.TypeToBenchmarks(fixture, DefaultConfig.Instance);
+        BenchmarkCase benchmark = Assert.Single(all.BenchmarksCases, item => item.Descriptor.WorkloadMethod.Name == method);
+        Assert.Equal(expectedModes, BenchmarkEntry.GetModes(benchmark));
+        foreach (string mode in new[] { "verify", "screen", "compare", "diagnose" })
+        {
+            Assert.Equal(expectedModes.Contains(mode), new BenchmarkEntry.ModeFilter(mode).Predicate(benchmark));
+        }
+
+        using var catalog = JsonDocument.Parse(BenchmarkEntry.CreateCatalog(fixture.Assembly));
+        JsonElement entry = Assert.Single(catalog.RootElement.GetProperty("Cases").EnumerateArray(), item =>
+            item.GetProperty("Type").GetString() == fixture.FullName && item.GetProperty("Method").GetString() == method);
+        Assert.Equal(expectedModes, entry.GetProperty("Modes").EnumerateArray().Select(mode => mode.GetString()!).ToArray());
+    }
+
+    /// <summary>Literal BDN method selection and category filters cannot override required purposes.</summary>
+    /// <param name="mode">The requested measurement mode.</param>
+    /// <param name="method">The literal workload method name.</param>
+    /// <param name="included">Whether the selected purpose admits that mode.</param>
+    [Theory]
+    [InlineData("screen", nameof(PurposeFixture.Screen), true)]
+    [InlineData("compare", nameof(PurposeFixture.Screen), false)]
+    [InlineData("diagnose", nameof(PurposeFixture.Screen), false)]
+    [InlineData("screen", nameof(PurposeFixture.Untagged), false)]
+    [InlineData("compare", nameof(PurposeFixture.Untagged), false)]
+    [InlineData("diagnose", nameof(PurposeFixture.Untagged), false)]
+    public void LiteralMethodFiltersRespectPurposePolicy(string mode, string method, bool included)
+    {
+        string literal = $"{typeof(PurposeFixture).FullName}.{method}";
+        Assert.Equal(new[] { "--filter", literal }, BenchmarkEntry.Parse(["--mode", mode, "--filter", literal]).Arguments);
+        using BenchmarkRunInfo all = BenchmarkConverter.TypeToBenchmarks(typeof(PurposeFixture), DefaultConfig.Instance);
+        BenchmarkCase selected = Assert.Single(all.BenchmarksCases, benchmark => benchmark.Descriptor.WorkloadMethod.Name == method);
+        var glob = new GlobFilter([literal]);
+        Assert.True(glob.Predicate(selected));
+        Assert.Single(all.BenchmarksCases, glob.Predicate);
+
+        ManualConfig config = ManualConfig.Create(BenchmarkEntry.CreateConfig(mode))
+            .AddFilter(glob)
+            .AddFilter(new AnyCategoriesFilter(["Semantic"]));
+        using BenchmarkRunInfo filtered = BenchmarkConverter.TypeToBenchmarks(typeof(PurposeFixture), config);
+        Assert.Equal(included ? 1 : 0, filtered.BenchmarksCases.Length);
+        Assert.All(filtered.BenchmarksCases, benchmark => Assert.Equal(method, benchmark.Descriptor.WorkloadMethod.Name));
+    }
+
     /// <summary>Catalog uses actual BDN descriptors and expands every declared parameter.</summary>
     [Fact]
     public void CatalogContainsRealMethodsCategoriesParametersAndIdentity()
@@ -256,6 +315,61 @@ public sealed class BenchmarkEntryTests
         }
     }
 
+    /// <summary>Benchmarks without any categories are verification-only.</summary>
+    public class UncategorizedFixture
+    {
+        /// <summary>Declares no categories or measurement purposes.</summary>
+        [Benchmark]
+        public void Work() => throw new InvalidOperationException("Unexpected workload execution.");
+    }
+
+    /// <summary>Semantic tags alone must not grant measurement eligibility.</summary>
+    [BenchmarkCategory("Semantic")]
+    public class PurposeFixture
+    {
+        /// <summary>Declares no measurement purpose.</summary>
+        [Benchmark]
+        public void Untagged() => throw new InvalidOperationException("Unexpected workload execution.");
+
+        /// <summary>Declares screening only.</summary>
+        [Benchmark]
+        [BenchmarkCategory("Screening")]
+        public void Screen() => throw new InvalidOperationException("Unexpected workload execution.");
+
+        /// <summary>Declares comparison only.</summary>
+        [Benchmark]
+        [BenchmarkCategory("Comparison")]
+        public void Compare() => throw new InvalidOperationException("Unexpected workload execution.");
+
+        /// <summary>Declares diagnosis only.</summary>
+        [Benchmark]
+        [BenchmarkCategory("Diagnostic")]
+        public void Diagnose() => throw new InvalidOperationException("Unexpected workload execution.");
+
+        /// <summary>Combines independent measurement purposes.</summary>
+        [Benchmark]
+        [BenchmarkCategory("Screening", "Comparison")]
+        public void Multiple() => throw new InvalidOperationException("Unexpected workload execution.");
+
+        /// <summary>The compatibility exclusion marker does not itself grant any purpose.</summary>
+        [Benchmark]
+        [BenchmarkCategory("diagnostic-only")]
+        public void LegacyMarker() => throw new InvalidOperationException("Unexpected workload execution.");
+    }
+
+    /// <summary>Provides a purpose category inherited by a concrete benchmark class.</summary>
+    [BenchmarkCategory("Screening")]
+    public abstract class PurposeBase;
+
+    /// <summary>Combines inherited class and local method purposes through BDN descriptors.</summary>
+    public class InheritedPurposeFixture : PurposeBase
+    {
+        /// <summary>Declares a second purpose at method level.</summary>
+        [Benchmark]
+        [BenchmarkCategory("Diagnostic")]
+        public void Work() => throw new InvalidOperationException("Unexpected workload execution.");
+    }
+
     /// <summary>Real benchmark metadata for catalog discovery; any workload execution is a test failure.</summary>
     [BenchmarkCategory("Catalog")]
     public class CatalogFixture
@@ -270,12 +384,13 @@ public sealed class BenchmarkEntryTests
         [Benchmark]
         [Arguments(2)]
         [Arguments(3)]
+        [BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
         public int Work(int value) => throw new InvalidOperationException($"Catalog executed {value}.");
 
         /// <summary>Supplies diagnostic-only metadata without permitting workload execution in tests.</summary>
         /// <returns>Never returns; tests enumerate metadata only.</returns>
         [Benchmark]
-        [BenchmarkCategory("diagnostic-only")]
+        [BenchmarkCategory("Screening", "Comparison", "Diagnostic", "diagnostic-only")]
         public int DiagnosticWork() => throw new InvalidOperationException("Diagnostic workload executed.");
     }
 }

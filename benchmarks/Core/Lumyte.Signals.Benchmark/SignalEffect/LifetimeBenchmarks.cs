@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Exercises scope ownership, recovery and actual parallel graph access.</summary>
-[BenchmarkCategory("Core", "Signals", "Effects")]
+[BenchmarkCategory("Core", "Signals", "Effects", "Screening", "Comparison", "Diagnostic")]
 public class LifetimeBenchmarks
 {
     /// <summary>Gets or sets the number of scope-owned observers.</summary>
@@ -13,7 +13,6 @@ public class LifetimeBenchmarks
     /// <summary>Constructs and disposes a scope before mutating its surviving source.</summary>
     /// <returns>The callback count, which must stop increasing after scope disposal.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-05")]
     public int ScopeLifetime()
     {
         var source = Signal.Create(0);
@@ -41,7 +40,6 @@ public class LifetimeBenchmarks
     /// <summary>Retries a failed computed read in the same source revision.</summary>
     /// <returns>The recovered result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-08")]
     public int FailureAndRetry()
     {
         bool fail = true;
@@ -61,7 +59,6 @@ public class LifetimeBenchmarks
     /// <summary>Runs two actual workers against distinct sources in one shared observed graph.</summary>
     /// <returns>The final consistent sum after both workers join.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-11")]
     public async Task<int> ParallelWaveAsync()
     {
         var left = Signal.Create(0);

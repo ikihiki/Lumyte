@@ -6,7 +6,7 @@ namespace Lumyte.Execution.Generators.Benchmark;
 
 /// <summary>Exercises the public incremental generator driver over independent consumers.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution.Generators", "SourceGeneration")]
+[BenchmarkCategory("Core", "Execution.Generators", "SourceGeneration", "Screening", "Comparison", "Diagnostic")]
 public class GeneratorBenchmarks
 {
     private CSharpCompilation _first = null!;
@@ -37,7 +37,6 @@ public class GeneratorBenchmarks
     /// <summary>Creates a fresh driver and generates without final consumer compilation.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-GEN-01")]
     public GeneratorDriverRunResult Cold() => CreateDriver().RunGenerators(_first).GetRunResult();
 
     /// <summary>Retains only the latest driver while alternating two fixed inputs.</summary>
@@ -52,13 +51,11 @@ public class GeneratorBenchmarks
     /// <summary>Runs malformed declarations through actual generator diagnostics.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-GEN-03")]
     public GeneratorDriverRunResult DiagnoseInvalid() => CreateDriver().RunGenerators(_invalid).GetRunResult();
 
     /// <summary>Generates and evaluates final consumer compiler diagnostics separately.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-GEN-01")]
     public int ConsumerCompile()
     {
         CreateDriver().RunGeneratorsAndUpdateCompilation(_first, out Compilation output, out _);

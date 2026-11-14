@@ -4,13 +4,12 @@ using Lumyte.Memory;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Rebuilds controlled runtime generations without physical device dependencies.</summary>
-[BenchmarkCategory("Core", "Resources", "Generations")]
+[BenchmarkCategory("Core", "Resources", "Generations", "Screening", "Comparison", "Diagnostic")]
 public class RuntimeGenerationBenchmarks
 {
     /// <summary>Invalidates one provider and rebuilds while an old lease remains bounded to one generation.</summary>
     /// <returns>The newly published provider version.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-08")]
     public async Task<ulong> InvalidateAndRebuildAsync()
     {
         await using var memory = new MemoryManager();

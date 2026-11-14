@@ -5,7 +5,7 @@ namespace Lumyte.Composition.Generators.Benchmark;
 
 /// <summary>Measures only warm driver reruns with distinct change profiles.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Composition.Generators", "SourceGeneration", "IncrementalGeneration")]
+[BenchmarkCategory("Core", "Composition.Generators", "SourceGeneration", "IncrementalGeneration", "Screening", "Comparison", "Diagnostic")]
 public class IncrementalBenchmarks
 {
     private GeneratorBenchmarks _driver = null!;
@@ -29,6 +29,5 @@ public class IncrementalBenchmarks
     /// <summary>Alternates at most two compilations and retains only the current driver.</summary>
     /// <returns>The actual generated trees and diagnostics.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-GEN-05")]
     public GeneratorDriverRunResult Rerun() => _driver.Warm();
 }

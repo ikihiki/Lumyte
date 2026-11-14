@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.StateMachines.Benchmark;
 
 /// <summary>Exercises full candidate scans, short circuit guards and string trigger lookup.</summary>
-[BenchmarkCategory("Core", "StateMachines", "Guards")]
+[BenchmarkCategory("Core", "StateMachines", "Guards", "Screening", "Comparison", "Diagnostic")]
 public class GuardSelectionBenchmarks
 {
     private readonly int[] _context = new int[1];
@@ -36,6 +36,5 @@ public class GuardSelectionBenchmarks
     /// <summary>Evaluates the configured candidate position without mutating current state.</summary>
     /// <returns>Whether one candidate accepts the input.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-STATE-03")]
     public bool Select() => _instance.CanFire(Match == "unknown" ? "unknown" : "go");
 }

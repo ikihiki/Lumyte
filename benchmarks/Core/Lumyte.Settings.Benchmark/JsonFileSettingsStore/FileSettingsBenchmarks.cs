@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Lumyte.Settings.Benchmark;
 
 /// <summary>Measures real atomic file persistence, including filesystem work.</summary>
-[BenchmarkCategory("Core", "Settings", "Persistence")]
+[BenchmarkCategory("Core", "Settings", "Persistence", "Screening", "Comparison", "Diagnostic")]
 public class FileSettingsBenchmarks
 {
     private string _directory = null!;
@@ -26,7 +26,6 @@ public class FileSettingsBenchmarks
     /// <summary>Loads a document, saves an edit atomically, and reloads the persisted file.</summary>
     /// <returns>The committed scalar after restart.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SET-09")]
     public int SaveAndReload()
     {
         using (ServiceProvider provider = SettingsBenchmarks.CreateProvider(new JsonFileSettingsStore(_path), 16))

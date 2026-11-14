@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Memory.Benchmark;
 
 /// <summary>Finite in-chunk waves with untimed fresh-chunk reset, never repeated cursor exhaustion.</summary>
-[BenchmarkCategory("Core", "Memory", "Allocation")]
+[BenchmarkCategory("Core", "Memory", "Allocation", "Screening", "Comparison", "Diagnostic")]
 public class ChunkHitBenchmarks
 {
     private readonly MemoryPoolId _pool = new("chunk-wave");
@@ -24,7 +24,6 @@ public class ChunkHitBenchmarks
     /// <summary>Rents 8192 bytes within the anchored chunk's remaining 65280 bytes.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-MEM-03")]
     public int HitWave()
     {
         for (int i = 0; i < _wave.Length; i++)

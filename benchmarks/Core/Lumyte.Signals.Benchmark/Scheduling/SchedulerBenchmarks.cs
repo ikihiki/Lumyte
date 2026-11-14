@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures scheduler reservation coalescing without operating system dispatch latency.</summary>
-[BenchmarkCategory("Core", "Signals", "Scheduling")]
+[BenchmarkCategory("Core", "Signals", "Scheduling", "Screening", "Comparison", "Diagnostic")]
 public class SchedulerBenchmarks
 {
     private readonly ManualScheduler _scheduler = new();
@@ -23,7 +23,6 @@ public class SchedulerBenchmarks
     /// <summary>Changes sixteen times, then drains the single scheduled delivery.</summary>
     /// <returns>The final observed value.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-06")]
     public int Coalesced16()
     {
         for (int index = 0; index < 16; index++)
@@ -38,7 +37,6 @@ public class SchedulerBenchmarks
     /// <summary>Pauses delivery during changing writes, then resumes and drains the deterministic queue.</summary>
     /// <returns>The final observed revision value.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-06")]
     public int PauseResume()
     {
         _effect.Pause();

@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Checks passive shared graphs after related or unrelated mutation generations change.</summary>
-[BenchmarkCategory("Core", "Signals", "Computed")]
+[BenchmarkCategory("Core", "Signals", "Computed", "Screening", "Comparison", "Diagnostic")]
 public class ValidationBenchmarks
 {
     private Signal<int> _source = null!;
@@ -39,7 +39,6 @@ public class ValidationBenchmarks
     /// <summary>Changes an unrelated signal, then validates the unchanged shared graph.</summary>
     /// <returns>The graph result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-02")]
     public int ReadAfterUnrelatedWrite()
     {
         _unrelated.Value = ++_unrelatedNext;
@@ -49,7 +48,6 @@ public class ValidationBenchmarks
     /// <summary>Changes a graph input, then computes its fresh result.</summary>
     /// <returns>The graph result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-SIG-02")]
     public int UpdateAndRead()
     {
         _source.Value = ++_next;

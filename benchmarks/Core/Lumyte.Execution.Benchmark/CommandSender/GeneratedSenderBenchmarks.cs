@@ -4,7 +4,7 @@ namespace Lumyte.Execution.Benchmark;
 
 /// <summary>Measures a generated static endpoint in its isolated benchmark process.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution", "Commands")]
+[BenchmarkCategory("Core", "Execution", "Commands", "Screening", "Comparison", "Diagnostic")]
 public class GeneratedSenderBenchmarks
 {
     private readonly SenderState _state = new();
@@ -28,6 +28,6 @@ public class GeneratedSenderBenchmarks
     /// <summary>Sends through the actual generated expanded wrapper.</summary>
     /// <returns>The receiver result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-EXEC-02", "Commands")]
+    [BenchmarkCategory("Commands")]
     public int GeneratedSender() => _fixture.Read(_sender.PlayAsync(7));
 }

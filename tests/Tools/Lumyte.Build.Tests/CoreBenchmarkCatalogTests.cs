@@ -52,8 +52,8 @@ public sealed class CoreBenchmarkCatalogTests
         Assert.Equal([binary, "--catalog"], CoreBenchmarkCatalog.Arguments(binary, "verify", "*", null, output, true));
         Assert.Equal([binary, "--mode", "verify"], CoreBenchmarkCatalog.Arguments(binary, "verify", "*", null, output, false));
         Assert.Equal(
-            [binary, "--mode", "screen", "--filter", "*Updated*", "--artifacts", output, "--anyCategories", "CORE-SIG-02"],
-            CoreBenchmarkCatalog.Arguments(binary, "screen", "*Updated*", "CORE-SIG-02", output, false));
+            [binary, "--mode", "screen", "--filter", "*Updated*", "--artifacts", output, "--anyCategories", "Screening"],
+            CoreBenchmarkCatalog.Arguments(binary, "screen", "*Updated*", "Screening", output, false));
         Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.Arguments(binary, "compare", string.Empty, null, output, false));
     }
 

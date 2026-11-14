@@ -26,7 +26,7 @@ public static class BenchmarkChecks
         TextDocumentSnapshot before = document.CaptureSnapshot();
         if (document.TryReplace(1, new TextSpan(0, 1), "z", new TextSelection(1, 1), TextEditOrigin.Keyboard) || document.CaptureSnapshot() != before || document.DrainChanges().Count != 0)
         {
-            throw new InvalidOperationException("CORE-TEXT-06 stale revision mutated published state.");
+            throw new InvalidOperationException("Stale revision mutated published state.");
         }
 
         foreach (int count in new[] { 1, 32, 256 })

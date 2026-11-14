@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Uses actual embedded readers, DI registrations and Execution workflows.</summary>
-[BenchmarkCategory("Core", "Resources", "Integration")]
+[BenchmarkCategory("Core", "Resources", "Integration", "Screening", "Comparison", "Diagnostic")]
 public class IntegrationBenchmarks
 {
     private MemoryManager _memory = null!;
@@ -40,7 +40,6 @@ public class IntegrationBenchmarks
     /// <summary>Registers and initially resolves a real singleton resource manager.</summary>
     /// <returns>Whether a child DI scope resolves the same manager.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-12")]
     public async Task<bool> RegisterAndResolveAsync()
     {
         var services = new ServiceCollection();
@@ -58,7 +57,6 @@ public class IntegrationBenchmarks
     /// <summary>Opens an independent bounded range in an already loaded assembly.</summary>
     /// <returns>The range byte sum.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-13")]
     public async Task<int> EmbeddedRangeAsync()
     {
         await using ResourceSourceSnapshot snapshot = await _source.OpenSnapshotAsync(new ResourceId("Benchmark.Payload"));
@@ -76,7 +74,6 @@ public class IntegrationBenchmarks
     /// <summary>Builds a checksum through the real embedded source pipeline.</summary>
     /// <returns>The complete payload checksum.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-14")]
     public async Task<int> EmbeddedPipelineAsync()
     {
         await using ResourceManager manager = new("embedded", _source, [new ChecksumStage()], _memory, new ResourcesBenchmarks.InlineRuntime());
@@ -88,7 +85,6 @@ public class IntegrationBenchmarks
     /// <summary>Builds and releases a four-node chain through actual Execution jobs.</summary>
     /// <returns>The chain result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-15")]
     public async Task<int> ExecutionChainAsync()
     {
         await using ResourceManager manager = ResourcesBenchmarks.CreateManager(_memory, 4, _resources);
@@ -100,7 +96,6 @@ public class IntegrationBenchmarks
     /// <summary>Rejects construction before the actual Execution runtime starts and drains failed ownership.</summary>
     /// <returns>Whether the admission boundary rejected the request.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-RES-16")]
     public async Task<bool> BeforeStartRejectedAsync()
     {
         var resources = new ResourceRuntime();

@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Memory.Benchmark;
 
 /// <summary>Fixed background workers perform finite shared-ledger waves.</summary>
-[BenchmarkCategory("Core", "Memory", "Concurrency")]
+[BenchmarkCategory("Core", "Memory", "Concurrency", "Screening", "Comparison", "Diagnostic")]
 public class ContentionBenchmarks
 {
     private readonly MemoryPoolId _pool = new("contended");
@@ -38,7 +38,6 @@ public class ContentionBenchmarks
     /// <summary>Starts all workers, joins the finite wave and consumes final ledger state.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("CORE-MEM-06")]
     public ulong SharedBudgetWave()
     {
         _completed.Reset(Workers);
