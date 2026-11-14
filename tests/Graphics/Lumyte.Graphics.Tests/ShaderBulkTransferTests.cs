@@ -175,6 +175,8 @@ public sealed class ShaderBulkTransferTests
 
         public static int TransferSize => 12;
 
+        public static int ReferenceCount => 0;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => Fields();
 
         public void Write<TWriter>(ref TWriter writer)
@@ -191,6 +193,8 @@ public sealed class ShaderBulkTransferTests
         public static string ShaderTypeName => "Wire";
 
         public static int TransferSize => 8;
+
+        public static int ReferenceCount => 0;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields => Fields();
 

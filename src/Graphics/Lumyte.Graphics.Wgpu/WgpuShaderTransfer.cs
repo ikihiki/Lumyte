@@ -12,10 +12,12 @@ internal static class WgpuShaderTransfer
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
+        int referenceCount = T.ReferenceCount;
+        WgpuShaderValueWriter.ValidateExpectedCount(size, referenceCount);
         var storage = new WgpuRootStorage(owner, size);
         try
         {
-            var writer = new WgpuShaderValueWriter(owner, size, storage, null, 0, diagnostic);
+            var writer = new WgpuShaderValueWriter(owner, size, storage, default, referenceCount, diagnostic);
             value.Write(ref writer);
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
@@ -34,10 +36,11 @@ internal static class WgpuShaderTransfer
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
+        WgpuShaderValueWriter.ValidateExpectedCount(size, 0);
         var storage = new WgpuRootStorage(owner, size);
         try
         {
-            var writer = new WgpuShaderValueWriter(owner, size, storage, null, 0, diagnostic);
+            var writer = new WgpuShaderValueWriter(owner, size, storage, default, 0, diagnostic);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
@@ -66,23 +69,32 @@ internal static class WgpuShaderTransfer
         Array.Clear(metadata, start, source.Length);
         try
         {
-            if (!storage.IsMapped || storage.Memory != MemoryPreference.Upload)
+            ulong offset = checked(elementOffset * (ulong)stride);
+            int length = checked(source.Length * stride);
+
+            int referenceCount = T.ReferenceCount;
+            WgpuShaderValueWriter.ValidateExpectedCount(stride, referenceCount);
+            if (storage is not WgpuBuffer<byte> buffer || !ReferenceEquals(buffer.Owner, owner))
             {
-                throw new InvalidOperationException("CopyFrom requires idle mapped upload storage.");
+                throw new ArgumentException("Upload storage belongs to another backend or device.", nameof(storage));
             }
 
             if (source.IsEmpty)
             {
+                if (!storage.IsMapped || storage.Memory != MemoryPreference.Upload)
+                {
+                    throw new InvalidOperationException("CopyFrom requires idle mapped upload storage.");
+                }
+
                 return;
             }
 
-            ulong offset = checked(elementOffset * (ulong)stride);
-            int length = checked(source.Length * stride);
-            storage.ValidateByteRange(offset, (ulong)length);
+            Span<byte> upload = buffer.GetMappedUploadSpan(offset, length);
+            using GraphicsValidation.HostWriteLease? lease = owner.Validation?.BeginHostWrite(storage, offset, (ulong)length);
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new WgpuShaderValueWriter(owner, stride, null, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
+                var writer = new WgpuShaderValueWriter(owner, stride, null, upload.Slice(checked(i * stride), stride), referenceCount, diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();
                 diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);

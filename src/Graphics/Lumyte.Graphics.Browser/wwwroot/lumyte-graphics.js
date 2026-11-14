@@ -108,6 +108,19 @@ export function copyBufferFrom(handle, source, offset) {
     source.copyTo(new Uint8Array(handle.mapped, offset, source.byteLength));
 }
 
+export function acquireMappedUploadRange(handle, offset, length) {
+    if (handle.disposed || !handle.mapped) throw new Error("Upload storage is not mapped.");
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length <= 0 || offset > handle.mapped.byteLength || length > handle.mapped.byteLength - offset) throw new RangeError("Upload range is outside the mapping.");
+    return new Uint8Array(handle.mapped, offset, length);
+}
+
+export function copyMappedUploadRange(view, source, relativeOffset) {
+    if (!Number.isInteger(relativeOffset) || relativeOffset < 0 || relativeOffset > view.byteLength || source.byteLength > view.byteLength - relativeOffset) throw new RangeError("Upload write is outside the acquired range.");
+    // MemoryView cannot be borrowed as a JS typed array. Its synchronous slice copies
+    // across the bridge; neither the MemoryView nor its managed span is retained.
+    view.set(source.slice(), relativeOffset);
+}
+
 export function copyBufferTo(handle, destination, offset) {
     destination.set(new Uint8Array(handle.mapped, offset, destination.byteLength));
 }

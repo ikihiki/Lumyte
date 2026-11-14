@@ -11,6 +11,13 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 /// <summary>Exercises final root streaming through ordinary public graph callbacks.</summary>
 public sealed class GraphFinalRootTests
 {
+    /// <summary>Supplies the immutable reference-slot count for a specialized test wire type.</summary>
+    private interface IReferenceCount
+    {
+        /// <summary>Gets the exact number of wire slots.</summary>
+        static abstract int Count { get; }
+    }
+
     /// <summary>Managed providers stream once, retain no CPU root, and reuse their frozen generation.</summary>
     [Fact]
     public void ManagedSelectionStreamsOnceWithoutSnapshotFallback()
@@ -18,7 +25,7 @@ public sealed class GraphFinalRootTests
         using var graph = new RenderGraph(new PublicGraphConsumerDevice());
         using var pipeline = new PublicGraphConsumerComputePipeline(Artifact());
         var commands = new RootCommands();
-        var arguments = new RootInput { Value = 17 };
+        var arguments = new RootInput<NoReferences> { Value = 17 };
         graph.AddPass("streamed root", context =>
         {
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
@@ -69,7 +76,7 @@ public sealed class GraphFinalRootTests
         {
             IGpuRef<IGraphicsTextureView> texture = context.GetGpuRef(source);
             data.SetTransferredReferences(0, Metadata(texture));
-            var arguments = new RootInput { Data = context.GetGpuRef(buffer), Value = 23 };
+            var arguments = new RootInput<OneReference> { Data = context.GetGpuRef(buffer), Value = 23 };
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
             encoder.SetArguments(arguments);
@@ -124,7 +131,7 @@ public sealed class GraphFinalRootTests
         {
             IGpuRef<IGraphicsTextureView> valid = context.GetGpuRef(first);
             data.SetTransferredReferences(0, Metadata(valid));
-            var arguments = new RootInput { Data = context.GetGpuRef(buffer), Value = 31 };
+            var arguments = new RootInput<OneReference> { Data = context.GetGpuRef(buffer), Value = 31 };
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
             encoder.SetArguments(arguments);
@@ -175,7 +182,7 @@ public sealed class GraphFinalRootTests
             Assert.Same(validReference.Resource, wrongReference.Resource);
             Assert.NotEqual(validReference.OffsetInBytes, wrongReference.OffsetInBytes);
             data.SetTransferredReferences(0, new ShaderDependencyMetadata([validReference]));
-            var arguments = new RootInput { Data = context.GetGpuRef(links) };
+            var arguments = new RootInput<OneReference> { Data = context.GetGpuRef(links) };
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
             encoder.SetArguments(arguments);
@@ -228,7 +235,7 @@ public sealed class GraphFinalRootTests
             Assert.True(own.SizeInBytes > expected.SizeInBytes);
             Assert.NotEqual(own.RegistrationOffsetInBytes, expected.RegistrationOffsetInBytes);
             Assert.NotEqual(own.RegistrationSizeInBytes, expected.RegistrationSizeInBytes);
-            var arguments = new RootInput { Data = cached };
+            var arguments = new RootInput<OneReference> { Data = cached };
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
             encoder.SetArguments(arguments);
@@ -271,9 +278,9 @@ public sealed class GraphFinalRootTests
             Assert.NotSame(((IShaderReference)declared).Resource, ((IShaderReference)cached!).Resource);
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
-            encoder.SetArguments(new RootInput { Data = declared });
+            encoder.SetArguments(new RootInput<OneReference> { Data = declared });
             TestRootOwner previous = commands.Encoder.Selected!;
-            Assert.Throws<ArgumentException>(() => encoder.SetArguments(new RootInput { Data = cached }));
+            Assert.Throws<ArgumentException>(() => encoder.SetArguments(new RootInput<OneReference> { Data = cached }));
             Assert.Same(previous, commands.Encoder.Selected);
             encoder.Dispatch(1);
             Assert.DoesNotContain((IShaderReference)cached!, Assert.Single(commands.Encoder.Bindings).References);
@@ -341,7 +348,18 @@ public sealed class GraphFinalRootTests
         return ShaderArtifact.PackTarget(ShaderTarget.SpirV, ShaderStage.Compute, "main", "metadata-only-test-fixture", code, reflection);
     }
 
-    private struct RootInput : IShaderArguments
+    private readonly struct NoReferences : IReferenceCount
+    {
+        public static int Count => 0;
+    }
+
+    private readonly struct OneReference : IReferenceCount
+    {
+        public static int Count => 1;
+    }
+
+    private struct RootInput<TCount> : IShaderArguments
+        where TCount : struct, IReferenceCount
     {
         private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
 
@@ -352,6 +370,8 @@ public sealed class GraphFinalRootTests
         public static string ShaderTypeName => "ConsumerLinkRoot";
 
         public static int TransferSize => 32;
+
+        public static int ReferenceCount => TCount.Count;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("Unexpected diagnostic probe.");
 
@@ -389,13 +409,13 @@ public sealed class GraphFinalRootTests
                 writer.WriteValue(bytes);
             }
         }
+    }
 
-        [StructLayout(LayoutKind.Explicit, Size = 32)]
-        private struct Wire
-        {
-            [FieldOffset(16)]
-            public uint Value;
-        }
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    private struct Wire
+    {
+        [FieldOffset(16)]
+        public uint Value;
     }
 
     private sealed class MemoryStorage(int size) : ITestShaderRootStorage

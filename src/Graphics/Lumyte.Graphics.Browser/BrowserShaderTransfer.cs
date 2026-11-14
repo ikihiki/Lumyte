@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.JavaScript;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
@@ -12,10 +13,12 @@ internal static class BrowserShaderTransfer
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
+        int referenceCount = T.ReferenceCount;
+        BrowserShaderValueWriter.ValidateExpectedCount(size, referenceCount);
         var storage = new BrowserRootStorage(owner, size);
         try
         {
-            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, diagnostic);
+            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, referenceCount, diagnostic);
             value.Write(ref writer);
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
@@ -34,10 +37,11 @@ internal static class BrowserShaderTransfer
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
+        BrowserShaderValueWriter.ValidateExpectedCount(size, 0);
         var storage = new BrowserRootStorage(owner, size);
         try
         {
-            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, diagnostic);
+            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, 0, diagnostic);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
@@ -64,25 +68,35 @@ internal static class BrowserShaderTransfer
 
         int start = checked((int)elementOffset);
         Array.Clear(metadata, start, source.Length);
+        JSObject? upload = null;
         try
         {
-            if (!storage.IsMapped || storage.Memory != MemoryPreference.Upload)
+            ulong offset = checked(elementOffset * (ulong)stride);
+            int length = checked(source.Length * stride);
+
+            int referenceCount = T.ReferenceCount;
+            BrowserShaderValueWriter.ValidateExpectedCount(stride, referenceCount);
+            if (storage is not BrowserBuffer<byte> buffer || !ReferenceEquals(buffer.Owner, owner))
             {
-                throw new InvalidOperationException("CopyFrom requires idle mapped upload storage.");
+                throw new ArgumentException("Upload storage belongs to another backend or device.", nameof(storage));
             }
 
             if (source.IsEmpty)
             {
+                if (!storage.IsMapped || storage.Memory != MemoryPreference.Upload)
+                {
+                    throw new InvalidOperationException("CopyFrom requires idle mapped upload storage.");
+                }
+
                 return;
             }
 
-            ulong offset = checked(elementOffset * (ulong)stride);
-            int length = checked(source.Length * stride);
-            storage.ValidateByteRange(offset, (ulong)length);
+            upload = buffer.AcquireMappedUploadRange(offset, length);
+            using GraphicsValidation.HostWriteLease? lease = owner.Validation?.BeginHostWrite(storage, offset, (ulong)length);
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new BrowserShaderValueWriter(owner, stride, null, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
+                var writer = new BrowserShaderValueWriter(owner, stride, null, upload, checked(i * stride), referenceCount, diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();
                 diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
@@ -93,6 +107,22 @@ internal static class BrowserShaderTransfer
         {
             Array.Clear(metadata, start, source.Length);
             throw;
+        }
+        finally
+        {
+            DisposeUploadView(upload);
+        }
+    }
+
+    private static void DisposeUploadView(JSObject? upload)
+    {
+        try
+        {
+            upload?.Dispose();
+        }
+        catch
+        {
+            // Releasing a private view must not mask a codec failure or unmap the GPU buffer.
         }
     }
 

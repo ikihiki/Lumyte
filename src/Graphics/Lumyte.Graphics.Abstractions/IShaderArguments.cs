@@ -12,6 +12,10 @@ public interface IShaderArguments
     /// <summary>Gets the C# wire size, independent of shader reflection and instances.</summary>
     static abstract int TransferSize { get; }
 
+    /// <summary>Gets the exact number of declared 16-byte reference slots in every wire value, including repeated references to the same resource.</summary>
+    /// <remarks>This instance-independent static provider must not inspect values or invoke reference getters. Numeric-only values return zero. The count must be nonnegative and no greater than <see cref="TransferSize"/> divided by sixteen; each successful write must emit exactly this many reference fixups.</remarks>
+    static abstract int ReferenceCount { get; }
+
     /// <summary>Gets C# field locations for explicit generic diagnostics; capture defers this getter through a static provider without retaining the value.</summary>
     static virtual IReadOnlyList<ShaderTransferField> TransferFields => [];
 

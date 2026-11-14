@@ -9,6 +9,8 @@ internal struct ManualBadAbiValue(NativeAbiValue value, int mode = 0) : IShaderA
 
     public static int TransferSize => 88;
 
+    public static int ReferenceCount => 5;
+
     public static IReadOnlyList<ShaderTransferField> TransferFields => Fields<NativeAbiValue>();
 
     public void Write<TWriter>(ref TWriter writer)

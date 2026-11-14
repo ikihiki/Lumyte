@@ -76,6 +76,8 @@ public sealed class UnifiedManualTransferTests
 
         public static int TransferSize => 4;
 
+        public static int ReferenceCount => 0;
+
         public uint Value
         {
             get => _value;

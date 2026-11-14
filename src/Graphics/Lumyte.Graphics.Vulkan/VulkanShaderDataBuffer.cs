@@ -44,7 +44,14 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
 
     public bool IsMapped => Storage.IsMapped;
 
-    Silk.NET.Vulkan.Buffer IVulkanShaderBuffer.ShaderBuffer => ((IVulkanShaderBuffer)Storage).ShaderBuffer;
+    ulong IVulkanShaderBuffer.ShaderAddress
+    {
+        get
+        {
+            ValidateAlive();
+            return ((IVulkanShaderBuffer)Storage).ShaderAddress;
+        }
+    }
 
     public object ShaderHandle => ((IShaderRawBuffer)Storage).ShaderHandle;
 
@@ -77,18 +84,18 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
     public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
     {
         ValidateAlive();
-        if (Memory != MemoryPreference.Upload || !IsMapped)
-        {
-            throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
-        }
-
-        if (elementOffset > Count || (ulong)source.Length > Count - elementOffset)
-        {
-            throw new ArgumentOutOfRangeException(nameof(elementOffset));
-        }
-
         if (source.IsEmpty)
         {
+            if (Memory != MemoryPreference.Upload || !IsMapped)
+            {
+                throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
+            }
+
+            if (elementOffset > Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            }
+
             return;
         }
 

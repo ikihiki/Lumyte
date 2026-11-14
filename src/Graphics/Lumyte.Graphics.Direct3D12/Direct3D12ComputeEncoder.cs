@@ -119,7 +119,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         Direct3D12Buffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
         owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
-        owner.Indirect(buffer.Native, arguments.OffsetInBytes, 2);
+        owner.Indirect(buffer.Native, buffer.GpuAddress, arguments.OffsetInBytes, 2);
         validationRecording?.Commit();
     }
 

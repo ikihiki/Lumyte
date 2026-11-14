@@ -89,6 +89,8 @@ public sealed class ShaderUploadDiagnosticTests
 
         public static int TransferSize => sizeof(uint);
 
+        public static int ReferenceCount => 0;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Number", 0, sizeof(uint), typeof(uint))];
 
         public readonly void Write<TWriter>(ref TWriter writer)
@@ -102,6 +104,8 @@ public sealed class ShaderUploadDiagnosticTests
         public static string ShaderTypeName => "UploadNumber";
 
         public static int TransferSize => sizeof(uint);
+
+        public static int ReferenceCount => 0;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields
         {

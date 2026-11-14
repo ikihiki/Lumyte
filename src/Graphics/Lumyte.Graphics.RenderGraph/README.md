@@ -244,3 +244,15 @@ pipeline-identity check all precede native emission, rejecting
 raw command-buffer or pipeline disposal before native use. Host failure preserves
 the old root selection, but cannot undo caller-requested resource disposal, table
 autobinding, or already-issued driver commands.
+
+### 厳密な参照数とmapped batchの契約
+
+IShaderArgumentsは既定実装のない `static abstract int ReferenceCount { get; }`を必須とする。生成型は同じresourceの重複も含めた物理16-byte slot数を返し、数値だけなら0とする。手書き型もgetterやinstanceに依存しない厳密な数を宣言する。backend writerは0 <= N <= wireSize / 16を検査し、WriteReferenceの超過とCompleteの不足をmetadata／root公開前に拒否する。N > 0ではwriterが厳密な長さの非公開参照配列を持ち、immutable metadata owner自身がIReadOnlyListを実装する。mutable配列を公開せず、List、ToArrayやread-only wrapperを介さない。N = 0はbackendごとの共有empty ownerを返し、rowごとのownerを作らない。明示Captureの検査用記録とは別の経路である。
+
+native CopyFromはbatch全体のmapped upload spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書く。segmentごとのCopyBytesFromは呼ばない。BrowserではJS bufferをC# Spanとして借用できないため、一つの検査済みUint8Array viewへsegmentごとにJS.setでコピーし、finallyでviewだけを解放する。GPU bufferはUnmapしない。writer位置・残容量の検査は全modeで必須とする。
+
+Validation非nullの場合だけHostWriteLeaseを確保し、codec callback中の重複raw書き込み・nested batchとMap／Unmap／Disposeを拒否する。finallyで非throwのcleanupを行い、失敗時は元の例外を維持して要求範囲のmetadataすべてをnullにする。byteの部分更新は許容する。既定OFFでは利用者が有効なmappingと並行Unmap／Disposeの同期を保証し、追加flag・lock・待機・pinは設けない。検証OFFで無効なpointerへのアクセスを起こす試験は行わない。
+
+Vulkanは必要なaddress usage／allocation flagsを持つbufferの作成・bind時にbase addressを一度保存し、各参照でchecked offsetを加算する。D3D12 native bufferも作成時のaddressを保存し、index／indirectも保存fieldを使用する。参照ごとのdriver queryやglobal cacheは設けない。Graphの宣言照合、native root即時定数、Wgpu／Browserの非公開uniform ownerとdescriptor pool／cacheは変更しない。N > 0の配列とowner、bufferごとのmetadata配列、実行時binding確保は残るため、全体のzero allocation／zero copyや未測定の性能向上を保証しない。
+
+whole-table変更とValidation OFF時のGraph BufferTracking除去は、この三点のCopyFrom変更範囲に含めません。既存の宣言照合は維持します。性能比較を行う場合の固定baselineは81949であり、過去の測定値を今回の結果として読み替えません。

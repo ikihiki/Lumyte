@@ -9,6 +9,8 @@ internal record struct ConsumerLinkArguments(IGpuRef<ConsumerLink> Data, float F
 
     public static int TransferSize => 32;
 
+    public static int ReferenceCount => 1;
+
     public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Data", 0, 16, typeof(ShaderReferenceSlot), true), new("Float", 16, 4, typeof(float))];
 
     public void Write<TWriter>(ref TWriter writer)

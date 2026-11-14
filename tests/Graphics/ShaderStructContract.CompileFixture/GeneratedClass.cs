@@ -5,6 +5,8 @@ internal partial class GeneratedClass : IShaderArguments
 {
     public static string ShaderTypeName => "Rejected";
     public static int TransferSize => 4;
+
+    public static int ReferenceCount => 0;
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter, allows ref struct { }
 }

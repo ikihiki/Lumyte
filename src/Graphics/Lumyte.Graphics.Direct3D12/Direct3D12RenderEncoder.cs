@@ -199,7 +199,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         Direct3D12Buffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
         owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
-        owner.Indirect(buffer.Native, arguments.OffsetInBytes, 0);
+        owner.Indirect(buffer.Native, buffer.GpuAddress, arguments.OffsetInBytes, 0);
         validationRecording?.Commit();
     }
 
@@ -212,7 +212,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         PrepareDraw(true);
         owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), _indexOffset, checked(_indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
-        owner.Indirect(buffer.Native, arguments.OffsetInBytes, 1);
+        owner.Indirect(buffer.Native, buffer.GpuAddress, arguments.OffsetInBytes, 1);
         validationRecording?.Commit();
     }
 
@@ -229,7 +229,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
-        NativeMethods.Indices(owner.Native, buffer.Native, indices.OffsetInBytes, checked((uint)indices.SizeInBytes), format == IndexFormat.Uint16 ? 57u : 42u);
+        NativeMethods.Indices(owner.Native, buffer.GpuAddress, indices.OffsetInBytes, checked((uint)indices.SizeInBytes), format == IndexFormat.Uint16 ? 57u : 42u);
         validationRecording?.Commit();
         _indexFormat = format;
         _indexCount = indices.Count;

@@ -9,6 +9,8 @@ internal record struct ConsumerTextureArguments(IGpuRef<IGraphicsTextureView> In
 
     public static int TransferSize => 48;
 
+    public static int ReferenceCount => 2;
+
     public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Input", 0, 16, typeof(ShaderReferenceSlot), true), new("Backdrop", 16, 16, typeof(ShaderReferenceSlot), true), new("Float", 32, 4, typeof(float))];
 
     public void Write<TWriter>(ref TWriter writer)

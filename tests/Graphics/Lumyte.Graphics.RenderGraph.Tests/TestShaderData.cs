@@ -9,6 +9,8 @@ internal readonly struct TestShaderData : IShaderArguments
 
     public static int TransferSize => System.Runtime.CompilerServices.Unsafe.SizeOf<TestShaderData>();
 
+    public static int ReferenceCount => 0;
+
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
 }

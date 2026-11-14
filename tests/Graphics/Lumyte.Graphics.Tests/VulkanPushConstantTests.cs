@@ -308,6 +308,8 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
 
         public static int TransferSize => TSize.Size;
 
+        public static int ReferenceCount => TSize.Size == 4 ? 0 : 1;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => _fields;
 
         internal uint Number { get; set; } = number;

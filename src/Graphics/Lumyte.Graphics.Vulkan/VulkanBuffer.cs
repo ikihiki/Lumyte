@@ -10,6 +10,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
     private readonly VulkanDevice _owner;
     private readonly VkBuffer _native;
     private readonly DeviceMemory _memory;
+    private readonly ulong _shaderAddress;
     private byte* _pointer;
     private bool _mapped;
     private bool _pending;
@@ -61,6 +62,11 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             Check(owner.Api.AllocateMemory(owner.NativeDevice, &allocation, null, &memory), "AllocateMemory");
             Check(owner.Api.BindBufferMemory(owner.NativeDevice, buffer, memory, 0), "BindBufferMemory");
             (_native, _memory) = (buffer, memory);
+            if ((Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) != 0)
+            {
+                var addressInfo = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
+                _shaderAddress = owner.Api.GetBufferDeviceAddress(owner.NativeDevice, &addressInfo);
+            }
         }
         catch
         {
@@ -78,7 +84,19 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         }
     }
 
-    Silk.NET.Vulkan.Buffer IVulkanShaderBuffer.ShaderBuffer => Native;
+    ulong IVulkanShaderBuffer.ShaderAddress
+    {
+        get
+        {
+            _ = Native;
+            if ((Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) == 0)
+            {
+                throw new InvalidOperationException("The buffer does not support shader addresses.");
+            }
+
+            return _shaderAddress;
+        }
+    }
 
     public object ShaderHandle => Native;
 
@@ -162,6 +180,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void Unmap()
     {
+        _owner.Validation?.ValidateUnmap(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -219,6 +238,18 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
         _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         new ReadOnlySpan<byte>(_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
+    }
+
+    internal Span<byte> GetMappedUploadSpan(ulong offset, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ValidateByteRange(offset, (ulong)length);
+        RequireMapping(MemoryPreference.Upload);
+        int start = checked((int)offset);
+        _ = checked(start + length);
+        nuint address = checked((nuint)_pointer + (nuint)start);
+        _ = checked(address + (nuint)length);
+        return new Span<byte>((void*)address, length);
     }
 
     private static uint SelectMemoryType(PhysicalDeviceMemoryProperties properties, uint bits, MemoryPropertyFlags required)

@@ -14,7 +14,7 @@ internal static class Direct3D12ShaderTransfer
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
         ValidateRootSize(size);
-        var writer = new Direct3D12ShaderValueWriter(owner, size, payload, null, 0, diagnostic);
+        var writer = new Direct3D12ShaderValueWriter(owner, size, payload, T.ReferenceCount, diagnostic);
         value.Write(ref writer);
         IShaderReferenceMetadata references = writer.Complete();
         diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
@@ -27,7 +27,7 @@ internal static class Direct3D12ShaderTransfer
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
         ValidateRootSize(size);
-        var writer = new Direct3D12ShaderValueWriter(owner, size, payload, null, 0, diagnostic);
+        var writer = new Direct3D12ShaderValueWriter(owner, size, payload, 0, diagnostic);
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         IShaderReferenceMetadata references = writer.Complete();
         diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
@@ -39,32 +39,43 @@ internal static class Direct3D12ShaderTransfer
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(metadata);
-        int stride = T.TransferSize;
-        if (stride <= 0 || elementOffset > (ulong)metadata.Length || (ulong)source.Length > (ulong)metadata.Length - elementOffset)
+        if (elementOffset > (ulong)metadata.Length || (ulong)source.Length > (ulong)metadata.Length - elementOffset)
         {
             throw new ArgumentOutOfRangeException(nameof(elementOffset));
-        }
-
-        if (source.IsEmpty)
-        {
-            return;
         }
 
         int start = checked((int)elementOffset);
         Array.Clear(metadata, start, source.Length);
         try
         {
+            int stride = T.TransferSize;
+            if (stride <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            }
+
             ulong offset = checked(elementOffset * (ulong)stride);
             int length = checked(source.Length * stride);
-            storage.ValidateByteRange(offset, (ulong)length);
-            if (!storage.IsMapped || storage.Memory != MemoryPreference.Upload)
+
+            int referenceCount = T.ReferenceCount;
+            Direct3D12ShaderValueWriter.ValidateExpectedCount(stride, referenceCount);
+
+            if (source.IsEmpty)
             {
-                throw new InvalidOperationException("CopyFrom requires idle mapped upload storage.");
+                return;
             }
+
+            if (storage is not Direct3D12Buffer<byte> native)
+            {
+                throw new ArgumentException("Shader upload requires native backend storage.", nameof(storage));
+            }
+
+            Span<byte> destination = native.GetMappedUploadSpan(offset, length);
+            using GraphicsValidation.HostWriteLease? lease = owner.Validation?.BeginHostWrite(storage, offset, (ulong)length);
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new Direct3D12ShaderValueWriter(owner, stride, default, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
+                var writer = new Direct3D12ShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride), referenceCount, diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();
                 diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);

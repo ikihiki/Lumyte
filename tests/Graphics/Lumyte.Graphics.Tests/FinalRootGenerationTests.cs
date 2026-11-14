@@ -248,6 +248,8 @@ public sealed class FinalRootGenerationTests
 
         public static int TransferSize => Marshal.SizeOf<Wire>();
 
+        public static int ReferenceCount => 2;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields =>
         [
             new(nameof(Number), 0, 4, typeof(uint)),

@@ -4,6 +4,46 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## address／mapped batch／exact reference countの三改善（2026-11-15）
+
+81949cf0を基準に、次の三点だけを先に独立checkpoint化した。
+
+- Vulkan bufferはaddress usage／allocation flagsを満たしてbindした後、一度だけGPU base addressを取得する。
+  typed shader bufferも同じownerのcached base＋checked byte offsetを使う。D3D12もnative buffer作成時にaddressをcacheする。
+  global handle dictionaryはなく、disposed／mappedなど既存native preconditionをgetterで検査する。
+- Native CopyFromは要求範囲のbyte数／mapping／offset／pointer算術を一度検査してmapped Spanを借り、row writerはsliceへ直接書く。
+  WriteValueごとのCopyBytesFrom呼び出しと再検査を除去するが、writerのposition／capacity／Complete検査は全構成で必須。
+  BrowserはC# SpanとしてJS backingを借りず、一つのchecked Uint8Array viewを取得し、既存の同期bridge copyで書く。
+  finallyでprivate viewを解放し、GPU unmapはしない。Browserをzero-copyとは呼ばない。
+- IShaderArguments.ReferenceCountを必須static abstractとし、生成側は物理IGpuRef slot数、手書き側も正確な数を宣言する。
+  同じresourceへの重複slotも数える。Nは非負かつwireSize/16以下としてallocation前に検査する。
+  N>0はprivateな長さNの参照arrayを一つ確保し、metadata owner自身がreadonly listを提供する。
+  List／growth backing／ToArray copy／read-only wrapperを廃止し、N=0はbackendごとのshared emptyを使う。
+  over-countは余分なwire書き込み前、under-countはmetadata／native Setの公開前に拒否する。
+
+HostWriteLeaseとactive write range追跡は既存Validationが有効な場合だけ作る。
+overlapするbatch／通常raw write、active callback中のMap／Unmap／Disposeを検出する。
+lease開始前に物理mappingとhost boundsを検査し、finally cleanupはidempotentかつ非throwing。
+検証無効では追加のtracking／protective flag／lock／pin／waitを設けない。
+callerが借用中にmappingやbufferを無効化しない責務を負い、invalid native操作を無効構成で実行するテストは行わない。
+
+失敗時は要求metadata範囲全体を無効にし、部分byte更新は許可、元の例外を保持する。
+Vulkan／D3D12 Setのstack即時native記録、Wgpu／Browserのbackend-private uniform ownerは変更しない。
+このcheckpointではwhole-table binding／Graphの粗いoptional trackingは未実装であり、後続の別commitとして扱う。
+
+検証:
+
+- Graphics Debug／Release各283成功・失敗0・97skip（380件）。Graph各133成功・失敗0・skip0。
+- 全host Release3,256成功・失敗0・118skip。targeted Debug／Release各41成功・失敗0・skip0。
+- focused count／lease／native関連138成功はlavapipe実行として区別し、最終targetedはRadeon ICDで再検証した。
+- D3D12管理側50成功・Windows依存7skip。Browser Release compile／JS syntaxとmock bridge検査成功。
+- 独立reviewでblockerなし。missing ReferenceCountはCS0535で拒否する。
+- Windows native／Browser実行／native Khronos validation layerは未検証。
+
+ログはartifacts/validation17-{fullhost,debug,hardware-debug,hardware-release,graph-debug,d3d-release,browser-release,markdown}.log。
+focused evidenceはvalidation17-focused-*。性能はこのcheckpointのSHAを固定した別worktreeで測定し、旧三者比較は変更しない。
+以下はこの三改善より前の履歴であり、動的Listによるmetadata生成は最新実装ではない。
+
 ## struct限定のshader引数とuser選択の要素範囲（2026-11-14）
 
 共通storage契約を削除したcheckpointはd7eb189592f5e170b0399525e6eee0ed9beac7e4。

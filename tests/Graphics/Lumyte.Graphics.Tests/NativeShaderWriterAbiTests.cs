@@ -63,6 +63,43 @@ public sealed class NativeShaderWriterAbiTests
             }
 
             await CheckAsync(device, artifact, ShaderTarget.SpirV);
+            await CheckAddressLifetimeAsync(device);
+        }
+    }
+
+    private static async Task CheckAddressLifetimeAsync(VulkanDevice device)
+    {
+        object? previous = null;
+        for (int generation = 0; generation < 2; generation++)
+        {
+            using IGraphicsBuffer<uint> buffer = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.ShaderRead, Memory = MemoryPreference.Upload });
+            Assert.NotSame(previous, buffer);
+            previous = buffer;
+            Type contract = buffer.GetType().GetInterfaces().Single(type => type.Name == "IVulkanShaderBuffer");
+            PropertyInfo address = contract.GetProperty("ShaderAddress")!;
+            ulong expected = Address(device, buffer);
+            Assert.NotEqual(0UL, expected);
+            Assert.Equal(expected, address.GetValue(buffer));
+            Assert.Equal(expected, address.GetValue(buffer));
+            FieldInfo cached = buffer.GetType().GetField("_shaderAddress", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Assert.Equal(expected, cached.GetValue(buffer));
+            await buffer.MapAsync();
+            try
+            {
+                TargetInvocationException mapped = Assert.Throws<TargetInvocationException>(() => address.GetValue(buffer));
+                Assert.IsType<InvalidOperationException>(mapped.InnerException);
+            }
+            finally
+            {
+                buffer.Unmap();
+            }
+
+            Assert.Equal(expected, address.GetValue(buffer));
+            buffer.Dispose();
+            TargetInvocationException disposed = Assert.Throws<TargetInvocationException>(() => address.GetValue(buffer));
+            Assert.IsType<ObjectDisposedException>(disposed.InnerException);
+
+            // Drivers may reuse addresses. Each new owner must match its own independent native query.
         }
     }
 
@@ -84,6 +121,7 @@ public sealed class NativeShaderWriterAbiTests
         Assert.Equal(88UL, upload.ShaderElementStrideInBytes);
         await upload.MapAsync();
         upload.CopyFrom([value]);
+        upload.CopyFrom([value]); // Repeated physical references reuse the same allocation address.
         upload.Unmap();
 
         // Diagnostic reflection exposes only the existing raw storage, never a new production API.
@@ -179,8 +217,9 @@ public sealed class NativeShaderWriterAbiTests
         BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var api = (Silk.NET.Vulkan.Vk)device.GetType().GetProperty("Api", flags)!.GetValue(device)!;
         var nativeDevice = (Silk.NET.Vulkan.Device)device.GetType().GetProperty("NativeDevice", flags)!.GetValue(device)!;
-        Type contract = buffer.GetType().GetInterfaces().Single(type => type.Name == "IVulkanShaderBuffer");
-        var nativeBuffer = (Silk.NET.Vulkan.Buffer)contract.GetProperty("ShaderBuffer")!.GetValue(buffer)!;
+
+        // Query the actual native handle independently of the cached ShaderAddress property.
+        var nativeBuffer = (Silk.NET.Vulkan.Buffer)buffer.GetType().GetProperty("Native", flags)!.GetValue(buffer)!;
         var info = new Silk.NET.Vulkan.BufferDeviceAddressInfo { SType = Silk.NET.Vulkan.StructureType.BufferDeviceAddressInfo, Buffer = nativeBuffer };
         return api.GetBufferDeviceAddress(nativeDevice, &info);
     }

@@ -175,6 +175,8 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(name) + ";\n" : string.Empty) +
             "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferSize => global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + Full(wire) + ">();\n" +
+            "    /// <summary>Gets the exact number of physical typed reference slots.</summary>\n" +
+            "    public static int ReferenceCount => " + referenceMembers.Count + ";\n" +
             offsets + plan + "    private static class __TransferDiagnostics\n    {\n" +
             "        static __TransferDiagnostics() { }\n" + diagnosticOffsets +
             "        internal static readonly global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> Fields = global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderTransferField[] {\n" + fields + "        });\n    }\n" +

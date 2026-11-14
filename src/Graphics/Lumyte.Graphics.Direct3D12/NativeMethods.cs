@@ -25,7 +25,7 @@ internal static partial class NativeMethods
     internal static partial void Release(nint handle);
 
     [LibraryImport(Library, EntryPoint = "buffer_create")]
-    internal static partial int BufferCreate(nint device, ulong size, int memory, int writable, out nint buffer);
+    internal static partial int BufferCreate(nint device, ulong size, int memory, int writable, out nint buffer, out ulong gpuAddress);
 
     [LibraryImport(Library, EntryPoint = "buffer_map")]
     internal static partial int BufferMap(nint buffer, ulong size, int read, out nint pointer);

@@ -6,13 +6,14 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
     where T : unmanaged
 {
     private readonly nint _native;
+    private readonly ulong _gpuAddress;
     private nint _pointer;
     private bool _disposed;
 
     internal Direct3D12Buffer(Direct3D12Device owner, BufferDesc<T> desc, BufferLayout<T> layout, ulong size)
     {
         (Owner, Layout, Count, SizeInBytes, Usage, Memory) = (owner, layout, desc.Count, size, desc.Usage, desc.Memory);
-        owner.Check(NativeMethods.BufferCreate(owner.Native, size, Memory == MemoryPreference.Upload ? 1 : Memory == MemoryPreference.Readback ? 2 : 0, (Usage & BufferUsage.ShaderWrite) != 0 ? 1 : 0, out _native));
+        owner.Check(NativeMethods.BufferCreate(owner.Native, size, Memory == MemoryPreference.Upload ? 1 : Memory == MemoryPreference.Readback ? 2 : 0, (Usage & BufferUsage.ShaderWrite) != 0 ? 1 : 0, out _native, out _gpuAddress));
     }
 
     public Type ElementType => typeof(T);
@@ -34,6 +35,15 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
     public object ShaderHandle => Native;
 
     internal Direct3D12Device Owner { get; }
+
+    internal ulong GpuAddress
+    {
+        get
+        {
+            _ = Native;
+            return _gpuAddress;
+        }
+    }
 
     internal nint Native
     {
@@ -82,6 +92,7 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
 
     public void Unmap()
     {
+        Owner.Validation?.ValidateUnmap(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!IsMapped)
         {
@@ -134,6 +145,18 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
 
         Owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         new ReadOnlySpan<byte>((byte*)_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
+    }
+
+    internal Span<byte> GetMappedUploadSpan(ulong offset, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ValidateByteRange(offset, (ulong)length);
+        RequireMapping(MemoryPreference.Upload);
+        int start = checked((int)offset);
+        _ = checked(start + length);
+        nuint address = checked((nuint)_pointer + (nuint)start);
+        _ = checked(address + (nuint)length);
+        return new Span<byte>((void*)address, length);
     }
 
     private void RequireMapping(MemoryPreference memory)

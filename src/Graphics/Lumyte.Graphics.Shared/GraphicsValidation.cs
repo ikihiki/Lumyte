@@ -15,6 +15,7 @@ public sealed class GraphicsValidation
     private readonly Dictionary<object, State> _signalStates = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<object, (object Operation, IGraphicsSemaphore? Semaphore)> _acquisitions = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<object, HashSet<object>> _semaphores = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<object, List<HostWriteLease>> _hostWrites = new(ReferenceEqualityComparer.Instance);
     private State _global = new();
     private bool _queueUnknown;
 
@@ -30,7 +31,14 @@ public sealed class GraphicsValidation
     /// <param name="size">The byte count.</param>
     public void HostAccess(object resource, ResourceAccess access, ulong offset, ulong size)
     {
-        Map(resource);
+        if ((access & ResourceAccess.HostWrite) != 0 &&
+            _hostWrites.TryGetValue(resource, out List<HostWriteLease>? writes) &&
+            size != 0 && writes.Any(write => write.Offset != write.End && offset < write.End && write.Offset < checked(offset + size)))
+        {
+            throw new InvalidOperationException("Validation: overlapping host writes.");
+        }
+
+        ValidateGpuMapping(resource);
 
         // Actual CPU access happens after explicit GPU retirement. It establishes
         // a new source scope, rather than pretending a GPU barrier performed it.
@@ -38,6 +46,36 @@ public sealed class GraphicsValidation
         Apply(state, new(resource, offset, End(offset, size), new(PipelineStage.Host, access), default, false, null, default, Host: true), false);
         _global = state;
     }
+
+    /// <summary>Validates and retains a host-write range until its callback finishes.</summary>
+    /// <param name="resource">The mapped allocation identity.</param>
+    /// <param name="offset">The first byte written.</param>
+    /// <param name="length">The number of bytes written.</param>
+    /// <returns>An idempotent, non-throwing cleanup lease; call only through an enabled validation instance.</returns>
+    public HostWriteLease BeginHostWrite(object resource, ulong offset, ulong length)
+    {
+        ulong end = checked(offset + length);
+        if (_hostWrites.TryGetValue(resource, out List<HostWriteLease>? writes) &&
+            offset != end && writes.Any(write => write.Offset != write.End && offset < write.End && write.Offset < end))
+        {
+            throw new InvalidOperationException("Validation: overlapping host writes.");
+        }
+
+        // Publish once, before recording the lease: a failed access cannot leak it.
+        HostAccess(resource, ResourceAccess.HostWrite, offset, length);
+        var lease = new HostWriteLease(this, resource, offset, end);
+        if (writes == null)
+        {
+            _hostWrites.Add(resource, writes = []);
+        }
+
+        writes.Add(lease);
+        return lease;
+    }
+
+    /// <summary>Rejects unmapping while a host-write callback is active.</summary>
+    /// <param name="resource">The mapped allocation identity.</param>
+    public void ValidateUnmap(object resource) => ValidateNoHostWrites(resource);
 
     /// <summary>Records metadata read or copy publication in command order.</summary>
     /// <param name="command">The recording owner.</param>
@@ -79,6 +117,7 @@ public sealed class GraphicsValidation
     /// <param name="resource">The resource whose release must be safe.</param>
     public void ValidateRelease(object resource)
     {
+        ValidateNoHostWrites(resource);
         if (_parents.Values.Any(parent => ReferenceEquals(parent, resource)) || _uses.Values.Any(uses => uses.Contains(resource)) || _semaphores.Values.Any(uses => uses.Contains(resource)))
         {
             throw new InvalidOperationException("Validation: live child or recorded/in-flight resource use.");
@@ -123,10 +162,8 @@ public sealed class GraphicsValidation
     /// <param name="resource">The mapped resource.</param>
     public void Map(object resource)
     {
-        if (_uses.Values.Any(uses => uses.Contains(resource)))
-        {
-            throw new InvalidOperationException("Validation: CPU mapping conflicts with GPU use.");
-        }
+        ValidateNoHostWrites(resource);
+        ValidateGpuMapping(resource);
     }
 
     /// <summary>Discards unsubmitted diagnostic state.</summary>
@@ -571,6 +608,27 @@ public sealed class GraphicsValidation
         state.Buffers[operation.Resource] = nextRanges;
     }
 
+    private void ValidateNoHostWrites(object resource)
+    {
+        if (_hostWrites.ContainsKey(resource))
+        {
+            throw new InvalidOperationException("Validation: allocation has an active host-write callback.");
+        }
+    }
+
+    private void ValidateGpuMapping(object resource)
+    {
+        if (_released.Contains(resource))
+        {
+            throw new InvalidOperationException("Validation: use after release.");
+        }
+
+        if (_uses.Values.Any(uses => uses.Contains(resource)))
+        {
+            throw new InvalidOperationException("Validation: CPU mapping conflicts with GPU use.");
+        }
+    }
+
     private void Record(object command, Operation operation)
     {
         if (!_commands.TryGetValue(command, out List<Operation>? operations))
@@ -640,6 +698,40 @@ public sealed class GraphicsValidation
         _uses.Remove(command);
         _commands.Remove(command);
         _references.Remove(command);
+    }
+
+    /// <summary>A validation-only host-write lifetime. Disposal only removes tracking and never validates resource state.</summary>
+    public sealed class HostWriteLease : IDisposable
+    {
+        private readonly object _resource;
+        private GraphicsValidation? _owner;
+
+        internal HostWriteLease(GraphicsValidation owner, object resource, ulong offset, ulong end)
+        {
+            _owner = owner;
+            _resource = resource;
+            Offset = offset;
+            End = end;
+        }
+
+        internal ulong Offset { get; }
+
+        internal ulong End { get; }
+
+        /// <summary>Ends tracking once without masking a callback exception.</summary>
+        public void Dispose()
+        {
+            GraphicsValidation? owner = _owner;
+            _owner = null;
+            if (owner != null && owner._hostWrites.TryGetValue(_resource, out List<HostWriteLease>? writes))
+            {
+                writes.Remove(this);
+                if (writes.Count == 0)
+                {
+                    owner._hostWrites.Remove(_resource);
+                }
+            }
+        }
     }
 
     /// <summary>Optional recording rollback state; no native resource ownership is changed.</summary>

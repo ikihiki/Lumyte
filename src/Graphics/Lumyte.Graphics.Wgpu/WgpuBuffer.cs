@@ -129,6 +129,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Unmap()
     {
+        _owner.Validation?.ValidateUnmap(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -189,6 +190,18 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
         _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         GetMappedBytes().Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
+    }
+
+    internal unsafe Span<byte> GetMappedUploadSpan(ulong offset, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ValidateByteRange(offset, (ulong)length);
+        RequireMapping(MemoryPreference.Upload);
+        nuint start = checked((nuint)offset);
+        _ = checked(start + (nuint)length);
+        nuint address = checked((nuint)_mappedAddress + start);
+        _ = checked(address + (nuint)length);
+        return new Span<byte>((void*)address, length);
     }
 
     private void RequireMapping(MemoryPreference memory)

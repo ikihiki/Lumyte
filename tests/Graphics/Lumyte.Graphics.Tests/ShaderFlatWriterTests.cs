@@ -365,7 +365,9 @@ public sealed class ShaderFlatWriterTests
             Type owner = assembly.GetType($"Lumyte.Graphics.{backend}.{backend}ReferenceMetadata", throwOnError: true)!;
             Assert.False(owner.IsPublic);
             FieldInfo field = Assert.Single(owner.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public));
-            Assert.Equal(typeof(IReadOnlyList<IShaderReference>), field.FieldType);
+            Assert.Equal(typeof(IShaderReference[]), field.FieldType);
+            Assert.True(field.IsPrivate);
+            Assert.True(field.IsInitOnly);
             Assert.DoesNotContain(owner.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), item => item.FieldType == typeof(ShaderValue[]));
         }
     }
@@ -389,6 +391,8 @@ public sealed class ShaderFlatWriterTests
 
         public static int TransferSize => 64;
 
+        public static int ReferenceCount => 2;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No field diagnostics.");
 
         public int Writes => _counter.Value;
@@ -411,6 +415,7 @@ public sealed class ShaderFlatWriterTests
         }
     }
 
+    // The declared ABI always has two slots; varying second deliberately supplies malformed producers.
     private struct CursorSlotValue(int first, int second) : IShaderArguments
     {
         private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
@@ -418,6 +423,8 @@ public sealed class ShaderFlatWriterTests
         public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
 
         public static int TransferSize => 32;
+
+        public static int ReferenceCount => 2;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No field diagnostics.");
 

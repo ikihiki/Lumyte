@@ -275,9 +275,9 @@ API void commands_topology(Commands* commands, UINT topology) noexcept
 {
     commands->list->IASetPrimitiveTopology(static_cast<D3D_PRIMITIVE_TOPOLOGY>(topology));
 }
-API void commands_indices(Commands* commands, ID3D12Resource* buffer, UINT64 offset, UINT size, UINT format) noexcept
+API void commands_indices(Commands* commands, UINT64 gpu_address, UINT64 offset, UINT size, UINT format) noexcept
 {
-    D3D12_INDEX_BUFFER_VIEW v{buffer->GetGPUVirtualAddress() + offset, size, static_cast<DXGI_FORMAT>(format)};
+    D3D12_INDEX_BUFFER_VIEW v{gpu_address + offset, size, static_cast<DXGI_FORMAT>(format)};
     commands->list->IASetIndexBuffer(&v);
 }
 API void commands_draw(Commands* commands, UINT count, UINT instances, UINT first, INT base, UINT first_instance,
@@ -299,7 +299,7 @@ API void commands_dispatch(Commands* commands, UINT x, UINT y, UINT z) noexcept
 {
     commands->list->Dispatch(x, y, z);
 }
-API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource* buffer, UINT64 offset, UINT kind,
+API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource* buffer, UINT64 gpu_address, UINT64 offset, UINT kind,
                               ID3D12CommandSignature** output) noexcept
 {
     D3D12_INDIRECT_ARGUMENT_DESC argument{};
@@ -312,7 +312,7 @@ API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource
     {
         const UINT info[]{kind + 1, 0};
         commands->list->SetGraphicsRoot32BitConstants(3, 2, info, 0);
-        commands->list->SetGraphicsRootShaderResourceView(4, buffer->GetGPUVirtualAddress() + offset);
+        commands->list->SetGraphicsRootShaderResourceView(4, gpu_address + offset);
     }
     commands->list->ExecuteIndirect(*output, 1, buffer, offset, nullptr, 0);
     return S_OK;

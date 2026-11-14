@@ -79,7 +79,7 @@ public sealed class ImmediateRootCommandTests
         Assert.Equal(17, Convert.ToInt32(constants.GetField("GraphicsStages", BindingFlags.Static | BindingFlags.NonPublic)!.GetRawConstantValue()));
     }
 
-    private static IEnumerable<(OpCode Code, MemberInfo? Member)> Instructions(MethodInfo method)
+    internal static IEnumerable<(OpCode Code, MemberInfo? Member)> Instructions(MethodBase method)
     {
         byte[] bytes = method.GetMethodBody()?.GetILAsByteArray() ?? [];
         var codes = typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static).Where(field => field.FieldType == typeof(OpCode)).Select(field => (OpCode)field.GetValue(null)!).ToDictionary(code => code.Value);

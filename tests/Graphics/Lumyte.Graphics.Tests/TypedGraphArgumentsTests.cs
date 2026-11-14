@@ -113,6 +113,8 @@ public sealed class TypedGraphArgumentsTests
 
         public static int TransferSize => 24;
 
+        public static int ReferenceCount => 1;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Output", 0, 16, typeof(ShaderReferenceSlot), true), new("Index", 16, 4, typeof(uint)), new("Value", 20, 4, typeof(uint))];
 
         public void Write<TWriter>(ref TWriter writer)

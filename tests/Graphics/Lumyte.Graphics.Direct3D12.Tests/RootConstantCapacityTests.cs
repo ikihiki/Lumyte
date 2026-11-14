@@ -177,6 +177,8 @@ public sealed class RootConstantCapacityTests
         /// <inheritdoc />
         public static int TransferSize => 233;
 
+        public static int ReferenceCount => 0;
+
         /// <inheritdoc />
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Must reject before writing.");
@@ -187,6 +189,8 @@ public sealed class RootConstantCapacityTests
         public static string ShaderTypeName => "Bytes";
 
         public static int TransferSize { get; set; }
+
+        public static int ReferenceCount => 0;
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct

@@ -91,6 +91,7 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Unmap()
     {
+        _owner.Validation?.ValidateUnmap(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -145,6 +146,13 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
         _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         BrowserInterop.CopyBufferTo(_native, destination[..checked((int)length)], checked((int)offset));
+    }
+
+    internal JSObject AcquireMappedUploadRange(ulong offset, int length)
+    {
+        ValidateByteRange(offset, checked((ulong)length));
+        RequireMapping(MemoryPreference.Upload);
+        return BrowserInterop.AcquireMappedUploadRange(_native, offset, length);
     }
 
     private void RequireMapping(MemoryPreference memory)

@@ -75,18 +75,18 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
     public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
     {
         ValidateAlive();
-        if (Memory != MemoryPreference.Upload || !IsMapped)
-        {
-            throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
-        }
-
-        if (elementOffset > Count || (ulong)source.Length > Count - elementOffset)
-        {
-            throw new ArgumentOutOfRangeException(nameof(elementOffset));
-        }
-
         if (source.IsEmpty)
         {
+            if (Memory != MemoryPreference.Upload || !IsMapped)
+            {
+                throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
+            }
+
+            if (elementOffset > Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            }
+
             return;
         }
 

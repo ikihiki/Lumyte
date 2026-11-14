@@ -239,6 +239,8 @@ public sealed class OptionalLayoutCostTests
 
         public static int TransferSize => sizeof(uint);
 
+        public static int ReferenceCount => 0;
+
         public readonly void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in Number, 1)));
     }
@@ -250,6 +252,8 @@ public sealed class OptionalLayoutCostTests
         public static string ShaderTypeName => "ManagedNoFields";
 
         public static int TransferSize => sizeof(uint);
+
+        public static int ReferenceCount => 0;
 
         public readonly void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
@@ -264,6 +268,8 @@ public sealed class OptionalLayoutCostTests
         public static string ShaderTypeName => "TypeOnly";
 
         public static int TransferSize => sizeof(uint);
+
+        public static int ReferenceCount => 0;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Value", 0, sizeof(uint), typeof(uint))];
 
@@ -280,6 +286,8 @@ public sealed class OptionalLayoutCostTests
         public static string ShaderTypeName => "Counted";
 
         public static int TransferSize => sizeof(uint);
+
+        public static int ReferenceCount => 0;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields
         {

@@ -11,6 +11,8 @@ internal record struct ConsumerArguments(float Float, Func<float>? Read = null) 
 
     public static int TransferSize => 128;
 
+    public static int ReferenceCount => 0;
+
     public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Float", 0, 4, typeof(float)), new("Int", 4, 4, typeof(int)), new("UInt", 8, 4, typeof(uint)), new("Vector2", 16, 8, typeof(Vector2)), new("Vector3", 32, 12, typeof(Vector3)), new("Vector4", 48, 16, typeof(Vector4)), new("Matrix", 64, 64, typeof(Matrix4x4))];
 
     public void Write<TWriter>(ref TWriter writer)

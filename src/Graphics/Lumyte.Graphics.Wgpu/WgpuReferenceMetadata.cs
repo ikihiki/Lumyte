@@ -1,17 +1,35 @@
+using System.Collections;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
 /// <summary>Retains backend-owned resource identities without shader bytes or wire fixups.</summary>
-internal sealed class WgpuReferenceMetadata : IShaderReferenceMetadata
+internal sealed class WgpuReferenceMetadata : IShaderReferenceMetadata, IReadOnlyList<IShaderReference>
 {
-    private WgpuReferenceMetadata(IEnumerable<IShaderReference> references)
+    private static readonly WgpuReferenceMetadata _empty = new(Array.Empty<IShaderReference>());
+    private readonly IShaderReference[] _references;
+
+    private WgpuReferenceMetadata(IShaderReference[] references)
     {
-        ArgumentNullException.ThrowIfNull(references);
-        References = Array.AsReadOnly(references.ToArray());
+        _references = references;
     }
 
-    public IReadOnlyList<IShaderReference> References { get; }
+    /// <summary>Gets the immutable ordered references.</summary>
+    public IReadOnlyList<IShaderReference> References => this;
 
-    internal static IShaderReferenceMetadata Create(IEnumerable<IShaderReference> references) => new WgpuReferenceMetadata(references);
+    /// <summary>Gets the number of physical reference slots.</summary>
+    public int Count => _references.Length;
+
+    /// <summary>Gets the reference in the specified slot.</summary>
+    /// <param name="index">The physical slot index.</param>
+    /// <returns>The retained reference identity.</returns>
+    public IShaderReference this[int index] => _references[index];
+
+    /// <summary>Enumerates the ordered reference identities.</summary>
+    /// <returns>The reference enumerator.</returns>
+    public IEnumerator<IShaderReference> GetEnumerator() => ((IEnumerable<IShaderReference>)_references).GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    internal static IShaderReferenceMetadata TakeOwnership(IShaderReference[] references) => references.Length == 0 ? _empty : new WgpuReferenceMetadata(references);
 }

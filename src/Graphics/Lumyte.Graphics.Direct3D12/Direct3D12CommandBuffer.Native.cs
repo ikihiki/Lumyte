@@ -18,9 +18,9 @@ internal sealed unsafe partial class Direct3D12CommandBuffer
         _active = null;
     }
 
-    internal void Indirect(nint buffer, ulong offset, uint kind)
+    internal void Indirect(nint buffer, ulong gpuAddress, ulong offset, uint kind)
     {
-        _owner.Check(NativeMethods.Indirect(_owner.Native, Native, buffer, offset, kind, out nint signature));
+        _owner.Check(NativeMethods.Indirect(_owner.Native, Native, buffer, gpuAddress, offset, kind, out nint signature));
         KeepBinding(new NativeObject(signature));
     }
 

@@ -10,6 +10,13 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks the selected argument table across all reachable shader references without a GPU.</summary>
 public sealed class ArgumentTableBindingTests
 {
+    /// <summary>Supplies the immutable reference-slot count for a specialized test wire type.</summary>
+    private interface IReferenceCount
+    {
+        /// <summary>Gets the exact number of wire slots.</summary>
+        static abstract int Count { get; }
+    }
+
     /// <summary>Accepts a reference issued by the selected table.</summary>
     [Fact]
     public void SelectedTableReferenceIsAccepted()
@@ -199,7 +206,7 @@ public sealed class ArgumentTableBindingTests
         }
 
         layout.ValidateArguments(root);
-        var arguments = new PoolArguments(values.Select(value => (IGpuRef<uint>)value.Reference!).ToArray());
+        var arguments = new PoolArguments<FourReferences>(values.Select(value => (IGpuRef<uint>)value.Reference!).ToArray());
         using TestRootOwner generation = TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
         var binding = new ShaderBindingData(ShaderBindingDependencies.Collect(generation.Metadata, table), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
@@ -216,7 +223,7 @@ public sealed class ArgumentTableBindingTests
 
     private static ShaderRootArguments Root(IShaderReference reference)
     {
-        var arguments = new PoolArguments([(IGpuRef<uint>)reference]);
+        var arguments = new PoolArguments<OneReference>([(IGpuRef<uint>)reference]);
         return TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode).Metadata;
     }
 
@@ -227,17 +234,35 @@ public sealed class ArgumentTableBindingTests
         return bytes;
     }
 
-    private struct PoolArguments(IGpuRef<uint>[] references) : IShaderArguments
+    private readonly struct OneReference : IReferenceCount
+    {
+        public static int Count => 1;
+    }
+
+    private readonly struct FourReferences : IReferenceCount
+    {
+        public static int Count => 4;
+    }
+
+    private struct PoolArguments<TCount>(IGpuRef<uint>[] references) : IShaderArguments
+        where TCount : struct, IReferenceCount
     {
         public static string ShaderTypeName => "Pools";
 
         public static int TransferSize => 64;
+
+        public static int ReferenceCount => TCount.Count;
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
         {
             Wire wire = default;
             ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            if (references.Length != TCount.Count)
+            {
+                throw new ArgumentException("Reference array must match the specialized wire type.");
+            }
+
             foreach (IGpuRef<uint> reference in references)
             {
                 writer.WriteReference(reference);

@@ -236,6 +236,8 @@ public sealed class ShaderDataUploadTests
 
         public static int TransferSize => 20;
 
+        public static int ReferenceCount => 1;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("Static diagnostics must remain disabled.");
 
         public uint Number { get; set; }
@@ -279,6 +281,8 @@ public sealed class ShaderDataUploadTests
         public static string ShaderTypeName => throw new InvalidOperationException("No diagnostics expected.");
 
         public static int TransferSize => int.MaxValue;
+
+        public static int ReferenceCount => 0;
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Overflow must precede codec execution.");

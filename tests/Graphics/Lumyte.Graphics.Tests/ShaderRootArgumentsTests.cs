@@ -9,6 +9,13 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks common metadata and isolated host-writer sinks without native devices or allocation budgets.</summary>
 public sealed class ShaderRootArgumentsTests
 {
+    /// <summary>Supplies the immutable reference-slot count for a specialized test wire type.</summary>
+    private interface IReferenceCount
+    {
+        /// <summary>Gets the exact number of wire slots.</summary>
+        static abstract int Count { get; }
+    }
+
     /// <summary>Minimal metadata owns an immutable ordered identity copy without legacy wire locations.</summary>
     [Fact]
     public void DependencyMetadataCopiesOrderedIdentities()
@@ -95,7 +102,7 @@ public sealed class ShaderRootArgumentsTests
     public void CreateStreamsOnceAndOwnsIndependentGenerations()
     {
         var factory = new StorageFactory();
-        var value = new Arguments { Value = 17 };
+        var value = new Arguments<NoReferences> { Value = 17 };
         using TestRootOwner first = TestShaderTransfer.Create(in value, factory.Create, Encode);
         value.Value = 29;
         using TestRootOwner second = TestShaderTransfer.Create(in value, factory.Create, Encode);
@@ -144,7 +151,7 @@ public sealed class ShaderRootArgumentsTests
         }
 
         var factory = new StorageFactory();
-        var value = new Arguments { Value = 7, Reference = reference };
+        var value = new Arguments<OneReference> { Value = 7, Reference = reference };
         using TestRootOwner root = TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare);
         Storage storage = Assert.Single(factory.Items);
         Assert.Same(root.References, Assert.Single(prepared));
@@ -171,7 +178,7 @@ public sealed class ShaderRootArgumentsTests
     public void FailedSelectionPreservesPreviousRootAndOriginalException(bool failPrepare)
     {
         var factory = new StorageFactory();
-        var value = new Arguments { Value = 11 };
+        var value = new Arguments<NoReferences> { Value = 11 };
         using TestRootOwner previous = TestShaderTransfer.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Selection failed.");
         factory.ThrowOnDispose = true;
@@ -190,7 +197,7 @@ public sealed class ShaderRootArgumentsTests
     public void FactoryFailurePreservesPreviousRoot()
     {
         var factory = new StorageFactory();
-        var value = new Arguments { Value = 13 };
+        var value = new Arguments<NoReferences> { Value = 13 };
         using TestRootOwner previous = TestShaderTransfer.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Allocation failed.");
         Assert.Same(failure, Record.Exception(() => TestShaderTransfer.Create(in value, _ => throw failure, Encode)));
@@ -207,7 +214,7 @@ public sealed class ShaderRootArgumentsTests
     [InlineData(31)]
     public void WrongNativeCapacityIsRejectedAndDisposed(int size)
     {
-        var value = new Arguments();
+        var value = new Arguments<NoReferences>();
         var storage = new Storage(size) { ThrowOnDispose = true };
         Assert.Throws<InvalidOperationException>(() => TestShaderTransfer.Create(in value, _ => storage, Encode));
         Assert.Equal(1, storage.Disposes);
@@ -226,7 +233,7 @@ public sealed class ShaderRootArgumentsTests
     {
         using var table = new Table();
         var factory = new StorageFactory();
-        var value = new Arguments { Mode = mode, Value = 17, Reference = new Reference(table, new object()) };
+        var value = new Arguments<OneReference> { Mode = mode, Value = 17, Reference = new Reference(table, new object()) };
         int encodes = 0;
         byte[] EncodeSlot(ShaderValue slot)
         {
@@ -267,7 +274,7 @@ public sealed class ShaderRootArgumentsTests
     public void SelectionRejectsWrongReferenceAbiLength(int length)
     {
         using var table = new Table();
-        var value = new Arguments { Reference = new Reference(table, new object()) };
+        var value = new Arguments<OneReference> { Reference = new Reference(table, new object()) };
         var factory = new StorageFactory();
         Assert.Throws<ArgumentException>(() => TestShaderTransfer.Create(in value, factory.Create, _ => new byte[length]));
         Assert.Equal(1, factory.Items[0].Writes);
@@ -310,7 +317,7 @@ public sealed class ShaderRootArgumentsTests
         var rootReference = new Reference(table, source);
         var firstReference = new Reference(table, new object());
         var secondReference = new Reference(table, new object());
-        var value = new Arguments { Reference = rootReference };
+        var value = new Arguments<OneReference> { Reference = rootReference };
         var factory = new StorageFactory();
         var prepared = new List<IShaderReferenceMetadata>();
         var admitted = new List<IReadOnlyCollection<IShaderReference>>();
@@ -354,7 +361,7 @@ public sealed class ShaderRootArgumentsTests
     public void AdmissionFailurePreservesRootAndOriginalException()
     {
         var factory = new StorageFactory();
-        var value = new Arguments { Value = 37 };
+        var value = new Arguments<NoReferences> { Value = 37 };
         var failure = new InvalidOperationException("Admission failed.");
         int prepares = 0;
         int admissions = 0;
@@ -419,13 +426,26 @@ public sealed class ShaderRootArgumentsTests
 
         public static int TransferSize => 4;
 
+        public static int ReferenceCount => 0;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Value", 0, 4, typeof(uint))];
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
-    private struct Arguments : IShaderArguments
+    private readonly struct NoReferences : IReferenceCount
+    {
+        public static int Count => 0;
+    }
+
+    private readonly struct OneReference : IReferenceCount
+    {
+        public static int Count => 1;
+    }
+
+    private struct Arguments<TCount> : IShaderArguments
+        where TCount : struct, IReferenceCount
     {
         private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
 
@@ -436,6 +456,8 @@ public sealed class ShaderRootArgumentsTests
         public static string ShaderTypeName => "Wire";
 
         public static int TransferSize => 32;
+
+        public static int ReferenceCount => TCount.Count;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("Diagnostics disabled.");
 
@@ -509,6 +531,8 @@ public sealed class ShaderRootArgumentsTests
 
         public static int TransferSize => 4;
 
+        public static int ReferenceCount => 0;
+
         public static IReadOnlyList<ShaderTransferField> TransferFields => throw Failure;
 
         public void Write<TWriter>(ref TWriter writer)
@@ -524,6 +548,8 @@ public sealed class ShaderRootArgumentsTests
         public static string ShaderTypeName => "Wire";
 
         public static int TransferSize => 4;
+
+        public static int ReferenceCount => 0;
 
         public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Value", 0, 4, typeof(uint))];
 

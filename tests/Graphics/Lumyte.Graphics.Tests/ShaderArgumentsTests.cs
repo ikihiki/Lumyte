@@ -161,6 +161,8 @@ public sealed class ShaderArgumentsTests
 
         public static int TransferSize => sizeof(uint);
 
+        public static int ReferenceCount => 0;
+
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
@@ -172,6 +174,8 @@ public sealed class ShaderArgumentsTests
         public static string ShaderTypeName => "SceneArguments";
 
         public static int TransferSize => sizeof(uint);
+
+        public static int ReferenceCount => 0;
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));

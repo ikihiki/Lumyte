@@ -58,6 +58,12 @@ internal static partial class BrowserInterop
     [JSImport("copyBufferFrom", "Lumyte.Graphics.Browser")]
     internal static partial void CopyBufferFrom(JSObject buffer, [JSMarshalAs<JSType.MemoryView>] Span<byte> source, int offset);
 
+    [JSImport("acquireMappedUploadRange", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject AcquireMappedUploadRange(JSObject buffer, double offset, int length);
+
+    [JSImport("copyMappedUploadRange", "Lumyte.Graphics.Browser")]
+    internal static partial void CopyMappedUploadRange(JSObject view, [JSMarshalAs<JSType.MemoryView>] Span<byte> source, int relativeOffset);
+
     [JSImport("copyBufferTo", "Lumyte.Graphics.Browser")]
     internal static partial void CopyBufferTo(JSObject buffer, [JSMarshalAs<JSType.MemoryView>] Span<byte> destination, int offset);
 
