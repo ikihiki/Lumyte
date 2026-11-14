@@ -1,7 +1,18 @@
 <Solution>
   <Folder Name="/benchmarks/Core/">
+    <Project Path="benchmarks/Core/Lumyte.Composition.Benchmark/Lumyte.Composition.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Composition.Generators.Benchmark/Lumyte.Composition.Generators.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Core.Benchmark/Lumyte.Core.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Execution.Benchmark/Lumyte.Execution.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Execution.Generators.Benchmark/Lumyte.Execution.Generators.Benchmark.csproj" />
     <Project Path="benchmarks/Core/Lumyte.Mathematics.Benchmark/Lumyte.Mathematics.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Memory.Benchmark/Lumyte.Memory.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Resources.Benchmark/Lumyte.Resources.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Settings.Benchmark/Lumyte.Settings.Benchmark.csproj" />
     <Project Path="benchmarks/Core/Lumyte.Signals.Benchmark/Lumyte.Signals.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.StateMachines.Benchmark/Lumyte.StateMachines.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.TextEditing.Benchmark/Lumyte.TextEditing.Benchmark.csproj" />
+    <Project Path="benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
@@ -160,6 +171,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Core.Benchmark.Tests/Lumyte.Core.Benchmark.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Benchmarks.Tests/Lumyte.Signals.Benchmarks.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj" />

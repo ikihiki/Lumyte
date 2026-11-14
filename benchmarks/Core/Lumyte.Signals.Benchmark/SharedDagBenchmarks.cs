@@ -26,11 +26,13 @@ public class SharedDagBenchmarks
     /// <summary>Reads an unchanged graph whose subscriptions propagate invalidation eagerly.</summary>
     /// <returns>The cached value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int ReadObservedCached() => _observed.Value;
 
     /// <summary>Reads an unchanged graph that must validate its shared dependencies lazily.</summary>
     /// <returns>The cached value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int ReadUnobservedCached() => _unobserved.Value;
 
     /// <summary>Releases the active graph's subscription.</summary>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <Compile Include="../../../benchmarks/Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Core.Benchmark/Lumyte.Core.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Mathematics.Benchmark/Lumyte.Mathematics.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Memory.Benchmark/Lumyte.Memory.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.TextEditing.Benchmark/Lumyte.TextEditing.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Signals.Benchmark/Lumyte.Signals.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Resources.Benchmark/Lumyte.Resources.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Settings.Benchmark/Lumyte.Settings.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Execution.Benchmark/Lumyte.Execution.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Composition.Benchmark/Lumyte.Composition.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Execution.Generators.Benchmark/Lumyte.Execution.Generators.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Composition.Generators.Benchmark/Lumyte.Composition.Generators.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.StateMachines.Benchmark/Lumyte.StateMachines.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
+  </ItemGroup>
+</Project>

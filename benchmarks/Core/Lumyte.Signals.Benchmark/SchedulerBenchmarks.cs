@@ -22,6 +22,7 @@ public class SchedulerBenchmarks
     /// <summary>Changes sixteen times, then drains the single scheduled delivery.</summary>
     /// <returns>The final observed value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-06")]
     public int Coalesced16()
     {
         for (int index = 0; index < 16; index++)
@@ -29,6 +30,23 @@ public class SchedulerBenchmarks
             _source.Value = ++_next;
         }
 
+        _scheduler.Drain();
+        return _sink;
+    }
+
+    /// <summary>Pauses delivery during changing writes, then resumes and drains the deterministic queue.</summary>
+    /// <returns>The final observed revision value.</returns>
+    [Benchmark]
+    [BenchmarkCategory("CORE-SIG-06")]
+    public int PauseResume()
+    {
+        _effect.Pause();
+        for (int index = 0; index < 8; index++)
+        {
+            _source.Value = ++_next;
+        }
+
+        _effect.Resume();
         _scheduler.Drain();
         return _sink;
     }

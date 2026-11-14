@@ -32,16 +32,19 @@ public class ComputedBenchmarks
     /// <summary>Reads the cached value of an actively observed chain.</summary>
     /// <returns>The chain result.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int ReadObservedCached() => _observed.Value;
 
     /// <summary>Reads the cached value of a passive chain, including dependency validation.</summary>
     /// <returns>The chain result.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int ReadUnobservedCached() => _unobserved.Value;
 
     /// <summary>Updates an active chain and delivers its final effect.</summary>
     /// <returns>The observed result.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int UpdateObserved()
     {
         _observedSource.Value = ++_next;
@@ -51,6 +54,7 @@ public class ComputedBenchmarks
     /// <summary>Updates a passive chain and explicitly reads its final value.</summary>
     /// <returns>The recomputed result.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int UpdateAndReadUnobserved()
     {
         _unobservedSource.Value = ++_next;

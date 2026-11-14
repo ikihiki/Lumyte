@@ -29,6 +29,7 @@ public class FanoutBenchmarks
     /// <summary>Updates once and delivers all observers.</summary>
     /// <returns>The last observed value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-04")]
     public int Update()
     {
         _source.Value = ++_next;

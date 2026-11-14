@@ -51,6 +51,7 @@ public class GraphBenchmarks
     /// <summary>Propagates one mutation through a diamond to one effect.</summary>
     /// <returns>The final sum.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-04")]
     public int DiamondUpdate()
     {
         _source.Value = ++_next;
@@ -60,6 +61,7 @@ public class GraphBenchmarks
     /// <summary>Switches a conditional dependency and updates its effect.</summary>
     /// <returns>The selected value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-03")]
     public int SwitchBranch()
     {
         _choose.Value = !_choose.Peek();
@@ -69,6 +71,7 @@ public class GraphBenchmarks
     /// <summary>Captures eight primitive reads with a preallocated build callback.</summary>
     /// <returns>The captured read set.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-07")]
     public SignalReadSet CaptureEightReads()
     {
         _ = Signal.CaptureReads(_build, out SignalReadSet reads);
@@ -78,6 +81,7 @@ public class GraphBenchmarks
     /// <summary>Validates a previously captured, unchanged eight-input read set.</summary>
     /// <returns>Whether the read set is current.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-07")]
     public bool CheckReadSet() => _reads.IsCurrent;
 
     /// <summary>Releases both subscriptions.</summary>

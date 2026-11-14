@@ -24,6 +24,7 @@ public class BatchBenchmarks
     /// <summary>Performs sixteen writes and sixteen effect deliveries.</summary>
     /// <returns>The final observed value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-04")]
     public int Unbatched16()
     {
         WriteAll();
@@ -33,6 +34,7 @@ public class BatchBenchmarks
     /// <summary>Performs sixteen writes and one effect delivery.</summary>
     /// <returns>The final observed value.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-04")]
     public int Batched16()
     {
         Signal.Batch(_update);

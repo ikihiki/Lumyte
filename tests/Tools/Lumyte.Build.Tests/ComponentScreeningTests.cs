@@ -24,6 +24,7 @@ public sealed class ComponentScreeningTests
     [InlineData("src/Core/Lumyte.Signals/Signal.cs", 12, false)]
     [InlineData("benchmarks/Lumyte.Signals.Benchmarks/Scalar.cs", 12, false)]
     [InlineData("benchmarks/Core/Lumyte.Signals.Benchmark/Scalar.cs", 12, false)]
+    [InlineData("benchmarks/Core/Shared/BenchmarkEntry.cs", 12, false)]
     [InlineData("src/Graphics/Renderer.cs", 1, true)]
     [InlineData("benchmarks/Core/Lumyte.Mathematics.Benchmark/Program.cs", 1, true)]
     public void Selection(string path, int count, bool uncovered)
@@ -246,6 +247,9 @@ public sealed class ComponentScreeningTests
         await GitAsync("config", "user.name", "fixture");
         string harness = System.IO.Path.Combine(repo, ComponentScreening.Harness);
         Directory.CreateDirectory(harness);
+        string shared = System.IO.Path.Combine(repo, ComponentScreening.SharedHarness);
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(System.IO.Path.Combine(shared, "BenchmarkEntry.cs"), "old shared");
         File.WriteAllText(System.IO.Path.Combine(harness, "stale.cs"), "stale");
         File.WriteAllText(System.IO.Path.Combine(repo, "README.md"), "first");
         File.WriteAllText(System.IO.Path.Combine(repo, "global.json"), "{\"sdk\":{\"version\":\"10.0.403\"}}");
@@ -258,6 +262,7 @@ public sealed class ComponentScreeningTests
         string second = await GitAsync("rev-parse", "HEAD");
         File.Delete(System.IO.Path.Combine(harness, "stale.cs"));
         File.WriteAllText(System.IO.Path.Combine(harness, "frozen.cs"), "frozen harness");
+        File.WriteAllText(System.IO.Path.Combine(shared, "BenchmarkEntry.cs"), "frozen shared");
         File.WriteAllText(System.IO.Path.Combine(repo, " unknown.cs"), "dirty source");
         string output = System.IO.Path.Combine(temp.Path, "plan output");
         JsonObject plan = await ComponentScreening.CreatePlanAsync(repo, second, first, output, false);
@@ -266,9 +271,14 @@ public sealed class ComponentScreeningTests
         Assert.Equal(" unknown.cs", Assert.Single(plan["changed_paths"]!.AsArray())!.ToString());
         Assert.Single(ComponentScreening.ValidatePlan(plan, repo));
         string snapshot = System.IO.Path.Combine(temp.Path, "snapshot");
-        await ComponentScreening.SnapshotAsync(repo, second, snapshot, harness, runner, temp.Path, "snapshot");
+        await ComponentScreening.SnapshotAsync(repo, second, snapshot, harness, runner, temp.Path, "snapshot", shared);
         Assert.Equal("tracked", File.ReadAllText(System.IO.Path.Combine(snapshot, " unknown.cs")));
         Assert.Equal(ComponentScreening.TreeHash(harness), ComponentScreening.TreeHash(System.IO.Path.Combine(snapshot, ComponentScreening.Harness)));
+        Assert.Equal("frozen shared", File.ReadAllText(System.IO.Path.Combine(snapshot, ComponentScreening.SharedHarness, "BenchmarkEntry.cs")));
+        Assert.Equal(ComponentScreening.HarnessHash(harness, shared), plan["harness_sha256"]!.ToString());
+        File.WriteAllText(System.IO.Path.Combine(shared, "BenchmarkEntry.cs"), "changed shared");
+        Assert.Equal("incomparable", Assert.Throws<ScreeningFailure>(() => ComponentScreening.ValidatePlan(plan, repo)).Status);
+        File.WriteAllText(System.IO.Path.Combine(shared, "BenchmarkEntry.cs"), "frozen shared");
         Assert.False(File.Exists(System.IO.Path.Combine(snapshot, ComponentScreening.Harness, "stale.cs")));
         Assert.True(Directory.Exists(System.IO.Path.Combine(snapshot, "artifacts/nuget")));
         string frozenPlan = System.IO.Path.Combine(output, "plan.json");

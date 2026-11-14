@@ -13,11 +13,16 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
+        "BenchmarkCore",
         "BenchmarkSignals",
         "CheckFormat",
         "CheckMarkdown",
         "CheckNativeFormat",
         "Ci",
+        "CiBrowser",
+        "CiDistribution",
+        "CiNative",
+        "CiQuality",
         "Clean",
         "Compile",
         "ComponentScreeningNotify",
@@ -54,6 +59,9 @@
         "TestRust",
         "TestSignals",
         "TestText",
+        "TestUiApplication",
+        "TestUiNavigation",
+        "TestUiPages",
         "TestWasm",
         "TestWindowing",
         "VerifyEnvironment",
@@ -147,6 +155,30 @@
           "type": "string",
           "description": "Restored Microsoft.Direct3D.D3D12 package directory containing the selected Agility SDK"
         },
+        "BenchmarkCategory": {
+          "type": "string",
+          "description": "Optional BenchmarkDotNet family category filter"
+        },
+        "BenchmarkFilter": {
+          "type": "string",
+          "description": "BenchmarkDotNet method filter for selected Core projects"
+        },
+        "BenchmarkList": {
+          "type": "boolean",
+          "description": "Enumerate compiled Core benchmark cases without running timings"
+        },
+        "BenchmarkMode": {
+          "type": "string",
+          "description": "Core benchmark execution mode: verify, screen, compare, or diagnose"
+        },
+        "BenchmarkProject": {
+          "type": "string",
+          "description": "Core target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark"
+        },
+        "BenchmarkTimeoutSeconds": {
+          "type": "number",
+          "description": "Shared Core benchmark process deadline in seconds, up to 900"
+        },
         "Cache": {
           "type": "string",
           "description": "Emscripten cache from the .NET wasm-tools workload"
@@ -170,6 +202,10 @@
         "GalleryRepository": {
           "type": "string",
           "description": "Repository whose successful diagnostic gallery artifacts are collected"
+        },
+        "HostOnly": {
+          "type": "boolean",
+          "description": "Build and package only projects supported by the current host OS"
         },
         "NoBuild": {
           "type": "boolean",

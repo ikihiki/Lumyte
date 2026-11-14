@@ -37,6 +37,7 @@ public class ReuseBenchmarks
     /// <summary>Mutates one input and reevaluates an existing observer with stable dependencies.</summary>
     /// <returns>The latest observed sum.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-02")]
     public int ReevaluateStable()
     {
         _inputs[0].Value = ++_next;
@@ -46,6 +47,7 @@ public class ReuseBenchmarks
     /// <summary>Creates and disposes one observer while reusing the same callback and inputs.</summary>
     /// <returns>The sum read by the temporary observer.</returns>
     [Benchmark]
+    [BenchmarkCategory("CORE-SIG-05")]
     public int CreateAndDisposeEffect()
     {
         using SignalEffect temporary = Signal.Effect(_observe);

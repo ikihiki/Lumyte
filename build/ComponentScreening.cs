@@ -20,6 +20,9 @@ internal static partial class ComponentScreening
 
     public static string FileHash(string file) => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)));
 
+    public static string HarnessHash(string harness, string shared)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(TreeHash(harness) + ":" + TreeHash(shared))));
+
     public static string TreeHash(string directory)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -47,7 +50,7 @@ internal static partial class ComponentScreening
             ["schema_version"] = 2,
             ["harness_version"] = Version,
             ["case_version"] = 2,
-            ["harness_sha256"] = TreeHash(Path.Combine(repo, Harness)),
+            ["harness_sha256"] = HarnessHash(Path.Combine(repo, Harness), Path.Combine(repo, SharedHarness)),
             ["base_sha"] = baseSha,
             ["head_sha"] = headSha,
             ["selected"] = cases.Length > 0,
@@ -77,7 +80,7 @@ internal static partial class ComponentScreening
     public static ScreeningCase[] ValidatePlan(JsonNode plan, string repo)
     {
         if (plan["schema_version"]?.GetValue<int>() != 2 || plan["case_version"]?.GetValue<int>() != 2 || plan["harness_version"]?.ToString() != Version
-            || plan["harness_sha256"]?.ToString() != TreeHash(Path.Combine(repo, Harness)))
+            || plan["harness_sha256"]?.ToString() != HarnessHash(Path.Combine(repo, Harness), Path.Combine(repo, SharedHarness)))
         {
             throw new ScreeningFailure("incomparable", "Plan and runner versions/hashes differ");
         }
@@ -100,7 +103,7 @@ internal static partial class ComponentScreening
         return cases;
     }
 
-    public static async Task<string> SnapshotAsync(string repo, string sha, string destination, string harnessSource, ComponentScreeningProcess runner, string output, string label)
+    public static async Task<string> SnapshotAsync(string repo, string sha, string destination, string harnessSource, ComponentScreeningProcess runner, string output, string label, string? sharedSource = null)
     {
         string archive = Path.Combine(output, label + "-source.tar");
         await runner.CallAsync("git", ["-C", repo, "archive", "--format=tar", "-o", archive, sha], repo, label + "-archive").ConfigureAwait(false);
@@ -133,6 +136,20 @@ internal static partial class ComponentScreening
         foreach (string file in SourceFiles(harnessSource))
         {
             string copy = Path.Combine(target, Path.GetRelativePath(harnessSource, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy);
+        }
+
+        string sharedTarget = Path.Combine(destination, SharedHarness);
+        if (Directory.Exists(sharedTarget))
+        {
+            Directory.Delete(sharedTarget, recursive: true);
+        }
+
+        string shared = sharedSource ?? Path.Combine(Path.GetDirectoryName(harnessSource)!, "Shared");
+        foreach (string file in SourceFiles(shared))
+        {
+            string copy = Path.Combine(sharedTarget, Path.GetRelativePath(shared, file));
             Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
             File.Copy(file, copy);
         }
@@ -200,7 +217,7 @@ internal static partial class ComponentScreening
                 ["cpuinfo"] = File.Exists("/proc/cpuinfo") ? await File.ReadAllTextAsync("/proc/cpuinfo").ConfigureAwait(false) : "unavailable",
                 ["dotnet"] = dotnet,
                 ["sdk_policy"] = policy!.DeepClone(),
-                ["harness_sha256"] = TreeHash(Path.Combine(repo, Harness)),
+                ["harness_sha256"] = HarnessHash(Path.Combine(repo, Harness), Path.Combine(repo, SharedHarness)),
                 ["runner_sha256"] = FileHash(typeof(ComponentScreening).Assembly.Location),
                 ["case_version"] = 2,
                 ["environment"] = JsonSerializer.SerializeToNode(Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
@@ -216,7 +233,15 @@ internal static partial class ComponentScreening
                 File.Copy(source, target);
             }
 
-            if (TreeHash(frozenHarness) != plan["harness_sha256"]!.ToString())
+            string frozenShared = Path.Combine(scratch, "frozen-shared");
+            foreach (string source in SourceFiles(Path.Combine(repo, SharedHarness)))
+            {
+                string target = Path.Combine(frozenShared, Path.GetRelativePath(Path.Combine(repo, SharedHarness), source));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(source, target);
+            }
+
+            if (HarnessHash(frozenHarness, frozenShared) != plan["harness_sha256"]!.ToString())
             {
                 throw new ScreeningFailure("incomparable", "Harness changed while freezing the plan overlay");
             }
@@ -225,7 +250,7 @@ internal static partial class ComponentScreening
             foreach ((string label, string location) in locations)
             {
                 string destination = Path.Combine(scratch, label);
-                projects[label] = await SnapshotAsync(location, plan[label + "_sha"]!.ToString(), destination, frozenHarness, runner, output, label).ConfigureAwait(false);
+                projects[label] = await SnapshotAsync(location, plan[label + "_sha"]!.ToString(), destination, frozenHarness, runner, output, label, frozenShared).ConfigureAwait(false);
                 string sdk;
                 try
                 {
