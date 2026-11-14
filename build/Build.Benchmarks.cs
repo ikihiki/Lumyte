@@ -28,6 +28,8 @@ internal sealed partial class Build
 
     private Target BenchmarkAnimation => definition => definition.Executes(() => RunBenchmarksAsync("Animation"));
 
+    private Target BenchmarkInput => definition => definition.Executes(() => RunBenchmarksAsync("Input"));
+
     private async Task RunBenchmarksAsync(string area)
     {
         string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
@@ -220,6 +222,11 @@ internal sealed partial class Build
         if (area != "Core")
         {
             inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, "src", area)));
+        }
+
+        if (area == "Input")
+        {
+            inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, "src", "Diagnostics")));
         }
 
         foreach (string name in new[] { "global.json", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "NuGet.config" })

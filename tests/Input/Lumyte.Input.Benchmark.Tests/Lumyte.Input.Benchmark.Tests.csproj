@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <Compile Include="../../../benchmarks/Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+    <ProjectReference Include="../../../benchmarks/Input/Lumyte.Input.Benchmark/Lumyte.Input.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Input/Lumyte.Input.Processing.Benchmark/Lumyte.Input.Processing.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Input/Lumyte.Input.Actions.Benchmark/Lumyte.Input.Actions.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Input/Lumyte.Input.Settings.Benchmark/Lumyte.Input.Settings.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Input/Lumyte.Input.Diagnostics.Benchmark/Lumyte.Input.Diagnostics.Benchmark.csproj" />
+  </ItemGroup>
+</Project>

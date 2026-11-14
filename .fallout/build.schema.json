@@ -15,6 +15,7 @@
       "enum": [
         "BenchmarkAnimation",
         "BenchmarkCore",
+        "BenchmarkInput",
         "BenchmarkSignals",
         "CheckFormat",
         "CheckMarkdown",
