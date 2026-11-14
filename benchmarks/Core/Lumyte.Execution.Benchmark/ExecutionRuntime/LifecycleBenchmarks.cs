@@ -1,16 +1,15 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Execution.Benchmark;
+namespace Lumyte.Execution.Benchmark.Runtime;
 
 /// <summary>Measures fresh lifecycle and bounded refusal, gate, and cancellation operations.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class LifecycleBenchmarks
 {
     /// <summary>Holds one completed result and confirms capacity resumes after observation.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Admission")]
     public CommandEnqueueStatus RetainedCapacity()
     {
         using var fixture = new Fixture(capacity: 1);
@@ -28,7 +27,6 @@ public class LifecycleBenchmarks
     /// <summary>Releases one actual gate waiter and observes its result.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Gates")]
     public int GateRelease()
     {
         using var fixture = new Fixture(gated: true);
@@ -46,7 +44,6 @@ public class LifecycleBenchmarks
     /// <summary>Starts and joins two dedicated producer workers, then drains every result from a dedicated owner.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Concurrency")]
     public int DedicatedProducers()
     {
         using var fixture = new Fixture(placement: OwnerPlacement.Dedicated);
@@ -74,10 +71,43 @@ public class LifecycleBenchmarks
         return sum;
     }
 
+    /// <summary>Cancels an admitted command behind a closed gate and proves capacity recovers.</summary>
+    /// <returns>The number of actual cancellation completions observed.</returns>
+    [Benchmark]
+    public int CancelAdmitted()
+    {
+        using var fixture = new Fixture(gated: true, capacity: 1);
+        using var cancellation = new CancellationTokenSource();
+        ValueTask<int> pending = fixture.Module.Port.ExecuteAsync(3, cancellation.Token);
+        fixture.Pump();
+        if (pending.IsCompleted || fixture.Module.Commands != 0)
+        {
+            throw new InvalidOperationException("Command did not wait behind its closed gate.");
+        }
+
+        cancellation.Cancel();
+        int canceled = 0;
+        try
+        {
+            _ = fixture.Read(pending);
+        }
+        catch (OperationCanceledException)
+        {
+            canceled++;
+        }
+
+        fixture.Module.Gate.Open();
+        if (fixture.Read(fixture.Module.Port.ExecuteAsync(4)) != 8 || fixture.Module.Commands != 1)
+        {
+            throw new InvalidOperationException("Canceled command executed or retained admission capacity.");
+        }
+
+        return canceled;
+    }
+
     /// <summary>Checks pre-cancellation without enqueuing side effects.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Cancellation")]
     public CommandEnqueueStatus PreCanceled()
     {
         using var fixture = new Fixture();

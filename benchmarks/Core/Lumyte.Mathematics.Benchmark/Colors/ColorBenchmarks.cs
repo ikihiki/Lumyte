@@ -2,10 +2,10 @@ using System.Numerics;
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Colors;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.ColorOperations;
 
 /// <summary>Color encoding, arithmetic, pixels and catalog lookup.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Colors", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ColorBenchmarks
 {
     private readonly SRgba<float> _color = new(0.2f, 0.5f, 0.8f, 0.5f);

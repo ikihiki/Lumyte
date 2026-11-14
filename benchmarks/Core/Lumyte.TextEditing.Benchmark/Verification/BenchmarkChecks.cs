@@ -1,3 +1,6 @@
+using Lumyte.TextEditing.Benchmark.ImeCandidateLists;
+using Lumyte.TextEditing.Benchmark.TextDocuments;
+
 namespace Lumyte.TextEditing.Benchmark;
 
 /// <summary>Public-API editing and rejection contracts.</summary>

@@ -2,10 +2,10 @@ using BenchmarkDotNet.Attributes;
 using Lumyte.Memory.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Lumyte.Memory.Benchmark;
+namespace Lumyte.Memory.Benchmark.Management;
 
 /// <summary>Bounded ownership, ledger and dependency-injection workloads.</summary>
-[BenchmarkCategory("Core", "Memory", "MemoryManagement", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class MemoryBenchmarks
 {
     private static readonly MemoryPoolId _pool = new("benchmark");
@@ -107,7 +107,6 @@ public class MemoryBenchmarks
 
     /// <summary>Builds, resolves, borrows and disposes a complete service-provider lifetime.</summary>
     /// <returns>The consumed operation result.</returns>
-    [Benchmark]
     public async Task ProviderLifetimeAsync()
     {
         var services = new ServiceCollection();

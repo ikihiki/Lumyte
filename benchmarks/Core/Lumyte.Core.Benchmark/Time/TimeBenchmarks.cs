@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Core.Time;
 
-namespace Lumyte.Core.Benchmark;
+namespace Lumyte.Core.Benchmark.ClockTime;
 
 /// <summary>Monotonic reads and checked time arithmetic.</summary>
-[BenchmarkCategory("Core", "Time", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class TimeBenchmarks
 {
     private readonly SystemMonotonicClock _clock = new();

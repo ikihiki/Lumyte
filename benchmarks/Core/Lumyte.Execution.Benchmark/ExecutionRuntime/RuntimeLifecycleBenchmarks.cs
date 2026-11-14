@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Execution.Benchmark;
+namespace Lumyte.Execution.Benchmark.Runtime;
 
 /// <summary>Separates plan preparation, runtime start, and runtime stop boundaries.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class RuntimeLifecycleBenchmarks
 {
     private Fixture? _fixture;
@@ -32,7 +32,6 @@ public class RuntimeLifecycleBenchmarks
     /// <summary>Collects modules and prepares a plan without starting or stopping it.</summary>
     /// <returns>The prepared status.</returns>
     [Benchmark]
-    [BenchmarkCategory("Configuration")]
     public ExecutionStatus Prepare()
     {
         _fixture = new Fixture(start: false);
@@ -42,7 +41,6 @@ public class RuntimeLifecycleBenchmarks
     /// <summary>Starts only a freshly prepared runtime.</summary>
     /// <returns>The running status.</returns>
     [Benchmark]
-    [BenchmarkCategory("Lifecycle")]
     public ExecutionStatus Start()
     {
         _fixture!.Wait(_fixture.Runtime.StartAsync().AsTask());
@@ -52,7 +50,6 @@ public class RuntimeLifecycleBenchmarks
     /// <summary>Stops only an already-running runtime.</summary>
     /// <returns>The stopped status.</returns>
     [Benchmark]
-    [BenchmarkCategory("Lifecycle")]
     public ExecutionStatus Stop()
     {
         _fixture!.Wait(_fixture.Runtime.StopAsync().AsTask());

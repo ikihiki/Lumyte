@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Effects;
 
 /// <summary>Compares complete transactions of sixteen writes, including final delivery.</summary>
-[BenchmarkCategory("Core", "Signals", "Batching", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class BatchBenchmarks
 {
     private const int Writes = 16;

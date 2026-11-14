@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
+using Lumyte.Settings.Benchmark.PersistedSettings;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Lumyte.Settings.Benchmark;
+namespace Lumyte.Settings.Benchmark.FileSettingsStorage;
 
-/// <summary>Measures real atomic file persistence, including filesystem work.</summary>
-[BenchmarkCategory("Core", "Settings", "Persistence", "Screening", "Comparison", "Diagnostic")]
+/// <summary>Verification helper for DI-backed file persistence and restart; not a measured workload.</summary>
 public class FileSettingsBenchmarks
 {
     private string _directory = null!;
@@ -25,7 +25,6 @@ public class FileSettingsBenchmarks
 
     /// <summary>Loads a document, saves an edit atomically, and reloads the persisted file.</summary>
     /// <returns>The committed scalar after restart.</returns>
-    [Benchmark]
     public int SaveAndReload()
     {
         using (ServiceProvider provider = SettingsBenchmarks.CreateProvider(new JsonFileSettingsStore(_path), 16))

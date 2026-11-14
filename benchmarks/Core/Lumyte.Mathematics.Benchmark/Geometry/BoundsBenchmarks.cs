@@ -2,10 +2,10 @@ using System.Numerics;
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Original seed-9417 transformed-corner workload without a stopwatch runner.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class BoundsBenchmarks
 {
     private readonly Vector2[] _first = new Vector2[256];

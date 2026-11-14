@@ -15,6 +15,7 @@
     <ProjectReference Include="FakeTool/FakeTool.csproj" ReferenceOutputAssembly="false" />
     <Compile Remove="FakeTool/**/*.cs" />
     <Compile Include="../../../build/BenchmarkCatalog.cs" Link="Build/BenchmarkCatalog.cs" />
+    <Compile Include="../../../build/CoreBenchmarkEvaluation.cs" Link="Build/CoreBenchmarkEvaluation.cs" />
     <Compile Include="../../../build/ScreeningCase.cs" Link="Build/ScreeningCase.cs" />
     <Compile Include="../../../build/ScreeningFailure.cs" Link="Build/ScreeningFailure.cs" />
     <Compile Include="../../../build/ComponentScreening.cs" Link="Build/ComponentScreening.cs" />

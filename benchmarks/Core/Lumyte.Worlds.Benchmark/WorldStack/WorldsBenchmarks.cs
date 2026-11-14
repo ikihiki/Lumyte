@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Worlds.Benchmark;
+namespace Lumyte.Worlds.Benchmark.Stack;
 
 /// <summary>Measures CPU scene ownership, boundary commits and independent frame dispatch phases.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Worlds", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class WorldsBenchmarks
 {
     private readonly CpuDrawContext _draw = new();

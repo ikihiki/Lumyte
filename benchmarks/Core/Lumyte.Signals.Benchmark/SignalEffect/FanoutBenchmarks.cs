@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Effects;
 
 /// <summary>Measures the cost of one mutation as the number of observers increases.</summary>
-[BenchmarkCategory("Core", "Signals", "Notifications", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class FanoutBenchmarks
 {
     private Signal<int> _source = null!;

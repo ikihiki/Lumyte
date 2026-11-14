@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Computed;
 
 /// <summary>Measures branching, diamond propagation, and passive read set construction.</summary>
-[BenchmarkCategory("Core", "Signals", "DependencyGraph", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class GraphBenchmarks
 {
     private Signal<int> _source = null!;

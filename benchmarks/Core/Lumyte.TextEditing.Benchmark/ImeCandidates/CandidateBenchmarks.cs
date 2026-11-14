@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.TextEditing.Benchmark;
+namespace Lumyte.TextEditing.Benchmark.ImeCandidateLists;
 
 /// <summary>Candidate-list validation and defensive ownership independent of document length.</summary>
-[BenchmarkCategory("Core", "TextEditing", "ImeCandidates", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class CandidateBenchmarks
 {
     private ImeCandidateSnapshot _candidates = null!;

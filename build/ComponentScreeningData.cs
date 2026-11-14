@@ -5,23 +5,23 @@ namespace Lumyte.Build;
 
 internal static partial class ComponentScreening
 {
-    public const string Version = "component-screening-v4";
+    public const string Version = "component-screening-v5";
     public const string SharedHarness = "benchmarks/Core/Shared";
     public const string Harness = "benchmarks/Core/Lumyte.Signals.Benchmark";
     public static readonly ScreeningCase[] Catalog =
     [
-        new("Lumyte.Signals.Benchmark.ScalarBenchmarks.ReadValue", 1),
-        new("Lumyte.Signals.Benchmark.ScalarBenchmarks.ReadPeek", 1),
-        new("Lumyte.Signals.Benchmark.ScalarBenchmarks.WriteSame", 1),
-        new("Lumyte.Signals.Benchmark.ScalarBenchmarks.WriteUnobserved", 2),
-        new("Lumyte.Signals.Benchmark.AsyncBenchmarks.CreateCompleted", 20),
-        new("Lumyte.Signals.Benchmark.AsyncBenchmarks.ReloadCompleted", 20),
-        new("Lumyte.Signals.Benchmark.AsyncBenchmarks.ReloadCompletedObserved", 30),
-        new("Lumyte.Signals.Benchmark.AsyncBenchmarks.SupersedeAndCancelPending", 100),
-        new("Lumyte.Signals.Benchmark.GraphBenchmarks.DiamondUpdate", 20),
-        new("Lumyte.Signals.Benchmark.GraphBenchmarks.SwitchBranch", 20),
-        new("Lumyte.Signals.Benchmark.GraphBenchmarks.CaptureEightReads", 20),
-        new("Lumyte.Signals.Benchmark.GraphBenchmarks.CheckReadSet", 5),
+        new("Lumyte.Signals.Benchmark.Values.ScalarBenchmarks.ReadValue", 1),
+        new("Lumyte.Signals.Benchmark.Values.ScalarBenchmarks.ReadPeek", 1),
+        new("Lumyte.Signals.Benchmark.Values.ScalarBenchmarks.WriteSame", 1),
+        new("Lumyte.Signals.Benchmark.Values.ScalarBenchmarks.WriteUnobserved", 2),
+        new("Lumyte.Signals.Benchmark.Async.AsyncBenchmarks.CreateCompleted", 20),
+        new("Lumyte.Signals.Benchmark.Async.AsyncBenchmarks.ReloadCompleted", 20),
+        new("Lumyte.Signals.Benchmark.Async.AsyncBenchmarks.ReloadCompletedObserved", 30),
+        new("Lumyte.Signals.Benchmark.Async.AsyncBenchmarks.SupersedeAndCancelPending", 100),
+        new("Lumyte.Signals.Benchmark.Computed.GraphBenchmarks.DiamondUpdate", 20),
+        new("Lumyte.Signals.Benchmark.Computed.GraphBenchmarks.SwitchBranch", 20),
+        new("Lumyte.Signals.Benchmark.Computed.GraphBenchmarks.CaptureEightReads", 20),
+        new("Lumyte.Signals.Benchmark.Computed.GraphBenchmarks.CheckReadSet", 5),
     ];
 
     private static readonly string[] _signalsPrefixes = ["src/Core/Lumyte.Signals/", "benchmarks/Lumyte.Signals.Benchmarks/", Harness + "/"];

@@ -25,7 +25,7 @@ public sealed class StateWorldTests
     [InlineData("notification")]
     public void ExpectedFailureIsObservedBeforeRecovery(string phase)
     {
-        var benchmark = new StateMachines.Benchmark.StateFailureBenchmarks { Phase = phase };
+        var benchmark = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = phase };
         benchmark.Setup();
         Assert.True(benchmark.Recover());
         Assert.Equal(1, benchmark.FailureCount);
@@ -39,7 +39,7 @@ public sealed class StateWorldTests
     [Fact]
     public void DiagnosticTransitionEmitsMatchingActivities()
     {
-        var benchmark = new StateMachines.Benchmark.StateFailureBenchmarks { Phase = "diagnostic" };
+        var benchmark = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
         benchmark.Setup();
         try
         {
@@ -59,7 +59,7 @@ public sealed class StateWorldTests
     [Fact]
     public void MissingFailureCannotPass()
     {
-        var benchmark = new StateMachines.Benchmark.StateFailureBenchmarks { Phase = "diagnostic" };
+        var benchmark = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
         benchmark.Setup();
         try
         {
@@ -72,13 +72,13 @@ public sealed class StateWorldTests
             benchmark.Cleanup();
         }
 
-        benchmark = new StateMachines.Benchmark.StateFailureBenchmarks { Phase = "guard" };
+        benchmark = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "guard" };
         benchmark.Setup();
         benchmark.Phase = "diagnostic";
         Assert.True(benchmark.Recover());
         Assert.Equal(0, benchmark.SampledCount);
         Assert.Equal(0, benchmark.MatchedActivityCount);
-        Assert.Throws<ArgumentException>(() => new StateMachines.Benchmark.StateFailureBenchmarks { Phase = "invalid" }.Setup());
+        Assert.Throws<ArgumentException>(() => new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "invalid" }.Setup());
     }
 
     /// <summary>Trigger input order cannot override transition priority or affect other instances.</summary>

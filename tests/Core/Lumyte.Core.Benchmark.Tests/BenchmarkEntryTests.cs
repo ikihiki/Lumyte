@@ -77,6 +77,22 @@ public sealed class BenchmarkEntryTests
         Assert.Null(BenchmarkEntry.Parse(["--catalog"]).Mode);
     }
 
+    /// <summary>Untimed selection uses the same BDN method globs and preserves all parameter cases.</summary>
+    [Fact]
+    public void CatalogFilterUsesNativeTypeAndMethodSelection()
+    {
+        BenchmarkEntry.EntryOptions options = BenchmarkEntry.Parse(["--catalog", "--filter", "*CatalogFixture.Work"]);
+        Assert.Equal("*CatalogFixture.Work", options.CatalogFilter);
+        Assert.Empty(options.Arguments);
+        using var catalog = JsonDocument.Parse(BenchmarkEntry.CreateCatalog(typeof(CatalogFixture).Assembly, options.CatalogFilter));
+        JsonElement[] cases = catalog.RootElement.GetProperty("Cases").EnumerateArray().ToArray();
+        Assert.Equal(4, cases.Length);
+        Assert.All(cases, benchmark => Assert.Equal("Work", benchmark.GetProperty("Method").GetString()));
+        Assert.Equal(0, BenchmarkEntry.Run(["--catalog", "--filter", "*CatalogFixture.Work"], typeof(CatalogFixture).Assembly));
+        using var missing = JsonDocument.Parse(BenchmarkEntry.CreateCatalog(typeof(CatalogFixture).Assembly, "*NoSuchSubject_726*"));
+        Assert.Equal(0, missing.RootElement.GetProperty("Cases").GetArrayLength());
+    }
+
     /// <summary>Shared switches are removed without changing BDN filter or parameter options.</summary>
     /// <param name="mode">The requested execution mode.</param>
     [Theory]
@@ -102,7 +118,9 @@ public sealed class BenchmarkEntryTests
     [InlineData("--mode", "Screen")]
     [InlineData("--mode", "screen", "--mode=compare")]
     [InlineData("--catalog", "--catalog")]
-    [InlineData("--catalog", "--filter", "*")]
+    [InlineData("--catalog", "--filter")]
+    [InlineData("--catalog", "--filter", "")]
+    [InlineData("--catalog", "--filter", "*", "--join")]
     [InlineData("--configuration", "Debug")]
     [InlineData("--inProcess")]
     [InlineData("--disableOptimizationsValidator")]

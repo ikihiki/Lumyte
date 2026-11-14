@@ -1,3 +1,4 @@
+using Lumyte.Core.Benchmark.ClockTime;
 using Lumyte.Core.Time;
 
 namespace Lumyte.Core.Benchmark;

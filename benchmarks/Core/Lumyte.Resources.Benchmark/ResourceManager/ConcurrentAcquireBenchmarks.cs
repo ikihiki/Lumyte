@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Memory;
 
-namespace Lumyte.Resources.Benchmark;
+namespace Lumyte.Resources.Benchmark.Management;
 
 /// <summary>Overlaps bounded callers against one gated construction.</summary>
-[BenchmarkCategory("Core", "Resources", "Acquisition", "Concurrency", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ConcurrentAcquireBenchmarks
 {
     /// <summary>Gets or sets the number of concurrent retain requests.</summary>

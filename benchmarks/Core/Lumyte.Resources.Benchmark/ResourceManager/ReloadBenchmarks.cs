@@ -3,10 +3,10 @@ using System.Threading.Channels;
 using BenchmarkDotNet.Attributes;
 using Lumyte.Memory;
 
-namespace Lumyte.Resources.Benchmark;
+namespace Lumyte.Resources.Benchmark.Management;
 
 /// <summary>Publishes source changes through the public automatic reload path.</summary>
-[BenchmarkCategory("Core", "Resources", "Reload", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ReloadBenchmarks
 {
     /// <summary>Rebuilds one changed source while retaining exactly one old generation lease.</summary>

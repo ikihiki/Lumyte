@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.StateMachines.Benchmark;
+namespace Lumyte.StateMachines.Benchmark.Machines;
 
 /// <summary>Exercises full candidate scans, short circuit guards and string trigger lookup.</summary>
-[BenchmarkCategory("Core", "StateMachines", "Guards", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class GuardSelectionBenchmarks
 {
     private readonly int[] _context = new int[1];

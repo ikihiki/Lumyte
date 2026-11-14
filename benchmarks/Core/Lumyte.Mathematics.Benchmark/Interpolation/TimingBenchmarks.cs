@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.InterpolationFunctions;
 
 /// <summary>Inverse timing solver uses its legal unit-interval domain.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Interpolation", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class TimingBenchmarks
 {
     private readonly CubicBezierTiming _timing = new(0.25, 0.1, 0.25, 1);

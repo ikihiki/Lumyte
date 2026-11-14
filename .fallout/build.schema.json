@@ -16,6 +16,7 @@
         "BenchmarkAnimation",
         "BenchmarkAudio",
         "BenchmarkCore",
+        "BenchmarkCoreEvaluate",
         "BenchmarkInput",
         "BenchmarkSignals",
         "CheckFormat",
@@ -180,7 +181,7 @@
         },
         "BenchmarkTimeoutSeconds": {
           "type": "number",
-          "description": "Shared Benchmark process deadline in seconds, up to 900"
+          "description": "Deadline seconds, up to 900: shared for BenchmarkCore; per build/catalog/Type.Method partition for BenchmarkCoreEvaluate"
         },
         "Cache": {
           "type": "string",

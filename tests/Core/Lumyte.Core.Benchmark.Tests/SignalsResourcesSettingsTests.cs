@@ -1,7 +1,7 @@
-using Lumyte.Resources.Benchmark;
+using Lumyte.Resources.Benchmark.Management;
 using Lumyte.Settings;
-using Lumyte.Settings.Benchmark;
-using Lumyte.Signals.Benchmark;
+using Lumyte.Settings.Benchmark.PersistedSettings;
+using Lumyte.Signals.Benchmark.Effects;
 using Xunit;
 
 namespace Lumyte.Core.Benchmark.Tests;

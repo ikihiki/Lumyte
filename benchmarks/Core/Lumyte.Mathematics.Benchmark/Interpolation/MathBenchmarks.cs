@@ -1,10 +1,10 @@
 using System.Numerics;
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.InterpolationFunctions;
 
 /// <summary>Distinct interpolation and geometry algorithm paths.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Interpolation", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class MathBenchmarks
 {
     /// <summary>Gets or sets endpoint, interior and extrapolation amounts.</summary>

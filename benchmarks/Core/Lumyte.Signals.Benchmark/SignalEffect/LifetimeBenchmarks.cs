@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Signals.Benchmark;
+namespace Lumyte.Signals.Benchmark.Effects;
 
 /// <summary>Exercises scope ownership, recovery and actual parallel graph access.</summary>
-[BenchmarkCategory("Core", "Signals", "Effects", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class LifetimeBenchmarks
 {
     /// <summary>Gets or sets the number of scope-owned observers.</summary>

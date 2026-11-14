@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Memory.Benchmark;
+namespace Lumyte.Memory.Benchmark.Chunks;
 
 /// <summary>Finite in-chunk waves with untimed fresh-chunk reset, never repeated cursor exhaustion.</summary>
-[BenchmarkCategory("Core", "Memory", "Allocation", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ChunkHitBenchmarks
 {
     private readonly MemoryPoolId _pool = new("chunk-wave");

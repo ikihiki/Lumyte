@@ -363,7 +363,7 @@ public sealed class ComponentScreeningTests
 
     private static JsonObject Fixture() => JsonNode.Parse("""
         {"HostEnvironmentInfo":{"BenchmarkDotNetVersion":"0.15.8","OsVersion":"fixture OS","ProcessorName":"fixture CPU","Architecture":"X64","RuntimeVersion":".NET 10.0","Configuration":"RELEASE","DotNetCliVersion":"10.0.403"},
-        "Benchmarks":[{"FullName":"Lumyte.Signals.Benchmark.ScalarBenchmarks.ReadValue","Parameters":"","HardwareIntrinsics":"fixture",
+        "Benchmarks":[{"FullName":"Lumyte.Signals.Benchmark.Values.ScalarBenchmarks.ReadValue","Parameters":"","HardwareIntrinsics":"fixture",
         "DisplayInfo":"SignalsScreening-v2(OutlierMode=DontRemove, IterationCount=8, IterationTime=150ms, LaunchCount=1, WarmupCount=3)",
         "Statistics":{"Median":10,"Mean":10,"StandardDeviation":0.1,"N":8},"Memory":{"BytesAllocatedPerOperation":0},"Measurements":[]}]}
         """)!.AsObject().WithMeasurements();

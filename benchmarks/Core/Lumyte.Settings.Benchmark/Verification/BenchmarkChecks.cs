@@ -1,3 +1,6 @@
+using Lumyte.Settings.Benchmark.FileSettingsStorage;
+using Lumyte.Settings.Benchmark.PersistedSettings;
+
 namespace Lumyte.Settings.Benchmark;
 
 /// <summary>Deterministic settings benchmark oracles.</summary>

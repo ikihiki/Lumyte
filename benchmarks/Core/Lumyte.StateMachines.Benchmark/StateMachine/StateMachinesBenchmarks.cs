@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.StateMachines.Benchmark;
+namespace Lumyte.StateMachines.Benchmark.Machines;
 
 /// <summary>Exercises immutable construction, candidate selection and successful bounded transitions.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "StateMachines", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class StateMachinesBenchmarks
 {
     private readonly int[] _context = new int[2];
@@ -53,7 +53,6 @@ public class StateMachinesBenchmarks
 
     /// <summary>Builds through the generated Composition consumer factory and content initializer.</summary>
     /// <returns>The observed operation result.</returns>
-    [Benchmark]
     public StateMachine<int[], int> ComposeDefinition()
     {
         var a = new State<int[]>("a");

@@ -1,11 +1,11 @@
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Execution.Benchmark;
+namespace Lumyte.Execution.Benchmark.Commands;
 
 /// <summary>Controls for the generated sender using its exact receiver operation.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution", "Commands", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class SenderControlBenchmarks
 {
     private readonly SenderState _state = new();
@@ -21,19 +21,16 @@ public class SenderControlBenchmarks
     /// <summary>Invokes the identical receiver work without execution admission.</summary>
     /// <returns>The command result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Commands")]
     public int Direct() => _state.Play(7);
 
     /// <summary>Invokes the retained receiver delegate.</summary>
     /// <returns>The command result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Commands")]
     public int CachedDelegate() => _cached();
 
     /// <summary>Creates an escaping receiver closure and then invokes it once.</summary>
     /// <returns>The command result.</returns>
     [Benchmark]
-    [BenchmarkCategory("Commands")]
     public int CapturedDelegate() => CreateCaptured(_state, 7)();
 
     [MethodImpl(MethodImplOptions.NoInlining)]

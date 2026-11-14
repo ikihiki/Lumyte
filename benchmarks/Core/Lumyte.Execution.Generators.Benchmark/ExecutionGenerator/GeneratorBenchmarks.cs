@@ -2,11 +2,11 @@ using BenchmarkDotNet.Attributes;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace Lumyte.Execution.Generators.Benchmark;
+namespace Lumyte.Execution.Generators.Benchmark.ExecutionGeneration;
 
 /// <summary>Exercises the public incremental generator driver over independent consumers.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution.Generators", "SourceGeneration", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class GeneratorBenchmarks
 {
     private CSharpCompilation _first = null!;

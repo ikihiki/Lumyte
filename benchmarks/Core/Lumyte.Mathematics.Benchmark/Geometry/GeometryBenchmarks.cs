@@ -2,10 +2,10 @@ using System.Numerics;
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Geometry paths without unrelated interpolation parameters.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class GeometryBenchmarks
 {
     private readonly Point2D<double> _start = new(0, 0);

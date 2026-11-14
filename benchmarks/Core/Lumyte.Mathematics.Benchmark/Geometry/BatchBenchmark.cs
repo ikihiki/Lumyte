@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Geometry;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.GeometryQueries;
 
 /// <summary>Seed-9417 SIMD batches retaining the original scalar distance oracle.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class BatchBenchmark
 {
     private float[] _x = [];

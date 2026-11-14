@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Mathematics.Colors;
 
-namespace Lumyte.Mathematics.Benchmark;
+namespace Lumyte.Mathematics.Benchmark.ColorOperations;
 
 /// <summary>Independent hue-sector profiles.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Colors", "ColorModels", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ColorModelBenchmarks
 {
     /// <summary>Gets or sets hue sectors and a wrapped value.</summary>

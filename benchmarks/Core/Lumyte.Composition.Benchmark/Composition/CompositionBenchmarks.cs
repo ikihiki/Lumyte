@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.Composition.Benchmark;
+namespace Lumyte.Composition.Benchmark.CompositionModel;
 
 /// <summary>Measures snapshots, constrained adapters, generated nodes, and recipes.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Composition", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class CompositionBenchmarks
 {
     private readonly CompositionSlot<Compose.Definitions.Item, int> _slot = new((target, children) => target.Children = children);

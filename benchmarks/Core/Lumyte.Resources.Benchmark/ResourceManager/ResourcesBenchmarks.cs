@@ -1,10 +1,10 @@
 using BenchmarkDotNet.Attributes;
 using Lumyte.Memory;
 
-namespace Lumyte.Resources.Benchmark;
+namespace Lumyte.Resources.Benchmark.Management;
 
 /// <summary>Exercises real manager construction, caching and generation ownership.</summary>
-[BenchmarkCategory("Core", "Resources", "Acquisition", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class ResourcesBenchmarks
 {
     private readonly ResourceKey<int> _key = new("asset/root");

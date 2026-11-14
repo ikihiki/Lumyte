@@ -1,9 +1,9 @@
 using BenchmarkDotNet.Attributes;
 
-namespace Lumyte.TextEditing.Benchmark;
+namespace Lumyte.TextEditing.Benchmark.TextDocuments;
 
 /// <summary>Single-line model work with bounded change history and nonidentical edits.</summary>
-[BenchmarkCategory("Core", "TextEditing", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Screening", "Comparison", "Diagnostic")]
 public class TextBenchmarks
 {
     private readonly LogicalNavigator _navigator = new();
@@ -72,6 +72,7 @@ public class TextBenchmarks
         using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Keyboard))
         {
             edit.SetComposition(new TextCompositionSnapshot(new Guid("11111111-2222-3333-4444-555555555555"), new TextSpan(0, 16), Array.Empty<TextCompositionSpan>()));
+            edit.Replace(new TextSpan(0, 1), "候", new TextSelection(1, 1));
             edit.Commit();
         }
 
@@ -82,6 +83,28 @@ public class TextBenchmarks
         }
 
         return document.CaptureSnapshot().Text;
+    }
+
+    /// <summary>Publishes changed composing text, then commits the composition checkpoint.</summary>
+    /// <returns>The committed snapshot with no active composition.</returns>
+    [Benchmark]
+    public TextDocumentSnapshot CompositionCommit()
+    {
+        var document = new TextDocument(_input, Length + 64);
+        using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Keyboard))
+        {
+            edit.SetComposition(new TextCompositionSnapshot(new Guid("11111111-2222-3333-4444-555555555555"), new TextSpan(0, 1), Array.Empty<TextCompositionSpan>()));
+            edit.Replace(new TextSpan(0, 1), "候", new TextSelection(1, 1));
+            edit.Commit();
+        }
+
+        using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Keyboard))
+        {
+            edit.EndComposition(TextCompositionEnd.Commit);
+            edit.Commit();
+        }
+
+        return document.CaptureSnapshot();
     }
 
     /// <summary>Deletes a known combined grapheme on a fresh document.</summary>

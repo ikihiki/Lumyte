@@ -1,4 +1,4 @@
 using Lumyte.Benchmarks;
 using Lumyte.Core.Benchmark;
 
-return BenchmarkEntry.Run(args, typeof(TimeBenchmarks).Assembly);
+return BenchmarkEntry.Run(args, typeof(BenchmarkChecks).Assembly);
