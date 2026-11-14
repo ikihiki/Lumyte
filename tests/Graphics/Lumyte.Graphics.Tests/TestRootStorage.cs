@@ -1,9 +1,7 @@
-using Lumyte.Graphics.Abstractions;
-
 namespace Lumyte.Graphics.Tests;
 
 /// <summary>Final allocation owned by an isolated test generation.</summary>
-internal sealed class TestRootStorage(int size) : IShaderRootStorage
+internal sealed class TestRootStorage(int size) : ITestShaderRootStorage
 {
     public int Size => size;
 

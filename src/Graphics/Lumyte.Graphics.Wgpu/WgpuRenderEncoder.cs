@@ -20,7 +20,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
     private bool _stencil;
 
     private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
-    private ShaderRootArguments? _arguments;
+    private WgpuRootStorage? _arguments;
     private object? _argumentProgram;
     private WgpuArgumentTable? _table;
 
@@ -48,16 +48,18 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        ShaderRootArguments root = WgpuShaderTransfer.CreateRoot(owner.Owner, in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
-        SelectRoot(root);
+        WgpuGraphicsPipeline program = _pipeline!;
+        WgpuRootStorage root = WgpuShaderTransfer.CreateRoot(owner.Owner, in value, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+        SelectRoot(root, program);
     }
 
     public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
         where T : unmanaged
     {
         ValidateRootSelection();
-        ShaderRootArguments root = WgpuShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
-        SelectRoot(root);
+        WgpuGraphicsPipeline program = _pipeline!;
+        WgpuRootStorage root = WgpuShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+        SelectRoot(root, program);
     }
 
     public void SetPipeline(IGraphicsPipeline pipeline)
@@ -230,24 +232,37 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         _pipeline.ValidateAlive();
     }
 
-    private IShaderRootStorage CreateRootStorage(int size) => new WgpuRootStorage(owner.Owner, size);
-
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 
-    private void SelectRoot(ShaderRootArguments root)
+    private void SelectRoot(WgpuRootStorage root, WgpuGraphicsPipeline program)
     {
         try
         {
+            owner.ValidatePass(this);
+            program.ValidateAlive();
+            if (!ReferenceEquals(_pipeline, program))
+            {
+                throw new InvalidOperationException("The selected program changed while preparing root arguments.");
+            }
+
             owner.KeepBinding(root);
         }
         catch
         {
-            root.Dispose();
+            try
+            {
+                root.Dispose();
+            }
+            catch
+            {
+                // Preserve the original transfer or selection failure.
+            }
+
             throw;
         }
 
         _arguments = root;
-        _argumentProgram = _pipeline;
+        _argumentProgram = program;
     }
 
     private void PrepareDraw(bool indexed)
@@ -267,7 +282,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments.Arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
                 EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
@@ -299,7 +314,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         WGPUBindGroupLayoutImpl* layout = WGPU.wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
         try
         {
-            var binding = new WgpuShaderBinding(owner.Owner, data, layout);
+            var binding = new WgpuShaderBinding(owner.Owner, data, _arguments!, layout);
             owner.KeepBinding(binding);
             WGPU.wgpuRenderPassEncoderSetBindGroup(handle, 0, binding.Native, 0, null);
         }

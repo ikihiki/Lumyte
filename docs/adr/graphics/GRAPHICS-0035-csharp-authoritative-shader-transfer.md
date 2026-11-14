@@ -317,11 +317,11 @@ WgpuとBrowserの読み取り専用・書き込み可能poolとremapの各lane�
 
 通常のunmanaged overloadとIShaderArguments overloadは、Set時点の値を同期的に固定する。Vulkan／D3D12はceil(wireSize/4) wordの有界stack spanをゼロクリアし、backendのref struct writerが直接書く。数値のCPU heap配列やArrayPool rental、pack・padding用の中間配列は作成・保持しない。末尾1／3 byteを含むpaddingはゼロとする。一時stackは最終payload ownerではなく、native command記録後の実際のコピーはdriver command bufferが所有する。明示CaptureとShaderValueSnapshotは独立した読み取り専用CPU検査のまま維持し、Set／upload入力へ戻さない。
 
-Setではwriter.Complete、任意の配置診断、参照準備hook、metadata owner生成とcommandのKeepBindingをすべて完了してから、VulkanPushConstants.EmitによるvkCmdPushConstants、またはD3D12のcommands_root_constantsによるSetGraphicsRoot32BitConstants／SetComputeRoot32BitConstantsを呼び、Setが戻る前に記録する。新しい選択はnative呼び出し後に公開する。host検査、codec、診断、準備やKeepBinding失敗ではnative定数を発行せず、前回成功した選択を保つ。ただし既に発行したvoid driver commandはrollbackできず、device failureを含むnative失敗からの原子的復元は保証しない。
+Setではwriter.Complete、任意の配置診断、参照準備hook、不変metadata生成をすべて完了してから、VulkanPushConstants.EmitによるvkCmdPushConstants、またはD3D12のcommands_root_constantsによるSetGraphicsRoot32BitConstants／SetComputeRoot32BitConstantsを呼び、Setが戻る前に記録する。新しい選択はnative呼び出し後に公開する。host検査、codec、診断や準備失敗ではnative定数を発行せず、前回成功した選択を保つ。ただし既に発行したvoid driver commandはrollbackできず、device failureを含むnative失敗からの原子的復元は保証しない。
 
-Vulkan／D3D12のrender／compute全四encoderはcodecとprepare中を_settingArgumentsで保護し、入れ子のSet、pipeline変更、End、Draw／Dispatchなどの再入を拒否する。Graph準備のtable自動選択に必要なSetArgumentTableだけは許可する。callback後は、捕捉したpipelineのValidateAlive、owner.ValidatePassとpipeline identity一致をすべてKeepBindingとnative発行より前に再検査する。raw command bufferやpipelineのDisposeがguardを迂回しても、解放済みhandleを使うnative発行を阻止する。host失敗では旧root選択を保持するが、呼び出し側が明示したresource Dispose、table自動選択や発行済みdriver commandは取り消さない。
+Vulkan／D3D12のrender／compute全四encoderはcodecとprepare中を_settingArgumentsで保護し、入れ子のSet、pipeline変更、End、Draw／Dispatchなどの再入を拒否する。Graph準備のtable自動選択に必要なSetArgumentTableだけは許可する。callback後は、捕捉したpipelineのValidateAlive、owner.ValidatePassとpipeline identity一致をすべてnative発行より前に再検査する。raw command bufferやpipelineのDisposeがguardを迂回しても、解放済みhandleを使うnative発行を阻止する。host失敗では旧root選択を保持するが、呼び出し側が明示したresource Dispose、table自動選択や発行済みdriver commandは取り消さない。
 
-Draw／Dispatchはnumeric rootを再送せず、参照metadataとadmissionだけを保持するroot ownerを使う。元のmutable classやstackのin参照を借用しない。転送済み要素のtransitive metadata、table照合とGraphのresource・範囲・access宣言は実行ごとに更新する。program一致検査も維持する。per-Set GPU uniform／CBVや容量超過fallbackは設けない。Wgpu／Browserは従来のbackend-private uniform emulationとstorage ownerを維持し、最初の実行でsealする。WGSLのbinding pool／remapも実行ごとに更新する。BrowserのMemoryView→JSコピーも残り、metadataの配列・参照collection、owner、delegateや実行ごとのbinding／descriptor heap確保まで除去するzero allocation／zero copyの主張ではない。公開の新しいimmediate APIやpackage更新は不要である。
+Draw／Dispatchはnumeric rootを再送せず、不変の参照metadataとadmissionを使う。元のmutable classやstackのin参照を借用しない。転送済み要素のtransitive metadata、table照合とGraphのresource・範囲・access宣言は実行ごとに更新する。program一致検査も維持する。per-Set GPU uniform／CBVや容量超過fallbackは設けない。Wgpu／Browserは従来のbackend-private uniform emulationとstorage ownerを維持し、最初の実行でsealする。WGSLのbinding pool／remapも実行ごとに更新する。BrowserのMemoryView→JSコピーも残り、metadataの配列・参照collection、owner、delegateや実行ごとのbinding／descriptor heap確保まで除去するzero allocation／zero copyの主張ではない。公開の新しいimmediate APIやpackage更新は不要である。
 
 VulkanDevice.MaxPushConstantsSizeはphysical deviceから取得するpublic容量queryである。Radeon8060Sで確認した256 byteを他deviceに一般化しない。push rangeはbind pointごとにoffset 0、size MaxPushConstantsSizeへ固定し、computeの全pipeline variantはCompute、graphics／partialの全variantはVertex|Fragmentを宣言する。Setのstage maskは対応rangeと完全一致し、compute／graphicsのnative push状態を分離する。全三stageの重複rangeに対して一部stageだけを更新する設計にはしない。descriptor visibilityはこれと独立にVertex|Fragment|Computeを許容する。この固定契約はpush rangeに限り、descriptor数などが異なるpipeline layout全体のsingleton化を意味しない。実際のpush量は論理wireの4-byte切り上げだけで、uint4宣言のpaddingとは区別する。Setには物理容量に加えて64 KiBのbackend host stack guardを適用し、異常に大きい物理上限でも無制限stack確保やheap fallbackを行わない。公開する物理上限やlayoutのrangeは変更しない。
 
@@ -357,7 +357,7 @@ IShaderValueWriterは`WriteValue(ReadOnlySpan<byte> value)`と`WriteReference<T>
 
 生成型のprivate static planは実際のC#オフセットによる参照順序とスロット妥当性のためだけに使う。任意診断のreflectionや数値field tableとは独立し、範囲外、負値、重複、交差をgetterの呼び出し前に拒否する。field、auto-property、virtual propertyと副作用のあるcustom getterも同じ経路を使い、wireローカルコピーの後に各参照getterを物理順で一回だけ評価する。getterによる数値格納領域の変更は今回のraw bytesへ反映せず、参照プロパティの変更は後続getterが観測する。emitter structは生成しない。
 
-VulkanShaderValueWriter、Direct3D12ShaderValueWriter、WgpuShaderValueWriter、BrowserShaderValueWriterを、それぞれのbackend内部でIShaderValueWriterとして直接実装する。各backendのShaderTransfer helperがSetと型付きCopyFromの両方でvalue.Write(ref writer)を呼ぶ。各writerが暗黙の現在位置とexpectedTransferSizeを所有し、raw区間をVulkan／D3D12の`Span<byte>`、Wgpu／BrowserのIShaderRootStorage.WriteまたはuploadのCopyBytesFromへ直接渡す。Sharedのwriterから参照encoder callbackを呼ぶ構造にはしない。WriteValueは渡された長さ、WriteReferenceは必ず16バイトだけ位置を進め、参照はその場でbackendの表現へ符号化する。残容量の検査はlength > expectedTransferSize - positionという減算形式でoverflowを避ける。Completeは一回だけ成功でき、position == expectedTransferSizeを必須とする。短い出力も長い出力も公開しない。
+VulkanShaderValueWriter、Direct3D12ShaderValueWriter、WgpuShaderValueWriter、BrowserShaderValueWriterを、それぞれのbackend内部でIShaderValueWriterとして直接実装する。各backendのShaderTransfer helperがSetと型付きCopyFromの両方でvalue.Write(ref writer)を呼ぶ。各writerが暗黙の現在位置とexpectedTransferSizeを所有し、raw区間をVulkan／D3D12の`Span<byte>`、Wgpu／Browserの非公開具象RootStorage.WriteまたはuploadのCopyBytesFromへ直接渡す。Sharedのwriterから参照encoder callbackを呼ぶ構造にはしない。WriteValueは渡された長さ、WriteReferenceは必ず16バイトだけ位置を進め、参照はその場でbackendの表現へ符号化する。残容量の検査はlength > expectedTransferSize - positionという減算形式でoverflowを避ける。Completeは一回だけ成功でき、position == expectedTransferSizeを必須とする。短い出力も長い出力も公開しない。
 
 IShaderReferenceMetadataはReferencesという依存identityの列挙だけを公開する。Graph、transitive traversal、copy overlayと任意検証はwire layoutを知らずにこの列挙を使う。各backendのprivate immutable ownerはShaderValueの共有list、数値bytes、wire offsetや元の値objectを保持しない。登録slot／range／accessはbindingに必要なIShaderReferenceのidentityとして残り、C# wire内の位置とは区別する。
 
@@ -365,26 +365,33 @@ CopyFromは失敗時の部分byte更新を許可し、要求範囲のmetadata全
 
 16-byte ABIは従来の予約ゼロを含めて維持する。Vulkanはbufferの物理addressに絶対byte offsetを加えた64-bit値、またはtexture／samplerの32-bit slotを置き、byte 8にchecked uintのcountを置く。内部の型付きIVulkanShaderBuffer.ShaderBufferを使い、object型ShaderHandleのboxingを避ける。D3D12はslot、checked uintの絶対byte offset、checked uintのcount、予約ゼロとする。Wgpu／Browserはslot、checked uintの登録相対byte offset、checked uintのcount、予約ゼロとし、相対offsetやcountの切り詰めを許さない。
 
-SharedのShaderTransferWriter、IShaderTransferDestination、ShaderRootDestination、ShaderUploadDestination、ShaderDataUpload、ShaderReferenceEncodingとVulkan／D3D12の旧参照encoderは削除する。ShaderRootArgumentsは参照metadataと任意の書き込み済みstorageの所有を引き受け、公開境界は次の非generic APIとする。
+SharedのShaderTransferWriter、IShaderTransferDestination、ShaderRootDestination、ShaderUploadDestination、ShaderDataUpload、ShaderReferenceEncodingとVulkan／D3D12の旧参照encoderは削除する。ShaderRootArgumentsは数値payloadを所有しない不変metadataとし、公開境界は次の非generic APIとする。IShaderRootStorageは削除し、公開の代替storage型やobject bagを設けない。
 
 ```diff
  namespace Lumyte.Graphics.Shared
  {
-+    public sealed class ShaderRootArguments : IDisposable
++    public sealed class ShaderRootArguments
 +    {
-+        // 引数・容量を検証して割り当てるだけ。戻り値の所有権は呼び出し側。
-+        public static IShaderRootStorage Allocate(string root, string name, int size,
-+            Func<int, IShaderRootStorage> factory);
-+        // storageは省略可能。検証とprepare成功時だけ所有権を取得。
++        public string RootParameter { get; }
++        public string ShaderTypeName { get; }
++        public int WireSize { get; }
++        public IShaderReferenceMetadata References { get; }
++        // 名前・非負size・参照を検査し、参照専用prepareを実行する。
 +        public static ShaderRootArguments Create(string rootParameter,
-+            string shaderTypeName, int wireSize, IShaderRootStorage? storage,
++            string shaderTypeName, int wireSize,
 +            IShaderReferenceMetadata references,
 +            Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null);
++        // detached callbackへ実行時の完全な参照集合を渡す。
++        public void Admit(IReadOnlyCollection<IShaderReference> references);
 +    }
  }
 ```
 
-Allocateは正確な論理sizeをfactoryへ渡し、16-byte切り上げや最小容量を要求しない。返された容量が負または論理size未満なら解放し、元の検証例外を返す。Createはstorageがある場合だけ非負かつ論理size以上の容量を照合する。Vulkan／D3D12はstorage: nullで作成し、ownerをKeepBindingしてからnative記録する。Sharedはbackend featureで分岐しない。storageなしのStorage getterはInvalidOperationExceptionとなり、Seal／Disposeはmetadata世代の状態を扱う。末尾1／3 byteを含むVulkan／D3D12の4-byte切り上げ、Wgpu／Browserの最小16 byte・16-byte整列とnative uniform binding容量検査はbackendが所有する。IShaderRootStorageのWriteは同期コピー、Sealはcommitとfreezeを表し、GPU bufferの存在や共通のGPU uniform寿命方針を要求しない。ShaderBindingDataの共通uniform容量検査もbackendへ移す。Createは書き込みやgeneric codec／encode callbackを受け付けない。Create失敗ではstorageの所有権は呼び出し側に残る。backend helperは書き込み、診断、準備またはCreate失敗時に未公開storageを解放し、cleanup例外で元の例外を隠さない。Create成功後のcommandへの所有権移転失敗はSelectRootが処理する。
+Storage、nullable storage、Allocate、Seal、Dispose、IDisposableと共通のsealed／disposed状態は持たない。Createは書き込み、generic codecやencode callbackを受け付けず、参照metadataとdetached admission callbackだけを保持する。SharedのShaderBindingDataもRootSizeと共通Sealを持たない。末尾1／3 byteを含むVulkan／D3D12の4-byte切り上げ、Wgpu／Browserの最小16 byte・16-byte整列とnative uniform binding容量検査はbackendが所有する。
+
+Wgpu／Browserの既存の非公開具象RootStorageだけがIDisposableとしてuniformと一度だけ設定するArgumentsを所有します。writerは具象RootStorageへ直接書き込み、bindingも具象ownerを直接受け取ってSealします。commandはKeepBindingでGPU利用終了まで具象ownerを保持します。Vulkan／D3D12のmetadataは解放不要でSet時のKeepBinding(root)もありません。記録済みnative bindingはreadonly ShaderBindingDependenciesを保持し、Dispose末尾のGC.KeepAliveでroot metadataと全resource／table identityを記録済みGPU利用の寿命まで維持します。未使用metadataは再選択後に保持不要です。
+
+backend helperは書き込み、診断、準備またはCreate失敗時に未公開の具象ownerを解放し、cleanup例外で元の例外を隠さない。commandへの所有権移転失敗はSelectRootが処理する。追加のroot wrapper、map、global cacheや公開型は設けない。Sharedはbackend featureで分岐しない。
 
 ### Graphの参照準備と実行時admission
 
@@ -415,7 +422,7 @@ prepared passごとに一つ保存したActionが実行時検査を行い、準�
 
 callback Bで取得して保存した参照も、使用するpass A自身がnative resource・範囲・accessを宣言し、native tableが互換ならAで使用できる。callbackの取得元、登録groupやslotによる所属判定は行わない。JoinTableによるtable共有だけでは使用宣言にならず、native table照合と宣言照合は別の条件である。Graphはnative command内の最新metadataを直接観測できないため、このhookで二つの検査境界を接続し、任意のdevice検証が無効でも宣言照合を行う。
 
-準備が失敗すると未公開のmetadataと存在するnative storageを解放し、元の例外と前回成功したroot選択を保持する。後続の実行時admissionが失敗した場合はnative描画・dispatchの記録を阻止するが、既に変更したCPU状態のrollbackは保証しない。IShaderRootEncoder、IShaderArgumentScope、GraphRootArgumentScopeとReferenceAdmissionのnested classは削除し、新しい公開型、friend accessやInternalsVisibleToは追加しない。
+準備が失敗すると未公開metadataを公開せず、Wgpu／Browserでは未公開の具象ownerを解放し、元の例外と前回成功したroot選択を保持する。後続の実行時admissionが失敗した場合はnative描画・dispatchの記録を阻止するが、既に変更したCPU状態のrollbackは保証しない。IShaderRootEncoder、IShaderArgumentScope、GraphRootArgumentScopeとReferenceAdmissionのnested classは削除し、新しい公開型、friend accessやInternalsVisibleToは追加しない。
 
 ### 手書き実装と第三者backendの移行
 

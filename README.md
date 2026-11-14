@@ -129,10 +129,18 @@ root 32-bit constants, not per-Set GPU uniform/CBV allocation or an oversized-ro
 fallback. Query VulkanDevice.MaxPushConstantsSize; D3D12 exposes
 RootConstantDwordCapacity=58 and RootConstantByteCapacity=232. Set writes a cleared, bounded ceil(wireSize/4)-word stack span and records
 native constants before returning. Complete, optional diagnostics, reference preparation,
-metadata creation and KeepBinding all precede emission. The driver command buffer
+metadata creation all precede emission. The driver command buffer
 owns the numeric copy, not the temporary stack. Draw/Dispatch never re-emit it;
-retained owners hold reference/admission metadata with null storage, not numeric
+selected roots hold immutable reference/admission metadata, not numeric
 CPU heap arrays or ArrayPool rentals. Metadata and execute-time bindings still allocate.
+Recorded native bindings retain readonly ShaderBindingDependencies through
+Dispose with GC.KeepAlive, preserving root metadata and all resource/table identities
+for recorded GPU work; unused metadata need not survive reselection. No root
+metadata KeepBinding or IDisposable is required at Set. Wgpu/Browser keep their
+existing private concrete IDisposable RootStorage, which owns its uniform and
+once-initialized Arguments; bindings Seal it directly and commands KeepBinding
+the owner until GPU release.
+
 Artifact-capacity preflight is mandatory ABI safety, independent of EnableValidation:
 Vulkan checks against the owning device before shader-module creation; all D3D12
 pipeline/partial paths check before native pipeline creation. Both inspect every app
@@ -165,7 +173,7 @@ Vulkan/D3D12 render and compute encoders guard codec/preparation with
 _settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
 rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
 After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
-pipeline-identity check all precede KeepBinding and native emission, rejecting
+pipeline-identity check all precede native emission, rejecting
 raw command-buffer or pipeline disposal before native use. Host failure preserves
 the old root selection, but cannot undo caller-requested resource disposal, table
 autobinding, or already-issued driver commands.

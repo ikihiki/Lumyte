@@ -46,8 +46,8 @@ public sealed class ArgumentTableBindingTests
     public void ValueOnlyArgumentsDoNotRequireTable()
     {
         float numeric = 1f;
-        using ShaderRootArguments generation = TestShaderTransfer.CreateUnmanaged(in numeric, "arguments", "Values", size => new TestRootStorage(size));
-        var captured = ShaderBindingDependencies.Collect(generation, null);
+        using TestRootOwner generation = TestShaderTransfer.CreateUnmanaged(in numeric, "arguments", "Values", size => new TestRootStorage(size));
+        var captured = ShaderBindingDependencies.Collect(generation.Metadata, null);
         Assert.Empty(captured.References);
         Assert.Empty(captured.Elements);
     }
@@ -125,7 +125,7 @@ public sealed class ArgumentTableBindingTests
     {
         using var first = new Table();
         using var second = new Table();
-        using ShaderRootArguments root = Root(new Reference(first, new object()));
+        ShaderRootArguments root = Root(new Reference(first, new object()));
         Assert.Single(ShaderBindingDependencies.Collect(root, first).References);
         Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(root, second));
     }
@@ -200,8 +200,8 @@ public sealed class ArgumentTableBindingTests
 
         layout.ValidateArguments(root);
         var arguments = new PoolArguments(values.Select(value => (IGpuRef<uint>)value.Reference!).ToArray());
-        using ShaderRootArguments generation = TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
-        var binding = new ShaderBindingData(ShaderBindingDependencies.Collect(generation, table), target, caps);
+        using TestRootOwner generation = TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
+        var binding = new ShaderBindingData(ShaderBindingDependencies.Collect(generation.Metadata, table), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
         Assert.Equal(2, binding.Writable.Count);
         Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 8)));
@@ -217,7 +217,7 @@ public sealed class ArgumentTableBindingTests
     private static ShaderRootArguments Root(IShaderReference reference)
     {
         var arguments = new PoolArguments([(IGpuRef<uint>)reference]);
-        return TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
+        return TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode).Metadata;
     }
 
     private static byte[] Encode(ShaderValue value)

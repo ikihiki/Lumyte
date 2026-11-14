@@ -4,6 +4,33 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## 共通root storage契約の削除（2026-11-14）
+
+IShaderRootStorageを削除し、alias／代替public storage interface／opaque object bagは残さない。
+ShaderRootArgumentsはRootParameter、ShaderTypeName、WireSize、Referencesとdetached admissionだけのimmutable metadataとなる。
+Storage／nullable storage field／Allocate factory／Seal／Dispose／IDisposableとpayload lifecycle stateを削除した。
+Createはroot名・型名・論理size・参照metadata・optional prepareの五引数である。
+共通ShaderBindingDataのRootSizeと共通seal呼び出しも削除し、数値やnative handleを共通rootへ格納しない。
+
+Wgpu／Browserは既存のprivate concrete RootStorage自体がuniform bufferと一度だけ初期化したArguments metadataを所有する。
+追加wrapper／array／dictionaryを作らず、backend writerとbindingはそのconcrete ownerを直接使う。
+backend encoderがownerをcommand bindingsへ保持し、最初のbindでbackend-private seal／unmap、GPU完了とcommand解放後にdisposeする。
+失敗した新世代は一度破棄し、cleanup例外で元の転送／prepare例外を隠さない。旧選択・複数Set／Drawの世代は維持する。
+
+Vulkan／D3D12のSet即時native記録は変更しない。root metadataをIDisposable ownerとしてcommand listへ積むことは廃止した。
+代わりに実Draw／Dispatchで作る既存native bindingがShaderBindingDependenciesをreadonly保持し、disposeまでRoot metadataと
+全transitive resource／table identityを生存させる。GC.KeepAliveはこの既存bindingの解放境界を明示する。
+未使用のSet metadataは再選択後に保持不要であり、数値payload保持や共通storageを復活させない。
+
+共通storage API不在guardは旧36daf855で二件とも失敗し、現行で成功した。
+actual Wgpu final-root testはvalidation off/onで実concrete ownerを観測し、command disposal後の解放を確認した。
+独立read-only reviewはblockerなし。tests-only sink／fake backend ownerは共通production契約ではない。
+型をstructへ限定する次の要求はこのstorage削除checkpointとは別の変更として扱う。
+新規性能測定／zero-allocationの主張はなく、旧凍結結果は変更しない。
+
+ログはartifacts/validation15-{fullhost,hardware-release,negative-control,positive-control}.logとmetadata-* evidence。
+以下は共通storage削除前の履歴であり、共通Storage／Seal／Disposeの記述は最新APIではない。
+
 ## SetArguments内でのnative定数command記録（2026-11-14）
 
 2aa25f99までのDraw時payload再送を廃止し、Vulkan／D3D12はSetArgumentsが戻る前にnative commandへ定数を記録する。

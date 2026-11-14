@@ -7,14 +7,15 @@ internal sealed class BrowserShaderBinding : IDisposable
 {
     private readonly JSObject _native;
 
-    internal BrowserShaderBinding(BrowserDevice owner, ShaderBindingData data, bool compute = false)
+    internal BrowserShaderBinding(BrowserDevice owner, ShaderBindingData data, BrowserRootStorage rootStorage, bool compute = false)
     {
         if (owner.Caps.MaxUniformBuffersPerStage < 1)
         {
             throw new NotSupportedException("Root uniform emulation exceeds the enabled per-stage binding limits.");
         }
 
-        _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key, compute, ((BrowserRootStorage)data.RootArgs.Storage).Native, data.Map);
+        rootStorage.Seal();
+        _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key, compute, rootStorage.Native, data.Map);
         try
         {
             foreach ((object resource, int index) in data.Textures)

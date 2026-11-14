@@ -23,7 +23,7 @@ internal static class Direct3D12ShaderTransfer
         value.Write(ref writer);
         IShaderReferenceMetadata references = writer.Complete();
         diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-        return ShaderRootArguments.Create(root, name, size, null, references, prepare);
+        return ShaderRootArguments.Create(root, name, size, references, prepare);
     }
 
     internal static ShaderRootArguments CreateUnmanaged<T>(Direct3D12Device owner, in T value, string rootParameter, string? shaderTypeName, Span<byte> payload, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
@@ -36,7 +36,7 @@ internal static class Direct3D12ShaderTransfer
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         IShaderReferenceMetadata references = writer.Complete();
         diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-        return ShaderRootArguments.Create(rootParameter, name, size, null, references, prepare);
+        return ShaderRootArguments.Create(rootParameter, name, size, references, prepare);
     }
 
     internal static void CopyFrom<T>(Direct3D12Device owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)

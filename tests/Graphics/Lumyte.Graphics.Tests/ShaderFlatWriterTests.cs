@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -229,8 +228,8 @@ public sealed class ShaderFlatWriterTests
         var valid = new WireCursorValue(1) { A = new Reference(1), B = new Reference(2) };
         var invalid = new WireCursorOverlapGetterValue(new Reference(3), new Reference(4));
         var previousStorage = new RootStorage(64);
-        ShaderRootArguments selected = TestShaderTransfer.Create(in valid, _ => previousStorage, encode: Encode);
-        using ShaderRootArguments previous = selected;
+        TestRootOwner selected = TestShaderTransfer.Create(in valid, _ => previousStorage, encode: Encode);
+        using TestRootOwner previous = selected;
         byte[] original = previousStorage.Bytes.ToArray();
         IShaderReferenceMetadata originalMetadata = previous.References;
         var candidate = new RootStorage(32);
@@ -324,8 +323,8 @@ public sealed class ShaderFlatWriterTests
     {
         var value = new WireCursorValue(1) { A = new Reference(1), B = new Reference(2) };
         var previousStorage = new RootStorage(64);
-        ShaderRootArguments selected = TestShaderTransfer.Create(in value, _ => previousStorage, encode: Encode);
-        using ShaderRootArguments previous = selected;
+        TestRootOwner selected = TestShaderTransfer.Create(in value, _ => previousStorage, encode: Encode);
+        using TestRootOwner previous = selected;
         byte[] original = previousStorage.Bytes.ToArray();
         IShaderReferenceMetadata originalMetadata = previous.References;
         var candidate = new RootStorage(64);
@@ -478,7 +477,7 @@ public sealed class ShaderFlatWriterTests
         }
     }
 
-    private sealed class RootStorage(int size) : IShaderRootStorage
+    private sealed class RootStorage(int size) : ITestShaderRootStorage
     {
         public int Size => size;
 

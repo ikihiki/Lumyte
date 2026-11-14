@@ -27,11 +27,11 @@ public sealed class GraphFinalRootTests
             arguments.Value = 99;
             encoder.Dispatch(1);
             encoder.Dispatch(2);
-            ShaderRootArguments root = commands.Encoder.Selected!;
+            TestRootOwner root = commands.Encoder.Selected!;
             Assert.Equal(17u, MemoryMarshal.Read<uint>(((MemoryStorage)root.Storage).Bytes.AsSpan(16)));
             AssertNoInputFields(root, arguments);
             var admit = (Action<IReadOnlyCollection<IShaderReference>>?)typeof(ShaderRootArguments)
-                .GetField("_admit", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(root);
+                .GetField("_admit", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(root.Metadata);
             Assert.Null(admit);
             Assert.Null(commands.Encoder.Prepare);
         }).KeepAlive();
@@ -46,7 +46,7 @@ public sealed class GraphFinalRootTests
         Assert.Equal(2, commands.Encoder.Bindings.Count);
         Assert.All(commands.Encoder.Bindings, binding =>
         {
-            Assert.Same(commands.Encoder.Selected, binding.Arguments);
+            Assert.Same(commands.Encoder.Selected!.Metadata, binding.Arguments);
             Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Root"));
         });
     }
@@ -73,7 +73,7 @@ public sealed class GraphFinalRootTests
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
             encoder.SetArguments(arguments);
-            ShaderRootArguments previous = commands.Encoder.Selected!;
+            TestRootOwner previous = commands.Encoder.Selected!;
             FieldInfo selectionField = typeof(RenderGraphComputeEncoder).GetField("_arguments", BindingFlags.Instance | BindingFlags.NonPublic)!;
             object previousResources = selectionField.GetValue(encoder)!;
             Assert.NotNull(previousResources);
@@ -89,7 +89,7 @@ public sealed class GraphFinalRootTests
             Assert.Same(previous, commands.Encoder.Selected);
             Assert.Same(previousResources, selectionField.GetValue(encoder));
             encoder.Dispatch(1);
-            Assert.Same(previous, Assert.Single(commands.Encoder.Bindings).Arguments);
+            Assert.Same(previous.Metadata, Assert.Single(commands.Encoder.Bindings).Arguments);
             Assert.Contains((IShaderReference)texture, commands.Encoder.Bindings[0].References);
         }).UseTexture(source, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseShaderDataBuffer(buffer, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
@@ -272,7 +272,7 @@ public sealed class GraphFinalRootTests
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
             encoder.SetPipeline(pipeline);
             encoder.SetArguments(new RootInput { Data = declared });
-            ShaderRootArguments previous = commands.Encoder.Selected!;
+            TestRootOwner previous = commands.Encoder.Selected!;
             Assert.Throws<ArgumentException>(() => encoder.SetArguments(new RootInput { Data = cached }));
             Assert.Same(previous, commands.Encoder.Selected);
             encoder.Dispatch(1);
@@ -316,12 +316,12 @@ public sealed class GraphFinalRootTests
     private static ShaderDependencyMetadata Metadata(IGpuRef<IGraphicsTextureView> reference)
         => new([Assert.IsAssignableFrom<IShaderReference>(reference)]);
 
-    private static void AssertNoInputFields(ShaderRootArguments root, RootInput input)
+    private static void AssertNoInputFields(TestRootOwner root, RootInput input)
     {
-        foreach (FieldInfo field in root.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+        foreach (FieldInfo field in root.Metadata.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
         {
             Assert.False(field.FieldType == typeof(ShaderValueSnapshot) || field.FieldType == typeof(byte[]) || field.FieldType == typeof(ReadOnlyMemory<byte>));
-            Assert.NotSame(input, field.GetValue(root));
+            Assert.NotSame(input, field.GetValue(root.Metadata));
         }
     }
 
@@ -394,7 +394,7 @@ public sealed class GraphFinalRootTests
         }
     }
 
-    private sealed class MemoryStorage(int size) : IShaderRootStorage
+    private sealed class MemoryStorage(int size) : ITestShaderRootStorage
     {
         public int Size => Bytes.Length;
 
@@ -422,7 +422,7 @@ public sealed class GraphFinalRootTests
         private IArgumentTable? _table;
         private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepare;
 
-        internal ShaderRootArguments? Selected { get; private set; }
+        internal TestRootOwner? Selected { get; private set; }
 
         internal Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? Prepare => _prepare;
 
@@ -452,7 +452,7 @@ public sealed class GraphFinalRootTests
 
         public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
         {
-            var binding = ShaderBindingDependencies.Collect(Selected!, _table, ReadShaderData);
+            var binding = ShaderBindingDependencies.Collect(Selected!.Metadata, _table, ReadShaderData);
             Selected!.Seal();
             Bindings.Add(binding);
         }
@@ -467,7 +467,7 @@ public sealed class GraphFinalRootTests
 
         private static byte[] Encode(ShaderValue value) => new byte[16];
 
-        private IShaderRootStorage Allocate(int size)
+        private ITestShaderRootStorage Allocate(int size)
         {
             FactoryCalls++;
             var storage = new MemoryStorage(size);

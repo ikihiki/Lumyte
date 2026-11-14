@@ -46,8 +46,6 @@ public sealed class ShaderBindingData
             throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
         }
 
-        dependencies.Arguments.Seal();
-
         uint capacity = dependencies.References.Count == 0 ? 0 : checked(dependencies.References.Max(r => r.Slot) + 1);
         if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
         {
@@ -84,11 +82,8 @@ public sealed class ShaderBindingData
     /// <summary>Gets the reachable resource dependencies.</summary>
     public ShaderBindingDependencies Dependencies { get; }
 
-    /// <summary>Gets the native root generation.</summary>
+    /// <summary>Gets the selected root generation metadata.</summary>
     public ShaderRootArguments RootArgs => Dependencies.Arguments;
-
-    /// <summary>Gets the allocated opaque root payload size.</summary>
-    public int RootSize => RootArgs.Storage.Size;
 
     /// <summary>Gets the resource remapping bytes.</summary>
     public byte[] Map { get; }

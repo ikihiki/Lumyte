@@ -172,7 +172,7 @@ graph.AddPass("sample", context =>
 - UseSampler(desc) declares a graph-owned immutable sampler; UseSampler(sampler) declares a borrowed identity. Samplers create neither GPU barriers nor write roots. GetGpuRef accepts the same desc or object key.
 - Distinct views/ranges retain their exact identities, while hazards and culling remain conservatively allocation-wide. GetGpuRef only looks up admitted keys during the declaring callback; it cannot append slots or widen access.
 
-SetArguments(in arguments) invokes the ordinary codec once through the selected backend’s internal IShaderValueWriter and fixes the Set-time value. Vulkan/D3D12 record native constants before Set returns using a cleared bounded stack span; Wgpu/Browser keep existing backend-private uniform owners. The same backend writer serves typed CopyFrom; it owns bounds, position and cleared stack-local 16-byte encoding and writes directly to storage, not through a Shared encoding callback. The reference-only Graph preparation hook below is unchanged and is not a codec/encoding callback. Graph caches one PrepareArguments delegate per graph encoder, installs it through existing native IRenderEncoder/IComputeEncoder.SetArgumentValidation only around ordinary SetArguments, and clears it in try/finally and before End. RenderGraphContext.SelectArguments delegates root checks to GraphShaderResourceOwner.SelectArguments: each reference must fit the pass’s existing allowed native resource identity, byte offset/size and access. BindResources automatically selects the native table before publishing the new root. EnsureActive rejects reentrant End, nested Set and pipeline mutation while SetArguments is active. There is no public Graph SetArgumentTable; native manual SetArgumentTable remains available. No numeric snapshot or legacy fallback is used. Numeric bytes remain frozen until another successful selection. Failed encoding/schema/preparation emits no native constants and preserves the old selection and original exception. All managed preparation and KeepBinding precede native emission; issued void driver commands and device failure are not rollbackable. Switching pipelines requires a new selection unless switching back before another successful SetArguments; there is one last selection, not a per-pipeline cache. Numeric-only arguments and argument-free programs need no dummy resource declaration.
+SetArguments(in arguments) invokes the ordinary codec once through the selected backend’s internal IShaderValueWriter and fixes the Set-time value. Vulkan/D3D12 record native constants before Set returns using a cleared bounded stack span; Wgpu/Browser keep existing backend-private uniform owners. The same backend writer serves typed CopyFrom; it owns bounds, position and cleared stack-local 16-byte encoding and writes directly to storage, not through a Shared encoding callback. The reference-only Graph preparation hook below is unchanged and is not a codec/encoding callback. Graph caches one PrepareArguments delegate per graph encoder, installs it through existing native IRenderEncoder/IComputeEncoder.SetArgumentValidation only around ordinary SetArguments, and clears it in try/finally and before End. RenderGraphContext.SelectArguments delegates root checks to GraphShaderResourceOwner.SelectArguments: each reference must fit the pass’s existing allowed native resource identity, byte offset/size and access. BindResources automatically selects the native table before publishing the new root. EnsureActive rejects reentrant End, nested Set and pipeline mutation while SetArguments is active. There is no public Graph SetArgumentTable; native manual SetArgumentTable remains available. No numeric snapshot or legacy fallback is used. Numeric bytes remain frozen until another successful selection. Failed encoding/schema/preparation emits no native constants and preserves the old selection and original exception. All managed preparation precedes native emission; issued void driver commands and device failure are not rollbackable. Switching pipelines requires a new selection unless switching back before another successful SetArguments; there is one last selection, not a per-pipeline cache. Numeric-only arguments and argument-free programs need no dummy resource declaration.
 
 Preparation returns the single detached Action cached per prepared pass. It captures only an immutable allowed array, never the owner, context, pass or original input. ShaderRootArguments retains it; every native Draw/Dispatch refreshes the complete root/transitive reference set through its latest command-local CopyFrom/CopyBuffer metadata overlay and checks it once against the same native resource/range/access permissions. Numeric bytes are not snapshotted or re-encoded. Metadata owners and collections, Wgpu/Browser uniform payloads, execute-time bindings/descriptor heaps and cached delegates still allocate; Browser interop still performs span copies. This does not claim zero allocation, zero GPU copy or new measured performance. A failed admission blocks native recording; it does not promise rollback of CPU state.
 
@@ -186,13 +186,17 @@ Built-in payload mapping/finalization uses an assembly-private bridge driven by 
 
 Graph admission and metadata are root-transport-neutral. Vulkan/D3D12 record native
 push/root constants during Set, after Complete, optional diagnostics, preparation,
-metadata creation and KeepBinding. A cleared bounded stack span holds
+metadata creation. A cleared bounded stack span holds
 ceil(wireSize/4) words until the driver command buffer copies them; it is not
 the final payload owner. Draw/Dispatch refresh references/admission only and never
 re-emit numeric roots. No numeric CPU heap arrays, ArrayPool rentals, per-Set GPU
-uniform/CBV or oversized-root fallback remain. Shared accepts nullable opaque storage
-without backend feature dispatch; Vulkan/D3D12 retain references/admission with null
-storage. Storage throws when absent; Seal/Dispose maintain metadata owner state.
+uniform/CBV or oversized-root fallback remain. Shared retains only immutable root/reference/admission metadata without storage,
+Allocate, Seal, Dispose or IDisposable; no replacement public storage type is added.
+Wgpu/Browser retain existing private concrete uniform owners through command
+KeepBinding until GPU release. Vulkan/D3D12 do not KeepBinding root metadata at Set.
+Recorded native bindings retain readonly ShaderBindingDependencies through Dispose
+with GC.KeepAlive, preserving root metadata and all resource/table identities for
+recorded GPU use; unused metadata need not survive reselection.
 Set-time capacity checks reject before
 allocation/publication, preserving the previous selection. Mandatory artifact
 preflight is separate ABI safety, active without validation tracking: Vulkan checks
@@ -209,7 +213,7 @@ Vulkan/D3D12 render and compute encoders guard codec/preparation with
 _settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
 rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
 After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
-pipeline-identity check all precede KeepBinding and native emission, rejecting
+pipeline-identity check all precede native emission, rejecting
 raw command-buffer or pipeline disposal before native use. Host failure preserves
 the old root selection, but cannot undo caller-requested resource disposal, table
 autobinding, or already-issued driver commands.

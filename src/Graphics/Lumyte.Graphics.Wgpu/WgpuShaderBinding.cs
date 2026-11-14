@@ -9,14 +9,14 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
     private readonly List<nint> _buffers = [];
     private WGPUBindGroupImpl* _native;
 
-    internal WgpuShaderBinding(WgpuDevice owner, ShaderBindingData data, WGPUBindGroupLayoutImpl* layout)
+    internal WgpuShaderBinding(WgpuDevice owner, ShaderBindingData data, WgpuRootStorage rootStorage, WGPUBindGroupLayoutImpl* layout)
     {
         if (owner.Caps.MaxUniformBuffersPerStage < 1)
         {
             throw new NotSupportedException("Root uniform emulation exceeds the enabled per-stage binding limits.");
         }
 
-        if ((ulong)data.RootSize > owner.Limits.maxUniformBufferBindingSize || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
+        if ((ulong)rootStorage.Size > owner.Limits.maxUniformBufferBindingSize || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
         {
             throw new NotSupportedException("Internal root or remap binding exceeds the device size limit.");
         }
@@ -24,8 +24,9 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
         try
         {
             var entries = new List<WGPUBindGroupEntry>();
-            WGPUBufferImpl* root = ((WgpuRootStorage)data.RootArgs.Storage).Native;
-            entries.Add(new() { binding = 8, buffer = root, size = (ulong)data.RootSize });
+            rootStorage.Seal();
+            WGPUBufferImpl* root = rootStorage.Native;
+            entries.Add(new() { binding = 8, buffer = root, size = (ulong)rootStorage.Size });
             if (data.Map.Length != 0)
             {
                 WGPUBufferImpl* map = Buffer(owner, data.Map, A.BufferUsage.Storage);

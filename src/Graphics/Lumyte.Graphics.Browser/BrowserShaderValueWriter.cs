@@ -7,7 +7,7 @@ internal struct BrowserShaderValueWriter : IShaderValueWriter
 {
     private readonly BrowserDevice _owner;
     private readonly int _size;
-    private readonly IShaderRootStorage? _root;
+    private readonly BrowserRootStorage? _root;
     private readonly IGraphicsBuffer<byte>? _upload;
     private readonly ulong _baseOffset;
     private readonly ShaderDataLayout? _diagnostic;
@@ -17,7 +17,7 @@ internal struct BrowserShaderValueWriter : IShaderValueWriter
     private bool _written;
     private bool _completed;
 
-    internal BrowserShaderValueWriter(BrowserDevice owner, int size, IShaderRootStorage? root, IGraphicsBuffer<byte>? upload, ulong baseOffset, ShaderDataLayout? diagnostic)
+    internal BrowserShaderValueWriter(BrowserDevice owner, int size, BrowserRootStorage? root, IGraphicsBuffer<byte>? upload, ulong baseOffset, ShaderDataLayout? diagnostic)
     {
         this = default;
         (_owner, _size, _root, _upload, _baseOffset, _diagnostic) = (owner, size, root, upload, baseOffset, diagnostic);

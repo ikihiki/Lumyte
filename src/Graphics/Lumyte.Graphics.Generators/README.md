@@ -169,20 +169,27 @@ and GPU copy commands are unchanged; no performance measurements are claimed.
 The same two-method writer and 16-byte reference ABI feed backend-private opaque
 root payloads. Vulkan/D3D12 ref-struct writers use cleared bounded stack spans
 of ceil(wireSize/4) words and emit native push/root constants before Set returns.
-Complete, optional diagnostics, reference preparation, metadata creation and
-KeepBinding all precede emission. The driver command buffer owns the numeric copy,
-not the transient stack. Draw/Dispatch never re-emit it; retained owners hold
-references/admission with null storage, not CPU numeric arrays or ArrayPool rentals.
+Complete, optional diagnostics, reference preparation, metadata creation all precede emission. The driver command buffer owns the numeric copy,
+not the transient stack. Draw/Dispatch never re-emit it; selected roots hold immutable
+references/admission, not CPU numeric arrays or ArrayPool rentals.
+Recorded native bindings retain readonly ShaderBindingDependencies through
+Dispose with GC.KeepAlive, preserving root metadata and all resource/table identities
+for recorded GPU work; unused metadata need not survive reselection. No root
+metadata KeepBinding or IDisposable is required at Set. Wgpu/Browser keep their
+existing private concrete IDisposable RootStorage, which owns its uniform and
+once-initialized Arguments; bindings Seal it directly and commands KeepBinding
+the owner until GPU release.
 There is no per-Set GPU uniform/CBV or oversized-root fallback. Wgpu/Browser keep uniform emulation entirely private.
 Shader target emitters necessarily choose VkPushConstants, D3DRoot32BitConstants or
 UniformBuffer metadata; common runtime state, metadata and lifetimes stay neutral.
 The uint4 declaration is padded, but Load reads only ceil(sizeof(T)/4) scalar words.
 A 232-byte DXIL root may declare 240 bytes yet loads 58 DWORDs, not 60; logical
 TransferSize, numeric padding and the reference ABI are unchanged. Backend-private
-DWORD rounding also handles 1- and 3-byte tails; common Allocate passes the exact
-logical size and only requires opaque capacity >= that size, with no 16-byte rule.
-IShaderRootStorage.Write/Seal means synchronous payload copy and commit/freeze,
-not a shared GPU-uniform lifetime policy. Artifact preflight is mandatory ABI
+DWORD rounding also handles 1- and 3-byte tails. Shared metadata has no storage,
+Allocate, Seal, Dispose or IDisposable contract; IShaderRootStorage is removed
+without a public replacement. Wgpu/Browser writers use their existing private
+concrete RootStorage directly; capacity, writes and Seal remain backend-owned.
+Artifact preflight is mandatory ABI
 safety, not optional validation tracking: Vulkan checks the owning device before
 shader-module creation, and all D3D12 pipeline/partial paths check before native
 pipeline creation. Both inspect every app ConstantBuffer using the actual root
@@ -212,7 +219,7 @@ Vulkan/D3D12 render and compute encoders guard codec/preparation with
 _settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
 rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
 After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
-pipeline-identity check all precede KeepBinding and native emission, rejecting
+pipeline-identity check all precede native emission, rejecting
 raw command-buffer or pipeline disposal before native use. Host failure preserves
 the old root selection, but cannot undo caller-requested resource disposal, table
 autobinding, or already-issued driver commands.

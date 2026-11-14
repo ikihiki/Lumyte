@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
@@ -97,6 +98,7 @@ public sealed class FinalRootGenerationTests
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = upload.SliceElements(0, 2), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.CopyBuffer(upload.SliceElements(0, 2), input.SliceElements(0, 2));
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = input.SliceElements(0, 2), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead) });
+        var nativeOwners = new List<object>();
         IComputeEncoder compute = commands.BeginComputePass(new());
         try
         {
@@ -105,10 +107,11 @@ public sealed class FinalRootGenerationTests
 
             // This is deliberately the first generic Set: a Snapshot writer throws in the codec.
             compute.SetArguments(in root);
+            CaptureWgpuOwner(device, compute, nativeOwners);
             if (device is VulkanDevice)
             {
                 var selected = (Lumyte.Graphics.Shared.ShaderRootArguments)compute.GetType().GetField("_arguments", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(compute)!;
-                Assert.Throws<InvalidOperationException>(() => selected.Storage);
+                Assert.Null(selected.GetType().GetProperty("Storage"));
                 Assert.Equal(2, selected.References.References.Count);
             }
 
@@ -121,6 +124,7 @@ public sealed class FinalRootGenerationTests
             Assert.Equal(1, root.Writes);
 
             compute.SetArguments(in root);
+            CaptureWgpuOwner(device, compute, nativeOwners);
             Assert.Equal(2, root.Writes);
             root.Number = 999;
             root.Input = inputA;
@@ -186,6 +190,7 @@ public sealed class FinalRootGenerationTests
             // A new typed selection owns numeric bytes independently of later source mutation.
             root.Number = 13;
             compute.SetArguments(in root);
+            CaptureWgpuOwner(device, compute, nativeOwners);
             root.Number = 999;
             compute.Dispatch(1);
             Assert.Equal(8, root.Writes);
@@ -196,6 +201,7 @@ public sealed class FinalRootGenerationTests
             compute.End();
         }
 
+        Assert.All(nativeOwners, owner => Assert.False(IsDisposed(owner)));
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.CopyBuffer(output.SliceElements(0, 3), readback.SliceElements(0, 3));
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 3), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
@@ -213,7 +219,26 @@ public sealed class FinalRootGenerationTests
         {
             readback.Unmap();
         }
+
+        commands.Dispose();
+        Assert.All(nativeOwners, owner => Assert.True(IsDisposed(owner)));
     }
+
+    private static void CaptureWgpuOwner(IGraphicDevice device, IComputeEncoder encoder, List<object> owners)
+    {
+        if (device is WgpuDevice)
+        {
+            object owner = encoder.GetType().GetField("_arguments", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(encoder)!;
+            Assert.Equal("Lumyte.Graphics.Wgpu.WgpuRootStorage", owner.GetType().FullName);
+            Assert.IsAssignableFrom<IDisposable>(owner);
+            Assert.False(IsDisposed(owner));
+            Assert.DoesNotContain(owners, previous => ReferenceEquals(previous, owner));
+            owners.Add(owner);
+        }
+    }
+
+    private static bool IsDisposed(object owner)
+        => (bool)owner.GetType().GetField("_disposed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
 
     private sealed class Arguments(bool diagnostics) : IShaderArguments
     {

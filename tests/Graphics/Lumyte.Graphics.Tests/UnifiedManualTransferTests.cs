@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -20,7 +19,7 @@ public sealed class UnifiedManualTransferTests
             throw new InvalidOperationException("A numeric-only codec cannot encode references.");
         }
 
-        using ShaderRootArguments root = TestShaderTransfer.Create(in value, size => new TestRootStorage(size), Encode, diagnostic: null);
+        using TestRootOwner root = TestShaderTransfer.Create(in value, size => new TestRootStorage(size), Encode, diagnostic: null);
         TestRootStorage nativeBacking = Assert.IsType<TestRootStorage>(root.Storage);
         Assert.Equal(4, root.WireSize);
         Assert.Equal(4, nativeBacking.Size);

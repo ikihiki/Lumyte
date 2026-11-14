@@ -8,7 +8,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
     private BrowserComputePipeline? _pipeline;
 
     private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
-    private ShaderRootArguments? _arguments;
+    private BrowserRootStorage? _arguments;
     private object? _argumentProgram;
     private BrowserArgumentTable? _table;
 
@@ -36,16 +36,18 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        ShaderRootArguments root = BrowserShaderTransfer.CreateRoot(owner.Owner, in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
-        SelectRoot(root);
+        BrowserComputePipeline program = _pipeline!;
+        BrowserRootStorage root = BrowserShaderTransfer.CreateRoot(owner.Owner, in value, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+        SelectRoot(root, program);
     }
 
     public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
         where T : unmanaged
     {
         ValidateRootSelection();
-        ShaderRootArguments root = BrowserShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
-        SelectRoot(root);
+        BrowserComputePipeline program = _pipeline!;
+        BrowserRootStorage root = BrowserShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+        SelectRoot(root, program);
     }
 
     public void SetPipeline(IGraphicsComputePipeline pipeline)
@@ -106,24 +108,37 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         _pipeline.ValidateAlive();
     }
 
-    private IShaderRootStorage CreateRootStorage(int size) => new BrowserRootStorage(owner.Owner, size);
-
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(_pipeline!.Data, rootParameter);
 
-    private void SelectRoot(ShaderRootArguments root)
+    private void SelectRoot(BrowserRootStorage root, BrowserComputePipeline program)
     {
         try
         {
+            owner.ValidatePass(this);
+            program.ValidateAlive();
+            if (!ReferenceEquals(_pipeline, program))
+            {
+                throw new InvalidOperationException("The selected program changed while preparing root arguments.");
+            }
+
             owner.KeepBinding(root);
         }
         catch
         {
-            root.Dispose();
+            try
+            {
+                root.Dispose();
+            }
+            catch
+            {
+                // Preserve the original transfer or selection failure.
+            }
+
             throw;
         }
 
         _arguments = root;
-        _argumentProgram = _pipeline;
+        _argumentProgram = program;
     }
 
     private void PrepareDispatch()
@@ -143,7 +158,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments.Arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
                 EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, PipelineStage.ComputeShader);
@@ -157,7 +172,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         BrowserInterop.SetComputePipeline(handle, _pipeline.Resolve(bindingData));
         if (bindingData != null)
         {
-            var binding = new BrowserShaderBinding(owner.Owner, bindingData, true);
+            var binding = new BrowserShaderBinding(owner.Owner, bindingData, _arguments!, true);
             owner.KeepBinding(binding);
             BrowserInterop.SetShaderBinding(handle, binding.Native);
         }

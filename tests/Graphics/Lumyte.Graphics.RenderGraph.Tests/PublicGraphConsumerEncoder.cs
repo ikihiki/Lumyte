@@ -8,7 +8,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     private ShaderTargetData? _target;
     private IArgumentTable? _table;
     private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepare;
-    private ShaderRootArguments? _selected;
+    private TestRootOwner? _selected;
 
     internal List<ShaderValueSnapshot> Snapshots { get; } = [];
 
@@ -39,7 +39,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, T.RootParameter);
-        ShaderRootArguments root = TestShaderTransfer.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, prepare: _prepare);
+        TestRootOwner root = TestShaderTransfer.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, prepare: _prepare);
         _selected = root;
         RecordSelection(root, ShaderTransfer.Fields(in arguments));
     }
@@ -49,7 +49,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, rootParameter);
-        ShaderRootArguments root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, prepare: _prepare);
+        TestRootOwner root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, prepare: _prepare);
         _selected = root;
         RecordSelection(root, ShaderTransfer.Fields<T>());
     }
@@ -141,7 +141,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         if (Snapshots.Count != 0)
         {
-            var binding = ShaderBindingDependencies.Collect(_selected!, _table, ReadShaderData);
+            var binding = ShaderBindingDependencies.Collect(_selected!.Metadata, _table, ReadShaderData);
             _selected!.Seal();
             Bindings.Add(binding);
             Executions.Add(Snapshots.Last());
@@ -158,7 +158,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     // Test observations only: read the fixture's final storage after successful selection.
     // These diagnostic bytes are never fed back into any production writing API.
-    private void RecordSelection(ShaderRootArguments root, IReadOnlyList<ShaderTransferField> fields)
+    private void RecordSelection(TestRootOwner root, IReadOnlyList<ShaderTransferField> fields)
         => Snapshots.Add(new(
             root.RootParameter,
             root.ShaderTypeName,
@@ -166,7 +166,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
             [],
             fields));
 
-    private sealed class MemoryStorage(int size) : IShaderRootStorage
+    private sealed class MemoryStorage(int size) : ITestShaderRootStorage
     {
         public int Size => Bytes.Length;
 

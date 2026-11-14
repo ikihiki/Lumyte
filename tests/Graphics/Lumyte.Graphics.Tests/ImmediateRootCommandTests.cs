@@ -29,10 +29,9 @@ public sealed class ImmediateRootCommandTests
         int emit = Array.FindIndex(instructions, item => item.Member is MethodBase called && called.DeclaringType?.Name == "VulkanPushConstants" && called.Name == "Emit");
         int ownerValidation = Array.FindIndex(instructions, item => item.Member is MethodBase called && called.Name == "ValidatePass");
         int pipelineValidation = Array.FindIndex(instructions, item => item.Member is MethodBase called && called.Name == "ValidateAlive");
-        int retain = Array.FindIndex(instructions, item => item.Member is MethodBase called && called.Name == "KeepBinding");
         Assert.True(
-            ownerValidation >= 0 && pipelineValidation > ownerValidation && retain > pipelineValidation && emit > retain,
-            "After user callbacks, validate owner and captured pipeline before retaining or issuing native commands.");
+            ownerValidation >= 0 && pipelineValidation > ownerValidation && emit > pipelineValidation,
+            "After user callbacks, validate owner and captured pipeline before issuing native commands.");
         int publish = Array.FindIndex(instructions, item => item.Code == OpCodes.Stfld && item.Member?.Name == "_arguments");
         Assert.True(emit >= 0, "Set must synchronously record native constants, not defer them to execution.");
         Assert.True(publish > emit, "Only publish the selection after native recording succeeds.");

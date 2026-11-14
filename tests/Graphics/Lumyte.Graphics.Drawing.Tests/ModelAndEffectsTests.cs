@@ -149,7 +149,7 @@ public sealed class ModelAndEffectsTests
         public IGpuRef<T> GetElement(ulong index) => index == 0 ? this : throw new ArgumentOutOfRangeException(nameof(index));
     }
 
-    private sealed class MemoryStorage(int size) : IShaderRootStorage
+    private sealed class MemoryStorage(int size) : ITestShaderRootStorage
     {
         private readonly byte[] _bytes = new byte[size];
 

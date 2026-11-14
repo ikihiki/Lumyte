@@ -1,14 +1,14 @@
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.JavaScript;
-using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserRootStorage : IShaderRootStorage
+internal sealed class BrowserRootStorage : IDisposable
 {
     private readonly JSObject _native;
     private bool _sealed;
     private bool _disposed;
+    private ShaderRootArguments? _arguments;
 
     internal BrowserRootStorage(BrowserDevice owner, int size)
     {
@@ -25,7 +25,9 @@ internal sealed class BrowserRootStorage : IShaderRootStorage
         _native = BrowserInterop.CreateRootBacking(owner.Handle, size);
     }
 
-    public int Size { get; }
+    internal ShaderRootArguments Arguments => _arguments ?? throw new InvalidOperationException("Root arguments are not initialized.");
+
+    internal int Size { get; }
 
     internal JSObject Native
     {
@@ -41,7 +43,30 @@ internal sealed class BrowserRootStorage : IShaderRootStorage
         }
     }
 
-    public void Write(ReadOnlySpan<byte> bytes, int offset)
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        BrowserInterop.DestroyBuffer(_native);
+        _native.Dispose();
+    }
+
+    internal void Initialize(ShaderRootArguments arguments)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_arguments != null)
+        {
+            throw new InvalidOperationException("Root arguments are already initialized.");
+        }
+
+        _arguments = arguments;
+    }
+
+    internal void Write(ReadOnlySpan<byte> bytes, int offset)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_sealed)
@@ -60,7 +85,7 @@ internal sealed class BrowserRootStorage : IShaderRootStorage
         BrowserInterop.WriteRootBacking(_native, view, offset);
     }
 
-    public void Seal()
+    internal void Seal()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_sealed)
@@ -68,17 +93,5 @@ internal sealed class BrowserRootStorage : IShaderRootStorage
             BrowserInterop.UnmapBuffer(_native);
             _sealed = true;
         }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        BrowserInterop.DestroyBuffer(_native);
-        _native.Dispose();
     }
 }

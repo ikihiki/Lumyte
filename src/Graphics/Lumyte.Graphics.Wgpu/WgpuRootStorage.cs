@@ -1,15 +1,15 @@
 using Ahjo.Wgpu.Native;
-using Lumyte.Graphics.Abstractions;
 using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed unsafe class WgpuRootStorage : IShaderRootStorage
+internal sealed unsafe class WgpuRootStorage : IDisposable
 {
     private WGPUBufferImpl* _native;
     private void* _mapped;
     private bool _sealed;
     private bool _disposed;
+    private ShaderRootArguments? _arguments;
 
     internal WgpuRootStorage(WgpuDevice owner, int size)
     {
@@ -47,7 +47,9 @@ internal sealed unsafe class WgpuRootStorage : IShaderRootStorage
         }
     }
 
-    public int Size { get; }
+    internal ShaderRootArguments Arguments => _arguments ?? throw new InvalidOperationException("Root arguments are not initialized.");
+
+    internal int Size { get; }
 
     internal WGPUBufferImpl* Native
     {
@@ -60,34 +62,6 @@ internal sealed unsafe class WgpuRootStorage : IShaderRootStorage
             }
 
             return _native;
-        }
-    }
-
-    public void Write(ReadOnlySpan<byte> bytes, int offset)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sealed)
-        {
-            throw new InvalidOperationException("Root arguments are immutable after sealing.");
-        }
-
-        ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        if (offset > Size || bytes.Length > Size - offset)
-        {
-            throw new ArgumentOutOfRangeException(nameof(offset));
-        }
-
-        bytes.CopyTo(new Span<byte>(_mapped, Size).Slice(offset, bytes.Length));
-    }
-
-    public void Seal()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_sealed)
-        {
-            WGPU.wgpuBufferUnmap(_native);
-            _mapped = null;
-            _sealed = true;
         }
     }
 
@@ -109,6 +83,45 @@ internal sealed unsafe class WgpuRootStorage : IShaderRootStorage
 
             WGPU.wgpuBufferRelease(_native);
             _native = null;
+        }
+    }
+
+    internal void Initialize(ShaderRootArguments arguments)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_arguments != null)
+        {
+            throw new InvalidOperationException("Root arguments are already initialized.");
+        }
+
+        _arguments = arguments;
+    }
+
+    internal void Write(ReadOnlySpan<byte> bytes, int offset)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_sealed)
+        {
+            throw new InvalidOperationException("Root arguments are immutable after sealing.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        if (offset > Size || bytes.Length > Size - offset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset));
+        }
+
+        bytes.CopyTo(new Span<byte>(_mapped, Size).Slice(offset, bytes.Length));
+    }
+
+    internal void Seal()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_sealed)
+        {
+            WGPU.wgpuBufferUnmap(_native);
+            _mapped = null;
+            _sealed = true;
         }
     }
 }

@@ -276,26 +276,16 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
     private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, Direct3D12GraphicsPipeline pipeline)
     {
-        try
+        // User codecs and admission hooks can dispose the command owner or pipeline.
+        // Revalidate the captured selection before issuing commands or publishing metadata.
+        owner.ValidatePass(this);
+        pipeline.ValidateAlive();
+        if (!ReferenceEquals(_pipeline, pipeline))
         {
-            // User codecs and admission hooks can dispose the command owner or pipeline.
-            // Revalidate the captured selection before retaining metadata or issuing commands.
-            owner.ValidatePass(this);
-            pipeline.ValidateAlive();
-            if (!ReferenceEquals(_pipeline, pipeline))
-            {
-                throw new InvalidOperationException("The selected program changed while setting arguments.");
-            }
-
-            owner.KeepBinding(root);
-        }
-        catch
-        {
-            root.Dispose();
-            throw;
+            throw new InvalidOperationException("The selected program changed while setting arguments.");
         }
 
-        // KeepBinding and all managed preparation precede the first native mutation.
+        // All managed preparation precedes the first native mutation.
         // Issued driver commands cannot be rolled back after recording.
         fixed (byte* bytes = payload)
         {

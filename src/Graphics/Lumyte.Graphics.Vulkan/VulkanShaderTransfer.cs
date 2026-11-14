@@ -22,7 +22,7 @@ internal static class VulkanShaderTransfer
         value.Write(ref writer);
         IShaderReferenceMetadata references = writer.Complete();
         diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-        return ShaderRootArguments.Create(root, name, size, storage: null, references, prepare);
+        return ShaderRootArguments.Create(root, name, size, references, prepare);
     }
 
     internal static ShaderRootArguments CreateUnmanaged<T>(VulkanDevice owner, in T value, string rootParameter, string? shaderTypeName, Span<byte> destination, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
@@ -35,7 +35,7 @@ internal static class VulkanShaderTransfer
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         IShaderReferenceMetadata references = writer.Complete();
         diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-        return ShaderRootArguments.Create(rootParameter, name, size, storage: null, references, prepare);
+        return ShaderRootArguments.Create(rootParameter, name, size, references, prepare);
     }
 
     internal static void CopyFrom<T>(VulkanDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)

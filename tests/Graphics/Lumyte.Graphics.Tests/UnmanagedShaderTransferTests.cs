@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
-using Lumyte.Graphics.Shared;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -159,7 +158,7 @@ public sealed class UnmanagedShaderTransferTests
 
     private sealed class CaptureEncoder : IComputeEncoder
     {
-        public ShaderRootArguments? Root { get; private set; }
+        public TestRootOwner? Root { get; private set; }
 
         public TestRootStorage? Storage { get; private set; }
 

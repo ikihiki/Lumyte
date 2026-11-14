@@ -279,23 +279,13 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanGraphicsPipeline pipeline)
     {
-        try
+        // User codecs and admission hooks can dispose the command owner or pipeline.
+        // Revalidate the captured selection before issuing commands or publishing metadata.
+        owner.ValidatePass(this);
+        pipeline.ValidateAlive();
+        if (!ReferenceEquals(_pipeline, pipeline))
         {
-            // User codecs and admission hooks can dispose the command owner or pipeline.
-            // Revalidate the captured selection before retaining metadata or issuing commands.
-            owner.ValidatePass(this);
-            pipeline.ValidateAlive();
-            if (!ReferenceEquals(_pipeline, pipeline))
-            {
-                throw new InvalidOperationException("The selected program changed while setting arguments.");
-            }
-
-            owner.KeepBinding(root);
-        }
-        catch
-        {
-            root.Dispose();
-            throw;
+            throw new InvalidOperationException("The selected program changed while setting arguments.");
         }
 
         VulkanPushConstants.Emit(owner, pipeline.ArgumentPipelineLayout, VulkanPushConstants.GraphicsStages, payload);

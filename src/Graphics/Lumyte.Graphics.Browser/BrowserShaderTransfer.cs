@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.Browser;
 
 internal static class BrowserShaderTransfer
 {
-    internal static ShaderRootArguments CreateRoot<T>(BrowserDevice owner, in T value, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static BrowserRootStorage CreateRoot<T>(BrowserDevice owner, in T value, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
         where T : IShaderArguments
     {
         if (!typeof(T).IsValueType)
@@ -17,14 +17,15 @@ internal static class BrowserShaderTransfer
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
-        IShaderRootStorage storage = ShaderRootArguments.Allocate(root, name, size, factory);
+        var storage = new BrowserRootStorage(owner, size);
         try
         {
             var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, diagnostic);
             value.Write(ref writer);
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            return ShaderRootArguments.Create(root, name, size, storage, references, prepare);
+            storage.Initialize(ShaderRootArguments.Create(root, name, size, references, prepare));
+            return storage;
         }
         catch
         {
@@ -33,19 +34,20 @@ internal static class BrowserShaderTransfer
         }
     }
 
-    internal static ShaderRootArguments CreateUnmanaged<T>(BrowserDevice owner, in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static BrowserRootStorage CreateUnmanaged<T>(BrowserDevice owner, in T value, string rootParameter, string? shaderTypeName, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
-        IShaderRootStorage storage = ShaderRootArguments.Allocate(rootParameter, name, size, factory);
+        var storage = new BrowserRootStorage(owner, size);
         try
         {
             var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, diagnostic);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
             IShaderReferenceMetadata references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            return ShaderRootArguments.Create(rootParameter, name, size, storage, references, prepare);
+            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, references, prepare));
+            return storage;
         }
         catch
         {
@@ -104,7 +106,7 @@ internal static class BrowserShaderTransfer
         }
     }
 
-    private static void DisposeFailed(IShaderRootStorage storage)
+    private static void DisposeFailed(BrowserRootStorage storage)
     {
         try
         {

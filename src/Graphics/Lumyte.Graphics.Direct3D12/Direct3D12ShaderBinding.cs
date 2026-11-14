@@ -4,12 +4,12 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 {
+    private readonly ShaderBindingDependencies _dependencies;
     private nint _native;
 
     internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingDependencies dependencies, ShaderTargetData target)
     {
-        ShaderRootArguments root = dependencies.Arguments;
-        root.Seal();
+        _dependencies = dependencies;
         owner.Check(NativeMethods.BindingCreate(owner.Native, out _native));
 
         try
@@ -90,6 +90,7 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
         }
 
         _native = 0;
+        GC.KeepAlive(_dependencies);
     }
 
     private static uint Address(AddressMode mode) => mode switch { AddressMode.Repeat => 1, AddressMode.MirrorRepeat => 2, AddressMode.ClampToEdge => 3, _ => throw new ArgumentException("Unknown address mode.") };

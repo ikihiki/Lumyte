@@ -35,7 +35,7 @@ public sealed class ShaderScratchPackingTests
         Assert.DoesNotContain(methods, method => method.Name == "WriteWire");
         Assert.DoesNotContain(typeof(ShaderDataLayout).GetMethods(), m => m.Name.StartsWith("Pack", StringComparison.Ordinal));
         Assert.DoesNotContain(typeof(ShaderRootArguments).GetMethods(), m => m.Name == "CreateSnapshot");
-        Assert.All(typeof(ShaderRootArguments).GetMethods().Where(m => m.Name == "Seal"), m => Assert.Empty(m.GetParameters()));
+        Assert.DoesNotContain(typeof(ShaderRootArguments).GetMethods(), method => method.Name == "Seal");
         Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Root"));
         Assert.Null(typeof(ShaderBindingDependencies).Assembly.GetType("Lumyte.Graphics.Shared.ShaderBindingSnapshot"));
         Assert.DoesNotContain(typeof(ShaderBindingDependencies).GetMethods(), method => method.Name == "Capture");
@@ -54,10 +54,9 @@ public sealed class ShaderScratchPackingTests
         MethodInfo create = Assert.Single(typeof(ShaderRootArguments).GetMethods(), m => m.Name == "Create");
         Assert.False(create.IsGenericMethod);
         Assert.Equal(typeof(int), create.GetParameters()[2].ParameterType);
-        Assert.Equal(typeof(IShaderRootStorage), create.GetParameters()[3].ParameterType);
-        Assert.Equal(typeof(IShaderReferenceMetadata), create.GetParameters()[4].ParameterType);
+        Assert.Equal(typeof(IShaderReferenceMetadata), create.GetParameters()[3].ParameterType);
         Assert.DoesNotContain(create.GetParameters(), parameter => parameter.ParameterType == typeof(Func<ShaderValue, byte[]>));
         Assert.False(create.GetParameters()[3].IsOptional);
-        Assert.False(create.GetParameters()[4].IsOptional);
+        Assert.True(create.GetParameters()[4].IsOptional);
     }
 }

@@ -1,9 +1,7 @@
 // Test-only streaming fake; never used by an engine backend.
-using Lumyte.Graphics.Abstractions;
-
 namespace Lumyte.Graphics.Drawing.Tests;
 
-internal readonly struct TestShaderRootDestination(IShaderRootStorage storage) : ITestShaderTransferDestination
+internal readonly struct TestShaderRootDestination(ITestShaderRootStorage storage) : ITestShaderTransferDestination
 {
     public void Write(ReadOnlySpan<byte> bytes, int offset) => storage.Write(bytes, offset);
 }

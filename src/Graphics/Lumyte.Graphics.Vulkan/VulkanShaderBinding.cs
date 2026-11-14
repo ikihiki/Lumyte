@@ -5,12 +5,14 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe class VulkanShaderBinding : IDisposable
 {
+    private readonly ShaderBindingDependencies _dependencies;
     private readonly VulkanDevice _owner;
     private DescriptorPool _pool;
 
     internal VulkanShaderBinding(VulkanDevice owner, ShaderBindingDependencies dependencies, ShaderTargetData target, DescriptorSetLayout layout)
     {
         _owner = owner;
+        _dependencies = dependencies;
         try
         {
             IShaderReference[] textures = dependencies.References.Where(r => r.Resource is VulkanTextureView).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
@@ -21,8 +23,6 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             {
                 throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
             }
-
-            dependencies.Arguments.Seal();
 
             DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[2];
             sizes[0] = new() { Type = DescriptorType.SampledImage, DescriptorCount = checked((uint)textureCount) };
@@ -63,6 +63,8 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             _owner.Api.DestroyDescriptorPool(_owner.NativeDevice, _pool, null);
             _pool = default;
         }
+
+        GC.KeepAlive(_dependencies);
     }
 
     internal static DescriptorSetLayout CreateLayout(VulkanDevice owner, uint textures = 1, uint samplers = 1)

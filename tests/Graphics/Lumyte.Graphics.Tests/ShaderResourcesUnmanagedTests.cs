@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -88,7 +87,7 @@ public sealed class ShaderResourcesUnmanagedTests
     private readonly record struct Color(uint Value);
 
     // This is the fake backend's final root allocation, not a captured CPU snapshot.
-    private sealed class RootStorage(int size) : IShaderRootStorage
+    private sealed class RootStorage(int size) : ITestShaderRootStorage
     {
         public int Size => Bytes.Length;
 
@@ -129,7 +128,7 @@ public sealed class ShaderResourcesUnmanagedTests
 
         internal (uint GroupCountX, uint GroupCountY, uint GroupCountZ) DispatchArguments { get; private set; }
 
-        internal ShaderRootArguments? Root { get; private set; }
+        internal TestRootOwner? Root { get; private set; }
 
         internal RootStorage? Storage { get; private set; }
 
