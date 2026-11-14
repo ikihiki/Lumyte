@@ -6,6 +6,8 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <ProjectReference Include="../../../src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
+    <Compile Include="../Shared/BenchmarkEntry.cs" Link="BenchmarkEntry.cs" />
   </ItemGroup>
 </Project>

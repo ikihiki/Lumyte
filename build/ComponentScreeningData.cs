@@ -5,7 +5,8 @@ namespace Lumyte.Build;
 
 internal static partial class ComponentScreening
 {
-    public const string Version = "component-screening-v3";
+    public const string Version = "component-screening-v4";
+    public const string SharedHarness = "benchmarks/Core/Shared";
     public const string Harness = "benchmarks/Core/Lumyte.Signals.Benchmark";
     public static readonly ScreeningCase[] Catalog =
     [
@@ -24,7 +25,7 @@ internal static partial class ComponentScreening
     ];
 
     private static readonly string[] _signalsPrefixes = ["src/Core/Lumyte.Signals/", "benchmarks/Lumyte.Signals.Benchmarks/", Harness + "/"];
-    private static readonly string[] _infrastructurePrefixes = ["build/", "tools/", ".github/", "benchmarks/Lumyte.Component.Screening/"];
+    private static readonly string[] _infrastructurePrefixes = ["build/", "tools/", ".github/", "benchmarks/Lumyte.Component.Screening/", SharedHarness + "/"];
     private static readonly string[] _hostFields = ["BenchmarkDotNetVersion", "OsVersion", "ProcessorName", "Architecture", "RuntimeVersion", "Configuration", "DotNetCliVersion"];
     private static readonly string[] _jobFields = ["SignalsScreening-v2", "OutlierMode=DontRemove", "IterationCount=8", "IterationTime=150ms", "LaunchCount=1", "WarmupCount=3"];
 

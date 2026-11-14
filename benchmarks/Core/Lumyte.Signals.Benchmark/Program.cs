@@ -4,9 +4,16 @@ using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
+using Lumyte.Benchmarks;
 using Lumyte.Signals.Benchmark;
 using Perfolizer.Horology;
 using Perfolizer.Mathematics.OutlierDetection;
+
+if (args.Any(argument => argument == "--mode" || argument.StartsWith("--mode=", StringComparison.Ordinal) || argument == "--catalog"))
+{
+    Environment.ExitCode = BenchmarkEntry.Run(args, typeof(ScalarBenchmarks).Assembly);
+    return;
+}
 
 if (args.Contains("--retention", StringComparer.Ordinal))
 {

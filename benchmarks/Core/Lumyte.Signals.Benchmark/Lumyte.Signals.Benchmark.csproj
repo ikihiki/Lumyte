@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Lumyte.Signals.Benchmarks.Tests" />
+    <Compile Include="../Shared/BenchmarkEntry.cs" Link="BenchmarkEntry.cs" />
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <ProjectReference Include="../../../src/Core/Lumyte.Signals/Lumyte.Signals.csproj" />
   </ItemGroup>
