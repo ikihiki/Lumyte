@@ -6,32 +6,34 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    [Parameter("Core benchmark execution mode: screen, compare, or diagnose. Required unless listing.")]
+    [Parameter("Benchmark execution mode: screen, compare, or diagnose. Required unless listing.")]
     public string BenchmarkMode { get; set; } = string.Empty;
 
-    [Parameter("Core target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark.")]
+    [Parameter("Target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark.")]
     public string BenchmarkProject { get; set; } = "*";
 
-    [Parameter("BenchmarkDotNet method filter for selected Core projects.")]
+    [Parameter("BenchmarkDotNet method filter for selected projects.")]
     public string BenchmarkFilter { get; set; } = "*";
 
-    [Parameter("Optional BenchmarkDotNet category filter across selected Core projects.")]
+    [Parameter("Optional BenchmarkDotNet category filter across selected projects.")]
     public string? BenchmarkCategory { get; set; }
 
-    [Parameter("Enumerate compiled Core benchmark cases without running timings.")]
+    [Parameter("Enumerate compiled Benchmark cases without running timings.")]
     public bool BenchmarkList { get; set; }
 
-    [Parameter("Shared Core benchmark process deadline in seconds, up to 900.")]
+    [Parameter("Shared Benchmark process deadline in seconds, up to 900.")]
     public double BenchmarkTimeoutSeconds { get; set; } = 900;
 
-    private Target BenchmarkCore => definition => definition.Executes(RunCoreBenchmarksAsync);
+    private Target BenchmarkCore => definition => definition.Executes(() => RunBenchmarksAsync("Core"));
 
-    private async Task RunCoreBenchmarksAsync()
+    private Target BenchmarkAnimation => definition => definition.Executes(() => RunBenchmarksAsync("Animation"));
+
+    private async Task RunBenchmarksAsync(string area)
     {
-        string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : CoreBenchmarkCatalog.NormalizeMode(BenchmarkMode);
+        string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
         if (Configuration != "Release")
         {
-            throw new ArgumentException("Core benchmarks require Release configuration.");
+            throw new ArgumentException("Benchmarks require Release configuration.");
         }
 
         if (!double.IsFinite(BenchmarkTimeoutSeconds) || BenchmarkTimeoutSeconds <= 0 || BenchmarkTimeoutSeconds > 900)
@@ -39,8 +41,8 @@ internal sealed partial class Build
             throw new ArgumentOutOfRangeException(nameof(BenchmarkTimeoutSeconds), "The shared deadline must be positive and at most 900 seconds.");
         }
 
-        string[] projects = CoreBenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject);
-        string root = Path.GetFullPath(Output ?? Path.Combine(ArtifactRoot, "core-benchmarks", DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffff", System.Globalization.CultureInfo.InvariantCulture)));
+        string[] projects = BenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject, area);
+        string root = Path.GetFullPath(Output ?? Path.Combine(ArtifactRoot, area.ToLowerInvariant() + "-benchmarks", DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffff", System.Globalization.CultureInfo.InvariantCulture)));
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(Path.Combine(RepositoryDirectory, "artifacts", "nuget"));
         var process = new ComponentScreeningProcess(root, BenchmarkTimeoutSeconds);
@@ -50,7 +52,8 @@ internal sealed partial class Build
         };
         var manifest = new JsonObject
         {
-            ["schema"] = "core-benchmark-run-v1",
+            ["schema"] = area.ToLowerInvariant() + "-benchmark-run-v1",
+            ["area"] = area,
             ["mode"] = BenchmarkList ? "catalog" : mode,
             ["project_filter"] = BenchmarkProject,
             ["method_filter"] = BenchmarkFilter,
@@ -83,7 +86,7 @@ internal sealed partial class Build
                 string binary = Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0", name + ".dll");
                 var record = new JsonObject { ["project"] = Path.GetRelativePath(RepositoryDirectory, project), ["status"] = "preparing" };
                 records.Add(record);
-                string inputHash = CoreBenchmarkInputs(project);
+                string inputHash = BenchmarkInputs(project, area);
                 string provenance = binary + ".inputs.json";
                 if (!NoBuild)
                 {
@@ -98,12 +101,12 @@ internal sealed partial class Build
 
                 if (!File.Exists(binary))
                 {
-                    throw new FileNotFoundException("Core benchmark binary is missing; build it before using --no-build.", binary);
+                    throw new FileNotFoundException("Benchmark binary is missing; build it before using --no-build.", binary);
                 }
 
                 string binaryHash = ComponentScreening.FileHash(binary);
-                string outputHash = CoreBenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!);
-                if (CoreBenchmarkInputs(project) != inputHash)
+                string outputHash = BenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!);
+                if (BenchmarkInputs(project, area) != inputHash)
                 {
                     throw new InvalidOperationException("Benchmark inputs changed during build; rebuild from frozen sources.");
                 }
@@ -140,13 +143,13 @@ internal sealed partial class Build
                     string name = Path.GetFileNameWithoutExtension(entry.Project);
                     string result = await process.CallAsync(DotNetExecutable, [entry.Binary, "--catalog"],
                         Path.GetDirectoryName(entry.Project)!, name + "-catalog", BenchmarkEnvironment(childEnvironment, entry.Project)).ConfigureAwait(false);
-                    JsonObject catalog = CoreBenchmarkCatalog.ParseCatalog(result);
-                    JsonArray selected = CoreBenchmarkCatalog.SelectCases(catalog, mode, BenchmarkCategory);
+                    JsonObject catalog = BenchmarkCatalog.ParseCatalog(result);
+                    JsonArray selected = BenchmarkCatalog.SelectCases(catalog, mode, BenchmarkCategory);
                     selections.Add(selected);
                     entry.Record["selected_cases"] = selected.DeepClone();
                     catalog["Cases"] = selected.DeepClone();
                     entry.Record["catalog"] = catalog;
-                    if (CoreBenchmarkCatalog.OutputHash(Path.GetDirectoryName(entry.Binary)!) != entry.Record["outputs_sha256"]!.ToString())
+                    if (BenchmarkCatalog.OutputHash(Path.GetDirectoryName(entry.Binary)!) != entry.Record["outputs_sha256"]!.ToString())
                     {
                         throw new InvalidOperationException("Benchmark execution dependencies changed during the run.");
                     }
@@ -161,7 +164,7 @@ internal sealed partial class Build
                     }
                 }
 
-                CoreBenchmarkCatalog.RequireSelectedCases(selections, BenchmarkCategory, mode);
+                BenchmarkCatalog.RequireSelectedCases(selections, BenchmarkCategory, mode);
                 entries = selectedEntries;
             }
 
@@ -172,15 +175,15 @@ internal sealed partial class Build
                 if (!BenchmarkList || record["catalog"] is null)
                 {
                     string result = await process.CallAsync(DotNetExecutable,
-                        CoreBenchmarkCatalog.Arguments(binary, mode, BenchmarkFilter, BenchmarkCategory, Path.Combine(root, name), BenchmarkList),
+                        BenchmarkCatalog.Arguments(binary, mode, BenchmarkFilter, BenchmarkCategory, Path.Combine(root, name), BenchmarkList),
                         Path.GetDirectoryName(project)!, name + (BenchmarkList ? "-catalog" : "-" + mode), BenchmarkEnvironment(childEnvironment, project)).ConfigureAwait(false);
                     if (BenchmarkList)
                     {
-                        record["catalog"] = CoreBenchmarkCatalog.ParseCatalog(result);
+                        record["catalog"] = BenchmarkCatalog.ParseCatalog(result);
                     }
                 }
 
-                if (CoreBenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!) != record["outputs_sha256"]!.ToString())
+                if (BenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!) != record["outputs_sha256"]!.ToString())
                 {
                     throw new InvalidOperationException("Benchmark execution dependencies changed during the run.");
                 }
@@ -206,7 +209,7 @@ internal sealed partial class Build
     private static Dictionary<string, string?> BenchmarkEnvironment(Dictionary<string, string?> inherited, string project)
         => new(inherited) { ["LUMYTE_BENCHMARK_PROJECT"] = project };
 
-    private string CoreBenchmarkInputs(string project)
+    private string BenchmarkInputs(string project, string area)
     {
         var inputs = new List<string>
         {
@@ -214,6 +217,11 @@ internal sealed partial class Build
             ComponentScreening.TreeHash(Path.GetDirectoryName(project)!),
             ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, "benchmarks", "Core", "Shared")),
         };
+        if (area != "Core")
+        {
+            inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, "src", area)));
+        }
+
         foreach (string name in new[] { "global.json", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "NuGet.config" })
         {
             string file = Path.Combine(RepositoryDirectory, name);

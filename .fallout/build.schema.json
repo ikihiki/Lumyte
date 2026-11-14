@@ -13,6 +13,7 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
+        "BenchmarkAnimation",
         "BenchmarkCore",
         "BenchmarkSignals",
         "CheckFormat",
@@ -157,27 +158,27 @@
         },
         "BenchmarkCategory": {
           "type": "string",
-          "description": "Optional BenchmarkDotNet category filter across selected Core projects"
+          "description": "Optional BenchmarkDotNet category filter across selected projects"
         },
         "BenchmarkFilter": {
           "type": "string",
-          "description": "BenchmarkDotNet method filter for selected Core projects"
+          "description": "BenchmarkDotNet method filter for selected projects"
         },
         "BenchmarkList": {
           "type": "boolean",
-          "description": "Enumerate compiled Core benchmark cases without running timings"
+          "description": "Enumerate compiled Benchmark cases without running timings"
         },
         "BenchmarkMode": {
           "type": "string",
-          "description": "Core benchmark execution mode: screen, compare, or diagnose. Required unless listing"
+          "description": "Benchmark execution mode: screen, compare, or diagnose. Required unless listing"
         },
         "BenchmarkProject": {
           "type": "string",
-          "description": "Core target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark"
+          "description": "Target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark"
         },
         "BenchmarkTimeoutSeconds": {
           "type": "number",
-          "description": "Shared Core benchmark process deadline in seconds, up to 900"
+          "description": "Shared Benchmark process deadline in seconds, up to 900"
         },
         "Cache": {
           "type": "string",
