@@ -226,7 +226,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
  }
 ```
 
-ShaderValueは同期符号化と明示的なCPU検査のためのValueType、Reference、C#のOffsetを持ち、Pathを持たない。IShaderDataLayout.ReferenceKind(string path)とPackは削除する。backendが保持する実行用metadataはIShaderReferenceMetadataであり、ShaderValueの共有リストではない。
+ShaderValueは明示的なCPU検査の論理記録としてValueType、Reference、C#のOffsetを持ち、Pathを持たない。nativeの同期符号化では生成しない。IShaderDataLayout.ReferenceKind(string path)とPackは削除する。backendが保持する実行用metadataはIShaderReferenceMetadataであり、ShaderValueの共有リストではない。
 
 RenderGraphの同名オーバーロードも通常のバッファ型を返す。数値だけの引数は、ShaderResourcesのDraw、DrawIndexed、Dispatchでも末尾にrootParameterとshaderTypeNameを持つunmanagedオーバーロードを使える。インターフェースを明示実装した型の従来の呼び出しは、短い引数リストの既存オーバーロードを選ぶ。通常の型をラップしたり、型を登録したりする必要はない。
 
@@ -335,11 +335,34 @@ IShaderValueWriterは`WriteValue(ReadOnlySpan<byte> value)`と`WriteReference<T>
 
 生成型のprivate static planは実際のC#オフセットによる参照順序とスロット妥当性のためだけに使う。任意診断のreflectionや数値field tableとは独立し、範囲外、負値、重複、交差をgetterの呼び出し前に拒否する。field、auto-property、virtual propertyと副作用のあるcustom getterも同じ経路を使い、wireローカルコピーの後に各参照getterを物理順で一回だけ評価する。getterによる数値格納領域の変更は今回のraw bytesへ反映せず、参照プロパティの変更は後続getterが観測する。emitter structは生成しない。
 
-rootとuploadのwriterが暗黙の現在位置とexpectedTransferSizeを所有する。WriteValueは渡された長さ、WriteReferenceは必ず16バイトだけ位置を進め、参照はその場でbackendの表現へ符号化する。残容量の検査はlength > expectedTransferSize - positionという減算形式でoverflowを避ける。Completeは一回だけ成功でき、position == expectedTransferSizeを必須とする。短い出力も長い出力も公開しない。
+VulkanShaderValueWriter、Direct3D12ShaderValueWriter、WgpuShaderValueWriter、BrowserShaderValueWriterを、それぞれのbackend内部でIShaderValueWriterとして直接実装する。各backendのShaderTransfer helperがSetと型付きCopyFromの両方でvalue.Write(ref writer)を呼ぶ。各writerが暗黙の現在位置とexpectedTransferSizeを所有し、raw区間をIShaderRootStorage.WriteまたはuploadのCopyBytesFromへ直接渡す。Sharedのwriterから参照encoder callbackを呼ぶ構造にはしない。WriteValueは渡された長さ、WriteReferenceは必ず16バイトだけ位置を進め、参照はその場でbackendの表現へ符号化する。残容量の検査はlength > expectedTransferSize - positionという減算形式でoverflowを避ける。Completeは一回だけ成功でき、position == expectedTransferSizeを必須とする。短い出力も長い出力も公開しない。
 
 IShaderReferenceMetadataはReferencesという依存identityの列挙だけを公開する。Graph、transitive traversal、copy overlayと任意検証はwire layoutを知らずにこの列挙を使う。各backendのprivate immutable ownerはShaderValueの共有list、数値bytes、wire offsetや元の値objectを保持しない。登録slot／range／accessはbindingに必要なIShaderReferenceのidentityとして残り、C# wire内の位置とは区別する。
 
-CopyFromは失敗時の部分byte更新を許可し、要求範囲のmetadata全体を無効にして元の例外を返す。手書きcodecにも現在位置だけの同じwriterを使い、参照の物理位置は前後のraw区間の長さで表現する。生成planの検査とwriterの容量・完了検査は別の責務である。参照encoderの一時16-byte配列、identity listとimmutable ownerは残り、zero allocationとは主張しない。Browserのinteropコピーも残る。
+CopyFromは失敗時の部分byte更新を許可し、要求範囲のmetadata全体を無効にして元の例外を返す。手書きcodecにも現在位置だけの同じwriterを使い、参照の物理位置は前後のraw区間の長さで表現する。生成planの検査とwriterの容量・完了検査は別の責務である。参照の一時領域はゼロクリアしたstackalloc byte[16]とし、native参照ごとのShaderValue、new byte[16]やFuncによる符号化をなくす。任意診断にはValidateReference(Type valueType, object? reference, int offset)へ型・参照・現在位置を直接渡す。明示CaptureのShaderSnapshotWriterが論理記録を作る経路とは分離する。identity list、配列、read-only wrapper、immutable metadata owner、rootのnative allocation、delegateやnative buffer handleは残り、zero allocationやzero GPU copyとは主張しない。Browserのinterop span-copyも残る。
+
+16-byte ABIは従来の予約ゼロを含めて維持する。Vulkanはbufferの物理addressに絶対byte offsetを加えた64-bit値、またはtexture／samplerの32-bit slotを置き、byte 8にchecked uintのcountを置く。内部の型付きIVulkanShaderBuffer.ShaderBufferを使い、object型ShaderHandleのboxingを避ける。D3D12はslot、checked uintの絶対byte offset、checked uintのcount、予約ゼロとする。Wgpu／Browserはslot、checked uintの登録相対byte offset、checked uintのcount、予約ゼロとし、相対offsetやcountの切り詰めを許さない。
+
+SharedのShaderTransferWriter、IShaderTransferDestination、ShaderRootDestination、ShaderUploadDestination、ShaderDataUpload、ShaderReferenceEncodingとVulkan／D3D12の旧参照encoderは削除する。ShaderRootArgumentsは書き込み済みstorageの所有だけを引き受け、公開境界は次の非generic APIとする。
+
+```diff
+ namespace Lumyte.Graphics.Shared
+ {
++    public sealed class ShaderRootArguments : IDisposable
++    {
++        // 引数・容量を検証して割り当てるだけ。戻り値の所有権は呼び出し側。
++        public static IShaderRootStorage Allocate(string root, string name, int size,
++            Func<int, IShaderRootStorage> factory);
++        // 書き込み済みstorageを受ける。検証とprepareが成功したときだけ所有権を取得。
++        public static ShaderRootArguments Create(string rootParameter,
++            string shaderTypeName, int wireSize, IShaderRootStorage storage,
++            IShaderReferenceMetadata references,
++            Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null);
++    }
+ }
+```
+
+Allocateはsizeを16-byte単位へ切り上げ、最小16 byteの容量をfactoryへ要求する。返された容量が違えば解放し、元の検証例外を返す。Createも容量を照合するが、書き込みやgeneric codec／encode callbackは受け付けない。Create失敗ではstorageの所有権は呼び出し側に残る。backend helperは書き込み、診断、準備またはCreate失敗時に未公開storageを解放し、cleanup例外で元の例外を隠さない。Create成功後のcommandへの所有権移転失敗は既存のSelectRootが処理する。
 
 ### Graphの参照準備と実行時admission
 
@@ -386,7 +409,7 @@ callback Bで取得して保存した参照も、使用するpass A自身がnati
 
 CopyFromの失敗atomicityは要求しない。codec、参照符号化、native mapped書き込みで失敗すると、指定したupload範囲のbyteは部分更新され得る。旧byteへrollbackせず、要求した範囲のreference metadataを全て無効にし、元の例外を返す。範囲外のmetadataは変更しない。成功した全範囲の明示再転送で回復する。無効なmetadataを読むcopy／bindingは、native使用前に拒否する。in-flight GPU使用中のstaging変更を許す判断ではなく、従来の所有権・同期責任は維持する。
 
-CPU一時領域は破損防止のために必須とはしない。直接mapped領域へ書く方式と、一つのCPU batch領域へ書いて一括copyする方式を、同じreference-only metadataの義務で比較し、実測上の価値で選択する。後者を使う場合も、これは転送性能上の選択であり、数値snapshotの保持や失敗atomicityの契約ではない。
+参照付きCopyFromもbackend writerからmapped領域へ直接書く。Sharedのbatch領域やsnapshot経由の代替経路は設けない。これは失敗atomicityを追加する判断ではなく、部分更新とmetadata無効化の契約を維持する。転送時間や割り当て量の改善は、この設計だけでは実測結果として主張しない。
 
 公開backend契約も明示的に変更する。IShaderDataSource.Readが返していた完全なCPU値と、ShaderBindingSnapshot.Elementsのnumeric snapshotは廃止し、ReadReferencesとSetTransferredReferencesを使う。IShaderReferenceMetadataはimmutableな依存identityの列挙だけを公開する。privateなbackend ownerはData、数値の配列、wire offset、配置providerや元の値objectを保持しない。GPU-only destinationから隠れたreadbackや待機を行わない。数値の履歴を必要とする利用側は、独立した明示Captureまたは明示readbackを使う。
 
@@ -398,7 +421,7 @@ MemoryPreference.UploadのバッファはCPUステージング領域、Automatic
 
 ### 検証方針
 
-値だけを渡すwriterの受け入れ条件は、二つの必須メソッドと各一引数、数値だけの一回のWriteValue、custom getterの物理順一回評価、getter前のwireコピーと不正plan拒否、減算形式の容量検査とCompleteのサイズ一致、失敗した準備による旧世代保持とする。Graph callbackのfinally解除、End前の解除、Set中の再入拒否、passごとに一つのActionと許可配列だけのcapture、command-local copy後の最新推移的参照による毎回一度のadmissionも検査する。別callbackで取得した参照は互換tableと使用passのresource・範囲・access宣言が揃えば許可し、共有tableだけの未宣言使用は検証無効時にも拒否する。snapshotを受けるbackend入力、Pack、遅延fixupが公開契約に残らないことも確認する。
+値だけを渡すwriterの受け入れ条件は、二つの必須メソッドと各一引数、数値だけの一回のWriteValue、custom getterの物理順一回評価、getter前のwireコピーと不正plan拒否、減算形式の容量検査とCompleteのサイズ一致、失敗した準備による旧世代保持とする。Graph callbackのfinally解除、End前の解除、Set中の再入拒否、passごとに一つのActionと許可配列だけのcapture、command-local copy後の最新推移的参照による毎回一度のadmissionも検査する。別callbackで取得した参照は互換tableと使用passのresource・範囲・access宣言が揃えば許可し、共有tableだけの未宣言使用は検証無効時にも拒否する。snapshotを受けるbackend入力、Pack、遅延fixupが公開契約に残らないことも確認する。四backendのSetと型付きCopyFromが内部writerを直接使うこと、予約ゼロを含む16-byte ABI、Wgpu／Browserの相対offsetとcountのchecked変換、D3D12の絶対offset、SharedのAllocate／Createの所有権境界とcleanup時の元例外保持を検査する。native参照ごとのShaderValue、byte[16]配列、encode callbackやsnapshot代替入力を残さず、生成コードにEmitScopeがないことも確認する。
 
 テストでは、インターフェースもpartial宣言もない構造体と外部の数値型、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、クラスの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、有効時の不一致検出、無効時のバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映、登録ごとのアクセス種別と能力の検査、同じバッファの別登録、GetElementによる登録の保持、置換前後の独立したCPUメタデータとremapのlane分離も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。
 
@@ -406,6 +429,7 @@ MemoryPreference.UploadのバッファはCPUステージング領域、Automatic
 
 - 数値型にもインターフェースと生成コードを必須にする: 外部のunmanaged型や通常の構造体をそのまま使えないため採用しない。
 - 型制約だけを外して任意の管理型を受け付ける: 参照を含む値と生のunmanagedバイト列の境界が不明確になるため採用しない。生バッファはunmanaged制約、参照を含む値は既存のインターフェース制約で分離する。
+- Sharedの汎用writerとbackend参照符号化callbackを維持する: 共通化はできるが、native転送で論理参照記録や一時配列を介さずbackendが直接ABIを書き込む境界にするため採用しない。Graphの参照だけの準備hookは別の責務として維持する。
 - 数値ごとのwriterを維持する: バイト列を再構築し、ABIの定義が重複するため採用しない。
 - Releaseでリフレクションのオフセットに詰め直す: 不整合な宣言によってC#のメモリ表現を暗黙に変更しない方針のため採用しない。
 - 管理クラスのメモリを直接転送する: 転送可能な領域は非公開のunmanaged格納領域だけとし、採用しない。

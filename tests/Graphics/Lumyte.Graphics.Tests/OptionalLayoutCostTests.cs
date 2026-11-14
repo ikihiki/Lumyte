@@ -37,7 +37,7 @@ public sealed class OptionalLayoutCostTests
     public void BindingPackingDoesNotParseReflectionOrProbeFields()
     {
         var value = new PlainValue(17);
-        using var root = ShaderRootArguments.CreateUnmanaged(in value, "arguments", "PlainValue", size => new TestRootStorage(size));
+        using ShaderRootArguments root = TestShaderTransfer.CreateUnmanaged(in value, "arguments", "PlainValue", size => new TestRootStorage(size));
         var snapshot = ShaderBindingSnapshot.Capture(root, null);
         var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [32], "not JSON");
         var data = new ShaderBindingData(snapshot, target, new DeviceCaps { MaxUniformBuffersPerStage = 1 });

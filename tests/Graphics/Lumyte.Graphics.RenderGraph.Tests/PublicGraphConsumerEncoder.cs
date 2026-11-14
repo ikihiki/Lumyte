@@ -39,7 +39,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, T.RootParameter);
-        var root = ShaderRootArguments.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, prepare: _prepare);
+        ShaderRootArguments root = TestShaderTransfer.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, prepare: _prepare);
         _selected = root;
         RecordSelection(root, ShaderTransfer.Fields(in arguments));
     }
@@ -49,7 +49,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, rootParameter);
-        var root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, prepare: _prepare);
+        ShaderRootArguments root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, prepare: _prepare);
         _selected = root;
         RecordSelection(root, ShaderTransfer.Fields<T>());
     }

@@ -36,7 +36,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
+        ShaderRootArguments root = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
         SelectRoot(root);
     }
 
@@ -44,7 +44,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: VulkanReferenceMetadata.Create);
+        ShaderRootArguments root = VulkanShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
         SelectRoot(root);
     }
 
@@ -107,9 +107,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     }
 
     private IShaderRootStorage CreateRootStorage(int size) => new VulkanRootStorage(owner.Owner, size);
-
-    // Stable reference encoding can fail during Set; selection and command ownership change only after creation succeeds.
-    private byte[] EncodeRootReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(owner.Owner, value);
 
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(_pipeline!.Data, rootParameter);
 

@@ -125,6 +125,26 @@ public sealed class FinalRootGenerationTests
             Assert.Equal(3, root.Writes);
             Assert.Equal(validation ? 2 : 0, root.Probes);
 
+            // All malformed codecs must leave the previous valid generation selected.
+            int writesBeforeMalformed = root.Writes;
+            int probesBeforeMalformed = root.Probes;
+            foreach (int mode in new[] { 1, 2, 3 })
+            {
+                root.BadCodec = mode;
+                if (mode == 3)
+                {
+                    Assert.Throws<ArgumentOutOfRangeException>(() => compute.SetArguments(in root));
+                }
+                else
+                {
+                    Assert.Throws<InvalidOperationException>(() => compute.SetArguments(in root));
+                }
+            }
+
+            root.BadCodec = 0;
+            Assert.Equal(writesBeforeMalformed + 3, root.Writes);
+            Assert.Equal(probesBeforeMalformed, root.Probes);
+
             // Neither guard may consume the selected generation or commit its accesses.
             compute.SetPipeline(otherPipeline);
             Assert.Throws<InvalidOperationException>(() => compute.Dispatch(1));
@@ -132,7 +152,7 @@ public sealed class FinalRootGenerationTests
             compute.SetArgumentTable(otherTable);
             Assert.Throws<ArgumentException>(() => compute.Dispatch(1));
             compute.SetArgumentTable(table);
-            Assert.Equal(3, root.Writes);
+            Assert.Equal(6, root.Writes);
 
             // A rejecting metadata-only hook must not consume or replace the selected generation.
             var preparationFailure = new InvalidOperationException("Preparation rejected final metadata.");
@@ -154,14 +174,14 @@ public sealed class FinalRootGenerationTests
 
             Assert.Equal(1, prepares);
             compute.Dispatch(1);
-            Assert.Equal(4, root.Writes);
+            Assert.Equal(7, root.Writes);
 
             // A new typed selection owns numeric bytes independently of later source mutation.
             root.Number = 13;
             compute.SetArguments(in root);
             root.Number = 999;
             compute.Dispatch(1);
-            Assert.Equal(5, root.Writes);
+            Assert.Equal(8, root.Writes);
             Assert.Equal(validation ? 4 : 0, root.Probes);
         }
         finally
@@ -208,6 +228,8 @@ public sealed class FinalRootGenerationTests
 
         internal IGpuRef<uint>? Input { get; set; }
 
+        internal int BadCodec { get; set; }
+
         internal Exception? Failure { get; set; }
 
         internal int Writes { get; private set; }
@@ -234,6 +256,16 @@ public sealed class FinalRootGenerationTests
             }
 
             Writes++;
+            if (BadCodec != 0)
+            {
+                if (BadCodec != 1)
+                {
+                    writer.WriteValue(new byte[BadCodec == 2 ? 4 : 89]);
+                }
+
+                return;
+            }
+
             var wire = new Wire { Number = Number, Output = default, Input = default, Padding = 0 };
             ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
             writer.WriteValue(bytes[..4]);

@@ -90,7 +90,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
             return;
         }
 
-        ShaderDataUpload.CopyFrom(source, Storage, elementOffset, _values, PackReference, _diagnosticLayout, metadataFactory: Direct3D12ReferenceMetadata.Create);
+        Direct3D12ShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, _values, _diagnosticLayout);
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -138,6 +138,4 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         Array.Clear(_values);
         _disposed = true;
     }
-
-    private byte[] PackReference(ShaderValue value) => Direct3D12ShaderReferenceEncoding.Pack(Owner, value);
 }

@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
+internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage, IVulkanShaderBuffer
     where T : IShaderArguments
 {
     private readonly IShaderReferenceMetadata?[] _values;
@@ -43,6 +43,8 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
     public MemoryPreference Memory { get; }
 
     public bool IsMapped => Storage.IsMapped;
+
+    Silk.NET.Vulkan.Buffer IVulkanShaderBuffer.ShaderBuffer => ((IVulkanShaderBuffer)Storage).ShaderBuffer;
 
     public object ShaderHandle => ((IShaderRawBuffer)Storage).ShaderHandle;
 
@@ -90,7 +92,7 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
             return;
         }
 
-        ShaderDataUpload.CopyFrom(source, Storage, elementOffset, _values, PackReference, _diagnosticLayout, metadataFactory: VulkanReferenceMetadata.Create);
+        VulkanShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, _values, _diagnosticLayout);
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -138,6 +140,4 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         Array.Clear(_values);
         _disposed = true;
     }
-
-    private byte[] PackReference(ShaderValue value) => VulkanShaderReferenceEncoding.Pack(Owner, value);
 }

@@ -48,7 +48,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         where T : IShaderArguments
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.Create(in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
+        ShaderRootArguments root = WgpuShaderTransfer.CreateRoot(owner.Owner, in value, CreateRootStorage, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
         SelectRoot(root);
     }
 
@@ -56,7 +56,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         where T : unmanaged
     {
         ValidateRootSelection();
-        var root = ShaderRootArguments.CreateUnmanaged(in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation, encode: EncodeRootReference, metadataFactory: WgpuReferenceMetadata.Create);
+        ShaderRootArguments root = WgpuShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, CreateRootStorage, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
         SelectRoot(root);
     }
 
@@ -231,9 +231,6 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
     }
 
     private IShaderRootStorage CreateRootStorage(int size) => new WgpuRootStorage(owner.Owner, size);
-
-    // Stable reference encoding can fail during Set; selection and command ownership change only after creation succeeds.
-    private byte[] EncodeRootReference(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 

@@ -46,7 +46,12 @@ public sealed class ShaderScratchPackingTests
         }
 
         MethodInfo create = Assert.Single(typeof(ShaderRootArguments).GetMethods(), m => m.Name == "Create");
-        Assert.Equal(typeof(Func<ShaderValue, byte[]>), create.GetParameters()[2].ParameterType);
-        Assert.False(create.GetParameters()[2].IsOptional);
+        Assert.False(create.IsGenericMethod);
+        Assert.Equal(typeof(int), create.GetParameters()[2].ParameterType);
+        Assert.Equal(typeof(IShaderRootStorage), create.GetParameters()[3].ParameterType);
+        Assert.Equal(typeof(IShaderReferenceMetadata), create.GetParameters()[4].ParameterType);
+        Assert.DoesNotContain(create.GetParameters(), parameter => parameter.ParameterType == typeof(Func<ShaderValue, byte[]>));
+        Assert.False(create.GetParameters()[3].IsOptional);
+        Assert.False(create.GetParameters()[4].IsOptional);
     }
 }

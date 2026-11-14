@@ -4,7 +4,56 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
-## 値だけを渡すwriterとGraph連携の簡素化（2026-11-14）
+## backend自身によるwriter実装（2026-11-14）
+
+Vulkan／Direct3D12／Wgpu／Browserがそれぞれ内部ShaderValueWriterでIShaderValueWriterを直接実装する。
+位置・容量・完了・16-byte参照符号化・依存収集はbackend内で行い、Shared writerへの委譲ではない。
+SetArgumentsの生成型／手書き型とshader-data CopyFromは同じbackend writerを使う。
+参照はクリアしたstackalloc 16-byteへ直接符号化し、最終uniform／mapped uploadへ同期書き込みする。
+GPU転送経路のShaderValue生成、byte[16]中間配列とFunc参照encoder呼び出しは削除した。
+Vulkanは内部の型付きnative buffer handleを使い、handleのobject boxingも避ける。
+
+SharedのShaderTransferWriter、IShaderTransferDestination、ShaderRootDestination、ShaderUploadDestination、
+ShaderDataUpload、ShaderReferenceEncodingとVulkan／D3D12の旧配列encoderを削除した。
+Shared root helperはAllocateによるaligned storage検査と、完成storage／metadataを受けるCreateによる
+成功時だけの所有権取得に限定した。書き込み失敗時はbackendがstorageを破棄し、cleanup例外で元の例外を隠さない。
+診断はType／opaque reference／位置を受けるoverloadで検査し、ShaderValue recordを構築しない。
+明示CaptureのShaderSnapshotWriterとlogical ShaderValueはCPU検査用としてのみ残す。
+
+公開writerは二つの値一引数methodのまま。C# wire／padding、参照slotの物理順と一回のgetter評価、
+数値bufferの直接copy、Graphのresource／範囲／access使用時検査とcached参照許可は変更しない。
+backend-private依存metadata、世代のGPU完了までの保持、Set失敗時の旧選択、CopyFrom失敗時の
+要求範囲metadata全無効化と元例外を維持した。Browser bridgeのJS／GPUコピーは残り、zero-copyとは呼ばない。
+
+fake-storageのunit testはShared所有権／診断の検査用であり、backend writer実行の代替とはしない。
+実Vulkan／Wgpuでは88-byte全wire（数値／padding／sampler／texture／writable／二つのread-only参照）を
+literal ABI oracleで照合し、reserved zeroを確認した。実backendのshort／overflow CopyFromは
+要求3要素のmetadataを全て無効化し、外側2要素のidentityを維持する。実Setのmissing／short／overflow、
+途中sentinel例外、prepare拒否後も以前の世代のreadbackを検査した。全てvalidation off/onで実行する。
+
+残るallocationは依存Listとそのbacking、metadata object／参照array／read-only wrapper、rootとnative buffer所有者、
+既存factory delegate、実行ごとのbinding dependency収集などである。転送全体のzero-allocationは主張しない。
+
+最終sourceの検証:
+
+- Graphics Debug／Release各243成功・失敗0・90skip（333件）。
+- RenderGraph Debug／Release各133成功・失敗0・skip0。
+- 全ホストRelease3,216成功・失敗0・111skip。host samples／consumer buildを含む。
+- Vulkan／Wgpu targeted subset Debug／Release各20成功・失敗0・skip0（backend別GPU test16とCPU test4）。実backendのABI、
+  malformed codec、世代保持、同一class root／buffer／Graphと更新されたtransitive依存を含む。
+- D3D12管理側Release29成功・Windows native7skip、Browser Release compile／JS syntax成功。
+- Windows native／Browser実行・AOT／presentationは未検証。独立source reviewでblockerなし。
+
+ログはartifacts/validation12-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,markdown}.log。
+
+凍結public-client BDNのABBA比較は[性能記録](performance/backend-native-writers.md)に全process値を記載した。
+Vulkan CopyFrom 64要素のmanaged allocationは24,640→11,264 B、paired medianは24.086%／27.047%低下。
+Set／full-completionのlatency改善は順序で逆転または0.5%未満で、安定したend-to-end高速化とは主張しない。
+raw結果はlocal artifactsに保持し、repositoryには小さいtext summaryだけを追加した。
+
+以下はf27以前のflat writer／Graph連携の履歴であり、旧Shared factoryは最新APIではない。
+
+## f27時点の値だけを渡すwriter／Graph連携履歴（2026-11-14）
 
 最新の明示要求により、旧cursor-only契約を次の単一writerへ置き換えた。
 
@@ -637,122 +686,3 @@ artifacts/shader-transfer/hardware.txt. Commands use the activation and TMPDIR
 shown above and the official Fallout runner.
 
     dotnet run --project build -c Release -- --target Compile --host-only --configuration Release
-    dotnet run --project build -c Release -- --target Test --host-only --configuration Release
-
-Hardware-enabled Graphics uses VK_DRIVER_FILES and LUMYTE_GRAPHICS_GPU_TESTS=1
-with the two Graphics commands shown above. CPU graph/drawing checks use:
-
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Release
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Drawing2D.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Drawing2D.Tests --configuration Release
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Drawing.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Drawing.Tests --configuration Release
-
-- Host Release compile: succeeded, 0 warnings/errors.
-- Drawing2D Debug/Release: each 309 passed, 0 failed/skipped.
-- Drawing Debug/Release CPU suite: each 12 passed, 0 failed, 10 GPU tests skipped.
-- RenderGraph final Debug and Release: each 122 passed, 0 failed/skipped.
-  The initial Debug run caught
-  a migrated test accessor reading numeric bytes at zero instead of its explicit
-  C# field offset; that accessor was corrected before the final rerun.
-- Final hardware Graphics Debug/Release: each **159 passed, 2 failed, 0 skipped**
-  (161 total), including all new bulk-wire and main-specific native graph tests.
-  Only VulkanAdvancedCommandsAsync and VulkanUncachedAdvancedCommandsAsync fail
-  at unsupported depth texture creation. No new bulk-transfer test fails.
-- Full host Release: **2,878 passed, 0 failed, 95 skipped** (2,973 total,
-  40 test projects); official runner restore, compile and test all succeeded.
-- Official CheckMarkdown: 310 files linted, 0 issues. Touched ADRs were migrated
-  to the current metadata/section rules; the frozen legacy exemption manifest was
-  not modified. git diff --check passed; runner-generated build schema drift was restored.
-- Full host Debug was not rerun on this new base; only the targeted Debug projects
-  listed above were rerun.
-
-The native failures are the same two Vulkan advanced depth-format paths seen in
-the historical baseline. The texture creation and advanced-command sources are
-unchanged from ef61258f; no assertions or GPU-test eligibility were relaxed.
-This is not a fresh pristine-ef61258f hardware baseline measurement.
-
-## Historical development-branch environment
-
-Validation on 2026-11-13 used .NET SDK 10.0.401, Slang 2026.19, Linux x64,
-and Radeon 8060S Graphics (RADV STRIX_HALO), Mesa 26.0.8-1ubuntu0.3.
-Hardware identity was verified with vulkaninfo under the selected Radeon ICD.
-No timing/performance claim is made.
-
-All builds and tests use the official Fallout runner from build/README.md.
-The local environment activation used:
-
-    export LUMYTE_ENV_ROOT=/home/hideaki/.openclaw/workspace/Lumyte/artifacts/dev-env
-    source tools/setup/activate.sh
-    export TMPDIR=/home/hideaki/.openclaw/workspace/shader-transfer-tmp
-    mkdir -p "$TMPDIR" artifacts/nuget
-
-The TMPDIR override avoids an unrelated /tmp per-user quota exhaustion. No machine
-configuration, CI definitions, driver settings or scheduler files were changed.
-
-## Historical development-branch commands
-
-    dotnet run --project build -c Release -- --target Test --host-only --configuration Debug
-    dotnet run --project build -c Release -- --target Test --host-only --configuration Release
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
-
-Hardware-enabled native tests use the same runner:
-
-    export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json
-    export LUMYTE_GRAPHICS_GPU_TESTS=1
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
-
-Unset LUMYTE_GRAPHICS_GPU_TESTS for the ordinary CPU-only host suite. Physical uniform
-padding, scalar GPU loads, original reference encodings, nested/vector/matrix data,
-cyclic references, explicit copies and mutable argument snapshots are exercised by
-the native Vulkan/Wgpu shader binding, drawing and effect tests.
-
-## Historical development-branch results
-
-- Full Linux host Debug: compile succeeded; 2,521 passed, 2 baseline failures,
-  67 skipped (2,590 total, 40 test projects).
-- Full Linux host Release: compile succeeded; 2,523 passed, 0 failed,
-  67 skipped (2,590 total, 40 test projects).
-- Hardware-enabled Graphics Debug and Release, each: 127 passed, 2 baseline
-  depth-format failures, 0 skipped (129 total). All 46 other GPU tests pass.
-- Direct3D12 Debug and Release CPU parity, each: 4 passed, 0 failed,
-  5 Windows-native tests skipped (9 total).
-- Pristine baseline Debug: Resources 226 passed/1 failed; Animation 144 passed/1 failed.
-  Hardware Graphics 105 passed/2 failed (107 total), reproducing exactly the same
-  unsupported Vulkan depth-format failures.
-- Final git diff whitespace validation passed. All intended code was compiled in both
-  configurations; generated build schema drift from the official runner was restored.
-
-## Historical baseline isolation
-
-The pristine baseline is commit 7ed00bbd1bbe47c7e2c98304bfda8a452a7d2630.
-An unmodified git archive of that commit was used to reproduce unrelated failures with
-the same SDK, driver and official runner:
-
-    dotnet run --project build -c Release -- --target Test --project tests/Core/Lumyte.Resources.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Animation/Lumyte.Animation.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
-
-The first two reproduce the existing Debug allocation-budget failures in
-WarmOwnershipOperationsHaveBoundedAllocationsAsync (reference) and
-WarmedNumericUpdatesAndRepeatedTransitionsAllocateNoManagedMemory. The GPU baseline
-reproduces both Vulkan advanced-command depth-format failures on this adapter.
-Assertions were not weakened, skipped or rewritten to hide these baseline failures.
-
-## Coverage boundaries
-
-- Native Vulkan and Wgpu execute on the verified Radeon adapter; the two unsupported
-  Vulkan advanced depth-format paths remain baseline failures.
-- Browser projects compile in the full host solution, but actual Browser/WASM/WebGPU
-  execution is not validated by native tests.
-- Direct3D12 CPU schema tests can run on Linux. Windows native D3D12/Agility execution
-  remains unverified and must not be inferred from DXIL compilation.
-- ModelVertex/ModelMaterial/ModelDrawArguments schemas are checked against all three
-  compiled shader targets, but a ModelMesh 3D GPU pixel-rendering smoke was not run.
-- NativeAOT publication and browser publication are not part of this validation.
-
-Logs and TRX files are retained under ignored artifacts/shader-transfer and
-artifacts/test-results. Generated WGSL, SPIR-V, DXIL and reflection are not committed.

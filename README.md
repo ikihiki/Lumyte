@@ -109,6 +109,13 @@ IShaderValueWriter requires only `WriteValue(ReadOnlySpan<byte> value)` and
 `WriteReference<T>(IGpuRef<T>? value)`, one value parameter each. Writers own implicit
 position and exact completion size; numeric-only values use one whole raw write,
 references encode 16 bytes inline. Cursor/emitter APIs and WriteWire are removed.
+Vulkan, Direct3D12, Wgpu and Browser each implement an internal backend-native
+IShaderValueWriter for both Set and typed CopyFrom. Each writer owns position,
+bounds and cleared stack-local 16-byte reference encoding, and writes directly to
+root storage or mapped upload storage; no shared encoding callback is involved.
+Reference metadata owners, collections, native buffers and some delegates still
+allocate, and Browser span-to-JS copies remain: this is not a zero-allocation or
+zero-copy claim. No new performance result is asserted here.
 Capture is CPU inspection only, never a Set/upload input. Graph temporarily uses
 SetArgumentValidation on existing native encoder contracts to check root references
 before publication and refreshed transitive references on execution against the

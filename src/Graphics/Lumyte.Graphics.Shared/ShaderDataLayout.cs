@@ -244,12 +244,18 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
     /// <summary>Checks one emitted reference against explicitly enabled shader diagnostics.</summary>
     /// <param name="value">The transient reference and its current wire slot.</param>
-    public void ValidateReference(ShaderValue value)
+    public void ValidateReference(ShaderValue value) => ValidateReference(value.ValueType, value.Reference, value.Offset);
+
+    /// <summary>Checks a backend-emitted reference without constructing a logical snapshot record.</summary>
+    /// <param name="valueType">The referenced element type.</param>
+    /// <param name="reference">The opaque backend reference.</param>
+    /// <param name="offset">The backend writer's current byte position.</param>
+    public void ValidateReference(Type valueType, object? reference, int offset)
     {
-        ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == value.Offset);
-        if (member == null || !ReferenceMatches(value, member))
+        ShaderMember? member = _members.Values.SingleOrDefault(member => member.Reference && member.Offset == offset);
+        if (member == null || !ReferenceMatches(valueType, reference, member))
         {
-            throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(value));
+            throw new ArgumentException("Resource kind, element type, access or slot differs from the compiled schema.", nameof(reference));
         }
     }
 
@@ -266,9 +272,11 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     /// <inheritdoc/>
     public bool Matches(IShaderDataLayout layout) => layout is ShaderDataLayout other && Name == other.Name && Size == other.Size && ((_members == null && other._members == null) || (_members != null && other._members != null && _members.Count == other._members.Count && _members.All(pair => other._members.TryGetValue(pair.Key, out ShaderMember? member) && pair.Value == member)));
 
-    private static bool ReferenceMatches(ShaderValue value, ShaderMember member)
+    private static bool ReferenceMatches(ShaderValue value, ShaderMember member) => ReferenceMatches(value.ValueType, value.Reference, member);
+
+    private static bool ReferenceMatches(Type valueType, object? value, ShaderMember member)
     {
-        if (value.Reference is not IShaderReference reference)
+        if (value is not IShaderReference reference)
         {
             return false;
         }
@@ -281,18 +289,18 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
 
         return member.Kind switch
         {
-            "GpuTextureRef" => value.ValueType == typeof(IGraphicsTextureView) && reference.Resource is IGraphicsTextureView,
-            "GpuSamplerRef" => value.ValueType == typeof(IGraphicsSampler) && reference.Resource is IGraphicsSampler,
+            "GpuTextureRef" => valueType == typeof(IGraphicsTextureView) && reference.Resource is IGraphicsTextureView,
+            "GpuSamplerRef" => valueType == typeof(IGraphicsSampler) && reference.Resource is IGraphicsSampler,
             "GpuBufferRef" when reference.Resource is IShaderDataSource data => data.Layout.Name == member.Target && data.Memory == MemoryPreference.Automatic,
-            "GpuBufferRef" or "GpuRWBufferRef" => RawReferenceMatches(value, reference.Resource, member),
+            "GpuBufferRef" or "GpuRWBufferRef" => RawReferenceMatches(valueType, reference.Resource, member),
             _ => false,
         };
     }
 
-    private static bool RawReferenceMatches(ShaderValue value, object resource, ShaderMember member)
+    private static bool RawReferenceMatches(Type valueType, object resource, ShaderMember member)
     {
         BufferUsage required = member.Kind == "GpuRWBufferRef" ? BufferUsage.ShaderWrite : BufferUsage.ShaderRead;
-        return resource is IShaderRawBuffer raw && raw.ElementType == value.ValueType && raw.ShaderTypeName == member.Target && (raw.Usage & required) == required;
+        return resource is IShaderRawBuffer raw && raw.ElementType == valueType && raw.ShaderTypeName == member.Target && (raw.Usage & required) == required;
     }
 
     private static JsonElement DataType(JsonElement metadata, string name)

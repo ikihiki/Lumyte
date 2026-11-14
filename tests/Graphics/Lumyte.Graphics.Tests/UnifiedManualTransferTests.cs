@@ -20,7 +20,7 @@ public sealed class UnifiedManualTransferTests
             throw new InvalidOperationException("A numeric-only codec cannot encode references.");
         }
 
-        using var root = ShaderRootArguments.Create(in value, size => new TestRootStorage(size), Encode, diagnostic: null);
+        using ShaderRootArguments root = TestShaderTransfer.Create(in value, size => new TestRootStorage(size), Encode, diagnostic: null);
         TestRootStorage nativeBacking = Assert.IsType<TestRootStorage>(root.Storage);
         Assert.Equal(4, root.WireSize);
         Assert.Equal(16, nativeBacking.Size);
@@ -31,7 +31,7 @@ public sealed class UnifiedManualTransferTests
         value.Value = 13;
         using var upload = new MappedBuffer(ManualValue.TransferSize);
         var metadata = new IShaderReferenceMetadata?[1];
-        ShaderDataUpload.CopyFrom<ManualValue>(new[] { value }, upload, 0, metadata, Encode, diagnostic: null);
+        TestShaderDataUpload.CopyFrom<ManualValue>(new[] { value }, upload, 0, metadata, Encode, diagnostic: null);
         Assert.Equal(13u, MemoryMarshal.Read<uint>(upload.Bytes));
         Assert.Empty(Assert.IsType<ShaderDependencyMetadata>(metadata[0]).References);
 

@@ -100,10 +100,14 @@ IShaderValueWriter has exactly two mandatory abstract methods, each with one val
     void WriteValue(ReadOnlySpan<byte> value);
     void WriteReference<T>(IGpuRef<T>? value);
 
-There is no offset, size, path, seek, skip or WriteAt parameter. Root/upload writers
-own their implicit position and expectedTransferSize. They guard remaining capacity
+There is no offset, size, path, seek, skip or WriteAt parameter. The internal VulkanShaderValueWriter, Direct3D12ShaderValueWriter,
+WgpuShaderValueWriter and BrowserShaderValueWriter each own their implicit
+position and expectedTransferSize for both root and upload writes. Their backend
+ShaderTransfer helpers call value.Write(ref writer) directly for Set and typed
+CopyFrom, not through a shared writer or reference-encoding callback. They guard remaining capacity
 by subtraction and require position == expectedTransferSize at Complete. References
-are always encoded inline as 16 bytes; borrowed spans never escape. Numeric-only
+are encoded inline into a cleared stackalloc byte[16], then passed directly to
+root storage.Write or upload CopyBytesFrom; borrowed spans never escape. Numeric-only
 codecs call WriteValue once over the complete unmanaged value, including padding.
 
 Reference-containing classes first copy the complete private unmanaged wire to a
@@ -145,6 +149,13 @@ active with validation disabled. No extra root
 encoder/scope types, public types, friend access or graph copy overlay proxy is needed.
 A failed admission blocks native recording, not a promise of CPU rollback. Native
 manual SetArgumentTable remains available; Graph selects its table automatically.
+
+Native optional reference diagnostics pass Type, reference and current position
+directly, without constructing ShaderValue records or per-reference byte arrays.
+Explicit Capture may still allocate logical inspection records in its separate
+ShaderSnapshotWriter. Metadata owners, lists, arrays/read-only wrappers, native root
+buffers and delegates remain; Browser interop still copies spans to JS. No
+zero-allocation, zero-copy or measured performance improvement is implied.
 
 Inspection Fields/reflection remain diagnostics only; ModelVertex checks size and
 Fields without Capture. ShaderBindingSnapshot.Capture(rootArguments, …) gathers

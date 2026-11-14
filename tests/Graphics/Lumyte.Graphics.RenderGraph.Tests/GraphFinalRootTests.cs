@@ -444,11 +444,11 @@ public sealed class GraphFinalRootTests
 
         public void SetArguments<T>(in T arguments)
             where T : IShaderArguments
-            => Selected = ShaderRootArguments.Create(in arguments, Allocate, Encode, prepare: _prepare);
+            => Selected = TestShaderTransfer.Create(in arguments, Allocate, Encode, prepare: _prepare);
 
         public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
             where T : unmanaged
-            => Selected = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, Allocate, prepare: _prepare);
+            => Selected = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, Allocate, prepare: _prepare);
 
         public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
         {

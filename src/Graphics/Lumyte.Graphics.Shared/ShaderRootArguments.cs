@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
@@ -36,70 +34,54 @@ public sealed class ShaderRootArguments : IDisposable
     /// <summary>Gets immutable, non-owning root resource dependencies.</summary>
     public IShaderReferenceMetadata References { get; }
 
-    /// <summary>Writes application arguments once into a new final native allocation.</summary>
-    /// <typeparam name="T">The shader argument type.</typeparam>
-    /// <param name="value">The input used synchronously and never retained.</param>
-    /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
-    /// <param name="encode">The stable synchronous backend reference encoder.</param>
-    /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
-    /// <param name="prepare">Optional reference-only selection preparation returning detached execution admission.</param>
-    /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
+    /// <summary>Creates an owner for a completed backend-written native generation.</summary>
+    /// <param name="rootParameter">The logical root parameter name.</param>
+    /// <param name="shaderTypeName">The logical shader type name.</param>
+    /// <param name="wireSize">The exact C# wire byte count.</param>
+    /// <param name="storage">Completed native storage, transferred only on success.</param>
+    /// <param name="references">The immutable backend-owned dependency metadata.</param>
+    /// <param name="prepare">Optional reference-only preparation returning detached execution admission.</param>
     /// <returns>The independently owned root generation.</returns>
-    public static ShaderRootArguments Create<T>(in T value, Func<int, IShaderRootStorage> factory, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
-        where T : IShaderArguments
+    /// <remarks>The caller retains storage ownership when validation or preparation throws.</remarks>
+    public static ShaderRootArguments Create(string rootParameter, string shaderTypeName, int wireSize, IShaderRootStorage storage, IShaderReferenceMetadata references, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
     {
-        if (!typeof(T).IsValueType)
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootParameter);
+        ArgumentException.ThrowIfNullOrWhiteSpace(shaderTypeName);
+        ArgumentOutOfRangeException.ThrowIfNegative(wireSize);
+        ArgumentNullException.ThrowIfNull(storage);
+        ArgumentNullException.ThrowIfNull(references);
+        int capacity = Math.Max(16, checked(((wireSize + 15) / 16) * 16));
+        if (storage.Size != capacity)
         {
-            ArgumentNullException.ThrowIfNull(value);
+            throw new InvalidOperationException("The root allocation must match the requested aligned capacity.");
         }
 
-        ArgumentNullException.ThrowIfNull(encode);
-        string root = T.RootParameter;
-        string name = T.ShaderTypeName;
-        int size = T.TransferSize;
-        IShaderRootStorage storage = Allocate(root, name, size, factory);
-        try
-        {
-            var writer = new ShaderTransferWriter<ShaderRootDestination>(new(storage), size, encode, metadataFactory, diagnostic);
-            value.Write(ref writer);
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
-            return new(root, name, size, storage, references, admit);
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
+        Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
+        return new(rootParameter, shaderTypeName, wireSize, storage, references, admit);
     }
 
-    /// <summary>Writes an unmanaged value once into a new final native allocation.</summary>
-    /// <typeparam name="T">The unmanaged wire type.</typeparam>
-    /// <param name="value">The value copied synchronously.</param>
-    /// <param name="rootParameter">The root parameter name.</param>
-    /// <param name="shaderTypeName">The shader type name, or the conventional C# type name.</param>
-    /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
-    /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
-    /// <param name="prepare">Optional reference-only selection preparation returning detached execution admission.</param>
-    /// <param name="encode">The stable synchronous backend reference encoder.</param>
-    /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
-    /// <returns>The independently owned root generation.</returns>
-    public static ShaderRootArguments CreateUnmanaged<T>(in T value, string rootParameter, string? shaderTypeName, Func<int, IShaderRootStorage> factory, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null, Func<ShaderValue, byte[]>? encode = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
-        where T : unmanaged
+    /// <summary>Allocates validated final native storage for a backend writer.</summary>
+    /// <param name="root">The logical root parameter name.</param>
+    /// <param name="name">The logical shader type name.</param>
+    /// <param name="size">The exact C# wire byte count.</param>
+    /// <param name="factory">Creates storage with the requested aligned capacity.</param>
+    /// <returns>Caller-owned storage; a backend must dispose it if writing fails.</returns>
+    public static IShaderRootStorage Allocate(string root, string name, int size, Func<int, IShaderRootStorage> factory)
     {
-        string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
-        int size = Unsafe.SizeOf<T>();
-        IShaderRootStorage storage = Allocate(rootParameter, name, size, factory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(factory);
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        int capacity = Math.Max(16, checked(((size + 15) / 16) * 16));
+        IShaderRootStorage storage = factory(capacity) ?? throw new InvalidOperationException("The root storage factory returned null.");
         try
         {
-            var writer = new ShaderTransferWriter<ShaderRootDestination>(new(storage), size, encode ?? RejectReference, metadataFactory, diagnostic);
-            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            diagnostic?.ValidateReferenceCount(0);
-            Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
-            return new(rootParameter, name, size, storage, references, admit);
+            if (storage.Size != capacity)
+            {
+                throw new InvalidOperationException("The root allocation must match the requested aligned capacity.");
+            }
+
+            return storage;
         }
         catch
         {
@@ -139,33 +121,6 @@ public sealed class ShaderRootArguments : IDisposable
 
         _disposed = true;
         Storage.Dispose();
-    }
-
-    private static byte[] RejectReference(ShaderValue value)
-        => throw new InvalidOperationException("A raw unmanaged value cannot emit resource references.");
-
-    private static IShaderRootStorage Allocate(string root, string name, int size, Func<int, IShaderRootStorage> factory)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(root);
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(factory);
-        ArgumentOutOfRangeException.ThrowIfNegative(size);
-        int capacity = Math.Max(16, checked(((size + 15) / 16) * 16));
-        IShaderRootStorage storage = factory(capacity) ?? throw new InvalidOperationException("The root storage factory returned null.");
-        try
-        {
-            if (storage.Size != capacity)
-            {
-                throw new InvalidOperationException("The root allocation must match the requested aligned capacity.");
-            }
-
-            return storage;
-        }
-        catch
-        {
-            DisposeFailed(storage);
-            throw;
-        }
     }
 
     private static void DisposeFailed(IShaderRootStorage storage)

@@ -1,9 +1,11 @@
+// Test-only streaming fake; never used by an engine backend.
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
-namespace Lumyte.Graphics.Shared;
+namespace Lumyte.Graphics.Tests;
 
 /// <summary>Writes current application bytes and retains only resource reference identities.</summary>
-public static class ShaderDataUpload
+internal static class TestShaderDataUpload
 {
     /// <summary>Writes a batch without promising failure atomicity or retaining CPU numeric values.</summary>
     /// <typeparam name="T">The application shader data type.</typeparam>
@@ -56,7 +58,7 @@ public static class ShaderDataUpload
                     diagnostic.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
                 }
 
-                var writer = new ShaderTransferWriter<ShaderUploadDestination>(new(storage, checked(offset + ((ulong)i * (ulong)stride))), stride, encode, metadataFactory, diagnostic);
+                var writer = new TestShaderValueWriter<TestShaderUploadDestination>(new(storage, checked(offset + ((ulong)i * (ulong)stride))), stride, encode, metadataFactory, diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata value = writer.Complete();
                 metadata[start + i] = value;

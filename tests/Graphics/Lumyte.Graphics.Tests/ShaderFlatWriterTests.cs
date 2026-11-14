@@ -34,7 +34,7 @@ public sealed class ShaderFlatWriterTests
             return new IdentityMetadata(references);
         }
 
-        ShaderDataUpload.CopyFrom<WireCursorValue>([value], buffer, 0, metadata, EncodeSlot, null, CreateMetadata);
+        TestShaderDataUpload.CopyFrom<WireCursorValue>([value], buffer, 0, metadata, EncodeSlot, null, CreateMetadata);
 
         byte[] expected = original.ToArray();
         Array.Fill(expected, (byte)0xA1, 8, 16);
@@ -78,7 +78,7 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        ShaderDataUpload.CopyFrom<WireCursorGetterValue>([value], buffer, 0, new IShaderReferenceMetadata?[1], EncodeSlot, null);
+        TestShaderDataUpload.CopyFrom<WireCursorGetterValue>([value], buffer, 0, new IShaderReferenceMetadata?[1], EncodeSlot, null);
         Assert.Equal(17U, MemoryMarshal.Read<uint>(buffer.Bytes));
         Assert.Equal(999U, value.Number);
         Assert.Equal(1, value.GetterCalls);
@@ -101,7 +101,7 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        ShaderDataUpload.CopyFrom<WireCursorOrderedGetterValue>([value], buffer, 0, new IShaderReferenceMetadata?[1], EncodeSlot, null);
+        TestShaderDataUpload.CopyFrom<WireCursorOrderedGetterValue>([value], buffer, 0, new IShaderReferenceMetadata?[1], EncodeSlot, null);
         Assert.Equal(new[] { "A", "B" }, getters);
         Assert.Equal(new[] { 8, 32 }, offsets);
         Assert.Equal(17u, MemoryMarshal.Read<uint>(buffer.Bytes));
@@ -124,7 +124,7 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        ShaderDataUpload.CopyFrom<CursorValue>([value], buffer, 0, metadata, EncodeSlot, null);
+        TestShaderDataUpload.CopyFrom<CursorValue>([value], buffer, 0, metadata, EncodeSlot, null);
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
         Assert.Equal(new[] { "G:8", "E:8", "G:32", "E:32" }, events.Where(item => !item.StartsWith("W:")));
@@ -148,7 +148,7 @@ public sealed class ShaderFlatWriterTests
         var old = new IdentityMetadata([]);
         IShaderReferenceMetadata?[] metadata = [old, old, old, old];
         using var buffer = new MappedBuffer(128, []);
-        Exception? failure = Record.Exception(() => ShaderDataUpload.CopyFrom<CursorSlotValue>([value, unvisited], buffer, 1, metadata, Encode, null));
+        Exception? failure = Record.Exception(() => TestShaderDataUpload.CopyFrom<CursorSlotValue>([value, unvisited], buffer, 1, metadata, Encode, null));
         if (prefix == 0)
         {
             Assert.IsType<InvalidOperationException>(failure);
@@ -176,7 +176,7 @@ public sealed class ShaderFlatWriterTests
         var value = new CursorSlotValue(0, 2);
         using var buffer = new MappedBuffer(32, []);
         var metadata = new IShaderReferenceMetadata?[1];
-        ShaderDataUpload.CopyFrom<CursorSlotValue>([value], buffer, 0, metadata, Encode, null);
+        TestShaderDataUpload.CopyFrom<CursorSlotValue>([value], buffer, 0, metadata, Encode, null);
         Assert.Equal(1, value.Writes);
         Assert.Equal(0, value.DiagnosticCalls);
         Assert.Equal(2, buffer.WriteCount);
@@ -201,8 +201,8 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        ArgumentException first = Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
-        ArgumentException repeated = Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
+        ArgumentException first = Assert.Throws<ArgumentException>(() => TestShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
+        ArgumentException repeated = Assert.Throws<ArgumentException>(() => TestShaderDataUpload.CopyFrom<WireCursorOverlapGetterValue>([value, value], buffer, 1, metadata, EncodeSlot, null));
         ArgumentException captured = Assert.Throws<ArgumentException>(() => IShaderArguments.Capture(in value));
         ArgumentException capturedAgain = Assert.Throws<ArgumentException>(() => IShaderArguments.Capture(in value));
         Assert.Equal(first.Message, repeated.Message);
@@ -229,7 +229,7 @@ public sealed class ShaderFlatWriterTests
         var valid = new WireCursorValue(1) { A = new Reference(1), B = new Reference(2) };
         var invalid = new WireCursorOverlapGetterValue(new Reference(3), new Reference(4));
         var previousStorage = new RootStorage(64);
-        var selected = ShaderRootArguments.Create(in valid, _ => previousStorage, encode: Encode);
+        ShaderRootArguments selected = TestShaderTransfer.Create(in valid, _ => previousStorage, encode: Encode);
         using ShaderRootArguments previous = selected;
         byte[] original = previousStorage.Bytes.ToArray();
         IShaderReferenceMetadata originalMetadata = previous.References;
@@ -242,7 +242,7 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        Assert.Throws<ArgumentException>(() => selected = ShaderRootArguments.Create(in invalid, _ => candidate, encode: EncodeSlot));
+        Assert.Throws<ArgumentException>(() => selected = TestShaderTransfer.Create(in invalid, _ => candidate, encode: EncodeSlot));
 
         Assert.Equal(0, invalid.AGetterCalls);
         Assert.Equal(0, invalid.BGetterCalls);
@@ -277,7 +277,7 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        Assert.Same(failure, Record.Exception(() => ShaderDataUpload.CopyFrom<WireCursorValue>([value, value], buffer, 1, metadata, EncodeSlot, null)));
+        Assert.Same(failure, Record.Exception(() => TestShaderDataUpload.CopyFrom<WireCursorValue>([value, value], buffer, 1, metadata, EncodeSlot, null)));
         Assert.Equal(3, calls);
         Assert.Null(metadata[1]);
         Assert.Null(metadata[2]);
@@ -299,7 +299,7 @@ public sealed class ShaderFlatWriterTests
         var value = new WireCursorValue(1) { A = new Reference(1), B = new Reference(2) };
         using var buffer = new MappedBuffer(64, []);
         IShaderReferenceMetadata?[] metadata = [new IdentityMetadata([])];
-        Assert.Throws<ArgumentException>(() => ShaderDataUpload.CopyFrom<WireCursorValue>([value], buffer, 0, metadata, _ => new byte[size], null));
+        Assert.Throws<ArgumentException>(() => TestShaderDataUpload.CopyFrom<WireCursorValue>([value], buffer, 0, metadata, _ => new byte[size], null));
         Assert.Null(metadata[0]);
         Assert.Equal(1, buffer.WriteCount); // Raw prefix only; invalid encoded bytes never reach storage.
     }
@@ -312,7 +312,7 @@ public sealed class ShaderFlatWriterTests
         IShaderReferenceMetadata?[] metadata = [old];
         using var buffer = new MappedBuffer(64, []);
         var value = new WireCursorValue(1);
-        Assert.Throws<ArgumentOutOfRangeException>(() => ShaderDataUpload.CopyFrom<WireCursorValue>([value], buffer, ulong.MaxValue, metadata, _ => throw new InvalidOperationException("Must not encode."), null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TestShaderDataUpload.CopyFrom<WireCursorValue>([value], buffer, ulong.MaxValue, metadata, _ => throw new InvalidOperationException("Must not encode."), null));
         Assert.Same(old, metadata[0]);
         Assert.Equal(0, buffer.WriteCount);
         Assert.All(buffer.Bytes, item => Assert.Equal((byte)0xCD, item));
@@ -324,7 +324,7 @@ public sealed class ShaderFlatWriterTests
     {
         var value = new WireCursorValue(1) { A = new Reference(1), B = new Reference(2) };
         var previousStorage = new RootStorage(64);
-        var selected = ShaderRootArguments.Create(in value, _ => previousStorage, encode: Encode);
+        ShaderRootArguments selected = TestShaderTransfer.Create(in value, _ => previousStorage, encode: Encode);
         using ShaderRootArguments previous = selected;
         byte[] original = previousStorage.Bytes.ToArray();
         IShaderReferenceMetadata originalMetadata = previous.References;
@@ -342,7 +342,7 @@ public sealed class ShaderFlatWriterTests
             return Encode(slot);
         }
 
-        Assert.Same(failure, Record.Exception(() => selected = ShaderRootArguments.Create(in value, _ => candidate, encode: EncodeSlot)));
+        Assert.Same(failure, Record.Exception(() => selected = TestShaderTransfer.Create(in value, _ => candidate, encode: EncodeSlot)));
         Assert.Same(previous, selected);
         Assert.Same(originalMetadata, selected.References);
         Assert.Equal(original, previousStorage.Bytes);

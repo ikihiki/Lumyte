@@ -34,15 +34,39 @@ public sealed class ShaderRootArgumentsTests
         Assert.Null(typeof(ShaderDataLayout).GetMethod("ValidateReferenceMetadata"));
     }
 
+    /// <summary>Prepared storage transfers ownership only after successful root construction.</summary>
+    [Fact]
+    public void PreparedStorageOwnershipTransfersOnSuccessOnly()
+    {
+        var storage = new Storage(32);
+        var metadata = new ShaderDependencyMetadata([]);
+        var failure = new InvalidOperationException("Preparation failed.");
+        Assert.Same(storage, ShaderRootArguments.Allocate("arguments", "Wire", 20, capacity =>
+        {
+            Assert.Equal(32, capacity);
+            return storage;
+        }));
+        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create("arguments", "Wire", 20, storage, metadata, _ => throw failure)));
+        Assert.Equal(0, storage.Disposes);
+        using (var root = ShaderRootArguments.Create("arguments", "Wire", 20, storage, metadata))
+        {
+            Assert.Same(storage, root.Storage);
+            Assert.Same(metadata, root.References);
+            Assert.Equal(0, storage.Writes);
+        }
+
+        Assert.Equal(1, storage.Disposes);
+    }
+
     /// <summary>Each selection writes once straight into independently owned final storage.</summary>
     [Fact]
     public void CreateStreamsOnceAndOwnsIndependentGenerations()
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 17 };
-        using var first = ShaderRootArguments.Create(in value, factory.Create, Encode);
+        using ShaderRootArguments first = TestShaderTransfer.Create(in value, factory.Create, Encode);
         value.Value = 29;
-        using var second = ShaderRootArguments.Create(in value, factory.Create, Encode);
+        using ShaderRootArguments second = TestShaderTransfer.Create(in value, factory.Create, Encode);
         value.Value = 91;
 
         Assert.Equal(2, value.Writes);
@@ -63,7 +87,7 @@ public sealed class ShaderRootArgumentsTests
     {
         var factory = new StorageFactory();
         uint value = 42;
-        using var root = ShaderRootArguments.CreateUnmanaged(in value, "arguments", "Wire", factory.Create);
+        using ShaderRootArguments root = TestShaderTransfer.CreateUnmanaged(in value, "arguments", "Wire", factory.Create);
         value = 99;
         Storage storage = Assert.Single(factory.Items);
         Assert.Equal(4, root.WireSize);
@@ -89,7 +113,7 @@ public sealed class ShaderRootArgumentsTests
 
         var factory = new StorageFactory();
         var value = new Arguments { Value = 7, Reference = reference };
-        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare);
+        using ShaderRootArguments root = TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare);
         Storage storage = Assert.Single(factory.Items);
         Assert.Same(root.References, Assert.Single(prepared));
         Assert.Same(reference, Assert.Single(root.References.References));
@@ -116,13 +140,13 @@ public sealed class ShaderRootArgumentsTests
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 11 };
-        using var previous = ShaderRootArguments.Create(in value, factory.Create, Encode);
+        using ShaderRootArguments previous = TestShaderTransfer.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Selection failed.");
         factory.ThrowOnDispose = true;
         Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata references)
             => failPrepare ? throw failure : null;
         value.Failure = failPrepare ? null : failure;
-        Exception? actual = Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare));
+        Exception? actual = Record.Exception(() => TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare));
         Assert.Same(failure, actual);
         Assert.Equal(1, factory.Items[1].Disposes);
         Assert.Equal(0, factory.Items[0].Disposes);
@@ -135,9 +159,9 @@ public sealed class ShaderRootArgumentsTests
     {
         var factory = new StorageFactory();
         var value = new Arguments { Value = 13 };
-        using var previous = ShaderRootArguments.Create(in value, factory.Create, Encode);
+        using ShaderRootArguments previous = TestShaderTransfer.Create(in value, factory.Create, Encode);
         var failure = new InvalidOperationException("Allocation failed.");
-        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create(in value, _ => throw failure, Encode)));
+        Assert.Same(failure, Record.Exception(() => TestShaderTransfer.Create(in value, _ => throw failure, Encode)));
         Assert.Equal(1, factory.Calls);
         Assert.Equal(13u, Read(factory.Items[0]));
         Assert.Equal(0, factory.Items[0].Disposes);
@@ -153,7 +177,7 @@ public sealed class ShaderRootArgumentsTests
     {
         var value = new Arguments();
         var storage = new Storage(size) { ThrowOnDispose = true };
-        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create(in value, _ => storage, Encode));
+        Assert.Throws<InvalidOperationException>(() => TestShaderTransfer.Create(in value, _ => storage, Encode));
         Assert.Equal(1, storage.Disposes);
         Assert.Equal(0, value.Writes);
     }
@@ -180,11 +204,11 @@ public sealed class ShaderRootArgumentsTests
 
         if (mode is "extra-reference" or "overflow-prefix" or "twice")
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => ShaderRootArguments.Create(in value, factory.Create, EncodeSlot));
+            Assert.Throws<ArgumentOutOfRangeException>(() => TestShaderTransfer.Create(in value, factory.Create, EncodeSlot));
         }
         else
         {
-            Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create(in value, factory.Create, EncodeSlot));
+            Assert.Throws<InvalidOperationException>(() => TestShaderTransfer.Create(in value, factory.Create, EncodeSlot));
         }
 
         Storage storage = Assert.Single(factory.Items);
@@ -213,7 +237,7 @@ public sealed class ShaderRootArgumentsTests
         using var table = new Table();
         var value = new Arguments { Reference = new Reference(table, new object()) };
         var factory = new StorageFactory();
-        Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create(in value, factory.Create, _ => new byte[length]));
+        Assert.Throws<ArgumentException>(() => TestShaderTransfer.Create(in value, factory.Create, _ => new byte[length]));
         Assert.Equal(1, factory.Items[0].Writes);
         Assert.Equal(0, factory.Items[0].Seals);
     }
@@ -225,11 +249,11 @@ public sealed class ShaderRootArgumentsTests
         ShaderDataLayout layout = DiagnosticLayout();
         var factory = new StorageFactory();
         var value = new NumericArguments { Value = 19 };
-        using var classRoot = ShaderRootArguments.Create(in value, factory.Create, Encode, layout);
+        using ShaderRootArguments classRoot = TestShaderTransfer.Create(in value, factory.Create, Encode, layout);
         Assert.Equal(1, value.Probes);
         Assert.Equal(19u, Read(factory.Items[0]));
         var numeric = new NumericStruct { Value = 31 };
-        using var structRoot = ShaderRootArguments.Create(in numeric, factory.Create, Encode, layout);
+        using ShaderRootArguments structRoot = TestShaderTransfer.Create(in numeric, factory.Create, Encode, layout);
         Assert.Equal(31u, Read(factory.Items[1]));
     }
 
@@ -240,7 +264,7 @@ public sealed class ShaderRootArgumentsTests
         var failure = new InvalidOperationException("Metadata failed.");
         var value = new NumericArguments { Failure = failure };
         var factory = new StorageFactory { ThrowOnDispose = true };
-        Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create(in value, factory.Create, Encode, DiagnosticLayout())));
+        Assert.Same(failure, Record.Exception(() => TestShaderTransfer.Create(in value, factory.Create, Encode, DiagnosticLayout())));
         Assert.Equal(1, Assert.Single(factory.Items).Disposes);
         Assert.Equal(1, value.Probes);
     }
@@ -264,7 +288,7 @@ public sealed class ShaderRootArgumentsTests
             return admitted.Add;
         }
 
-        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare);
+        using ShaderRootArguments root = TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare);
         IShaderReferenceMetadata current = new ShaderDependencyMetadata([firstReference]);
         int reads = 0;
         IShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer, ulong index)
@@ -312,7 +336,7 @@ public sealed class ShaderRootArgumentsTests
             };
         }
 
-        using var root = ShaderRootArguments.Create(in value, factory.Create, Encode, prepare: Prepare);
+        using ShaderRootArguments root = TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare);
         Assert.Same(failure, Record.Exception(() => ShaderBindingSnapshot.Capture(root, null)));
         Assert.Same(failure, Record.Exception(() => ShaderBindingSnapshot.Capture(root, null)));
         Assert.Equal(1, prepares);
@@ -328,7 +352,7 @@ public sealed class ShaderRootArgumentsTests
     {
         var value = new Arguments();
         var factory = new StorageFactory();
-        var root = ShaderRootArguments.Create(in value, factory.Create, Encode);
+        ShaderRootArguments root = TestShaderTransfer.Create(in value, factory.Create, Encode);
         root.Dispose();
         root.Dispose();
         Assert.Equal(1, factory.Items[0].Disposes);

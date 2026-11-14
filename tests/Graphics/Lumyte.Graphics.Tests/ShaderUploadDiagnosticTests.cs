@@ -27,7 +27,7 @@ public sealed class ShaderUploadDiagnosticTests
             Assert.Throws<ArgumentException>(() => layout.ValidateTransferLayout(4, StaticFields<InstanceData>(), "UploadNumber"));
         }
 
-        ShaderDataUpload.CopyFrom<InstanceData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
+        TestShaderDataUpload.CopyFrom<InstanceData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
 
         Assert.Equal(enabled ? 1 : 0, value.Probes);
         Assert.Equal(37U, MemoryMarshal.Read<uint>(storage.Bytes));
@@ -52,7 +52,7 @@ public sealed class ShaderUploadDiagnosticTests
             Assert.Throws<ArgumentException>(() => layout.ValidateTransferLayout(4, StaticFields<TypeData>(), "UploadNumber"));
         }
 
-        ShaderDataUpload.CopyFrom<TypeData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
+        TestShaderDataUpload.CopyFrom<TypeData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
 
         Assert.Equal(73U, MemoryMarshal.Read<uint>(storage.Bytes));
         Assert.Empty(Assert.IsAssignableFrom<IShaderReferenceMetadata>(metadata[0]).References);

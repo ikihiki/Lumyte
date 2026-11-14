@@ -63,7 +63,7 @@ public sealed class ModelAndEffectsTests
             Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
             layout.ValidateArguments(snapshot);
 
-            Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create(in arguments, size => new MemoryStorage(size), _ => new byte[16]));
+            Assert.Throws<ArgumentException>(() => TestShaderTransfer.Create(in arguments, size => new MemoryStorage(size), _ => new byte[16]));
         }
     }
 

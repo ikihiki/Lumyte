@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -46,7 +45,7 @@ public sealed class ShaderDataUploadTests
             return EncodeReference(value);
         }
 
-        Exception? actual = Record.Exception(() => ShaderDataUpload.CopyFrom<UploadValue>(source, storage, 1, metadata, Encode, null));
+        Exception? actual = Record.Exception(() => TestShaderDataUpload.CopyFrom<UploadValue>(source, storage, 1, metadata, Encode, null));
         Assert.Same(failure, actual);
         if (failureKind != 2)
         {
@@ -82,7 +81,7 @@ public sealed class ShaderDataUploadTests
         first.Writes = 0;
         second.Writes = 0;
 
-        ShaderDataUpload.CopyFrom<UploadValue>(source, storage, 1, metadata, EncodeReference, null);
+        TestShaderDataUpload.CopyFrom<UploadValue>(source, storage, 1, metadata, EncodeReference, null);
 
         Assert.Equal(1, first.Writes);
         Assert.Equal(1, second.Writes);
@@ -122,13 +121,13 @@ public sealed class ShaderDataUploadTests
         if (rangeKind == 3)
         {
             HugeValue[] source = [new(), new()];
-            failure = Record.Exception(() => ShaderDataUpload.CopyFrom<HugeValue>(source, storage, 0, metadata, Encode, null));
+            failure = Record.Exception(() => TestShaderDataUpload.CopyFrom<HugeValue>(source, storage, 0, metadata, Encode, null));
             Assert.IsType<OverflowException>(failure);
         }
         else
         {
             ulong offset = rangeKind == 0 ? ulong.MaxValue : rangeKind == 1 ? 4UL : 1UL;
-            failure = Record.Exception(() => ShaderDataUpload.CopyFrom<UploadValue>(new[] { value }, storage, offset, metadata, Encode, null));
+            failure = Record.Exception(() => TestShaderDataUpload.CopyFrom<UploadValue>(new[] { value }, storage, offset, metadata, Encode, null));
             Assert.IsType<ArgumentOutOfRangeException>(failure);
         }
 
@@ -162,7 +161,7 @@ public sealed class ShaderDataUploadTests
             return EncodeReference(reference);
         }
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => ShaderDataUpload.CopyFrom<UploadValue>(new[] { value, new UploadValue() }, storage, 1, metadata, Encode, null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TestShaderDataUpload.CopyFrom<UploadValue>(new[] { value, new UploadValue() }, storage, 1, metadata, Encode, null));
         Assert.Equal(1, encoded);
         Assert.Null(metadata[1]);
         Assert.Null(metadata[2]);

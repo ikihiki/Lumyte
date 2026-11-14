@@ -1,9 +1,11 @@
+// Test-only streaming fake; never used by an engine backend.
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 
-namespace Lumyte.Graphics.Shared;
+namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal struct ShaderTransferWriter<TDestination>(TDestination destination, int size, Func<ShaderValue, byte[]> encode, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory, ShaderDataLayout? diagnostic) : IShaderValueWriter
-    where TDestination : struct, IShaderTransferDestination
+internal struct TestShaderValueWriter<TDestination>(TDestination destination, int size, Func<ShaderValue, byte[]> encode, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory, ShaderDataLayout? diagnostic) : IShaderValueWriter
+    where TDestination : struct, ITestShaderTransferDestination
 {
     private List<IShaderReference>? _dependencies;
     private bool _written;

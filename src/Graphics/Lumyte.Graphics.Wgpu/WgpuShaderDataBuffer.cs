@@ -75,22 +75,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
     public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
     {
         ValidateAlive();
-        if (Memory != MemoryPreference.Upload || !IsMapped)
-        {
-            throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
-        }
-
-        if (elementOffset > Count || (ulong)source.Length > Count - elementOffset)
-        {
-            throw new ArgumentOutOfRangeException(nameof(elementOffset));
-        }
-
-        if (source.IsEmpty)
-        {
-            return;
-        }
-
-        ShaderDataUpload.CopyFrom(source, Storage, elementOffset, _values, PackReference, _diagnosticLayout, metadataFactory: WgpuReferenceMetadata.Create);
+        WgpuShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, _values, _diagnosticLayout);
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -138,6 +123,4 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         Array.Clear(_values);
         _disposed = true;
     }
-
-    private byte[] PackReference(ShaderValue value) => ShaderReferenceEncoding.Pack(value);
 }

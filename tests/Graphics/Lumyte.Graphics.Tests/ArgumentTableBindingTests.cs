@@ -46,7 +46,7 @@ public sealed class ArgumentTableBindingTests
     public void ValueOnlyArgumentsDoNotRequireTable()
     {
         float numeric = 1f;
-        using var generation = ShaderRootArguments.CreateUnmanaged(in numeric, "arguments", "Values", size => new TestRootStorage(size));
+        using ShaderRootArguments generation = TestShaderTransfer.CreateUnmanaged(in numeric, "arguments", "Values", size => new TestRootStorage(size));
         var captured = ShaderBindingSnapshot.Capture(generation, null);
         Assert.Empty(captured.References);
         Assert.Empty(captured.Elements);
@@ -200,7 +200,7 @@ public sealed class ArgumentTableBindingTests
 
         layout.ValidateArguments(root);
         var arguments = new PoolArguments(values.Select(value => (IGpuRef<uint>)value.Reference!).ToArray());
-        using var generation = ShaderRootArguments.Create(in arguments, size => new TestRootStorage(size), Encode);
+        using ShaderRootArguments generation = TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
         var binding = new ShaderBindingData(ShaderBindingSnapshot.Capture(generation, table), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
         Assert.Equal(2, binding.Writable.Count);
@@ -217,7 +217,7 @@ public sealed class ArgumentTableBindingTests
     private static ShaderRootArguments Root(IShaderReference reference)
     {
         var arguments = new PoolArguments([(IGpuRef<uint>)reference]);
-        return ShaderRootArguments.Create(in arguments, size => new TestRootStorage(size), Encode);
+        return TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
     }
 
     private static byte[] Encode(ShaderValue value)

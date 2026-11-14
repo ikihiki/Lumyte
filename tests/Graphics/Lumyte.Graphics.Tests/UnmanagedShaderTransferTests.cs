@@ -167,7 +167,7 @@ public sealed class UnmanagedShaderTransferTests
             where T : IShaderArguments => throw new InvalidOperationException("The numeric path must not call an interface serializer.");
 
         public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
-            where T : unmanaged => Root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new TestRootStorage(size));
+            where T : unmanaged => Root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new TestRootStorage(size));
 
         public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
         {

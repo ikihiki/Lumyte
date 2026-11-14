@@ -137,7 +137,7 @@ public sealed class ShaderResourcesUnmanagedTests
             where T : unmanaged
         {
             RawSetCount++;
-            Root = ShaderRootArguments.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new RootStorage(size));
+            Root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new RootStorage(size));
         }
 
         public void SetArguments<T>(in T arguments)
