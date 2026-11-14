@@ -232,6 +232,25 @@ public sealed class ComponentScreeningTests
         Assert.Contains(seconds > 0 ? "incomparable" : "execution_error", File.ReadAllText(System.IO.Path.Combine(temp.Path, "summary.md")), StringComparison.Ordinal);
     }
 
+    /// <summary>Cleanup removes owned read-only Git objects on Windows without ignoring errors.</summary>
+    [Fact]
+    public void TemporaryDirectoryDeletesReadOnlyGitObject()
+    {
+        string root;
+        using (var temporary = new ScreeningTemporaryDirectory())
+        {
+            root = temporary.Path;
+            string directory = System.IO.Path.Combine(root, "repository", ".git", "objects", "aa");
+            Directory.CreateDirectory(directory);
+            string file = System.IO.Path.Combine(directory, "readonly-object");
+            File.WriteAllText(file, "owned test object");
+            File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+            Assert.True((File.GetAttributes(file) & FileAttributes.ReadOnly) != 0);
+        }
+
+        Assert.False(Directory.Exists(root));
+    }
+
     /// <summary>Exact two-commit diff includes deletion; snapshots exclude dirty sources and replace the whole harness.</summary>
     /// <returns>Completion of Git integration assertions.</returns>
     [Fact]
