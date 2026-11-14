@@ -1,5 +1,8 @@
 # 用途別レンダリングworkload suite
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 2026-11-02、2Dコンテンツ・ゲームUI・エディタUIを独立選択できるbenchmarkを追加した。
 [全case・引数・測定scope](../../tools/benchmarks/drawing2d-incremental/WORKLOADS.md)を正本とする。
 fixture実装は `46d1907`。製品APIの変更はなく、通常のCanvas/Renderer/UIを使う。

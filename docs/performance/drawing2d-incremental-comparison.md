@@ -1,5 +1,8 @@
 # Drawing2D部分更新アーキテクチャの試作・性能比較
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 - 日付: 2026-11-02
 - 比較元: main `fbc8105`、PR #105 `ffe075c`
 - 計測ハーネス: `9e402e9`。[試作と実行手順](../../tools/benchmarks/drawing2d-incremental/README.md)

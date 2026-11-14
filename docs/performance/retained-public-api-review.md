@@ -1,5 +1,8 @@
 # 保持描画レビュー対応と公開 API の更新・batch 境界
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 - 対象: PR #108 のレビュー指摘と追加計測
 - 修正・測定 source: `916b6de`
 - CPU 比較元: `1c4470d10d83ced90c78b06ff2ec0e7b53be38aa`

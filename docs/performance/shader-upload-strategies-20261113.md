@@ -1,5 +1,8 @@
 # 参照付きupload: 直接mapped書き込みとCPU一時buffer（2026-11-13）
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 ## 決定
 
 数値のCPU snapshotを作らないreference-only契約へ変更したうえで、直接mapped書き込みを既定実装に採用した。CPU batch scratchはproductionから削除し、比較対象として隔離したsourceだけを保存する。これは失敗atomicityのための判断ではない。

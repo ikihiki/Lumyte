@@ -1,5 +1,8 @@
 # SetArgumentsの最終uniform直接書き込み（2026-11-13）
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 ## 結論とtradeoff
 
 Set時点の値固定を保ち、numericの中間ShaderValueSnapshotとbyte配列を最終native uniform所有へ置き換えた。これは所有権／copy経路の変更であり、この測定から速度改善は主張しない。

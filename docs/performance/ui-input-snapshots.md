@@ -1,5 +1,8 @@
 # UI入力情報の保持と性能測定
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 測定日: 2026-10-29。対応: PR #80、[UI-0005](../adr/ui/UI-0005-pointer-dispatch-and-capture.md)。
 
 ## 最新コード: 部分木の入力領域による探索打ち切り

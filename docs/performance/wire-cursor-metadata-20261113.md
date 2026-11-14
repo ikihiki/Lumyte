@@ -1,5 +1,8 @@
 # 同期wire cursorとbackend依存metadata（2026-11-14）
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 ## 結論
 
 C# raw区間（padding込み）→16-byte参照のinline符号化→次区間という生成cursorと、backend固有のidentity-only ownerを実装した。Setの最終uniform所有とCopyFromの最新値・部分失敗契約を維持する。これは表現／所有権の変更であり、frame速度改善やzero allocationは主張しない。

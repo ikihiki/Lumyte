@@ -1,5 +1,8 @@
 # Windows UIの詳細な時間・割当調査
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 2026-11-02、[120Hz改善後](ui-game120-performance.md)の製品コード`c506d0e0`と同じツリーを調査しました。
 最大の固定費は、毎frameのsurface能力照会でした。全要素更新の追加割当は、主にWidgetの変更候補生成と更新計画に集中しています。
 製品の動作変更は行わず、詳細probeと固定Window専用のcache切り分けを任意適用patchに保存しました。
