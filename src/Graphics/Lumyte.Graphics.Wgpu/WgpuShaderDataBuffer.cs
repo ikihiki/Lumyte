@@ -1,11 +1,12 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
+internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage, IWgpuDependencyStorage
     where T : struct, IShaderArguments
 {
-    private readonly IShaderReferenceMetadata?[] _values;
+    private readonly DependencyState? _dependencies;
     private readonly ShaderDataLayout? _diagnosticLayout;
     private bool _disposed;
 
@@ -27,7 +28,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         Owner = owner;
         Count = count;
-        _values = new IShaderReferenceMetadata?[checked((int)count)];
+        _dependencies = owner.Validation == null ? null : new DependencyState(T.ReferenceCount == 0);
     }
 
     object IValidatedShaderDataStorage.ValidationStorage => Storage;
@@ -75,7 +76,47 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
     public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
     {
         ValidateAlive();
-        WgpuShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, _values, _diagnosticLayout);
+        if (source.IsEmpty)
+        {
+            if (Memory != MemoryPreference.Upload || !IsMapped)
+            {
+                throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
+            }
+
+            if (elementOffset > Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            }
+
+            return;
+        }
+
+        HashSet<IShaderReference>? collector = _dependencies == null ? null : new();
+        try
+        {
+            WgpuShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, Count, collector, _diagnosticLayout);
+            if (_dependencies != null)
+            {
+                bool full = elementOffset == 0 && (ulong)source.Length == Count;
+                if (full)
+                {
+                    _dependencies.Revision = WgpuReferenceMetadata.TakeOwnership(collector!.ToArray());
+                }
+                else if (_dependencies.Revision is { } previous)
+                {
+                    _dependencies.Revision = WgpuReferenceMetadata.Merge(previous, WgpuReferenceMetadata.TakeOwnership(collector!.ToArray()));
+                }
+            }
+        }
+        catch
+        {
+            if (_dependencies != null)
+            {
+                _dependencies.Revision = null;
+            }
+
+            throw;
+        }
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -84,26 +125,22 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         return new(this, offset, count);
     }
 
-    public IShaderReferenceMetadata ReadReferences(ulong index)
+    public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
     {
         ValidateAlive();
-        if (index >= Count)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index));
-        }
-
-        return _values[checked((int)index)] ?? throw new InvalidOperationException("Shader data reference metadata is uninitialized or invalid after a failed transfer.");
+        dependencies = _dependencies == null ? null : _dependencies.Revision ?? throw new InvalidOperationException("Shader buffer dependencies are unknown until a complete rewrite.");
+        return dependencies != null;
     }
 
-    public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value)
+    void IWgpuDependencyStorage.PublishDependencies(IShaderReferenceMetadata dependencies)
     {
         ValidateAlive();
-        if (Memory != MemoryPreference.Automatic || index >= Count)
+        if (_dependencies == null)
         {
-            throw new InvalidOperationException("Invalid shader data transfer destination.");
+            throw new InvalidOperationException("Dependency tracking is disabled.");
         }
 
-        _values[checked((int)index)] = value;
+        _dependencies.Revision = dependencies;
     }
 
     public void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
@@ -120,7 +157,16 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
 
         Storage.Dispose();
         Owner.Validation?.Release(this);
-        Array.Clear(_values);
+        if (_dependencies != null)
+        {
+            _dependencies.Revision = null;
+        }
+
         _disposed = true;
+    }
+
+    private sealed class DependencyState(bool knownEmpty)
+    {
+        internal IShaderReferenceMetadata? Revision { get; set; } = knownEmpty ? WgpuReferenceMetadata.TakeOwnership(Array.Empty<IShaderReference>()) : null;
     }
 }

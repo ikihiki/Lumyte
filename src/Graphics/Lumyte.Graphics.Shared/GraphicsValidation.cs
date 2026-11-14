@@ -80,11 +80,10 @@ public sealed class GraphicsValidation
     /// <summary>Records metadata read or copy publication in command order.</summary>
     /// <param name="command">The recording owner.</param>
     /// <param name="source">The logical metadata buffer.</param>
-    /// <param name="index">The element.</param>
     /// <param name="value">The captured snapshot.</param>
     /// <param name="write">Whether this operation publishes a copied value.</param>
-    public void Metadata(object command, IShaderDataSource source, ulong index, IShaderReferenceMetadata value, bool write)
-        => Record(command, new(source, 0, 0, default, default, false, null, default, MetadataSource: source, Element: index, Value: value, MetadataWrite: write));
+    public void Metadata(object command, IShaderDataSource source, IShaderReferenceMetadata value, bool write)
+        => Record(command, new(source, 0, 0, default, default, false, null, default, MetadataSource: source, Value: value, MetadataWrite: write));
 
     /// <summary>Registers a successfully created child.</summary>
     /// <param name="child">The child.</param>
@@ -507,13 +506,21 @@ public sealed class GraphicsValidation
     {
         if (operation.MetadataSource is { } source)
         {
-            (IShaderDataSource Source, ulong Element) key = (source, operation.Element);
-            if (!operation.MetadataWrite && !ReferenceEquals(state.Metadata.GetValueOrDefault(key) ?? source.ReadReferences(operation.Element), operation.Value))
+            if (!operation.MetadataWrite)
             {
-                throw new InvalidOperationException("Validation: shader metadata sequencing changed after command recording.");
+                if (!state.Metadata.TryGetValue(source, out IShaderReferenceMetadata? current) &&
+                    !source.TryGetDependencies(out current))
+                {
+                    throw new InvalidOperationException("Validation: shader buffer dependency metadata is unavailable or unknown.");
+                }
+
+                if (current == null || !ReferenceEquals(current, operation.Value))
+                {
+                    throw new InvalidOperationException("Validation: shader buffer metadata sequencing changed after command recording.");
+                }
             }
 
-            state.Metadata[key] = operation.Value!;
+            state.Metadata[source] = operation.Value!;
             return;
         }
 
@@ -799,7 +806,7 @@ public sealed class GraphicsValidation
 
     internal sealed class State
     {
-        internal Dictionary<(IShaderDataSource Source, ulong Element), IShaderReferenceMetadata> Metadata { get; } = [];
+        internal Dictionary<IShaderDataSource, IShaderReferenceMetadata> Metadata { get; } = new(ReferenceEqualityComparer.Instance);
 
         internal Dictionary<object, List<BufferAccess>> Buffers { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -818,7 +825,7 @@ public sealed class GraphicsValidation
                 result.Textures.Add(pair.Key, pair.Value);
             }
 
-            foreach (KeyValuePair<(IShaderDataSource Source, ulong Element), IShaderReferenceMetadata> pair in Metadata)
+            foreach (KeyValuePair<IShaderDataSource, IShaderReferenceMetadata> pair in Metadata)
             {
                 result.Metadata.Add(pair.Key, pair.Value);
             }
@@ -827,7 +834,7 @@ public sealed class GraphicsValidation
         }
     }
 
-    private sealed record Operation(object? Resource, ulong Offset, ulong End, BarrierScope Scope, BarrierScope Before, bool Barrier, TextureSubresourceRange? Range, TextureState TextureState, TextureState BeforeState = default, bool Host = false, IShaderDataSource? MetadataSource = null, ulong Element = 0, IShaderReferenceMetadata? Value = null, bool MetadataWrite = false);
+    private sealed record Operation(object? Resource, ulong Offset, ulong End, BarrierScope Scope, BarrierScope Before, bool Barrier, TextureSubresourceRange? Range, TextureState TextureState, TextureState BeforeState = default, bool Host = false, IShaderDataSource? MetadataSource = null, IShaderReferenceMetadata? Value = null, bool MetadataWrite = false);
 
     private sealed record AccessState(BarrierScope Scope, bool Used, BarrierScope? Available = null);
 }

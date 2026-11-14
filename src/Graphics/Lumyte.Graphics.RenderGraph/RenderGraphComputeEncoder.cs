@@ -8,7 +8,7 @@ public sealed class RenderGraphComputeEncoder : IDisposable
 {
     private readonly RenderGraphContext _context;
     private readonly IComputeEncoder _native;
-    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?> _prepareArguments;
+    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepareArguments;
     private IGraphicsComputePipeline? _pipeline;
     private IReadOnlyList<ShaderResources>? _arguments;
     private bool _hasArguments;
@@ -21,7 +21,7 @@ public sealed class RenderGraphComputeEncoder : IDisposable
     {
         _context = context;
         _native = native;
-        _prepareArguments = PrepareArguments;
+        _prepareArguments = context.ValidationEnabled ? PrepareArguments : null;
     }
 
     /// <summary>Selects the compute pipeline.</summary>
@@ -47,9 +47,21 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         }
 
         _settingArguments = true;
+        bool validationInstalled = false;
         try
         {
-            _native.SetArgumentValidation(_prepareArguments);
+            _pendingResources = _context.DeclaredArguments([], graphics: false);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
             _native.SetArguments(in arguments);
             _arguments = _pendingResources;
             _hasArguments = true;
@@ -59,7 +71,10 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         {
             try
             {
-                _native.SetArgumentValidation(null);
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
             }
             finally
             {
@@ -84,9 +99,21 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         }
 
         _settingArguments = true;
+        bool validationInstalled = false;
         try
         {
-            _native.SetArgumentValidation(_prepareArguments);
+            _pendingResources = _context.DeclaredArguments([], graphics: false);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
             _native.SetArguments(in arguments, rootParameter, shaderTypeName);
             _arguments = _pendingResources;
             _hasArguments = true;
@@ -96,7 +123,10 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         {
             try
             {
-                _native.SetArgumentValidation(null);
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
             }
             finally
             {
@@ -131,7 +161,6 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         _ended = true;
         try
         {
-            _native.SetArgumentValidation(null);
             _native.End();
         }
         finally
@@ -175,6 +204,11 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         if (_pipeline is null)
         {
             throw new InvalidOperationException("Select a pipeline before recording shader operations.");
+        }
+
+        if (_context.DeclaredArguments([], graphics: false) is { } declaredResources)
+        {
+            _context.BindResources(declaredResources, _native);
         }
 
         // Borrowed graphs without a device cannot create logical resources; native execution validates its own root contract.

@@ -29,7 +29,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void PassDeclarationsResolveReferencesAndReuseTypedArguments()
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         using var sourceImage = new TestTexture();
         using var targetImage = new TestTexture();
@@ -76,7 +76,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [InlineData(2, 1u)]
     public void PassAggregateLimitIsCheckedBeforeCallbacksOrNativeWrites(int declared, uint capacity)
     {
-        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = capacity } };
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true, Limits = new() { TextureSlots = capacity } };
         using var graph = new RenderGraph(device);
         using var firstImage = new TestTexture();
         using var secondImage = new TestTexture();
@@ -125,7 +125,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void SeparatePassesPartitionAtTheExactLimit()
     {
-        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 1 } };
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true, Limits = new() { TextureSlots = 1 } };
         using var graph = new RenderGraph(device);
         using var firstImage = new TestTexture();
         using var secondImage = new TestTexture();
@@ -149,7 +149,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ExactBindingViewsRangesAndShaderRolesStayValidated()
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         using var foreign = new RenderGraph(device);
         using var image = new TestTexture();
@@ -183,7 +183,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void MultipleViewsAndRangesAreAllAdmittedFromOnePass()
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         using var image = new TestTexture();
         using var buffer = new TestTypedBuffer<int>(new() { Count = 4, Usage = BufferUsage.ShaderRead }, []);
@@ -212,7 +212,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void SamplersUseNaturalPassDeclarations()
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         var desc = new SamplerDesc();
         using IGraphicsSampler borrowed = device.CreateSampler(desc);
@@ -236,7 +236,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [InlineData(true)]
     public void TransitiveMetadataScopeLifetimeAndRecoveryAreCheckedPerCommand(bool indirect)
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         using var firstImage = new TestTexture();
         using var secondImage = new TestTexture();
@@ -252,16 +252,16 @@ public sealed partial class PublicGraphEncoderConsumerTests
         {
             var valid = new ConsumerLink(context.GetGpuRef(first));
             var foreignLink = new ConsumerLink(otherReference!);
-            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in valid).Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))));
+            data.SetDependencies(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in valid).Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))));
             var arguments = new ConsumerLinkArguments(context.GetGpuRef(buffer), 1f);
             using var counts = new TestTypedBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect }, []);
             using RenderGraphComputeEncoder compute = context.BeginComputePass();
             compute.SetPipeline(pipeline);
             compute.SetArguments(in arguments);
             Execute();
-            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in foreignLink).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
+            data.SetDependencies(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in foreignLink).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
             Assert.Throws<ArgumentException>(Execute);
-            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in valid).Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))));
+            data.SetDependencies(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in valid).Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))));
             Execute();
             data.Dispose();
             Assert.Throws<ObjectDisposedException>(Execute);
@@ -291,7 +291,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ShaderDataTransferDependencyKeepsStableNativeReferenceIdentity()
     {
-        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 1 } };
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true, Limits = new() { TextureSlots = 1 } };
         using var graph = new RenderGraph(device);
         using var firstImage = new TestTexture();
         using var secondImage = new TestTexture();
@@ -302,7 +302,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         graph.AddPass("publish metadata", context =>
         {
             var value = new ConsumerLink(context.GetGpuRef(first));
-            data.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in value).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
+            data.SetDependencies(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in value).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
         }).UseTexture(first, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseShaderDataBuffer(buffer, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).KeepAlive();
         graph.AddPass("unrelated", context => Assert.NotNull(context.GetGpuRef(second)))
@@ -331,7 +331,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [InlineData(true)]
     public void CullingAndPreflightRespectFrozenViewDeclarations(bool live)
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         using var image = new TestTexture();
         RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
@@ -362,7 +362,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void RepeatedCompilationKeepsIndependentIntrinsicOwners()
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var graph = new RenderGraph(device);
         using var image = new TestTexture();
         RenderGraphTexture texture = graph.ImportTexture(image, TextureState.Sampled, default);
@@ -392,7 +392,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void CopyOnlyShaderDataBridgePreservesRangeAndCommandLocalMetadata()
     {
-        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 1 } };
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true, Limits = new() { TextureSlots = 1 } };
         using var graph = new RenderGraph(device);
         using var image = new TestTexture();
         using var unrelatedImage = new TestTexture();
@@ -405,7 +405,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
         RenderGraphPass producer = graph.AddPass("metadata producer", context =>
         {
             var value = new ConsumerLink(context.GetGpuRef(texture));
-            upload.SetTransferredReferences(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in value).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
+            upload.SetDependencies(0, new ShaderDependencyMetadata(IShaderArguments.Capture(in value).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference))));
         }).UseTexture(texture, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Host, ResourceAccess.HostWrite)).KeepAlive();
         graph.AddPass("intervening partition", context => Assert.NotNull(context.GetGpuRef(unrelated)))
@@ -428,10 +428,10 @@ public sealed partial class PublicGraphEncoderConsumerTests
         plan.Record(commands);
         Assert.Equal(2, device.Tables.Count);
         Assert.Contains("shader-copy", commands.Events);
-        Assert.Empty(storage.ReadReferences(1).References);
+        Assert.Empty(storage.ElementDependencies(1).References);
         Lumyte.Graphics.Shared.ShaderBindingDependencies capture = Assert.Single(commands.Encoder.Bindings);
         Assert.Same(image, Assert.IsAssignableFrom<IGraphicsTextureView>(Assert.Single(capture.References, reference => reference.Resource is IGraphicsTextureView).Resource).Texture);
-        Assert.Equal(1ul, Assert.Single(capture.Elements).Key.Element);
+        Assert.Same(storage, Assert.Single(capture.Buffers).Key);
     }
 
     /// <summary>Preparation and range lookup leave metadata live until the explicit command-local copy.</summary>
@@ -439,7 +439,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     public void PreparedShaderDataBridgeCapturesMetadataAtCopyRatherThanCompileOrRangeLookup()
     {
         // Metadata boundary only: ConsumerLinkBuffer cannot CopyFrom; CPU/staging native transfers have separate coverage.
-        var device = new PublicGraphConsumerDevice { Limits = new() { TextureSlots = 2 } };
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true, Limits = new() { TextureSlots = 2 } };
         using var graph = new RenderGraph(device);
         using var imageA = new TestTexture();
         using var imageB = new TestTexture();
@@ -457,20 +457,20 @@ public sealed partial class PublicGraphEncoderConsumerTests
             var valueB = new ConsumerLink(context.GetGpuRef(textureB));
             metadataA = new ShaderDependencyMetadata(IShaderArguments.Capture(in valueA).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference)));
             metadataB = new ShaderDependencyMetadata(IShaderArguments.Capture(in valueB).Values.Select(item => Assert.IsAssignableFrom<IShaderReference>(item.Reference)));
-            upload.SetTransferredReferences(0, metadataA);
+            upload.SetDependencies(0, metadataA);
             ShaderDataSlice<ConsumerLink> range = context.GetShaderDataBuffer(source).SliceElements(0, 1);
             Assert.Equal(1ul, range.Count);
-            upload.SetTransferredReferences(0, metadataB);
+            upload.SetDependencies(0, metadataB);
             Assert.Same(range.Buffer, context.GetShaderDataBuffer(source));
         }).UseTexture(textureA, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseTexture(textureB, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
           .UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Host, ResourceAccess.HostWrite)).KeepAlive();
         RenderGraphPass copy = graph.AddPass("copy then overwrite metadata", context =>
         {
-            Assert.Same(metadataB, upload.ReadReferences(0));
+            Assert.Same(metadataB, upload.ElementDependencies(0));
             context.Commands.CopyBuffer(context.GetShaderDataBuffer(source).SliceElements(0, 1), context.GetShaderDataBuffer(destination).SliceElements(1, 1));
-            upload.SetTransferredReferences(0, metadataA!);
-            Assert.Empty(storage.ReadReferences(1).References);
+            upload.SetDependencies(0, metadataA!);
+            Assert.Empty(storage.ElementDependencies(1).References);
         }).UseShaderDataBuffer(source, 0, 1, new(PipelineStage.Copy, ResourceAccess.CopyRead))
           .UseShaderDataBuffer(destination, 1, 1, new(PipelineStage.Copy, ResourceAccess.CopyWrite)).DependsOn(producer);
         using var pipeline = new PublicGraphConsumerComputePipeline(LinkArtifact(element: false));
@@ -487,16 +487,16 @@ public sealed partial class PublicGraphEncoderConsumerTests
         using CompiledRenderGraph plan = graph.Compile();
         Assert.Null(metadataA);
         Assert.Null(metadataB);
-        Assert.Empty(upload.ReadReferences(0).References);
+        Assert.Empty(upload.ElementDependencies(0).References);
         using var commands = new PublicGraphConsumerCommands();
         plan.Record(commands);
-        Assert.Same(metadataA, upload.ReadReferences(0));
-        Assert.Empty(storage.ReadReferences(0).References);
-        Assert.Empty(storage.ReadReferences(1).References);
+        Assert.Same(metadataA, upload.ElementDependencies(0));
+        Assert.Empty(storage.ElementDependencies(0).References);
+        Assert.Empty(storage.ElementDependencies(1).References);
         Assert.Equal(1, commands.Events.Count(item => item is string name && name == "shader-copy"));
         Lumyte.Graphics.Shared.ShaderBindingDependencies capture = Assert.Single(commands.Encoder.Bindings);
         Assert.Same(imageB, Assert.IsAssignableFrom<IGraphicsTextureView>(Assert.Single(capture.References, reference => reference.Resource is IGraphicsTextureView).Resource).Texture);
-        Assert.Equal(1ul, Assert.Single(capture.Elements).Key.Element);
+        Assert.Same(storage, Assert.Single(capture.Buffers).Key);
         Assert.Single(commands.Encoder.Executions);
     }
 

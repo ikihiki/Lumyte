@@ -24,9 +24,12 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private object? _argumentProgram;
     private bool _settingArguments;
     private Direct3D12ArgumentTable? _table;
+    private Direct3D12ArgumentTable? _argumentTableHint;
 
     public void SetArgumentTable(IArgumentTable table)
     {
+        // Graph preparation may bind its already-declared table while arguments are encoded.
+
         // Graph admission legitimately autobinds its table here; it does not change root bytes.
         owner.ValidatePass(this);
         ArgumentNullException.ThrowIfNull(table);
@@ -58,8 +61,8 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             int words = Direct3D12ShaderTransfer.ValidateRootSize(T.TransferSize);
             Span<byte> payload = stackalloc byte[words * 4];
             payload.Clear();
-            ShaderRootArguments root = Direct3D12ShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
-            SelectRoot(root, payload, pipeline);
+            (ShaderRootArguments? root, Direct3D12ArgumentTable? tableHint) = Direct3D12ShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            SelectRoot(root, payload, pipeline, tableHint);
         }
         finally
         {
@@ -79,7 +82,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             Span<byte> payload = stackalloc byte[words * 4];
             payload.Clear();
             ShaderRootArguments root = Direct3D12ShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
-            SelectRoot(root, payload, pipeline);
+            SelectRoot(root, payload, pipeline, null);
         }
         finally
         {
@@ -274,7 +277,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 
-    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, Direct3D12GraphicsPipeline pipeline)
+    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, Direct3D12GraphicsPipeline pipeline, Direct3D12ArgumentTable? tableHint)
     {
         // User codecs and admission hooks can dispose the command owner or pipeline.
         // Revalidate the captured selection before issuing commands or publishing metadata.
@@ -285,6 +288,14 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             throw new InvalidOperationException("The selected program changed while setting arguments.");
         }
 
+        if (_table != null && tableHint != null && !ReferenceEquals(_table, tableHint))
+        {
+            throw new ArgumentException("Shader resources belong to a different explicit argument table.");
+        }
+
+        tableHint?.ThrowIfDisposed();
+        _table?.ThrowIfDisposed();
+
         // All managed preparation precedes the first native mutation.
         // Issued driver commands cannot be rolled back after recording.
         fixed (byte* bytes = payload)
@@ -293,6 +304,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         }
 
         _arguments = root;
+        _argumentTableHint = tableHint;
         _argumentProgram = pipeline;
     }
 
@@ -309,16 +321,24 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingDependencies? bindingDependencies = null;
-        if (_pipeline.RequiresArguments && _arguments != null)
+        if (_pipeline.RequiresArguments && _arguments == null)
         {
-            _table?.ThrowIfDisposed();
-            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
-            if (owner.Owner.Validation is { } validation)
-            {
-                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
-            }
+            throw new InvalidOperationException("Set shader arguments before drawing or dispatching.");
+        }
 
+        Direct3D12ArgumentTable? table = _table ?? _argumentTableHint;
+        if (_table != null && _argumentTableHint != null && !ReferenceEquals(_table, _argumentTableHint))
+        {
+            throw new ArgumentException("Shader resources belong to a different explicit argument table.");
+        }
+
+        table?.ThrowIfDisposed();
+        IShaderReference[]? registrations = table?.SnapshotRegistrations();
+        ShaderBindingDependencies? bindingDependencies = null;
+        if (_pipeline.RequiresArguments && _arguments != null && owner.Owner.Validation is { } validation)
+        {
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, table, owner.ReadShaderDependencies);
+            EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
             bindingDependencies = dependencies;
         }
 
@@ -332,17 +352,12 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         _pipeline.ValidateAlive();
 
-        if (_pipeline.RequiresArguments && bindingDependencies == null)
-        {
-            throw new InvalidOperationException("Set shader arguments before drawing.");
-        }
-
         nint pipeline = _pipeline.Resolve(_state, _formats, bindingDependencies, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Check(NativeMethods.Pipeline(owner.Native, pipeline, 0));
         NativeMethods.Topology(owner.Native, (uint)_state.Desc.Topology + 1);
-        if (bindingDependencies != null)
+        if (registrations != null)
         {
-            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingDependencies, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingDependencies.RootParameter));
+            var binding = new Direct3D12ShaderBinding(owner.Owner, table!, registrations, bindingDependencies);
             owner.KeepBinding(binding);
             NativeMethods.Binding(owner.Native, binding.Native, 0);
         }

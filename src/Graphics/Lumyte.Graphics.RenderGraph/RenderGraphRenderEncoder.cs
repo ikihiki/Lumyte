@@ -10,7 +10,7 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     private readonly IRenderEncoder _native;
     private readonly IReadOnlyList<RenderGraphTexture> _colorAttachments;
     private readonly RenderGraphTexture? _depthAttachment;
-    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?> _prepareArguments;
+    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepareArguments;
     private IGraphicsPipeline? _pipeline;
     private IReadOnlyList<ShaderResources>? _arguments;
     private bool _hasArguments;
@@ -23,7 +23,7 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     {
         _context = context;
         _native = native;
-        _prepareArguments = PrepareArguments;
+        _prepareArguments = context.ValidationEnabled ? PrepareArguments : null;
         _colorAttachments = Array.AsReadOnly((RenderGraphTexture[])colorAttachments.Clone());
         _depthAttachment = depthAttachment;
     }
@@ -107,9 +107,21 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         }
 
         _settingArguments = true;
+        bool validationInstalled = false;
         try
         {
-            _native.SetArgumentValidation(_prepareArguments);
+            _pendingResources = _context.DeclaredArguments(_colorAttachments, graphics: true);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native, _colorAttachments);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
             _native.SetArguments(in arguments);
             _arguments = _pendingResources;
             _hasArguments = true;
@@ -119,7 +131,10 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         {
             try
             {
-                _native.SetArgumentValidation(null);
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
             }
             finally
             {
@@ -144,9 +159,21 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         }
 
         _settingArguments = true;
+        bool validationInstalled = false;
         try
         {
-            _native.SetArgumentValidation(_prepareArguments);
+            _pendingResources = _context.DeclaredArguments(_colorAttachments, graphics: true);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native, _colorAttachments);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
             _native.SetArguments(in arguments, rootParameter, shaderTypeName);
             _arguments = _pendingResources;
             _hasArguments = true;
@@ -156,7 +183,10 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         {
             try
             {
-                _native.SetArgumentValidation(null);
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
             }
             finally
             {
@@ -212,7 +242,6 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         _ended = true;
         try
         {
-            _native.SetArgumentValidation(null);
             _native.End();
         }
         finally
@@ -256,6 +285,11 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         if (_pipeline is null)
         {
             throw new InvalidOperationException("Select a pipeline before recording shader operations.");
+        }
+
+        if (_context.DeclaredArguments(_colorAttachments, graphics: true) is { } declaredResources)
+        {
+            _context.BindResources(declaredResources, _native, _colorAttachments);
         }
 
         // Borrowed graphs without a device cannot create logical resources; native execution validates its own root contract.

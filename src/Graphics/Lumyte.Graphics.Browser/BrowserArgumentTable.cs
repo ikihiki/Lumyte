@@ -107,6 +107,8 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
         }
     }
 
+    internal IReadOnlyCollection<IShaderReference> SnapshotRegistrations() => _textures.Values.Concat(_samplers.Values).Concat(_buffers.Values).Cast<IShaderReference>().ToArray();
+
     internal bool BelongsTo(BrowserDevice device) => ReferenceEquals(owner, device);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
@@ -114,7 +116,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
     private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
     {
         ValidateSlot(capacity, slot);
-        var entry = new ArgumentRegistration(this, slot, resource, offset, size, access);
+        var entry = new ArgumentRegistration(this, slot, resource, offset, size, count, access);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         slots[slot] = entry;
         return reference;

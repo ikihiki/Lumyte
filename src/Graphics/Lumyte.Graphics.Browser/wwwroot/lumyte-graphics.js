@@ -301,9 +301,10 @@ export function draw(pass, vertices, instances, firstVertex, firstInstance) { pa
 export function dispatch(pass, x, y, z) { pass.dispatchWorkgroups(x, y, z); }
 
 function shaderLayout(device, key, compute = false) {
-    const [textures, samplers, buffers, writable] = key.split(":").map(Number);
+    const [textures, samplers, buffers, writable, hasRoot = 1] = key.split(":").map(Number);
+    if ((hasRoot && device.limits.maxUniformBuffersPerShaderStage < 1) || textures > device.limits.maxSampledTexturesPerShaderStage || samplers > device.limits.maxSamplersPerShaderStage || buffers + writable + (textures + samplers + buffers + writable > 0 ? 1 : 0) > device.limits.maxStorageBuffersPerShaderStage) throw new Error("Argument table exceeds actual device binding limits.");
     const visibility = compute ? GPUShaderStage.COMPUTE : GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
-    const entries = [{ binding: 8, visibility, buffer: { type: "uniform" } }];
+    const entries = hasRoot ? [{ binding: 8, visibility, buffer: { type: "uniform" } }] : [];
     if (textures + samplers + buffers + writable > 0) entries.push({ binding: 9, visibility, buffer: { type: "read-only-storage" } });
     const extra = [10, 10 + Math.max(0, textures - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1) + Math.max(0, buffers - 1)];
     [textures, samplers, buffers, writable].forEach((count, kind) => {
@@ -316,7 +317,7 @@ function shaderLayout(device, key, compute = false) {
             entries.push(entry);
         }
     });
-    if (entries.length > device.limits.maxBindingsPerBindGroup) throw new Error("Shader arguments exceed maxBindingsPerBindGroup.");
+    if (entries.length > device.limits.maxBindingsPerBindGroup || entries.some(entry => entry.binding >= device.limits.maxBindingsPerBindGroup)) throw new Error("Shader arguments exceed maxBindingsPerBindGroup.");
     return device.createBindGroupLayout({ entries });
 }
 function shaderBacking(device, view, usage) {
@@ -346,14 +347,13 @@ export function writeRootBacking(root, view, offset) {
     new Uint8Array(root.mapped, offset, bytes.length).set(bytes);
 }
 export function createShaderBinding(handle, key, compute, rootBacking, map) {
-    if (!rootBacking || rootBacking.disposed || rootBacking.mapped) throw new Error("Root arguments must have sealed native backing before binding.");
-    const rootSize = rootBacking.size;
-    if (rootSize > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
+    if (rootBacking && (rootBacking.disposed || rootBacking.mapped)) throw new Error("Root arguments must have sealed native backing before binding.");
+    const rootSize = rootBacking?.size ?? 0;
+    if (rootSize > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize || map.length > handle.device.limits.maxBufferSize) throw new Error("Internal shader bindings exceed device size limits.");
     const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [], entries: [] };
     try {
         // Command-owned roots are borrowed, never destroyed with this binding.
-        const uniform = rootBacking.buffer;
-        binding.entries.push({ binding: 8, resource: { buffer: uniform, size: rootSize } });
+        if (rootBacking) binding.entries.push({ binding: 8, resource: { buffer: rootBacking.buffer, size: rootSize } });
         if (map.length > 0) {
             const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
             binding.buffers.push(remap);

@@ -25,6 +25,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     private object? _argumentProgram;
     private bool _settingArguments;
     private VulkanArgumentTable? _table;
+    private VulkanArgumentTable? _argumentTableHint;
 
     public void SetArgumentTable(IArgumentTable table)
     {
@@ -59,8 +60,8 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             int size = VulkanPushConstants.ValidateStackSize(owner.Owner, T.TransferSize);
             Span<byte> payload = stackalloc byte[size];
             payload.Clear();
-            ShaderRootArguments root = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
-            SelectRoot(root, payload, pipeline);
+            (ShaderRootArguments? root, VulkanArgumentTable? tableHint) = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            SelectRoot(root, payload, pipeline, tableHint);
         }
         finally
         {
@@ -80,7 +81,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             Span<byte> payload = stackalloc byte[size];
             payload.Clear();
             ShaderRootArguments root = VulkanShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
-            SelectRoot(root, payload, pipeline);
+            SelectRoot(root, payload, pipeline, null);
         }
         finally
         {
@@ -277,7 +278,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
     private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 
-    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanGraphicsPipeline pipeline)
+    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanGraphicsPipeline pipeline, VulkanArgumentTable? tableHint)
     {
         // User codecs and admission hooks can dispose the command owner or pipeline.
         // Revalidate the captured selection before issuing commands or publishing metadata.
@@ -288,8 +289,16 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             throw new InvalidOperationException("The selected program changed while setting arguments.");
         }
 
+        if (_table != null && tableHint != null && !ReferenceEquals(_table, tableHint))
+        {
+            throw new ArgumentException("Shader resources belong to a different explicit argument table.");
+        }
+
+        tableHint?.ThrowIfDisposed();
+        _table?.ThrowIfDisposed();
         VulkanPushConstants.Emit(owner, pipeline.ArgumentPipelineLayout, VulkanPushConstants.GraphicsStages, payload);
         _arguments = root;
+        _argumentTableHint = tableHint;
         _argumentProgram = pipeline;
     }
 
@@ -306,17 +315,25 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingDependencies? bindingDependencies = null;
-        if (_pipeline.RequiresArguments && _arguments != null)
+        if (_pipeline.RequiresArguments && _arguments == null)
         {
-            _table?.ThrowIfDisposed();
-            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
-            if (owner.Owner.Validation is { } validation)
-            {
-                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
-            }
+            throw new InvalidOperationException("Set arguments before drawing or dispatching.");
+        }
 
-            bindingDependencies = dependencies;
+        VulkanArgumentTable? table = _table ?? _argumentTableHint;
+        if (_table != null && _argumentTableHint != null && !ReferenceEquals(_table, _argumentTableHint))
+        {
+            throw new ArgumentException("Shader resources belong to a different explicit argument table.");
+        }
+
+        table?.ThrowIfDisposed();
+        IShaderReference[]? registrations = table?.SnapshotRegistrations();
+        ShaderBindingDependencies? validationDependencies = null;
+        if (_pipeline.RequiresArguments && _arguments != null && owner.Owner.Validation is { } validation)
+        {
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, table, owner.ReadShaderDependencies);
+            validationDependencies = dependencies;
+            EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
         }
 
         if (indexed)
@@ -329,11 +346,11 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
         _pipeline.ValidateAlive();
 
-        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, bindingDependencies, _depthFormat, indexed ? _indexFormat : null);
+        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, registrations, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
-        if (bindingDependencies != null)
+        if (registrations != null)
         {
-            var binding = new VulkanShaderBinding(owner.Owner, bindingDependencies, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingDependencies.RootParameter), _pipeline.ArgumentLayout);
+            var binding = new VulkanShaderBinding(owner.Owner, table!, registrations, _pipeline.ArgumentLayout, validationDependencies);
             owner.KeepBinding(binding);
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);

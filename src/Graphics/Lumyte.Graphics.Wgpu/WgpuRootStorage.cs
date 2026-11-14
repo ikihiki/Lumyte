@@ -49,6 +49,8 @@ internal sealed unsafe class WgpuRootStorage : IDisposable
 
     internal ShaderRootArguments Arguments => _arguments ?? throw new InvalidOperationException("Root arguments are not initialized.");
 
+    internal WgpuArgumentTable? ImplicitTable { get; private set; }
+
     internal int Size { get; }
 
     internal WGPUBufferImpl* Native
@@ -86,7 +88,7 @@ internal sealed unsafe class WgpuRootStorage : IDisposable
         }
     }
 
-    internal void Initialize(ShaderRootArguments arguments)
+    internal void Initialize(ShaderRootArguments arguments, WgpuArgumentTable? table)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_arguments != null)
@@ -95,6 +97,7 @@ internal sealed unsafe class WgpuRootStorage : IDisposable
         }
 
         _arguments = arguments;
+        ImplicitTable = table;
     }
 
     internal void Write(ReadOnlySpan<byte> bytes, int offset)

@@ -17,6 +17,8 @@ internal sealed class PublicGraphConsumerDevice : IGraphicDevice
         }
     }
 
+    public bool ValidationEnabled { get; init; }
+
     public GraphicsDeviceStatus Status => GraphicsDeviceStatus.Ready;
 
     public GraphicsDeviceLoss? Loss => null;

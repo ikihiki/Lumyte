@@ -17,7 +17,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
 
     internal DescriptorSetLayout ArgumentLayout => _argumentLayout;
 
-    internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats, ShaderBindingDependencies? dependencies = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
+    internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats, IReadOnlyCollection<Lumyte.Graphics.Abstractions.IShaderReference>? dependencies = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
         if (Desc.AlphaToCoverageEnable)
@@ -109,10 +109,10 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         WriteMask = state.StencilWriteMask,
     };
 
-    private string SelectLayout(ShaderBindingDependencies? dependencies)
+    private string SelectLayout(IReadOnlyCollection<Lumyte.Graphics.Abstractions.IShaderReference>? dependencies)
     {
-        uint textures = dependencies == null ? 1 : dependencies.References.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
-        uint samplers = dependencies == null ? 1 : dependencies.References.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        uint textures = dependencies == null ? 1 : dependencies.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        uint samplers = dependencies == null ? 1 : dependencies.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
         if (textures > _owner.Caps.MaxSampledTexturesPerStage || samplers > _owner.Caps.MaxSamplersPerStage)
         {
             throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");

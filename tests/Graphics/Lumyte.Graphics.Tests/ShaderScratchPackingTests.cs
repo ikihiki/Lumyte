@@ -41,7 +41,12 @@ public sealed class ShaderScratchPackingTests
         Assert.DoesNotContain(typeof(ShaderBindingDependencies).GetMethods(), method => method.Name == "Capture");
         MethodInfo collect = Assert.Single(typeof(ShaderBindingDependencies).GetMethods(BindingFlags.Public | BindingFlags.Static), method => method.Name == "Collect");
         Assert.Equal(typeof(ShaderBindingDependencies), collect.ReturnType);
-        Assert.Equal(new[] { typeof(ShaderRootArguments), typeof(IArgumentTable), typeof(Func<IShaderDataSource, ulong, IShaderReferenceMetadata>) }, collect.GetParameters().Select(parameter => parameter.ParameterType));
+        Assert.Equal(new[] { typeof(ShaderRootArguments), typeof(IArgumentTable), typeof(Func<IShaderDataSource, IShaderReferenceMetadata>) }, collect.GetParameters().Select(parameter => parameter.ParameterType));
+        Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Elements"));
+        Assert.NotNull(typeof(ShaderBindingDependencies).GetProperty("Buffers"));
+        Assert.Null(typeof(IShaderDataSource).GetMethod("ReadReferences"));
+        Assert.Null(typeof(IShaderDataSource).GetMethod("SetTransferredReferences"));
+        Assert.Equal(typeof(bool), typeof(IShaderDataSource).GetMethod("TryGetDependencies")!.ReturnType);
         Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Data"));
         Assert.Equal(typeof(ShaderRootArguments), typeof(ShaderBindingDependencies).GetProperty("Arguments")!.PropertyType);
         foreach (Type encoder in new[] { typeof(IRenderEncoder), typeof(IComputeEncoder) })

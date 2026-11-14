@@ -9,13 +9,16 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
     private readonly int _size;
     private readonly Span<byte> _destination;
     private readonly ShaderDataLayout? _diagnostic;
+    private readonly int _expectedCount;
+    private readonly HashSet<IShaderReference>? _collector;
     private IShaderReference[]? _dependencies;
+    private VulkanArgumentTable? _table;
     private int _position;
     private int _referenceCount;
     private bool _written;
     private bool _completed;
 
-    internal VulkanShaderValueWriter(VulkanDevice owner, int size, Span<byte> destination, int expectedCount, ShaderDataLayout? diagnostic)
+    internal VulkanShaderValueWriter(VulkanDevice owner, int size, Span<byte> destination, int expectedCount, ShaderDataLayout? diagnostic, bool collect = false, HashSet<IShaderReference>? collector = null)
     {
         this = default;
         ValidateExpectedCount(size, expectedCount);
@@ -28,8 +31,12 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         _size = size;
         _destination = destination;
         _diagnostic = diagnostic;
-        _dependencies = expectedCount == 0 ? Array.Empty<IShaderReference>() : new IShaderReference[expectedCount];
+        _expectedCount = expectedCount;
+        _collector = collector;
+        _dependencies = collect ? (expectedCount == 0 ? Array.Empty<IShaderReference>() : new IShaderReference[expectedCount]) : null;
     }
+
+    internal VulkanArgumentTable? Table => _table;
 
     public void WriteValue(scoped ReadOnlySpan<byte> value)
     {
@@ -43,7 +50,7 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
     public void WriteReference<T>(IGpuRef<T>? reference)
     {
         ValidateWrite(16);
-        if (_referenceCount >= _dependencies!.Length)
+        if (_referenceCount >= _expectedCount)
         {
             throw new InvalidOperationException("The codec exceeds its declared reference count.");
         }
@@ -60,6 +67,13 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         }
 
         table.ThrowIfDisposed();
+        dependency.ValidateRegistration();
+        if (_table != null && !ReferenceEquals(_table, table))
+        {
+            throw new ArgumentException("Shader references must use one argument table.", nameof(reference));
+        }
+
+        _table = table;
         Span<byte> wire = stackalloc byte[16];
         wire.Clear();
         if (dependency.Resource is IGraphicsTextureView or IGraphicsSampler)
@@ -80,7 +94,13 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
 
         BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], checked((uint)dependency.Count));
         WriteValue(wire);
-        _dependencies![_referenceCount++] = dependency;
+        if (_dependencies != null)
+        {
+            _dependencies[_referenceCount] = dependency;
+        }
+
+        _collector?.Add(dependency);
+        _referenceCount++;
     }
 
     internal static void ValidateExpectedCount(int size, int expectedCount)
@@ -91,18 +111,18 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         }
     }
 
-    internal IShaderReferenceMetadata Complete()
+    internal IShaderReferenceMetadata? Complete()
     {
-        if (!_written || _completed || _position != _size || _referenceCount != _dependencies!.Length)
+        if (!_written || _completed || _position != _size || _referenceCount != _expectedCount)
         {
             throw new InvalidOperationException("The codec must write exactly the complete C# wire value.");
         }
 
         _completed = true;
         _diagnostic?.ValidateReferenceCount(_referenceCount);
-        IShaderReference[] dependencies = _dependencies!;
+        IShaderReference[]? dependencies = _dependencies;
         _dependencies = null;
-        return VulkanReferenceMetadata.TakeOwnership(dependencies);
+        return dependencies == null ? null : VulkanReferenceMetadata.TakeOwnership(dependencies);
     }
 
     private readonly void ValidateWrite(int length)

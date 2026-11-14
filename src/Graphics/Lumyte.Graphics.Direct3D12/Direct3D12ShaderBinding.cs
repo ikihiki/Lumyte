@@ -4,17 +4,21 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 {
-    private readonly ShaderBindingDependencies _dependencies;
+    private readonly ShaderBindingDependencies? _dependencies;
+    private readonly Direct3D12ArgumentTable _table;
+    private readonly IShaderReference[] _registrations;
     private nint _native;
 
-    internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingDependencies dependencies, ShaderTargetData target)
+    internal Direct3D12ShaderBinding(Direct3D12Device owner, Direct3D12ArgumentTable table, IShaderReference[] registrations, ShaderBindingDependencies? dependencies)
     {
         _dependencies = dependencies;
+        _table = table;
+        _registrations = registrations;
         owner.Check(NativeMethods.BindingCreate(owner.Native, out _native));
 
         try
         {
-            foreach (IShaderReference reference in dependencies.References)
+            foreach (IShaderReference reference in registrations)
             {
                 switch (reference.Resource)
                 {
@@ -43,6 +47,11 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
                         NativeMethods.BindingSampler(owner.Native, _native, reference.Slot, filter, Address(d.AddressU), Address(d.AddressV), Address(d.AddressW), d.LodMinClamp, d.LodMaxClamp, d.MaxAnisotropy, d.Compare.HasValue ? (uint)d.Compare.Value + 1 : 8);
                         break;
                     default:
+                        if (reference.BufferAccess is not (ShaderBufferAccess.ReadOnly or ShaderBufferAccess.ReadWrite))
+                        {
+                            throw new NotSupportedException("Unknown shader buffer access.");
+                        }
+
                         if (reference.Slot >= 64)
                         {
                             throw new NotSupportedException("Buffer slot exceeds 63.");
@@ -91,6 +100,8 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 
         _native = 0;
         GC.KeepAlive(_dependencies);
+        GC.KeepAlive(_table);
+        GC.KeepAlive(_registrations);
     }
 
     private static uint Address(AddressMode mode) => mode switch { AddressMode.Repeat => 1, AddressMode.MirrorRepeat => 2, AddressMode.ClampToEdge => 3, _ => throw new ArgumentException("Unknown address mode.") };

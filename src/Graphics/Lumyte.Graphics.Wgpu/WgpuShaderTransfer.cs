@@ -17,11 +17,11 @@ internal static class WgpuShaderTransfer
         var storage = new WgpuRootStorage(owner, size);
         try
         {
-            var writer = new WgpuShaderValueWriter(owner, size, storage, default, referenceCount, diagnostic);
+            var writer = new WgpuShaderValueWriter(owner, size, storage, default, referenceCount, diagnostic, collect: owner.Validation != null || prepare != null);
             value.Write(ref writer);
-            IShaderReferenceMetadata references = writer.Complete();
+            IShaderReferenceMetadata? references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            storage.Initialize(ShaderRootArguments.Create(root, name, size, references, prepare));
+            storage.Initialize(ShaderRootArguments.Create(root, name, size, references, prepare), writer.Table);
             return storage;
         }
         catch
@@ -40,11 +40,11 @@ internal static class WgpuShaderTransfer
         var storage = new WgpuRootStorage(owner, size);
         try
         {
-            var writer = new WgpuShaderValueWriter(owner, size, storage, default, 0, diagnostic);
+            var writer = new WgpuShaderValueWriter(owner, size, storage, default, 0, diagnostic, collect: owner.Validation != null || prepare != null);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata references = writer.Complete();
+            IShaderReferenceMetadata? references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, references, prepare));
+            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, references, prepare), writer.Table);
             return storage;
         }
         catch
@@ -54,20 +54,16 @@ internal static class WgpuShaderTransfer
         }
     }
 
-    internal static void CopyFrom<T>(WgpuDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)
+    internal static void CopyFrom<T>(WgpuDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count, HashSet<IShaderReference>? collector, ShaderDataLayout? diagnostic)
         where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
-        ArgumentNullException.ThrowIfNull(metadata);
         int stride = T.TransferSize;
-        if (stride <= 0 || elementOffset > (ulong)metadata.Length || (ulong)source.Length > (ulong)metadata.Length - elementOffset)
+        if (stride <= 0 || elementOffset > count || (ulong)source.Length > count - elementOffset)
         {
             throw new ArgumentOutOfRangeException(nameof(elementOffset));
         }
 
-        int start = checked((int)elementOffset);
-        Array.Clear(metadata, start, source.Length);
-        try
         {
             ulong offset = checked(elementOffset * (ulong)stride);
             int length = checked(source.Length * stride);
@@ -94,17 +90,11 @@ internal static class WgpuShaderTransfer
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new WgpuShaderValueWriter(owner, stride, null, upload.Slice(checked(i * stride), stride), referenceCount, diagnostic);
+                var writer = new WgpuShaderValueWriter(owner, stride, null, upload.Slice(checked(i * stride), stride), referenceCount, diagnostic, collector: collector);
                 source[i].Write(ref writer);
-                IShaderReferenceMetadata references = writer.Complete();
+                writer.Complete();
                 diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
-                metadata[start + i] = references;
             }
-        }
-        catch
-        {
-            Array.Clear(metadata, start, source.Length);
-            throw;
         }
     }
 

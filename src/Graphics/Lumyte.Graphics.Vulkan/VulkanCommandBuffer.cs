@@ -4,7 +4,7 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffer
 {
-    private readonly ShaderDataTransferState _shaderData = new();
+    private readonly CommandDependencyState? _shaderDependencies;
     private readonly List<IDisposable> _bindings = [];
     private readonly VulkanDevice _owner;
     private object? _active;
@@ -14,7 +14,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         _owner = owner;
         if (owner.Validation != null)
         {
-            _shaderData.ConfigureValidation(owner.Validation, this);
+            _shaderDependencies = new CommandDependencyState(owner.Validation, this);
         }
 
         Initialize();
@@ -24,19 +24,25 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
 
     internal VulkanDevice Owner => _owner;
 
-    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
-
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
         where T : struct, IShaderArguments
     {
         using GraphicsValidation.RecordingTransaction? validationRecording = _owner.Validation?.BeginRecording(this);
         RequireRecording();
-        if (source.Buffer is not VulkanShaderDataBuffer<T> src || destination.Buffer is not VulkanShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
+        if (source.Buffer is not VulkanShaderDataBuffer<T> src || destination.Buffer is not VulkanShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count || dst.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+        src.ValidateAlive();
+        dst.ValidateAlive();
+        IShaderReferenceMetadata? copied = _shaderDependencies?.PrepareCopy(src, dst, destination.Offset == 0 && destination.Count == dst.Count);
+        CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes)));
+        if (copied != null)
+        {
+            _shaderDependencies!.InstallCopy(dst, copied);
+        }
+
         validationRecording?.Commit();
     }
 
@@ -290,13 +296,13 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         State = CommandBufferState.Disposed;
     }
 
-    internal IShaderReferenceMetadata ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.ReadReferences(source, index);
+    internal IShaderReferenceMetadata? ReadShaderDependencies(IShaderDataSource source) => _shaderDependencies?.Read(source);
 
     internal void ValidateSubmit()
     {
         if (_owner.Validation != null)
         {
-            _shaderData.ValidateSubmit();
+            _shaderDependencies!.ValidateSubmit();
         }
 
         if (State != CommandBufferState.Executable)
@@ -308,7 +314,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
     internal void MarkSubmitted()
     {
         _owner.Validation?.Submit(this);
-        _shaderData.Publish();
+        _shaderDependencies?.Publish();
         State = CommandBufferState.Submitted;
     }
 
@@ -371,6 +377,76 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         if (State != CommandBufferState.Recording || !ReferenceEquals(_active, pass))
         {
             throw new InvalidOperationException("This pass is not active.");
+        }
+    }
+
+    private sealed class CommandDependencyState(GraphicsValidation validation, VulkanCommandBuffer command)
+    {
+        private readonly Dictionary<IShaderDataSource, IShaderReferenceMetadata> _overlay = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<IShaderDataSource, IShaderReferenceMetadata> _captured = new(ReferenceEqualityComparer.Instance);
+
+        internal IShaderReferenceMetadata Read(IShaderDataSource source)
+        {
+            IShaderReferenceMetadata value;
+            if (_overlay.TryGetValue(source, out IShaderReferenceMetadata? pending))
+            {
+                value = pending;
+            }
+            else
+            {
+                if (!source.TryGetDependencies(out IShaderReferenceMetadata? current))
+                {
+                    throw new NotSupportedException("Shader dependencies unavailable.");
+                }
+
+                if (_captured.TryGetValue(source, out IShaderReferenceMetadata? previous) && !ReferenceEquals(previous, current))
+                {
+                    throw new InvalidOperationException("Shader dependencies changed during command recording.");
+                }
+
+                _captured[source] = current;
+                value = current;
+            }
+
+            validation.Metadata(command, source, value, false);
+            return value;
+        }
+
+        internal IShaderReferenceMetadata PrepareCopy(IShaderDataSource source, IShaderDataSource destination, bool full)
+        {
+            IShaderReferenceMetadata copied = Read(source);
+            if (full)
+            {
+                return copied;
+            }
+
+            // Partial writes cannot restore an unknown destination.
+            return VulkanReferenceMetadata.Merge(Read(destination), copied);
+        }
+
+        internal void InstallCopy(IShaderDataSource destination, IShaderReferenceMetadata dependencies)
+        {
+            validation.Metadata(command, destination, dependencies, true);
+            _overlay[destination] = dependencies;
+        }
+
+        internal void ValidateSubmit()
+        {
+            foreach (KeyValuePair<IShaderDataSource, IShaderReferenceMetadata> entry in _captured)
+            {
+                if (!entry.Key.TryGetDependencies(out IShaderReferenceMetadata? current) || !ReferenceEquals(current, entry.Value))
+                {
+                    throw new InvalidOperationException("Shader dependencies changed before submission.");
+                }
+            }
+        }
+
+        internal void Publish()
+        {
+            foreach (KeyValuePair<IShaderDataSource, IShaderReferenceMetadata> entry in _overlay)
+            {
+                ((IVulkanDependencyStorage)entry.Key).PublishDependencies(entry.Value);
+            }
         }
     }
 }

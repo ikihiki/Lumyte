@@ -112,7 +112,14 @@ public sealed class FinalRootGenerationTests
             {
                 var selected = (Lumyte.Graphics.Shared.ShaderRootArguments)compute.GetType().GetField("_arguments", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(compute)!;
                 Assert.Null(selected.GetType().GetProperty("Storage"));
-                Assert.Equal(2, selected.References.References.Count);
+                if (device.ValidationEnabled)
+                {
+                    Assert.Equal(2, Assert.IsAssignableFrom<IShaderReferenceMetadata>(selected.References).References.Count);
+                }
+                else
+                {
+                    Assert.Null(selected.References);
+                }
             }
 
             Assert.Equal(1, root.Writes);
@@ -187,13 +194,28 @@ public sealed class FinalRootGenerationTests
             compute.Dispatch(1);
             Assert.Equal(7, root.Writes);
 
+            // Transition tables before selecting their matching root; stale roots still reject execution.
+            IGpuRef<uint> otherInput = otherTable.WriteBuffer(0, input.SliceElements(0, 1), ShaderBufferAccess.ReadOnly);
+            IGpuRef<uint> otherOutput = otherTable.WriteBuffer(1, output.SliceElements(0, 3), ShaderBufferAccess.ReadWrite).GetElement(2);
+            compute.SetArgumentTable(otherTable);
+            Assert.Throws<ArgumentException>(() => compute.Dispatch(1));
+            Assert.Throws<ArgumentException>(() => compute.SetArguments(in root));
+            root.Input = otherInput;
+            root.Output = otherOutput;
+
             // A new typed selection owns numeric bytes independently of later source mutation.
             root.Number = 13;
             compute.SetArguments(in root);
             CaptureWgpuOwner(device, compute, nativeOwners);
+            compute.SetArgumentTable(table);
+            Assert.Throws<ArgumentException>(() => compute.Dispatch(1));
+            root.Input = inputA;
+            root.Output = outputSnapshot;
+            compute.SetArguments(in root);
+            CaptureWgpuOwner(device, compute, nativeOwners);
             root.Number = 999;
             compute.Dispatch(1);
-            Assert.Equal(8, root.Writes);
+            Assert.Equal(10, root.Writes);
             Assert.Equal(0, root.Probes);
         }
         finally

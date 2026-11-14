@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Lumyte.Graphics.Abstractions;
 
 /// <summary>Provides backend snapshot metadata.</summary>
@@ -15,16 +17,11 @@ public interface IShaderDataSource
     /// <summary>Gets the backend native GPU buffer handle.</summary>
     object ShaderHandle { get; }
 
-    /// <summary>Reads immutable reference-only metadata without reading numeric shader data.</summary>
-    /// <param name="index">The logical element.</param>
-    /// <returns>The immutable reference metadata for this element.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The element index is outside the buffer.</exception>
-    IShaderReferenceMetadata ReadReferences(ulong index);
-
-    /// <summary>Publishes metadata after an explicit GPU copy is submitted.</summary>
-    /// <param name="index">The destination element.</param>
-    /// <param name="value">The copied value metadata.</param>
-    void SetTransferredReferences(ulong index, IShaderReferenceMetadata value);
+    /// <summary>Tries to get immutable, non-owning dependencies for the entire buffer.</summary>
+    /// <param name="dependencies">The tracked buffer dependencies, or null when tracking is unavailable.</param>
+    /// <returns>True when dependencies are known, including a known empty set; false when untracked.</returns>
+    /// <exception cref="InvalidOperationException">Tracked dependencies are unknown after a failed transfer.</exception>
+    bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies);
 
     /// <summary>Validates that the logical shader data source is alive.</summary>
     void ValidateAlive();

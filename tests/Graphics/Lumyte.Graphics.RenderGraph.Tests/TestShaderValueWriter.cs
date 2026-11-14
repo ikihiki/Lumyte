@@ -4,7 +4,7 @@ using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal struct TestShaderValueWriter<TDestination>(TDestination destination, int size, Func<ShaderValue, byte[]> encode, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory, ShaderDataLayout? diagnostic) : IShaderValueWriter
+internal struct TestShaderValueWriter<TDestination>(TDestination destination, int size, Func<ShaderValue, byte[]> encode, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory, ShaderDataLayout? diagnostic, bool validationEnabled) : IShaderValueWriter
     where TDestination : struct, ITestShaderTransferDestination
 {
     private List<IShaderReference>? _dependencies;
@@ -38,13 +38,17 @@ internal struct TestShaderValueWriter<TDestination>(TDestination destination, in
             throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
         }
 
-        (_dependencies ??= []).Add(dependency);
+        if (validationEnabled)
+        {
+            (_dependencies ??= []).Add(dependency);
+        }
+
         _referenceCount++;
         _position += 16;
         _written = true;
     }
 
-    internal IShaderReferenceMetadata Complete()
+    internal IShaderReferenceMetadata? Complete()
     {
         if (!_written || _completed || _position != size)
         {
@@ -53,6 +57,11 @@ internal struct TestShaderValueWriter<TDestination>(TDestination destination, in
 
         _completed = true;
         diagnostic?.ValidateReferenceCount(_referenceCount);
+        if (!validationEnabled)
+        {
+            return null;
+        }
+
         IEnumerable<IShaderReference> dependencies = _dependencies ?? (IEnumerable<IShaderReference>)Array.Empty<IShaderReference>();
         return metadataFactory == null ? new ShaderDependencyMetadata(dependencies) : metadataFactory(dependencies);
     }

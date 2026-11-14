@@ -62,11 +62,11 @@ public sealed class RootConstantCapacityTests
         payload.Clear();
         BytesRoot.TransferSize = bytes;
         BytesRoot value = default;
-        ShaderRootArguments root = Direct3D12ShaderTransfer.CreateRoot(device, in value, payload);
+        ShaderRootArguments root = Direct3D12ShaderTransfer.CreateRoot(device, in value, payload).Root;
         Assert.All(payload[..bytes].ToArray(), item => Assert.Equal((byte)37, item));
         Assert.All(payload[bytes..].ToArray(), item => Assert.Equal((byte)0, item));
         Assert.Null(typeof(ShaderRootArguments).GetProperty("Storage"));
-        Assert.Empty(root.References.References);
+        Assert.Null(root.References);
         payload.Fill(99);
         Assert.False(typeof(IDisposable).IsAssignableFrom(typeof(ShaderRootArguments)));
         Assert.Null(typeof(Direct3D12Device).Assembly.GetType("Lumyte.Graphics.Direct3D12.Direct3D12RootStorage"));

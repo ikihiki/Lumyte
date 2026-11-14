@@ -7,7 +7,7 @@ public sealed class ShaderRootArguments
 {
     private readonly Action<IReadOnlyCollection<IShaderReference>>? _admit;
 
-    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderReferenceMetadata references, Action<IReadOnlyCollection<IShaderReference>>? admit)
+    private ShaderRootArguments(string rootParameter, string shaderTypeName, int wireSize, IShaderReferenceMetadata? references, Action<IReadOnlyCollection<IShaderReference>>? admit)
     {
         RootParameter = rootParameter;
         ShaderTypeName = shaderTypeName;
@@ -26,7 +26,7 @@ public sealed class ShaderRootArguments
     public int WireSize { get; }
 
     /// <summary>Gets immutable, non-owning root resource dependencies.</summary>
-    public IShaderReferenceMetadata References { get; }
+    public IShaderReferenceMetadata? References { get; }
 
     /// <summary>Creates metadata for a completed backend-written root generation.</summary>
     /// <param name="rootParameter">The logical root parameter name.</param>
@@ -35,13 +35,17 @@ public sealed class ShaderRootArguments
     /// <param name="references">The immutable backend-owned dependency metadata.</param>
     /// <param name="prepare">Optional reference-only preparation returning detached execution admission.</param>
     /// <returns>The immutable root generation metadata.</returns>
-    public static ShaderRootArguments Create(string rootParameter, string shaderTypeName, int wireSize, IShaderReferenceMetadata references, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    public static ShaderRootArguments Create(string rootParameter, string shaderTypeName, int wireSize, IShaderReferenceMetadata? references, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootParameter);
         ArgumentException.ThrowIfNullOrWhiteSpace(shaderTypeName);
         ArgumentOutOfRangeException.ThrowIfNegative(wireSize);
-        ArgumentNullException.ThrowIfNull(references);
-        Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
+        if (prepare != null && references == null)
+        {
+            throw new NotSupportedException("Root shader dependency metadata is unavailable for argument preparation.");
+        }
+
+        Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references!);
         return new(rootParameter, shaderTypeName, wireSize, references, admit);
     }
 

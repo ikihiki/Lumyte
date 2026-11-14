@@ -44,7 +44,7 @@ public sealed class NativeShaderWriterAbiTests
                 device.EnableValidation();
             }
 
-            await CheckAsync(device, artifact, ShaderTarget.Wgsl);
+            await CheckAsync(device, artifact, ShaderTarget.Wgsl, validation);
         }
     }
 
@@ -62,7 +62,7 @@ public sealed class NativeShaderWriterAbiTests
                 device.EnableValidation();
             }
 
-            await CheckAsync(device, artifact, ShaderTarget.SpirV);
+            await CheckAsync(device, artifact, ShaderTarget.SpirV, validation);
             await CheckAddressLifetimeAsync(device);
         }
     }
@@ -106,7 +106,7 @@ public sealed class NativeShaderWriterAbiTests
     private static Task<ShaderArtifact> CompileAsync(ShaderTarget target)
         => new SlangShaderCompiler().CompileAsync(new() { Source = Source, Target = target, Stage = ShaderStage.Compute });
 
-    private static async Task CheckAsync(IGraphicDevice device, ShaderArtifact artifact, ShaderTarget target)
+    private static async Task CheckAsync(IGraphicDevice device, ShaderArtifact artifact, ShaderTarget target, bool validation)
     {
         using IGraphicsShaderDataBuffer<NativeAbiValue> upload = device.CreateShaderDataBuffer<NativeAbiValue>(artifact, 1, MemoryPreference.Upload);
         using IGraphicsBuffer<uint> numbers = device.CreateBuffer<uint>(new() { Count = 12, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite });
@@ -121,7 +121,18 @@ public sealed class NativeShaderWriterAbiTests
         Assert.Equal(88UL, upload.ShaderElementStrideInBytes);
         await upload.MapAsync();
         upload.CopyFrom([value]);
+        IShaderReferenceMetadata? firstRevision = QueryDependencies((IShaderDataSource)upload, validation);
+        IShaderReference[] captured = firstRevision?.References.ToArray() ?? [];
         upload.CopyFrom([value]); // Repeated physical references reuse the same allocation address.
+        IShaderReferenceMetadata? nextRevision = QueryDependencies((IShaderDataSource)upload, validation);
+        if (validation)
+        {
+            Assert.Equal(5, firstRevision!.References.Count);
+            Assert.Equal(captured, firstRevision.References.ToArray());
+            Assert.NotSame(firstRevision, nextRevision);
+            Assert.All(captured, reference => Assert.Contains(reference, nextRevision!.References));
+        }
+
         upload.Unmap();
 
         // Diagnostic reflection exposes only the existing raw storage, never a new production API.
@@ -158,10 +169,10 @@ public sealed class NativeShaderWriterAbiTests
         }
 
         Assert.Equal(expected, actual);
-        await CheckMalformedAsync(device, artifact, value);
+        await CheckMalformedAsync(device, artifact, value, validation);
     }
 
-    private static async Task CheckMalformedAsync(IGraphicDevice device, ShaderArtifact artifact, NativeAbiValue value)
+    private static async Task CheckMalformedAsync(IGraphicDevice device, ShaderArtifact artifact, NativeAbiValue value, bool validation)
     {
         using IGraphicsShaderDataBuffer<ManualBadAbiValue> upload = device.CreateShaderDataBuffer<ManualBadAbiValue>(artifact, 5, MemoryPreference.Upload);
         IShaderDataSource metadata = Assert.IsAssignableFrom<IShaderDataSource>(upload);
@@ -172,8 +183,8 @@ public sealed class NativeShaderWriterAbiTests
             foreach (int mode in new[] { 1, 2 })
             {
                 upload.CopyFrom([valid, valid, valid, valid, valid]);
-                IShaderReferenceMetadata before = metadata.ReadReferences(0);
-                IShaderReferenceMetadata after = metadata.ReadReferences(4);
+                IShaderReferenceMetadata? before = QueryDependencies(metadata, validation);
+                IShaderReference[] captured = before?.References.ToArray() ?? [];
                 var malformed = new ManualBadAbiValue(value, mode);
                 if (mode == 1)
                 {
@@ -184,18 +195,48 @@ public sealed class NativeShaderWriterAbiTests
                     Assert.Throws<ArgumentOutOfRangeException>(() => upload.CopyFrom([valid, malformed, valid], 1));
                 }
 
-                Assert.Same(before, metadata.ReadReferences(0));
-                Assert.Same(after, metadata.ReadReferences(4));
-                for (ulong index = 1; index <= 3; index++)
+                AssertUnknownDependencies(metadata, validation);
+                upload.CopyFrom([valid], 1);
+                AssertUnknownDependencies(metadata, validation);
+                if (validation)
                 {
-                    ulong invalidIndex = index;
-                    Assert.Throws<InvalidOperationException>(() => metadata.ReadReferences(invalidIndex));
+                    Assert.Equal(captured, before!.References.ToArray());
                 }
+
+                upload.CopyFrom([valid, valid, valid, valid, valid]);
+                QueryDependencies(metadata, validation);
             }
         }
         finally
         {
             upload.Unmap();
+        }
+    }
+
+    private static IShaderReferenceMetadata? QueryDependencies(IShaderDataSource source, bool validation)
+    {
+        Assert.Equal(validation, source.TryGetDependencies(out IShaderReferenceMetadata? dependencies));
+        if (validation)
+        {
+            Assert.NotNull(dependencies);
+        }
+        else
+        {
+            Assert.Null(dependencies);
+        }
+
+        return dependencies;
+    }
+
+    private static void AssertUnknownDependencies(IShaderDataSource source, bool validation)
+    {
+        if (validation)
+        {
+            Assert.Throws<InvalidOperationException>(() => source.TryGetDependencies(out _));
+        }
+        else
+        {
+            QueryDependencies(source, validation);
         }
     }
 

@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Builds finite resource bindings for WGSL backends using native roots.</summary>
+/// <summary>Projects a complete argument table into finite WGSL resource bindings.</summary>
 public sealed class ShaderBindingData
 {
     private readonly Dictionary<object, int> _textures = [];
@@ -13,13 +13,13 @@ public sealed class ShaderBindingData
     private readonly Dictionary<ShaderBufferBinding, int> _writable = [];
 
     /// <summary>Initializes a new instance of the <see cref="ShaderBindingData"/> class.</summary>
-    /// <param name="dependencies">The reachable resource dependencies.</param>
+    /// <param name="registrations">The complete selected argument table registrations.</param>
     /// <param name="target">The target input.</param>
     /// <param name="caps">The caps input.</param>
-    public ShaderBindingData(ShaderBindingDependencies dependencies, ShaderTargetData target, DeviceCaps caps)
+    public ShaderBindingData(IReadOnlyCollection<IShaderReference> registrations, ShaderTargetData target, DeviceCaps caps)
     {
-        Dependencies = dependencies;
-        foreach (IShaderReference reference in dependencies.References)
+        ArgumentNullException.ThrowIfNull(registrations);
+        foreach (IShaderReference reference in registrations)
         {
             object resource = reference.Resource;
             if (resource is IGraphicsTextureView)
@@ -41,19 +41,19 @@ public sealed class ShaderBindingData
             }
         }
 
-        if (_textures.Count > caps.MaxSampledTexturesPerStage || _samplers.Count > caps.MaxSamplersPerStage || _buffers.Count + _writable.Count + (dependencies.References.Count == 0 ? 0 : 1) > caps.MaxStorageBuffersPerStage)
+        if (_textures.Count > caps.MaxSampledTexturesPerStage || _samplers.Count > caps.MaxSamplersPerStage || _buffers.Count + _writable.Count + (registrations.Count == 0 ? 0 : 1) > caps.MaxStorageBuffersPerStage)
         {
-            throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
+            throw new NotSupportedException("Argument table entries exceed the enabled per-stage binding limits.");
         }
 
-        uint capacity = dependencies.References.Count == 0 ? 0 : checked(dependencies.References.Max(r => r.Slot) + 1);
+        uint capacity = registrations.Count == 0 ? 0 : checked(registrations.Max(r => r.Slot) + 1);
         if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
         {
             throw new NotSupportedException("The reference remap exceeds the storage binding size limit.");
         }
 
         Map = new byte[checked((int)capacity * 16)];
-        foreach (IShaderReference reference in dependencies.References)
+        foreach (IShaderReference reference in registrations)
         {
             int offset = checked((int)reference.Slot * 16);
             if (_textures.TryGetValue(reference.Resource, out int texture))
@@ -78,12 +78,6 @@ public sealed class ShaderBindingData
             }
         }
     }
-
-    /// <summary>Gets the reachable resource dependencies.</summary>
-    public ShaderBindingDependencies Dependencies { get; }
-
-    /// <summary>Gets the selected root generation metadata.</summary>
-    public ShaderRootArguments RootArgs => Dependencies.Arguments;
 
     /// <summary>Gets the resource remapping bytes.</summary>
     public byte[] Map { get; }

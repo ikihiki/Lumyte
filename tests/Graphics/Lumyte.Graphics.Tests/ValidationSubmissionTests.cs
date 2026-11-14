@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
 using Xunit;
@@ -412,17 +413,17 @@ public sealed class ValidationSubmissionTests
         ShaderDependencyMetadata original = new([]);
         ShaderDependencyMetadata copied = new(original.References);
         var source = new FakeMetadataSource(original);
-        validation?.Metadata(write, source, 0, copied, write: true);
-        validation?.Metadata(stale, source, 0, original, write: false);
+        validation?.Metadata(write, source, copied, write: true);
+        validation?.Metadata(stale, source, original, write: false);
 
         // Capture a matching read independently, then restore the pre-submit source value.
-        source.SetTransferredReferences(0, copied);
-        validation?.Metadata(matching, source, 0, copied, write: false);
-        source.SetTransferredReferences(0, original);
+        source.Value = copied;
+        validation?.Metadata(matching, source, copied, write: false);
+        source.Value = original;
         CheckInvalid(enabled, () => validation?.PrepareSubmission([write, stale]));
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
         Commit(validation, [write, matching]);
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
     }
 
     /// <summary>Checks abandoned native-submit preparation publishes no metadata or resource hazards.</summary>
@@ -439,9 +440,9 @@ public sealed class ValidationSubmissionTests
         ShaderDependencyMetadata original = new([]);
         ShaderDependencyMetadata copied = new(original.References);
         var source = new FakeMetadataSource(original);
-        validation?.Metadata(write, source, 0, copied, write: true);
+        validation?.Metadata(write, source, copied, write: true);
         validation?.Access(write, buffer, _write, 0, 16);
-        validation?.Metadata(originalRead, source, 0, original, write: false);
+        validation?.Metadata(originalRead, source, original, write: false);
         validation?.Access(originalRead, buffer, _read, 0, 16);
         GraphicsValidation.SubmissionState? abandoned = validation?.PrepareSubmission([write]);
         if (enabled)
@@ -449,7 +450,7 @@ public sealed class ValidationSubmissionTests
             Assert.NotNull(abandoned);
         }
 
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
         Commit(validation, [originalRead]);
     }
 
@@ -528,23 +529,23 @@ public sealed class ValidationSubmissionTests
         CheckInvalid(enabled, () =>
         {
             using GraphicsValidation.RecordingTransaction? recording = validation?.BeginRecording(command);
-            validation?.Metadata(command, source, 0, copied, write: true);
+            validation?.Metadata(command, source, copied, write: true);
             validation?.Access(command, buffer, _read, 0, 16);
             recording?.Commit();
         });
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
 
         // Reading the original in the same command proves the partial metadata operation rolled back.
-        validation?.Metadata(command, source, 0, original, write: false);
-        validation?.Metadata(originalRead, source, 0, original, write: false);
+        validation?.Metadata(command, source, original, write: false);
+        validation?.Metadata(originalRead, source, original, write: false);
         using (GraphicsValidation.RecordingTransaction? recording = validation?.BeginRecording(command))
         {
-            validation?.Metadata(command, source, 0, copied, write: true);
+            validation?.Metadata(command, source, copied, write: true);
 
             // Native recording failed: leave the transaction uncommitted.
         }
 
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
         GraphicsValidation.SubmissionState? abandoned = validation?.PrepareSubmission([command]);
         if (enabled)
         {
@@ -552,9 +553,9 @@ public sealed class ValidationSubmissionTests
         }
 
         // Native submission failed: leave the prepared queue state uncommitted as well.
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
         Commit(validation, [command, originalRead]);
-        Assert.Same(original, source.ReadReferences(0));
+        Assert.Same(original, source.Value);
     }
 
     private static void CheckInvalid(bool enabled, Action action)
@@ -595,22 +596,12 @@ public sealed class ValidationSubmissionTests
         /// <summary>Gets the source identity.</summary>
         public object ShaderHandle => this;
 
-        /// <summary>Reads the single element snapshot.</summary>
-        /// <param name="index">The logical element index.</param>
-        /// <returns>The currently published snapshot.</returns>
-        public IShaderReferenceMetadata ReadReferences(ulong index) => index == 0 ? value : throw new ArgumentOutOfRangeException(nameof(index));
+        internal IShaderReferenceMetadata Value { get; set; } = value;
 
-        /// <summary>Publishes the single element snapshot.</summary>
-        /// <param name="index">The logical element index.</param>
-        /// <param name="snapshot">The transferred snapshot.</param>
-        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata snapshot)
+        public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
         {
-            if (index != 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(index));
-            }
-
-            value = snapshot;
+            dependencies = Value;
+            return true;
         }
 
         /// <summary>Validates this always-live managed source.</summary>

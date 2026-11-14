@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
@@ -92,7 +93,9 @@ public sealed class ShaderRootArgumentsTests
         Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create(" ", "Wire", 0, metadata, Prepare));
         Assert.Throws<ArgumentException>(() => ShaderRootArguments.Create("arguments", " ", 0, metadata, Prepare));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShaderRootArguments.Create("arguments", "Wire", -1, metadata, Prepare));
-        Assert.Throws<ArgumentNullException>(() => ShaderRootArguments.Create("arguments", "Wire", 0, null!, Prepare));
+        Assert.Throws<NotSupportedException>(() => ShaderRootArguments.Create("arguments", "Wire", 0, null, Prepare));
+        Assert.Null(ShaderRootArguments.Create("arguments", "Wire", 0, null).References);
+        Assert.Throws<NotSupportedException>(() => ShaderBindingDependencies.Collect(ShaderRootArguments.Create("arguments", "Wire", 0, null), null));
         Assert.False(prepared);
         Assert.Equal(0, ShaderRootArguments.Create("arguments", "Wire", 0, metadata).WireSize);
     }
@@ -330,10 +333,9 @@ public sealed class ShaderRootArgumentsTests
         using TestRootOwner root = TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare);
         IShaderReferenceMetadata current = new ShaderDependencyMetadata([firstReference]);
         int reads = 0;
-        IShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer, ulong index)
+        IShaderReferenceMetadata ReadMetadata(IShaderDataSource buffer)
         {
             Assert.Same(source, buffer);
-            Assert.Equal(0ul, index);
             reads++;
             return current;
         }
@@ -346,7 +348,7 @@ public sealed class ShaderRootArgumentsTests
         Assert.Contains(secondReference, second.References);
         Assert.DoesNotContain(firstReference, second.References);
         Assert.Same(rootReference, Assert.Single(root.References.References));
-        Assert.NotSame(first.Elements[(source, 0)], second.Elements[(source, 0)]);
+        Assert.NotSame(first.Buffers[source], second.Buffers[source]);
         Assert.Equal(2, reads);
         Assert.Equal(2, admitted.Count);
         Assert.Equal(1, value.Writes);
@@ -663,13 +665,11 @@ public sealed class ShaderRootArgumentsTests
 
         internal int Reads { get; private set; }
 
-        public IShaderReferenceMetadata ReadReferences(ulong index)
+        public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
         {
             Reads++;
             throw new InvalidOperationException("Expected command-local metadata reader.");
         }
-
-        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value) => throw new NotSupportedException();
 
         public void ValidateAlive()
         {

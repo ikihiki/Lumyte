@@ -15,6 +15,8 @@ internal sealed class ProfilingDevice : IGraphicDevice
         }
     }
 
+    public bool ValidationEnabled { get; init; }
+
     public GraphicsDeviceStatus Status => GraphicsDeviceStatus.Ready;
 
     public GraphicsDeviceLoss? Loss => null;

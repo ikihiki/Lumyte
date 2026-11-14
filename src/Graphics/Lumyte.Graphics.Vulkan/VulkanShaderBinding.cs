@@ -5,18 +5,22 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe class VulkanShaderBinding : IDisposable
 {
-    private readonly ShaderBindingDependencies _dependencies;
+    private readonly IShaderReference[] _registrations;
+    private readonly VulkanArgumentTable _table;
+    private readonly ShaderBindingDependencies? _validationDependencies;
     private readonly VulkanDevice _owner;
     private DescriptorPool _pool;
 
-    internal VulkanShaderBinding(VulkanDevice owner, ShaderBindingDependencies dependencies, ShaderTargetData target, DescriptorSetLayout layout)
+    internal VulkanShaderBinding(VulkanDevice owner, VulkanArgumentTable table, IShaderReference[] registrations, DescriptorSetLayout layout, ShaderBindingDependencies? validationDependencies = null)
     {
         _owner = owner;
-        _dependencies = dependencies;
+        _registrations = registrations;
+        _validationDependencies = validationDependencies;
+        _table = table;
         try
         {
-            IShaderReference[] textures = dependencies.References.Where(r => r.Resource is VulkanTextureView).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
-            IShaderReference[] samplers = dependencies.References.Where(r => r.Resource is VulkanSampler).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
+            IShaderReference[] textures = registrations.Where(r => r.Resource is VulkanTextureView).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
+            IShaderReference[] samplers = registrations.Where(r => r.Resource is VulkanSampler).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
             uint textureCount = textures.Length == 0 ? 1 : checked(textures.Max(r => r.Slot) + 1);
             uint samplerCount = samplers.Length == 0 ? 1 : checked(samplers.Max(r => r.Slot) + 1);
             if (textureCount > owner.Caps.MaxSampledTexturesPerStage || samplerCount > owner.Caps.MaxSamplersPerStage)
@@ -64,7 +68,9 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             _pool = default;
         }
 
-        GC.KeepAlive(_dependencies);
+        GC.KeepAlive(_registrations);
+        GC.KeepAlive(_table);
+        GC.KeepAlive(_validationDependencies);
     }
 
     internal static DescriptorSetLayout CreateLayout(VulkanDevice owner, uint textures = 1, uint samplers = 1)

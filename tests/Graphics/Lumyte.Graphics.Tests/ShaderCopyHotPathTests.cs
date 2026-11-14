@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using System.Reflection.Emit;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
 using Lumyte.Graphics.Shared;
@@ -176,8 +177,8 @@ public sealed class ShaderCopyHotPathTests
         string writer = ReadSource($"src/Graphics/Lumyte.Graphics.{backend}/{backend}ShaderValueWriter.cs");
         Assert.DoesNotContain("CopyBytesFrom(", writer);
         Assert.Contains(backend == "Browser" ? "BrowserInterop.CopyMappedUploadRange(" : backend == "Wgpu" ? "value.CopyTo(_upload.Slice(" : "value.CopyTo(_destination.Slice(", writer);
-        Assert.Contains("_referenceCount >= _dependencies!.Length", writer);
-        Assert.Contains("_referenceCount != _dependencies!.Length", writer);
+        Assert.Contains("_referenceCount >= _expectedCount", writer);
+        Assert.Contains("_referenceCount != _expectedCount", writer);
         string metadata = ReadSource($"src/Graphics/Lumyte.Graphics.{backend}/{backend}ReferenceMetadata.cs");
         Assert.Contains("References => this", metadata);
         Assert.Contains("private readonly IShaderReference[] _references", metadata);
@@ -278,10 +279,11 @@ public sealed class ShaderCopyHotPathTests
         using IGraphicsBuffer<uint> numbers = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.ShaderRead });
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 4 });
         IGpuRef<uint> reference = table.WriteBuffer(0, numbers.SliceElements(1, 4));
+        IGpuRef<uint> replacement = table.WriteBuffer(1, numbers.SliceElements(6, 1));
         using IGraphicsShaderDataBuffer<HotPathValue> upload = device.CreateShaderDataBuffer<HotPathValue>(artifact, 5, MemoryPreference.Upload);
         IShaderDataSource data = Assert.IsAssignableFrom<IShaderDataSource>(upload);
         IGraphicsBuffer<byte> raw = Assert.IsAssignableFrom<IGraphicsBuffer<byte>>(upload.GetType().GetProperty("Storage", Hidden)!.GetValue(upload));
-        CheckRoots(device, reference);
+        CheckRoots(device, reference, enabled);
         var valid = new HotPathValue(reference);
         Assert.Throws<InvalidOperationException>(() => upload.CopyFrom([valid]));
         await upload.MapAsync();
@@ -289,25 +291,42 @@ public sealed class ShaderCopyHotPathTests
         {
             upload.CopyFrom([valid, valid, valid, valid, valid]);
             Assert.Equal(5, valid.Calls[0]);
-            IShaderReferenceMetadata first = data.ReadReferences(0);
-            Assert.Same(first, first.References);
-            Assert.Equal(2, first.References.Count);
-            Assert.Same(reference, first.References[0]);
-            Assert.Same(reference, first.References[1]);
-            IShaderReferenceMetadata last = data.ReadReferences(4);
+            IShaderReferenceMetadata? first = QueryDependencies(data, enabled);
+            if (enabled)
+            {
+                Assert.Same(first, first!.References);
+                Assert.Same(reference, Assert.Single(first.References));
+                Assert.Same(first, QueryDependencies(data, enabled));
+            }
+
+            var changed = new HotPathValue(replacement);
+            upload.CopyFrom([changed], 2);
+            IShaderReferenceMetadata? union = QueryDependencies(data, enabled);
+            if (enabled)
+            {
+                Assert.NotSame(first, union);
+                Assert.Same(reference, Assert.Single(first!.References));
+                Assert.Contains((IShaderReference)reference, union!.References);
+                Assert.Contains((IShaderReference)replacement, union.References);
+            }
+
             Assert.Throws<ArgumentOutOfRangeException>(() => upload.CopyFrom([valid], ulong.MaxValue));
-            Assert.Same(first, data.ReadReferences(0));
-            Assert.Same(last, data.ReadReferences(4));
+            AssertUnknownDependencies(data, enabled);
+            upload.CopyFrom([valid, valid, valid, valid, valid]);
+            first = QueryDependencies(data, enabled);
             var original = new ApplicationException("codec failure");
             var bad = new HotPathValue(reference, () => throw original);
             Assert.Same(original, Record.Exception(() => upload.CopyFrom([valid, bad, valid], 1)));
-            Assert.Same(first, data.ReadReferences(0));
-            Assert.Same(last, data.ReadReferences(4));
-            for (ulong i = 1; i <= 3; i++)
+            AssertUnknownDependencies(data, enabled);
+            upload.CopyFrom([valid], 1);
+            AssertUnknownDependencies(data, enabled); // A partial success cannot repair unknown bytes elsewhere.
+            if (enabled)
             {
-                ulong index = i;
-                Assert.Throws<InvalidOperationException>(() => data.ReadReferences(index));
+                Assert.Same(reference, Assert.Single(first!.References)); // Old revisions remain immutable.
             }
+
+            upload.CopyFrom([valid, valid, valid, valid, valid]);
+            QueryDependencies(data, enabled);
 
             if (enabled)
             {
@@ -327,12 +346,13 @@ public sealed class ShaderCopyHotPathTests
                     });
                     upload.CopyFrom([guarded], 1);
                     Assert.Equal(1, attempts);
-                    Assert.Equal(2, data.ReadReferences(1).References.Count);
+                    upload.CopyFrom([valid, valid, valid, valid, valid]);
+                    Assert.Same(reference, Assert.Single(QueryDependencies(data, enabled)!.References));
                 }
 
                 var disjoint = new HotPathValue(reference, () => upload.CopyFrom([valid], 4));
                 upload.CopyFrom([disjoint], 1);
-                Assert.Equal(2, data.ReadReferences(4).References.Count);
+                Assert.Same(reference, Assert.Single(QueryDependencies(data, enabled)!.References));
             }
             else
             {
@@ -349,14 +369,14 @@ public sealed class ShaderCopyHotPathTests
         }
 
         await CheckMappedBoundsAsync(device);
-        await CheckEmptyAsync(device, artifact);
-        await CheckCountMismatchAsync<DeclaredOne>(device, artifact, reference);
-        await CheckCountMismatchAsync<DeclaredThree>(device, artifact, reference);
-        await CheckCountMismatchAsync<DeclaredNegative>(device, artifact, reference);
-        await CheckCountMismatchAsync<DeclaredHuge>(device, artifact, reference);
+        await CheckEmptyAsync(device, artifact, enabled);
+        await CheckCountMismatchAsync<DeclaredOne>(device, artifact, reference, enabled);
+        await CheckCountMismatchAsync<DeclaredThree>(device, artifact, reference, enabled);
+        await CheckCountMismatchAsync<DeclaredNegative>(device, artifact, reference, enabled);
+        await CheckCountMismatchAsync<DeclaredHuge>(device, artifact, reference, enabled);
     }
 
-    private static void CheckRoots(IGraphicDevice device, IGpuRef<uint> reference)
+    private static void CheckRoots(IGraphicDevice device, IGpuRef<uint> reference, bool enabled)
     {
         CheckRoot(device, new CopyNumeric(17), 0);
         CheckRoot(device, new UnifiedTransferValue { Value = 17, Output = reference }, 1);
@@ -370,6 +390,13 @@ public sealed class ShaderCopyHotPathTests
         var once = new HotPathValue(reference);
         CheckRoot(device, once, 2);
         Assert.Equal(1, once.Calls[0]);
+        var unpreparedValue = new HotPathValue(reference);
+        using (CreateRoot(device, in unpreparedValue, null, out ShaderRootArguments unprepared))
+        {
+            Assert.Equal(enabled, unprepared.References != null);
+        }
+
+        Assert.Equal(1, unpreparedValue.Calls[0]);
         CheckBadRoot(device, new CountedValue<DeclaredOne>(reference));
         CheckBadRoot(device, new CountedValue<DeclaredThree>(reference));
         CheckBadRoot(device, new CountedValue<DeclaredNegative>(reference));
@@ -390,7 +417,7 @@ public sealed class ShaderCopyHotPathTests
         ShaderRootArguments arguments;
         using IDisposable? storage = CreateRoot(device, in value, Prepare, out arguments);
         Assert.Equal(1, prepared);
-        Assert.Equal(expected, arguments.References.References.Count);
+        Assert.Equal(expected, arguments.References!.References.Count);
         Assert.Same(arguments.References, arguments.References);
         Assert.Equal(T.TransferSize, arguments.WireSize);
         Assert.Equal(1, prepared);
@@ -424,7 +451,7 @@ public sealed class ShaderCopyHotPathTests
         Assert.Equal(0, prepared);
     }
 
-    private static IDisposable? CreateRoot<T>(IGraphicDevice device, in T value, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?> prepare, out ShaderRootArguments arguments)
+    private static IDisposable? CreateRoot<T>(IGraphicDevice device, in T value, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare, out ShaderRootArguments arguments)
         where T : struct, IShaderArguments
     {
         string backend = device is WgpuDevice ? "Wgpu" : "Vulkan";
@@ -438,7 +465,22 @@ public sealed class ShaderCopyHotPathTests
             return storage;
         }
 
-        VulkanRoot<T> vulkanWrite = create.CreateDelegate<VulkanRoot<T>>();
+        var adapter = new DynamicMethod(
+            "CreateVulkanRootArguments",
+            typeof(ShaderRootArguments),
+            [typeof(VulkanDevice), typeof(T).MakeByRefType(), typeof(Span<byte>), typeof(ShaderDataLayout), typeof(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>)],
+            typeof(ShaderCopyHotPathTests).Module,
+            skipVisibility: true);
+        ILGenerator il = adapter.GetILGenerator();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Ldarg_2);
+        il.Emit(OpCodes.Ldarg_3);
+        il.Emit(OpCodes.Ldarg_S, (byte)4);
+        il.Emit(OpCodes.Call, create);
+        il.Emit(OpCodes.Ldfld, create.ReturnType.GetField("Item1")!);
+        il.Emit(OpCodes.Ret);
+        VulkanRoot<T> vulkanWrite = adapter.CreateDelegate<VulkanRoot<T>>();
         arguments = vulkanWrite((VulkanDevice)device, in value, new byte[T.TransferSize], null, prepare);
         return null;
     }
@@ -475,7 +517,7 @@ public sealed class ShaderCopyHotPathTests
         }
     }
 
-    private static async Task CheckEmptyAsync(IGraphicDevice device, ShaderArtifact artifact)
+    private static async Task CheckEmptyAsync(IGraphicDevice device, ShaderArtifact artifact, bool enabled)
     {
         using IGraphicsShaderDataBuffer<CopyNumeric> upload = device.CreateShaderDataBuffer<CopyNumeric>(artifact, 2, MemoryPreference.Upload);
         await upload.MapAsync();
@@ -485,12 +527,14 @@ public sealed class ShaderCopyHotPathTests
             var second = new CopyNumeric(31);
             upload.CopyFrom([first, second]);
             var source = (IShaderDataSource)upload;
-            IShaderReferenceMetadata empty = source.ReadReferences(0);
-            Assert.Empty(empty.References);
-            Assert.Same(empty, source.ReadReferences(1));
+            IShaderReferenceMetadata? empty = QueryDependencies(source, enabled);
+            if (enabled)
+            {
+                Assert.Empty(empty!.References);
+            }
+
             upload.CopyFrom([second, first]);
-            Assert.Same(empty, source.ReadReferences(0));
-            Assert.Same(empty, source.ReadReferences(1));
+            Assert.Same(empty, QueryDependencies(source, enabled));
         }
         finally
         {
@@ -498,7 +542,7 @@ public sealed class ShaderCopyHotPathTests
         }
     }
 
-    private static async Task CheckCountMismatchAsync<TCount>(IGraphicDevice device, ShaderArtifact artifact, IGpuRef<uint> reference)
+    private static async Task CheckCountMismatchAsync<TCount>(IGraphicDevice device, ShaderArtifact artifact, IGpuRef<uint> reference, bool enabled)
         where TCount : struct, ICount
     {
         using IGraphicsShaderDataBuffer<CountedValue<TCount>> upload = device.CreateShaderDataBuffer<CountedValue<TCount>>(artifact, 1, MemoryPreference.Upload);
@@ -521,7 +565,7 @@ public sealed class ShaderCopyHotPathTests
                 Assert.Equal(1, value.Calls[0]);
             }
 
-            Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)upload).ReadReferences(0));
+            AssertUnknownDependencies((IShaderDataSource)upload, enabled);
             byte[] bytes = borrow(0, 48).ToArray();
             if (TCount.Count < 0 || TCount.Count > 3)
             {
@@ -540,6 +584,33 @@ public sealed class ShaderCopyHotPathTests
         finally
         {
             upload.Unmap();
+        }
+    }
+
+    private static IShaderReferenceMetadata? QueryDependencies(IShaderDataSource source, bool enabled)
+    {
+        Assert.Equal(enabled, source.TryGetDependencies(out IShaderReferenceMetadata? dependencies));
+        if (enabled)
+        {
+            Assert.NotNull(dependencies);
+        }
+        else
+        {
+            Assert.Null(dependencies);
+        }
+
+        return dependencies;
+    }
+
+    private static void AssertUnknownDependencies(IShaderDataSource source, bool enabled)
+    {
+        if (enabled)
+        {
+            Assert.Throws<InvalidOperationException>(() => source.TryGetDependencies(out _));
+        }
+        else
+        {
+            QueryDependencies(source, enabled);
         }
     }
 

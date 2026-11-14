@@ -84,6 +84,8 @@ public sealed class RenderGraphPreparationContext
         return (IGraphicsSampler)_plan.Resolve(sampler);
     }
 
+    internal object Resolve(RenderGraphResource resource) => _plan.Resolve(resource);
+
     internal bool IsGraphAllocation(object allocation) => _plan.ContainsAllocation(allocation);
 
     internal void CheckAllocation(RenderGraphPass pass, object allocation, ResourceAccess required, bool sampled)

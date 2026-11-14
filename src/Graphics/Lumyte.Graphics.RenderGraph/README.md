@@ -128,7 +128,7 @@ factoryが返す状態やimportsは借用ビューであり、型がIDisposable�
 
 ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の拡張が担当します。RenderGraph本体はその型やパッケージを参照しません。
 
-## Struct-only arguments and explicit element ranges
+## struct引数と明示的な要素範囲
 
 All IShaderArguments-consuming root, buffer, slice, factory and Graph/resource APIs
 require `where T : struct, IShaderArguments`, allowing managed IGpuRef fields.
@@ -155,9 +155,9 @@ them; encoding rejects null root references. DrawingInstruction new() retains -1
 resource indices and default! reference initialization, not valid GPU references.
 ShaderRootArguments remains a reference-only metadata class, not a shader provider.
 
-## Shader inputs and execution
+## シェーダー入力と実行
 
-The pass itself owns its declared inputs. UseTexture, UseBuffer, UseShaderDataBuffer and UseSampler are the only declaration source; there is no resource-set factory, attachment step, member-name value bag or required artifact/root pin. Obtain IGpuRef values through the AddPass callback and reuse the ordinary IShaderArguments type and codec. A reference cached from callback B may also be used in A when A declares the native resource, range and access and the native table is compatible; callback origin, registration group and slot are not use permissions.
+passの入力はUseTexture、UseBuffer、UseShaderDataBuffer、UseSamplerで宣言し、通常のIShaderArguments型とcodecを使います。別callbackから保存した参照の取得元は許可条件ではなく、検証ONの照合は使用passの正規化resource identityとread／write権限に従います。
 
 The following example is inside ImageEffects and reuses its existing internal EffectArguments. Applications likewise reuse their own ordinary argument types. The caller supplies the matching pipeline, source/target, samplerDesc, bounds, opacity, width/height and sampleRead/colorWrite scopes. Creation/import, using directives including System.Numerics, export, Submit/Wait and failure cleanup are omitted. Retain the compiled plan and borrowed resources through GPU completion.
 
@@ -192,20 +192,12 @@ graph.AddPass("sample", context =>
   .UseSampler(samplerDesc);
 ```
 
-**The capacity unit is the entire pass's declared shader inputs, not each individual Draw.** If their aggregate exceeds effective native slot/binding/range/remap limits, split AddPass. Admission fails before callbacks or native table writes. Built-in Drawing2D prepares bounded pass segments at known command boundaries; arbitrary custom Record callbacks are never replayed or transparently split.
-
 - Sampled shader-read UseTexture admits the default view. UseTexture(texture, viewDesc, TextureState.Sampled, scope) admits an exact view. Attachment/copy-only declarations do not create sampled bindings.
-- Whole-buffer shader declarations admit the whole range. UseBuffer(buffer, offset, count, scope) and UseShaderDataBuffer(buffer, offset, count, scope) admit exact element ranges. Shader read/write permission comes from scope, not a duplicate registration argument. Copy-only/upload uses do not consume shader bindings.
+- UseBuffer／UseShaderDataBufferのoffset／countは具体化する登録範囲を指定します。Graphの検証ONの許可判定はallocationとaccess単位であり、登録範囲の完全一致とは分離します。copy-only／upload宣言はshader bindingを作りません。
 - UseSampler(desc) declares a graph-owned immutable sampler; UseSampler(sampler) declares a borrowed identity. Samplers create neither GPU barriers nor write roots. GetGpuRef accepts the same desc or object key.
 - Distinct views/ranges retain their exact identities, while hazards and culling remain conservatively allocation-wide. GetGpuRef only looks up admitted keys during the declaring callback; it cannot append slots or widen access.
 
-SetArguments(in arguments) invokes the ordinary codec once through the selected backend’s internal IShaderValueWriter and fixes the Set-time value. Vulkan/D3D12 record native constants before Set returns using a cleared bounded stack span; Wgpu/Browser keep existing backend-private uniform owners. The same backend writer serves typed CopyFrom; it owns bounds, position and cleared stack-local 16-byte encoding and writes directly to storage, not through a Shared encoding callback. The reference-only Graph preparation hook below is unchanged and is not a codec/encoding callback. Graph caches one PrepareArguments delegate per graph encoder, installs it through existing native IRenderEncoder/IComputeEncoder.SetArgumentValidation only around ordinary SetArguments, and clears it in try/finally and before End. RenderGraphContext.SelectArguments delegates root checks to GraphShaderResourceOwner.SelectArguments: each reference must fit the pass’s existing allowed native resource identity, byte offset/size and access. BindResources automatically selects the native table before publishing the new root. EnsureActive rejects reentrant End, nested Set and pipeline mutation while SetArguments is active. There is no public Graph SetArgumentTable; native manual SetArgumentTable remains available. No numeric snapshot or legacy fallback is used. Numeric bytes remain frozen until another successful selection. Failed encoding/schema/preparation emits no native constants and preserves the old selection and original exception. All managed preparation precedes native emission; issued void driver commands and device failure are not rollbackable. Switching pipelines requires a new selection unless switching back before another successful SetArguments; there is one last selection, not a per-pipeline cache. Numeric-only arguments and argument-free programs need no dummy resource declaration.
-
-Preparation returns the single detached Action cached per prepared pass. It captures only an immutable allowed array, never the owner, context, pass or original input. ShaderRootArguments retains it; every native Draw/Dispatch refreshes the complete root/transitive reference set through its latest command-local CopyFrom/CopyBuffer metadata overlay and checks it once against the same native resource/range/access permissions. Numeric bytes are not snapshotted or re-encoded. Metadata owners and collections, Wgpu/Browser uniform payloads, execute-time bindings/descriptor heaps and cached delegates still allocate; Browser interop still performs span copies. This does not claim zero allocation, zero GPU copy or new measured performance. A failed admission blocks native recording; it does not promise rollback of CPU state.
-
-This minimal hook is needed even with device validation disabled. JoinTable can merge native table identity across passes, but that identity does not describe a pass declaration-range boundary. Sharing a table does not itself declare resource use. Graph cannot directly observe native command-local metadata, so table affinity and declared resource/range/access admission remain separate checks. Ordinary native SetArguments remains direct, with no hook allocation on the null path. IShaderRootEncoder, IShaderArgumentScope, GraphRootArgumentScope and the nested ReferenceAdmission class are removed; no new public types, friend access, InternalsVisibleTo or Graph copy-overlay proxy are added.
-
-Every execution validates the pass generation, native table and complete root/transitive reference set. Shader-data producer/copy/consumer ranges keep encoded table identities coherent without moving native capture earlier than ordinary command-local transfer semantics. Each pass's own binding budget remains independent; connected data that cannot share a representable slot/remap table is rejected rather than silently repacked. External already-encoded table references are not automatically migrated.
+各実行のpass世代とnative tableの通常契約は維持します。root／buffer全体の推移的依存の照合は検証ONだけで行います。選択table全体の登録がnative上限へ収まらなければ拒否し、外部の符号化済み参照を暗黙に移動しません。
 
 Actual BeginRenderPass attachments must match declared roles/access and cannot contain duplicates. Capacity preflight conservatively reserves all color attachments declared by the pass. Draw, DrawIndexed, both indirect variants and compute Dispatch/DispatchIndirect retain ordinary interface signatures and defaults. End/callback guards and caller-owned submission/completion are unchanged.
 
@@ -215,15 +207,14 @@ Graph admission and metadata are root-transport-neutral. Vulkan/D3D12 record nat
 push/root constants during Set, after Complete, optional diagnostics, preparation,
 metadata creation. A cleared bounded stack span holds
 ceil(wireSize/4) words until the driver command buffer copies them; it is not
-the final payload owner. Draw/Dispatch refresh references/admission only and never
+the final payload owner. 検証ONだけがDraw／Dispatchで依存を更新し、全modeで数値rootを再送しません。
+Draw/Dispatch never
 re-emit numeric roots. No numeric CPU heap arrays, ArrayPool rentals, per-Set GPU
 uniform/CBV or oversized-root fallback remain. Shared retains only immutable root/reference/admission metadata without storage,
 Allocate, Seal, Dispose or IDisposable; no replacement public storage type is added.
 Wgpu/Browser retain existing private concrete uniform owners through command
 KeepBinding until GPU release. Vulkan/D3D12 do not KeepBinding root metadata at Set.
-Recorded native bindings retain readonly ShaderBindingDependencies through Dispose
-with GC.KeepAlive, preserving root metadata and all resource/table identities for
-recorded GPU use; unused metadata need not survive reselection.
+記録済みbindingは全登録とtable identityを保持し、検証ONだけで依存revisionも保持します。
 Set-time capacity checks reject before
 allocation/publication, preserving the previous selection. Mandatory artifact
 preflight is separate ABI safety, active without validation tracking: Vulkan checks
@@ -245,14 +236,62 @@ raw command-buffer or pipeline disposal before native use. Host failure preserve
 the old root selection, but cannot undo caller-requested resource disposal, table
 autobinding, or already-issued driver commands.
 
+## 選択table全体のbindingと任意の依存検証
+
+bindingは選択したArgumentTableの書き込み済み登録すべてから構築します。capacityの未登録holeはentryではありません。Vulkanは全texture／sampler登録をdescriptorへ投影し、buffer参照は保存済みGPU addressへoffsetを加えてinline符号化します。Direct3D12は全texture／sampler／ReadOnly SRV／ReadWrite UAV登録を投影し、各上限128／16／64／64を適用します。Wgpu／Browserは全登録から有限のbinding poolとremapを構築し、WGSLの個数はcapacityではなく実際の書き込み済み登録を基にします。native binding数・storage範囲・remap容量へ収まらなければ明確に拒否し、巨大な無効binding、追加feature・package・pool・cacheで回避しません。rootなしのshaderも明示選択tableの全登録をbindし、Wgpuは未使用のroot uniform binding 8を省略します。
+
+全登録をbinding可能にすることは、全登録をGPU使用済みとして記録することではありません。backend-privateな登録・remapは検証OFFでも必要な機能状態ですが、同期の所有権や使用hazardを追加しません。resource寿命とCPU／GPU同期は利用者が管理します。
+
+Graphのbarrier・依存順・cullingは、必要なresourceの正確で完全なpass宣言だけを使い、従来どおりallocation全体を保守的に同期します。検証OFFでは宣言の真実性・完全性が利用者の事前条件です。root走査、依存query、準備hook、許可集合、admission callbackの確保を行いません。table共有だけでは使用宣言になりません。
+
+検証ONの場合だけ、Graphはrootとbuffer全体の推移的依存を、buffer allocationまたはtextureの元imageを正規化したresource object identityと宣言read／write権限の合併で照合します。native handle値の衝突判定、要素・byte範囲・view・callback取得元による許可判定は行いません。同じbufferの別宣言範囲から保存した参照も許可されますが、未宣言の別resourceとread-only宣言に対するReadWrite参照は拒否します。
+
+GetGpuRefの具体化はこの粗い許可判定とは別です。要求offset／countと一致する登録を選び、単一要素なら既存登録からGetElementで導出できます。未登録の複数要素範囲に、より広いCountの参照を返しません。新しいslice APIや自動dirty trackingは追加しません。
+
+## buffer全体の読み取り専用依存query
+
+共通境界はIShaderDataSource.TryGetDependenciesだけです。ReadReferences(index)、SetTransferredReferences、SharedのShaderDataTransferStateおよびShaderBindingDependencies.Elementsは削除し、共通の書き込みAPIは設けません。
+
+```csharp
+using System.Diagnostics.CodeAnalysis;
+using Lumyte.Graphics.Abstractions;
+
+// IShaderDataSourceの宣言抜粋。手書きbackendも実装する。
+public interface IShaderDataSource
+{
+    bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies);
+}
+```
+
+既存の有効なsourceに対する呼び出し例です。
+
+```csharp
+// falseを既知の空集合として扱わない。
+if (source.TryGetDependencies(out IShaderReferenceMetadata? dependencies))
+{
+    foreach (IShaderReference reference in dependencies.References)
+    {
+        // 追跡済みのbuffer全体の依存を読み取る。
+    }
+}
+else
+{
+    // 追跡利用不可。呼び出し側が宣言と同期を保証する。
+}
+```
+
+検証OFFでは全backendが数値だけのReferenceCount = 0を含めてfalse／nullを返します。これは追跡利用不可であり、既知の空集合ではありません。登録・remapなどの非公開機能状態は残ります。検証ONではbuffer全体の不変な依存unionを返し、ReferenceCount = 0は既知の空集合としてtrueです。参照付きbufferの未初期化・失敗後の状態は無効で、queryはInvalidOperationExceptionとなり、buffer全体の明示再転送で回復します。部分転送だけでは回復しません。
+
+既知状態への部分更新は旧依存とのunionを保持でき、buffer寿命内で保守的な偽陽性が残ります。全体書き直しは現在のunionを置き換えられますが、記録済みcommandが保持する旧revisionは不変です。要素ごとの配列や毎drawの行走査は不要で、検証ONのShaderBindingDependencies.Buffersが各bufferを一回だけ訪問します。
+
+CPU CopyFromの更新はbackendが所有します。GPU copyは検証ONだけでbackend-privateなbuffer単位のcommand overlayを作り、native copy記録成功後に更新し、queue Submit成功後にだけ公開します。失敗・未送信・破棄したcommandから公開せず、隠れたreadback・待機・数値履歴も持ちません。
+
 ### 厳密な参照数とmapped batchの契約
 
-IShaderArgumentsは既定実装のない `static abstract int ReferenceCount { get; }`を必須とする。生成型は同じresourceの重複も含めた物理16-byte slot数を返し、数値だけなら0とする。手書き型もgetterやinstanceに依存しない厳密な数を宣言する。backend writerは0 <= N <= wireSize / 16を検査し、WriteReferenceの超過とCompleteの不足をmetadata／root公開前に拒否する。N > 0ではwriterが厳密な長さの非公開参照配列を持ち、immutable metadata owner自身がIReadOnlyListを実装する。mutable配列を公開せず、List、ToArrayやread-only wrapperを介さない。N = 0はbackendごとの共有empty ownerを返し、rowごとのownerを作らない。明示Captureの検査用記録とは別の経路である。
+IShaderArgumentsのstatic abstract ReferenceCountは重複も数えた物理16-byte slot数です。backend writerは全modeで0 <= N <= wireSize / 16、WriteReferenceの超過とCompleteの不足、位置・容量・型・範囲を検査します。rootの直接参照配列を収集するのは検証ONまたは利用者が明示したprepare hookがある場合だけです。それ以外はscalar countと単一の暗黙table hintだけを保持します。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
 
-native CopyFromはbatch全体のmapped upload spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書く。segmentごとのCopyBytesFromは呼ばない。BrowserではJS bufferをC# Spanとして借用できないため、一つの検査済みUint8Array viewへsegmentごとにJS.setでコピーし、finallyでviewだけを解放する。GPU bufferはUnmapしない。writer位置・残容量の検査は全modeで必須とする。
+ShaderRootArgumentsはstorageを持たない不変metadata classです。Referencesはnullableでnullは未収集を表し、Createにprepareを渡す場合は利用可能なmetadataが必須です。rootの単一table hintは自動選択を補助しますが、明示SelectedTableが優先します。異なるtableが混在すればnative Set発行前に拒否します。
 
-Validation非nullの場合だけHostWriteLeaseを確保し、codec callback中の重複raw書き込み・nested batchとMap／Unmap／Disposeを拒否する。finallyで非throwのcleanupを行い、失敗時は元の例外を維持して要求範囲のmetadataすべてをnullにする。byteの部分更新は許容する。既定OFFでは利用者が有効なmappingと並行Unmap／Disposeの同期を保証し、追加flag・lock・待機・pinは設けない。検証OFFで無効なpointerへのアクセスを起こす試験は行わない。
+native CopyFromはbatch全体のmapped spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書きます。Browserは一つの検査済みUint8Array viewへJS.setでコピーし、finallyでviewだけを解放します。検証ONだけHostWriteLeaseで再入書き込み・Map／Unmap／Disposeを診断します。失敗時は部分byte更新を許し、追跡buffer全体を無効にして元例外を保持します。OFFでは利用者がmappingと寿命・並行操作を保証し、追加lock・待機・pinは設けず、無効pointerを実行する試験もしません。
 
-Vulkanは必要なaddress usage／allocation flagsを持つbufferの作成・bind時にbase addressを一度保存し、各参照でchecked offsetを加算する。D3D12 native bufferも作成時のaddressを保存し、index／indirectも保存fieldを使用する。参照ごとのdriver queryやglobal cacheは設けない。Graphの宣言照合、native root即時定数、Wgpu／Browserの非公開uniform ownerとdescriptor pool／cacheは変更しない。N > 0の配列とowner、bufferごとのmetadata配列、実行時binding確保は残るため、全体のzero allocation／zero copyや未測定の性能向上を保証しない。
-
-whole-table変更とValidation OFF時のGraph BufferTracking除去は、この三点のCopyFrom変更範囲に含めません。既存の宣言照合は維持します。性能比較を行う場合の固定baselineは81949であり、過去の測定値を今回の結果として読み替えません。
+VulkanとD3D12はbuffer作成時の保存済みaddressへchecked offsetを加え、参照ごとのdriver queryやglobal cacheを作りません。native root即時定数、固定signature／stage、pipeline・End・callback後の再検査は継続します。残るbinding確保やBrowserコピーを含めzero allocation／zero copyは保証しません。c1bdf69以前の固定checkpoint測定はこの全table・任意追跡方式の性能結果ではありません。

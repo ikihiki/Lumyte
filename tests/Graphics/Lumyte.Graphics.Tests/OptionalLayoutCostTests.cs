@@ -43,7 +43,7 @@ public sealed class OptionalLayoutCostTests
         using TestRootOwner root = TestShaderTransfer.CreateUnmanaged(in value, "arguments", "PlainValue", size => new TestRootStorage(size));
         var dependencies = ShaderBindingDependencies.Collect(root.Metadata, null);
         var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [32], "not JSON");
-        var data = new ShaderBindingData(dependencies, target, new DeviceCaps { MaxUniformBuffersPerStage = 1 });
+        var data = new ShaderBindingData([], target, new DeviceCaps { MaxUniformBuffersPerStage = 1 });
 
         Assert.Equal(4, dependencies.Arguments.WireSize);
         TestRootStorage storage = Assert.IsType<TestRootStorage>(root.Storage);

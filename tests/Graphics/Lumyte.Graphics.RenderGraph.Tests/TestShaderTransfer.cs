@@ -27,9 +27,9 @@ internal static class TestShaderTransfer
         ITestShaderRootStorage storage = Allocate(size, factory);
         try
         {
-            var writer = new TestShaderValueWriter<TestShaderRootDestination>(new(storage), size, encode, metadataFactory, diagnostic);
+            var writer = new TestShaderValueWriter<TestShaderRootDestination>(new(storage), size, encode, metadataFactory, diagnostic, prepare != null || diagnostic != null);
             value.Write(ref writer);
-            IShaderReferenceMetadata references = writer.Complete();
+            IShaderReferenceMetadata? references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, T.TransferFields, name);
             return new(storage, ShaderRootArguments.Create(root, name, size, references, prepare));
         }
@@ -59,9 +59,9 @@ internal static class TestShaderTransfer
         ITestShaderRootStorage storage = Allocate(size, factory);
         try
         {
-            var writer = new TestShaderValueWriter<TestShaderRootDestination>(new(storage), size, encode ?? RejectReference, metadataFactory, diagnostic);
+            var writer = new TestShaderValueWriter<TestShaderRootDestination>(new(storage), size, encode ?? RejectReference, metadataFactory, diagnostic, prepare != null || diagnostic != null);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata references = writer.Complete();
+            IShaderReferenceMetadata? references = writer.Complete();
             diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
             diagnostic?.ValidateReferenceCount(0);
             return new(storage, ShaderRootArguments.Create(rootParameter, name, size, references, prepare));

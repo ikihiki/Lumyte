@@ -116,15 +116,28 @@ internal sealed class GraphBindingLookup
     {
         context.EnsureActive();
         _owner.ValidateLookup(Core, context.Pass);
+        ArgumentOutOfRangeException.ThrowIfZero(count);
+
+        // Lookup materializes the exact requested range; coarse allocation/access validation is separate.
+        // Cached references may be admitted outside this pass's declared ranges, but lookup must not widen Count.
         foreach ((ResourceKey key, object? reference) in _references)
         {
-            if (ReferenceEquals(key.Resource, buffer) && key.Offset == offset && key.Count == count && reference is IGpuRef<T> typed)
+            if (ReferenceEquals(key.Resource, buffer) && reference is IGpuRef<T> typed)
             {
-                return typed;
+                if (key.Offset == offset && key.Count == count)
+                {
+                    return typed;
+                }
+
+                if (count == 1 && offset >= key.Offset && offset - key.Offset < typed.Count)
+                {
+                    return typed.GetElement(offset - key.Offset);
+                }
             }
         }
 
-        throw new ArgumentException("Declare this exact typed buffer range and shader access on the pass.");
+        // GetElement can derive a single element, but no range API can materialize an unregistered multi-element subset.
+        throw new ArgumentException("No shader registration was found for this exact typed buffer offset/count. Declare the requested range and shader access on the pass before compilation.");
     }
 
     private bool Add(ResourceKey key)

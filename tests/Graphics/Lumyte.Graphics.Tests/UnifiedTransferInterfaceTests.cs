@@ -61,7 +61,7 @@ public sealed class UnifiedTransferInterfaceTests
             }
 
             await CheckAsync(device, uniform, buffer);
-            await CheckMiddleElementAsync(device, buffer);
+            await CheckMiddleElementAsync(device, buffer, validation);
         }
     }
 
@@ -80,7 +80,7 @@ public sealed class UnifiedTransferInterfaceTests
             }
 
             await CheckAsync(device, uniform, buffer);
-            await CheckMiddleElementAsync(device, buffer);
+            await CheckMiddleElementAsync(device, buffer, validation);
         }
     }
 
@@ -184,7 +184,7 @@ public sealed class UnifiedTransferInterfaceTests
         await CheckGraphAutomaticBindingAsync(device, uniformPipeline);
     }
 
-    private static async Task CheckMiddleElementAsync(IGraphicDevice device, ShaderArtifact artifact)
+    private static async Task CheckMiddleElementAsync(IGraphicDevice device, ShaderArtifact artifact, bool validation)
     {
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
@@ -210,11 +210,10 @@ public sealed class UnifiedTransferInterfaceTests
         }
 
         var destinationMetadata = (IShaderDataSource)data;
-        IShaderReferenceMetadata destinationFirst = destinationMetadata.ReadReferences(0);
-        IShaderReferenceMetadata destinationLast = destinationMetadata.ReadReferences(2);
+        IShaderReferenceMetadata? destinationBefore = QueryDependencies(destinationMetadata, validation);
         var uploadMetadata = (IShaderDataSource)upload;
-        IShaderReferenceMetadata? first = uploadMetadata.ReadReferences(0);
-        IShaderReferenceMetadata? last = uploadMetadata.ReadReferences(2);
+        IShaderReferenceMetadata? before = QueryDependencies(uploadMetadata, validation);
+        IShaderReference[] captured = before?.References.ToArray() ?? [];
         await upload.MapAsync();
         {
             ref UnifiedTransferValue middle = ref rows[1];
@@ -224,8 +223,15 @@ public sealed class UnifiedTransferInterfaceTests
         }
 
         upload.Unmap();
-        Assert.Same(first, uploadMetadata.ReadReferences(0));
-        Assert.Same(last, uploadMetadata.ReadReferences(2));
+        IShaderReferenceMetadata? updated = QueryDependencies(uploadMetadata, validation);
+        if (validation)
+        {
+            Assert.Equal(captured, before!.References.ToArray());
+            Assert.NotSame(before, updated);
+            Assert.All(captured, reference => Assert.Contains(reference, updated!.References));
+            Assert.Contains((IShaderReference)rows[1].Output!, updated!.References);
+        }
+
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         commands.Barrier(new ShaderDataBufferBarrierDesc<UnifiedTransferValue> { Buffer = upload.SliceElements(1, 1), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.Barrier(new ShaderDataBufferBarrierDesc<UnifiedTransferValue> { Buffer = data.SliceElements(1, 1), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
@@ -243,11 +249,13 @@ public sealed class UnifiedTransferInterfaceTests
         commands.Finish();
         using IGraphicsSubmission complete = device.Queue.Submit([commands]);
         await complete.WaitAsync();
-        Assert.Same(destinationFirst, destinationMetadata.ReadReferences(0));
-        Assert.Same(destinationLast, destinationMetadata.ReadReferences(2));
-        IShaderReference replacement = Assert.Single(destinationMetadata.ReadReferences(1).References);
-        Assert.Same(((IShaderReference)rows[1].Output!).Resource, replacement.Resource);
-        Assert.Equal(((IShaderReference)rows[1].Output!).OffsetInBytes, replacement.OffsetInBytes);
+        IShaderReferenceMetadata? transferred = QueryDependencies(destinationMetadata, validation);
+        if (validation)
+        {
+            Assert.Equal(captured, destinationBefore!.References.ToArray());
+            Assert.All(updated!.References, reference => Assert.Contains(reference, transferred!.References));
+        }
+
         await readback.MapAsync();
         uint[] actual = new uint[4];
         readback.CopyTo(actual);
@@ -255,6 +263,21 @@ public sealed class UnifiedTransferInterfaceTests
         Assert.Equal(11u, actual[0]);
         Assert.Equal(33u, actual[2]);
         Assert.Equal(77u, actual[3]);
+    }
+
+    private static IShaderReferenceMetadata? QueryDependencies(IShaderDataSource source, bool validation)
+    {
+        Assert.Equal(validation, source.TryGetDependencies(out IShaderReferenceMetadata? dependencies));
+        if (validation)
+        {
+            Assert.NotNull(dependencies);
+        }
+        else
+        {
+            Assert.Null(dependencies);
+        }
+
+        return dependencies;
     }
 
     private static async Task CheckGraphAutomaticBindingAsync(IGraphicDevice device, IGraphicsComputePipeline pipeline)

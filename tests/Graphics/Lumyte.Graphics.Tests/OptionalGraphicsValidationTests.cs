@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
 using Xunit;
@@ -178,30 +179,25 @@ public sealed class OptionalGraphicsValidationTests
         }
     }
 
-    /// <summary>Checks copy metadata mutation before submission using an entirely fake native boundary.</summary>
+    /// <summary>Checks whole-buffer metadata mutation before submission at a managed fake boundary.</summary>
     /// <param name="enabled">Whether diagnostics are enabled.</param>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void CopyRevisionChecksAreOptIn(bool enabled)
+    public void WholeBufferRevisionChecksAreOptIn(bool enabled)
     {
         var source = new FakeDataSource();
-        var destination = new FakeDataSource();
-        var state = new ShaderDataTransferState();
-        if (enabled)
-        {
-            state.EnableValidation();
-        }
-
-        state.Record(source, 0, destination, 0, 1, () => { });
+        GraphicsValidation? validation = enabled ? new() : null;
+        using var command = new FakeCommand();
+        validation?.Metadata(command, source, source.Value, write: false);
         source.Value = new ShaderDependencyMetadata(source.Value.References);
         if (enabled)
         {
-            Assert.Throws<InvalidOperationException>(state.ValidateSubmit);
+            Assert.Throws<InvalidOperationException>(() => validation!.PrepareSubmission([command]));
         }
         else
         {
-            state.ValidateSubmit();
+            validation?.PrepareSubmission([command]);
         }
     }
 
@@ -265,9 +261,11 @@ public sealed class OptionalGraphicsValidationTests
 
         public object ShaderHandle => this;
 
-        public IShaderReferenceMetadata ReadReferences(ulong index) => Value;
-
-        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value) => Value = value;
+        public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
+        {
+            dependencies = Value;
+            return true;
+        }
 
         public void ValidateAlive()
         {
@@ -279,5 +277,70 @@ public sealed class OptionalGraphicsValidationTests
         public void Dispose()
         {
         }
+    }
+
+    private sealed class FakeCommand : IGraphicsCommandBuffer
+    {
+        public CommandBufferState State { get; private set; } = CommandBufferState.Executable;
+
+        /// <summary>Rejects native buffer copies.</summary>
+        /// <param name="source">The source slice.</param>
+        /// <param name="destination">The destination slice.</param>
+        public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
+            where TSource : unmanaged
+            where TDestination : unmanaged => throw new NotSupportedException();
+
+        /// <summary>Rejects native shader-data copies.</summary>
+        /// <param name="source">The source slice.</param>
+        /// <param name="destination">The destination slice.</param>
+        public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
+            where T : struct, IShaderArguments => throw new NotSupportedException();
+
+        /// <summary>Rejects native texture copies.</summary>
+        /// <param name="source">The source region.</param>
+        /// <param name="destination">The destination region.</param>
+        public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => throw new NotSupportedException();
+
+        /// <summary>Rejects native buffer-to-texture copies.</summary>
+        /// <param name="source">The source layout.</param>
+        /// <param name="destination">The destination region.</param>
+        public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination) => throw new NotSupportedException();
+
+        /// <summary>Rejects native texture-to-buffer copies.</summary>
+        /// <param name="source">The source region.</param>
+        /// <param name="destination">The destination layout.</param>
+        public void CopyTextureToBuffer(TextureCopyRegion source, BufferTextureCopyLayout destination) => throw new NotSupportedException();
+
+        /// <summary>Rejects native barriers.</summary>
+        /// <param name="barrier">The dependency description.</param>
+        public void Barrier(MemoryBarrierDesc barrier) => throw new NotSupportedException();
+
+        /// <summary>Rejects native buffer barriers.</summary>
+        /// <param name="barrier">The dependency description.</param>
+        public void Barrier<T>(BufferBarrierDesc<T> barrier)
+            where T : unmanaged => throw new NotSupportedException();
+
+        /// <summary>Rejects native buffer barriers.</summary>
+        /// <param name="barrier">The dependency description.</param>
+        public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
+            where T : struct, IShaderArguments => throw new NotSupportedException();
+
+        /// <summary>Rejects native barriers.</summary>
+        /// <param name="barrier">The dependency description.</param>
+        public void Barrier(TextureBarrierDesc barrier) => throw new NotSupportedException();
+
+        /// <summary>Rejects native render passes.</summary>
+        /// <param name="desc">The pass description.</param>
+        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => throw new NotSupportedException();
+
+        /// <summary>Rejects native compute passes.</summary>
+        /// <param name="desc">The pass description.</param>
+        public IComputeEncoder BeginComputePass(ComputePassDesc desc) => throw new NotSupportedException();
+
+        /// <summary>Marks the fake executable.</summary>
+        public void Finish() => State = CommandBufferState.Executable;
+
+        /// <summary>Disposes the managed fake.</summary>
+        public void Dispose() => State = CommandBufferState.Disposed;
     }
 }

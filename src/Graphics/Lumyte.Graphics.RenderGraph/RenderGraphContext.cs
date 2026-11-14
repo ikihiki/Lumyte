@@ -32,6 +32,8 @@ public sealed class RenderGraphContext
 
     internal RenderGraphPass Pass { get; }
 
+    internal bool ValidationEnabled => Pass.Owner.Device?.ValidationEnabled == true;
+
     internal ShaderTarget? DeviceTarget => Pass.Owner.Device?.Caps.ShaderTarget;
 
     /// <summary>Resolves the pass's predeclared sampled image view without changing its registration plan.</summary>
@@ -254,6 +256,12 @@ public sealed class RenderGraphContext
             _encoder = null;
             _active = false;
         }
+    }
+
+    internal IReadOnlyList<ShaderResources>? DeclaredArguments(IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    {
+        EnsureActive();
+        return _plan.ShaderResourceOwner?.DeclaredArguments(Pass, outputs, graphics);
     }
 
     internal (IReadOnlyList<ShaderResources>? Resources, Action<IReadOnlyCollection<IShaderReference>>? Admit) SelectArguments(IShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)

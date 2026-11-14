@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Direct3D12.Tests;
@@ -295,14 +294,14 @@ public sealed class PartialSubmissionTests
         // Deliberately bypass native allocation. Never call Dispose on this numeric-handle command.
         var command = (Direct3D12CommandBuffer)RuntimeHelpers.GetUninitializedObject(typeof(Direct3D12CommandBuffer));
         SetField(command, "_owner", device);
-        var transfers = new ShaderDataTransferState();
         if (device.Validation is { } validation)
         {
-            transfers.ConfigureValidation(validation, command);
+            Type stateType = typeof(Direct3D12CommandBuffer).GetNestedType("CommandDependencyState", BindingFlags.NonPublic)!;
+            object dependencies = Activator.CreateInstance(stateType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, [validation, command], null)!;
+            SetField(command, "_shaderDependencies", dependencies);
             validation.Register(command, device);
         }
 
-        SetField(command, "_shaderData", transfers);
         SetField(command, "<Native>k__BackingField", (nint)10000);
         SetField(command, "<State>k__BackingField", CommandBufferState.Executable);
         return command;

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
@@ -52,11 +53,10 @@ public sealed class ArgumentTableBindingTests
     [Fact]
     public void ValueOnlyArgumentsDoNotRequireTable()
     {
-        float numeric = 1f;
-        using TestRootOwner generation = TestShaderTransfer.CreateUnmanaged(in numeric, "arguments", "Values", size => new TestRootStorage(size));
-        var captured = ShaderBindingDependencies.Collect(generation.Metadata, null);
+        var root = ShaderRootArguments.Create("arguments", "Values", 4, new ShaderDependencyMetadata([]));
+        var captured = ShaderBindingDependencies.Collect(root, null);
         Assert.Empty(captured.References);
-        Assert.Empty(captured.Elements);
+        Assert.Empty(captured.Buffers);
     }
 
     /// <summary>Checks resources reached through shader data as well as direct root references.</summary>
@@ -82,20 +82,20 @@ public sealed class ArgumentTableBindingTests
         Assert.Equal(0, data.Reads);
     }
 
-    /// <summary>References in every element of a registered range are checked.</summary>
+    /// <summary>Whole-buffer dependencies include references outside the selected element range.</summary>
     [Fact]
-    public void ForeignReferenceInLaterElementIsRejected()
+    public void ForeignReferenceOutsideSelectedRangeIsRejected()
     {
         using var selected = new Table();
         using var foreign = new Table();
         var data = new DataSource();
         data.Values[0] = new ShaderDependencyMetadata([new Reference(selected, new object())]);
         data.Values[1] = new ShaderDependencyMetadata([new Reference(foreign, new object())]);
-        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data, 2)), selected));
-        Assert.Equal(2, data.Reads);
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data)), selected));
+        Assert.Equal(1, data.Reads);
     }
 
-    /// <summary>Cycles inside the selected table terminate and capture each element once.</summary>
+    /// <summary>Cycles inside the selected table terminate and capture each whole buffer once.</summary>
     [Fact]
     public void SelectedTableCyclesAreAccepted()
     {
@@ -108,7 +108,7 @@ public sealed class ArgumentTableBindingTests
         second.Values[0] = new ShaderDependencyMetadata([a]);
         var captured = ShaderBindingDependencies.Collect(Root(a), table);
         Assert.Equal(2, captured.References.Count);
-        Assert.Equal(2, captured.Elements.Count);
+        Assert.Equal(2, captured.Buffers.Count);
         Assert.Equal(1, first.Reads);
         Assert.Equal(1, second.Reads);
     }
@@ -122,7 +122,7 @@ public sealed class ArgumentTableBindingTests
         var data = new DataSource();
         data.Values[0] = new ShaderDependencyMetadata([new Reference(selected, new object())]);
         IShaderReferenceMetadata copied = new ShaderDependencyMetadata([new Reference(foreign, new object())]);
-        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data)), selected, (_, _) => copied));
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data)), selected, _ => copied));
         Assert.Equal(0, data.Reads);
     }
 
@@ -208,7 +208,7 @@ public sealed class ArgumentTableBindingTests
         layout.ValidateArguments(root);
         var arguments = new PoolArguments<FourReferences>(values.Select(value => (IGpuRef<uint>)value.Reference!).ToArray());
         using TestRootOwner generation = TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
-        var binding = new ShaderBindingData(ShaderBindingDependencies.Collect(generation.Metadata, table), target, caps);
+        var binding = new ShaderBindingData(values.Select(value => (IShaderReference)value.Reference!).ToArray(), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
         Assert.Equal(2, binding.Writable.Count);
         Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 8)));
@@ -221,22 +221,52 @@ public sealed class ArgumentTableBindingTests
         }
     }
 
-    private static ShaderRootArguments Root(IShaderReference reference)
+    /// <summary>All written registrations bind even when absent from the root, including sparse slots.</summary>
+    [Fact]
+    public void WholeTablePackingIncludesUnreachableRegistrationsAndSlotGaps()
     {
-        var arguments = new PoolArguments<OneReference>([(IGpuRef<uint>)reference]);
-        return TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode).Metadata;
+        using var table = new Table();
+        var first = new RawSource();
+        var second = new RawSource();
+        IShaderReference[] registrations =
+        [
+            new Reference(table, first, slot: 1),
+            new Reference(table, second, slot: 5),
+            new Reference(table, second, slot: 9, access: ShaderBufferAccess.ReadWrite),
+        ];
+        var root = ShaderRootArguments.Create("arguments", "Values", 4, new ShaderDependencyMetadata([]));
+        Assert.Empty(ShaderBindingDependencies.Collect(root, table).References);
+        var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [], "not JSON");
+        var caps = new DeviceCaps { MaxStorageBufferBindingSize = 1024, MaxStorageBuffersPerStage = 8 };
+        var binding = new ShaderBindingData(registrations, target, caps);
+        Assert.Equal(2, binding.Buffers.Count);
+        Assert.Single(binding.Writable);
+        Assert.Equal(10 * 16, binding.Map.Length);
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((5 * 16) + 8)));
+        Assert.All(binding.Map.AsSpan(2 * 16, 3 * 16).ToArray(), item => Assert.Equal((byte)0, item));
+        Assert.Contains(new ShaderBufferBinding(second, 0, 16), binding.Writable.Keys);
     }
+
+    /// <summary>Unavailable dependencies are not confused with a known empty numeric buffer.</summary>
+    [Fact]
+    public void UnavailableBufferDependenciesAreRejected()
+    {
+        using var table = new Table();
+        var source = new DataSource { Tracking = false };
+        Assert.False(source.TryGetDependencies(out IShaderReferenceMetadata? dependencies));
+        Assert.Null(dependencies);
+        Assert.Throws<NotSupportedException>(() => ShaderBindingDependencies.Collect(Root(new Reference(table, source)), table));
+        Assert.Throws<NotSupportedException>(() => ShaderBindingDependencies.Collect(Root(new Reference(table, source)), table, _ => null));
+    }
+
+    private static ShaderRootArguments Root(IShaderReference reference) =>
+        ShaderRootArguments.Create("arguments", "Pools", 64, new ShaderDependencyMetadata([reference]));
 
     private static byte[] Encode(ShaderValue value)
     {
         byte[] bytes = new byte[16];
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, ((IShaderReference)value.Reference!).Slot);
         return bytes;
-    }
-
-    private readonly struct OneReference : IReferenceCount
-    {
-        public static int Count => 1;
     }
 
     private readonly struct FourReferences : IReferenceCount
@@ -331,13 +361,20 @@ public sealed class ArgumentTableBindingTests
 
         internal int Reads { get; private set; }
 
-        public IShaderReferenceMetadata ReadReferences(ulong index)
+        internal bool Tracking { get; init; } = true;
+
+        public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
         {
             Reads++;
-            return Values[index];
-        }
+            if (!Tracking)
+            {
+                dependencies = null;
+                return false;
+            }
 
-        public void SetTransferredReferences(ulong index, IShaderReferenceMetadata value) => Values[index] = value;
+            dependencies = new ShaderDependencyMetadata(Values.Values.SelectMany(value => value.References));
+            return true;
+        }
 
         public void ValidateAlive()
         {

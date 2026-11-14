@@ -20,6 +20,7 @@ public sealed partial class Drawing2DTests
     public async Task VulkanArgumentPartitionsAsync()
     {
         using var device = VulkanDevice.Create();
+        device.EnableValidation();
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -29,6 +30,7 @@ public sealed partial class Drawing2DTests
     public async Task WgpuArgumentPartitionsAsync()
     {
         using var device = WgpuDevice.Create();
+        device.EnableValidation();
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -350,7 +352,7 @@ public sealed partial class Drawing2DTests
                 Visit(new ShaderDependencyMetadata(snapshot.Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))).References, table, visited);
             }
 
-            Assert.True(nested >= 10, "Every sampled image must be reached through shader-data metadata.");
+            Assert.True(nested > 0, "Sampled images must be reached through whole-buffer shader-data metadata.");
             Assert.All(views, view => Assert.Contains(view, sampled));
 
             void Visit(IReadOnlyList<IShaderReference> values, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
@@ -368,15 +370,9 @@ public sealed partial class Drawing2DTests
                         continue;
                     }
 
-                    ulong stride = checked((ulong)source.Layout.Size);
-                    Assert.Equal(0ul, reference.OffsetInBytes % stride);
-                    Assert.Equal(0ul, reference.SizeInBytes % stride);
-                    for (ulong offset = 0; offset < reference.SizeInBytes; offset += stride)
-                    {
-                        IShaderReferenceMetadata child = source.ReadReferences((reference.OffsetInBytes + offset) / stride);
-                        nested++;
-                        Visit(child.References, table, visited);
-                    }
+                    Assert.True(source.TryGetDependencies(out IShaderReferenceMetadata? child));
+                    nested++;
+                    Visit(child.References, table, visited);
                 }
             }
         }

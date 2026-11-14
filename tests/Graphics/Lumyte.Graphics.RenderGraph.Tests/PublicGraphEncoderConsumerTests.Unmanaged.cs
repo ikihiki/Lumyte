@@ -12,7 +12,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void OrdinaryUnmanagedGraphRootNeedsNoCodec()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var pipeline = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute));
         graph.AddPass("plain numeric", context =>
         {

@@ -64,7 +64,7 @@ public sealed class ExplicitTransferBoundaryTests
                 device.EnableValidation();
             }
 
-            await CheckAsync(device, artifact);
+            await CheckAsync(device, artifact, validation);
         }
     }
 
@@ -82,14 +82,29 @@ public sealed class ExplicitTransferBoundaryTests
                 device.EnableValidation();
             }
 
-            await CheckAsync(device, artifact);
+            await CheckAsync(device, artifact, validation);
         }
     }
 
     private static Task<ShaderArtifact> CompileAsync(ShaderTarget target)
         => new SlangShaderCompiler().CompileAsync(new() { Source = Source, Stage = ShaderStage.Compute, Target = target });
 
-    private static async Task CheckAsync(IGraphicDevice device, ShaderArtifact artifact)
+    private static IShaderReferenceMetadata? QueryDependencies(IShaderDataSource source, bool validation)
+    {
+        Assert.Equal(validation, source.TryGetDependencies(out IShaderReferenceMetadata? dependencies));
+        if (validation)
+        {
+            Assert.NotNull(dependencies);
+        }
+        else
+        {
+            Assert.Null(dependencies);
+        }
+
+        return dependencies;
+    }
+
+    private static async Task CheckAsync(IGraphicDevice device, ShaderArtifact artifact, bool validation)
     {
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
@@ -143,11 +158,23 @@ public sealed class ExplicitTransferBoundaryTests
         values[0].Target = b;
         await MapAndCopyAsync();
 
+        IShaderReferenceMetadata? capturedDependencies = QueryDependencies((IShaderDataSource)typedUpload, validation);
+        if (validation)
+        {
+            Assert.Same(b, Assert.Single(capturedDependencies!.References));
+        }
+
         // CPU mutation after CopyFrom must affect neither mapped bytes nor reference metadata.
         numbers[0] = 999;
         numbers[1] = 1000;
         values[0].Value = 999;
         values[0].Target = a;
+        Assert.Same(capturedDependencies, QueryDependencies((IShaderDataSource)typedUpload, validation));
+        if (validation)
+        {
+            Assert.Same(b, Assert.Single(capturedDependencies!.References));
+        }
+
         numericUpload.Unmap();
         typedUpload.Unmap();
         await DispatchAndCheckAsync([7, 8, 7, 200], reuse: false);
@@ -159,15 +186,24 @@ public sealed class ExplicitTransferBoundaryTests
         await DispatchAndCheckAsync([999, 1000, 999, 100], reuse: true);
 
         // A failed reference-bearing write may change mapped bytes, but cannot leave
-        // old metadata claiming that those bytes still form a coherent element.
+        // old metadata claiming that the whole buffer still has known dependencies.
         await typedUpload.MapAsync();
         values[0].Value = 1001;
         values[0].Target = null;
         Assert.Throws<ArgumentException>(() => typedUpload.CopyFrom(values));
-        Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)typedUpload).ReadReferences(0));
-        typedUpload.Unmap();
-        using (IGraphicsCommandBuffer rejected = device.CreateCommandBuffer(new()))
+        if (validation)
         {
+            Assert.Throws<InvalidOperationException>(() => ((IShaderDataSource)typedUpload).TryGetDependencies(out _));
+        }
+        else
+        {
+            QueryDependencies((IShaderDataSource)typedUpload, validation);
+        }
+
+        typedUpload.Unmap();
+        if (validation)
+        {
+            using IGraphicsCommandBuffer rejected = device.CreateCommandBuffer(new());
             Assert.Throws<InvalidOperationException>(() => rejected.CopyBuffer(typedSource, typedDestination));
         }
 

@@ -197,7 +197,7 @@ public sealed class GraphShaderResourceExecutionTests
     [Fact]
     public void BaseTypedSiblingStillRejectsUndeclaredNativeBuffer()
     {
-        var device = new ProfilingDevice();
+        var device = new ProfilingDevice { ValidationEnabled = true };
         using var graph = new Graph(device);
         using IGraphicsBuffer<uint> native = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead });
         ShaderResources original = graph.CreatePreparedPayload();

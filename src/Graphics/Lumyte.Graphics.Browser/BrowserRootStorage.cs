@@ -27,6 +27,8 @@ internal sealed class BrowserRootStorage : IDisposable
 
     internal ShaderRootArguments Arguments => _arguments ?? throw new InvalidOperationException("Root arguments are not initialized.");
 
+    internal BrowserArgumentTable? ImplicitTable { get; private set; }
+
     internal int Size { get; }
 
     internal JSObject Native
@@ -55,7 +57,7 @@ internal sealed class BrowserRootStorage : IDisposable
         _native.Dispose();
     }
 
-    internal void Initialize(ShaderRootArguments arguments)
+    internal void Initialize(ShaderRootArguments arguments, BrowserArgumentTable? table)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_arguments != null)
@@ -64,6 +66,7 @@ internal sealed class BrowserRootStorage : IDisposable
         }
 
         _arguments = arguments;
+        ImplicitTable = table;
     }
 
     internal void Write(ReadOnlySpan<byte> bytes, int offset)

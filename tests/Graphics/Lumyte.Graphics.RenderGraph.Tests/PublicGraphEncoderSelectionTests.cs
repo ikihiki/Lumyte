@@ -117,7 +117,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void RenderSelectionFreezesValuesAndPreservesLastValidSelection()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var other = new PublicGraphConsumerPipeline(artifact);
@@ -173,7 +173,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ComputeSelectionFreezesValuesForDirectAndIndirectDispatch()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         using var other = new PublicGraphConsumerComputePipeline(artifact);
@@ -207,7 +207,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ArgumentFreeProgramsExecuteWithoutSetArguments()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var graphics = new PublicGraphConsumerPipeline(Artifact(ShaderStage.Vertex, hasRoot: false));
         using var compute = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute, hasRoot: false));
         using var image = new TestTexture();
@@ -236,7 +236,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void NativeSetFailurePreservesPreviousResourceSelection()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         var first = new ConsumerArguments(1f);

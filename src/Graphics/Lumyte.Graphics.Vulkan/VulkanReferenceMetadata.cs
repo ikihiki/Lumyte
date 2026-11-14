@@ -31,5 +31,17 @@ internal sealed class VulkanReferenceMetadata : IShaderReferenceMetadata, IReadO
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+    internal static IShaderReferenceMetadata Merge(IShaderReferenceMetadata first, IShaderReferenceMetadata second)
+    {
+        if (ReferenceEquals(first, second))
+        {
+            return first;
+        }
+
+        var references = new HashSet<IShaderReference>(first.References);
+        references.UnionWith(second.References);
+        return TakeOwnership(references.ToArray());
+    }
+
     internal static IShaderReferenceMetadata TakeOwnership(IShaderReference[] references) => references.Length == 0 ? _empty : new VulkanReferenceMetadata(references);
 }

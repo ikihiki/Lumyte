@@ -13,13 +13,16 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
     private readonly JSObject? _upload;
     private readonly int _baseOffset;
     private readonly ShaderDataLayout? _diagnostic;
+    private readonly int _expectedCount;
+    private readonly HashSet<IShaderReference>? _collector;
     private IShaderReference[]? _dependencies;
+    private BrowserArgumentTable? _table;
     private int _position;
     private int _referenceCount;
     private bool _written;
     private bool _completed;
 
-    internal BrowserShaderValueWriter(BrowserDevice owner, int size, BrowserRootStorage? root, JSObject? upload, int baseOffset, int expectedCount, ShaderDataLayout? diagnostic)
+    internal BrowserShaderValueWriter(BrowserDevice owner, int size, BrowserRootStorage? root, JSObject? upload, int baseOffset, int expectedCount, ShaderDataLayout? diagnostic, bool collect = false, HashSet<IShaderReference>? collector = null)
     {
         this = default;
         ValidateExpectedCount(size, expectedCount);
@@ -29,8 +32,12 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
         _upload = upload;
         _baseOffset = baseOffset;
         _diagnostic = diagnostic;
-        _dependencies = expectedCount == 0 ? Array.Empty<IShaderReference>() : new IShaderReference[expectedCount];
+        _expectedCount = expectedCount;
+        _collector = collector;
+        _dependencies = collect ? (expectedCount == 0 ? Array.Empty<IShaderReference>() : new IShaderReference[expectedCount]) : null;
     }
+
+    internal BrowserArgumentTable? Table => _table;
 
     public void WriteValue(scoped ReadOnlySpan<byte> value)
     {
@@ -51,7 +58,7 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
     public void WriteReference<T>(IGpuRef<T>? reference)
     {
         ValidateWrite(16);
-        if (_referenceCount >= _dependencies!.Length)
+        if (_referenceCount >= _expectedCount)
         {
             throw new InvalidOperationException("The codec exceeds its declared reference count.");
         }
@@ -68,6 +75,17 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
         }
 
         table.ThrowIfDisposed();
+        if (_owner.Validation != null)
+        {
+            dependency.ValidateRegistration();
+        }
+
+        if (_table != null && !ReferenceEquals(_table, table))
+        {
+            throw new ArgumentException("Shader references must use one argument table.", nameof(reference));
+        }
+
+        _table = table;
         Span<byte> wire = stackalloc byte[16];
         wire.Clear();
         if (dependency.Resource is IShaderDataSource data && data.Memory != MemoryPreference.Automatic)
@@ -80,7 +98,13 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
         BinaryPrimitives.WriteUInt32LittleEndian(wire[4..], checked((uint)(dependency.OffsetInBytes - dependency.RegistrationOffsetInBytes)));
         BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], checked((uint)dependency.Count));
         WriteValue(wire);
-        _dependencies![_referenceCount++] = dependency;
+        if (_dependencies != null)
+        {
+            _dependencies[_referenceCount] = dependency;
+        }
+
+        _collector?.Add(dependency);
+        _referenceCount++;
     }
 
     internal static void ValidateExpectedCount(int size, int expectedCount)
@@ -91,18 +115,18 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
         }
     }
 
-    internal IShaderReferenceMetadata Complete()
+    internal IShaderReferenceMetadata? Complete()
     {
-        if (!_written || _completed || _position != _size || _referenceCount != _dependencies!.Length)
+        if (!_written || _completed || _position != _size || _referenceCount != _expectedCount)
         {
             throw new InvalidOperationException("The codec must write exactly the complete C# wire value.");
         }
 
         _completed = true;
         _diagnostic?.ValidateReferenceCount(_referenceCount);
-        IShaderReference[] dependencies = _dependencies!;
+        IShaderReference[]? dependencies = _dependencies;
         _dependencies = null;
-        return BrowserReferenceMetadata.TakeOwnership(dependencies);
+        return dependencies == null ? null : BrowserReferenceMetadata.TakeOwnership(dependencies);
     }
 
     private readonly void ValidateWrite(int length)

@@ -6,16 +6,22 @@ namespace Lumyte.Graphics.Browser;
 internal sealed class BrowserShaderBinding : IDisposable
 {
     private readonly JSObject _native;
+    private readonly ShaderBindingData _data;
+    private readonly BrowserArgumentTable? _table;
+    private readonly IReadOnlyCollection<IShaderReference> _registrations;
 
-    internal BrowserShaderBinding(BrowserDevice owner, ShaderBindingData data, BrowserRootStorage rootStorage, bool compute = false)
+    internal BrowserShaderBinding(BrowserDevice owner, ShaderBindingData data, BrowserRootStorage? rootStorage, BrowserArgumentTable? table, IReadOnlyCollection<IShaderReference> registrations, bool compute = false)
     {
-        if (owner.Caps.MaxUniformBuffersPerStage < 1)
+        _data = data;
+        _table = table;
+        _registrations = registrations;
+        if (rootStorage != null && owner.Caps.MaxUniformBuffersPerStage < 1)
         {
             throw new NotSupportedException("Root uniform emulation exceeds the enabled per-stage binding limits.");
         }
 
-        rootStorage.Seal();
-        _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key, compute, rootStorage.Native, data.Map);
+        rootStorage?.Seal();
+        _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key + (rootStorage == null ? ":0" : ":1"), compute, rootStorage?.Native, data.Map);
         try
         {
             foreach ((object resource, int index) in data.Textures)

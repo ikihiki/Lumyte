@@ -19,7 +19,7 @@ internal sealed class TestRootOwner(ITestShaderRootStorage storage, ShaderRootAr
 
     internal int WireSize => Metadata.WireSize;
 
-    internal IShaderReferenceMetadata References => Metadata.References;
+    internal IShaderReferenceMetadata? References => Metadata.References;
 
     public void Dispose()
     {

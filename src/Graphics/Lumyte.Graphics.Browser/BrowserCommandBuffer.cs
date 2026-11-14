@@ -4,7 +4,7 @@ namespace Lumyte.Graphics.Browser;
 
 internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
 {
-    private readonly ShaderDataTransferState _shaderData = new();
+    private readonly CommandDependencyState? _shaderDependencies;
     private readonly List<IDisposable> _bindings = [];
     private readonly BrowserDevice _owner;
     private object? _active;
@@ -14,7 +14,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         _owner = owner;
         if (owner.Validation != null)
         {
-            _shaderData.ConfigureValidation(owner.Validation, this);
+            _shaderDependencies = new CommandDependencyState(owner.Validation, this);
         }
 
         Initialize();
@@ -23,8 +23,6 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     public CommandBufferState State { get; private set; } = CommandBufferState.Recording;
 
     internal BrowserDevice Owner => _owner;
-
-    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
         where T : struct, IShaderArguments
@@ -36,7 +34,13 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+        IShaderReferenceMetadata? copied = _shaderDependencies?.PrepareCopy(src, dst, destination.Offset == 0 && destination.Count == dst.Count);
+        CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes)));
+        if (copied != null)
+        {
+            _shaderDependencies!.InstallCopy(dst, copied);
+        }
+
         validationRecording?.Commit();
     }
 
@@ -290,13 +294,13 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         State = CommandBufferState.Disposed;
     }
 
-    internal IShaderReferenceMetadata ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.ReadReferences(source, index);
+    internal IShaderReferenceMetadata? ReadShaderDependencies(IShaderDataSource source) => _shaderDependencies?.Read(source);
 
     internal void ValidateSubmit()
     {
         if (_owner.Validation != null)
         {
-            _shaderData.ValidateSubmit();
+            _shaderDependencies!.ValidateSubmit();
         }
 
         if (State != CommandBufferState.Executable)
@@ -308,7 +312,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     internal void MarkSubmitted()
     {
         _owner.Validation?.Submit(this);
-        _shaderData.Publish();
+        _shaderDependencies?.Publish();
         State = CommandBufferState.Submitted;
     }
 
@@ -371,6 +375,76 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
         if (State != CommandBufferState.Recording || !ReferenceEquals(_active, pass))
         {
             throw new InvalidOperationException("This pass is not active.");
+        }
+    }
+
+    private sealed class CommandDependencyState(GraphicsValidation validation, BrowserCommandBuffer command)
+    {
+        private readonly Dictionary<IShaderDataSource, IShaderReferenceMetadata> _overlay = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<IShaderDataSource, IShaderReferenceMetadata> _captured = new(ReferenceEqualityComparer.Instance);
+
+        internal IShaderReferenceMetadata Read(IShaderDataSource source)
+        {
+            IShaderReferenceMetadata value;
+            if (_overlay.TryGetValue(source, out IShaderReferenceMetadata? pending))
+            {
+                value = pending;
+            }
+            else
+            {
+                if (!source.TryGetDependencies(out IShaderReferenceMetadata? current))
+                {
+                    throw new NotSupportedException("Shader dependencies unavailable.");
+                }
+
+                if (_captured.TryGetValue(source, out IShaderReferenceMetadata? previous) && !ReferenceEquals(previous, current))
+                {
+                    throw new InvalidOperationException("Shader dependencies changed during command recording.");
+                }
+
+                _captured[source] = current;
+                value = current;
+            }
+
+            validation.Metadata(command, source, value, false);
+            return value;
+        }
+
+        internal IShaderReferenceMetadata PrepareCopy(IShaderDataSource source, IShaderDataSource destination, bool full)
+        {
+            IShaderReferenceMetadata copied = Read(source);
+            if (full)
+            {
+                return copied;
+            }
+
+            // Partial writes cannot restore an unknown destination.
+            return BrowserReferenceMetadata.Merge(Read(destination), copied);
+        }
+
+        internal void InstallCopy(IShaderDataSource destination, IShaderReferenceMetadata dependencies)
+        {
+            validation.Metadata(command, destination, dependencies, true);
+            _overlay[destination] = dependencies;
+        }
+
+        internal void ValidateSubmit()
+        {
+            foreach (KeyValuePair<IShaderDataSource, IShaderReferenceMetadata> entry in _captured)
+            {
+                if (!entry.Key.TryGetDependencies(out IShaderReferenceMetadata? current) || !ReferenceEquals(current, entry.Value))
+                {
+                    throw new InvalidOperationException("Shader dependencies changed before submission.");
+                }
+            }
+        }
+
+        internal void Publish()
+        {
+            foreach (KeyValuePair<IShaderDataSource, IShaderReferenceMetadata> entry in _overlay)
+            {
+                ((IBrowserDependencyStorage)entry.Key).PublishDependencies(entry.Value);
+            }
         }
     }
 }

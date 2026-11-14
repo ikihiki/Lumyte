@@ -4,6 +4,63 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## 全table bindingと検証時だけのbuffer依存query（2026-11-15）
+
+三改善checkpoint c1bdf69a972e5b0f01453d920396c736ab1a64c9とは別に、後続の明示承認に従って依存管理を変更した。
+選択ArgumentTableの現在登録済みentryを全てbinding対象とし、rootから到達した参照だけには限定しない。
+capacityの未登録穴をentryとは数えず、全てbindしたことを全てGPU使用したこととも扱わない。
+
+- Vulkanは全登録texture／samplerをdescriptorへ反映し、bufferは従来のcached address＋offsetで利用する。
+- D3D12は全登録texture／sampler／RO SRV／RW UAVを反映する。既存固定native上限を維持し、高いslot等は明示拒否する。
+- Wgpu／Browserは全登録をfinite binding shapeとremapへ投影する。実登録数・range・remap byte数がdevice limitを超えれば例外。
+  rootless shaderも選択tableをbindし、不要なuniform binding8は作らない。descriptor pool／binding cacheの拡張はしない。
+- explicit tableとrootのimplicit table hintを分離する。table A→B選択後にroot BをSetでき、古いrootのまま実行すれば拒否する。
+  新Root Setの不一致はnative定数発行前に拒否する。Graph準備中のtable autobindは許可し、他の再入変更guardは残す。
+
+共通queryは読み取り専用のIShaderDataSource.TryGetDependencies(out IShaderReferenceMetadata? dependencies)だけとした。
+false／nullは利用不可であり、既知の空集合ではない。旧ReadReferences(index)、SetTransferredReferencesと
+共通ShaderDataTransferStateを削除した。ShaderBindingDependencies.Buffersはbuffer全体を一度ずつ辿り、Elementsは持たない。
+
+検証無効:
+
+- 四backendともbuffer／element依存array・履歴・command overlay・推移的依存探索を作らず、queryは参照なし型もfalse／null。
+- rootもscalar ReferenceCount／型／capacity／encoded operandの必須検査と一つのtable hintだけで、参照collectionは保持しない。
+  明示的にSetArgumentValidation hookを指定したcallerはroot metadataを要求できるが、buffer trackingは有効にしない。
+- Graphはuserの使用宣言だけで依存順序・barrierを作り、追加のroot scan／query／admission hook／allowed-set診断を作らない。
+  宣言されていない参照やGPU内部書換えをGraphが推測するとは約束せず、正しい完全な宣言はcallerの責務である。
+- WebGPUのtable登録・binding shape・remapは機能情報なので残すが、element依存追跡は必要ない。
+
+検証有効:
+
+- backend-privateなbuffer単位immutable dependency revisionを管理する。参照なし型はknown-empty、未初期化／失敗した参照bufferは
+  full transferで回復するまでunknownとして拒否する。既知bufferへのpartial transferはconservative union、full rewriteはreset可能。
+- 明示GPU copyはnative記録後にcommand-local buffer overlayへ反映し、native submit成功後だけdestへ公開する。
+  旧commandが保持するrevisionを変更しない。unionはbuffer lifetimeに有界だが、過去の参照を保守的に含むことがある。
+- Graphはbuffer allocation／textureのunderlying imageと宣言read/write intentで照合する。same bufferの別range、同じimageの別view、
+  別callbackで得たcached参照は、それ自体を拒否しない。別の未宣言resource、ReadOnly宣言へのRW参照は拒否する。
+- Graphの依存順序とbarrierは既にallocation／全mip・layer単位であり、その保守的coverageは維持する。
+  GetGpuRefのmaterializationは別で、要求offset／Countを厳密に保持する。未登録multi-element rangeを広いCountへ黙って置換しない。
+
+host pointer bounds／overflow／writer capacityとnative mapping preconditionは全構成で必須。
+active host-writeのUnmap／Dispose／overlap追加検査はValidation時だけで、無効時はnative API以上のpin／lock／waitを提供しない。
+Vulkan／D3D12 Set即時native定数記録とWebGPU private uniform ownership、struct限定・ReferenceCount契約は維持した。
+
+最終gate:
+
+- Graphics Debug／Release各285成功・失敗0・99skip（384件）。Graph各137成功・失敗0・skip0。
+- 全host Release3,262成功・失敗0・120skip。targeted Debug／Release各50成功・失敗0・skip0。
+- 実Vulkan／Wgpuでroot metadataに含まれないtexture Bをnumeric slotで選んでgreen pixelを確認し、rootless版と検証off/onも通した。
+- OFF query unavailable／probeゼロ、ON粗いmembership／readwrite、immutable buffer revisions／copy順序／failure recoveryを検査した。
+- D3D12管理側50成功・Windows依存7skip。Browser Release compile／JS syntax成功。
+- 独立source reviewはcritical blockerなし。実機で発覚したtable切替・Graph autobind guardの不整合は修正後に再検証した。
+- Windows native／Browser実行、NativeAOT publish、native Khronos validation layer／presentationは未検証。
+
+ログはartifacts/validation18-{final-fullhost,final-debug,hardware-debug,hardware-release,final-graph-debug,d3d-release,browser-release,markdown}.log。
+三改善だけの性能証拠は別benchmark branchの6abc8883b3d3cf8c1bc990aaf5e1b401ac0655d7に保存した。
+CPU Copyは両ペア28.69–66.40%短縮、Ref112 Copy完了は13.84%／15.79%短縮だったが、これは81949→c1bだけの結果である。
+この後続architectureへ旧値を流用せず、最新sourceの性能は未計測とする。CI／workflow・過去ADR・凍結harness変更やgzip復元はない。
+以下は旧方式の履歴であり、常時element metadata／常時Graph admissionの記述は最新契約ではない。
+
 ## address／mapped batch／exact reference countの三改善（2026-11-15）
 
 81949cf0を基準に、次の三点だけを先に独立checkpoint化した。

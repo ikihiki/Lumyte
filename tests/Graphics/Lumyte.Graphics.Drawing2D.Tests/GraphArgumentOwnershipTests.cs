@@ -92,7 +92,7 @@ public sealed class GraphArgumentOwnershipTests
     [Fact]
     public void DirectUndeclaredAllocationIsRejectedBeforeNativeTablesOrCommands()
     {
-        var device = new ProfilingDevice();
+        var device = new ProfilingDevice { ValidationEnabled = true };
         using var graph = new Graph(device);
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
@@ -336,7 +336,7 @@ public sealed class GraphArgumentOwnershipTests
     [Fact]
     public void InheritedBufferRegistrationCannotSmuggleAnUndeclaredGraphImport()
     {
-        var device = new ProfilingDevice();
+        var device = new ProfilingDevice { ValidationEnabled = true };
         using var graph = new Graph(device);
         using IGraphicsBuffer<uint> buffer = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead });
         graph.ImportBuffer(buffer, ShaderRead);
