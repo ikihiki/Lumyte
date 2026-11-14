@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/benchmarks/Audio/">
+    <Project Path="benchmarks/Audio/Lumyte.Audio.Execution.Benchmark/Lumyte.Audio.Execution.Benchmark.csproj" />
+    <Project Path="benchmarks/Audio/Lumyte.Audio.OpenAL.Benchmark/Lumyte.Audio.OpenAL.Benchmark.csproj" />
+    <Project Path="benchmarks/Audio/Lumyte.Resources.Audio.Benchmark/Lumyte.Resources.Audio.Benchmark.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/Input/">
     <Project Path="benchmarks/Input/Lumyte.Input.Benchmark/Lumyte.Input.Benchmark.csproj" />
     <Project Path="benchmarks/Input/Lumyte.Input.Actions.Benchmark/Lumyte.Input.Actions.Benchmark.csproj" />
@@ -173,6 +178,7 @@
     <Project Path="tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Audio/">
+    <Project Path="tests/Audio/Lumyte.Audio.Benchmark.Tests/Lumyte.Audio.Benchmark.Tests.csproj" />
     <Project Path="tests/Audio/Lumyte.Resources.Audio.Tests/Lumyte.Resources.Audio.Tests.csproj" />
     <Project Path="tests/Audio/Lumyte.Resources.Audio.IntegrationTests/Lumyte.Resources.Audio.IntegrationTests.csproj" />
     <Project Path="tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj" />

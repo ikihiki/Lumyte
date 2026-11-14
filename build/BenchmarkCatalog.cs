@@ -13,7 +13,7 @@ internal static class BenchmarkCatalog
     internal static string[] SelectProjects(string repository, string pattern, string area = "Core")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-        if (area is not ("Core" or "Animation" or "Input"))
+        if (area is not ("Core" or "Animation" or "Input" or "Audio"))
         {
             throw new ArgumentException("Unsupported benchmark area.", nameof(area));
         }
