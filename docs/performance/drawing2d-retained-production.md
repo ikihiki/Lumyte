@@ -1,5 +1,8 @@
 # Drawing2D 保持経路の製品実装と検証
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 - 日付: 2026-11-03
 - 測定source: `c217c08847db36802fc96f18445652f560a101af`
 - 対応: mutableな配置木、不変のCPUページ、順序付きのGPU実行列

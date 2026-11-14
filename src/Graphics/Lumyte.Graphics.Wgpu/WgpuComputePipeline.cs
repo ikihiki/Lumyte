@@ -21,6 +21,7 @@ internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipel
         Data = PipelineValidation.Shader(shader, owner.Caps.ShaderTarget, ShaderStage.Compute, owner.Caps);
         RequiresArguments = ShaderDataLayout.HasRoot(Data);
         Initialize();
+        owner.Validation?.Use(this, desc.ComputeShader);
     }
 
     public ComputePipelineDesc Desc { get; }
@@ -37,6 +38,9 @@ internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipel
         {
             return;
         }
+
+        _owner.Validation?.Release(this);
+        _owner.Validation?.Discard(this);
 
         DisposeNative();
         _disposed = true;

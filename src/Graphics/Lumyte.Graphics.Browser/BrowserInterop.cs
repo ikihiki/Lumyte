@@ -58,6 +58,12 @@ internal static partial class BrowserInterop
     [JSImport("copyBufferFrom", "Lumyte.Graphics.Browser")]
     internal static partial void CopyBufferFrom(JSObject buffer, [JSMarshalAs<JSType.MemoryView>] Span<byte> source, int offset);
 
+    [JSImport("acquireMappedUploadRange", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject AcquireMappedUploadRange(JSObject buffer, double offset, int length);
+
+    [JSImport("copyMappedUploadRange", "Lumyte.Graphics.Browser")]
+    internal static partial void CopyMappedUploadRange(JSObject view, [JSMarshalAs<JSType.MemoryView>] Span<byte> source, int relativeOffset);
+
     [JSImport("copyBufferTo", "Lumyte.Graphics.Browser")]
     internal static partial void CopyBufferTo(JSObject buffer, [JSMarshalAs<JSType.MemoryView>] Span<byte> destination, int offset);
 
@@ -176,8 +182,14 @@ internal static partial class BrowserInterop
     [JSImport("dispatch", "Lumyte.Graphics.Browser")]
     internal static partial void Dispatch(JSObject pass, double x, double y, double z);
 
+    [JSImport("createRootBacking", "Lumyte.Graphics.Browser")]
+    internal static partial JSObject CreateRootBacking(JSObject device, int size);
+
+    [JSImport("writeRootBacking", "Lumyte.Graphics.Browser")]
+    internal static partial void WriteRootBacking(JSObject root, [JSMarshalAs<JSType.MemoryView>] Span<byte> bytes, int offset);
+
     [JSImport("createShaderBinding", "Lumyte.Graphics.Browser")]
-    internal static partial JSObject CreateShaderBinding(JSObject device, string key, bool compute, [JSMarshalAs<JSType.MemoryView>] Span<byte> root, [JSMarshalAs<JSType.MemoryView>] Span<byte> map);
+    internal static partial JSObject CreateShaderBinding(JSObject device, string key, bool compute, JSObject? rootBacking, [JSMarshalAs<JSType.MemoryView>] Span<byte> map);
 
     [JSImport("addShaderResource", "Lumyte.Graphics.Browser")]
     internal static partial void AddShaderResource(JSObject binding, int slot, int kind, JSObject resource, double offset, double size);

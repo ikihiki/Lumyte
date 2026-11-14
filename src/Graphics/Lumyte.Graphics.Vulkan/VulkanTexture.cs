@@ -166,6 +166,7 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         ImageView native = default;
         Check(_owner.Api.CreateImageView(_owner.NativeDevice, &descriptor, null, &native), "CreateImageView");
         var view = new VulkanTextureView(this, info, native);
+        Owner.Validation?.Register(view, this);
         return view;
     }
 
@@ -175,6 +176,8 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
         }
+
+        _owner.Validation?.Release(this);
 
         DisposeLease();
     }

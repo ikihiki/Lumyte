@@ -114,12 +114,16 @@ public sealed class GraphicsApiConvenienceTests
         Assert.Throws<ArgumentOutOfRangeException>(() => GraphicsRenderStateDesc.ForColorTargets(-1));
     }
 
-    private readonly record struct SampleData(uint Value) : IShaderData
+    private readonly record struct SampleData(uint Value) : IShaderArguments
     {
         public static string ShaderTypeName => nameof(SampleData);
 
+        public static int TransferSize => sizeof(uint);
+
+        public static int ReferenceCount => 0;
+
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(nameof(Value), Value);
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
     private sealed class ShaderBuffer : IGraphicsShaderDataBuffer<SampleData>
@@ -261,10 +265,17 @@ public sealed class GraphicsApiConvenienceTests
             SetterCalls++;
         }
 
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+        {
+        }
+
         public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();
 
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments => throw new NotSupportedException();
+
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged => throw new NotSupportedException();
 
         public void SetPipeline(IGraphicsPipeline pipeline) => throw new NotSupportedException();
 

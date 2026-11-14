@@ -1,5 +1,8 @@
 # 12ワークロードの正式比較: main / PR #105
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 - 日付: 2026-11-02
 - source: `2402407`、main: `fbc8105`、PR #105: `ffe075c`
 - 対象: count=200、1280×720 Rgba8Srgb、Radeon8060S/RADV。正式設定を使用し、quick値を流用しない。

@@ -9,6 +9,9 @@ public interface IShaderReference
     /// <summary>Gets the backend resource represented by this registration.</summary>
     object Resource { get; }
 
+    /// <summary>Gets storage access from the original registration, preserved by element references.</summary>
+    ShaderBufferAccess BufferAccess { get; }
+
     /// <summary>Gets the slot in its resource-kind namespace.</summary>
     uint Slot { get; }
 

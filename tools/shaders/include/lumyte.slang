@@ -1,6 +1,27 @@
 #ifndef LUMYTE_SHADER_ABI
 #define LUMYTE_SHADER_ABI
 
+// Root arguments are opaque C# wire bytes, not shader aggregate uniforms.
+// Vulkan uses push constants; D3D uses root 32-bit constants at b8; WGSL uses
+// a uniform at binding 8. uint4 lanes have the same 16-byte stride everywhere.
+// The declaration may round up, but Load reads only ceil(sizeof(T)/4) words:
+// native constant counts and logical transfer sizes are never rounded to uint4.
+// GpuTextureRef/GpuSamplerRef/Gpu(RW)BufferRef remain 16-byte records.
+// reinterpret preserves declaration order, including nested vectors/matrices.
+struct LumyteRootWire<T>
+{
+    uint4 Words[(sizeof(T) + 15) / 16];
+
+    T Load()
+    {
+        uint words[(sizeof(T) + 3) / 4];
+        [ForceUnroll]
+        for (uint i = 0; i < (sizeof(T) + 3) / 4; i++)
+            words[i] = Words[i / 4][i % 4];
+        return reinterpret<T>(words);
+    }
+};
+
 struct GpuTextureRef { uint Id; uint Offset; uint Count; uint Reserved; };
 struct GpuSamplerRef { uint Id; uint Offset; uint Count; uint Reserved; };
 
@@ -32,7 +53,30 @@ uint LumyteVertexIndex(uint vertexId)
 [[vk::binding(9, 0)]] StructuredBuffer<uint4> lumyteMap;
 #endif
 
-// T uses Slang's natural layout for pointer access and raw byte-address loads.
+#ifdef LUMYTE_SPIRV
+// Read individual words rather than vector-valued physical-buffer members.
+// This needs no scalarBlockLayout feature and permits CLR float3 nesting at
+// offsets such as 4 or 12, even when the vector crosses a 16-byte boundary.
+T LumyteLoadAddress<T>(uint64_t address, uint index)
+{
+    uint words[(sizeof(T) + 3) / 4];
+    uint* source = (uint*)(address + uint64_t(index) * uint64_t(sizeof(T)));
+    [ForceUnroll]
+    for (uint i = 0; i < (sizeof(T) + 3) / 4; i++) words[i] = source[i];
+    return reinterpret<T>(words);
+}
+
+void LumyteStoreAddress<T>(uint64_t address, uint index, T value)
+{
+    typedef uint Words[(sizeof(T) + 3) / 4];
+    Words words = reinterpret<Words>(value);
+    uint* destination = (uint*)(address + uint64_t(index) * uint64_t(sizeof(T)));
+    [ForceUnroll]
+    for (uint i = 0; i < (sizeof(T) + 3) / 4; i++) destination[i] = words[i];
+}
+#endif
+
+// T uses Slang's natural layout for raw byte-address loads.
 // Offline and online schema probes reflect Ptr<T> to preserve that exact layout.
 struct GpuBufferRef<T>
 {
@@ -45,7 +89,7 @@ struct GpuBufferRef<T>
     {
 #ifdef LUMYTE_SPIRV
         uint64_t address = uint64_t(Id) | (uint64_t(Offset) << 32);
-        return ((T*)address)[index];
+        return LumyteLoadAddress<T>(address, index);
 #else
 #ifdef LUMYTE_DXIL
         return lumyteBuffers[NonUniformResourceIndex(Id)].Load<T>(Offset + index * sizeof(T));
@@ -67,7 +111,7 @@ struct GpuRWBufferRef<T>
     {
 #ifdef LUMYTE_SPIRV
         uint64_t address = uint64_t(Id) | (uint64_t(Offset) << 32);
-        return ((T*)address)[index];
+        return LumyteLoadAddress<T>(address, index);
 #else
 #ifdef LUMYTE_DXIL
         return lumyteRWBuffers[NonUniformResourceIndex(Id)].Load<T>(Offset + index * sizeof(T));
@@ -81,7 +125,7 @@ struct GpuRWBufferRef<T>
     {
 #ifdef LUMYTE_SPIRV
         uint64_t address = uint64_t(Id) | (uint64_t(Offset) << 32);
-        ((T*)address)[index] = value;
+        LumyteStoreAddress<T>(address, index, value);
 #else
 #ifdef LUMYTE_DXIL
         lumyteRWBuffers[NonUniformResourceIndex(Id)].Store<T>(Offset + index * sizeof(T), value);

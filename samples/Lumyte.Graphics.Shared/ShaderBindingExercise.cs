@@ -49,7 +49,7 @@ public static class ShaderBindingExercise
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2 });
         IGpuRef<BindingNode> node = table.WriteBuffer(0, nodes.SliceElements(0, 2));
-        IGpuRef<uint> results = table.WriteBuffer(1, output.SliceElements(0, 8));
+        IGpuRef<uint> results = table.WriteBuffer(1, output.SliceElements(0, 8), ShaderBufferAccess.ReadWrite);
         using IGraphicsShaderDataBuffer<BindingNode> staging = device.CreateShaderDataBuffer<BindingNode>(artifact, 2, MemoryPreference.Upload);
         using IGraphicsShaderDataBuffer<BindingNode> changed = device.CreateShaderDataBuffer<BindingNode>(artifact, 1, MemoryPreference.Upload);
         await staging.MapAsync();
@@ -76,7 +76,7 @@ public static class ShaderBindingExercise
         compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
         compute.SetArgumentTable(table);
-        BindingComputeArguments second = first with { Output = results.GetElement(4) };
+        BindingComputeArguments second = new(first.Camera, first.Factor, first.Node, results.GetElement(4));
         compute.SetArguments(in second);
         compute.Dispatch(1);
         compute.End();
@@ -247,7 +247,7 @@ public static class ShaderBindingExercise
     }
 
     private static void RecordUpload<T>(IGraphicsCommandBuffer commands, IGraphicsShaderDataBuffer<T> staging, IGraphicsShaderDataBuffer<T> gpu, ulong? count = null, PipelineStage stage = PipelineStage.ComputeShader)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ulong length = count ?? staging.Count;
         commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = staging.SliceElements(0, length), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });

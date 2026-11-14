@@ -1,22 +1,24 @@
 struct Binding
 {
     ComPtr<ID3D12DescriptorHeap> resources, samplers;
-    ComPtr<ID3D12Resource> uniform;
     UINT resource_stride = 0, sampler_stride = 0;
 };
-API HRESULT binding_create(Device* device, const void* bytes, UINT size, Binding** output) noexcept
+API HRESULT binding_create(Device* device, Binding** output) noexcept
 {
+    if (!output)
+    {
+        return E_INVALIDARG;
+    }
     *output = nullptr;
+    if (!device)
+    {
+        return E_INVALIDARG;
+    }
     auto binding = std::unique_ptr<Binding>(new (std::nothrow) Binding());
     if (!binding)
     {
         return E_OUTOFMEMORY;
     }
-    CHECK(buffer_create(device, (static_cast<UINT64>(size) + 255) & ~255ull, 1, 0, &binding->uniform));
-    void* mapped;
-    CHECK(buffer_map(binding->uniform.Get(), size, 0, &mapped));
-    std::memcpy(mapped, bytes, size);
-    buffer_unmap(binding->uniform.Get(), size, 1);
     D3D12_DESCRIPTOR_HEAP_DESC heap{D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 256,
                                     D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0};
     CHECK(device->device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&binding->resources)));
@@ -140,13 +142,11 @@ API void commands_binding(Commands* commands, Binding* binding, int compute) noe
     commands->list->SetDescriptorHeaps(2, heaps);
     if (compute)
     {
-        commands->list->SetComputeRootConstantBufferView(0, binding->uniform->GetGPUVirtualAddress());
         commands->list->SetComputeRootDescriptorTable(1, binding->resources->GetGPUDescriptorHandleForHeapStart());
         commands->list->SetComputeRootDescriptorTable(2, binding->samplers->GetGPUDescriptorHandleForHeapStart());
     }
     else
     {
-        commands->list->SetGraphicsRootConstantBufferView(0, binding->uniform->GetGPUVirtualAddress());
         commands->list->SetGraphicsRootDescriptorTable(1, binding->resources->GetGPUDescriptorHandleForHeapStart());
         commands->list->SetGraphicsRootDescriptorTable(2, binding->samplers->GetGPUDescriptorHandleForHeapStart());
     }

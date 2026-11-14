@@ -4,12 +4,13 @@ using VkBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
+internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IVulkanShaderBuffer
     where T : unmanaged
 {
     private readonly VulkanDevice _owner;
     private readonly VkBuffer _native;
     private readonly DeviceMemory _memory;
+    private readonly ulong _shaderAddress;
     private byte* _pointer;
     private bool _mapped;
     private bool _pending;
@@ -61,6 +62,11 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             Check(owner.Api.AllocateMemory(owner.NativeDevice, &allocation, null, &memory), "AllocateMemory");
             Check(owner.Api.BindBufferMemory(owner.NativeDevice, buffer, memory, 0), "BindBufferMemory");
             (_native, _memory) = (buffer, memory);
+            if ((Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) != 0)
+            {
+                var addressInfo = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
+                _shaderAddress = owner.Api.GetBufferDeviceAddress(owner.NativeDevice, &addressInfo);
+            }
         }
         catch
         {
@@ -78,7 +84,25 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         }
     }
 
+    ulong IVulkanShaderBuffer.ShaderAddress
+    {
+        get
+        {
+            _ = Native;
+            if ((Usage & (BufferUsage.ShaderRead | BufferUsage.ShaderWrite)) == 0)
+            {
+                throw new InvalidOperationException("The buffer does not support shader addresses.");
+            }
+
+            return _shaderAddress;
+        }
+    }
+
     public object ShaderHandle => Native;
+
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
 
     public BufferLayout<T> Layout { get; }
 
@@ -125,6 +149,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        _owner.Validation?.Map(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -155,6 +180,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
 
     public void Unmap()
     {
+        _owner.Validation?.ValidateUnmap(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -176,6 +202,8 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
         }
 
+        _owner.Validation?.Release(this);
+
         if (_mapped)
         {
             UnmapCore();
@@ -195,6 +223,7 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostWrite, offset, (ulong)source.Length);
         source.CopyTo(new Span<byte>(_pointer + checked((int)offset), source.Length));
     }
 
@@ -207,7 +236,20 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
             throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         new ReadOnlySpan<byte>(_pointer + checked((int)offset), checked((int)length)).CopyTo(destination);
+    }
+
+    internal Span<byte> GetMappedUploadSpan(ulong offset, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ValidateByteRange(offset, (ulong)length);
+        RequireMapping(MemoryPreference.Upload);
+        int start = checked((int)offset);
+        _ = checked(start + length);
+        nuint address = checked((nuint)_pointer + (nuint)start);
+        _ = checked(address + (nuint)length);
+        return new Span<byte>((void*)address, length);
     }
 
     private static uint SelectMemoryType(PhysicalDeviceMemoryProperties properties, uint bits, MemoryPropertyFlags required)

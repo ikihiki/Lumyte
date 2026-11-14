@@ -20,6 +20,7 @@ public sealed partial class Drawing2DTests
     public async Task VulkanArgumentPartitionsAsync()
     {
         using var device = VulkanDevice.Create();
+        device.EnableValidation();
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -29,6 +30,7 @@ public sealed partial class Drawing2DTests
     public async Task WgpuArgumentPartitionsAsync()
     {
         using var device = WgpuDevice.Create();
+        device.EnableValidation();
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -298,7 +300,7 @@ public sealed partial class Drawing2DTests
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => _native.CreateComputePipeline(desc);
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : struct, IShaderData => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
+            where T : struct, IShaderArguments => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
     }
 
     private sealed class PartitionCommands(IGraphicsCommandBuffer native) : IGraphicsCommandBuffer
@@ -331,10 +333,10 @@ public sealed partial class Drawing2DTests
         public void Finish() => native.Finish();
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : struct, IShaderData => native.CopyBuffer(source, destination);
+            where T : struct, IShaderArguments => native.CopyBuffer(source, destination);
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : struct, IShaderData => native.Barrier(barrier);
+            where T : struct, IShaderArguments => native.Barrier(barrier);
 
         public void Dispose() => native.Dispose();
 
@@ -347,17 +349,16 @@ public sealed partial class Drawing2DTests
             {
                 Assert.Contains(tables, item => ReferenceEquals(item.Table, table));
                 var visited = new HashSet<(object Resource, ulong Offset, ulong Size)>();
-                Visit(snapshot, table, visited);
+                Visit(new ShaderDependencyMetadata(snapshot.Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))).References, table, visited);
             }
 
-            Assert.True(nested >= 10, "Every sampled image must be reached through shader-data metadata.");
+            Assert.True(nested > 0, "Sampled images must be reached through whole-buffer shader-data metadata.");
             Assert.All(views, view => Assert.Contains(view, sampled));
 
-            void Visit(ShaderValueSnapshot snapshot, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
+            void Visit(IReadOnlyList<IShaderReference> values, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
             {
-                foreach (ShaderValue value in snapshot.Values.Where(value => value.IsReference))
+                foreach (IShaderReference reference in values)
                 {
-                    IShaderReference reference = Assert.IsAssignableFrom<IShaderReference>(value.Reference);
                     Assert.Same(table, reference.Table);
                     if (reference.Resource is IGraphicsTextureView view)
                     {
@@ -369,15 +370,9 @@ public sealed partial class Drawing2DTests
                         continue;
                     }
 
-                    ulong stride = checked((ulong)source.Layout.Size);
-                    Assert.Equal(0ul, reference.OffsetInBytes % stride);
-                    Assert.Equal(0ul, reference.SizeInBytes % stride);
-                    for (ulong offset = 0; offset < reference.SizeInBytes; offset += stride)
-                    {
-                        ShaderValueSnapshot child = source.Read((reference.OffsetInBytes + offset) / stride);
-                        nested++;
-                        Visit(child, table, visited);
-                    }
+                    Assert.True(source.TryGetDependencies(out IShaderReferenceMetadata? child));
+                    nested++;
+                    Visit(child.References, table, visited);
                 }
             }
         }
@@ -387,6 +382,8 @@ public sealed partial class Drawing2DTests
     {
         private IArgumentTable? _table;
         private ShaderValueSnapshot? _arguments;
+
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
 
         public void SetArgumentTable(IArgumentTable table)
         {
@@ -402,10 +399,11 @@ public sealed partial class Drawing2DTests
             _arguments = snapshot;
         }
 
-        public void SetArguments(ShaderValueSnapshot arguments)
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged
         {
-            ShaderValueSnapshot snapshot = arguments.Copy();
-            native.SetArguments(arguments);
+            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+            native.SetArguments(in arguments, rootParameter, shaderTypeName);
             _arguments = snapshot;
         }
 

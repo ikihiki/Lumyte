@@ -27,7 +27,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void TypedArgumentsDoNotRequireAResourceOrArtifactDescription()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var pipeline = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute));
         graph.AddPass("typed numeric", context =>
         {
@@ -47,7 +47,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void DrawAndIndexedDrawReuseSelectedSnapshotAndCloseScope()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var image = new TestTexture();
@@ -78,16 +78,16 @@ public sealed partial class PublicGraphEncoderConsumerTests
         Assert.Equal(1, commands.Encoder.Draws);
         Assert.Equal(1, commands.Encoder.IndexedDraws);
         Assert.Equal(2, reads);
-        Assert.Equal(new[] { 1f, 2f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span)));
+        Assert.Equal(new[] { 1f, 2f }, commands.Encoder.Snapshots.Select(snapshot => MemoryMarshal.Read<float>(snapshot.Data.Span)));
         Assert.Equal(1, commands.Encoder.Ends);
         Assert.Throws<InvalidOperationException>(() => escaped!.SetPipeline(pipeline));
     }
 
-    /// <summary>Incomplete roots fail before a native argument snapshot or draw is emitted.</summary>
+    /// <summary>Numeric root layout mismatches diagnose in Debug; Release preserves the original bytes.</summary>
     [Fact]
-    public void MissingMemberIsRejectedBeforeNativeDraw()
+    public void NumericLayoutMismatchIsExplicitlyDiagnosedBeforeNativeDraw()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var image = new TestTexture();
@@ -111,7 +111,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ComputeDispatchAcceptsCompatibleArtifactsAndClosesCallback()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         using var wrong = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute));
@@ -139,7 +139,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ForeignGraphDeclarationIsRejected()
     {
-        var device = new PublicGraphConsumerDevice();
+        var device = new PublicGraphConsumerDevice { ValidationEnabled = true };
         using var first = new RenderGraph(device);
         using var second = new RenderGraph(device);
         using var image = new TestTexture();
@@ -151,7 +151,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void WrongPassCannotResolveLogicalInputs()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var image = new TestTexture();
         RenderGraphTexture source = graph.ImportTexture(image, TextureState.Sampled, default);
         graph.AddPass("owner", _ => { }).UseTexture(source, TextureState.Sampled, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
@@ -168,7 +168,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [InlineData(true)]
     public void CallbackFailurePreservesOriginalAndEndsEncoder(bool cleanupFails)
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         var original = new ApplicationException("callback failure");
         graph.AddPass("throw", context =>
         {
@@ -193,7 +193,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void UsingComputeEncoderCleanupFailurePreservesOriginalAndEndsOnce()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         var original = new ApplicationException("callback failure");
         graph.AddPass("throw from using compute", context =>
         {
@@ -213,7 +213,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void UsingRenderEncoderCleanupFailurePreservesOriginalAndEndsOnce()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var image = new TestTexture();
         RenderGraphTexture target = graph.ImportTexture(image, TextureState.Undefined, default);
         var original = new ApplicationException("callback failure");
@@ -236,7 +236,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void SuccessfulCallbackReportsDeferredCleanupFailure()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         var cleanup = new InvalidOperationException("cleanup failure");
         graph.AddPass("deferred cleanup", context =>
         {
@@ -258,7 +258,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void DepthOnlyPassRecordsGraphDrawWithoutColorOutputs()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var depth = new TestTexture { Format = TextureFormat.Depth32Float };

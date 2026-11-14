@@ -1,5 +1,8 @@
 # 保持pageを直接描画する矩形試作
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 - 日付: 2026-11-02
 - source: `fcd6e7b`、比較baseline: main `fbc8105` / PR #105 `ffe075c`
 - [試作の契約と手順](../../tools/benchmarks/drawing2d-incremental/DIRECT-PAGES.md)、[前の平坦化比較](drawing2d-hardware-comparison.md)

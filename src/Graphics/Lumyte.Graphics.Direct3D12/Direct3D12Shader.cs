@@ -32,5 +32,14 @@ internal sealed class Direct3D12Shader : IGraphicsShader
         }
     }
 
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Owner.Validation?.Release(this);
+        _disposed = true;
+    }
 }

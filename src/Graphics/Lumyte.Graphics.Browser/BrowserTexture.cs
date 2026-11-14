@@ -66,6 +66,7 @@ internal sealed class BrowserTexture : IGraphicsTexture
         TextureViewInfo info = TextureValidation.Resolve(this, desc);
         JSObject native = BrowserInterop.CreateTextureView(_native, (int)info.Dimension, checked((int)info.BaseMipLevel), checked((int)info.MipLevelCount), checked((int)info.BaseArrayLayer), checked((int)info.ArrayLayerCount));
         var view = new BrowserTextureView(this, info, native);
+        Owner.Validation?.Register(view, this);
         return view;
     }
 
@@ -75,6 +76,8 @@ internal sealed class BrowserTexture : IGraphicsTexture
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
         }
+
+        _owner.Validation?.Release(this);
 
         DisposeLease();
     }

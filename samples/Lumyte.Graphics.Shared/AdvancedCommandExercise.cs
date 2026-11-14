@@ -239,7 +239,7 @@ public static class AdvancedCommandExercise
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1, BufferCapacity = 2 });
-        var root = new IndirectComputeArguments(table.WriteBuffer(0, command.SliceElements(0, 1)), table.WriteBuffer(1, output.SliceElements(0, 3)));
+        var root = new IndirectComputeArguments(table.WriteBuffer(0, command.SliceElements(0, 1), ShaderBufferAccess.ReadWrite), table.WriteBuffer(1, output.SliceElements(0, 3), ShaderBufferAccess.ReadWrite));
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(generator);

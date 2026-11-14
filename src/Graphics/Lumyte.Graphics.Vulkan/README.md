@@ -154,7 +154,7 @@ textureとsamplerは種類別の論理slotをnative descriptor array indexとし
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
-shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+shader dataのstrideと配置はC# unmanaged structのTransferSizeと実際のfield offsetが正本です。pointee reflectionはDebug照合と参照access kindにのみ使用し、数値を再配置しません。physical addressからのshader load/storeはscalar wordsを使い、float3のalignment補正を必要としません。root uniformはuint4 wire lanesをinterpretし、allocation/binding capacityだけを16-byteへ切り上げます。C# wire sizeとoffsetは変更しません。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルは使用しません。native完了workerからのloss通知を安全に配送するための内部bridgeと回帰テストに限りInternalsVisibleToを使用します。
 
@@ -236,3 +236,9 @@ submissionのnative待機中はfenceを保持し、Statusが先に完了を観�
 VK_ERROR_DEVICE_LOSTをdevice・子資源・submission・presentationから共通状態へ接続します。Pending submissionはFailed、commandはFaultedとなり、WaitAsyncはGraphicsDeviceLostExceptionを返します。loss後のWaitForRetirementAsyncは明示的にvkDeviceWaitIdleを呼び、Success／ErrorDeviceLostを破棄安全性の確認として扱います。Engineがその後に子資源とdeviceを明示的にDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 任意のmanaged検証
+
+生成した実deviceに、子資源を作る前に`EnableValidation()`を呼ぶと、Debug／Releaseの両方で診断を有効にします。既定ではValidationはnullで、診断tracker・callback・状態走査を作りません。D3D12のnative debug layerとは別設定です。
+
+診断は、記録済み／提出済みresourceの寿命、mapping、登録identityの記録時・Submit時照合、親子関係、byte範囲別buffer hazardとmip／layer別texture状態、shader・index・indirect・copy・attachmentの明示アクセスを扱います。Acquire／Submit／Presentのbinary semaphore履歴とnative完了も追跡します。記録の失敗は診断だけをrollbackし、提出前の照合は複製したqueue状態で行います。nativeが成功した操作だけを公開し、キャンセルされた待機を完了として扱いません。GPU内部の動的indexは登録範囲で保守的に扱い、直接変更したstaging byte、shader内部の実アクセス、外部native操作は見えません。D3D12の部分発行済み操作やWebGPUの非同期実行エラーを巻き戻す保証はありません。検証有効時のdevice操作は外部で直列化し、無効時は寿命・同期とも利用者が保証します。

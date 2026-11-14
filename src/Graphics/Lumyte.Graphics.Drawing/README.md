@@ -6,7 +6,7 @@ Wgpu／Browser／Vulkan の具象 backend には依存しません。
 
 ## 提供する型
 
-- `DrawingVertex`：3D 座標、linear／straight-alpha の頂点色、UV。`IShaderData` を実装します。
+- `DrawingVertex`：3D 座標、linear／straight-alpha の頂点色、UV。`IShaderArguments` は不要で、通常のunmanaged構造体です。
 - `ColorDrawArguments`：頂点範囲、object-to-clip 行列、色の乗算値。
 - `TextureDrawArguments`：上記に加えて 2D texture view と通常の sampler の GPU 参照。
 - `DrawingPrimitives.Rectangle`／`Circle`：XY 平面の反時計回り triangle list。
@@ -34,16 +34,16 @@ using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new()
     VertexShader = vertexShader,
     FragmentShader = fragmentShader,
 });
-using IGraphicsShaderDataBuffer<DrawingVertex> upload = device.CreateBuffer<DrawingVertex>(
+using IGraphicsBuffer<DrawingVertex> upload = device.CreateShaderDataBuffer<DrawingVertex>(
     vertexArtifact, (ulong)vertices.Length, MemoryPreference.Upload);
-using IGraphicsShaderDataBuffer<DrawingVertex> storage = device.CreateBuffer<DrawingVertex>(
+using IGraphicsBuffer<DrawingVertex> storage = device.CreateShaderDataBuffer<DrawingVertex>(
     vertexArtifact, (ulong)vertices.Length);
 await upload.MapAsync();
 upload.CopyFrom(vertices);
 upload.Unmap();
 ```
 
-続いて、既存の command API の `CopyBuffer` と `ShaderDataBufferBarrierDesc` で
+続いて、既存の command API の `CopyBuffer` と `BufferBarrierDesc` で
 upload から storage へ明示転送します。argument table に
 `storage.SliceElements(0, storage.Count)` を登録すると `IGpuRef<DrawingVertex>` を取得できます。
 記録中の render encoder に `SetPipeline(pipeline)`、描画状態・viewport・scissor・blend constant・stencil reference を設定し、
@@ -103,4 +103,4 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Drawing.T
 GPU テストは upload から indexed model draw、HDR scene、フォグ、fullscreen effect、
 readback までの結果を確認します。透過 alpha、DAG の tone mapping、ビネット、
 Resources による世代保持と managed device loss を模擬した復旧も検証します。CPU テストは形状、material／render state、normal transform、
-生成 codec の compiled ABI を確認します。ファイル形式のインポーターは含みません。
+Debug構成でC# bulk transferとcompiled ABIの一致を確認します。Releaseでは数値layoutを検証・repackしません。ファイル形式のインポーターは含みません。

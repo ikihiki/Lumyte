@@ -24,7 +24,7 @@ internal sealed partial class BrowserGraphicsPipeline
 
         using JSObject? vertex = arguments == null ? null : BrowserInterop.CreateShader(_owner.Handle, arguments.Specialize(VertexData));
         using JSObject? fragment = arguments == null || FragmentData == null ? null : BrowserInterop.CreateShader(_owner.Handle, arguments.Specialize(FragmentData!));
-        JSObject pipeline = BrowserInterop.CreateGraphicsPipeline(_owner.Handle, vertex ?? _vertex.Native, VertexData.EntryPoint, fragment ?? _fragment?.Native, FragmentData?.EntryPoint ?? string.Empty, state.Key, formatJson, depthFormat is { } df ? (int)df : -1, arguments?.Key ?? string.Empty);
+        JSObject pipeline = BrowserInterop.CreateGraphicsPipeline(_owner.Handle, vertex ?? _vertex.Native, VertexData.EntryPoint, fragment ?? _fragment?.Native, FragmentData?.EntryPoint ?? string.Empty, state.Key, formatJson, depthFormat is { } df ? (int)df : -1, arguments == null ? string.Empty : arguments.Key + (RequiresArguments ? ":1" : ":0"));
         _variants.Add(key, pipeline);
         return pipeline;
     }

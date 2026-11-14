@@ -38,7 +38,7 @@ internal static unsafe partial class NativeMethods
     internal static partial void Topology(nint commands, uint topology);
 
     [LibraryImport(Library, EntryPoint = "commands_indices")]
-    internal static partial void Indices(nint commands, nint buffer, ulong offset, uint size, uint format);
+    internal static partial void Indices(nint commands, ulong gpuAddress, ulong offset, uint size, uint format);
 
     [LibraryImport(Library, EntryPoint = "commands_draw")]
     internal static partial void Draw(nint commands, uint count, uint instances, uint first, int baseVertex, uint firstInstance, int indexed);
@@ -47,7 +47,7 @@ internal static unsafe partial class NativeMethods
     internal static partial void Dispatch(nint commands, uint x, uint y, uint z);
 
     [LibraryImport(Library, EntryPoint = "commands_indirect")]
-    internal static partial int Indirect(nint device, nint commands, nint buffer, ulong offset, uint kind, out nint signature);
+    internal static partial int Indirect(nint device, nint commands, nint buffer, ulong gpuAddress, ulong offset, uint kind, out nint signature);
 
     [LibraryImport(Library, EntryPoint = "commands_render_begin")]
     internal static partial int RenderBegin(nint device, nint commands, NativeAttachment* colors, uint count, NativeAttachment* depth);
@@ -55,8 +55,11 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "commands_detach_heaps")]
     internal static partial void DetachHeaps(nint commands, out nint rtv, out nint dsv);
 
+    [LibraryImport(Library, EntryPoint = "commands_root_constants")]
+    internal static partial int RootConstants(nint commands, uint* words, uint wordCount, int compute);
+
     [LibraryImport(Library, EntryPoint = "binding_create")]
-    internal static partial int BindingCreate(nint device, byte* bytes, uint size, out nint binding);
+    internal static partial int BindingCreate(nint device, out nint binding);
 
     [LibraryImport(Library, EntryPoint = "binding_destroy")]
     internal static partial void BindingDestroy(nint binding);

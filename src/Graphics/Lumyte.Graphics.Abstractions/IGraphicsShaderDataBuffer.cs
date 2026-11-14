@@ -3,7 +3,7 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Owns typed shader storage and dependency metadata for explicit staging transfers.</summary>
 /// <typeparam name="T">The application shader data structure.</typeparam>
 public interface IGraphicsShaderDataBuffer<T> : IDisposable
-    where T : struct, IShaderData
+    where T : struct, IShaderArguments
 {
     /// <summary>Gets the logical element count.</summary>
     ulong Count { get; }
@@ -21,8 +21,9 @@ public interface IGraphicsShaderDataBuffer<T> : IDisposable
     bool IsMapped { get; }
 
     /// <summary>Writes values into mapped upload staging without issuing GPU commands.</summary>
-    /// <param name="source">The values to snapshot.</param>
+    /// <param name="source">The current application values read synchronously by this explicit CPU transfer.</param>
     /// <param name="elementOffset">The first logical element.</param>
+    /// <remarks>Creating buffers, slices, or registrations does not capture these values. Successful CopyFrom owns an independent staging copy; later application mutations require another CopyFrom. A command-buffer CopyBuffer reads that staging allocation, which must remain unchanged until its GPU use completes.</remarks>
     void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0);
 
     /// <summary>Maps idle upload staging for explicit CPU writes.</summary>

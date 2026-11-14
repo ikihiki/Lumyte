@@ -7,6 +7,9 @@ public interface IGraphicDevice
     /// <summary>Notifies loss once; subscribers must also check Status after subscribing.</summary>
     event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost;
 
+    /// <summary>Gets a value indicating whether explicit managed resource, synchronization and layout diagnostics are enabled; false by default.</summary>
+    bool ValidationEnabled => false;
+
     /// <summary>Gets the cached physical device state.</summary>
     GraphicsDeviceStatus Status { get; }
 
@@ -88,5 +91,15 @@ public interface IGraphicDevice
     /// <param name="memory">Automatic for GPU storage or Upload for CPU staging.</param>
     /// <returns>The backend's shader data allocation.</returns>
     IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData;
+        where T : struct, IShaderArguments;
+
+    /// <summary>Creates ordinary unmanaged shader storage without generated code or conversion.</summary>
+    /// <typeparam name="T">The unmanaged element type; its C# layout is the shader ABI.</typeparam>
+    /// <param name="artifact">The compiled shader used for Debug layout diagnostics.</param>
+    /// <param name="count">The positive element count.</param>
+    /// <param name="memory">The allocation memory preference.</param>
+    /// <param name="usage">The raw buffer usages; upload staging uses CopySource instead.</param>
+    /// <returns>Raw typed storage with exactly the C# element size and stride.</returns>
+    IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged => CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
 }

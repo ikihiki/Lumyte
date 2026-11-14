@@ -31,7 +31,7 @@ internal sealed unsafe partial class WgpuComputePipeline
         }
 
         using Ahjo.Wgpu.ShaderModule module = _owner.NativeDevice.CreateShaderModule(new Ahjo.Wgpu.ShaderModuleDescriptor { Source = Ahjo.Wgpu.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(arguments.Specialize(Data))) });
-        WGPUPipelineLayoutImpl* layout = WgpuShaderBinding.CreateLayout(_owner, arguments, true);
+        WGPUPipelineLayoutImpl* layout = WgpuShaderBinding.CreateLayout(_owner, arguments, RequiresArguments, true);
         try
         {
             byte[] entry = Encoding.UTF8.GetBytes(Data.EntryPoint);

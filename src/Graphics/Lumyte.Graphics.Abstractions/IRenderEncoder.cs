@@ -7,15 +7,23 @@ public interface IRenderEncoder
     /// <param name="table">The live argument table containing all directly and transitively referenced resources.</param>
     void SetArgumentTable(IArgumentTable table);
 
-    /// <summary>Snapshots application root values using their interface serializer.</summary>
+    /// <summary>Configures reference preparation and detached execution admission for subsequently selected arguments.</summary>
+    /// <param name="prepare">The metadata preparation callback, or null to disable argument validation.</param>
+    void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare);
+
+    /// <summary>Copies application root values directly through their value writer.</summary>
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>
     void SetArguments<T>(in T arguments)
         where T : struct, IShaderArguments;
 
-    /// <summary>Copies a logical root snapshot for the selected program.</summary>
-    /// <param name="arguments">The root member values and numeric payloads.</param>
-    void SetArguments(ShaderValueSnapshot arguments) => throw new NotSupportedException("This encoder does not support logical argument snapshots.");
+    /// <summary>Copies an ordinary unmanaged value directly without an interface or generated code.</summary>
+    /// <typeparam name="T">The unmanaged argument type.</typeparam>
+    /// <param name="arguments">The raw C# value, including padding.</param>
+    /// <param name="rootParameter">The shader root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged;
 
     /// <summary>Selects a program without changing draw state.</summary>
     /// <param name="pipeline">The same-device program.</param>

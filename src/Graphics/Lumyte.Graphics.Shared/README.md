@@ -2,12 +2,11 @@
 
 グラフィックスバックエンドから `ProjectReference` で参照する共通実装ライブラリです。ソースのリンクコンパイルは使用しません。
 
-- `ShaderDataLayout` は artifact の型 schema を読み、生成時の互換性確認と値の配置を行います。
+- `ShaderDataLayout` は artifact の型 schema を読み、生成時の互換性確認と明示的な配置診断を行います。数値の再配置やPackは提供しません。
 
   `Data(artifact, target, name)`はtargetの展開・reflection解析・layout構築をartifactの寿命内で共有します。`Data(target, name)`・`Root`・`HasRoot`も不変のtargetごとに解析結果を再利用します。所有者は弱参照で結び付け、GPU資源を保持しません。別artifact・別target・同名の異なるschemaを分離し、公開されるshader codeのコピー契約を維持します。成功したlayoutだけを保存し、存在しない名前の問い合わせでキャッシュを増やしません。
-- `ShaderBindingSnapshot` は選択した要素から参照を収集し、循環と転送済み要素の依存snapshotを扱います。
-- `ShaderDataTransferState` は明示copyのmetadata overlayを管理し、submit成功後に公開します。
-- `ShaderBindingData` と `WgslBindingSpecializer` は WGSL を使うバックエンドで必要な binding データと shader variant を生成します。Vulkan は snapshot と layout を利用し、参照の GPU 表現は自身で生成します。
+- `ShaderBindingDependencies.Collect` は検証ONだけでbuffer全体の依存unionを収集し、`Buffers`で各bufferを一回だけ訪問します。数値snapshotや要素別走査はありません。
+- `ShaderBindingData` と `WgslBindingSpecializer` は WGSL を使うバックエンドで必要な binding データと shader variant を生成します。Vulkan は参照依存metadataとlayoutを利用し、参照の GPU 表現は自身で生成します。
 - `ShaderBufferBinding` はallocationと登録byte範囲を保持します。同じallocationでも異なる範囲は別bindingとして解決し、GetElementはそのbinding内の要素位置を指定します。
 - `GraphicsDeviceLifetime` は各backendが観測したdevice lossを一度だけ記録し、保存済みの状態、通知、loss待機を共通管理します。
 
@@ -15,8 +14,104 @@
 
 GPU同期とリソースの有効期間は利用者が管理します。このライブラリはGPU同期や転送命令の自動発行を追加しません。metadataキャッシュの初期構築と公開は内部lockで保護します。
 
-`ShaderBindingSnapshot`の収集と`ShaderDataTransferState`のmetadata overlayはbinding生成に必要な情報だけを保持します。登録の失効、staging revision、command間依存の変化をSubmit時に再検証しません。
-
 `SurfaceFrameLifetime`は取得・提示の局所状態を扱い、ネイティブ取得・提示の明示的な完了待機を提供します。GPU submissionを自動収集せず、GPU使用の完了は利用者が別途確認します。semaphoreのsignal／wait履歴、使用中resourceの保持数、検証callbackは管理しません。
 
-共通の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)に従います。
+無効時の責務は[GRAPHICS-0014](../../../docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)を維持し、明示的な検証を許可する一部変更は[GRAPHICS-0035](../../../docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md)に記録します。
+
+writerは同期呼び出し中だけ暗黙のC#位置を使い、完了後は不透明な参照identityだけを保持します。Wgpu/Browserのstorage poolとremap laneはArgumentTable登録のShaderBufferAccessから決定し、BufferUsageやshaderの文字列パスから推定しません。同一範囲のread/write登録も別laneを使用します。シェーダーとの配置・参照種別の整合性は明示的に有効化する診断であり、Debug／Releaseとも既定無効です。binding分類には使いません。
+
+GraphicsValidationは、command記録をrollback可能な診断transactionとして保持し、Submit時にqueue状態の複製へアクセスを指定順で適用します。成功後だけ状態を公開するため、未提出・破棄・同期的に失敗したnative Submitは後続commandの状態を変えません。bufferはbyte範囲、textureはmip／layer別に追跡します。登録identity、親子、mapping、binary semaphoreとmetadata copyの順序も診断します。GPU内部の動的アクセスは登録範囲として保守的に扱い、直接のnative操作やstaging byte変更は観測できません。D3D12の部分発行済みnative操作や非同期GPU失敗を取り消す保証はありません。
+
+## structの転送境界
+
+IShaderArgumentsを消費するgeneric APIは`where T : struct, IShaderArguments`で、管理参照を許します。生成readonly Writeがコピーするのはprivate unmanaged wireだけで、外側の管理参照をraw bytesとして転送しません。生成partial propertyは宣言のreadonly修飾を正確に保持し、通常のgetへreadonlyを合成しません。in/ref readonly経由では外側structの防御的コピーがあり得ます。引数CaptureはDiagnosticTypeとキャッシュ済み静的generic DiagnosticFields callbackを保存し、入力struct、boxingやinstance closureを保持しません。Capture／Copyではcallbackを呼ばず、明示GetDiagnosticFieldsで初めて`ArgumentDiagnosticCache<T>`のT.TransferFields直接静的dispatchを使います。`Fields<T>(in T)`もこのAOT-safe経路を使い、DynamicMethod／MakeGenericMethodを必要としません。Typeのみの未知Tのreflectionとraw unmanagedの反射field fallbackはAOTでは利用できません。JITではdefault TransferFieldsが空の手書きunmanaged IShaderArgumentsの反射fallbackを保ち、静的metadataのない管理参照入り外側structは診断を空で返し、その管理配置を数値転送しません。ClassDiagnosticSource/GetTransferFieldsは削除しました。
+
+利用者が選んだ要素範囲をCopyFromし、明示CopyBufferします。dirty tracking、field範囲転送、自動coalescingや数値cacheはありません。upload元はGPU消費まで変更・解放しません。default(T)と配列初期要素はconstructorを呼ばず、参照は利用者が設定するまでnullです。DrawingInstructionのnew()はresource indexの-1と参照のdefault!初期化を保ちますが、default!はnullable解析の抑制だけで、null root参照は符号化時に拒否されます。Browser build成功とAOT publication／runtime実行は別で、AOT publicationと実行は未検証です。ShaderRootArgumentsは転送値ではなくmetadataのclassのまま維持します。
+
+## Set時の最終ルート格納領域
+
+ShaderRootArgumentsはRootParameter、ShaderTypeName、WireSize、Referencesの四つの読み取り専用propertyとdetached admission callbackだけを持つ不変metadataです。Create(rootParameter, shaderTypeName, wireSize, references, prepare)は名前、非負のwireSizeとnullableなreferencesを受け取り、任意の参照準備を行います。Admitは実行時の完全な参照集合をcallbackへ渡します。IShaderRootStorageは削除し、公開の代替storage型やobject bagは設けません。Storage、Allocate、Seal、Dispose、IDisposableや共通のsealed／disposed状態はありません。Wgpu／Browserの既存の非公開具象RootStorageだけがIDisposableとしてuniformと一度だけ設定するArgumentsを所有します。writerは具象RootStorageへ直接書き込み、bindingも具象ownerを直接受け取ってSealします。commandはKeepBindingでGPU利用終了まで具象ownerを保持します。Vulkan／D3D12のmetadataは解放不要でSet時のKeepBinding(root)もありません。記録済みbindingは機能上必要な登録とtable identityを保持し、検証ONの場合だけ追加の依存revisionを保持します。未使用metadataは再選択後に保持不要です。各backend内部のShaderTransfer helperがwriterを直接呼び、書き込み・診断・準備・Create失敗では未公開の具象ownerを解放して元の例外を保持します。commandへの所有権移転失敗はSelectRootが扱います。Set成功時だけ新選択を公開し、失敗しても前回の選択を保ちます。
+
+## 値だけを渡す同期writer
+
+IShaderValueWriterの必須抽象メソッドは`WriteValue(ReadOnlySpan<byte> value)`と`WriteReference<T>(IGpuRef<T>? value)`だけです。offset、size、pathや位置移動は渡しません。各backend内部のVulkanShaderValueWriter、Direct3D12ShaderValueWriter、WgpuShaderValueWriter、BrowserShaderValueWriterが暗黙位置とexpectedTransferSizeを持ちます。Setと型付きCopyFromの両方で各backendのShaderTransfer helperがvalue.Write(ref writer)を呼びます。writerはraw区間をVulkan／D3D12のroot span、Wgpu／BrowserのrootのWriteまたは検査済みupload batch viewへ直接送り、参照はstackalloc byte[16]をクリアしてその場で符号化します。数値だけならパディング込み全wireを一回のWriteValueでコピーします。減算による残容量検査とComplete時の完全サイズ一致を要求し、spanを保持しません。
+
+生成型はprivate unmanaged wireのローカルコピー後、実際のC#オフセット順にraw区間と参照を送ります。private static planは順序と妥当性に限定し、不正planはgetter前に拒否します。custom getterも物理順で一回だけ評価し、emitter structは生成しません。IShaderWireSink、IShaderReferenceCursor、IShaderReferenceEmitter、ShaderWire、ShaderWireCursorとWriteWireは削除済みで、互換aliasを残しません。
+
+準備失敗では未公開storageを解放して旧root選択を維持します。検証ONのnative実行だけが最新command-local overlayを含むbuffer全体の推移的参照を再収集し、ShaderRootArguments.Admitを呼びます。admission失敗はnative記録を阻止しますが、CPU状態のrollbackは保証しません。Graphのcopy overlay代理や数値snapshot、codec再実行はありません。
+
+SharedのShaderTransferWriter、IShaderTransferDestination、ShaderRootDestination、ShaderUploadDestination、ShaderDataUpload、ShaderReferenceEncodingとVulkan／D3D12の旧参照encoderは削除し、汎用callbackへの迂回を残しません。任意診断はValidateReference(Type, object?, int)へ型・参照・現在位置を渡し、native参照ごとのShaderValue、new byte[16]やencode delegateを作りません。Vulkanは内部の型付きbuffer handleでShaderHandleのobject boxingを避けます。検証ONまたは明示prepare時の参照配列とimmutable metadata owner、Wgpu／Browserのroot payload allocationとdelegate、実行ごとのbinding／descriptor heap確保は残り、zero allocationやGPU copy削減の実測は主張しません。Browserのinterop span-copyも残ります。
+
+IShaderArguments.Capture／ShaderTransfer.CaptureとShaderValueSnapshotは明示検査・診断専用です。配置検査のFields、reflectionと手書き型の静的metadata取得補助は残しますが、backendの書き込み入力や実行admissionには使いません。ModelVertexの配置検査もUnsafe.SizeOfとFieldsを使い、Captureしません。通常の数値bufferの直接memcpyとGPU copy commandは変更しません。これはシェーダー転送の契約であり、無関係なコンパイル経路などの代替処理を除去する判断ではありません。
+
+## backend-privateな転送方式
+
+共通状態・Graph metadata・所有権・寿命はuniformを仮定しません。SharedのShaderBindingDataはRootSizeと共通Sealを持たず、uniform容量検査やcommit／freezeは具象backend ownerに任せます。Vulkan／D3D12のref struct writerはceil(wireSize/4) wordの有界stack spanをクリアして書き、Complete、任意診断、prepare、metadata作成をすべて終えてから、Setが戻る前にnative定数commandを記録します。一時stackは最終payload ownerではなくdriver command bufferがコピーを所有します。CPU heap数値配列やArrayPool rentalは保持せず、Draw／Dispatchは数値を再送しません。Wgpu／Browserだけがbackend-private uniform emulationの最小16 byte・16-byte整列とnative binding上限を扱います。共通コードにWgpu／Browser feature dispatchは加えません。
+
+Vulkanの容量はVulkanDevice.MaxPushConstantsSize、D3D12はDirect3D12Device.RootConstantDwordCapacity=58／RootConstantByteCapacity=232を参照します。Setでの超過は確保・公開前に拒否し、uniform fallbackを行いません。さらにartifact容量は任意validationと独立した必須ABI検査です。Vulkanは所有deviceに対してshader module生成前、D3D12は全pipeline／partial経路でnative pipeline生成前に検査します。全app ConstantBufferを実際のroot名でShaderDataLayout.Root(target, name).Sizeの論理容量から検査し、lumyteDrawInfoと__lumyte_schema_は除外します。論理232 byteの宣言padding240 byteは58 DWORDだけを読むため許可します。target別shader emitterがVkPushConstants／D3DRoot32BitConstants／UniformBufferを出し分けることは、runtimeの共通所有モデルがtransport非依存であることと両立します。
+
+Vulkanのpush rangeはbind pointごとにoffset 0・物理容量へ固定し、computeの全variantはCompute、graphics／partialの全variantはVertex|Fragmentを使います。Setのstage maskは対応rangeと完全一致し、compute／graphicsのnative push状態を分離します。descriptor visibilityは独立にVertex|Fragment|Computeを許容し、descriptor数の違うlayout全体を同一にする契約ではありません。物理容量検査に加え64 KiBのbackend host stack guardで異常に大きい入力を拒否し、fallbackしません。256 byteは観測deviceの値です。D3D12はdevice初期化時にthread-safe cacheで一つの固定64 DWORD root signature（app 58、table各1、draw 2、SRV 2）を作ります。graphics／compute root pointerを別々に追跡し、同じsignatureのPSO／SetProgram変更では再bindによる定数resetを避けます。
+
+IShaderArguments.`Write<TWriter>`の制約は`where TWriter : IShaderValueWriter, allows ref struct`です。C# 13以降と固定.NET 10 SDKを使い、公開writerの二メソッド・各一引数・offsetなしは変えません。host検査や準備hook失敗ではnative定数を発行せず旧選択を保ちますが、発行済みvoid driver commandやdevice failureのrollbackは保証しません。
+
+Vulkan／D3D12のrender／compute全四encoderはcodecとprepare中を_settingArgumentsで保護し、入れ子のSet、pipeline変更、End、Draw／Dispatchなどの再入を拒否します。Graph準備のtable自動選択に必要なSetArgumentTableだけは許可します。callback後は、捕捉したpipelineのValidateAlive、owner.ValidatePassとpipeline identity一致をすべてnative発行より前に再検査します。raw command bufferやpipelineのDisposeがguardを迂回しても、解放済みhandleを使うnative発行を阻止します。host失敗では旧root選択を保持しますが、呼び出し側が明示したresource Dispose、table自動選択や発行済みdriver commandは取り消しません。
+
+## 選択table全体のbindingと任意の依存検証
+
+bindingは選択したArgumentTableの書き込み済み登録すべてから構築します。capacityの未登録holeはentryではありません。Vulkanは全texture／sampler登録をdescriptorへ投影し、buffer参照は保存済みGPU addressへoffsetを加えてinline符号化します。Direct3D12は全texture／sampler／ReadOnly SRV／ReadWrite UAV登録を投影し、各上限128／16／64／64を適用します。Wgpu／Browserは全登録から有限のbinding poolとremapを構築し、WGSLの個数はcapacityではなく実際の書き込み済み登録を基にします。native binding数・storage範囲・remap容量へ収まらなければ明確に拒否し、巨大な無効binding、追加feature・package・pool・cacheで回避しません。rootなしのshaderも明示選択tableの全登録をbindし、Wgpuは未使用のroot uniform binding 8を省略します。
+
+全登録をbinding可能にすることは、全登録をGPU使用済みとして記録することではありません。backend-privateな登録・remapは検証OFFでも必要な機能状態ですが、同期の所有権や使用hazardを追加しません。resource寿命とCPU／GPU同期は利用者が管理します。
+
+Graphのbarrier・依存順・cullingは、必要なresourceの正確で完全なpass宣言だけを使い、従来どおりallocation全体を保守的に同期します。検証OFFでは宣言の真実性・完全性が利用者の事前条件です。root走査、依存query、準備hook、許可集合、admission callbackの確保を行いません。table共有だけでは使用宣言になりません。
+
+検証ONの場合だけ、Graphはrootとbuffer全体の推移的依存を、buffer allocationまたはtextureの元imageを正規化したresource object identityと宣言read／write権限の合併で照合します。native handle値の衝突判定、要素・byte範囲・view・callback取得元による許可判定は行いません。同じbufferの別宣言範囲から保存した参照も許可されますが、未宣言の別resourceとread-only宣言に対するReadWrite参照は拒否します。
+
+GetGpuRefの具体化はこの粗い許可判定とは別です。要求offset／countと一致する登録を選び、単一要素なら既存登録からGetElementで導出できます。未登録の複数要素範囲に、より広いCountの参照を返しません。新しいslice APIや自動dirty trackingは追加しません。
+
+## buffer全体の読み取り専用依存query
+
+共通境界はIShaderDataSource.TryGetDependenciesだけです。ReadReferences(index)、SetTransferredReferences、SharedのShaderDataTransferStateおよびShaderBindingDependencies.Elementsは削除し、共通の書き込みAPIは設けません。
+
+```csharp
+using System.Diagnostics.CodeAnalysis;
+using Lumyte.Graphics.Abstractions;
+
+// IShaderDataSourceの宣言抜粋。手書きbackendも実装する。
+public interface IShaderDataSource
+{
+    bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies);
+}
+```
+
+既存の有効なsourceに対する呼び出し例です。
+
+```csharp
+// falseを既知の空集合として扱わない。
+if (source.TryGetDependencies(out IShaderReferenceMetadata? dependencies))
+{
+    foreach (IShaderReference reference in dependencies.References)
+    {
+        // 追跡済みのbuffer全体の依存を読み取る。
+    }
+}
+else
+{
+    // 追跡利用不可。呼び出し側が宣言と同期を保証する。
+}
+```
+
+検証OFFでは全backendが数値だけのReferenceCount = 0を含めてfalse／nullを返します。これは追跡利用不可であり、既知の空集合ではありません。登録・remapなどの非公開機能状態は残ります。検証ONではbuffer全体の不変な依存unionを返し、ReferenceCount = 0は既知の空集合としてtrueです。参照付きbufferの未初期化・失敗後の状態は無効で、queryはInvalidOperationExceptionとなり、buffer全体の明示再転送で回復します。部分転送だけでは回復しません。
+
+既知状態への部分更新は旧依存とのunionを保持でき、buffer寿命内で保守的な偽陽性が残ります。全体書き直しは現在のunionを置き換えられますが、記録済みcommandが保持する旧revisionは不変です。要素ごとの配列や毎drawの行走査は不要で、検証ONのShaderBindingDependencies.Buffersが各bufferを一回だけ訪問します。
+
+CPU CopyFromの更新はbackendが所有します。GPU copyは検証ONだけでbackend-privateなbuffer単位のcommand overlayを作り、native copy記録成功後に更新し、queue Submit成功後にだけ公開します。失敗・未送信・破棄したcommandから公開せず、隠れたreadback・待機・数値履歴も持ちません。
+
+### 厳密な参照数とmapped batchの契約
+
+IShaderArgumentsのstatic abstract ReferenceCountは重複も数えた物理16-byte slot数です。backend writerは全modeで0 <= N <= wireSize / 16、WriteReferenceの超過とCompleteの不足、位置・容量・型・範囲を検査します。rootの直接参照配列を収集するのは検証ONまたは利用者が明示したprepare hookがある場合だけです。それ以外はscalar countと単一の暗黙table hintだけを保持します。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
+
+ShaderRootArgumentsはstorageを持たない不変metadata classです。Referencesはnullableでnullは未収集を表し、Createにprepareを渡す場合は利用可能なmetadataが必須です。rootの単一table hintは自動選択を補助しますが、明示SelectedTableが優先します。異なるtableが混在すればnative Set発行前に拒否します。
+
+native CopyFromはbatch全体のmapped spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書きます。Browserは一つの検査済みUint8Array viewへJS.setでコピーし、finallyでviewだけを解放します。検証ONだけHostWriteLeaseで再入書き込み・Map／Unmap／Disposeを診断します。失敗時は部分byte更新を許し、追跡buffer全体を無効にして元例外を保持します。OFFでは利用者がmappingと寿命・並行操作を保証し、追加lock・待機・pinは設けず、無効pointerを実行する試験もしません。
+
+VulkanとD3D12はbuffer作成時の保存済みaddressへchecked offsetを加え、参照ごとのdriver queryやglobal cacheを作りません。native root即時定数、固定signature／stage、pipeline・End・callback後の再検査は継続します。残るbinding確保やBrowserコピーを含めzero allocation／zero copyは保証しません。c1bdf69以前の固定checkpoint測定はこの全table・任意追跡方式の性能結果ではありません。

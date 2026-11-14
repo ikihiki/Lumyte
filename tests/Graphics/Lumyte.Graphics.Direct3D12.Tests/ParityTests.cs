@@ -48,12 +48,14 @@ public sealed class ParityTests
         ShaderTargetData Target(string name) => ShaderArtifact.LoadEmbedded(typeof(ShaderBindingExercise).Assembly, "Lumyte.Shaders." + name + ".lshader").GetTarget(ShaderTarget.Dxil);
         ShaderTargetData compute = Target("binding-compute");
         var root = ShaderDataLayout.Root(compute, "arguments");
-        Assert.Equal(112, root.Size);
+        Assert.Equal(100, root.Size);
         Assert.Equal(20, ShaderDataLayout.Data(compute, "BindingNode").Size);
         using var json = System.Text.Json.JsonDocument.Parse(compute.ReflectionJson);
         System.Text.Json.JsonElement binding = json.RootElement.GetProperty("parameters").EnumerateArray().Single(p => p.GetProperty("name").GetString() == "arguments").GetProperty("binding");
         Assert.Equal("constantBuffer", binding.GetProperty("kind").GetString());
         Assert.Equal(8, binding.GetProperty("index").GetInt32());
+
+        // Explicit diagnostic calls have the same contract in both configurations.
         Assert.Throws<ArgumentException>(() => ShaderDataLayout.ValidateProgram(Target("binding-mismatch-vertex"), Target("binding-mismatch-fragment")));
         ShaderDataLayout.ValidateProgram(Target("binding-cycle-vertex"), Target("binding-cycle-fragment"));
     }

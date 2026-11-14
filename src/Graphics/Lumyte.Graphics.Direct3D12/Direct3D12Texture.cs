@@ -66,7 +66,9 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         _ = Native;
-        return new Direct3D12TextureView(this, TextureValidation.Resolve(this, desc));
+        var view = new Direct3D12TextureView(this, TextureValidation.Resolve(this, desc));
+        Owner.Validation?.Register(view, this);
+        return view;
     }
 
     public void Dispose()
@@ -75,6 +77,8 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
         {
             throw new InvalidOperationException("The frame owns this image lease.");
         }
+
+        Owner.Validation?.Release(this);
 
         DisposeLease();
     }

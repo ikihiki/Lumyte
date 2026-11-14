@@ -2,13 +2,21 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed class Direct3D12Surface(Direct3D12Device owner, nint window) : IGraphicsSurface
+internal sealed class Direct3D12Surface : IGraphicsSurface
 {
+    private readonly Direct3D12Device _owner;
+    private readonly nint _window;
     private bool _disposed;
 
-    internal Direct3D12Device Owner => owner;
+    internal Direct3D12Surface(Direct3D12Device owner, nint window)
+    {
+        (_owner, _window) = (owner, window);
+        _owner.Validation?.Register(this, _owner);
+    }
 
-    internal nint Window => window;
+    internal Direct3D12Device Owner => _owner;
+
+    internal nint Window => _window;
 
     public SurfaceCapabilities GetCapabilities()
     {
@@ -30,13 +38,22 @@ internal sealed class Direct3D12Surface(Direct3D12Device owner, nint window) : I
         return new Direct3D12Swapchain(this, desc);
     }
 
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Owner.Validation?.Release(this);
+        _disposed = true;
+    }
 
     internal void ValidateAlive()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         Owner.RequireReady();
-        if (NativeMethods.WindowValid(window) == 0)
+        if (NativeMethods.WindowValid(_window) == 0)
         {
             throw new InvalidOperationException("The borrowed HWND is no longer valid.");
         }

@@ -64,3 +64,16 @@ dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter FullyQualif
 回帰caseは256命令を最初に描画し、255命令と8/9・16/17境界も独立した期待画素で確認します。nativeのphysical-pointer命令取得では、SIMDの非activeなループ終了レーンがone-past-endを読むことがあるため、indexを独立したbuffer Countの範囲へ制限します。正しい描画プログラムの有効iterationではindexは変わりません。buffer Count=0・不正な依存index等、任意の不正GPU入力を検証する変更ではありません。
 
 修正前は空cache・4CPUのlavapipeでtesthost SIGSEGVを再現し、native dumpで命令bufferのCount=256に対するindex=256の読取りを確認しました。最大RSSは約400MiBで、OOMとは区別しています。cacheが温まった107件のsuite成功だけでは、この回帰を検証したことにはなりません。crash dumpはプロセス内メモリーを含むため公開しません。
+
+## 任意のmanaged検証
+
+OptionalGraphicsValidationTests、ValidationSubmissionTests、EncoderValidationTests、PresentationValidationTests、OptionalLayoutCostTestsはnative GPUへ不正な操作を渡さず、同じfixtureで有効／無効の契約を確認します。DebugとReleaseの両方で実行してください。検証を無効にした最初の操作での診断状態・metadata列挙・probe呼び出しの省略、部分範囲、複数command、事前照合失敗、記録rollback、キャンセルされた完了待機も対象です。
+
+```sh
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
+dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
+```
+
+実GPUの有効な転送経路はLUMYTE_GRAPHICS_GPU_TESTS=1で追加します。ValidatedPresentationNativeTestsはLinuxの明示的に許可されたX11 displayに対してLUMYTE_GRAPHICS_PRESENTATION_TESTS=1を設定した場合だけ実行し、Vulkan／Wgpuで検証の有効／無効を対にします。実window、surface、swapchain、取得semaphore、clear、明示barrier、Submit、提示semaphore、Present、両完了待機と解放順を通ります。通常のheadless実行では4件をskipします。
+
+物理displayがない場合は、独立したWeston headless GLとXwaylandのclientから同じrunnerを実行できます。他ユーザーやgreeterのDISPLAY／認証を流用しないでください。compositorとapplicationのrenderer、割り当てられたDISPLAY、client終了値を個別に記録し、仮想提示の機能確認と物理scanout／VSyncの測定を区別します。Browserの実WebGPU実行とWindowsのD3D12 native実行は別環境の検証であり、managed compile成功で代用しません。

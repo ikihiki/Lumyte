@@ -7,11 +7,22 @@ namespace Lumyte.Graphics.Wgpu;
 internal sealed unsafe class WgpuShaderBinding : IDisposable
 {
     private readonly List<nint> _buffers = [];
+    private readonly ShaderBindingData _data;
+    private readonly WgpuArgumentTable? _table;
+    private readonly IReadOnlyCollection<IShaderReference> _registrations;
     private WGPUBindGroupImpl* _native;
 
-    internal WgpuShaderBinding(WgpuDevice owner, ShaderBindingData data, WGPUBindGroupLayoutImpl* layout)
+    internal WgpuShaderBinding(WgpuDevice owner, ShaderBindingData data, WgpuRootStorage? rootStorage, WGPUBindGroupLayoutImpl* layout, WgpuArgumentTable? table, IReadOnlyCollection<IShaderReference> registrations)
     {
-        if ((ulong)data.Root.Length > owner.Limits.maxUniformBufferBindingSize || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
+        _data = data;
+        _table = table;
+        _registrations = registrations;
+        if (rootStorage != null && owner.Caps.MaxUniformBuffersPerStage < 1)
+        {
+            throw new NotSupportedException("Root uniform emulation exceeds the enabled per-stage binding limits.");
+        }
+
+        if ((rootStorage != null && (ulong)rootStorage.Size > owner.Limits.maxUniformBufferBindingSize) || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
         {
             throw new NotSupportedException("Internal root or remap binding exceeds the device size limit.");
         }
@@ -19,8 +30,12 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
         try
         {
             var entries = new List<WGPUBindGroupEntry>();
-            WGPUBufferImpl* root = Buffer(owner, data.Root, A.BufferUsage.Uniform);
-            entries.Add(new() { binding = 8, buffer = root, size = (ulong)data.Root.Length });
+            if (rootStorage != null)
+            {
+                rootStorage.Seal();
+                entries.Add(new() { binding = 8, buffer = rootStorage.Native, size = (ulong)rootStorage.Size });
+            }
+
             if (data.Map.Length != 0)
             {
                 WGPUBufferImpl* map = Buffer(owner, data.Map, A.BufferUsage.Storage);
@@ -82,13 +97,25 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
         _buffers.Clear();
     }
 
-    internal static WGPUPipelineLayoutImpl* CreateLayout(WgpuDevice owner, ShaderBindingData data, bool compute = false)
+    internal static WGPUPipelineLayoutImpl* CreateLayout(WgpuDevice owner, ShaderBindingData data, bool includeRoot, bool compute = false)
     {
-        ulong visibility = (ulong)(compute ? A.ShaderStage.Compute : A.ShaderStage.Vertex | A.ShaderStage.Fragment);
-        var entries = new List<WGPUBindGroupLayoutEntry>
+        if ((includeRoot && owner.Limits.maxUniformBuffersPerShaderStage < 1) ||
+            (ulong)data.Map.Length > owner.Limits.maxBufferSize ||
+            (ulong)data.Map.Length > owner.Limits.maxStorageBufferBindingSize ||
+            (uint)data.Textures.Count > owner.Limits.maxSampledTexturesPerShaderStage ||
+            (uint)data.Samplers.Count > owner.Limits.maxSamplersPerShaderStage ||
+            (uint)(data.Buffers.Count + data.Writable.Count + (data.Map.Length == 0 ? 0 : 1)) > owner.Limits.maxStorageBuffersPerShaderStage)
         {
-            new() { binding = 8, visibility = visibility, buffer = new() { type = WGPUBufferBindingType.Uniform } },
-        };
+            throw new NotSupportedException("Argument table exceeds actual device binding limits.");
+        }
+
+        ulong visibility = (ulong)(compute ? A.ShaderStage.Compute : A.ShaderStage.Vertex | A.ShaderStage.Fragment);
+        var entries = new List<WGPUBindGroupLayoutEntry>();
+        if (includeRoot)
+        {
+            entries.Add(new() { binding = 8, visibility = visibility, buffer = new() { type = WGPUBufferBindingType.Uniform } });
+        }
+
         if (data.Map.Length != 0)
         {
             entries.Add(new() { binding = 9, visibility = visibility, buffer = new() { type = WGPUBufferBindingType.ReadOnlyStorage } });
@@ -112,7 +139,7 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
             }
         }
 
-        if ((uint)entries.Count > owner.Limits.maxBindingsPerBindGroup)
+        if ((uint)entries.Count > owner.Limits.maxBindingsPerBindGroup || entries.Any(entry => entry.binding >= owner.Limits.maxBindingsPerBindGroup))
         {
             throw new NotSupportedException("Shader arguments exceed the bind group entry limit.");
         }

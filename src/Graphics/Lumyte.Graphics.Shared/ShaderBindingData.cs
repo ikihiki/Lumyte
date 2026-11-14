@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Packs snapshots and finite resource bindings for WGSL backends.</summary>
+/// <summary>Projects a complete argument table into finite WGSL resource bindings.</summary>
 public sealed class ShaderBindingData
 {
     private readonly Dictionary<object, int> _textures = [];
@@ -13,41 +13,13 @@ public sealed class ShaderBindingData
     private readonly Dictionary<ShaderBufferBinding, int> _writable = [];
 
     /// <summary>Initializes a new instance of the <see cref="ShaderBindingData"/> class.</summary>
-    /// <param name="snapshot">The snapshot input.</param>
+    /// <param name="registrations">The complete selected argument table registrations.</param>
     /// <param name="target">The target input.</param>
     /// <param name="caps">The caps input.</param>
-    public ShaderBindingData(ShaderBindingSnapshot snapshot, ShaderTargetData target, DeviceCaps caps)
+    public ShaderBindingData(IReadOnlyCollection<IShaderReference> registrations, ShaderTargetData target, DeviceCaps caps)
     {
-        Snapshot = snapshot;
-        var rootLayout = ShaderDataLayout.Root(target, snapshot.Root.RootParameter);
-        var read = new HashSet<IShaderReference>();
-        var write = new HashSet<IShaderReference>();
-        void Uses(IShaderDataLayout layout, ShaderValueSnapshot values)
-        {
-            foreach (ShaderValue value in values.Values)
-            {
-                if (value.Reference is IShaderReference reference)
-                {
-                    string kind = layout.ReferenceKind(value.Path);
-                    if (kind == "GpuBufferRef")
-                    {
-                        read.Add(reference);
-                    }
-                    else if (kind == "GpuRWBufferRef")
-                    {
-                        write.Add(reference);
-                    }
-                }
-            }
-        }
-
-        Uses(rootLayout, snapshot.Root);
-        foreach (((IShaderDataSource source, ulong _), ShaderValueSnapshot values) in snapshot.Elements)
-        {
-            Uses(source.Layout, values);
-        }
-
-        foreach (IShaderReference reference in snapshot.References)
+        ArgumentNullException.ThrowIfNull(registrations);
+        foreach (IShaderReference reference in registrations)
         {
             object resource = reference.Resource;
             if (resource is IGraphicsTextureView)
@@ -58,31 +30,30 @@ public sealed class ShaderBindingData
             {
                 _samplers.TryAdd(resource, _samplers.Count);
             }
-            else if (read.Contains(reference))
+            else if (reference.BufferAccess == ShaderBufferAccess.ReadOnly)
             {
                 _buffers.TryAdd(BufferRange(reference, caps), _buffers.Count);
             }
 
-            if (write.Contains(reference))
+            if (resource is not IGraphicsTextureView and not IGraphicsSampler && reference.BufferAccess == ShaderBufferAccess.ReadWrite)
             {
                 _writable.TryAdd(BufferRange(reference, caps), _writable.Count);
             }
         }
 
-        if (_textures.Count > caps.MaxSampledTexturesPerStage || _samplers.Count > caps.MaxSamplersPerStage || _buffers.Count + _writable.Count + (snapshot.References.Count == 0 ? 0 : 1) > caps.MaxStorageBuffersPerStage || caps.MaxUniformBuffersPerStage < 1)
+        if (_textures.Count > caps.MaxSampledTexturesPerStage || _samplers.Count > caps.MaxSamplersPerStage || _buffers.Count + _writable.Count + (registrations.Count == 0 ? 0 : 1) > caps.MaxStorageBuffersPerStage)
         {
-            throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
+            throw new NotSupportedException("Argument table entries exceed the enabled per-stage binding limits.");
         }
 
-        Root = rootLayout.Pack(snapshot.Root, ReferenceBytes);
-        uint capacity = snapshot.References.Count == 0 ? 0 : checked(snapshot.References.Max(r => r.Slot) + 1);
+        uint capacity = registrations.Count == 0 ? 0 : checked(registrations.Max(r => r.Slot) + 1);
         if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
         {
             throw new NotSupportedException("The reference remap exceeds the storage binding size limit.");
         }
 
         Map = new byte[checked((int)capacity * 16)];
-        foreach (IShaderReference reference in snapshot.References)
+        foreach (IShaderReference reference in registrations)
         {
             int offset = checked((int)reference.Slot * 16);
             if (_textures.TryGetValue(reference.Resource, out int texture))
@@ -96,23 +67,17 @@ public sealed class ShaderBindingData
             }
 
             var range = new ShaderBufferBinding(reference.Resource, reference.RegistrationOffsetInBytes, reference.RegistrationSizeInBytes);
-            if (_buffers.TryGetValue(range, out int buffer))
+            if (reference.BufferAccess == ShaderBufferAccess.ReadOnly && _buffers.TryGetValue(range, out int buffer))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 8), (uint)buffer);
             }
 
-            if (_writable.TryGetValue(range, out int writable))
+            if (reference.BufferAccess == ShaderBufferAccess.ReadWrite && _writable.TryGetValue(range, out int writable))
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 12), (uint)writable);
             }
         }
     }
-
-    /// <summary>Gets the dependency snapshot.</summary>
-    public ShaderBindingSnapshot Snapshot { get; }
-
-    /// <summary>Gets the packed root argument bytes.</summary>
-    public byte[] Root { get; }
 
     /// <summary>Gets the resource remapping bytes.</summary>
     public byte[] Map { get; }
@@ -166,6 +131,4 @@ public sealed class ShaderBindingData
 
         return new(reference.Resource, offset, size);
     }
-
-    private static byte[] ReferenceBytes(ShaderValue value, string kind) => ShaderReferenceEncoding.Pack(value, kind);
 }

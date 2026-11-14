@@ -7,14 +7,16 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 {
     private ShaderTargetData? _target;
     private IArgumentTable? _table;
+    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepare;
+    private TestRootOwner? _selected;
 
     internal List<ShaderValueSnapshot> Snapshots { get; } = [];
 
     internal List<ShaderValueSnapshot> Executions { get; } = [];
 
-    internal List<ShaderBindingSnapshot> Bindings { get; } = [];
+    internal List<ShaderBindingDependencies> Bindings { get; } = [];
 
-    internal Func<IShaderDataSource, ulong, ShaderValueSnapshot>? ReadShaderData { get; set; }
+    internal Func<IShaderDataSource, IShaderReferenceMetadata?>? ReadShaderData { get; set; }
 
     internal int Draws { get; private set; }
 
@@ -28,20 +30,28 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     internal Exception? EndException { get; init; }
 
+    public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => _prepare = prepare;
+
     public void SetArgumentTable(IArgumentTable table) => _table = table;
 
     public void SetArguments<T>(in T arguments)
-        where T : struct, IShaderArguments => throw new NotSupportedException();
-
-    public void SetArguments(ShaderValueSnapshot arguments)
+        where T : struct, IShaderArguments
     {
-        if (SetArgumentsException is { } error)
-        {
-            throw error;
-        }
+        ThrowSelectionError();
+        var layout = ShaderDataLayout.Root(_target!, T.RootParameter);
+        TestRootOwner root = TestShaderTransfer.Create(in arguments, size => new MemoryStorage(size), Encode, diagnostic: layout, prepare: _prepare);
+        _selected = root;
+        RecordSelection(root, ShaderTransfer.Fields(in arguments));
+    }
 
-        ShaderDataLayout.Root(_target!, arguments.RootParameter).ValidateArguments(arguments, validateReferences: true);
-        Snapshots.Add(arguments.Copy());
+    public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
+        where T : unmanaged
+    {
+        ThrowSelectionError();
+        var layout = ShaderDataLayout.Root(_target!, rootParameter);
+        TestRootOwner root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => new MemoryStorage(size), diagnostic: layout, prepare: _prepare);
+        _selected = root;
+        RecordSelection(root, ShaderTransfer.Fields<T>());
     }
 
     public void SetPipeline(IGraphicsPipeline pipeline) => _target = pipeline.Desc.VertexShader.Artifact.GetTarget(ShaderTarget.SpirV);
@@ -125,12 +135,55 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
         }
     }
 
+    private static byte[] Encode(ShaderValue value) => new byte[16];
+
     private void CaptureExecution()
     {
         if (Snapshots.Count != 0)
         {
-            Bindings.Add(ShaderBindingSnapshot.Capture(Snapshots.Last(), _table, ReadShaderData));
+            ShaderBindingDependencies? binding = _selected!.Metadata.References == null ? null : ShaderBindingDependencies.Collect(_selected.Metadata, _table, ReadShaderData);
+            _selected!.Seal();
+            if (binding != null)
+            {
+                Bindings.Add(binding);
+            }
+
             Executions.Add(Snapshots.Last());
+        }
+    }
+
+    private void ThrowSelectionError()
+    {
+        if (SetArgumentsException is { } error)
+        {
+            throw error;
+        }
+    }
+
+    // Test observations only: read the fixture's final storage after successful selection.
+    // These diagnostic bytes are never fed back into any production writing API.
+    private void RecordSelection(TestRootOwner root, IReadOnlyList<ShaderTransferField> fields)
+        => Snapshots.Add(new(
+            root.RootParameter,
+            root.ShaderTypeName,
+            ((MemoryStorage)root.Storage).Bytes.AsMemory(0, root.WireSize).ToArray(),
+            [],
+            fields));
+
+    private sealed class MemoryStorage(int size) : ITestShaderRootStorage
+    {
+        public int Size => Bytes.Length;
+
+        internal byte[] Bytes { get; } = new byte[size];
+
+        public void Write(ReadOnlySpan<byte> bytes, int offset) => bytes.CopyTo(Bytes.AsSpan(offset));
+
+        public void Seal()
+        {
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

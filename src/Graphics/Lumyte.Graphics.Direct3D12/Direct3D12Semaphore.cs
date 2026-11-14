@@ -9,7 +9,7 @@ internal sealed class Direct3D12Semaphore : IGraphicsSemaphore
     internal Direct3D12Semaphore(Direct3D12Device owner)
     {
         Owner = owner;
-        owner.Check(NativeMethods.FenceCreate(owner.Native, out _native));
+        owner.QueueDriver.CreateFence(owner, out _native);
     }
 
     internal Direct3D12Device Owner { get; }
@@ -29,21 +29,22 @@ internal sealed class Direct3D12Semaphore : IGraphicsSemaphore
 
     public void Dispose()
     {
-        NativeMethods.Release(_native);
+        Owner.Validation?.Release(this);
+        Owner.QueueDriver.Release(_native);
         _native = 0;
     }
 
     internal void Signal()
     {
         ValidateSignal();
-        Owner.Check(NativeMethods.QueueSignalValue(Owner.Native, Native, SignalValue));
+        Owner.QueueDriver.Signal(Owner, Native, SignalValue);
         SignalValue++;
     }
 
     internal void Wait()
     {
         ValidateWait();
-        Owner.Check(NativeMethods.QueueWaitValue(Owner.Native, Native, WaitValue));
+        Owner.QueueDriver.Wait(Owner, Native, WaitValue);
         WaitValue++;
     }
 

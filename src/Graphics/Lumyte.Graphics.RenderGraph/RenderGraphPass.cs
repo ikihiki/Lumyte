@@ -65,7 +65,7 @@ public sealed class RenderGraphPass
     /// <param name="discard">Promises to overwrite every element without preserving prior contents; requires write-only access.</param>
     /// <returns>This pass.</returns>
     public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope, bool discard = false)
-        where T : struct, IShaderData => UseShaderDataCore(buffer, 0, buffer.Count, scope, discard, repeated: false);
+        where T : struct, IShaderArguments => UseShaderDataCore(buffer, 0, buffer.Count, scope, discard, repeated: false);
 
     /// <summary>Declares borrowed storage whose writes are confined to this pass, without making an otherwise dead pass observable.</summary>
     /// <typeparam name="T">The unmanaged storage element.</typeparam>
@@ -81,7 +81,7 @@ public sealed class RenderGraphPass
     /// <param name="scope">All actual intra-pass accesses.</param>
     /// <returns>This pass; the caller still owns the allocation.</returns>
     public RenderGraphPass UseLocalShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : struct, IShaderData => UseShaderDataCore(Owner.LocalShaderData(this, buffer, scope), 0, buffer.Count, scope, discard: false, repeated: false);
+        where T : struct, IShaderArguments => UseShaderDataCore(Owner.LocalShaderData(this, buffer, scope), 0, buffer.Count, scope, discard: false, repeated: false);
 
     /// <summary>Declares an exact sampled view while hazards remain conservatively allocation-wide.</summary>
     /// <param name="texture">The logical image.</param>
@@ -119,7 +119,7 @@ public sealed class RenderGraphPass
     /// <param name="scope">The actual accesses.</param>
     /// <returns>This pass.</returns>
     public RenderGraphPass UseShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count, BarrierScope scope)
-        where T : struct, IShaderData => UseShaderDataCore(buffer, offset, count, scope, discard: false, repeated: true);
+        where T : struct, IShaderArguments => UseShaderDataCore(buffer, offset, count, scope, discard: false, repeated: true);
 
     /// <summary>Declares a borrowed immutable sampler by identity without introducing a barrier or write root.</summary>
     /// <param name="sampler">The sampler to retain through GPU completion.</param>
@@ -166,7 +166,7 @@ public sealed class RenderGraphPass
         where T : unmanaged => UseBufferCore(Owner.LocalBuffer(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);
 
     internal RenderGraphPass UseLocalShaderDataBuffer<T>(ShaderDataSlice<T> range, BarrierScope scope)
-        where T : struct, IShaderData => UseShaderDataCore(Owner.LocalShaderData(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);
+        where T : struct, IShaderArguments => UseShaderDataCore(Owner.LocalShaderData(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);
 
     private static ArgumentBufferAccess? ShaderAccess(BarrierScope scope)
     {
@@ -194,7 +194,7 @@ public sealed class RenderGraphPass
     }
 
     private RenderGraphPass UseShaderDataCore<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count, BarrierScope scope, bool discard, bool repeated)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(buffer);
         Range(offset, count, buffer.Count);

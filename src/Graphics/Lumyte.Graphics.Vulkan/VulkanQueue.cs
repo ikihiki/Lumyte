@@ -15,6 +15,8 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        owner.Validation?.ValidateSemaphores(desc);
+        GraphicsValidation.SubmissionState? validationState = owner.Validation?.PrepareSubmission(desc);
         IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
         if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
@@ -103,12 +105,19 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             throw new InvalidOperationException($"Vulkan QueueSubmit failed: {result}.");
         }
 
+        if (validationState != null)
+        {
+            owner.Validation!.CommitSubmission(validationState);
+        }
+
         foreach (VulkanCommandBuffer command in commands)
         {
             command.MarkSubmitted();
         }
 
-        return new VulkanSubmission(owner, commands, fence);
+        var submission = new VulkanSubmission(owner, commands, fence);
+        owner.Validation?.SubmittedSemaphores(submission, desc);
+        return submission;
     }
 
     private static PipelineStageFlags NativeStages(PipelineStage stages)

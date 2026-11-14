@@ -13,6 +13,27 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
+        if (owner.Validation != null)
+        {
+            foreach (SemaphoreWaitDesc wait in desc.WaitSemaphores)
+            {
+                if (wait.Semaphore is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, owner))
+                {
+                    throw new ArgumentException("Validation: semaphore belongs to another device.");
+                }
+            }
+
+            foreach (IGraphicsSemaphore signal in desc.SignalSemaphores)
+            {
+                if (signal is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, owner))
+                {
+                    throw new ArgumentException("Validation: semaphore belongs to another device.");
+                }
+            }
+        }
+
+        owner.Validation?.ValidateSemaphores(desc);
+        GraphicsValidation.SubmissionState? validationState = owner.Validation?.PrepareSubmission(desc);
         IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
         if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {
@@ -38,11 +59,18 @@ internal sealed unsafe class WgpuQueue(WgpuDevice owner) : IGraphicsQueue
             WGPU.wgpuQueueSubmit(owner.NativeDevice.Queue.Handle, (nuint)handles.Length, (WGPUCommandBufferImpl**)data);
         }
 
+        if (validationState != null)
+        {
+            owner.Validation!.CommitSubmission(validationState);
+        }
+
         foreach (WgpuCommandBuffer buffer in commands)
         {
             buffer.MarkSubmitted();
         }
 
-        return new WgpuSubmission(owner, commands);
+        var submission = new WgpuSubmission(owner, commands);
+        owner.Validation?.SubmittedSemaphores(submission, desc);
+        return submission;
     }
 }

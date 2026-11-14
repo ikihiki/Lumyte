@@ -56,6 +56,24 @@ public static class ArgumentTableExercise
         other.Dispose();
         view.Dispose();
 
+        // Usage is a resource capability; each registration chooses its own storage view.
+        Expect<ArgumentException>(() => table.WriteBuffer(1, buffer.SliceElements(0, 1), ShaderBufferAccess.ReadWrite));
+        Expect<ArgumentOutOfRangeException>(() => table.WriteBuffer(1, buffer.SliceElements(0, 1), (ShaderBufferAccess)99));
+        using IGraphicsBuffer<uint> writableOnly = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderWrite });
+        Expect<ArgumentException>(() => table.WriteBuffer(1, writableOnly.SliceElements(0, 4)));
+        IGpuRef<uint> writeOnlyView = table.WriteBuffer(1, writableOnly.SliceElements(0, 4), ShaderBufferAccess.ReadWrite);
+        Require(((IShaderReference)writeOnlyView.GetElement(1)).BufferAccess == ShaderBufferAccess.ReadWrite, "Writable element lost registration access.");
+        using IGraphicsBuffer<uint> shared = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite });
+        IGpuRef<uint> readView = table.WriteBuffer(0, shared.SliceElements(0, 4));
+        IGpuRef<uint> writeView = table.WriteBuffer(1, shared.SliceElements(0, 4), ShaderBufferAccess.ReadWrite);
+        Require(((IShaderReference)readView).BufferAccess == ShaderBufferAccess.ReadOnly && ((IShaderReference)writeView).BufferAccess == ShaderBufferAccess.ReadWrite, "Aliased registrations shared access state.");
+        Require(((IShaderReference)readView.GetElement(2)).BufferAccess == ShaderBufferAccess.ReadOnly && ((IShaderReference)writeView.GetElement(2)).BufferAccess == ShaderBufferAccess.ReadWrite, "Element references lost registration identity.");
+        IGpuRef<uint> replaced = table.WriteBuffer(0, shared.SliceElements(0, 4), ShaderBufferAccess.ReadWrite);
+        Require(!ReferenceEquals(readView, replaced) && ((IShaderReference)readView).BufferAccess == ShaderBufferAccess.ReadOnly && ((IShaderReference)replaced).BufferAccess == ShaderBufferAccess.ReadWrite, "Replacement mutated the previous registration metadata.");
+
+        // Old references are inspected as immutable CPU metadata only, never executed after replacement.
+        table.ReleaseBuffer(1);
+
         using IGraphicsBuffer<ushort> words = device.CreateBuffer(new BufferDesc<ushort> { Count = 8, Usage = BufferUsage.ShaderRead });
         IGpuRef<ushort> differentlyTyped = table.WriteBuffer(0, words.SliceElements(1, 3));
         Require(differentlyTyped.GetElement(2).Count == 1 && sampling.GetElement(0).Count == 1, "Replacement invalidated a different resource kind.");

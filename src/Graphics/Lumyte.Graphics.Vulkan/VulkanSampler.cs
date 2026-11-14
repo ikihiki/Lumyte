@@ -64,6 +64,8 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
             return;
         }
 
+        _owner.Validation?.Release(this);
+
         _owner.Api.DestroySampler(_owner.NativeDevice, _native, null);
         _disposed = true;
     }

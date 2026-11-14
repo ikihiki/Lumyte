@@ -16,14 +16,14 @@ internal sealed class TestGraphCommands : IGraphicsCommandBuffer
     public void Barrier(TextureBarrierDesc barrier) => Events.Add(barrier);
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData => Events.Add(barrier);
+        where T : struct, IShaderArguments => Events.Add(barrier);
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
         where TDestination : unmanaged => Events.Add("copy");
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData => throw new NotSupportedException();
+        where T : struct, IShaderArguments => throw new NotSupportedException();
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 

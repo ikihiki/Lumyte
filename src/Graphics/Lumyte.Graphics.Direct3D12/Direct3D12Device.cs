@@ -6,8 +6,29 @@ namespace Lumyte.Graphics.Direct3D12;
 /// <summary>Owns a Direct3D 12 device and direct queue.</summary>
 public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 {
+    /// <summary>The application root capacity in DWORDs after the six-DWORD fixed root-signature cost.</summary>
+    public const int RootConstantDwordCapacity = 58;
+
+    /// <summary>The maximum logical application root wire size in bytes.</summary>
+    public const int RootConstantByteCapacity = RootConstantDwordCapacity * sizeof(uint);
+
     private readonly GraphicsDeviceLifetime _lifetime;
+
     private readonly nint _native;
+    private readonly IDirect3D12QueueDriver? _queueDriver;
+    private bool _hasCreatedResources;
+    private Direct3D12Submission? _failedSubmissions;
+
+    internal Direct3D12Device(IDirect3D12QueueDriver driver, bool validation)
+    {
+        _queueDriver = driver;
+        _lifetime = new(this);
+        Queue = new Direct3D12Queue(this);
+        if (validation)
+        {
+            EnableValidation();
+        }
+    }
 
     private Direct3D12Device(nint native, bool partial)
     {
@@ -24,6 +45,12 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         add => _lifetime.DeviceLost += value;
         remove => _lifetime.DeviceLost -= value;
     }
+
+    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
+    public GraphicsValidation? Validation { get; private set; }
+
+    /// <inheritdoc />
+    public bool ValidationEnabled => Validation != null;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -72,6 +99,20 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
     /// <summary>Gets a value indicating whether Preview partial programs were requested and validated on the selected driver.</summary>
     public bool PartialGraphicsProgramsEnabled { get; }
+
+    internal nint QueueNative
+    {
+        get
+        {
+            // Removal probes remain valid while lost, but never use a freed owner.
+            ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
+            return _native;
+        }
+    }
+
+    internal IDirect3D12QueueDriver QueueDriver => _queueDriver ?? NativeDirect3D12QueueDriver.Instance;
+
+    internal Direct3D12Submission? FailedSubmission => _failedSubmissions;
 
     internal nint Native
     {
@@ -156,7 +197,21 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new NotSupportedException("Buffer usage is incompatible with the selected heap.");
         }
 
-        return new Direct3D12Buffer<T>(this, desc, layout, size);
+        var child = new Direct3D12Buffer<T>(this, desc, layout, size);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
+    }
+
+    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
+    public void EnableValidation()
+    {
+        if (Validation == null && _hasCreatedResources)
+        {
+            throw new InvalidOperationException("Enable validation before creating device resources.");
+        }
+
+        Validation ??= new GraphicsValidation();
     }
 
     /// <inheritdoc />
@@ -164,33 +219,83 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         ArgumentNullException.ThrowIfNull(desc);
         RequireReady();
-        return new Direct3D12CommandBuffer(this);
+        var child = new Direct3D12CommandBuffer(this);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
-    public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
+    public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        int removed = NativeMethods.DeviceRemoved(_native);
+        int removed = QueueDriver.DeviceRemoved(this);
         if (removed >= 0)
         {
-            throw new InvalidOperationException("Retirement requires confirmed native device removal.");
+            if (_failedSubmissions == null)
+            {
+                throw new InvalidOperationException("Retirement requires confirmed native device removal or a partially issued submission.");
+            }
+
+            try
+            {
+                while (_failedSubmissions is { } pending)
+                {
+                    if (!pending.HasNativeUse)
+                    {
+                        pending.AbandonUnissued();
+                    }
+                    else
+                    {
+                        pending.EnsureCompletionSignal();
+                        await pending.WaitAsync(cancellationToken).ConfigureAwait(false);
+                        pending.Dispose();
+                    }
+
+                    _failedSubmissions = pending.NextFailed;
+                    pending.NextFailed = null;
+                }
+
+                return;
+            }
+            catch (Exception error) when (error is not OperationCanceledException && QueueDriver.DeviceRemoved(this) < 0)
+            {
+                // Native removal during recovery is also an explicit retirement
+                // confirmation, not a reason to lose the retained owners.
+                removed = QueueDriver.DeviceRemoved(this);
+            }
         }
 
         _lifetime.ReportLoss($"0x{removed:X8}", "Direct3D 12 device was removed.");
-        return ValueTask.CompletedTask;
+        while (_failedSubmissions is { } pending)
+        {
+            pending.RetireAfterDeviceRemoval();
+            _failedSubmissions = pending.NextFailed;
+            pending.NextFailed = null;
+        }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
+        RetireCompletedFailedSubmissions();
+        if (_failedSubmissions != null)
+        {
+            throw new InvalidOperationException("Retire partial native submissions before device disposal.");
+        }
+
+        Validation?.Release(this);
         if (Status == GraphicsDeviceStatus.Disposed)
         {
             return;
         }
 
-        NativeMethods.DeviceDestroy(_native);
+        if (_native != 0)
+        {
+            NativeMethods.DeviceDestroy(_native);
+        }
+
         _lifetime.Dispose();
     }
 
@@ -199,7 +304,11 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         TextureValidation.Validate(desc, Caps);
-        return new Direct3D12Texture(this, desc);
+        var child = new Direct3D12Texture(this, desc);
+        Validation?.SetTextureState(child, TextureState.Undefined);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -207,7 +316,10 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         SamplerValidation.Validate(desc, Caps);
-        return new Direct3D12Sampler(this, desc);
+        var child = new Direct3D12Sampler(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -220,7 +332,10 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new ArgumentException("An argument table must have at least one logical slot.", nameof(desc));
         }
 
-        return new Direct3D12ArgumentTable(this, desc);
+        var child = new Direct3D12ArgumentTable(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -228,14 +343,20 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(artifact);
-        return new Direct3D12Shader(this, artifact);
+        var child = new Direct3D12Shader(this, artifact);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
     public IGraphicsSemaphore CreateSemaphore()
     {
         RequireReady();
-        return new Direct3D12Semaphore(this);
+        var child = new Direct3D12Semaphore(this);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -258,7 +379,10 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
-        return new Direct3D12GraphicsPipeline(this, desc);
+        var child = new Direct3D12GraphicsPipeline(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <inheritdoc />
@@ -266,16 +390,42 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
-        return new Direct3D12ComputePipeline(this, desc);
+        var child = new Direct3D12ComputePipeline(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
+    }
+
+    /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The compiled shader artifact.</param>
+    /// <param name="count">The element count.</param>
+    /// <param name="memory">The memory preference.</param>
+    /// <param name="usage">The GPU usages; upload staging uses CopySource.</param>
+    /// <returns>The typed raw buffer, without conversion or dependency metadata.</returns>
+    public IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        if (Validation != null)
+        {
+            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        }
+
+        return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireReady();
+
         ArgumentNullException.ThrowIfNull(artifact);
-        return new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
+        var child = new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
+        _hasCreatedResources = true;
+        Validation?.Register(child, this);
+        return child;
     }
 
     /// <summary>Creates a surface borrowing a valid HWND; the caller owns the window and its message loop.</summary>
@@ -289,11 +439,59 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new ArgumentException("A valid HWND is required.", nameof(window));
         }
 
-        return new Direct3D12Surface(this, window);
+        var child = new Direct3D12Surface(this, window);
+        _hasCreatedResources = true;
+        return child;
+    }
+
+    internal void RetainFailedSubmission(Direct3D12Submission submission)
+    {
+        submission.NextFailed = _failedSubmissions;
+        _failedSubmissions = submission;
+    }
+
+    internal void RetireCompletedFailedSubmissions()
+    {
+        Direct3D12Submission? previous = null;
+        Direct3D12Submission? pending = _failedSubmissions;
+        while (pending != null)
+        {
+            Direct3D12Submission? next = pending.NextFailed;
+            if (!pending.HasNativeUse || pending.Status is SubmissionStatus.Completed or SubmissionStatus.Failed)
+            {
+                if (!pending.HasNativeUse)
+                {
+                    pending.AbandonUnissued();
+                }
+                else
+                {
+                    pending.Dispose();
+                }
+
+                if (previous == null)
+                {
+                    _failedSubmissions = next;
+                }
+                else
+                {
+                    previous.NextFailed = next;
+                }
+
+                pending.NextFailed = null;
+            }
+            else
+            {
+                previous = pending;
+            }
+
+            pending = next;
+        }
     }
 
     internal void RequireReady()
     {
+        RetireCompletedFailedSubmissions();
+
         ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
         if (Status == GraphicsDeviceStatus.Lost)
         {
@@ -308,7 +506,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             return;
         }
 
-        int removed = NativeMethods.DeviceRemoved(_native);
+        int removed = QueueDriver.DeviceRemoved(this);
         if (removed < 0)
         {
             _lifetime.ReportLoss($"0x{removed:X8}", "Direct3D 12 device was removed.");

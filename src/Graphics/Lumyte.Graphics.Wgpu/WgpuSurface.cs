@@ -14,6 +14,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
     internal WgpuSurface(WgpuDevice owner, A.Surface native, A.Adapter adapter)
     {
         (_owner, _native, _adapter) = (owner, native, adapter);
+        owner.Validation?.Register(this, owner);
     }
 
     internal A.Surface Native => _native;
@@ -86,6 +87,7 @@ internal sealed class WgpuSurface : IGraphicsSurface
             return;
         }
 
+        Owner.Validation?.Release(this);
         _native.Dispose();
         _disposed = true;
     }

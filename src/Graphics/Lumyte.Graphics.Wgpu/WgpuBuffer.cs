@@ -66,6 +66,10 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public unsafe object ShaderHandle => (nint)Native.Handle;
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }
@@ -111,6 +115,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
+        _owner.Validation?.Map(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         if (Memory == MemoryPreference.Automatic || _mapped || _pending)
@@ -124,6 +129,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public void Unmap()
     {
+        _owner.Validation?.ValidateUnmap(this);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_mapped || _pending)
         {
@@ -147,6 +153,8 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             throw new InvalidOperationException("Wait for the mapping request before disposal.");
         }
 
+        _owner.Validation?.Release(this);
+
         if (_mapped)
         {
             _native.Unmap();
@@ -167,6 +175,7 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             throw new ArgumentException("Source does not fit the buffer range.", nameof(source));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostWrite, offset, (ulong)source.Length);
         source.CopyTo(GetMappedBytes().Slice(checked((int)offset), source.Length));
     }
 
@@ -179,7 +188,20 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
             throw new ArgumentException("Destination does not fit the complete buffer range.", nameof(destination));
         }
 
+        _owner.Validation?.HostAccess(this, ResourceAccess.HostRead, offset, length);
         GetMappedBytes().Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
+    }
+
+    internal unsafe Span<byte> GetMappedUploadSpan(ulong offset, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ValidateByteRange(offset, (ulong)length);
+        RequireMapping(MemoryPreference.Upload);
+        nuint start = checked((nuint)offset);
+        _ = checked(start + (nuint)length);
+        nuint address = checked((nuint)_mappedAddress + start);
+        _ = checked(address + (nuint)length);
+        return new Span<byte>((void*)address, length);
     }
 
     private void RequireMapping(MemoryPreference memory)

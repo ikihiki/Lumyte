@@ -175,3 +175,9 @@ GPU を使わないテストは DXIL container、helper の binding、natural／
 stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
 一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
 Stable の WARP（debug layer 有効）では共通 suite 全体も成功しました。Preview partial program は未実行です。
+
+## 任意のmanaged検証
+
+生成した実deviceに、子資源を作る前に`EnableValidation()`を呼ぶと、Debug／Releaseの両方で診断を有効にします。既定ではValidationはnullで、診断tracker・callback・状態走査を作りません。D3D12のnative debug layerとは別設定です。
+
+診断は、記録済み／提出済みresourceの寿命、mapping、登録identityの記録時・Submit時照合、親子関係、byte範囲別buffer hazardとmip／layer別texture状態、shader・index・indirect・copy・attachmentの明示アクセスを扱います。Acquire／Submit／Presentのbinary semaphore履歴とnative完了も追跡します。記録の失敗は診断だけをrollbackし、提出前の照合は複製したqueue状態で行います。nativeが成功した操作だけを公開し、キャンセルされた待機を完了として扱いません。GPU内部の動的indexは登録範囲で保守的に扱い、直接変更したstaging byte、shader内部の実アクセス、外部native操作は見えません。D3D12の部分発行済み操作やWebGPUの非同期実行エラーを巻き戻す保証はありません。検証有効時のdevice操作は外部で直列化し、無効時は寿命・同期とも利用者が保証します。

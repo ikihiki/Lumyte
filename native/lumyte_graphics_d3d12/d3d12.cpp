@@ -4,9 +4,11 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 #include <memory>
+#include <vector>
 #include <new>
 #include <cstring>
 #include <cstdio>
+#include <mutex>
 
 using Microsoft::WRL::ComPtr;
 #define API extern "C" __declspec(dllexport)
@@ -23,15 +25,22 @@ struct Device
     ComPtr<ID3D12DeviceFactory> factory;
     ComPtr<ID3D12Device> device;
     ComPtr<ID3D12CommandQueue> queue;
+    std::mutex root_mutex;
+    ComPtr<ID3D12RootSignature> root;
 };
 struct Commands
 {
+    Device* owner = nullptr;
+    ID3D12RootSignature* graphics_root = nullptr;
+    ID3D12RootSignature* compute_root = nullptr;
     ComPtr<ID3D12CommandAllocator> allocator;
     ComPtr<ID3D12GraphicsCommandList> list;
     ComPtr<ID3D12GraphicsCommandList7> barriers;
     ComPtr<ID3D12DescriptorHeap> render_targets;
     ComPtr<ID3D12DescriptorHeap> depth_target;
 };
+
+static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcept;
 
 static HRESULT report_failure(Device* device, HRESULT result) noexcept
 {
@@ -136,6 +145,8 @@ API HRESULT device_create(UINT adapter_index, int warp, int debug, int partial, 
     D3D12_COMMAND_QUEUE_DESC queue{};
     queue.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     CHECK(owner->device->CreateCommandQueue(&queue, IID_PPV_ARGS(&owner->queue)));
+    ComPtr<ID3D12RootSignature> root;
+    CHECK(create_root(owner.get(), &root));
     *output = owner.release();
     return S_OK;
 }
@@ -169,7 +180,7 @@ API void object_release(IUnknown* object) noexcept
     }
 }
 
-API HRESULT buffer_create(Device* device, UINT64 size, int memory, int writable, ID3D12Resource** output) noexcept
+API HRESULT buffer_create(Device* device, UINT64 size, int memory, int writable, ID3D12Resource** output, UINT64* gpu_address) noexcept
 {
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = memory == 1 ? D3D12_HEAP_TYPE_UPLOAD : memory == 2 ? D3D12_HEAP_TYPE_READBACK : D3D12_HEAP_TYPE_DEFAULT;
@@ -186,8 +197,10 @@ API HRESULT buffer_create(Device* device, UINT64 size, int memory, int writable,
     const auto state = memory == 1   ? D3D12_RESOURCE_STATE_GENERIC_READ
                        : memory == 2 ? D3D12_RESOURCE_STATE_COPY_DEST
                                      : D3D12_RESOURCE_STATE_COMMON;
-    return device->device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, nullptr,
-                                                   IID_PPV_ARGS(output));
+    CHECK(device->device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, nullptr,
+                                                   IID_PPV_ARGS(output)));
+    *gpu_address = (*output)->GetGPUVirtualAddress();
+    return S_OK;
 }
 API HRESULT buffer_map(ID3D12Resource* buffer, UINT64 size, int read, void** output) noexcept
 {
@@ -207,6 +220,7 @@ API HRESULT commands_create(Device* device, Commands** output) noexcept
     {
         return E_OUTOFMEMORY;
     }
+    commands->owner = device;
     CHECK(device->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commands->allocator)));
     CHECK(device->device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commands->allocator.Get(), nullptr,
                                             IID_PPV_ARGS(&commands->list)));

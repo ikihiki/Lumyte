@@ -27,7 +27,7 @@ internal sealed partial class BrowserComputePipeline
         if (!_variants.TryGetValue(arguments.Key, out JSObject? pipeline))
         {
             using JSObject shader = BrowserInterop.CreateShader(_owner.Handle, arguments.Specialize(Data));
-            pipeline = BrowserInterop.CreateComputePipeline(_owner.Handle, shader, Data.EntryPoint, arguments.Key);
+            pipeline = BrowserInterop.CreateComputePipeline(_owner.Handle, shader, Data.EntryPoint, arguments.Key + (RequiresArguments ? ":1" : ":0"));
             _variants.Add(arguments.Key, pipeline);
         }
 

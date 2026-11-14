@@ -9,6 +9,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
     private readonly GraphicsDeviceLifetime _lifetime;
+
+    private bool _hasCreatedResources;
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -25,6 +27,12 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         add => _lifetime.DeviceLost += value;
         remove => _lifetime.DeviceLost -= value;
     }
+
+    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
+    public GraphicsValidation? Validation { get; private set; }
+
+    /// <inheritdoc />
+    public bool ValidationEnabled => Validation != null;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -77,7 +85,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(context);
-        return new BrowserSurface(this, context);
+        var surface = new BrowserSurface(this, context);
+        _hasCreatedResources = true;
+        return surface;
     }
 
     /// <summary>Connects distinct externally supplied canvas contexts to this shared device.</summary>
@@ -124,12 +134,25 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
     }
 
+    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
+    public void EnableValidation()
+    {
+        if (Validation == null && _hasCreatedResources)
+        {
+            throw new InvalidOperationException("Enable validation before creating device resources.");
+        }
+
+        Validation ??= new GraphicsValidation();
+    }
+
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserGraphicsPipeline(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(program, this);
         return program;
     }
 
@@ -139,6 +162,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new BrowserComputePipeline(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(program, this);
         return program;
     }
 
@@ -147,6 +172,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new BrowserSemaphore(this);
+        _hasCreatedResources = true;
+        Validation?.Register(semaphore, this);
         return semaphore;
     }
 
@@ -156,6 +183,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new BrowserCommandBuffer(this);
+        _hasCreatedResources = true;
+        Validation?.Register(commands, this);
         return commands;
     }
 
@@ -210,16 +239,40 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new BrowserBuffer<T>(this, desc, layout, size);
+        _hasCreatedResources = true;
+        Validation?.Register(buffer, this);
         return buffer;
+    }
+
+    /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The compiled shader artifact.</param>
+    /// <param name="count">The element count.</param>
+    /// <param name="memory">The memory preference.</param>
+    /// <param name="usage">The GPU usages; upload staging uses CopySource.</param>
+    /// <returns>The typed raw buffer, without conversion or dependency metadata.</returns>
+    public IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        if (Validation != null)
+        {
+            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
+        }
+
+        return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new BrowserShaderDataBuffer<T>(this, artifact, count, memory);
+        _hasCreatedResources = true;
+        Validation?.Register(buffer, this);
         return buffer;
     }
 
@@ -229,6 +282,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new BrowserTexture(this, desc);
+        Validation?.SetTextureState(texture, TextureState.Undefined);
+        _hasCreatedResources = true;
+        Validation?.Register(texture, this);
         return texture;
     }
 
@@ -238,6 +294,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new BrowserSampler(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(sampler, this);
         return sampler;
     }
 
@@ -252,6 +310,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         }
 
         var table = new BrowserArgumentTable(this, desc);
+        _hasCreatedResources = true;
+        Validation?.Register(table, this);
         return table;
     }
 
@@ -261,12 +321,15 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new BrowserShader(this, artifact);
+        _hasCreatedResources = true;
+        Validation?.Register(shader, this);
         return shader;
     }
 
     /// <summary>Destroys the WebGPU device and releases its JavaScript proxy; subsequent calls do nothing.</summary>
     public void Dispose()
     {
+        Validation?.Release(this);
         if (_disposed)
         {
             return;

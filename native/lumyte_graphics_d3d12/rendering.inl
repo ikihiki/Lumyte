@@ -12,8 +12,29 @@ struct PartialProgram
     ComPtr<ID3D12StateObject> collection;
     UINT optimization = 0;
 };
+// Tables cost one DWORD each regardless of descriptor counts; draw info costs two,
+// and the vertex root SRV costs two. Every pipeline/partial variant shares this layout.
+static constexpr UINT resource_table_dword_cost = 1;
+static constexpr UINT sampler_table_dword_cost = 1;
+static constexpr UINT draw_info_dword_cost = 2;
+static constexpr UINT vertex_srv_dword_cost = 2;
+static constexpr UINT fixed_root_dword_cost =
+    resource_table_dword_cost + sampler_table_dword_cost + draw_info_dword_cost + vertex_srv_dword_cost;
+static constexpr UINT app_root_dword_capacity = 58;
+static_assert(app_root_dword_capacity + fixed_root_dword_cost == 64,
+              "D3D12 root signature budget must be exactly 64 DWORDs.");
+
 static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcept
 {
+    if (!device || !output)
+    {
+        return E_INVALIDARG;
+    }
+    std::lock_guard<std::mutex> lock(device->root_mutex);
+    if (device->root)
+    {
+        return device->root.CopyTo(output);
+    }
     D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
     CHECK(device->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options)));
     D3D12_FEATURE_DATA_SHADER_MODEL shader{D3D_SHADER_MODEL_6_6};
@@ -28,14 +49,14 @@ static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcep
     ranges[2] = {D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 64, 0, 1, 192};
     D3D12_DESCRIPTOR_RANGE samplers{D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, 0};
     D3D12_ROOT_PARAMETER parameters[5]{};
-    parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    parameters[0].Descriptor = {8, 0};
+    parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    parameters[0].Constants = {8, 0, app_root_dword_capacity};
     parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[1].DescriptorTable = {3, ranges};
     parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[2].DescriptorTable = {1, &samplers};
     parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    parameters[3].Constants = {9, 0, 2};
+    parameters[3].Constants = {9, 0, draw_info_dword_cost};
     parameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     parameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
     parameters[4].Descriptor = {0, 2};
@@ -44,8 +65,9 @@ static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcep
                                    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
     ComPtr<ID3DBlob> blob, errors;
     CHECK(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &errors));
-    return device->device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                                               IID_PPV_ARGS(output));
+    CHECK(device->device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
+                                              IID_PPV_ARGS(&device->root)));
+    return device->root.CopyTo(output);
 }
 #include "partial_programs.inl"
 
@@ -91,13 +113,10 @@ API HRESULT graphics_create(Device* device, const void* vs, UINT64 vs_size, cons
     {
         return E_OUTOFMEMORY;
     }
-    if (partial)
+    CHECK(report_failure(device, create_root(device, &pipeline->root)));
+    if (partial && partial->root.Get() != pipeline->root.Get())
     {
-        pipeline->root = partial->root;
-    }
-    else
-    {
-        CHECK(report_failure(device, create_root(device, &pipeline->root)));
+        return E_INVALIDARG;
     }
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = pipeline->root.Get();
@@ -159,12 +178,68 @@ API HRESULT graphics_create(Device* device, const void* vs, UINT64 vs_size, cons
     *output = pipeline.release();
     return S_OK;
 }
+// Root state is tracked independently for graphics and compute. Never redundantly bind:
+// even an identical layout with a different object identity would invalidate arguments.
+static void bind_root_signature(Commands* commands, ID3D12RootSignature* root, int compute) noexcept
+{
+    auto& selected = compute ? commands->compute_root : commands->graphics_root;
+    if (selected != root)
+    {
+        if (compute)
+        {
+            commands->list->SetComputeRootSignature(root);
+        }
+        else
+        {
+            commands->list->SetGraphicsRootSignature(root);
+        }
+        selected = root;
+    }
+}
+
+API HRESULT commands_root_constants(Commands* commands, const DWORD* words, UINT word_count, int compute) noexcept
+{
+    if (!commands || !commands->owner || !commands->list || !commands->owner->root ||
+        word_count > app_root_dword_capacity || (word_count && !words) || (compute != 0 && compute != 1))
+    {
+        return E_INVALIDARG;
+    }
+    // Every fallible precondition precedes mutation. D3D12 copies the borrowed words
+    // into command-list storage synchronously; no CPU payload is retained here.
+    bind_root_signature(commands, commands->owner->root.Get(), compute);
+    if (word_count)
+    {
+        if (compute)
+        {
+            commands->list->SetComputeRoot32BitConstants(0, word_count, words, 0);
+        }
+        else
+        {
+            commands->list->SetGraphicsRoot32BitConstants(0, word_count, words, 0);
+        }
+    }
+    // These void driver calls cannot be rolled back if device failure is reported later.
+    return S_OK;
+}
+
 API HRESULT commands_pipeline(Commands* commands, Pipeline* pipeline, int compute) noexcept
 {
+    if (!commands || !commands->owner || !pipeline || !commands->list || !commands->owner->root ||
+        pipeline->root.Get() != commands->owner->root.Get() || (compute != 0 && compute != 1) ||
+        (!pipeline->executable && !pipeline->state) || (compute && pipeline->executable))
+    {
+        return E_INVALIDARG;
+    }
+    ComPtr<ID3D12GraphicsCommandList10> list;
     if (pipeline->executable)
     {
-        ComPtr<ID3D12GraphicsCommandList10> list;
         CHECK(commands->list.As(&list));
+    }
+    // Also covers pipelines without SetArguments. Generic programs inherit the same
+    // device-global signature through their partial collection; identity checked above.
+    bind_root_signature(commands, pipeline->root.Get(), compute);
+    if (pipeline->executable)
+    {
         D3D12_SET_PROGRAM_DESC desc{};
         desc.Type = D3D12_PROGRAM_TYPE_GENERIC_PIPELINE;
         desc.GenericPipeline.ProgramIdentifier = pipeline->identifier;
@@ -173,14 +248,6 @@ API HRESULT commands_pipeline(Commands* commands, Pipeline* pipeline, int comput
     else
     {
         commands->list->SetPipelineState(pipeline->state.Get());
-    }
-    if (compute)
-    {
-        commands->list->SetComputeRootSignature(pipeline->root.Get());
-    }
-    else
-    {
-        commands->list->SetGraphicsRootSignature(pipeline->root.Get());
     }
     return S_OK;
 }
@@ -208,9 +275,9 @@ API void commands_topology(Commands* commands, UINT topology) noexcept
 {
     commands->list->IASetPrimitiveTopology(static_cast<D3D_PRIMITIVE_TOPOLOGY>(topology));
 }
-API void commands_indices(Commands* commands, ID3D12Resource* buffer, UINT64 offset, UINT size, UINT format) noexcept
+API void commands_indices(Commands* commands, UINT64 gpu_address, UINT64 offset, UINT size, UINT format) noexcept
 {
-    D3D12_INDEX_BUFFER_VIEW v{buffer->GetGPUVirtualAddress() + offset, size, static_cast<DXGI_FORMAT>(format)};
+    D3D12_INDEX_BUFFER_VIEW v{gpu_address + offset, size, static_cast<DXGI_FORMAT>(format)};
     commands->list->IASetIndexBuffer(&v);
 }
 API void commands_draw(Commands* commands, UINT count, UINT instances, UINT first, INT base, UINT first_instance,
@@ -232,7 +299,7 @@ API void commands_dispatch(Commands* commands, UINT x, UINT y, UINT z) noexcept
 {
     commands->list->Dispatch(x, y, z);
 }
-API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource* buffer, UINT64 offset, UINT kind,
+API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource* buffer, UINT64 gpu_address, UINT64 offset, UINT kind,
                               ID3D12CommandSignature** output) noexcept
 {
     D3D12_INDIRECT_ARGUMENT_DESC argument{};
@@ -245,7 +312,7 @@ API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource
     {
         const UINT info[]{kind + 1, 0};
         commands->list->SetGraphicsRoot32BitConstants(3, 2, info, 0);
-        commands->list->SetGraphicsRootShaderResourceView(4, buffer->GetGPUVirtualAddress() + offset);
+        commands->list->SetGraphicsRootShaderResourceView(4, gpu_address + offset);
     }
     commands->list->ExecuteIndirect(*output, 1, buffer, offset, nullptr, 0);
     return S_OK;

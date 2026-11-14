@@ -113,6 +113,7 @@ internal sealed class WgpuTexture : IGraphicsTexture
             ArrayLayerCount = info.ArrayLayerCount,
         });
         var view = new WgpuTextureView(this, info, native);
+        Owner.Validation?.Register(view, this);
         return view;
     }
 
@@ -122,6 +123,8 @@ internal sealed class WgpuTexture : IGraphicsTexture
         {
             throw new InvalidOperationException("The frame owns this borrowed presentation image.");
         }
+
+        _owner.Validation?.Release(this);
 
         DisposeLease();
     }
