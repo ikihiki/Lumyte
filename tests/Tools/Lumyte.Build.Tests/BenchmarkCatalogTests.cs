@@ -328,6 +328,37 @@ public sealed class BenchmarkCatalogTests
         Assert.Equal(commands, fixture.Records("dotnet").Length);
     }
 
+    /// <summary>The Audio target reuses the guarded runner and fingerprints Audio product inputs.</summary>
+    /// <returns>The target and stale-source assertions.</returns>
+    [Fact]
+    public async Task AudioTargetRejectsStaleProductInputsAsync()
+    {
+        using var fixture = new BuildFixture();
+        string projectRoot = Path.Combine(fixture.Root, "benchmarks", "Audio", "Lumyte.Audio.Benchmark");
+        Directory.CreateDirectory(projectRoot);
+        File.WriteAllText(Path.Combine(projectRoot, "Lumyte.Audio.Benchmark.csproj"), "<Project />");
+        string product = Path.Combine(fixture.Root, "src", "Audio");
+        Directory.CreateDirectory(product);
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "src", "Core"));
+        string shared = Path.Combine(fixture.Root, "benchmarks", "Core", "Shared");
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(Path.Combine(shared, "BenchmarkEntry.cs"), "shared fixture");
+        string source = Path.Combine(product, "Source.cs");
+        File.WriteAllText(source, "original");
+        string output = Path.Combine(projectRoot, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "Lumyte.Audio.Benchmark.dll"), "fixture output");
+        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkAudio", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(first.ExitCode == 0, first.Output + first.Error);
+        int commands = fixture.Records("dotnet").Length;
+        Assert.Equal(2, commands);
+        File.WriteAllText(source, "changed animation product");
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkAudio", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, stale.ExitCode);
+        Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
+        Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
     private static void AddProject(string root, string name)
     {
         string directory = Path.Combine(root, "benchmarks", "Core", name + ".Benchmark");

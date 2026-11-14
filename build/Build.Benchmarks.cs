@@ -30,6 +30,8 @@ internal sealed partial class Build
 
     private Target BenchmarkInput => definition => definition.Executes(() => RunBenchmarksAsync("Input"));
 
+    private Target BenchmarkAudio => definition => definition.Executes(() => RunBenchmarksAsync("Audio"));
+
     private async Task RunBenchmarksAsync(string area)
     {
         string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
