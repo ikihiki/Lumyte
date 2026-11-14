@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Lumyte.Build.Tests;
@@ -137,12 +138,75 @@ public sealed class CoreBenchmarkCatalogTests
         BuildFixture.ProcessResult initial = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
         Assert.True(initial.ExitCode == 0, initial.Output + initial.Error);
         int commands = fixture.Records("dotnet").Length;
+        Assert.Equal(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(output)))!, fixture.Records("dotnet")[^1].GetProperty("workingDirectory").GetString());
+        Assert.Equal(Path.Combine(fixture.Root, "benchmarks", "Core", "Lumyte.Demo.Benchmark", "Lumyte.Demo.Benchmark.csproj"), fixture.Records("dotnet")[^1].GetProperty("environment").GetProperty("LUMYTE_BENCHMARK_PROJECT").GetString());
         File.WriteAllText(dependency, "replaced output");
         BuildFixture.ProcessResult changed = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, changed.ExitCode);
         Assert.Contains("No-build benchmark outputs", changed.Output + changed.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
     }
+
+    /// <summary>Compiled categories select cases across unrelated project, file and type names.</summary>
+    [Fact]
+    public void MetadataSelectsAcrossProjectsWithoutNameInference()
+    {
+        JsonObject first = CoreBenchmarkCatalog.ParseCatalog("""
+            {"SchemaVersion":1,"Assembly":{"Name":"Vector.Benchmark","Location":"/shapes/Fixtures.dll"},
+             "Modes":["verify","screen","compare","diagnose"],"Cases":[
+              {"Type":"Unrelated.Subject","Method":"Run","Categories":["Core","shared"],"Modes":["verify","screen"]},
+              {"Type":"shared.NamedClass","Method":"Other","Categories":["Other"],"Modes":["screen"]}]}
+            """);
+        JsonObject second = CoreBenchmarkCatalog.ParseCatalog("""
+            {"SchemaVersion":1,"Assembly":{"Name":"CompletelyDifferent.Benchmark","Location":"/elsewhere/Inputs.dll"},
+             "Modes":["verify","screen","compare","diagnose"],"Cases":[
+              {"Type":"Another.Namespace.Fixture","Method":"Work","Categories":["shared"],"Modes":["screen","diagnose"]}]}
+            """);
+        JsonArray[] selections = [CoreBenchmarkCatalog.SelectCases(first, "screen", "shared"), CoreBenchmarkCatalog.SelectCases(second, "screen", "shared")];
+        Assert.All(selections, cases => Assert.Single(cases));
+        CoreBenchmarkCatalog.RequireSelectedCases(selections, "shared", "screen");
+        CoreBenchmarkCatalog.RequireSelectedCases([new JsonArray(), selections[1]], "shared", "screen");
+        Assert.Equal("Unrelated.Subject", selections[0][0]!["Type"]!.GetValue<string>());
+        Assert.Equal(2, first["Cases"]!.AsArray().Count);
+        Assert.Empty(CoreBenchmarkCatalog.SelectCases(first, "screen", "Vector"));
+        Assert.Empty(CoreBenchmarkCatalog.SelectCases(first, "screen", "Shared"));
+        Assert.Empty(CoreBenchmarkCatalog.SelectCases(first, "screen", "Core,shared"));
+        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.RequireSelectedCases(
+            [CoreBenchmarkCatalog.SelectCases(first, "screen", "missing"), CoreBenchmarkCatalog.SelectCases(second, "screen", "missing")], "missing", "screen"));
+    }
+
+    /// <summary>Case modes, not category spelling, determine measurement eligibility.</summary>
+    [Fact]
+    public void DiagnosticCasesRequireEligibleMode()
+    {
+        JsonObject catalog = CoreBenchmarkCatalog.ParseCatalog("""
+            {"SchemaVersion":1,"Modes":["verify","screen","compare","diagnose"],"Cases":[
+              {"Type":"RegularLookingType","Categories":["diagnostic-only","subject"],"Modes":["verify","diagnose"]}]}
+            """);
+        Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
+        Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "compare", "subject"));
+        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, "verify", "subject"));
+        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, "diagnose", "subject"));
+        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.RequireSelectedCases(
+            [CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject")], "subject", "screen"));
+    }
+
+    /// <summary>Malformed compiled metadata cannot silently become an empty selection.</summary>
+    /// <param name="json">An invalid catalog.</param>
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("{\"SchemaVersion\":1,\"Cases\":[]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[],\"Cases\":[]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":{}}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":\"screen\",\"Cases\":[]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"unknown\"],\"Cases\":[]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[null]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Modes\":[\"screen\"]}]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[12],\"Modes\":[\"screen\"]}]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[],\"Modes\":[]}]}")]
+    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[],\"Modes\":[\"diagnose\"]}]}")]
+    public void RejectsMalformedMetadata(string json) => Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.ParseCatalog(json));
 
     private static void AddProject(string root, string name)
     {

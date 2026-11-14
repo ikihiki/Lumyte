@@ -17,6 +17,30 @@ namespace Lumyte.Core.Benchmark.Tests;
 /// <summary>Checks mode policy without running timed benchmarks.</summary>
 public sealed class BenchmarkEntryTests
 {
+    /// <summary>Explicit project binding retains the standard SDK builder and executor.</summary>
+    [Fact]
+    public void ExplicitProjectToolchainRetainsStandardExecution()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "benchmark project " + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string project = Path.Combine(root, "Lumyte.Core.Benchmark.Tests.csproj");
+            File.WriteAllText(project, "<Project />");
+            IConfig config = BenchmarkEntry.CreateConfig("screen", project);
+            BenchmarkEntry.ProjectToolchain toolchain = Assert.IsType<BenchmarkEntry.ProjectToolchain>(Assert.Single(config.GetJobs()).Infrastructure.Toolchain);
+            BenchmarkEntry.ProjectGenerator generator = Assert.IsType<BenchmarkEntry.ProjectGenerator>(toolchain.Generator);
+            Assert.Equal(project, generator.Project.FullName);
+            Assert.Same(BenchmarkDotNet.Toolchains.CsProj.CsProjCoreToolchain.NetCoreApp10_0.Builder, toolchain.Builder);
+            Assert.Same(BenchmarkDotNet.Toolchains.CsProj.CsProjCoreToolchain.NetCoreApp10_0.Executor, toolchain.Executor);
+            Assert.Throws<ArgumentException>(() => BenchmarkEntry.CreateConfig("screen", Path.Combine(root, "missing.csproj")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     /// <summary>New executables default to untimed correctness verification.</summary>
     [Fact]
     public void DefaultsToVerify()

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Characteristics;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Exporters.Json;
@@ -10,6 +11,8 @@ using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
+using BenchmarkDotNet.Toolchains;
+using BenchmarkDotNet.Toolchains.CsProj;
 using BenchmarkDotNet.Validators;
 using Perfolizer.Horology;
 using Perfolizer.Mathematics.OutlierDetection;
@@ -52,7 +55,7 @@ internal static class BenchmarkEntry
             }
 
             var errors = new ErrorLogger();
-            ManualConfig config = ManualConfig.Create(CreateConfig(options.Mode == "verify" ? "diagnose" : options.Mode))
+            ManualConfig config = ManualConfig.Create(CreateConfig(options.Mode == "verify" ? "diagnose" : options.Mode, Environment.GetEnvironmentVariable("LUMYTE_BENCHMARK_PROJECT")))
                 .AddLogger(errors);
             Summary[] summaries = BenchmarkSwitcher.FromAssembly(assembly).Run(options.Arguments, config).ToArray();
             if (errors.HasErrors)
@@ -140,9 +143,20 @@ internal static class BenchmarkEntry
         return new EntryOptions(mode ?? "verify", catalog, remaining.ToArray());
     }
 
-    internal static IConfig CreateConfig(string mode)
+    internal static IConfig CreateConfig(string mode, string? projectFile = null)
     {
         Job job = CreateJob(mode);
+        if (projectFile is not null)
+        {
+            var project = new FileInfo(projectFile);
+            if (!project.Exists || project.Extension != ".csproj")
+            {
+                throw new ArgumentException("The explicit benchmark project must be an existing csproj.", nameof(projectFile));
+            }
+
+            job = job.WithToolchain(new ProjectToolchain(project, CsProjCoreToolchain.NetCoreApp10_0));
+        }
+
         ManualConfig config = ManualConfig.Create(DefaultConfig.Instance)
             .AddJob(job)
             .AddFilter(new ModeFilter(mode))
@@ -263,6 +277,28 @@ internal static class BenchmarkEntry
         public void Flush()
         {
         }
+    }
+
+    internal sealed class ProjectGenerator(FileInfo project) : CsProjGenerator("net10.0", null!, null!, null!)
+    {
+        internal FileInfo Project => project;
+
+        protected override FileInfo GetProjectFilePath(Type benchmarkTarget, ILogger logger)
+        {
+            if (Path.GetFileNameWithoutExtension(project.Name) != benchmarkTarget.Assembly.GetName().Name)
+            {
+                throw new InvalidOperationException("The explicit project does not own the benchmark assembly.");
+            }
+
+            return project;
+        }
+    }
+
+    internal sealed class ProjectToolchain(FileInfo project, IToolchain standard)
+        : Toolchain(standard.Name, new ProjectGenerator(project), standard.Builder, standard.Executor)
+    {
+        public override IEnumerable<ValidationError> Validate(BenchmarkCase benchmarkCase, IResolver resolver)
+            => standard.Validate(benchmarkCase, resolver);
     }
 
     internal sealed record EntryOptions(string Mode, bool Catalog, string[] Arguments);

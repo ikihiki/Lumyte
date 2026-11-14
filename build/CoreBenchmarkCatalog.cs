@@ -1,6 +1,7 @@
 using System.IO.Enumeration;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace Lumyte.Build;
 
@@ -50,6 +51,59 @@ internal static class CoreBenchmarkCatalog
         return args.ToArray();
     }
 
+    // Category selection deliberately knows nothing about source paths or type naming.
+    internal static JsonObject ParseCatalog(string json)
+    {
+        JsonObject catalog = JsonNode.Parse(json) as JsonObject
+            ?? throw new ArgumentException("Benchmark catalog must be an object.", nameof(json));
+        if (catalog["SchemaVersion"] is not JsonValue schema || !schema.TryGetValue<int>(out int version) || version != 1
+            || catalog["Cases"] is not JsonArray cases)
+        {
+            throw new ArgumentException("Benchmark catalog requires SchemaVersion 1 and a Cases array.", nameof(json));
+        }
+
+        string[] modes = ReadStrings(catalog["Modes"], "Modes");
+        if (modes.Length == 0 || modes.Any(mode => mode is not ("verify" or "screen" or "compare" or "diagnose")))
+        {
+            throw new ArgumentException("Benchmark catalog Modes must contain supported modes.", nameof(json));
+        }
+
+        foreach (JsonNode? item in cases)
+        {
+            if (item is not JsonObject benchmark)
+            {
+                throw new ArgumentException("Benchmark catalog Cases must contain objects.", nameof(json));
+            }
+
+            ReadStrings(benchmark["Categories"], "Cases.Categories");
+            string[] caseModes = ReadStrings(benchmark["Modes"], "Cases.Modes");
+            if (caseModes.Length == 0 || caseModes.Any(mode => !modes.Contains(mode, StringComparer.Ordinal)))
+            {
+                throw new ArgumentException("Benchmark case Modes must be nonempty and declared by the catalog.", nameof(json));
+            }
+        }
+
+        return catalog;
+    }
+
+    internal static JsonArray SelectCases(JsonObject catalog, string mode, string category)
+    {
+        NormalizeMode(mode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(category);
+        return new JsonArray(catalog["Cases"]!.AsArray()
+            .Where(benchmark => ReadStrings(benchmark!["Categories"], "Cases.Categories").Contains(category, StringComparer.Ordinal)
+                && ReadStrings(benchmark["Modes"], "Cases.Modes").Contains(mode, StringComparer.Ordinal))
+            .Select(benchmark => benchmark!.DeepClone()).ToArray());
+    }
+
+    internal static void RequireSelectedCases(IEnumerable<JsonArray> selections, string category, string mode)
+    {
+        if (!selections.Any(cases => cases.Count > 0))
+        {
+            throw new ArgumentException($"No eligible Core benchmark cases match category '{category}' in mode '{mode}'.", nameof(category));
+        }
+    }
+
     internal static string OutputHash(string directory)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -70,5 +124,16 @@ internal static class CoreBenchmarkCatalog
         }
 
         return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    private static string[] ReadStrings(JsonNode? node, string field)
+    {
+        if (node is not JsonArray array)
+        {
+            throw new ArgumentException($"Benchmark catalog {field} must be a string array.");
+        }
+
+        return array.Select(item => item is JsonValue value && value.TryGetValue<string>(out string? text) && !string.IsNullOrWhiteSpace(text)
+            ? text : throw new ArgumentException($"Benchmark catalog {field} must contain nonempty strings.")).ToArray();
     }
 }

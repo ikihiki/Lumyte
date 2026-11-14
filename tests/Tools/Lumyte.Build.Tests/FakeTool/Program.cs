@@ -12,7 +12,7 @@ internal static class Program
         "DOTNET_EMSCRIPTEN_NODE_JS", "EM_CONFIG", "EM_CACHE", "EM_FROZEN_CACHE", "EMSDK_PYTHON",
         "PYTHON", "PYTHON3", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "CC_wasm32_unknown_emscripten",
         "AR_wasm32_unknown_emscripten", "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER",
-        "LUMYTE_BUILD_ASSEMBLY", "Configuration",
+        "LUMYTE_BUILD_ASSEMBLY", "LUMYTE_BENCHMARK_PROJECT", "Configuration",
     ];
 
     private static int Main(string[] args)
@@ -21,7 +21,7 @@ internal static class Program
         string log = Environment.GetEnvironmentVariable("PARLEY_TEST_LOG") ?? throw new InvalidOperationException("Missing test log directory.");
         Dictionary<string, string?> observed = _observedVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable);
         Directory.CreateDirectory(log);
-        string record = JsonSerializer.Serialize(new { arguments = args, environment = observed });
+        string record = JsonSerializer.Serialize(new { arguments = args, environment = observed, workingDirectory = Environment.CurrentDirectory });
         File.WriteAllText(Path.Combine(log, tool + ".json"), record);
         File.AppendAllText(Path.Combine(log, tool + ".jsonl"), record + "\n");
 

@@ -157,7 +157,7 @@
         },
         "BenchmarkCategory": {
           "type": "string",
-          "description": "Optional BenchmarkDotNet family category filter"
+          "description": "Optional BenchmarkDotNet category filter across selected Core projects"
         },
         "BenchmarkFilter": {
           "type": "string",

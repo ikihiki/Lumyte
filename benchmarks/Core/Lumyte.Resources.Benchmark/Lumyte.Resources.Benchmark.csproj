@@ -11,7 +11,7 @@
     <ProjectReference Include="../../../src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Resources.Embedded/Lumyte.Resources.Embedded.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Resources.Execution/Lumyte.Resources.Execution.csproj" />
-    <EmbeddedResource Include="Payload.txt" LogicalName="Benchmark.Payload" />
+    <EmbeddedResource Include="Fixtures/Payload.txt" LogicalName="Benchmark.Payload" />
     <Compile Include="../Shared/BenchmarkEntry.cs" Link="BenchmarkEntry.cs" />
   </ItemGroup>
 </Project>
