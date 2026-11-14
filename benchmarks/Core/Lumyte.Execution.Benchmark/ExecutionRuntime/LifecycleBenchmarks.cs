@@ -43,7 +43,7 @@ public class LifecycleBenchmarks
         return fixture.Read(result);
     }
 
-    /// <summary>Admits from two producers to a real dedicated owner and drains every result.</summary>
+    /// <summary>Starts and joins two dedicated producer workers, then drains every result from a dedicated owner.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
     [BenchmarkCategory("Concurrency")]
@@ -52,14 +52,19 @@ public class LifecycleBenchmarks
         using var fixture = new Fixture(placement: OwnerPlacement.Dedicated);
         var results = new ValueTask<int>[16];
         using var ready = new Barrier(2);
-        Parallel.For(0, 2, producer =>
+        Task first = Task.Factory.StartNew(() => Produce(0), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Task second = Task.Factory.StartNew(() => Produce(1), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Task.WaitAll(first, second);
+
+        void Produce(int producer)
         {
             ready.SignalAndWait();
             for (int i = producer * 8; i < (producer + 1) * 8; i++)
             {
                 results[i] = fixture.Module.Port.ExecuteAsync(i);
             }
-        });
+        }
+
         int sum = 0;
         foreach (ValueTask<int> result in results)
         {

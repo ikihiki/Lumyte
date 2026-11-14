@@ -31,6 +31,25 @@ public sealed class ExecutionCompositionTests
         Assert.Equal(0, composition.ChangedConsumerCompile());
     }
 
+    /// <summary>Both producers must run independently of the caller's serial task scheduler.</summary>
+    /// <returns>The producer completion assertion.</returns>
+    [Fact]
+    public async Task DedicatedProducersDrainAllCommandsOnSerialSchedulerAsync()
+    {
+        var scheduler = new ConcurrentExclusiveSchedulerPair(TaskScheduler.Default, maxConcurrencyLevel: 1);
+        try
+        {
+            var benchmark = new Execution.Benchmark.LifecycleBenchmarks();
+            Task<int> result = Task.Factory.StartNew(benchmark.DedicatedProducers, CancellationToken.None, TaskCreationOptions.None, scheduler.ExclusiveScheduler);
+            Assert.Equal(240, await result);
+        }
+        finally
+        {
+            scheduler.Complete();
+            await scheduler.Completion;
+        }
+    }
+
     /// <summary>Checks retained capacity and cancellation status independently.</summary>
     [Fact]
     public void AdmissionBoundaries()
