@@ -21,9 +21,16 @@ dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --fi
 
 ベンチマークの動作確認は`tests/Core/Lumyte.Signals.Benchmarks.Tests`へ集約しています。結果値、通知回数、購読解除、非同期処理の失効、共有依存グラフの鮮度をxUnitで確認し、時間の良否は判定しません。旧`--smoke`の代わりに上記の`dotnet test`を使用してください。
 
+共通カテゴリrunnerでは、独立したCore評価を明示的に選択できます（旧`--screening`等の互換入口は残しています）。
+
+```sh
+dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --catalog
+dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --mode screen --allCategories Standalone --filter '*ScalarBenchmarks*'
+```
+
 ## ケースと1操作の意味
 
-パラメーター展開後は48ケースです。入力、callback、購読、完了済みTaskは原則として測定の外で用意します。
+現在のケース数・カテゴリは`--catalog`で取得してください。入力、callback、購読、完了済みTaskは原則として測定の外で用意します。
 
 | クラス | ケース | 1操作 |
 | --- | --- | --- |
@@ -35,6 +42,7 @@ dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --fi
 | Batch | unbatched / batched | 16代入全体と最終配送 |
 | Scheduler | 手動schedulerで集約 | 16代入全体と予約された配送の実行 |
 | Async | completed create / reload | 同期完了するloaderの作成・破棄、または再取得 |
+| AsyncCompletion | pending completion / failure recovery | 実際に中断するloaderの完了待ち、または失敗を観測して同じadapterを再取得 |
 | Async | observed reload | 再取得とPending・Succeededの2通知 |
 | Async | supersede / cancel | 未完了処理2件の生成、置換、キャンセル、旧処理の完了・清掃 |
 | SharedDag | 2・4・8層、購読あり／なし | 値が変わっていない共有依存DAGの読出し1回 |
@@ -47,7 +55,7 @@ dotnet run --project benchmarks/Core/Lumyte.Signals.Benchmark -c Release -- --fi
 
 ジョブは1 launch、3 warmup iterations、8 measurement iterations、目標150 ms/iterationです。BenchmarkDotNetが呼出し回数を調整し、呼出しオーバーヘッドを補正します。MemoryDiagnoserによる割当量と、CSV・Markdown・完全なJSONを出力します。比較する実装は同じ環境・同じケースを使用し、計測を並列実行しないでください。
 
-絶対時間はCPU、VMの負荷、JITに依存します。平均だけでなくError・StdDevも確認し、小さな時間差は複数launchで再測定してください。これは単一スレッドのJITマイクロベンチマークであり、UI描画、ネットワーク、ThreadPoolの配送遅延、複数スレッドの競合、NativeAOT性能は含みません。ウォームアップ後の値なので、コールドスタート時のプール初期化・辞書の最初の確保とは異なります。
+絶対時間はCPU、VMの負荷、JITに依存します。平均だけでなくError・StdDevも確認し、小さな時間差は複数launchで再測定してください。主な同期ケースは単一スレッドですが、LifetimeのParallelWaveは複数workerを使い、AsyncCompletionは非同期継続の完了を待ちます。UI描画、ネットワーク、NativeAOT性能は含みません。ThreadPoolの費用が含まれるケースを同期読出しの費用と混同しないでください。ウォームアップ後の値なので、コールドスタート時のプール初期化・辞書の最初の確保とは異なります。
 
 ## プールと保持メモリ
 

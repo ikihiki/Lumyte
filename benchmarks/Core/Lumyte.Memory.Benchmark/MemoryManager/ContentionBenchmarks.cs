@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Memory.Benchmark;
 
 /// <summary>Fixed background workers perform finite shared-ledger waves.</summary>
-[BenchmarkCategory("Core", "Memory", "Concurrency", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Contention", "Standalone", "Core", "Memory", "Concurrency", "Screening", "Comparison", "Diagnostic")]
 public class ContentionBenchmarks
 {
     private readonly MemoryPoolId _pool = new("contended");

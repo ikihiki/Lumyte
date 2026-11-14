@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Worlds.Benchmark;
 
 /// <summary>Separates finite destruction batch application from fixture construction.</summary>
-[BenchmarkCategory("Core", "Worlds", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Lifetime", "Standalone", "Core", "Worlds", "Screening", "Comparison", "Diagnostic")]
 public class WorldLifetimeBenchmarks
 {
     private WorldManager _manager = null!;

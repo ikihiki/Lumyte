@@ -4,7 +4,7 @@ namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures asynchronous adapters with deterministic inline task completion.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Signals", "Async", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Lifetime", "Standalone", "Core", "Signals", "Async", "Screening", "Comparison", "Diagnostic")]
 public class AsyncBenchmarks
 {
     private static readonly Task<int> _completed = Task.FromResult(42);

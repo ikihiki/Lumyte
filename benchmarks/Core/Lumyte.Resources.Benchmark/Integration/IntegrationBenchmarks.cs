@@ -40,6 +40,7 @@ public class IntegrationBenchmarks
     /// <summary>Registers and initially resolves a real singleton resource manager.</summary>
     /// <returns>Whether a child DI scope resolves the same manager.</returns>
     [Benchmark]
+    [BenchmarkCategory("DependencyInjection")]
     public async Task<bool> RegisterAndResolveAsync()
     {
         var services = new ServiceCollection();

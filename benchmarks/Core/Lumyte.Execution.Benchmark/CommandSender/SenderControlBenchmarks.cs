@@ -5,7 +5,7 @@ namespace Lumyte.Execution.Benchmark;
 
 /// <summary>Controls for the generated sender using its exact receiver operation.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution", "Commands", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("SteadyState", "Standalone", "Core", "Execution", "Commands", "Screening", "Comparison", "Diagnostic")]
 public class SenderControlBenchmarks
 {
     private readonly SenderState _state = new();

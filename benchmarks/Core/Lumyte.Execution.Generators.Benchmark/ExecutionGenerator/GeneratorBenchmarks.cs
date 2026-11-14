@@ -6,7 +6,7 @@ namespace Lumyte.Execution.Generators.Benchmark;
 
 /// <summary>Exercises the public incremental generator driver over independent consumers.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution.Generators", "SourceGeneration", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Standalone", "CompileTime", "Core", "Execution.Generators", "SourceGeneration", "Screening", "Comparison", "Diagnostic")]
 public class GeneratorBenchmarks
 {
     private CSharpCompilation _first = null!;

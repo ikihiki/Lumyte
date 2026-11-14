@@ -6,7 +6,7 @@ using Lumyte.Resources.Execution;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Consumes finite ordered streams through actual Execution dispatch.</summary>
-[BenchmarkCategory("Core", "Resources", "Streaming", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Integration", "Core", "Resources", "Streaming", "Screening", "Comparison", "Diagnostic")]
 public class StreamingBenchmarks
 {
     private MemoryManager _memory = null!;

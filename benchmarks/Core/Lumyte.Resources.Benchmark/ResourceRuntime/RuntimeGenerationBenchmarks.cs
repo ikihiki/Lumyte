@@ -4,7 +4,7 @@ using Lumyte.Memory;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Rebuilds controlled runtime generations without physical device dependencies.</summary>
-[BenchmarkCategory("Core", "Resources", "Generations", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Lifetime", "Standalone", "Core", "Resources", "Generations", "Screening", "Comparison", "Diagnostic")]
 public class RuntimeGenerationBenchmarks
 {
     /// <summary>Invalidates one provider and rebuilds while an old lease remains bounded to one generation.</summary>

@@ -31,6 +31,8 @@ public class MemoryBenchmarks
     /// <summary>Constructs and releases a manager.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("Lifetime")]
     public async Task ManagerLifetimeAsync()
     {
         await using var manager = new MemoryManager();
@@ -39,6 +41,8 @@ public class MemoryBenchmarks
     /// <summary>Creates and releases an empty owned scope.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("Lifetime")]
     public async Task ScopeLifetimeAsync()
     {
         await using IMemoryScope scope = _manager.CreateScope("child");
@@ -47,11 +51,15 @@ public class MemoryBenchmarks
     /// <summary>Reads an existing pool snapshot.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("SteadyState")]
     public MemorySnapshot Snapshot() => _manager.GetSnapshot(_pool);
 
     /// <summary>Reserves, commits and releases an external logical charge.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("SteadyState")]
     public async Task ReservationAsync()
     {
         using IMemoryReservation reservation = await _scope.ReserveAsync(new MemoryRequest { Pool = _pool, Bytes = 4096, Purpose = MemoryPurpose.Build });
@@ -61,6 +69,8 @@ public class MemoryBenchmarks
     /// <summary>Disposes an uncommitted reservation.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("SteadyState")]
     public async Task AbandonReservationAsync()
     {
         using IMemoryReservation reservation = await _scope.ReserveAsync(new MemoryRequest { Pool = _pool, Bytes = 4096, Purpose = MemoryPurpose.Build });
@@ -69,6 +79,8 @@ public class MemoryBenchmarks
     /// <summary>Rents a first chunk and releases the final reference.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("Lifetime")]
     public async Task NewChunkAsync()
     {
         using IMemoryBuffer<byte> buffer = await _scope.RentAsync<byte>(_pool, 256, MemoryPurpose.Build);
@@ -78,6 +90,8 @@ public class MemoryBenchmarks
     /// <summary>Releases a nonempty scope with 32 owned buffers.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("Lifetime")]
     public async Task PopulatedScopeLifetimeAsync()
     {
         await using IMemoryScope scope = _manager.CreateScope("populated");
@@ -89,6 +103,8 @@ public class MemoryBenchmarks
 
     /// <summary>Registers and removes a borrowed reclaimer.</summary>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("Lifetime")]
     public void Registration()
     {
         using IDisposable registration = _manager.RegisterReclaimer(new ChargeReclaimer(null));
@@ -97,6 +113,8 @@ public class MemoryBenchmarks
     /// <summary>Requests real release of a freshly replenished charge.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Standalone")]
+    [BenchmarkCategory("SteadyState")]
     public async Task<ulong> ReclaimAsync()
     {
         using IMemoryReservation reservation = await _scope.ReserveAsync(new MemoryRequest { Pool = _pool, Bytes = 4096, Purpose = MemoryPurpose.Resident });
@@ -108,6 +126,8 @@ public class MemoryBenchmarks
     /// <summary>Builds, resolves, borrows and disposes a complete service-provider lifetime.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("DependencyInjection")]
+    [BenchmarkCategory("Lifetime")]
     public async Task ProviderLifetimeAsync()
     {
         var services = new ServiceCollection();

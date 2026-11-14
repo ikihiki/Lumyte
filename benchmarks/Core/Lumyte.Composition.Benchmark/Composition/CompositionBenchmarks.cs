@@ -4,7 +4,7 @@ namespace Lumyte.Composition.Benchmark;
 
 /// <summary>Measures snapshots, constrained adapters, generated nodes, and recipes.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Composition", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Standalone", "Core", "Composition", "Screening", "Comparison", "Diagnostic")]
 public class CompositionBenchmarks
 {
     private readonly CompositionSlot<Compose.Definitions.Item, int> _slot = new((target, children) => target.Children = children);
@@ -29,11 +29,13 @@ public class CompositionBenchmarks
     /// <summary>Captures an immutable slot assignment without applying it.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public CompositionSlotAssignment<Compose.Definitions.Item> Capture() => _slot[_children];
 
     /// <summary>Applies a retained assignment, replacing rather than retaining old arrays.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public int[] Apply()
     {
         _assignment.Apply(_target);
@@ -43,6 +45,7 @@ public class CompositionBenchmarks
     /// <summary>Resolves a mutable explicit-interface adapter and attaches its preserved state.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public int Adapter()
     {
         var argument = new CountingArgument(17);
@@ -58,16 +61,19 @@ public class CompositionBenchmarks
     /// <summary>Builds through the actual generated factory, actions, and content indexer.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Construction")]
     public Compose.Definitions.Item Factory() => Compose.Item(value: 17, with: [Compose.Item.Set(19)])[_children];
 
     /// <summary>Constructs a passive function wrapper without evaluating its body.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Construction")]
     public Compose.Definitions.Node FunctionWrapper() => Compose.Value(value: 17);
 
     /// <summary>Reconstructs a fresh wrapper from its generated retained recipe.</summary>
     /// <returns>The actual operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public object Rebuild() => _recipe.Factory!();
 
     private struct CountingArgument(int value) : IComposeArgument<int>

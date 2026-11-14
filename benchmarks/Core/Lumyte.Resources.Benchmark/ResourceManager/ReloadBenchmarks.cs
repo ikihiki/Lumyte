@@ -6,7 +6,7 @@ using Lumyte.Memory;
 namespace Lumyte.Resources.Benchmark;
 
 /// <summary>Publishes source changes through the public automatic reload path.</summary>
-[BenchmarkCategory("Core", "Resources", "Reload", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Lifetime", "Standalone", "Core", "Resources", "Reload", "Screening", "Comparison", "Diagnostic")]
 public class ReloadBenchmarks
 {
     /// <summary>Rebuilds one changed source while retaining exactly one old generation lease.</summary>

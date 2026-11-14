@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Compares complete transactions of sixteen writes, including final delivery.</summary>
-[BenchmarkCategory("Core", "Signals", "Batching", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("SteadyState", "Standalone", "Core", "Signals", "Batching", "Screening", "Comparison", "Diagnostic")]
 public class BatchBenchmarks
 {
     private const int Writes = 16;

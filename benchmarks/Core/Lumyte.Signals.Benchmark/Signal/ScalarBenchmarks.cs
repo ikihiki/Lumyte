@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Measures primitive operations with values and callbacks created outside timed code.</summary>
-[BenchmarkCategory("Core", "Signals", "Values", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("SteadyState", "Standalone", "Core", "Signals", "Values", "Screening", "Comparison", "Diagnostic")]
 public class ScalarBenchmarks
 {
     private readonly Signal<int> _read = Signal.Create(42);

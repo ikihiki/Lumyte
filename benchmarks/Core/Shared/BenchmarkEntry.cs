@@ -5,6 +5,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Characteristics;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
+using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Filters;
 using BenchmarkDotNet.Jobs;
@@ -196,13 +197,15 @@ internal static class BenchmarkEntry
             using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(type, DefaultConfig.Instance);
             foreach (BenchmarkCase benchmark in run.BenchmarksCases)
             {
+                string resultKey = FullNameProvider.GetBenchmarkName(benchmark) + "|" + benchmark.Parameters.PrintInfo;
                 cases.Add(new CatalogCase(
                     type.FullName ?? type.Name,
                     benchmark.Descriptor.WorkloadMethod.Name,
                     benchmark.Descriptor.Categories,
                     benchmark.Parameters.Items.Select(parameter => new CatalogParameter(
                         parameter.Name, parameter.ToSourceCode(), parameter.IsArgument)).ToArray(),
-                    GetModes(benchmark)));
+                    GetModes(benchmark),
+                    resultKey));
             }
         }
 
@@ -319,7 +322,7 @@ internal static class BenchmarkEntry
 
     internal sealed record EntryOptions(string? Mode, bool Catalog, string[] Arguments);
 
-    internal sealed record CatalogCase(string Type, string Method, string[] Categories, CatalogParameter[] Parameters, string[] Modes);
+    internal sealed record CatalogCase(string Type, string Method, string[] Categories, CatalogParameter[] Parameters, string[] Modes, string ResultKey);
 
     internal sealed record CatalogParameter(string Name, string Value, bool IsArgument);
 }

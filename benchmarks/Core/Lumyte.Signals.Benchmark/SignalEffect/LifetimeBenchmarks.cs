@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Lumyte.Signals.Benchmark;
 
 /// <summary>Exercises scope ownership, recovery and actual parallel graph access.</summary>
-[BenchmarkCategory("Core", "Signals", "Effects", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Lifetime", "Standalone", "Core", "Signals", "Effects", "Screening", "Comparison", "Diagnostic")]
 public class LifetimeBenchmarks
 {
     /// <summary>Gets or sets the number of scope-owned observers.</summary>

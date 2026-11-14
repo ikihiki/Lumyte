@@ -4,7 +4,7 @@ namespace Lumyte.Execution.Benchmark;
 
 /// <summary>Measures a generated static endpoint in its isolated benchmark process.</summary>
 [MemoryDiagnoser]
-[BenchmarkCategory("Core", "Execution", "Commands", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("SteadyState", "Standalone", "Core", "Execution", "Commands", "Screening", "Comparison", "Diagnostic")]
 public class GeneratedSenderBenchmarks
 {
     private readonly SenderState _state = new();

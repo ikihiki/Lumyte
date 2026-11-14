@@ -5,7 +5,7 @@ using Lumyte.Mathematics.Geometry;
 namespace Lumyte.Mathematics.Benchmark;
 
 /// <summary>Geometry paths without unrelated interpolation parameters.</summary>
-[BenchmarkCategory("Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
+[BenchmarkCategory("Standalone", "Core", "Mathematics", "Geometry", "Screening", "Comparison", "Diagnostic")]
 public class GeometryBenchmarks
 {
     private readonly Point2D<double> _start = new(0, 0);
@@ -18,66 +18,79 @@ public class GeometryBenchmarks
     /// <summary>Executes TimingConstruct through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("Construction")]
     public CubicBezierTiming TimingConstruct() => new(0.25, 0.1, 0.25, 1);
 
     /// <summary>Executes CoordinateConvert through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public Point2D<double> CoordinateConvert() => new Point2D<int>(123, -456).ConvertChecked<double>();
 
     /// <summary>Executes Distance through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public double Distance() => _start.DistanceTo(_end);
 
     /// <summary>Executes Projection through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public Point2D<double> Projection() => new Segment2D<double>(_start, _end).ClosestPoint(new(8, -2));
 
     /// <summary>Executes Intersection through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public bool Intersection() => new Segment2D<double>(_start, _end).Intersects(new(new(0, 5), new(10, -2)));
 
     /// <summary>Executes ContainsClosed through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public bool ContainsClosed() => _rectangle.Contains(new(10, 20));
 
     /// <summary>Executes ContainsHalfOpen through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public bool ContainsHalfOpen() => _rectangle.ContainsHalfOpen(new(10, 20));
 
     /// <summary>Executes BoundsUnion through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public Rect2D<double> BoundsUnion() => _rectangle.Union(new(-3, -2, 8, 9));
 
     /// <summary>Executes Affine through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public Point2D<double> Affine() => Geometry2D.TransformAffineFused(_start, _transform);
 
     /// <summary>Executes PolygonNonZero through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public bool PolygonNonZero() => Geometry2D.ContainsPolygonClosed<double>(_polygon, new(2, 2));
 
     /// <summary>Executes PolygonEvenOdd through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public bool PolygonEvenOdd() => Geometry2D.ContainsPolygonEvenOddClosed<double>(_polygon, new(2, 2));
 
     /// <summary>Executes CurveEvaluate through the public product API.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public Point2D<double> CurveEvaluate() => Geometry2D.EvaluateCubicBezier(_start, new Point2D<double>(2, 8), new Point2D<double>(6, -3), _end, 0.375);
 
     /// <summary>Flattens a curve with bounded output and a reused cleared destination.</summary>
     /// <returns>The consumed operation result.</returns>
     [Benchmark]
+    [BenchmarkCategory("SteadyState")]
     public int Flatten()
     {
         _flattened.Clear();
