@@ -1,6 +1,6 @@
 # Lumyte.Graphics.Generators
 
-Ordinary unmanaged structs do not need IShaderData, IShaderArguments, partial,
+Ordinary unmanaged structs do not need IShaderArguments, partial,
 a generator reference, or registration. Use `device.CreateShaderDataBuffer<T>`(artifact,
 count) to obtain `IGraphicsBuffer<T>`; CopyFrom copies the complete span without conversion.
 Use `BufferSlice<T>`, `BufferBarrierDesc<T>`, CopyBuffer and WriteBuffer, including
@@ -11,7 +11,7 @@ The C# type name is the default shader structure name (intrinsic numeric types u
 their shader names, e.g. Vector3 maps to float3); root calls can override it.
 
 The generator is for reference-containing classes, or explicitly opted-in
-IShaderArguments/IShaderData implementations on partial types.
+IShaderArguments implementations on partial types.
 There is no codec registry, per-numeric-field serialization, or reflected repacking.
 
 - Unmanaged structs (including record structs) transfer their **entire C# representation**

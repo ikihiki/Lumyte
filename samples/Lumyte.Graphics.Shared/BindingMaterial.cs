@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Defines application-owned material values and independent resource references.</summary>
-public sealed partial record class BindingMaterial : IShaderData
+public sealed partial record class BindingMaterial : IShaderArguments
 {
     private TransferData _data;
 

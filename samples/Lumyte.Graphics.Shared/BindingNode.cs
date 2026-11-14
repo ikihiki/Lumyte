@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Defines application-owned linked shader data for dependency traversal checks.</summary>
-public sealed partial record class BindingNode : IShaderData
+public sealed partial record class BindingNode : IShaderArguments
 {
     private TransferData _data;
 

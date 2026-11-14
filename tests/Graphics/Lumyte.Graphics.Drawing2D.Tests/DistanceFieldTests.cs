@@ -130,7 +130,7 @@ public sealed class DistanceFieldTests
             where T : unmanaged => throw new NotSupportedException();
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : IShaderData => throw new NotSupportedException();
+            where T : IShaderArguments => throw new NotSupportedException();
 
         public void ReleaseTexture(uint slot)
         {

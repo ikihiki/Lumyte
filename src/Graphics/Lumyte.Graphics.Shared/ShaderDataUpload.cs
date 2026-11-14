@@ -16,7 +16,7 @@ public static class ShaderDataUpload
     /// <param name="metadataFactory">The backend-owned immutable dependency factory, or the default identity-only owner.</param>
     /// <remarks>Any failure invalidates metadata for the requested range. Destination bytes may already be partially modified.</remarks>
     public static void CopyFrom<T>(ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(metadata);

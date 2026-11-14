@@ -516,7 +516,7 @@ public sealed class ShaderWireCursorTests
         public IGpuRef<uint> GetElement(ulong index) => throw new NotSupportedException();
     }
 
-    private sealed class CursorValue(List<string> events) : IShaderData
+    private sealed class CursorValue(List<string> events) : IShaderArguments
     {
         public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
 
@@ -556,7 +556,7 @@ public sealed class ShaderWireCursorTests
         }
     }
 
-    private sealed class CursorSlotValue(int first, int second) : IShaderData
+    private sealed class CursorSlotValue(int first, int second) : IShaderArguments
     {
         public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
 

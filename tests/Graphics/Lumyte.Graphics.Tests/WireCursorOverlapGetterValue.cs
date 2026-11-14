@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class WireCursorOverlapGetterValue(IGpuRef<uint> a, IGpuRef<uint> b) : IShaderData
+internal partial class WireCursorOverlapGetterValue(IGpuRef<uint> a, IGpuRef<uint> b) : IShaderArguments
 {
     private Storage _data = default;
 

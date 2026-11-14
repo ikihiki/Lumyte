@@ -6,7 +6,7 @@ Wgpu／Browser／Vulkan の具象 backend には依存しません。
 
 ## 提供する型
 
-- `DrawingVertex`：3D 座標、linear／straight-alpha の頂点色、UV。`IShaderData` は不要で、通常のunmanaged構造体です。
+- `DrawingVertex`：3D 座標、linear／straight-alpha の頂点色、UV。`IShaderArguments` は不要で、通常のunmanaged構造体です。
 - `ColorDrawArguments`：頂点範囲、object-to-clip 行列、色の乗算値。
 - `TextureDrawArguments`：上記に加えて 2D texture view と通常の sampler の GPU 参照。
 - `DrawingPrimitives.Rectangle`／`Circle`：XY 平面の反時計回り triangle list。

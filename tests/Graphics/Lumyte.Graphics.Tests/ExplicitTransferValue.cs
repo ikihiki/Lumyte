@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class ExplicitTransferValue : IShaderData
+internal partial class ExplicitTransferValue : IShaderArguments
 {
     private Storage _data;
 

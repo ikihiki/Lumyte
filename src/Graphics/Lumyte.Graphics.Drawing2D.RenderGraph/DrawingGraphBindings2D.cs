@@ -68,7 +68,7 @@ public sealed class DrawingGraphBindings2D
     /// <param name="buffer">The borrowed allocation.</param>
     /// <param name="resource">The graph-local handle.</param>
     public void BindShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, RenderGraphShaderDataBuffer<T> resource)
-        where T : IShaderData => BindBufferResource(buffer, resource);
+        where T : IShaderArguments => BindBufferResource(buffer, resource);
 
     /// <summary>Gets the handle bound to an external buffer.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
@@ -83,7 +83,7 @@ public sealed class DrawingGraphBindings2D
     /// <param name="buffer">The borrowed allocation.</param>
     /// <returns>The existing graph handle.</returns>
     public RenderGraphShaderDataBuffer<T> GetShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer)
-        where T : IShaderData => _buffers.TryGetValue(buffer, out RenderGraphResource? resource) && resource is RenderGraphShaderDataBuffer<T> typed
+        where T : IShaderArguments => _buffers.TryGetValue(buffer, out RenderGraphResource? resource) && resource is RenderGraphShaderDataBuffer<T> typed
             ? typed : throw new InvalidOperationException("The shader data has not been bound to this graph.");
 
     internal DrawingGraphBindings2D Snapshot()

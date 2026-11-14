@@ -411,7 +411,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         RequireReady();
 

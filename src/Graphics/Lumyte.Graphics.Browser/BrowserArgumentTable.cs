@@ -64,7 +64,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ThrowIfDisposed();
         if (range.Buffer is not BrowserShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)

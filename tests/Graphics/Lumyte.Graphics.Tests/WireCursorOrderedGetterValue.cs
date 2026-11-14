@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Tests;
 
 // Deliberately declare B before A: the generated cursor must evaluate physical order.
-internal partial class WireCursorOrderedGetterValue(IGpuRef<uint> a, IGpuRef<uint> b, List<string> events) : IShaderData
+internal partial class WireCursorOrderedGetterValue(IGpuRef<uint> a, IGpuRef<uint> b, List<string> events) : IShaderArguments
 {
     private Storage _data;
 

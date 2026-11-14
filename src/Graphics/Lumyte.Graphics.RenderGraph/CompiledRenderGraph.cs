@@ -163,7 +163,7 @@ public sealed class CompiledRenderGraph : IDisposable
     /// <param name="buffer">The explicitly marked or exported output.</param>
     /// <returns>The caller-owned allocation.</returns>
     public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer)
-        where T : IShaderData => (IGraphicsShaderDataBuffer<T>)GetOutput(buffer);
+        where T : IShaderArguments => (IGraphicsShaderDataBuffer<T>)GetOutput(buffer);
 
     /// <summary>Transfers external ownership to this unused plan until safe disposal.</summary>
     /// <param name="lifetime">The ownership validated before recording and released after plan allocations.</param>

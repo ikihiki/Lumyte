@@ -81,7 +81,7 @@ internal sealed class GraphBindingLookup
     /// <param name="count">The positive element count.</param>
     /// <returns>This resource group.</returns>
     internal GraphBindingLookup ReadBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ArgumentOutOfRangeException.ThrowIfZero(count);
         var key = new ResourceKey(buffer, null, offset, count, ArgumentBufferAccess.Read);

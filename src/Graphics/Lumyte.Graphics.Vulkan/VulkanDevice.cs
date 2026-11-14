@@ -311,7 +311,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 

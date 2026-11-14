@@ -247,6 +247,6 @@ public sealed class ShaderResourcesUnmanagedTests
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : IShaderData => throw new NotSupportedException();
+            where T : IShaderArguments => throw new NotSupportedException();
     }
 }

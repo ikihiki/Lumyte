@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal sealed record class ConsumerLink(IGpuRef<IGraphicsTextureView> Texture) : IShaderData
+internal sealed record class ConsumerLink(IGpuRef<IGraphicsTextureView> Texture) : IShaderArguments
 {
     public static string ShaderTypeName => "ConsumerLink";
 

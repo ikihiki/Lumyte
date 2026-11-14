@@ -85,7 +85,7 @@ public sealed class RenderGraphContext
     /// <param name="count">The declared element count; null requests the whole buffer.</param>
     /// <returns>The existing native range reference.</returns>
     public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset = 0, ulong? count = null)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(buffer);
@@ -117,7 +117,7 @@ public sealed class RenderGraphContext
     /// <param name="buffer">The graph-local handle.</param>
     /// <returns>The caller-owned shader data buffer.</returns>
     public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         Check(buffer);
         return (IGraphicsShaderDataBuffer<T>)_plan.Resolve(buffer);

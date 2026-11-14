@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal readonly struct TestShaderData : IShaderData
+internal readonly struct TestShaderData : IShaderArguments
 {
     public static string ShaderTypeName => "TestShaderData";
 

@@ -67,7 +67,6 @@ public sealed class ColorShaderTransferTests
         where T : unmanaged
     {
         Assert.False(typeof(IShaderArguments).IsAssignableFrom(typeof(T)));
-        Assert.False(typeof(IShaderData).IsAssignableFrom(typeof(T)));
         Assert.Equal(16, Unsafe.SizeOf<T>());
         byte[] expected = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)).ToArray();
         ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value, "color", "ColorWire");

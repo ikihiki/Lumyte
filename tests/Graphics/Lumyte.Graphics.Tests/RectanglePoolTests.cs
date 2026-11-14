@@ -126,6 +126,6 @@ public sealed class RectanglePoolTests
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => inner.CreateComputePipeline(desc);
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : IShaderData => inner.CreateShaderDataBuffer<T>(artifact, count, memory);
+            where T : IShaderArguments => inner.CreateShaderDataBuffer<T>(artifact, count, memory);
     }
 }

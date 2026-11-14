@@ -73,14 +73,14 @@ internal sealed class RetainedFrameFixture
         public void Barrier(TextureBarrierDesc barrier) => Events.Add(barrier);
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : IShaderData => Events.Add(barrier);
+            where T : IShaderArguments => Events.Add(barrier);
 
         public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
             where TSource : unmanaged
             where TDestination : unmanaged => Events.Add("copy");
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : IShaderData => throw new NotSupportedException();
+            where T : IShaderArguments => throw new NotSupportedException();
 
         public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 
@@ -168,6 +168,6 @@ internal sealed class RetainedFrameFixture
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : IShaderData => throw new NotSupportedException();
+            where T : IShaderArguments => throw new NotSupportedException();
     }
 }

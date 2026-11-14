@@ -4,6 +4,38 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## 転送interfaceの統合（2026-11-14）
+
+旧IShaderData markerを削除し、IShaderArgumentsをrootとtyped shader-data bufferの単一契約とした。
+4 backend、buffer／slice／factory、Graph／resource宣言、samplesとtest consumerの制約を統一し、
+互換aliasは残していない。通常のunmanaged overload／直接byte copyは変更していない。
+
+生成型の同じIShaderArguments classを、実GPUでCopyFrom／CopyBuffer／GPU loadと
+SetArgumentsの両方に使い、明示転送値7とSet値13を同時readbackするfixtureを追加した。
+同じ型でpublic Graphのbuffer生成・宣言・copyも実行する。手書きcodecも同一classを
+rootとupload helperに渡し、別時点の値とpadding／空metadata／encoder未呼び出しを検査する。
+API不在guard、single-interface制約、plain unmanagedの非interface経路も検査する。
+
+過去のbenchmark workload／削除済みbinary dataは復元・改変しない。凍結revision専用の
+過去harness内の旧marker名は履歴sourceであり、現行consumerとは区別する。
+新しい性能測定やAPIの追加flatteningは行わない。
+
+統合後の最終検証:
+
+- Graphics Debug／Release各253成功・失敗0・88skip（341件）。
+- RenderGraph Debug／Release各130成功・失敗0・skip0。
+- 全ホストRelease3,223成功・失敗0・109skip。host samples／public consumer buildも成功。
+- Vulkan／Wgpu native subset Debug／Release各16成功・失敗0・skip0。
+  新しい同一classのroot／buffer／Graph fixtureは各backendでvalidation off/onを実行した。
+- D3D12管理側Release28成功・Windows native7skip、Browser Release compile成功。
+- Windows native／Browser実行・AOT／presentationは未検証。新しい性能測定なし。
+- source reviewで本体の変更はmarker削除と制約／実装名の置換だけと確認した。
+  buildが生成した.fallout/build.schema.jsonの差分は元のindexへ戻し、CI／build設定は変更しない。
+
+ログはartifacts/validation10-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,unified-gpu-debug,markdown}.log。
+
+以下は前のcursor-only API変更時の履歴である。
+
 ## cursor以外の書き込み経路の削除（2026-11-14）
 
 利用者の明示的な破壊的変更要求により、以前残した互換書き込みを削除した。

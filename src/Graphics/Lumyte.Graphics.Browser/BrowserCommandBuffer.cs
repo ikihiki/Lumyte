@@ -27,7 +27,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         using GraphicsValidation.RecordingTransaction? validationRecording = _owner.Validation?.BeginRecording(this);
         RequireRecording();
@@ -41,7 +41,7 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         using GraphicsValidation.RecordingTransaction? validationRecording = _owner.Validation?.BeginRecording(this);
         RequireRecording();

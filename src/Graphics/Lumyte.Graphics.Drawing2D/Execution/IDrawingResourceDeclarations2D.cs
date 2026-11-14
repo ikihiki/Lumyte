@@ -23,7 +23,7 @@ public interface IDrawingResourceDeclarations2D
     /// <param name="buffer">The borrowed allocation.</param>
     /// <param name="scope">The accesses made during the batch.</param>
     void UseShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : IShaderData;
+        where T : IShaderArguments;
 
     /// <summary>Declares one exact sampled view; default adapters retain allocation-wide access semantics.</summary>
     /// <param name="view">The sampled view.</param>
@@ -48,5 +48,5 @@ public interface IDrawingResourceDeclarations2D
     /// <param name="range">The binding range.</param>
     /// <param name="scope">The actual accesses.</param>
     void UseShaderDataBuffer<T>(ShaderDataSlice<T> range, BarrierScope scope)
-        where T : IShaderData => UseShaderDataBuffer(range.Buffer, scope);
+        where T : IShaderArguments => UseShaderDataBuffer(range.Buffer, scope);
 }

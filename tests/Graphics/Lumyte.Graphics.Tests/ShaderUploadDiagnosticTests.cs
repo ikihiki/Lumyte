@@ -88,7 +88,7 @@ public sealed class ShaderUploadDiagnosticTests
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct TypeData : IShaderData
+    private struct TypeData : IShaderArguments
     {
         public uint Number;
 
@@ -103,7 +103,7 @@ public sealed class ShaderUploadDiagnosticTests
             where TWriter : IShaderValueWriter => ShaderWire.Write(in Number, ref writer);
     }
 
-    private sealed class InstanceData : IShaderData
+    private sealed class InstanceData : IShaderArguments
     {
         public static string ShaderTypeName => "UploadNumber";
 

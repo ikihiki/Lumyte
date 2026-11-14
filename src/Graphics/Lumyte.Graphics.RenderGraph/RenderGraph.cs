@@ -113,7 +113,7 @@ public sealed class RenderGraph : IDisposable
     /// <param name="name">The optional diagnostic name.</param>
     /// <returns>A graph-local handle.</returns>
     public RenderGraphShaderDataBuffer<T> ImportShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope initialScope, string? name = null)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(buffer);
         var resource = new RenderGraphShaderDataBuffer<T>(this, buffer, initialScope, ResourceName(name));
@@ -141,7 +141,7 @@ public sealed class RenderGraph : IDisposable
     /// <param name="name">The optional name of a new import.</param>
     /// <returns>The unique graph handle; an existing import retains its initial scope.</returns>
     public RenderGraphShaderDataBuffer<T> GetOrImportShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope initialScope, string? name = null)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         EnsureBuilding();
         return _resources.OfType<RenderGraphShaderDataBuffer<T>>().FirstOrDefault(resource => ReferenceEquals(resource.Allocation, buffer)) ?? ImportShaderDataBuffer(buffer, initialScope, name);
@@ -192,7 +192,7 @@ public sealed class RenderGraph : IDisposable
     /// <param name="name">The optional diagnostic name.</param>
     /// <returns>A temporary whose first read requires an explicit graph copy-write producer.</returns>
     public RenderGraphShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, string? name = null)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(artifact);
         ArgumentOutOfRangeException.ThrowIfZero(count);
@@ -273,7 +273,7 @@ public sealed class RenderGraph : IDisposable
     /// <param name="scope">The subsequent accesses.</param>
     /// <returns>This graph.</returns>
     public RenderGraph ExportShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         Export(buffer, TextureState.Undefined, scope);
         return this;
@@ -437,7 +437,7 @@ public sealed class RenderGraph : IDisposable
         where T : unmanaged => LocalResource(pass, buffer, scope, () => new RenderGraphBuffer<T>(this, buffer, default, "pass-local-buffer"));
 
     internal RenderGraphShaderDataBuffer<T> LocalShaderData<T>(RenderGraphPass pass, IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : IShaderData => LocalResource(pass, buffer, scope, () => new RenderGraphShaderDataBuffer<T>(this, buffer, default, "pass-local-shader-data"));
+        where T : IShaderArguments => LocalResource(pass, buffer, scope, () => new RenderGraphShaderDataBuffer<T>(this, buffer, default, "pass-local-shader-data"));
 
     internal RenderGraphSampler GetSamplerResource(IGraphicsSampler sampler)
     {

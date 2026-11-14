@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Browser;
 
 internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
-    where T : IShaderData
+    where T : IShaderArguments
 {
     private readonly IShaderReferenceMetadata?[] _values;
     private readonly ShaderDataLayout? _diagnosticLayout;

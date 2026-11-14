@@ -227,7 +227,7 @@ public sealed class ShaderDataUploadTests
         public ShaderReferenceSlot Reference;
     }
 
-    private sealed class UploadValue : IShaderData
+    private sealed class UploadValue : IShaderArguments
     {
         public static string ShaderTypeName => throw new InvalidOperationException("Type diagnostics must remain disabled.");
 
@@ -281,7 +281,7 @@ public sealed class ShaderDataUploadTests
         }
     }
 
-    private sealed class HugeValue : IShaderData
+    private sealed class HugeValue : IShaderArguments
     {
         public static string ShaderTypeName => throw new InvalidOperationException("No diagnostics expected.");
 

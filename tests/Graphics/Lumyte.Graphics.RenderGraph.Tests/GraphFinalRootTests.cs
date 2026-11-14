@@ -364,14 +364,14 @@ public sealed class GraphFinalRootTests
         public void Barrier(TextureBarrierDesc barrier) => _inner.Barrier(barrier);
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : IShaderData => _inner.Barrier(barrier);
+            where T : IShaderArguments => _inner.Barrier(barrier);
 
         public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
             where TSource : unmanaged
             where TDestination : unmanaged => _inner.CopyBuffer(source, destination);
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : IShaderData => _inner.CopyBuffer(source, destination);
+            where T : IShaderArguments => _inner.CopyBuffer(source, destination);
 
         public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => _inner.CopyTexture(source, destination);
 

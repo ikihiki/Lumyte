@@ -64,7 +64,7 @@ internal sealed class WgpuArgumentTable(WgpuDevice owner, ArgumentTableDesc desc
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : IShaderData
+        where T : IShaderArguments
     {
         ThrowIfDisposed();
         if (range.Buffer is not WgpuShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)

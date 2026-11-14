@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed partial record class DrawingInstruction : IShaderData
+internal sealed partial record class DrawingInstruction : IShaderArguments
 {
     private TransferData _data;
 

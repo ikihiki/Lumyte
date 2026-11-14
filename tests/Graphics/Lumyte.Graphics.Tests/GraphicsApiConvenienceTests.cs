@@ -114,7 +114,7 @@ public sealed class GraphicsApiConvenienceTests
         Assert.Throws<ArgumentOutOfRangeException>(() => GraphicsRenderStateDesc.ForColorTargets(-1));
     }
 
-    private readonly record struct SampleData(uint Value) : IShaderData
+    private readonly record struct SampleData(uint Value) : IShaderArguments
     {
         public static string ShaderTypeName => nameof(SampleData);
 

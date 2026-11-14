@@ -75,14 +75,14 @@ public class ShaderResources
     /// <param name="range">The device-memory shader-data range.</param>
     /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
     public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved)
-        where T : IShaderData => _reservation.RegisterBuffer(range, resolved);
+        where T : IShaderArguments => _reservation.RegisterBuffer(range, resolved);
 
     /// <summary>Registers a shader-data range resolved during preparation.</summary>
     /// <typeparam name="T">The logical shader element type.</typeparam>
     /// <param name="resolve">The final shader-data range resolver.</param>
     /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
     public void RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve, Action<IGpuRef<T>> resolved)
-        where T : IShaderData => _reservation.RegisterShaderData(resolve, resolved);
+        where T : IShaderArguments => _reservation.RegisterShaderData(resolve, resolved);
 
     /// <summary>Adds a resource identity and shader-access validation before native allocation.</summary>
     /// <param name="inspect">The resource declaration validator.</param>

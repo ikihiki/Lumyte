@@ -172,14 +172,14 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     /// <param name="range">The borrowed range.</param>
     /// <param name="resolved">Receives the native reference after materialization.</param>
     public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved)
-        where T : IShaderData => Legacy().RegisterBuffer(range, resolved);
+        where T : IShaderArguments => Legacy().RegisterBuffer(range, resolved);
 
     /// <summary>Registers a shader-data range resolved during materialization.</summary>
     /// <typeparam name="T">The shader-data type.</typeparam>
     /// <param name="resolve">Provides the borrowed range.</param>
     /// <param name="resolved">Receives the native reference after materialization.</param>
     public void RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve, Action<IGpuRef<T>> resolved)
-        where T : IShaderData => Legacy().RegisterShaderData(resolve, resolved);
+        where T : IShaderArguments => Legacy().RegisterShaderData(resolve, resolved);
 
     /// <summary>Schedules a compatibility finalizer after all native registrations succeed.</summary>
     /// <param name="upload">The host payload operation.</param>
@@ -363,7 +363,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         where T : unmanaged => PreparedMarks(resources).Add(declarations => declarations.UseBuffer(range, scope));
 
     internal void MarkPreparedShaderData<T>(ShaderResources resources, ShaderDataSlice<T> range, BarrierScope scope)
-        where T : IShaderData => PreparedMarks(resources).Add(declarations => declarations.UseShaderDataBuffer(range, scope));
+        where T : IShaderArguments => PreparedMarks(resources).Add(declarations => declarations.UseShaderDataBuffer(range, scope));
 
     internal IGraphicsSampler Sampler(DrawingResources2D resources) => _sampler ??= resources.Sampler ?? _sharedSampler ?? _samplerFactory?.Invoke() ?? Own(Device.CreateSampler(new() { MinFilter = FilterMode.Nearest, MagFilter = FilterMode.Nearest, MipmapFilter = FilterMode.Nearest, AddressU = AddressMode.ClampToEdge, AddressV = AddressMode.ClampToEdge, LodMaxClamp = 0 }));
 

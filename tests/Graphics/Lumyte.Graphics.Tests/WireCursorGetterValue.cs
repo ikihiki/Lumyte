@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class WireCursorGetterValue : IShaderData
+internal partial class WireCursorGetterValue : IShaderArguments
 {
     private Storage _data;
 

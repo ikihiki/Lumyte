@@ -164,7 +164,7 @@ public sealed class ShaderBulkTransferTests
         public uint Last;
     }
 
-    private sealed class PaddedUnconstructibleData : IShaderData
+    private sealed class PaddedUnconstructibleData : IShaderArguments
     {
         private PaddedUnconstructibleData()
         {
@@ -181,7 +181,7 @@ public sealed class ShaderBulkTransferTests
             where TWriter : IShaderValueWriter => throw new InvalidOperationException("Static sizing must not capture values.");
     }
 
-    private sealed class UnconstructibleData : IShaderData
+    private sealed class UnconstructibleData : IShaderArguments
     {
         private UnconstructibleData()
         {

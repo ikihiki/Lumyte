@@ -276,7 +276,7 @@ public sealed class RenderingGeometryTests
             where T : unmanaged => throw new InvalidOperationException("Paint compilation must not bind buffers.");
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : IShaderData => throw new InvalidOperationException("Paint compilation must not bind buffers.");
+            where T : IShaderArguments => throw new InvalidOperationException("Paint compilation must not bind buffers.");
 
         public void ReleaseTexture(uint slot) => throw new InvalidOperationException("Paint compilation must not release textures.");
 
