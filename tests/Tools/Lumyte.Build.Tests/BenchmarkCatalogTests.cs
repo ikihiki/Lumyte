@@ -4,7 +4,7 @@ using Xunit;
 namespace Lumyte.Build.Tests;
 
 /// <summary>Checks Core category selection and argument boundaries without timing thresholds.</summary>
-public sealed class CoreBenchmarkCatalogTests
+public sealed class BenchmarkCatalogTests
 {
     /// <summary>Only real target-specific project roots participate in selection.</summary>
     [Fact]
@@ -17,12 +17,34 @@ public sealed class CoreBenchmarkCatalogTests
             AddProject(root, "Lumyte.Mathematics");
             Directory.CreateDirectory(Path.Combine(root, "benchmarks", "Core", "Shared"));
             Directory.CreateDirectory(Path.Combine(root, "benchmarks", "Core", "Missing.Benchmark"));
-            string[] all = CoreBenchmarkCatalog.SelectProjects(root, "*");
+            string[] all = BenchmarkCatalog.SelectProjects(root, "*");
             Assert.Equal(2, all.Length);
             Assert.EndsWith("Lumyte.Mathematics.Benchmark.csproj", all[0], StringComparison.Ordinal);
-            Assert.Single(CoreBenchmarkCatalog.SelectProjects(root, "Lumyte.Signals"));
-            Assert.Single(CoreBenchmarkCatalog.SelectProjects(root, "Lumyte.Signals.Benchmark"));
-            Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.SelectProjects(root, "NoSuchProject"));
+            Assert.Single(BenchmarkCatalog.SelectProjects(root, "Lumyte.Signals"));
+            Assert.Single(BenchmarkCatalog.SelectProjects(root, "Lumyte.Signals.Benchmark"));
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "NoSuchProject"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>Each target resolves its logical project area without treating filenames as categories.</summary>
+    [Fact]
+    public void AnimationSelectionDoesNotIncludeCoreProjects()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "Animation catalog " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            AddProject(root, "Lumyte.Core");
+            string directory = Path.Combine(root, "benchmarks", "Animation", "Lumyte.Animation.Benchmark");
+            Directory.CreateDirectory(directory);
+            string project = Path.Combine(directory, "Lumyte.Animation.Benchmark.csproj");
+            File.WriteAllText(project, "<Project />");
+            Assert.Equal(new[] { project }, BenchmarkCatalog.SelectProjects(root, "*", "Animation"));
+            Assert.Single(BenchmarkCatalog.SelectProjects(root, "*", "Core"));
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "*", "../Core"));
         }
         finally
         {
@@ -36,7 +58,7 @@ public sealed class CoreBenchmarkCatalogTests
     [InlineData("screen")]
     [InlineData("compare")]
     [InlineData("diagnose")]
-    public void ModesAreExplicit(string mode) => Assert.Equal(mode, CoreBenchmarkCatalog.NormalizeMode(mode));
+    public void ModesAreExplicit(string mode) => Assert.Equal(mode, BenchmarkCatalog.NormalizeMode(mode));
 
     /// <summary>Unknown, removed and missing modes cannot silently become a timing run.</summary>
     /// <param name="mode">The invalid mode.</param>
@@ -44,7 +66,7 @@ public sealed class CoreBenchmarkCatalogTests
     [InlineData("screening-typo")]
     [InlineData("verify")]
     [InlineData("")]
-    public void UnknownModeIsRejected(string mode) => Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.NormalizeMode(mode));
+    public void UnknownModeIsRejected(string mode) => Assert.Throws<ArgumentException>(() => BenchmarkCatalog.NormalizeMode(mode));
 
     /// <summary>Paths and filters remain distinct process arguments.</summary>
     [Fact]
@@ -52,13 +74,13 @@ public sealed class CoreBenchmarkCatalogTests
     {
         string binary = "target with spaces/日本語.dll";
         string output = "output 日本語";
-        Assert.Equal([binary, "--catalog"], CoreBenchmarkCatalog.Arguments(binary, null, "*", null, output, true));
-        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.Arguments(binary, "verify", "*", null, output, false));
-        Assert.Throws<ArgumentNullException>(() => CoreBenchmarkCatalog.Arguments(binary, null, "*", null, output, false));
+        Assert.Equal([binary, "--catalog"], BenchmarkCatalog.Arguments(binary, null, "*", null, output, true));
+        Assert.Throws<ArgumentException>(() => BenchmarkCatalog.Arguments(binary, "verify", "*", null, output, false));
+        Assert.Throws<ArgumentNullException>(() => BenchmarkCatalog.Arguments(binary, null, "*", null, output, false));
         Assert.Equal(
             [binary, "--mode", "screen", "--filter", "*Updated*", "--artifacts", output, "--anyCategories", "Screening"],
-            CoreBenchmarkCatalog.Arguments(binary, "screen", "*Updated*", "Screening", output, false));
-        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.Arguments(binary, "compare", string.Empty, null, output, false));
+            BenchmarkCatalog.Arguments(binary, "screen", "*Updated*", "Screening", output, false));
+        Assert.Throws<ArgumentException>(() => BenchmarkCatalog.Arguments(binary, "compare", string.Empty, null, output, false));
     }
 
     /// <summary>Real Fallout validates mode before launching a project worker.</summary>
@@ -156,44 +178,44 @@ public sealed class CoreBenchmarkCatalogTests
     [Fact]
     public void MetadataSelectsAcrossProjectsWithoutNameInference()
     {
-        JsonObject first = CoreBenchmarkCatalog.ParseCatalog("""
+        JsonObject first = BenchmarkCatalog.ParseCatalog("""
             {"SchemaVersion":1,"Assembly":{"Name":"Vector.Benchmark","Location":"/shapes/Fixtures.dll"},
              "Modes":["screen","compare","diagnose"],"Cases":[
               {"Type":"Unrelated.Subject","Method":"Run","Categories":["Core","shared"],"Modes":["screen"]},
               {"Type":"shared.NamedClass","Method":"Other","Categories":["Other"],"Modes":["screen"]}]}
             """);
-        JsonObject second = CoreBenchmarkCatalog.ParseCatalog("""
+        JsonObject second = BenchmarkCatalog.ParseCatalog("""
             {"SchemaVersion":1,"Assembly":{"Name":"CompletelyDifferent.Benchmark","Location":"/elsewhere/Inputs.dll"},
              "Modes":["screen","compare","diagnose"],"Cases":[
               {"Type":"Another.Namespace.Fixture","Method":"Work","Categories":["shared"],"Modes":["screen","diagnose"]}]}
             """);
-        JsonArray[] selections = [CoreBenchmarkCatalog.SelectCases(first, "screen", "shared"), CoreBenchmarkCatalog.SelectCases(second, "screen", "shared")];
+        JsonArray[] selections = [BenchmarkCatalog.SelectCases(first, "screen", "shared"), BenchmarkCatalog.SelectCases(second, "screen", "shared")];
         Assert.All(selections, cases => Assert.Single(cases));
-        CoreBenchmarkCatalog.RequireSelectedCases(selections, "shared", "screen");
-        CoreBenchmarkCatalog.RequireSelectedCases([new JsonArray(), selections[1]], "shared", "screen");
+        BenchmarkCatalog.RequireSelectedCases(selections, "shared", "screen");
+        BenchmarkCatalog.RequireSelectedCases([new JsonArray(), selections[1]], "shared", "screen");
         Assert.Equal("Unrelated.Subject", selections[0][0]!["Type"]!.GetValue<string>());
         Assert.Equal(2, first["Cases"]!.AsArray().Count);
-        Assert.Empty(CoreBenchmarkCatalog.SelectCases(first, "screen", "Vector"));
-        Assert.Empty(CoreBenchmarkCatalog.SelectCases(first, "screen", "Shared"));
-        Assert.Empty(CoreBenchmarkCatalog.SelectCases(first, "screen", "Core,shared"));
-        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.RequireSelectedCases(
-            [CoreBenchmarkCatalog.SelectCases(first, "screen", "missing"), CoreBenchmarkCatalog.SelectCases(second, "screen", "missing")], "missing", "screen"));
+        Assert.Empty(BenchmarkCatalog.SelectCases(first, "screen", "Vector"));
+        Assert.Empty(BenchmarkCatalog.SelectCases(first, "screen", "Shared"));
+        Assert.Empty(BenchmarkCatalog.SelectCases(first, "screen", "Core,shared"));
+        Assert.Throws<ArgumentException>(() => BenchmarkCatalog.RequireSelectedCases(
+            [BenchmarkCatalog.SelectCases(first, "screen", "missing"), BenchmarkCatalog.SelectCases(second, "screen", "missing")], "missing", "screen"));
     }
 
     /// <summary>Case modes, not category spelling, determine measurement eligibility.</summary>
     [Fact]
     public void DiagnosticCasesRequireEligibleMode()
     {
-        JsonObject catalog = CoreBenchmarkCatalog.ParseCatalog("""
+        JsonObject catalog = BenchmarkCatalog.ParseCatalog("""
             {"SchemaVersion":1,"Modes":["screen","compare","diagnose"],"Cases":[
               {"Type":"RegularLookingType","Categories":["diagnostic-only","subject"],"Modes":["diagnose"]}]}
             """);
-        Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
-        Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "compare", "subject"));
-        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, null, "subject"));
-        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, "diagnose", "subject"));
-        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.RequireSelectedCases(
-            [CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject")], "subject", "screen"));
+        Assert.Empty(BenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
+        Assert.Empty(BenchmarkCatalog.SelectCases(catalog, "compare", "subject"));
+        Assert.Single(BenchmarkCatalog.SelectCases(catalog, null, "subject"));
+        Assert.Single(BenchmarkCatalog.SelectCases(catalog, "diagnose", "subject"));
+        Assert.Throws<ArgumentException>(() => BenchmarkCatalog.RequireSelectedCases(
+            [BenchmarkCatalog.SelectCases(catalog, "screen", "subject")], "subject", "screen"));
     }
 
     /// <summary>Malformed compiled metadata cannot silently become an empty selection.</summary>
@@ -210,18 +232,18 @@ public sealed class CoreBenchmarkCatalogTests
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Modes\":[\"screen\"]}]}")]
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[12],\"Modes\":[\"screen\"]}]}")]
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[],\"Modes\":[\"diagnose\"]}]}")]
-    public void RejectsMalformedMetadata(string json) => Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.ParseCatalog(json));
+    public void RejectsMalformedMetadata(string json) => Assert.Throws<ArgumentException>(() => BenchmarkCatalog.ParseCatalog(json));
 
     /// <summary>Listing includes cases with no measurement purpose without inventing a replacement mode.</summary>
     [Fact]
     public void UntaggedCasesRemainListableWithoutExecution()
     {
-        JsonObject catalog = CoreBenchmarkCatalog.ParseCatalog("""
+        JsonObject catalog = BenchmarkCatalog.ParseCatalog("""
             {"SchemaVersion":1,"Modes":["screen","compare","diagnose"],"Cases":[
               {"Type":"NoPurpose","Categories":["subject"],"Modes":[]}]}
             """);
-        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, null, "subject"));
-        Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
+        Assert.Single(BenchmarkCatalog.SelectCases(catalog, null, "subject"));
+        Assert.Empty(BenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
     }
 
     /// <summary>A missing mode cannot trigger a benchmark or a hidden correctness preflight.</summary>
@@ -237,6 +259,37 @@ public sealed class CoreBenchmarkCatalogTests
         BuildFixture.ProcessResult removed = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "verify", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, removed.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
+    }
+
+    /// <summary>The Animation target reuses the guarded runner and fingerprints Animation product inputs.</summary>
+    /// <returns>The target and stale-source assertions.</returns>
+    [Fact]
+    public async Task AnimationTargetRejectsStaleProductInputsAsync()
+    {
+        using var fixture = new BuildFixture();
+        string projectRoot = Path.Combine(fixture.Root, "benchmarks", "Animation", "Lumyte.Animation.Benchmark");
+        Directory.CreateDirectory(projectRoot);
+        File.WriteAllText(Path.Combine(projectRoot, "Lumyte.Animation.Benchmark.csproj"), "<Project />");
+        string product = Path.Combine(fixture.Root, "src", "Animation");
+        Directory.CreateDirectory(product);
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "src", "Core"));
+        string shared = Path.Combine(fixture.Root, "benchmarks", "Core", "Shared");
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(Path.Combine(shared, "BenchmarkEntry.cs"), "shared fixture");
+        string source = Path.Combine(product, "Source.cs");
+        File.WriteAllText(source, "original");
+        string output = Path.Combine(projectRoot, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "Lumyte.Animation.Benchmark.dll"), "fixture output");
+        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkAnimation", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(first.ExitCode == 0, first.Output + first.Error);
+        int commands = fixture.Records("dotnet").Length;
+        Assert.Equal(2, commands);
+        File.WriteAllText(source, "changed animation product");
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkAnimation", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, stale.ExitCode);
+        Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
+        Assert.Equal(commands, fixture.Records("dotnet").Length);
     }
 
     private static void AddProject(string root, string name)

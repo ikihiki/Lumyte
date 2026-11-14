@@ -5,15 +5,20 @@ using System.Text.Json.Nodes;
 
 namespace Lumyte.Build;
 
-internal static class CoreBenchmarkCatalog
+internal static class BenchmarkCatalog
 {
     internal static string NormalizeMode(string mode) => mode is "screen" or "compare" or "diagnose"
         ? mode : throw new ArgumentException("Explicit benchmark mode must be screen, compare, or diagnose. Use --benchmark-list to enumerate without timing.", nameof(mode));
 
-    internal static string[] SelectProjects(string repository, string pattern)
+    internal static string[] SelectProjects(string repository, string pattern, string area = "Core")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-        string root = Path.Combine(repository, "benchmarks", "Core");
+        if (area is not ("Core" or "Animation"))
+        {
+            throw new ArgumentException("Unsupported benchmark area.", nameof(area));
+        }
+
+        string root = Path.Combine(repository, "benchmarks", area);
         if (!Directory.Exists(root))
         {
             throw new DirectoryNotFoundException(root);
@@ -25,7 +30,7 @@ internal static class CoreBenchmarkCatalog
             .Where(project => FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileNameWithoutExtension(project), ignoreCase: false)
                 || FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileNameWithoutExtension(project).AsSpan()[..^".Benchmark".Length], ignoreCase: false))
             .Order(StringComparer.Ordinal).ToArray();
-        return projects.Length > 0 ? projects : throw new ArgumentException("No Core benchmark projects match: " + pattern, nameof(pattern));
+        return projects.Length > 0 ? projects : throw new ArgumentException("No benchmark projects match: " + pattern, nameof(pattern));
     }
 
     internal static string[] Arguments(string binary, string? mode, string filter, string? category, string output, bool list)
@@ -106,7 +111,7 @@ internal static class CoreBenchmarkCatalog
     {
         if (!selections.Any(cases => cases.Count > 0))
         {
-            throw new ArgumentException($"No eligible Core benchmark cases match category '{category}' in mode '{mode}'.", nameof(category));
+            throw new ArgumentException($"No eligible benchmark cases match category '{category}' in mode '{mode}'.", nameof(category));
         }
     }
 

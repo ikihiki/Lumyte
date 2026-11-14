@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/Animation/">
+    <Project Path="benchmarks/Animation/Lumyte.Animation.Benchmark/Lumyte.Animation.Benchmark.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/Core/">
     <Project Path="benchmarks/Core/Lumyte.Composition.Benchmark/Lumyte.Composition.Benchmark.csproj" />
     <Project Path="benchmarks/Core/Lumyte.Composition.Generators.Benchmark/Lumyte.Composition.Generators.Benchmark.csproj" />
@@ -168,6 +171,7 @@
     <Project Path="tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Animation/">
+    <Project Path="tests/Animation/Lumyte.Animation.Benchmark.Tests/Lumyte.Animation.Benchmark.Tests.csproj" />
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
