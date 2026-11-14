@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
-export LUMYTE_ENV_ROOT="$ROOT/artifacts/dev-env"
+export LUMYTE_ENV_ROOT="${LUMYTE_ENV_ROOT:-$ROOT/artifacts/dev-env}"
 export WORKLOAD_REPO_ROOT="$ROOT"
 export LUMYTE_WORKLOAD_REVISION=$(git -C "$ROOT" rev-parse HEAD)
-export DOTNET_TieredCompilation=0 DOTNET_TieredPGO=0 DOTNET_gcServer=0
+# Preserve product JIT/PGO/GC defaults; explicit diagnostic overrides are inherited.
 source "$ROOT/tools/setup/activate.sh"
 cd "$ROOT"
 PROJECT=tools/benchmarks/drawing2d-incremental

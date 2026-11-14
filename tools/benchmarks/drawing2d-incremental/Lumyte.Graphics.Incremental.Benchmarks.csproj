@@ -6,6 +6,17 @@
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <Target Name="RecordBenchmarkSourceIdentity" BeforeTargets="GetAssemblyAttributes">
+    <ItemGroup>
+      <BenchmarkSource Include="$(MSBuildProjectDirectory)/*.cs;$(MSBuildProjectFullPath)" />
+    </ItemGroup>
+    <GetFileHash Files="@(BenchmarkSource)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="BenchmarkSourceHashes" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyMetadata Include="BenchmarkHarnessHashes" Value="@(BenchmarkSourceHashes->'%(Filename)%(Extension)=%(FileHash)','|')" />
+    </ItemGroup>
+  </Target>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />

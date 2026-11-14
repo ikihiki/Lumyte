@@ -26,7 +26,24 @@ public class RenderingWorkloadCpuBenchmarks
 
     /// <summary>Creates actual UI/text/render fixtures outside the measured method.</summary>
     [GlobalSetup]
-    public void Setup() => _workload = RenderingWorkloadCatalog.Create(CaseName, Count);
+    public void Setup()
+    {
+        _workload = RenderingWorkloadCatalog.Create(CaseName, Count);
+        try
+        {
+            // Prime immutable/static recordings and retain a verification oracle before timing.
+            // This is a warmed retained-fixture benchmark, not cold construction/first text shaping.
+            _workload.Layout();
+            _history[0] = _workload.Record();
+            UiWorkloadText.VerifyLayers(_history[0]!);
+            _workload.Verify();
+        }
+        catch
+        {
+            _workload.Dispose();
+            throw;
+        }
+    }
 
     /// <summary>Updates, lays out and records while retaining three CPU snapshots.</summary>
     /// <returns>The immutable ordered recordings.</returns>
@@ -49,7 +66,14 @@ public class RenderingWorkloadCpuBenchmarks
     [GlobalCleanup]
     public void Cleanup()
     {
-        _workload.Verify();
-        _workload.Dispose();
+        try
+        {
+            _workload.Verify();
+        }
+        finally
+        {
+            Array.Clear(_history);
+            _workload.Dispose();
+        }
     }
 }
