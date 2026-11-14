@@ -11,7 +11,7 @@ using Perfolizer.Mathematics.OutlierDetection;
 
 if (args.Any(argument => argument == "--mode" || argument.StartsWith("--mode=", StringComparison.Ordinal) || argument == "--catalog"))
 {
-    Environment.ExitCode = BenchmarkEntry.Run(args, typeof(ScalarBenchmarks).Assembly, BenchmarkChecks.Verify);
+    Environment.ExitCode = BenchmarkEntry.Run(args, typeof(ScalarBenchmarks).Assembly);
     return;
 }
 

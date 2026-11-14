@@ -6,8 +6,8 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    [Parameter("Core benchmark execution mode: verify, screen, compare, or diagnose.")]
-    public string BenchmarkMode { get; set; } = "verify";
+    [Parameter("Core benchmark execution mode: screen, compare, or diagnose. Required unless listing.")]
+    public string BenchmarkMode { get; set; } = string.Empty;
 
     [Parameter("Core target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark.")]
     public string BenchmarkProject { get; set; } = "*";
@@ -28,7 +28,7 @@ internal sealed partial class Build
 
     private async Task RunCoreBenchmarksAsync()
     {
-        string mode = CoreBenchmarkCatalog.NormalizeMode(BenchmarkMode);
+        string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : CoreBenchmarkCatalog.NormalizeMode(BenchmarkMode);
         if (Configuration != "Release")
         {
             throw new ArgumentException("Core benchmarks require Release configuration.");
@@ -165,20 +165,11 @@ internal sealed partial class Build
                 entries = selectedEntries;
             }
 
-            // All builds and correctness checks finish before any timed job starts.
-            if (!BenchmarkList)
-            {
-                foreach ((string project, string binary, JsonObject record) in entries)
-                {
-                    await process.CallAsync(DotNetExecutable, [binary, "--mode", "verify"], Path.GetDirectoryName(project)!, Path.GetFileNameWithoutExtension(project) + "-verify", BenchmarkEnvironment(childEnvironment, project)).ConfigureAwait(false);
-                    record["status"] = "verified";
-                }
-            }
-
+            // All builds finish before any timed job starts.
             foreach ((string project, string binary, JsonObject record) in entries)
             {
                 string name = Path.GetFileNameWithoutExtension(project);
-                if ((BenchmarkList && record["catalog"] is null) || (!BenchmarkList && mode != "verify"))
+                if (!BenchmarkList || record["catalog"] is null)
                 {
                     string result = await process.CallAsync(DotNetExecutable,
                         CoreBenchmarkCatalog.Arguments(binary, mode, BenchmarkFilter, BenchmarkCategory, Path.Combine(root, name), BenchmarkList),

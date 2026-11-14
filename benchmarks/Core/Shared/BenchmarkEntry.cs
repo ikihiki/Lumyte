@@ -22,9 +22,9 @@ namespace Lumyte.Benchmarks;
 /// <summary>Shared, source-linked entry point for product benchmark executables.</summary>
 internal static class BenchmarkEntry
 {
-    private static readonly string[] _modes = ["verify", "screen", "compare", "diagnose"];
+    private static readonly string[] _modes = ["screen", "compare", "diagnose"];
 
-    internal static int Run(string[] args, Assembly assembly, Action verify)
+    internal static int Run(string[] args, Assembly assembly)
     {
         try
         {
@@ -37,25 +37,15 @@ internal static class BenchmarkEntry
 
             // BDN owns help/list parsing, including its regular filters and formatting.
             bool informational = options.Arguments.Any(argument => argument is "--help" or "-h" or "--list");
-            if (options.Mode == "verify" && !informational)
-            {
-                if (options.Arguments.Length != 0)
-                {
-                    throw new ArgumentException("Benchmark options require an explicit --mode screen, compare, or diagnose.");
-                }
-
-                verify();
-                Console.WriteLine("verification-ok");
-                return 0;
-            }
-
             if (options.Mode == "diagnose" && !informational)
             {
                 EnsureTraceSupported();
             }
 
             var errors = new ErrorLogger();
-            ManualConfig config = ManualConfig.Create(CreateConfig(options.Mode == "verify" ? "diagnose" : options.Mode, Environment.GetEnvironmentVariable("LUMYTE_BENCHMARK_PROJECT")))
+            ManualConfig config = ManualConfig.Create(options.Mode is null
+                ? DefaultConfig.Instance
+                : CreateConfig(options.Mode, Environment.GetEnvironmentVariable("LUMYTE_BENCHMARK_PROJECT")))
                 .AddLogger(errors);
             Summary[] summaries = BenchmarkSwitcher.FromAssembly(assembly).Run(options.Arguments, config).ToArray();
             if (errors.HasErrors)
@@ -98,7 +88,7 @@ internal static class BenchmarkEntry
                 {
                     if (++index == args.Length || args[index].StartsWith("-", StringComparison.Ordinal))
                     {
-                        throw new ArgumentException("--mode requires verify, screen, compare, or diagnose.");
+                        throw new ArgumentException("--mode requires screen, compare, or diagnose.");
                     }
 
                     mode = args[index];
@@ -140,7 +130,13 @@ internal static class BenchmarkEntry
             throw new ArgumentException("--catalog enumerates the complete assembly; do not combine it with BDN options.");
         }
 
-        return new EntryOptions(mode ?? "verify", catalog, remaining.ToArray());
+        bool informational = remaining.Any(argument => argument is "--help" or "-h" or "--list");
+        if (mode is null && !catalog && args.Length > 0 && !informational)
+        {
+            throw new ArgumentException("Benchmark options require an explicit --mode screen, compare, or diagnose.");
+        }
+
+        return new EntryOptions(mode, catalog || args.Length == 0, remaining.ToArray());
     }
 
     internal static IConfig CreateConfig(string mode, string? projectFile = null)
@@ -196,7 +192,7 @@ internal static class BenchmarkEntry
                 continue;
             }
 
-            // Catalog discovery must include verify-only and non-diagnostic purposes too.
+            // Catalog discovery includes cases without any measurement purpose too.
             using BenchmarkRunInfo run = BenchmarkConverter.TypeToBenchmarks(type, DefaultConfig.Instance);
             foreach (BenchmarkCase benchmark in run.BenchmarksCases)
             {
@@ -235,7 +231,7 @@ internal static class BenchmarkEntry
 
     internal static string[] GetModes(BenchmarkCase benchmark)
     {
-        var modes = new List<string> { "verify" };
+        var modes = new List<string>();
         bool diagnosticOnly = benchmark.Descriptor.HasCategory("diagnostic-only");
         if (!diagnosticOnly && benchmark.Descriptor.HasCategory("Screening"))
         {
@@ -321,7 +317,7 @@ internal static class BenchmarkEntry
             => standard.Validate(benchmarkCase, resolver);
     }
 
-    internal sealed record EntryOptions(string Mode, bool Catalog, string[] Arguments);
+    internal sealed record EntryOptions(string? Mode, bool Catalog, string[] Arguments);
 
     internal sealed record CatalogCase(string Type, string Method, string[] Categories, CatalogParameter[] Parameters, string[] Modes);
 

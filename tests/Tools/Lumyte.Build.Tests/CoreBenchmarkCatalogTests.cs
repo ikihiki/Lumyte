@@ -33,15 +33,18 @@ public sealed class CoreBenchmarkCatalogTests
     /// <summary>Known modes are explicit rather than implicit fallback settings.</summary>
     /// <param name="mode">The requested mode.</param>
     [Theory]
-    [InlineData("verify")]
     [InlineData("screen")]
     [InlineData("compare")]
     [InlineData("diagnose")]
     public void ModesAreExplicit(string mode) => Assert.Equal(mode, CoreBenchmarkCatalog.NormalizeMode(mode));
 
-    /// <summary>Unknown modes cannot silently become a quick or empty success.</summary>
-    [Fact]
-    public void UnknownModeIsRejected() => Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.NormalizeMode("screening-typo"));
+    /// <summary>Unknown, removed and missing modes cannot silently become a timing run.</summary>
+    /// <param name="mode">The invalid mode.</param>
+    [Theory]
+    [InlineData("screening-typo")]
+    [InlineData("verify")]
+    [InlineData("")]
+    public void UnknownModeIsRejected(string mode) => Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.NormalizeMode(mode));
 
     /// <summary>Paths and filters remain distinct process arguments.</summary>
     [Fact]
@@ -49,8 +52,9 @@ public sealed class CoreBenchmarkCatalogTests
     {
         string binary = "target with spaces/日本語.dll";
         string output = "output 日本語";
-        Assert.Equal([binary, "--catalog"], CoreBenchmarkCatalog.Arguments(binary, "verify", "*", null, output, true));
-        Assert.Equal([binary, "--mode", "verify"], CoreBenchmarkCatalog.Arguments(binary, "verify", "*", null, output, false));
+        Assert.Equal([binary, "--catalog"], CoreBenchmarkCatalog.Arguments(binary, null, "*", null, output, true));
+        Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.Arguments(binary, "verify", "*", null, output, false));
+        Assert.Throws<ArgumentNullException>(() => CoreBenchmarkCatalog.Arguments(binary, null, "*", null, output, false));
         Assert.Equal(
             [binary, "--mode", "screen", "--filter", "*Updated*", "--artifacts", output, "--anyCategories", "Screening"],
             CoreBenchmarkCatalog.Arguments(binary, "screen", "*Updated*", "Screening", output, false));
@@ -75,7 +79,7 @@ public sealed class CoreBenchmarkCatalogTests
     {
         using var fixture = new BuildFixture();
         AddProject(fixture.Root, "Lumyte.Signals");
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "NotPresent", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "NotPresent", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
     }
@@ -104,7 +108,7 @@ public sealed class CoreBenchmarkCatalogTests
             File.WriteAllText(binary + ".inputs.json", """{"inputs_sha256":"stale","binary_sha256":"stale"}""");
         }
 
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("No-build benchmark outputs", result.Output + result.Error, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
@@ -135,13 +139,14 @@ public sealed class CoreBenchmarkCatalogTests
         string dependency = Path.Combine(output, relative.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(dependency)!);
         File.WriteAllText(dependency, "first output");
-        BuildFixture.ProcessResult initial = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult initial = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
         Assert.True(initial.ExitCode == 0, initial.Output + initial.Error);
         int commands = fixture.Records("dotnet").Length;
+        Assert.Equal(2, commands);
         Assert.Equal(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(output)))!, fixture.Records("dotnet")[^1].GetProperty("workingDirectory").GetString());
         Assert.Equal(Path.Combine(fixture.Root, "benchmarks", "Core", "Lumyte.Demo.Benchmark", "Lumyte.Demo.Benchmark.csproj"), fixture.Records("dotnet")[^1].GetProperty("environment").GetProperty("LUMYTE_BENCHMARK_PROJECT").GetString());
         File.WriteAllText(dependency, "replaced output");
-        BuildFixture.ProcessResult changed = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult changed = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, changed.ExitCode);
         Assert.Contains("No-build benchmark outputs", changed.Output + changed.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
@@ -153,13 +158,13 @@ public sealed class CoreBenchmarkCatalogTests
     {
         JsonObject first = CoreBenchmarkCatalog.ParseCatalog("""
             {"SchemaVersion":1,"Assembly":{"Name":"Vector.Benchmark","Location":"/shapes/Fixtures.dll"},
-             "Modes":["verify","screen","compare","diagnose"],"Cases":[
-              {"Type":"Unrelated.Subject","Method":"Run","Categories":["Core","shared"],"Modes":["verify","screen"]},
+             "Modes":["screen","compare","diagnose"],"Cases":[
+              {"Type":"Unrelated.Subject","Method":"Run","Categories":["Core","shared"],"Modes":["screen"]},
               {"Type":"shared.NamedClass","Method":"Other","Categories":["Other"],"Modes":["screen"]}]}
             """);
         JsonObject second = CoreBenchmarkCatalog.ParseCatalog("""
             {"SchemaVersion":1,"Assembly":{"Name":"CompletelyDifferent.Benchmark","Location":"/elsewhere/Inputs.dll"},
-             "Modes":["verify","screen","compare","diagnose"],"Cases":[
+             "Modes":["screen","compare","diagnose"],"Cases":[
               {"Type":"Another.Namespace.Fixture","Method":"Work","Categories":["shared"],"Modes":["screen","diagnose"]}]}
             """);
         JsonArray[] selections = [CoreBenchmarkCatalog.SelectCases(first, "screen", "shared"), CoreBenchmarkCatalog.SelectCases(second, "screen", "shared")];
@@ -180,12 +185,12 @@ public sealed class CoreBenchmarkCatalogTests
     public void DiagnosticCasesRequireEligibleMode()
     {
         JsonObject catalog = CoreBenchmarkCatalog.ParseCatalog("""
-            {"SchemaVersion":1,"Modes":["verify","screen","compare","diagnose"],"Cases":[
-              {"Type":"RegularLookingType","Categories":["diagnostic-only","subject"],"Modes":["verify","diagnose"]}]}
+            {"SchemaVersion":1,"Modes":["screen","compare","diagnose"],"Cases":[
+              {"Type":"RegularLookingType","Categories":["diagnostic-only","subject"],"Modes":["diagnose"]}]}
             """);
         Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
         Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "compare", "subject"));
-        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, "verify", "subject"));
+        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, null, "subject"));
         Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, "diagnose", "subject"));
         Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.RequireSelectedCases(
             [CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject")], "subject", "screen"));
@@ -204,9 +209,35 @@ public sealed class CoreBenchmarkCatalogTests
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[null]}")]
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Modes\":[\"screen\"]}]}")]
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[12],\"Modes\":[\"screen\"]}]}")]
-    [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[],\"Modes\":[]}]}")]
     [InlineData("{\"SchemaVersion\":1,\"Modes\":[\"screen\"],\"Cases\":[{\"Categories\":[],\"Modes\":[\"diagnose\"]}]}")]
     public void RejectsMalformedMetadata(string json) => Assert.Throws<ArgumentException>(() => CoreBenchmarkCatalog.ParseCatalog(json));
+
+    /// <summary>Listing includes cases with no measurement purpose without inventing a replacement mode.</summary>
+    [Fact]
+    public void UntaggedCasesRemainListableWithoutExecution()
+    {
+        JsonObject catalog = CoreBenchmarkCatalog.ParseCatalog("""
+            {"SchemaVersion":1,"Modes":["screen","compare","diagnose"],"Cases":[
+              {"Type":"NoPurpose","Categories":["subject"],"Modes":[]}]}
+            """);
+        Assert.Single(CoreBenchmarkCatalog.SelectCases(catalog, null, "subject"));
+        Assert.Empty(CoreBenchmarkCatalog.SelectCases(catalog, "screen", "subject"));
+    }
+
+    /// <summary>A missing mode cannot trigger a benchmark or a hidden correctness preflight.</summary>
+    /// <returns>The asynchronous invocation assertion.</returns>
+    [Fact]
+    public async Task FalloutRequiresExplicitModeUnlessListingAsync()
+    {
+        using var fixture = new BuildFixture();
+        AddProject(fixture.Root, "Lumyte.Demo");
+        BuildFixture.ProcessResult missing = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, missing.ExitCode);
+        Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
+        BuildFixture.ProcessResult removed = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "verify", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, removed.ExitCode);
+        Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
+    }
 
     private static void AddProject(string root, string name)
     {

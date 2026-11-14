@@ -169,7 +169,7 @@
         },
         "BenchmarkMode": {
           "type": "string",
-          "description": "Core benchmark execution mode: verify, screen, compare, or diagnose"
+          "description": "Core benchmark execution mode: screen, compare, or diagnose. Required unless listing"
         },
         "BenchmarkProject": {
           "type": "string",

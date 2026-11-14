@@ -41,20 +41,45 @@ public sealed class BenchmarkEntryTests
         }
     }
 
-    /// <summary>New executables default to untimed correctness verification.</summary>
+    /// <summary>New executables default to catalog discovery without selecting a measurement mode.</summary>
     [Fact]
-    public void DefaultsToVerify()
+    public void DefaultsToCatalog()
     {
         BenchmarkEntry.EntryOptions options = BenchmarkEntry.Parse([]);
-        Assert.Equal("verify", options.Mode);
-        Assert.False(options.Catalog);
+        Assert.Null(options.Mode);
+        Assert.True(options.Catalog);
         Assert.Empty(options.Arguments);
+    }
+
+    /// <summary>Informational options do not invent an execution mode or implicit catalog flag.</summary>
+    /// <param name="args">Informational command-line arguments.</param>
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    [InlineData("--list", "flat")]
+    [InlineData("--list", "tree", "--filter", "*Untagged*")]
+    public void InformationalParsingLeavesModeUnspecified(params string[] args)
+    {
+        BenchmarkEntry.EntryOptions options = BenchmarkEntry.Parse(args);
+        Assert.Null(options.Mode);
+        Assert.False(options.Catalog);
+        Assert.Equal(args, options.Arguments);
+    }
+
+    /// <summary>Explicit catalog discovery includes the full assembly even when a mode was supplied.</summary>
+    [Fact]
+    public void ExplicitCatalogIsIndependentOfMode()
+    {
+        BenchmarkEntry.EntryOptions options = BenchmarkEntry.Parse(["--mode", "screen", "--catalog"]);
+        Assert.Equal("screen", options.Mode);
+        Assert.True(options.Catalog);
+        Assert.Empty(options.Arguments);
+        Assert.Null(BenchmarkEntry.Parse(["--catalog"]).Mode);
     }
 
     /// <summary>Shared switches are removed without changing BDN filter or parameter options.</summary>
     /// <param name="mode">The requested execution mode.</param>
     [Theory]
-    [InlineData("verify")]
     [InlineData("screen")]
     [InlineData("compare")]
     [InlineData("diagnose")]
@@ -83,34 +108,35 @@ public sealed class BenchmarkEntryTests
     [InlineData("--disableOptimizationsValidator")]
     public void RejectsInvalidArguments(params string[] args) => Assert.Throws<ArgumentException>(() => BenchmarkEntry.Parse(args));
 
-    /// <summary>Verification calls the callback once and reports failures through a return code.</summary>
-    [Fact]
-    public void VerificationReturnsFailureWithoutExiting()
+    /// <summary>Removed verification modes and implicit measurement requests fail without executing work.</summary>
+    /// <param name="args">Unsupported execution arguments.</param>
+    [Theory]
+    [InlineData("--mode", "verify")]
+    [InlineData("--mode=verify")]
+    [InlineData("--mode", "validate")]
+    [InlineData("--filter", "*")]
+    [InlineData("--mode", "invalid")]
+    public void UnsupportedExecutionReturnsFailure(params string[] args)
     {
-        int calls = 0;
-        Assert.Equal(0, BenchmarkEntry.Run([], typeof(BenchmarkEntryTests).Assembly, () => calls++));
-        Assert.Equal(1, calls);
-        int failure = BenchmarkEntry.Run(
-            ["--mode", "verify"],
-            typeof(BenchmarkEntryTests).Assembly,
-            () => throw new InvalidOperationException("expected verification failure"));
-        Assert.Equal(1, failure);
-        Assert.Equal(1, BenchmarkEntry.Run(["--mode", "invalid"], typeof(BenchmarkEntryTests).Assembly, () => calls++));
-        Assert.Equal(1, calls);
+        Assert.Throws<ArgumentException>(() => BenchmarkEntry.Parse(args));
+        Assert.Equal(1, BenchmarkEntry.Run(args, typeof(BenchmarkEntryTests).Assembly));
     }
 
-    /// <summary>Catalog, help and flat listing bypass correctness and measurement execution.</summary>
+    /// <summary>Default catalog, help and listing never execute benchmark workloads.</summary>
     /// <param name="args">Informational command-line arguments.</param>
     [Theory]
+    [InlineData]
     [InlineData("--catalog")]
     [InlineData("--help")]
+    [InlineData("-h")]
     [InlineData("--list", "flat")]
+    [InlineData("--list", "tree")]
+    [InlineData("--mode", "diagnose", "--list", "flat")]
     public void InformationalCommandsDoNotExecuteWork(params string[] args)
     {
         int result = BenchmarkEntry.Run(
             args,
-            typeof(CatalogFixture).Assembly,
-            () => throw new InvalidOperationException("Information command invoked verification."));
+            typeof(CatalogFixture).Assembly);
         Assert.Equal(0, result);
     }
 
@@ -120,8 +146,7 @@ public sealed class BenchmarkEntryTests
     {
         int result = BenchmarkEntry.Run(
             ["--mode", "screen", "--filter", "*NoSuchMethod_837*"],
-            typeof(CatalogFixture).Assembly,
-            () => throw new InvalidOperationException("Unexpected verification."));
+            typeof(CatalogFixture).Assembly);
         Assert.Equal(1, result);
     }
 
@@ -205,7 +230,7 @@ public sealed class BenchmarkEntryTests
         IFilter policy = Assert.Single(BenchmarkEntry.CreateConfig(mode).GetFilters());
         Assert.Equal(included, policy.Predicate(diagnostic));
         Assert.True(policy.Predicate(normal));
-        Assert.True(new BenchmarkEntry.ModeFilter("verify").Predicate(diagnostic));
+        Assert.False(new BenchmarkEntry.ModeFilter("verify").Predicate(diagnostic));
 
         ManualConfig selected = ManualConfig.Create(BenchmarkEntry.CreateConfig(mode))
             .AddFilter(new GlobFilter(["*DiagnosticWork*"]))
@@ -220,21 +245,21 @@ public sealed class BenchmarkEntryTests
     /// <param name="method">The selected method.</param>
     /// <param name="expectedModes">The eligible modes in catalog order.</param>
     [Theory]
-    [InlineData(typeof(UncategorizedFixture), nameof(UncategorizedFixture.Work), new[] { "verify" })]
-    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Untagged), new[] { "verify" })]
-    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Screen), new[] { "verify", "screen" })]
-    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Compare), new[] { "verify", "compare" })]
-    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Diagnose), new[] { "verify", "diagnose" })]
-    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Multiple), new[] { "verify", "screen", "compare" })]
-    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.LegacyMarker), new[] { "verify" })]
-    [InlineData(typeof(InheritedPurposeFixture), nameof(InheritedPurposeFixture.Work), new[] { "verify", "screen", "diagnose" })]
+    [InlineData(typeof(UncategorizedFixture), nameof(UncategorizedFixture.Work), new string[0])]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Untagged), new string[0])]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Screen), new[] { "screen" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Compare), new[] { "compare" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Diagnose), new[] { "diagnose" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.Multiple), new[] { "screen", "compare" })]
+    [InlineData(typeof(PurposeFixture), nameof(PurposeFixture.LegacyMarker), new string[0])]
+    [InlineData(typeof(InheritedPurposeFixture), nameof(InheritedPurposeFixture.Work), new[] { "screen", "diagnose" })]
     public void PurposeCategoriesDetermineModes(Type fixture, string method, string[] expectedModes)
     {
-        // Do not apply the mode filter while discovering fixtures: verify-only cases must remain visible.
+        // Do not apply the mode filter while discovering fixtures: cases without measurement purposes must remain visible.
         using BenchmarkRunInfo all = BenchmarkConverter.TypeToBenchmarks(fixture, DefaultConfig.Instance);
         BenchmarkCase benchmark = Assert.Single(all.BenchmarksCases, item => item.Descriptor.WorkloadMethod.Name == method);
         Assert.Equal(expectedModes, BenchmarkEntry.GetModes(benchmark));
-        foreach (string mode in new[] { "verify", "screen", "compare", "diagnose" })
+        foreach (string mode in new[] { "screen", "compare", "diagnose" })
         {
             Assert.Equal(expectedModes.Contains(mode), new BenchmarkEntry.ModeFilter(mode).Predicate(benchmark));
         }
@@ -282,6 +307,9 @@ public sealed class BenchmarkEntryTests
         JsonElement root = document.RootElement;
         Assert.Equal(1, root.GetProperty("SchemaVersion").GetInt32());
         Assert.Equal(
+            new[] { "screen", "compare", "diagnose" },
+            root.GetProperty("Modes").EnumerateArray().Select(mode => mode.GetString()!).ToArray());
+        Assert.Equal(
             typeof(CatalogFixture).Assembly.GetName().Name,
             root.GetProperty("Assembly").GetProperty("Name").GetString());
         Assert.Equal(
@@ -298,7 +326,7 @@ public sealed class BenchmarkEntryTests
         foreach (JsonElement item in diagnosticCases)
         {
             Assert.Contains("diagnostic-only", item.GetProperty("Categories").EnumerateArray().Select(category => category.GetString()));
-            Assert.Equal(new[] { "verify", "diagnose" }, item.GetProperty("Modes").EnumerateArray().Select(mode => mode.GetString()!).ToArray());
+            Assert.Equal(new[] { "diagnose" }, item.GetProperty("Modes").EnumerateArray().Select(mode => mode.GetString()!).ToArray());
         }
 
         Assert.Equal(4, cases.Length);
@@ -306,7 +334,7 @@ public sealed class BenchmarkEntryTests
         {
             Assert.Equal(nameof(CatalogFixture.Work), item.GetProperty("Method").GetString());
             Assert.Contains("Catalog", item.GetProperty("Categories").EnumerateArray().Select(category => category.GetString()));
-            Assert.Equal(4, item.GetProperty("Modes").GetArrayLength());
+            Assert.Equal(3, item.GetProperty("Modes").GetArrayLength());
             Assert.Equal(2, item.GetProperty("Parameters").GetArrayLength());
             Assert.Contains(item.GetProperty("Parameters").EnumerateArray(), parameter =>
                 parameter.GetProperty("Name").GetString() == "Count" && !parameter.GetProperty("IsArgument").GetBoolean());
@@ -315,7 +343,7 @@ public sealed class BenchmarkEntryTests
         }
     }
 
-    /// <summary>Benchmarks without any categories are verification-only.</summary>
+    /// <summary>Benchmarks without any categories remain catalog-visible but cannot be measured.</summary>
     public class UncategorizedFixture
     {
         /// <summary>Declares no categories or measurement purposes.</summary>

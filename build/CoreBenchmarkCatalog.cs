@@ -7,8 +7,8 @@ namespace Lumyte.Build;
 
 internal static class CoreBenchmarkCatalog
 {
-    internal static string NormalizeMode(string mode) => mode is "verify" or "screen" or "compare" or "diagnose"
-        ? mode : throw new ArgumentException("Benchmark mode must be verify, screen, compare, or diagnose.", nameof(mode));
+    internal static string NormalizeMode(string mode) => mode is "screen" or "compare" or "diagnose"
+        ? mode : throw new ArgumentException("Explicit benchmark mode must be screen, compare, or diagnose. Use --benchmark-list to enumerate without timing.", nameof(mode));
 
     internal static string[] SelectProjects(string repository, string pattern)
     {
@@ -28,19 +28,21 @@ internal static class CoreBenchmarkCatalog
         return projects.Length > 0 ? projects : throw new ArgumentException("No Core benchmark projects match: " + pattern, nameof(pattern));
     }
 
-    internal static string[] Arguments(string binary, string mode, string filter, string? category, string output, bool list)
+    internal static string[] Arguments(string binary, string? mode, string filter, string? category, string output, bool list)
     {
-        NormalizeMode(mode);
-        ArgumentException.ThrowIfNullOrWhiteSpace(filter);
+        if (mode is not null)
+        {
+            NormalizeMode(mode);
+        }
+
         if (list)
         {
             return [binary, "--catalog"];
         }
 
-        if (mode == "verify")
-        {
-            return [binary, "--mode", "verify"];
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(mode);
+        NormalizeMode(mode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filter);
 
         var args = new List<string> { binary, "--mode", mode, "--filter", filter, "--artifacts", output };
         if (!string.IsNullOrWhiteSpace(category))
@@ -63,7 +65,7 @@ internal static class CoreBenchmarkCatalog
         }
 
         string[] modes = ReadStrings(catalog["Modes"], "Modes");
-        if (modes.Length == 0 || modes.Any(mode => mode is not ("verify" or "screen" or "compare" or "diagnose")))
+        if (modes.Length == 0 || modes.Any(mode => mode is not ("screen" or "compare" or "diagnose")))
         {
             throw new ArgumentException("Benchmark catalog Modes must contain supported modes.", nameof(json));
         }
@@ -77,26 +79,30 @@ internal static class CoreBenchmarkCatalog
 
             ReadStrings(benchmark["Categories"], "Cases.Categories");
             string[] caseModes = ReadStrings(benchmark["Modes"], "Cases.Modes");
-            if (caseModes.Length == 0 || caseModes.Any(mode => !modes.Contains(mode, StringComparer.Ordinal)))
+            if (caseModes.Any(mode => !modes.Contains(mode, StringComparer.Ordinal)))
             {
-                throw new ArgumentException("Benchmark case Modes must be nonempty and declared by the catalog.", nameof(json));
+                throw new ArgumentException("Benchmark case Modes must be declared by the catalog.", nameof(json));
             }
         }
 
         return catalog;
     }
 
-    internal static JsonArray SelectCases(JsonObject catalog, string mode, string category)
+    internal static JsonArray SelectCases(JsonObject catalog, string? mode, string category)
     {
-        NormalizeMode(mode);
+        if (mode is not null)
+        {
+            NormalizeMode(mode);
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(category);
         return new JsonArray(catalog["Cases"]!.AsArray()
             .Where(benchmark => ReadStrings(benchmark!["Categories"], "Cases.Categories").Contains(category, StringComparer.Ordinal)
-                && ReadStrings(benchmark["Modes"], "Cases.Modes").Contains(mode, StringComparer.Ordinal))
+                && (mode is null || ReadStrings(benchmark["Modes"], "Cases.Modes").Contains(mode, StringComparer.Ordinal)))
             .Select(benchmark => benchmark!.DeepClone()).ToArray());
     }
 
-    internal static void RequireSelectedCases(IEnumerable<JsonArray> selections, string category, string mode)
+    internal static void RequireSelectedCases(IEnumerable<JsonArray> selections, string category, string? mode)
     {
         if (!selections.Any(cases => cases.Count > 0))
         {
