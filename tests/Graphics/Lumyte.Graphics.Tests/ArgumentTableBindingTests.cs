@@ -16,7 +16,7 @@ public sealed class ArgumentTableBindingTests
     {
         using var table = new Table();
         var reference = new Reference(table, new object());
-        var captured = ShaderBindingSnapshot.Capture(Root(reference), table);
+        var captured = ShaderBindingDependencies.Collect(Root(reference), table);
         Assert.Same(reference, Assert.Single(captured.References));
     }
 
@@ -29,8 +29,8 @@ public sealed class ArgumentTableBindingTests
         object resource = new();
         var allowed = new Reference(selected, resource);
         var outside = new Reference(foreign, resource);
-        Assert.Single(ShaderBindingSnapshot.Capture(Root(allowed), selected).References);
-        Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Root(outside), selected));
+        Assert.Single(ShaderBindingDependencies.Collect(Root(allowed), selected).References);
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(outside), selected));
     }
 
     /// <summary>Resource references require an explicitly selected table.</summary>
@@ -38,7 +38,7 @@ public sealed class ArgumentTableBindingTests
     public void MissingTableIsRejected()
     {
         using var table = new Table();
-        Assert.Throws<InvalidOperationException>(() => ShaderBindingSnapshot.Capture(Root(new Reference(table, new object())), null));
+        Assert.Throws<InvalidOperationException>(() => ShaderBindingDependencies.Collect(Root(new Reference(table, new object())), null));
     }
 
     /// <summary>Numeric arguments remain independent of argument tables.</summary>
@@ -47,7 +47,7 @@ public sealed class ArgumentTableBindingTests
     {
         float numeric = 1f;
         using ShaderRootArguments generation = TestShaderTransfer.CreateUnmanaged(in numeric, "arguments", "Values", size => new TestRootStorage(size));
-        var captured = ShaderBindingSnapshot.Capture(generation, null);
+        var captured = ShaderBindingDependencies.Collect(generation, null);
         Assert.Empty(captured.References);
         Assert.Empty(captured.Elements);
     }
@@ -60,7 +60,7 @@ public sealed class ArgumentTableBindingTests
         using var foreign = new Table();
         var data = new DataSource();
         data.Values[0] = new ShaderDependencyMetadata([new Reference(foreign, new object())]);
-        Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Root(new Reference(selected, data)), selected));
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data)), selected));
         Assert.Equal(1, data.Reads);
     }
 
@@ -71,7 +71,7 @@ public sealed class ArgumentTableBindingTests
         using var selected = new Table();
         using var foreign = new Table();
         var data = new DataSource();
-        Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Root(new Reference(foreign, data)), selected));
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(foreign, data)), selected));
         Assert.Equal(0, data.Reads);
     }
 
@@ -84,7 +84,7 @@ public sealed class ArgumentTableBindingTests
         var data = new DataSource();
         data.Values[0] = new ShaderDependencyMetadata([new Reference(selected, new object())]);
         data.Values[1] = new ShaderDependencyMetadata([new Reference(foreign, new object())]);
-        Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Root(new Reference(selected, data, 2)), selected));
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data, 2)), selected));
         Assert.Equal(2, data.Reads);
     }
 
@@ -99,7 +99,7 @@ public sealed class ArgumentTableBindingTests
         var b = new Reference(table, second);
         first.Values[0] = new ShaderDependencyMetadata([b]);
         second.Values[0] = new ShaderDependencyMetadata([a]);
-        var captured = ShaderBindingSnapshot.Capture(Root(a), table);
+        var captured = ShaderBindingDependencies.Collect(Root(a), table);
         Assert.Equal(2, captured.References.Count);
         Assert.Equal(2, captured.Elements.Count);
         Assert.Equal(1, first.Reads);
@@ -115,7 +115,7 @@ public sealed class ArgumentTableBindingTests
         var data = new DataSource();
         data.Values[0] = new ShaderDependencyMetadata([new Reference(selected, new object())]);
         IShaderReferenceMetadata copied = new ShaderDependencyMetadata([new Reference(foreign, new object())]);
-        Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(Root(new Reference(selected, data)), selected, (_, _) => copied));
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(Root(new Reference(selected, data)), selected, (_, _) => copied));
         Assert.Equal(0, data.Reads);
     }
 
@@ -126,8 +126,8 @@ public sealed class ArgumentTableBindingTests
         using var first = new Table();
         using var second = new Table();
         using ShaderRootArguments root = Root(new Reference(first, new object()));
-        Assert.Single(ShaderBindingSnapshot.Capture(root, first).References);
-        Assert.Throws<ArgumentException>(() => ShaderBindingSnapshot.Capture(root, second));
+        Assert.Single(ShaderBindingDependencies.Collect(root, first).References);
+        Assert.Throws<ArgumentException>(() => ShaderBindingDependencies.Collect(root, second));
     }
 
     /// <summary>Dependency metadata rejects missing identity lists and null identities.</summary>
@@ -201,7 +201,7 @@ public sealed class ArgumentTableBindingTests
         layout.ValidateArguments(root);
         var arguments = new PoolArguments(values.Select(value => (IGpuRef<uint>)value.Reference!).ToArray());
         using ShaderRootArguments generation = TestShaderTransfer.Create(in arguments, size => new TestRootStorage(size), Encode);
-        var binding = new ShaderBindingData(ShaderBindingSnapshot.Capture(generation, table), target, caps);
+        var binding = new ShaderBindingData(ShaderBindingDependencies.Collect(generation, table), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
         Assert.Equal(2, binding.Writable.Count);
         Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 8)));

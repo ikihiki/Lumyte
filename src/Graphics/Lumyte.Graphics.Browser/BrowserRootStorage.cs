@@ -12,7 +12,10 @@ internal sealed class BrowserRootStorage : IShaderRootStorage
 
     internal BrowserRootStorage(BrowserDevice owner, int size)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+
+        // Uniform emulation capacity is private to this WebGPU backend.
+        size = Math.Max(16, checked(((size + 15) / 16) * 16));
         if ((ulong)size > owner.Caps.MaxBufferSize)
         {
             throw new NotSupportedException("Root arguments exceed the device buffer size limit.");

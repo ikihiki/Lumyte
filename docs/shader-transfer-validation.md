@@ -4,6 +4,63 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## native定数rootとbackend-private WebGPU emulation（2026-11-14）
+
+直前のbackend-native writer／uniform root checkpointは3582af8ada8c00ff38553eebc216bc64527171c1。
+その時点のf27→3582 ABBA測定は凍結したままであり、以下のnative定数rootへ適用しない。
+
+- Vulkanは実vkCmdPushConstantsを使い、application rootのdescriptor binding8とroot uniform bufferを削除した。
+  physical deviceからMaxPushConstantsSizeを取得する。今回のRadeon8060S／RADVは256 Bであり、普遍的な値ではない。
+  pipeline variantは同じoffset0／device max範囲、Vertex／Fragment／Compute stage flagsを使う。
+  layout解決と依存admissionの後、Draw／Dispatch記録時にceil(wire bytes/4) DWORDをpushする。
+- D3D12はapp parameter0、b8／space0を実SetGraphicsRoot32BitConstants／SetComputeRoot32BitConstantsへ置換した。
+  64 DWORDからresource table1、sampler table1、draw-info parameter3の2、vertex SRV parameter4の2を引き、
+  appは58 DWORD／232 B。固定合計64をnative static assertionで検査し、per-Set GPU CBV allocationと旧root exportsを削除した。
+- どちらもuniform fallbackを持たず、容量超過はallocation／選択publish前に例外となる。
+  大き過ぎるshader artifactもSet前にnative pipelineを作らないよう、全app root名のlogical extentを事前検査する。
+  Vulkan260 B artifactは256 B adapterでCreateShader時に拒否、256 Bはshader／pipelineとも成功。
+  D3D232 Bはphysical helper宣言240 Bでもlogical58 DWORDとして許可し、236 Bはnative PSO前に拒否する。
+- Set時に確定した小さいbackend-owned CPU payloadを保持し、現在のpipeline layoutで記録するnative commandへ渡す。
+  これはShaderValueSnapshotやCPU inspection objectではない。複数Set／Draw、再Draw、失敗後の旧選択を保持する。
+  private payload、root owner、metadata／collector等のallocationは残り、zero-allocationとは主張しない。
+
+共通runtimeからuniform知識を除去した箇所:
+
+- ShaderRootArguments.Allocateは論理wire sizeをそのままfactoryへ渡し、共通のminimum16／alignment16を廃止。
+- Create／Allocateはopaque payload capacityが論理size以上であることだけを検査する。
+- IShaderRootStorageのWrite／Sealはgenericなbackend payloadの書き込み／freezeであり、uniform allocationやGPU unmapを要求しない。
+- ShaderBindingDataのuniform capability前提を除き、backendへ移した。root capacity情報はopaque storageの実サイズ。
+- 共通runtimeにbackend名／push／uniform feature分岐を追加していない。shader target emitterがstorageを選ぶのはtarget codegenの責務。
+
+Wgpu／Browserは変更前と同じuniform emulationをbackend内に維持する。
+private RootStorageだけがminimum16／alignment16、buffer確保／map／sealとuniform limitを知る。
+per-Set世代をnative command完了まで保持し、Graph metadata／remapも従来どおり扱う。
+ImmediateData、package／Slang version update、共通uniform fallbackは追加しない。
+
+参照だけを持つ旧ShaderBindingSnapshotはShaderBindingDependenciesへ改名し、public Collect／private VisitReferencesとした。
+旧型のaliasは残さない。取得するのはtable affinity／最新command-local transitive metadata／Graph宣言検査用の依存であり、
+数値snapshotではない。ShaderValueSnapshot等の本当のsnapshotは改名・削除していない。
+
+最終sourceの検証:
+
+- Graphics Debug／Release各264成功・失敗0・94skip（358件）。
+- RenderGraph Debug／Release各133成功・失敗0・skip0。
+- 全ホストRelease3,237成功・失敗0・115skip。host consumer／samples buildを含む。
+- targeted subset Debug／Release各36成功・失敗0・skip0（GPU-gated20、CPU16）。
+  実Vulkan4／20／256 B dispatchと260 B Set拒否、20／256 B旧世代readback、oversized artifact早期拒否、
+  Vulkan／Wgpu validation off/onのred／green二draw、世代・transitive依存・byte ABIを含む。
+  4-byte caseはdispatch確認であり、直接readbackの検査ではない。
+- D3D12管理側Release47成功・Windows依存7skip。Windows native実行／cross-buildはtoolchain不在で未検証。
+- Browser Release compile／JS syntax成功。Browser実行／AOT／presentationは未検証。
+- 独立read-only reviewで容量preflight不足と旧alignment testを検出し修正後、final reviewはblockerなし。
+
+ログはartifacts/validation13-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,markdown}.log。
+shader disassembly／layout probesはartifacts/native-constant-shader-probesに保持する。
+CI／workflow／通常build runner設定、過去ADR、旧raw測定・削除済みbinaryは変更／復元しない。
+offline shader packのtarget storage metadataにはtools/shaders/Slang.targetsを機能変更として更新した。
+
+以下はuniform-root checkpointまでの履歴であり、最新root transportと混同しない。
+
 ## backend自身によるwriter実装（2026-11-14）
 
 Vulkan／Direct3D12／Wgpu／Browserがそれぞれ内部ShaderValueWriterでIShaderValueWriterを直接実装する。

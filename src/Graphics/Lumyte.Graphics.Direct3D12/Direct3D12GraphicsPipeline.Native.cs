@@ -7,7 +7,7 @@ internal sealed unsafe partial class Direct3D12GraphicsPipeline
     private readonly Dictionary<string, nint> _variants = [];
     private nint _partial;
 
-    internal nint Resolve(RenderStateSnapshot snapshot, TextureFormat[] formats, ShaderBindingSnapshot? arguments, TextureFormat? depthFormat, IndexFormat? indexFormat)
+    internal nint Resolve(RenderStateSnapshot snapshot, TextureFormat[] formats, ShaderBindingDependencies? dependencies, TextureFormat? depthFormat, IndexFormat? indexFormat)
     {
         ValidateAlive();
         GraphicsRenderStateDesc state = snapshot.Desc;
@@ -112,6 +112,12 @@ internal sealed unsafe partial class Direct3D12GraphicsPipeline
 
     private void Initialize()
     {
+        PipelineValidation.RootCapacity(VertexData);
+        if (FragmentData != null)
+        {
+            PipelineValidation.RootCapacity(FragmentData);
+        }
+
         if (!_owner.PartialGraphicsProgramsEnabled)
         {
             return;

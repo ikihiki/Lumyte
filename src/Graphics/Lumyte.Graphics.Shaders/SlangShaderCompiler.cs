@@ -51,7 +51,7 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
 
                 _ = await RunCompilerAsync(arguments, cancellationToken);
                 byte[] code = await File.ReadAllBytesAsync(output, cancellationToken);
-                string reflectionJson = ShaderSourcePreparation.CompleteReflection(await File.ReadAllTextAsync(reflection, cancellationToken), desc.Source);
+                string reflectionJson = ShaderSourcePreparation.CompleteReflection(await File.ReadAllTextAsync(reflection, cancellationToken), desc.Source, target);
                 results.Add(new(target, desc.Stage, desc.EntryPoint, compilerVersion, "row-major", code, reflectionJson));
             }
 

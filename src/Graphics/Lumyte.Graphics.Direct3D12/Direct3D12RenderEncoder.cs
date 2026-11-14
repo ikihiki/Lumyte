@@ -252,17 +252,17 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingSnapshot? bindingSnapshot = null;
+        ShaderBindingDependencies? bindingDependencies = null;
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter));
+                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
             }
 
-            bindingSnapshot = snapshot;
+            bindingDependencies = dependencies;
         }
 
         if (indexed)
@@ -275,17 +275,17 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         _pipeline.ValidateAlive();
 
-        if (_pipeline.RequiresArguments && bindingSnapshot == null)
+        if (_pipeline.RequiresArguments && bindingDependencies == null)
         {
             throw new InvalidOperationException("Set shader arguments before drawing.");
         }
 
-        nint pipeline = _pipeline.Resolve(_state, _formats, bindingSnapshot, _depthFormat, indexed ? _indexFormat : null);
+        nint pipeline = _pipeline.Resolve(_state, _formats, bindingDependencies, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Check(NativeMethods.Pipeline(owner.Native, pipeline, 0));
         NativeMethods.Topology(owner.Native, (uint)_state.Desc.Topology + 1);
-        if (bindingSnapshot != null)
+        if (bindingDependencies != null)
         {
-            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingSnapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingSnapshot.RootParameter));
+            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingDependencies, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingDependencies.RootParameter));
             owner.KeepBinding(binding);
             NativeMethods.Binding(owner.Native, binding.Native, 0);
         }

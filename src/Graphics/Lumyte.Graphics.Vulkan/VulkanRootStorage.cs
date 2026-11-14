@@ -1,40 +1,36 @@
 using Lumyte.Graphics.Abstractions;
-using V = Silk.NET.Vulkan;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanRootStorage : IShaderRootStorage
+internal sealed class VulkanRootStorage : IShaderRootStorage
 {
-    private readonly VulkanShaderBacking _backing;
-    private void* _mapped;
+    private readonly byte[] _payload;
     private bool _sealed;
     private bool _disposed;
 
     internal VulkanRootStorage(VulkanDevice owner, int size)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
-        if ((ulong)size > owner.Caps.MaxBufferSize || (ulong)size > owner.MaxRootUniformSize)
-        {
-            throw new NotSupportedException("Root arguments exceed the device uniform size limit.");
-        }
-
-        Size = size;
-        _backing = new(owner, size);
-        try
-        {
-            _mapped = _backing.Map();
-            new Span<byte>(_mapped, Size).Clear();
-        }
-        catch
-        {
-            _backing.Dispose();
-            throw;
-        }
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        Size = Math.Max(4, checked((size + 3) & ~3));
+        _payload = new byte[Size];
     }
 
     public int Size { get; }
 
-    internal V.Buffer Native => !_disposed && _sealed ? _backing.Native : throw new InvalidOperationException("Seal live root storage before binding.");
+    internal ReadOnlySpan<byte> Data
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_sealed)
+            {
+                throw new InvalidOperationException("Seal root storage before pushing command payloads.");
+            }
+
+            return _payload;
+        }
+    }
 
     public void Write(ReadOnlySpan<byte> bytes, int offset)
     {
@@ -50,34 +46,14 @@ internal sealed unsafe class VulkanRootStorage : IShaderRootStorage
             throw new ArgumentOutOfRangeException(nameof(offset));
         }
 
-        bytes.CopyTo(new Span<byte>(_mapped, Size).Slice(offset, bytes.Length));
+        bytes.CopyTo(_payload.AsSpan(offset, bytes.Length));
     }
 
     public void Seal()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_sealed)
-        {
-            _backing.Unmap();
-            _mapped = null;
-            _sealed = true;
-        }
+        _sealed = true;
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (_mapped != null)
-        {
-            _backing.Unmap();
-            _mapped = null;
-        }
-
-        _backing.Dispose();
-        _disposed = true;
-    }
+    public void Dispose() => _disposed = true;
 }

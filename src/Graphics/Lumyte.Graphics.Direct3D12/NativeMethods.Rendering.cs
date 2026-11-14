@@ -56,10 +56,7 @@ internal static unsafe partial class NativeMethods
     internal static partial void DetachHeaps(nint commands, out nint rtv, out nint dsv);
 
     [LibraryImport(Library, EntryPoint = "binding_create_root")]
-    internal static partial int BindingCreateRoot(nint device, nint root, out nint binding);
-
-    [LibraryImport(Library, EntryPoint = "binding_create")]
-    internal static partial int BindingCreate(nint device, byte* bytes, uint size, out nint binding);
+    internal static partial int BindingCreateRoot(nint device, uint* words, uint wordCount, out nint binding);
 
     [LibraryImport(Library, EntryPoint = "binding_destroy")]
     internal static partial void BindingDestroy(nint binding);

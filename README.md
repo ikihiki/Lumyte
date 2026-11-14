@@ -122,3 +122,22 @@ before publication and refreshed transitive references on execution against the
 pass’s native resource identity, byte range and access declarations. References
 cached from another callback are usable with a compatible native table and matching
 use declarations in the consuming pass; shared table identity alone declares no use.
+
+Native Vulkan roots now use vkCmdPushConstants; Direct3D12 uses graphics/compute
+root 32-bit constants, not per-Set GPU uniform/CBV allocation or an oversized-root
+fallback. Query VulkanDevice.MaxPushConstantsSize; D3D12 exposes
+RootConstantDwordCapacity=58 and RootConstantByteCapacity=232. Set freezes a private
+CPU payload for command lifetime so Draw/Dispatch can choose the program/layout variant
+and record the actual native constants command; small arrays and metadata still allocate.
+Artifact-capacity preflight is mandatory ABI safety, independent of EnableValidation:
+Vulkan checks against the owning device before shader-module creation; all D3D12
+pipeline/partial paths check before native pipeline creation. Both inspect every app
+ConstantBuffer by its actual root name using logical ShaderDataLayout.Root.Size,
+excluding lumyteDrawInfo and __lumyte_schema_ entries. A logical 232-byte D3D12 root
+with a padded 240-byte declaration is valid: it loads 58 DWORDs, not 60.
+Vulkan’s observed 256-byte limit is device-specific, not a universal capacity.
+Wgpu/Browser retain backend-private uniform-buffer emulation without new immediate
+APIs or dependency upgrades. Shared/Graph lifetimes and metadata remain transport-neutral;
+target-specific shader emission is inherently target-aware, not runtime feature dispatch.
+The archived writer measurements describe checkpoint 3582af8a, not this newer
+constant-root implementation; see the [pinned report](docs/performance/backend-native-writers.md).

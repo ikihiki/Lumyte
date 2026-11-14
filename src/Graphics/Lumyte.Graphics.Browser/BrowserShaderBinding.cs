@@ -9,6 +9,11 @@ internal sealed class BrowserShaderBinding : IDisposable
 
     internal BrowserShaderBinding(BrowserDevice owner, ShaderBindingData data, bool compute = false)
     {
+        if (owner.Caps.MaxUniformBuffersPerStage < 1)
+        {
+            throw new NotSupportedException("Root uniform emulation exceeds the enabled per-stage binding limits.");
+        }
+
         _native = BrowserInterop.CreateShaderBinding(owner.Handle, data.Key, compute, ((BrowserRootStorage)data.RootArgs.Storage).Native, data.Map);
         try
         {

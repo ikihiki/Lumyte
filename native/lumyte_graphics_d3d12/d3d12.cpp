@@ -4,6 +4,7 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 #include <memory>
+#include <vector>
 #include <new>
 #include <cstring>
 #include <cstdio>

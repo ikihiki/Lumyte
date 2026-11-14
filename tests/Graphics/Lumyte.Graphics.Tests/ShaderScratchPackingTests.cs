@@ -36,8 +36,14 @@ public sealed class ShaderScratchPackingTests
         Assert.DoesNotContain(typeof(ShaderDataLayout).GetMethods(), m => m.Name.StartsWith("Pack", StringComparison.Ordinal));
         Assert.DoesNotContain(typeof(ShaderRootArguments).GetMethods(), m => m.Name == "CreateSnapshot");
         Assert.All(typeof(ShaderRootArguments).GetMethods().Where(m => m.Name == "Seal"), m => Assert.Empty(m.GetParameters()));
-        Assert.Null(typeof(ShaderBindingSnapshot).GetProperty("Root"));
-        Assert.All(typeof(ShaderBindingSnapshot).GetMethods().Where(m => m.Name == "Capture"), m => Assert.Equal(typeof(ShaderRootArguments), m.GetParameters()[0].ParameterType));
+        Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Root"));
+        Assert.Null(typeof(ShaderBindingDependencies).Assembly.GetType("Lumyte.Graphics.Shared.ShaderBindingSnapshot"));
+        Assert.DoesNotContain(typeof(ShaderBindingDependencies).GetMethods(), method => method.Name == "Capture");
+        MethodInfo collect = Assert.Single(typeof(ShaderBindingDependencies).GetMethods(BindingFlags.Public | BindingFlags.Static), method => method.Name == "Collect");
+        Assert.Equal(typeof(ShaderBindingDependencies), collect.ReturnType);
+        Assert.Equal(new[] { typeof(ShaderRootArguments), typeof(IArgumentTable), typeof(Func<IShaderDataSource, ulong, IShaderReferenceMetadata>) }, collect.GetParameters().Select(parameter => parameter.ParameterType));
+        Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Data"));
+        Assert.Equal(typeof(ShaderRootArguments), typeof(ShaderBindingDependencies).GetProperty("Arguments")!.PropertyType);
         foreach (Type encoder in new[] { typeof(IRenderEncoder), typeof(IComputeEncoder) })
         {
             Assert.DoesNotContain(encoder.GetMethods(), m => m.Name == "SetArguments" && m.GetParameters().Any(p => p.ParameterType == typeof(ShaderValueSnapshot)));

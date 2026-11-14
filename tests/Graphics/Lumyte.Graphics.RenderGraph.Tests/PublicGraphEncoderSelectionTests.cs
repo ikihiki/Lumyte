@@ -38,7 +38,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
             Assert.Null(graph.GetMethod("SetArgumentValidation"));
         }
 
-        Assert.Null(typeof(Lumyte.Graphics.Shared.ShaderBindingSnapshot).GetProperty("Root"));
+        Assert.Null(typeof(Lumyte.Graphics.Shared.ShaderBindingDependencies).GetProperty("Root"));
         Assert.DoesNotContain(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "CreateSnapshot");
         MethodInfo create = Assert.Single(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "Create");
         Assert.False(create.GetParameters()[2].IsOptional);

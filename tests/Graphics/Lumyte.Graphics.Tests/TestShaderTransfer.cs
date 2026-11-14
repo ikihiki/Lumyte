@@ -11,7 +11,7 @@ internal static class TestShaderTransfer
     /// <summary>Writes application arguments once into a new final native allocation.</summary>
     /// <typeparam name="T">The shader argument type.</typeparam>
     /// <param name="value">The input used synchronously and never retained.</param>
-    /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
+    /// <param name="factory">Creates backend-owned storage for the exact logical wire byte count.</param>
     /// <param name="encode">The stable synchronous backend reference encoder.</param>
     /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
     /// <param name="prepare">Optional reference-only selection preparation returning detached execution admission.</param>
@@ -50,7 +50,7 @@ internal static class TestShaderTransfer
     /// <param name="value">The value copied synchronously.</param>
     /// <param name="rootParameter">The root parameter name.</param>
     /// <param name="shaderTypeName">The shader type name, or the conventional C# type name.</param>
-    /// <param name="factory">Creates storage with the requested 16-byte-aligned capacity.</param>
+    /// <param name="factory">Creates backend-owned storage for the exact logical wire byte count.</param>
     /// <param name="diagnostic">Optional explicitly enabled shader layout diagnostics.</param>
     /// <param name="prepare">Optional reference-only selection preparation returning detached execution admission.</param>
     /// <param name="encode">The stable synchronous backend reference encoder.</param>

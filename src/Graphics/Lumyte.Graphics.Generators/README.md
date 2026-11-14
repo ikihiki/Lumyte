@@ -59,7 +59,7 @@ Example (using System.Numerics and System.Runtime.InteropServices):
 Keep shader declarations in the same order and with matching offsets. The generator
 never rearranges fields or chooses packing. GPU references remain opaque and non-owning.
 Explicit inspection snapshots copy wire bytes and reference identities; native Set
-instead writes a fresh command-owned final uniform generation. Neither is changed by
+instead writes a fresh command-owned backend-owned opaque root generation. Neither is changed by
 later property writes. Reference-containing classes themselves are never copied to GPU memory.
 
 Project reference:
@@ -78,18 +78,20 @@ Where dynamic code is unavailable (Browser or AOT), names and sizes remain
 checkable while unavailable field offsets are skipped. Ordinary capture stores
 a type identity, not a diagnostic callback. Generated classes retain an unboxed
 metadata provider and initialize diagnostic field tables only when explicitly
-requested; native transfer never invokes the provider when diagnostics are disabled. The disabled path has no field
-reflection, diagnostic table initialization, or runtime code generation.
+requested; native transfer never invokes the provider when diagnostics are disabled. The disabled transfer path has no managed field
+reflection, diagnostic table initialization, or runtime code generation. This does
+not remove shader/artifact reflection: mandatory capacity preflight still reads
+logical root metadata before native shader/pipeline creation.
 
 The generated `Write<TWriter>` seam also supports direct reference-bearing uploads.
 CopyFrom uses a streaming writer, not an implicit Capture: private unmanaged bytes
-are copied synchronously and only immutable resource identities remain on the CPU.
+are copied synchronously; upload metadata retains only immutable resource identities.
 Explicit Capture remains a CPU-only inspection/diagnostic API: its writer copies
 raw ranges into independent bytes and records logical references, clearing each
 16-byte reference slot rather than exposing its source representation. Snapshots
 are not native write inputs or upload backdoors. SetArguments
-keeps Set-time value semantics by writing directly into a new command-owned final
-uniform generation; it does not allocate an intermediate numeric snapshot.
+keeps Set-time value semantics by writing directly into a new command-owned opaque root
+generation; it does not allocate an intermediate numeric snapshot.
 A failed upload may partially modify bytes and invalidates the requested reference
 metadata range; it does not roll back values or retain a hidden numeric history.
 
@@ -130,7 +132,7 @@ Explicit Capture uses a size-constructed ShaderSnapshotWriter implementing these
 same methods, storing zeroed reference slots and logical identities. It remains
 read-only inspection, never a native write backdoor. SetArguments(ShaderValueSnapshot),
 CreateSnapshot and Pack/SharedPackRaw remain removed. Native Set writes a fresh
-final uniform generation and preserves the old selection if encoding or preparation
+backend-owned opaque root generation and preserves the old selection if encoding or preparation
 fails; it does not re-run the codec on Draw/Dispatch.
 
 Graph caches one preparation delegate per graph encoder and installs it through
@@ -153,11 +155,33 @@ manual SetArgumentTable remains available; Graph selects its table automatically
 Native optional reference diagnostics pass Type, reference and current position
 directly, without constructing ShaderValue records or per-reference byte arrays.
 Explicit Capture may still allocate logical inspection records in its separate
-ShaderSnapshotWriter. Metadata owners, lists, arrays/read-only wrappers, native root
-buffers and delegates remain; Browser interop still copies spans to JS. No
+ShaderSnapshotWriter. Metadata owners, lists, arrays/read-only wrappers, backend-private root
+payloads and delegates remain; Browser interop still copies spans to JS. No
 zero-allocation, zero-copy or measured performance improvement is implied.
 
 Inspection Fields/reflection remain diagnostics only; ModelVertex checks size and
-Fields without Capture. ShaderBindingSnapshot.Capture(rootArguments, …) gathers
+Fields without Capture. ShaderBindingDependencies.Collect(rootArguments, …) gathers
 reference metadata only, with no numeric Root. Ordinary unmanaged buffer memcpy
 and GPU copy commands are unchanged; no performance measurements are claimed.
+
+## Root transport is not the codec ABI
+
+The same two-method writer and 16-byte reference ABI feed backend-private opaque
+root payloads. Vulkan/D3D12 freeze private CPU arrays and emit native push/root
+constants after binding resolution at Draw/Dispatch, with no per-Set GPU uniform/CBV
+or oversized-root fallback. Wgpu/Browser keep uniform emulation entirely private.
+Shader target emitters necessarily choose VkPushConstants, D3DRoot32BitConstants or
+UniformBuffer metadata; common runtime state, metadata and lifetimes stay neutral.
+The uint4 declaration is padded, but Load reads only ceil(sizeof(T)/4) scalar words.
+A 232-byte DXIL root may declare 240 bytes yet loads 58 DWORDs, not 60; logical
+TransferSize, numeric padding and the reference ABI are unchanged. Backend-private
+DWORD rounding also handles 1- and 3-byte tails; common Allocate passes the exact
+logical size and only requires opaque capacity >= that size, with no 16-byte rule.
+IShaderRootStorage.Write/Seal means synchronous payload copy and commit/freeze,
+not a shared GPU-uniform lifetime policy. Artifact preflight is mandatory ABI
+safety, not optional validation tracking: Vulkan checks the owning device before
+shader-module creation, and all D3D12 pipeline/partial paths check before native
+pipeline creation. Both inspect every app ConstantBuffer using the actual root
+name and logical ShaderDataLayout.Root.Size, excluding lumyteDrawInfo and
+__lumyte_schema_ entries. No zero-allocation
+or zero-copy claim follows: CPU payload arrays, metadata and retained owners remain.

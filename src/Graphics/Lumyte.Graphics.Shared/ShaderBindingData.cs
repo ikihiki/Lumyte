@@ -13,13 +13,13 @@ public sealed class ShaderBindingData
     private readonly Dictionary<ShaderBufferBinding, int> _writable = [];
 
     /// <summary>Initializes a new instance of the <see cref="ShaderBindingData"/> class.</summary>
-    /// <param name="snapshot">The snapshot input.</param>
+    /// <param name="dependencies">The reachable resource dependencies.</param>
     /// <param name="target">The target input.</param>
     /// <param name="caps">The caps input.</param>
-    public ShaderBindingData(ShaderBindingSnapshot snapshot, ShaderTargetData target, DeviceCaps caps)
+    public ShaderBindingData(ShaderBindingDependencies dependencies, ShaderTargetData target, DeviceCaps caps)
     {
-        Snapshot = snapshot;
-        foreach (IShaderReference reference in snapshot.References)
+        Dependencies = dependencies;
+        foreach (IShaderReference reference in dependencies.References)
         {
             object resource = reference.Resource;
             if (resource is IGraphicsTextureView)
@@ -41,21 +41,21 @@ public sealed class ShaderBindingData
             }
         }
 
-        if (_textures.Count > caps.MaxSampledTexturesPerStage || _samplers.Count > caps.MaxSamplersPerStage || _buffers.Count + _writable.Count + (snapshot.References.Count == 0 ? 0 : 1) > caps.MaxStorageBuffersPerStage || caps.MaxUniformBuffersPerStage < 1)
+        if (_textures.Count > caps.MaxSampledTexturesPerStage || _samplers.Count > caps.MaxSamplersPerStage || _buffers.Count + _writable.Count + (dependencies.References.Count == 0 ? 0 : 1) > caps.MaxStorageBuffersPerStage)
         {
             throw new NotSupportedException("Reachable resources exceed the enabled per-stage binding limits.");
         }
 
-        snapshot.Arguments.Seal();
+        dependencies.Arguments.Seal();
 
-        uint capacity = snapshot.References.Count == 0 ? 0 : checked(snapshot.References.Max(r => r.Slot) + 1);
+        uint capacity = dependencies.References.Count == 0 ? 0 : checked(dependencies.References.Max(r => r.Slot) + 1);
         if ((ulong)capacity * 16 > caps.MaxStorageBufferBindingSize || (ulong)capacity * 16 > int.MaxValue)
         {
             throw new NotSupportedException("The reference remap exceeds the storage binding size limit.");
         }
 
         Map = new byte[checked((int)capacity * 16)];
-        foreach (IShaderReference reference in snapshot.References)
+        foreach (IShaderReference reference in dependencies.References)
         {
             int offset = checked((int)reference.Slot * 16);
             if (_textures.TryGetValue(reference.Resource, out int texture))
@@ -81,13 +81,13 @@ public sealed class ShaderBindingData
         }
     }
 
-    /// <summary>Gets the dependency snapshot.</summary>
-    public ShaderBindingSnapshot Snapshot { get; }
+    /// <summary>Gets the reachable resource dependencies.</summary>
+    public ShaderBindingDependencies Dependencies { get; }
 
     /// <summary>Gets the native root generation.</summary>
-    public ShaderRootArguments RootArgs => Snapshot.Arguments;
+    public ShaderRootArguments RootArgs => Dependencies.Arguments;
 
-    /// <summary>Gets the final root uniform allocation size.</summary>
+    /// <summary>Gets the allocated opaque root payload size.</summary>
     public int RootSize => RootArgs.Storage.Size;
 
     /// <summary>Gets the resource remapping bytes.</summary>

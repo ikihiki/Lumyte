@@ -12,6 +12,18 @@ struct PartialProgram
     ComPtr<ID3D12StateObject> collection;
     UINT optimization = 0;
 };
+// Tables cost one DWORD each regardless of descriptor counts; draw info costs two,
+// and the vertex root SRV costs two. Every pipeline/partial variant shares this layout.
+static constexpr UINT resource_table_dword_cost = 1;
+static constexpr UINT sampler_table_dword_cost = 1;
+static constexpr UINT draw_info_dword_cost = 2;
+static constexpr UINT vertex_srv_dword_cost = 2;
+static constexpr UINT fixed_root_dword_cost =
+    resource_table_dword_cost + sampler_table_dword_cost + draw_info_dword_cost + vertex_srv_dword_cost;
+static constexpr UINT app_root_dword_capacity = 58;
+static_assert(app_root_dword_capacity + fixed_root_dword_cost == 64,
+              "D3D12 root signature budget must be exactly 64 DWORDs.");
+
 static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcept
 {
     D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
@@ -28,14 +40,14 @@ static HRESULT create_root(Device* device, ID3D12RootSignature** output) noexcep
     ranges[2] = {D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 64, 0, 1, 192};
     D3D12_DESCRIPTOR_RANGE samplers{D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 16, 0, 0, 0};
     D3D12_ROOT_PARAMETER parameters[5]{};
-    parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    parameters[0].Descriptor = {8, 0};
+    parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    parameters[0].Constants = {8, 0, app_root_dword_capacity};
     parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[1].DescriptorTable = {3, ranges};
     parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[2].DescriptorTable = {1, &samplers};
     parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    parameters[3].Constants = {9, 0, 2};
+    parameters[3].Constants = {9, 0, draw_info_dword_cost};
     parameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     parameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
     parameters[4].Descriptor = {0, 2};

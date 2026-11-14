@@ -23,7 +23,7 @@ public sealed class UnifiedManualTransferTests
         using ShaderRootArguments root = TestShaderTransfer.Create(in value, size => new TestRootStorage(size), Encode, diagnostic: null);
         TestRootStorage nativeBacking = Assert.IsType<TestRootStorage>(root.Storage);
         Assert.Equal(4, root.WireSize);
-        Assert.Equal(16, nativeBacking.Size);
+        Assert.Equal(4, nativeBacking.Size);
         Assert.Equal(7u, MemoryMarshal.Read<uint>(nativeBacking.Bytes));
         Assert.All(nativeBacking.Bytes[4..], item => Assert.Equal((byte)0, item));
         Assert.Empty(root.References.References);

@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Owns a selected root generation in final native storage, retaining only reference metadata.</summary>
+/// <summary>Owns a selected root generation in backend-owned opaque payload storage, retaining only reference metadata.</summary>
 public sealed class ShaderRootArguments : IDisposable
 {
     private readonly Action<IReadOnlyCollection<IShaderReference>>? _admit;
@@ -25,10 +25,10 @@ public sealed class ShaderRootArguments : IDisposable
     /// <summary>Gets the logical shader structure name.</summary>
     public string ShaderTypeName { get; }
 
-    /// <summary>Gets the exact C# wire size before trailing capacity padding.</summary>
+    /// <summary>Gets the exact logical C# wire byte count, independent of backend storage capacity.</summary>
     public int WireSize { get; }
 
-    /// <summary>Gets the final native uniform allocation owned by this generation.</summary>
+    /// <summary>Gets the backend-owned opaque payload storage whose logical bytes remain stable for this generation.</summary>
     public IShaderRootStorage Storage { get; }
 
     /// <summary>Gets immutable, non-owning root resource dependencies.</summary>
@@ -50,10 +50,9 @@ public sealed class ShaderRootArguments : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(wireSize);
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(references);
-        int capacity = Math.Max(16, checked(((wireSize + 15) / 16) * 16));
-        if (storage.Size != capacity)
+        if (storage.Size < 0 || storage.Size < wireSize)
         {
-            throw new InvalidOperationException("The root allocation must match the requested aligned capacity.");
+            throw new InvalidOperationException("The root storage capacity must be nonnegative and cover the logical wire bytes.");
         }
 
         Action<IReadOnlyCollection<IShaderReference>>? admit = prepare?.Invoke(references);
@@ -64,7 +63,7 @@ public sealed class ShaderRootArguments : IDisposable
     /// <param name="root">The logical root parameter name.</param>
     /// <param name="name">The logical shader type name.</param>
     /// <param name="size">The exact C# wire byte count.</param>
-    /// <param name="factory">Creates storage with the requested aligned capacity.</param>
+    /// <param name="factory">Creates backend-owned storage for the exact logical wire byte count.</param>
     /// <returns>Caller-owned storage; a backend must dispose it if writing fails.</returns>
     public static IShaderRootStorage Allocate(string root, string name, int size, Func<int, IShaderRootStorage> factory)
     {
@@ -72,13 +71,12 @@ public sealed class ShaderRootArguments : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentOutOfRangeException.ThrowIfNegative(size);
-        int capacity = Math.Max(16, checked(((size + 15) / 16) * 16));
-        IShaderRootStorage storage = factory(capacity) ?? throw new InvalidOperationException("The root storage factory returned null.");
+        IShaderRootStorage storage = factory(size) ?? throw new InvalidOperationException("The root storage factory returned null.");
         try
         {
-            if (storage.Size != capacity)
+            if (storage.Size < 0 || storage.Size < size)
             {
-                throw new InvalidOperationException("The root allocation must match the requested aligned capacity.");
+                throw new InvalidOperationException("The root storage capacity must be nonnegative and cover the logical wire bytes.");
             }
 
             return storage;
@@ -90,7 +88,7 @@ public sealed class ShaderRootArguments : IDisposable
         }
     }
 
-    /// <summary>Seals the already encoded native allocation on its first successful execution.</summary>
+    /// <summary>Commits and freezes the already encoded backend payload on its first successful execution.</summary>
     public void Seal()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

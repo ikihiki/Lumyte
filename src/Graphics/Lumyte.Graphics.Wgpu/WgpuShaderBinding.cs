@@ -11,6 +11,11 @@ internal sealed unsafe class WgpuShaderBinding : IDisposable
 
     internal WgpuShaderBinding(WgpuDevice owner, ShaderBindingData data, WGPUBindGroupLayoutImpl* layout)
     {
+        if (owner.Caps.MaxUniformBuffersPerStage < 1)
+        {
+            throw new NotSupportedException("Root uniform emulation exceeds the enabled per-stage binding limits.");
+        }
+
         if ((ulong)data.RootSize > owner.Limits.maxUniformBufferBindingSize || (ulong)data.Map.Length > owner.Caps.MaxStorageBufferBindingSize)
         {
             throw new NotSupportedException("Internal root or remap binding exceeds the device size limit.");

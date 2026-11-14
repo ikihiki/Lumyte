@@ -2,21 +2,21 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Captures reachable resource identities for command-owned native roots.</summary>
-public sealed class ShaderBindingSnapshot
+/// <summary>Collects reachable resource identities for command-owned native roots.</summary>
+public sealed class ShaderBindingDependencies
 {
     private readonly HashSet<IShaderReference> _references = [];
     private readonly Dictionary<(IShaderDataSource Buffer, ulong Element), IShaderReferenceMetadata> _elements = [];
 
-    private ShaderBindingSnapshot(ShaderRootArguments arguments, IArgumentTable? table, Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? read)
+    private ShaderBindingDependencies(ShaderRootArguments arguments, IArgumentTable? table, Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? read)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         Arguments = arguments;
         Stack<IShaderReferenceMetadata>? pending = null;
-        Collect(arguments.References.References, table, ref pending, read);
+        VisitReferences(arguments.References.References, table, ref pending, read);
         while (pending != null && pending.TryPop(out IShaderReferenceMetadata? value))
         {
-            Collect(value.References, table, ref pending, read);
+            VisitReferences(value.References, table, ref pending, read);
         }
 
         arguments.Admit(_references);
@@ -31,17 +31,17 @@ public sealed class ShaderBindingSnapshot
     /// <summary>Gets the reachable resource references.</summary>
     public IReadOnlyCollection<IShaderReference> References => _references;
 
-    /// <summary>Gets the captured shader data elements.</summary>
+    /// <summary>Gets the reachable shader data element reference metadata.</summary>
     public IReadOnlyDictionary<(IShaderDataSource Buffer, ulong Element), IShaderReferenceMetadata> Elements => _elements;
 
-    /// <summary>Captures refreshed transitive dependencies without allocating a numeric root snapshot.</summary>
+    /// <summary>Collects refreshed transitive dependencies without allocating a numeric root snapshot.</summary>
     /// <param name="arguments">The command-owned native root generation.</param>
     /// <param name="table">The selected argument table.</param>
     /// <param name="read">The command-local transferred metadata reader.</param>
     /// <returns>The processed dependency set.</returns>
-    public static ShaderBindingSnapshot Capture(ShaderRootArguments arguments, IArgumentTable? table, Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? read = null) => new(arguments, table, read);
+    public static ShaderBindingDependencies Collect(ShaderRootArguments arguments, IArgumentTable? table, Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? read = null) => new(arguments, table, read);
 
-    private void Collect(IReadOnlyList<IShaderReference> references, IArgumentTable? table, ref Stack<IShaderReferenceMetadata>? pending, Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? read)
+    private void VisitReferences(IReadOnlyList<IShaderReference> references, IArgumentTable? table, ref Stack<IShaderReferenceMetadata>? pending, Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? read)
     {
         foreach (IShaderReference reference in references)
         {
@@ -70,9 +70,9 @@ public sealed class ShaderBindingSnapshot
                     continue;
                 }
 
-                IShaderReferenceMetadata snapshot = read == null ? source.ReadReferences(key.Item2) : read(source, key.Item2);
-                _elements.Add(key, snapshot);
-                (pending ??= new()).Push(snapshot);
+                IShaderReferenceMetadata metadata = read == null ? source.ReadReferences(key.Item2) : read(source, key.Item2);
+                _elements.Add(key, metadata);
+                (pending ??= new()).Push(metadata);
             }
         }
     }

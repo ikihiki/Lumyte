@@ -1,8 +1,12 @@
 # Backend-native shader writers: bounded allocation comparison
 
-2026-11-14。Aは旧Shared callback writerのf27e4b29、Bは本reportと同じ変更setのbackend-native writer。
+2026-11-14。Aは旧Shared callback writerのf27e4b29d02a7e5d78c37b91dc94d33881264e2b、Bはbackend-native writerのcheckpoint 3582af8ada8c00ff38553eebc216bc64527171c1（uniform-root実装）である。
 Bは計測時にはf27上の未commit sourceとして凍結し、四processをA1→B1→B2→A2で直列実行した。
-現行sourceを途中変更せず、各process後にsource／harness／launcher-output DLL hash一致を検査した。
+凍結した計測対象sourceを途中変更せず、各process後にsource／harness／launcher-output DLL hash一致を検査した。
+
+最新HEADのVulkan push constants／D3D12 root constantsへの変更はこのcampaignでは未測定である。
+以下の全timing・allocation値は上記checkpoint間だけの結果で、最新HEADには適用しない。
+harness source・script・既存hash・summary CSVと数値は変更していない。
 
 ## 結論
 
@@ -94,6 +98,7 @@ artifacts/backend-native-writers-finalに保持する。raw binary／gzipをrepo
 小さい全rowのtext転記は[summary.csv](data/backend-native-writers/summary.csv)。
 
 - baseline SHA: f27e4b29d02a7e5d78c37b91dc94d33881264e2b。
+- candidate checkpoint SHA: 3582af8ada8c00ff38553eebc216bc64527171c1。
 - candidate tracked-diff SHA256（計測時）: 8cd4600c9bcf23877e91ca8de57cb417c0cf4adce2d5dd27f240f04ac45e1e14。
 - 完全source manifest SHA256: A=2ec5a3e973cc941f5cc7c798b91a3fd396b7b79dfd6a844a48697ccbacb5e57a、
   B=0fbc35a4a5933264abfe5026679e4763e07e0cf3495c4e63b776fbf91f6c3bf2。
@@ -102,5 +107,5 @@ artifacts/backend-native-writers-finalに保持する。raw binary／gzipをrepo
   csproj de81c6a8…、runner cb39cd6f…。完全hashはlocal harness.sha256に保持。
 
 実行はtools/setup環境を設定し、BACKEND_WRITERS_FINAL_FROZEN=yesでrunnerへbaseline checkout、
-最終candidate checkout、local artifacts出力先を渡す。runnerはbuild／oracle後にABBAを直列実行し、途中変更を拒否する。
+上記checkpointのcandidate checkout（最新HEADではない）、local artifacts出力先を渡す。runnerはbuild／oracle後にABBAを直列実行し、途中変更を拒否する。
 過去の凍結harness／旧測定結果は一切変更していない。機能検証と未実行platformは[検証記録](../shader-transfer-validation.md)を参照。

@@ -138,30 +138,30 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingSnapshot? bindingSnapshot = null;
+        ShaderBindingDependencies? bindingDependencies = null;
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, PipelineStage.ComputeShader);
+                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, PipelineStage.ComputeShader);
             }
 
-            bindingSnapshot = snapshot;
+            bindingDependencies = dependencies;
         }
 
         _pipeline.ValidateAlive();
 
-        if (_pipeline.RequiresArguments && bindingSnapshot == null)
+        if (_pipeline.RequiresArguments && bindingDependencies == null)
         {
             throw new InvalidOperationException("Set shader arguments before dispatch.");
         }
 
         owner.Owner.Check(NativeMethods.Pipeline(owner.Native, _pipeline.Native, 1));
-        if (bindingSnapshot != null)
+        if (bindingDependencies != null)
         {
-            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingSnapshot, _pipeline.Data);
+            var binding = new Direct3D12ShaderBinding(owner.Owner, bindingDependencies, _pipeline.Data);
             owner.KeepBinding(binding);
             NativeMethods.Binding(owner.Native, binding.Native, 1);
         }

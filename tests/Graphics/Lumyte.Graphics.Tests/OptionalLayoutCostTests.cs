@@ -38,11 +38,11 @@ public sealed class OptionalLayoutCostTests
     {
         var value = new PlainValue(17);
         using ShaderRootArguments root = TestShaderTransfer.CreateUnmanaged(in value, "arguments", "PlainValue", size => new TestRootStorage(size));
-        var snapshot = ShaderBindingSnapshot.Capture(root, null);
+        var dependencies = ShaderBindingDependencies.Collect(root, null);
         var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [32], "not JSON");
-        var data = new ShaderBindingData(snapshot, target, new DeviceCaps { MaxUniformBuffersPerStage = 1 });
+        var data = new ShaderBindingData(dependencies, target, new DeviceCaps { MaxUniformBuffersPerStage = 1 });
 
-        Assert.Equal(16, data.RootSize);
+        Assert.Equal(4, data.RootSize);
         TestRootStorage storage = Assert.IsType<TestRootStorage>(root.Storage);
         Assert.Equal(17u, System.Runtime.InteropServices.MemoryMarshal.Read<uint>(storage.Bytes));
         Assert.All(storage.Bytes[4..], item => Assert.Equal((byte)0, item));

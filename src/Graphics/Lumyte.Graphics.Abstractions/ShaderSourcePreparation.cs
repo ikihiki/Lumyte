@@ -15,17 +15,17 @@ public static class ShaderSourcePreparation
         ArgumentNullException.ThrowIfNull(source);
         if (!source.Contains("lumyte.slang", StringComparison.Ordinal))
         {
-            return Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
+            return Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<$1> $2;\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
         }
 
-        // A native aggregate uniform has backend-specific vector/struct alignment.
+        // A native aggregate has backend-specific vector/struct alignment.
         // Keep the logical schema for reflection, but read its bytes through
-        // portable uint4 uniform lanes. No CPU-side numeric repacking is allowed.
+        // portable uint4 lanes (push constants, root constants, or WGSL uniform). No CPU-side numeric repacking is allowed.
         source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", match =>
         {
             string type = match.Groups[1].Value.Trim();
             string name = match.Groups[2].Value;
-            return $"\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
+            return $"\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
         });
 
         var probes = new StringBuilder();
@@ -43,12 +43,20 @@ public static class ShaderSourcePreparation
     /// <summary>Records the compiler-owned resource ABI version in target metadata.</summary>
     /// <param name="reflection">The compiler reflection JSON.</param>
     /// <param name="source">The source containing logical application structures.</param>
+    /// <param name="target">The compiled target, when known. Vulkan push storage is also detected from reflection.</param>
     /// <returns>The complete target schema and helper ABI metadata.</returns>
-    public static string CompleteReflection(string reflection, string source)
+    public static string CompleteReflection(string reflection, string source, ShaderTarget? target = null)
     {
         JsonObject metadata = JsonNode.Parse(reflection)?.AsObject() ?? throw new ArgumentException("Invalid compiler reflection.", nameof(reflection));
         metadata["lumyteAbi"] = 1;
         metadata["lumyteRootBinding"] = 8;
+
+        // Storage is independent of the 16-byte resource-reference ABI. Old Vulkan
+        // descriptor-backed artifacts must never pass as native push constants.
+        bool pushConstants = metadata["parameters"]!.AsArray().OfType<JsonObject>()
+            .Any(parameter => parameter["binding"]?["kind"]?.GetValue<string>() == "pushConstantBuffer");
+        metadata["lumyteRootStorage"] = pushConstants ? "VkPushConstants"
+            : target == ShaderTarget.Dxil ? "D3DRoot32BitConstants" : "UniformBuffer";
         var targets = new JsonObject();
         foreach (Match structure in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{([^}]+)\}", RegexOptions.Singleline))
         {
@@ -59,7 +67,7 @@ public static class ShaderSourcePreparation
         }
 
         // Reflection exposes the logical scalar schema while the compiled binding
-        // is an opaque word buffer. Its physical capacity rounds up to 16 bytes;
+        // is opaque words. Its declaration rounds up to 16 bytes, not its native count;
         // TransferSize remains the exact C# size and is never rounded/repacked.
         JsonArray parameters = metadata["parameters"]!.AsArray();
         if (source.Contains("lumyte.slang", StringComparison.Ordinal))

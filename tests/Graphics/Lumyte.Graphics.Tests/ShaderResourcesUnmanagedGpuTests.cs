@@ -19,6 +19,12 @@ public sealed class ShaderResourcesUnmanagedGpuTests
         """;
 
     private const string FragmentSource = """
+        struct HelperColorRoot { float Red; float Green; float Blue; float Alpha; uint Gain; };
+        ConstantBuffer<HelperColorRoot> arguments;
+        float4 main() : SV_Target { return float4(arguments.Red, arguments.Green, arguments.Blue, arguments.Alpha) * float(arguments.Gain); }
+        """;
+
+    private const string UniformFragmentSource = """
         struct HelperColorRoot { float4 Color; };
         ConstantBuffer<HelperColorRoot> arguments;
         float4 main() : SV_Target { return arguments.Color; }
@@ -64,20 +70,20 @@ public sealed class ShaderResourcesUnmanagedGpuTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var compiler = new SlangShaderCompiler();
         ShaderArtifact vertex = await compiler.CompileAsync(new() { Source = VertexSource, Stage = ShaderStage.Vertex, Target = target }, timeout.Token);
-        ShaderArtifact fragment = await compiler.CompileAsync(new() { Source = FragmentSource, Stage = ShaderStage.Fragment, Target = target }, timeout.Token);
+        ShaderArtifact fragment = await compiler.CompileAsync(new() { Source = target == ShaderTarget.SpirV ? FragmentSource : UniformFragmentSource, Stage = ShaderStage.Fragment, Target = target }, timeout.Token);
         using IGraphicsShader vertexShader = device.CreateShader(vertex);
         using IGraphicsShader fragmentShader = device.CreateShader(fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertexShader, FragmentShader = fragmentShader });
         using IGraphicsTexture texture = device.CreateTexture(new()
         {
-            Width = 1,
+            Width = 2,
             Height = 1,
             Format = TextureFormat.Rgba8Unorm,
             Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource,
         });
         using IGraphicsTextureView view = texture.CreateView();
         TextureCopyLayout layout = device.GetTextureCopyLayout(texture.Format);
-        uint pitch = checked(((layout.BytesPerTexel + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
+        uint pitch = checked((((2 * layout.BytesPerTexel) + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using var plan = new ArgumentTablePlan(device);
         ShaderResources resources = plan.CreateShaderResources();
@@ -106,15 +112,31 @@ public sealed class ShaderResourcesUnmanagedGpuTests
             {
                 encoder.SetPipeline(pipeline);
                 encoder.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
-                encoder.SetViewport(new(0, 0, 1, 1, 0, 1));
+                encoder.SetViewport(new(0, 0, 2, 1, 0, 1));
                 encoder.SetScissor(new(0, 0, 1, 1));
                 encoder.SetBlendConstant(new(0, 0, 0, 0));
                 encoder.SetStencilReference(0);
-                var color = new HelperColorRoot(new(1, 0, 0, 1));
-                resources.Draw(encoder, in color, 3, rootParameter: "arguments", shaderTypeName: "HelperColorRoot");
-                color = new HelperColorRoot(new(0, 1, 0, 1));
-                Assert.Equal(1, encoder.RawSetCount);
+                DrawColor(new(1, 0, 0, 1));
+                encoder.SetScissor(new(1, 0, 1, 1));
+                DrawColor(new(0, 1, 0, 1));
+                Assert.Equal(2, encoder.RawSetCount);
                 renderBodyCompleted = true;
+
+                void DrawColor(Vector4 color)
+                {
+                    if (target == ShaderTarget.SpirV)
+                    {
+                        var root = new HelperColorRoot(color);
+                        resources.Draw(encoder, in root, 3, rootParameter: "arguments", shaderTypeName: "HelperColorRoot");
+                        root = new HelperColorRoot(new(0, 0, 1, 1));
+                    }
+                    else
+                    {
+                        var root = new UniformColorRoot(color);
+                        resources.Draw(encoder, in root, 3, rootParameter: "arguments", shaderTypeName: "HelperColorRoot");
+                        root = new UniformColorRoot(new(0, 0, 1, 1));
+                    }
+                }
             }
             finally
             {
@@ -137,7 +159,7 @@ public sealed class ShaderResourcesUnmanagedGpuTests
                 Before = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite),
                 After = new(PipelineStage.Copy, ResourceAccess.CopyRead),
             });
-            commands.CopyTextureToBuffer(new() { Texture = texture, Width = 1, Height = 1 }, new() { Buffer = readback.SliceElements(0, pitch), BytesPerRow = pitch, RowsPerImage = 1 });
+            commands.CopyTextureToBuffer(new() { Texture = texture, Width = 2, Height = 1 }, new() { Buffer = readback.SliceElements(0, pitch), BytesPerRow = pitch, RowsPerImage = 1 });
             commands.Barrier(new BufferBarrierDesc<byte>
             {
                 Buffer = readback.SliceElements(0, pitch),
@@ -151,7 +173,7 @@ public sealed class ShaderResourcesUnmanagedGpuTests
             byte[] pixels = new byte[pitch];
             readback.CopyTo(pixels);
             readback.Unmap();
-            Assert.Equal(new byte[] { 255, 0, 0, 255 }, pixels[..4]);
+            Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 255, 0, 255 }, pixels[..8]);
             commandsCompleted = true;
         }
         finally
@@ -167,7 +189,15 @@ public sealed class ShaderResourcesUnmanagedGpuTests
         }
     }
 
-    private readonly record struct HelperColorRoot(Vector4 Color);
+    private readonly record struct HelperColorRoot(float Red, float Green, float Blue, float Alpha, uint Gain)
+    {
+        internal HelperColorRoot(Vector4 color)
+            : this(color.X, color.Y, color.Z, color.W, 1)
+        {
+        }
+    }
+
+    private readonly record struct UniformColorRoot(Vector4 Color);
 
     // The adapter only observes overload selection: all actual recording and root allocation are native.
     // The old helper's eager Capture reaches the rejecting snapshot overload before any draw occurs.

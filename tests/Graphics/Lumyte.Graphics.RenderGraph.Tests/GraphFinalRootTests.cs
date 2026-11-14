@@ -47,7 +47,7 @@ public sealed class GraphFinalRootTests
         Assert.All(commands.Encoder.Bindings, binding =>
         {
             Assert.Same(commands.Encoder.Selected, binding.Arguments);
-            Assert.Null(typeof(ShaderBindingSnapshot).GetProperty("Root"));
+            Assert.Null(typeof(ShaderBindingDependencies).GetProperty("Root"));
         });
     }
 
@@ -428,7 +428,7 @@ public sealed class GraphFinalRootTests
 
         internal List<MemoryStorage> Storages { get; } = [];
 
-        internal List<ShaderBindingSnapshot> Bindings { get; } = [];
+        internal List<ShaderBindingDependencies> Bindings { get; } = [];
 
         internal Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? ReadShaderData { get; set; }
 
@@ -452,7 +452,7 @@ public sealed class GraphFinalRootTests
 
         public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
         {
-            var binding = ShaderBindingSnapshot.Capture(Selected!, _table, ReadShaderData);
+            var binding = ShaderBindingDependencies.Collect(Selected!, _table, ReadShaderData);
             Selected!.Seal();
             Bindings.Add(binding);
         }

@@ -17,6 +17,7 @@ internal static class Direct3D12ShaderTransfer
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
+        ValidateRootSize(size);
         IShaderRootStorage storage = ShaderRootArguments.Allocate(root, name, size, factory);
         try
         {
@@ -38,6 +39,7 @@ internal static class Direct3D12ShaderTransfer
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
+        ValidateRootSize(size);
         IShaderRootStorage storage = ShaderRootArguments.Allocate(rootParameter, name, size, factory);
         try
         {
@@ -101,6 +103,18 @@ internal static class Direct3D12ShaderTransfer
             Array.Clear(metadata, start, source.Length);
             throw;
         }
+    }
+
+    internal static int ValidateRootSize(int size)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        int words = checked((int)(((long)size + 3) / 4));
+        if (words > Direct3D12Device.RootConstantDwordCapacity)
+        {
+            throw new NotSupportedException("Application roots support at most 58 DWORDs (232 wire bytes).");
+        }
+
+        return words;
     }
 
     private static void DisposeFailed(IShaderRootStorage storage)

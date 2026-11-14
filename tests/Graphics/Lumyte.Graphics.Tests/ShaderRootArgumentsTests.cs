@@ -43,7 +43,7 @@ public sealed class ShaderRootArgumentsTests
         var failure = new InvalidOperationException("Preparation failed.");
         Assert.Same(storage, ShaderRootArguments.Allocate("arguments", "Wire", 20, capacity =>
         {
-            Assert.Equal(32, capacity);
+            Assert.Equal(20, capacity);
             return storage;
         }));
         Assert.Same(failure, Record.Exception(() => ShaderRootArguments.Create("arguments", "Wire", 20, storage, metadata, _ => throw failure)));
@@ -56,6 +56,59 @@ public sealed class ShaderRootArgumentsTests
         }
 
         Assert.Equal(1, storage.Disposes);
+    }
+
+    /// <summary>Common ownership passes exact logical sizes and accepts backend-defined excess capacity.</summary>
+    /// <param name="wireSize">The logical payload byte count.</param>
+    /// <param name="capacity">The backend-defined payload capacity.</param>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(3, 3)]
+    [InlineData(3, 7)]
+    [InlineData(20, 20)]
+    [InlineData(20, 32)]
+    [InlineData(20, 48)]
+    public void LogicalSizeIsIndependentOfBackendCapacity(int wireSize, int capacity)
+    {
+        var storage = new Storage(capacity);
+        Assert.Same(storage, ShaderRootArguments.Allocate("arguments", "Wire", wireSize, requested =>
+        {
+            Assert.Equal(wireSize, requested);
+            return storage;
+        }));
+        using var root = ShaderRootArguments.Create("arguments", "Wire", wireSize, storage, new ShaderDependencyMetadata([]));
+        Assert.Equal(wireSize, root.WireSize);
+        Assert.Equal(capacity, root.Storage.Size);
+    }
+
+    /// <summary>Common binding metadata does not require uniform emulation capabilities.</summary>
+    [Fact]
+    public void BindingMetadataAcceptsNoUniformBufferCapacity()
+    {
+        using var root = ShaderRootArguments.Create("arguments", "Wire", 3, new Storage(3), new ShaderDependencyMetadata([]));
+        var dependencies = ShaderBindingDependencies.Collect(root, null);
+        var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [], "{}");
+        var data = new ShaderBindingData(dependencies, target, new DeviceCaps { MaxUniformBuffersPerStage = 0 });
+        Assert.Equal(3, data.RootSize);
+        Assert.Empty(data.Map);
+    }
+
+    /// <summary>Invalid backend capacities fail before metadata preparation without transferring ownership.</summary>
+    [Fact]
+    public void InvalidCapacityAndNullStorageAreRejected()
+    {
+        var metadata = new ShaderDependencyMetadata([]);
+        var negative = new InvalidCapacityStorage();
+        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Allocate("arguments", "Wire", 0, _ => negative));
+        Assert.Equal(1, negative.Disposes);
+        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create("arguments", "Wire", 0, negative, metadata));
+        Assert.Equal(1, negative.Disposes);
+        using var shortStorage = new Storage(2);
+        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Create("arguments", "Wire", 3, shortStorage, metadata, _ => throw new Exception("Must not prepare.")));
+        Assert.Equal(0, shortStorage.Disposes);
+        Assert.Throws<InvalidOperationException>(() => ShaderRootArguments.Allocate("arguments", "Wire", 0, _ => null!));
+        Assert.Throws<ArgumentNullException>(() => ShaderRootArguments.Create("arguments", "Wire", 0, null!, metadata));
     }
 
     /// <summary>Each selection writes once straight into independently owned final storage.</summary>
@@ -81,7 +134,7 @@ public sealed class ShaderRootArgumentsTests
         AssertNoRetainedInput(second, value);
     }
 
-    /// <summary>Unmanaged input is copied synchronously, with only trailing capacity alignment.</summary>
+    /// <summary>Unmanaged input is copied synchronously into exact logical payload capacity.</summary>
     [Fact]
     public void UnmanagedCreateCopiesIntoFinalStorage()
     {
@@ -91,7 +144,7 @@ public sealed class ShaderRootArgumentsTests
         value = 99;
         Storage storage = Assert.Single(factory.Items);
         Assert.Equal(4, root.WireSize);
-        Assert.Equal(16, storage.Size);
+        Assert.Equal(4, storage.Size);
         Assert.Equal(42u, Read(storage));
         Assert.Equal(1, storage.Writes);
         Assert.Empty(root.References.References);
@@ -167,12 +220,12 @@ public sealed class ShaderRootArgumentsTests
         Assert.Equal(0, factory.Items[0].Disposes);
     }
 
-    /// <summary>Wrong-sized final allocation is rejected and cleaned up even if cleanup throws.</summary>
+    /// <summary>Undersized final allocation is rejected and cleaned up even if cleanup throws.</summary>
     /// <param name="size">The invalid physical storage capacity returned by the factory.</param>
     [Theory]
     [InlineData(0)]
     [InlineData(16)]
-    [InlineData(48)]
+    [InlineData(31)]
     public void WrongNativeCapacityIsRejectedAndDisposed(int size)
     {
         var value = new Arguments();
@@ -299,9 +352,9 @@ public sealed class ShaderRootArgumentsTests
             return current;
         }
 
-        var first = ShaderBindingSnapshot.Capture(root, table, ReadMetadata);
+        var first = ShaderBindingDependencies.Collect(root, table, ReadMetadata);
         current = new ShaderDependencyMetadata([secondReference]);
-        var second = ShaderBindingSnapshot.Capture(root, table, ReadMetadata);
+        var second = ShaderBindingDependencies.Collect(root, table, ReadMetadata);
         Assert.Contains(firstReference, first.References);
         Assert.DoesNotContain(secondReference, first.References);
         Assert.Contains(secondReference, second.References);
@@ -337,8 +390,8 @@ public sealed class ShaderRootArgumentsTests
         }
 
         using ShaderRootArguments root = TestShaderTransfer.Create(in value, factory.Create, Encode, prepare: Prepare);
-        Assert.Same(failure, Record.Exception(() => ShaderBindingSnapshot.Capture(root, null)));
-        Assert.Same(failure, Record.Exception(() => ShaderBindingSnapshot.Capture(root, null)));
+        Assert.Same(failure, Record.Exception(() => ShaderBindingDependencies.Collect(root, null)));
+        Assert.Same(failure, Record.Exception(() => ShaderBindingDependencies.Collect(root, null)));
         Assert.Equal(1, prepares);
         Assert.Equal(2, admissions);
         Assert.Equal(1, value.Writes);
@@ -558,6 +611,19 @@ public sealed class ShaderRootArgumentsTests
                 throw new InvalidOperationException("Cleanup failed.");
             }
         }
+    }
+
+    private sealed class InvalidCapacityStorage : IShaderRootStorage
+    {
+        public int Size => -1;
+
+        internal int Disposes { get; private set; }
+
+        public void Write(ReadOnlySpan<byte> bytes, int offset) => throw new NotSupportedException();
+
+        public void Seal() => throw new NotSupportedException();
+
+        public void Dispose() => Disposes++;
     }
 
     private sealed class StorageFactory

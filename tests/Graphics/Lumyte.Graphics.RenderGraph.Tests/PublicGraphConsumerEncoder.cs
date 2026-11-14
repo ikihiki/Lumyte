@@ -14,7 +14,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
 
     internal List<ShaderValueSnapshot> Executions { get; } = [];
 
-    internal List<ShaderBindingSnapshot> Bindings { get; } = [];
+    internal List<ShaderBindingDependencies> Bindings { get; } = [];
 
     internal Func<IShaderDataSource, ulong, IShaderReferenceMetadata>? ReadShaderData { get; set; }
 
@@ -141,7 +141,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     {
         if (Snapshots.Count != 0)
         {
-            var binding = ShaderBindingSnapshot.Capture(_selected!, _table, ReadShaderData);
+            var binding = ShaderBindingDependencies.Collect(_selected!, _table, ReadShaderData);
             _selected!.Seal();
             Bindings.Add(binding);
             Executions.Add(Snapshots.Last());

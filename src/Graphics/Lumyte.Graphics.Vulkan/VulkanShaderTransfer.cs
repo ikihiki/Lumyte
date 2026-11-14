@@ -17,6 +17,7 @@ internal static class VulkanShaderTransfer
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
+        VulkanPushConstants.ValidateSize(owner, size);
         IShaderRootStorage storage = ShaderRootArguments.Allocate(root, name, size, factory);
         try
         {
@@ -38,6 +39,7 @@ internal static class VulkanShaderTransfer
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
+        VulkanPushConstants.ValidateSize(owner, size);
         IShaderRootStorage storage = ShaderRootArguments.Allocate(rootParameter, name, size, factory);
         try
         {

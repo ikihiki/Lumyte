@@ -267,13 +267,13 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter));
+                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
             }
 
-            bindingData = new(snapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter), owner.Owner.Caps);
+            bindingData = new(dependencies, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter), owner.Owner.Caps);
         }
 
         if (indexed)

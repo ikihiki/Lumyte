@@ -143,13 +143,13 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, PipelineStage.ComputeShader);
+                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, PipelineStage.ComputeShader);
             }
 
-            bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
+            bindingData = new(dependencies, _pipeline.Data, owner.Owner.Caps);
         }
 
         _pipeline.ValidateAlive();

@@ -13,7 +13,10 @@ internal sealed unsafe class WgpuRootStorage : IShaderRootStorage
 
     internal WgpuRootStorage(WgpuDevice owner, int size)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(size);
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+
+        // Uniform emulation capacity is private to this WebGPU backend.
+        size = Math.Max(16, checked(((size + 15) / 16) * 16));
         if ((ulong)size > owner.Caps.MaxBufferSize || (ulong)size > owner.Limits.maxUniformBufferBindingSize)
         {
             throw new NotSupportedException("Root arguments exceed the device uniform size limit.");

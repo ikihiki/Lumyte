@@ -256,17 +256,17 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingSnapshot? bindingSnapshot = null;
+        ShaderBindingDependencies? bindingDependencies = null;
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, snapshot.RootParameter));
+                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
             }
 
-            bindingSnapshot = snapshot;
+            bindingDependencies = dependencies;
         }
 
         if (indexed)
@@ -279,12 +279,13 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
         _pipeline.ValidateAlive();
 
-        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, bindingSnapshot, _depthFormat, indexed ? _indexFormat : null);
+        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, bindingDependencies, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
-        if (bindingSnapshot != null)
+        if (bindingDependencies != null)
         {
-            var binding = new VulkanShaderBinding(owner.Owner, bindingSnapshot, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingSnapshot.RootParameter), _pipeline.ArgumentLayout);
+            var binding = new VulkanShaderBinding(owner.Owner, bindingDependencies, ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, bindingDependencies.RootParameter), _pipeline.ArgumentLayout);
             owner.KeepBinding(binding);
+            VulkanPushConstants.Emit(owner, _pipeline.ArgumentPipelineLayout, bindingDependencies.Arguments);
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }

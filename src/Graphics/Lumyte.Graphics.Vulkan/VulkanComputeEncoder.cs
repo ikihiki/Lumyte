@@ -139,26 +139,27 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingSnapshot? bindingSnapshot = null;
+        ShaderBindingDependencies? bindingDependencies = null;
         if (_pipeline.RequiresArguments && _arguments != null)
         {
             _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
+            var dependencies = ShaderBindingDependencies.Collect(_arguments, _table, owner.ReadShaderData);
             if (owner.Owner.Validation is { } validation)
             {
-                EncoderValidation.ShaderAccesses(validation, owner, snapshot.References, PipelineStage.ComputeShader);
+                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, PipelineStage.ComputeShader);
             }
 
-            bindingSnapshot = snapshot;
+            bindingDependencies = dependencies;
         }
 
         _pipeline.ValidateAlive();
 
-        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(bindingSnapshot));
-        if (bindingSnapshot != null)
+        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(bindingDependencies));
+        if (bindingDependencies != null)
         {
-            var binding = new VulkanShaderBinding(owner.Owner, bindingSnapshot, _pipeline.Data, _pipeline.ArgumentLayout);
+            var binding = new VulkanShaderBinding(owner.Owner, bindingDependencies, _pipeline.Data, _pipeline.ArgumentLayout);
             owner.KeepBinding(binding);
+            VulkanPushConstants.Emit(owner, _pipeline.ArgumentPipelineLayout, bindingDependencies.Arguments);
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Compute, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }

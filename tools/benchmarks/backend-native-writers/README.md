@@ -1,6 +1,6 @@
 # Backend-native writer comparison
 
-Prepared public-API-only BenchmarkDotNet 0.15.8 client; no timings are authorized until the parent explicitly freezes the final implementation and stops concurrent builds/tests.
+Archived public-API-only BenchmarkDotNet 0.15.8 comparison: A=f27e4b29d02a7e5d78c37b91dc94d33881264e2b → B=3582af8ada8c00ff38553eebc216bc64527171c1. B is the frozen backend-native-writer checkpoint with uniform roots, not latest HEAD. The newer Vulkan push-constant / D3D12 root-constant implementation is unmeasured; do not apply the archived timing/allocation numbers to it. Harness source, scripts and measurement hashes are unchanged. See the [pinned report](../../../docs/performance/backend-native-writers.md).
 
 ## Cases
 
@@ -14,7 +14,7 @@ GlobalSetup compiles the real Slang kernel and validates fixed expected GPU outp
 
 Use an external copy of these source files, identical hashes for both roots, separate obj/bin. ProjectReference supports LumyteProjectRoot (7 regular projects plus generator analyzer). Required shader compiler and native paths come from tools/setup/activate.sh with the existing LUMYTE_ENV_ROOT. Do not run timing during implementation.
 
-After final freeze, create owned baseline f27e4b29 and candidate final-source worktrees, then:
+To reproduce the archived comparison, use owned baseline f27e4b29d02a7e5d78c37b91dc94d33881264e2b and candidate 3582af8ada8c00ff38553eebc216bc64527171c1 worktrees, not latest HEAD; freeze both and stop concurrent builds/tests, then:
 
     export LUMYTE_ENV_ROOT=/home/hideaki/.openclaw/workspace/Lumyte/artifacts/dev-env
     BACKEND_WRITERS_FINAL_FROZEN=yes bash tools/benchmarks/backend-native-writers/run-comparison.sh BASELINE_ROOT CANDIDATE_ROOT LOCAL_ARTIFACTS

@@ -6,6 +6,12 @@ namespace Lumyte.Graphics.Direct3D12;
 /// <summary>Owns a Direct3D 12 device and direct queue.</summary>
 public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 {
+    /// <summary>The application root capacity in DWORDs after the six-DWORD fixed root-signature cost.</summary>
+    public const int RootConstantDwordCapacity = 58;
+
+    /// <summary>The maximum logical application root wire size in bytes.</summary>
+    public const int RootConstantByteCapacity = RootConstantDwordCapacity * sizeof(uint);
+
     private readonly GraphicsDeviceLifetime _lifetime;
 
     private readonly nint _native;

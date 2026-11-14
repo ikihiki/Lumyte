@@ -6,16 +6,20 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 {
     private nint _native;
 
-    internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingSnapshot snapshot, ShaderTargetData target)
+    internal Direct3D12ShaderBinding(Direct3D12Device owner, ShaderBindingDependencies dependencies, ShaderTargetData target)
     {
-        ShaderRootArguments root = snapshot.Arguments;
+        ShaderRootArguments root = dependencies.Arguments;
         root.Seal();
         var storage = (Direct3D12RootStorage)root.Storage;
-        owner.Check(NativeMethods.BindingCreateRoot(owner.Native, storage.Native, out _native));
+        int wordCount = Direct3D12ShaderTransfer.ValidateRootSize(root.WireSize);
+        fixed (byte* bytes = storage.Payload)
+        {
+            owner.Check(NativeMethods.BindingCreateRoot(owner.Native, (uint*)bytes, checked((uint)wordCount), out _native));
+        }
 
         try
         {
-            foreach (IShaderReference reference in snapshot.References)
+            foreach (IShaderReference reference in dependencies.References)
             {
                 switch (reference.Resource)
                 {

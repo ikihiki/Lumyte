@@ -1,9 +1,12 @@
 #ifndef LUMYTE_SHADER_ABI
 #define LUMYTE_SHADER_ABI
 
-// Root buffers are opaque C# wire bytes, not HLSL/WGSL aggregate uniforms.
-// uint4 lanes have the same 16-byte stride on every backend. The final lane
-// may contain allocation padding; only sizeof(T) bytes enter the logical value.
+// Root arguments are opaque C# wire bytes, not shader aggregate uniforms.
+// Vulkan uses push constants; D3D uses root 32-bit constants at b8; WGSL uses
+// a uniform at binding 8. uint4 lanes have the same 16-byte stride everywhere.
+// The declaration may round up, but Load reads only ceil(sizeof(T)/4) words:
+// native constant counts and logical transfer sizes are never rounded to uint4.
+// GpuTextureRef/GpuSamplerRef/Gpu(RW)BufferRef remain 16-byte records.
 // reinterpret preserves declaration order, including nested vectors/matrices.
 struct LumyteRootWire<T>
 {
