@@ -270,7 +270,7 @@ public sealed class GraphicsApiConvenienceTests
         public void SetArgumentTable(IArgumentTable table) => throw new NotSupportedException();
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => throw new NotSupportedException();
+            where T : struct, IShaderArguments => throw new NotSupportedException();
 
         public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
             where T : unmanaged => throw new NotSupportedException();

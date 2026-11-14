@@ -49,7 +49,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     }
 
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ValidateRootSelection();
         VulkanGraphicsPipeline pipeline = _pipeline!;

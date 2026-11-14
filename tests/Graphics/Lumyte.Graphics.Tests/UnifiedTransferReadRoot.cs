@@ -3,9 +3,13 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class UnifiedTransferReadRoot : IShaderArguments
+internal partial struct UnifiedTransferReadRoot : IShaderArguments
 {
     private Storage _data = default;
+
+    public UnifiedTransferReadRoot()
+    {
+    }
 
     public IGpuRef<UnifiedTransferValue>? Values { get; set; }
 

@@ -16,14 +16,14 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
     public void Barrier(TextureBarrierDesc barrier) => Events.Add(barrier);
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : IShaderArguments => Events.Add(barrier);
+        where T : struct, IShaderArguments => Events.Add(barrier);
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
         where TDestination : unmanaged => Events.Add("copy");
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : IShaderArguments => Events.Add("shader-copy");
+        where T : struct, IShaderArguments => Events.Add("shader-copy");
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 
@@ -55,7 +55,7 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
             where T : unmanaged => owner.Events.Add(arguments);
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => owner.Events.Add(arguments);
+            where T : struct, IShaderArguments => owner.Events.Add(arguments);
 
         public void SetPipeline(IGraphicsPipeline pipeline)
         {
@@ -110,7 +110,7 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
             where T : unmanaged => owner.Events.Add(arguments);
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => owner.Events.Add(arguments);
+            where T : struct, IShaderArguments => owner.Events.Add(arguments);
 
         public void SetPipeline(IGraphicsComputePipeline pipeline)
         {

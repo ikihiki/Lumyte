@@ -164,9 +164,9 @@ public sealed class ShaderBulkTransferTests
         public uint Last;
     }
 
-    private sealed class PaddedUnconstructibleData : IShaderArguments
+    private struct PaddedUnconstructibleData : IShaderArguments
     {
-        private PaddedUnconstructibleData()
+        public PaddedUnconstructibleData()
         {
             throw new InvalidOperationException("Static sizing must not construct values.");
         }
@@ -181,9 +181,9 @@ public sealed class ShaderBulkTransferTests
             where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Static sizing must not capture values.");
     }
 
-    private sealed class UnconstructibleData : IShaderArguments
+    private struct UnconstructibleData : IShaderArguments
     {
-        private UnconstructibleData()
+        public UnconstructibleData()
         {
             throw new InvalidOperationException("Must not construct shader values to determine stride.");
         }

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>One generated IShaderArguments class works at both public transfer boundaries.</summary>
+/// <summary>One generated IShaderArguments struct works at both public transfer boundaries.</summary>
 public sealed class UnifiedTransferInterfaceTests
 {
     private const string ValueSource = """
@@ -39,17 +39,17 @@ public sealed class UnifiedTransferInterfaceTests
         ConstantBuffer<UnifiedTransferReadRoot> arguments;
         [shader("compute")]
         [numthreads(1, 1, 1)]
-        void main()
+        void main(uint3 tid : SV_DispatchThreadID)
         {
-            UnifiedTransferValue value = arguments.Values.Load(0);
-            value.Output.Store(1, value.Value);
+            UnifiedTransferValue value = arguments.Values.Load(tid.x);
+            value.Output.Store(0, value.Value);
         }
         """;
 
-    /// <summary>Vulkan consumes the same class as a root and a GPU-loaded typed element.</summary>
+    /// <summary>Vulkan consumes the same struct as a root and a GPU-loaded typed element.</summary>
     /// <returns>The completed readback checks in both validation modes.</returns>
     [GpuFact]
-    public async Task VulkanSameClassSupportsRootAndTypedBufferAsync()
+    public async Task VulkanSameStructSupportsRootAndTypedBufferAsync()
     {
         (ShaderArtifact uniform, ShaderArtifact buffer) = await CompileAsync(ShaderTarget.SpirV);
         foreach (bool validation in new[] { false, true })
@@ -61,13 +61,14 @@ public sealed class UnifiedTransferInterfaceTests
             }
 
             await CheckAsync(device, uniform, buffer);
+            await CheckMiddleElementAsync(device, buffer);
         }
     }
 
-    /// <summary>Wgpu consumes the same class as a root and a GPU-loaded typed element.</summary>
+    /// <summary>Wgpu consumes the same struct as a root and a GPU-loaded typed element.</summary>
     /// <returns>The completed readback checks in both validation modes.</returns>
     [GpuFact]
-    public async Task WgpuSameClassSupportsRootAndTypedBufferAsync()
+    public async Task WgpuSameStructSupportsRootAndTypedBufferAsync()
     {
         (ShaderArtifact uniform, ShaderArtifact buffer) = await CompileAsync(ShaderTarget.Wgsl);
         foreach (bool validation in new[] { false, true })
@@ -79,6 +80,7 @@ public sealed class UnifiedTransferInterfaceTests
             }
 
             await CheckAsync(device, uniform, buffer);
+            await CheckMiddleElementAsync(device, buffer);
         }
     }
 
@@ -114,7 +116,9 @@ public sealed class UnifiedTransferInterfaceTests
             await upload.MapAsync(mappingTimeout.Token);
         }
 
-        upload.CopyFrom(new[] { value });
+        UnifiedTransferValue uploaded = value;
+        uploaded.Output = value.Output!.GetElement(1);
+        upload.CopyFrom(new[] { uploaded });
         upload.Unmap();
         value.Value = 13;
 
@@ -180,13 +184,86 @@ public sealed class UnifiedTransferInterfaceTests
         await CheckGraphAutomaticBindingAsync(device, uniformPipeline);
     }
 
+    private static async Task CheckMiddleElementAsync(IGraphicDevice device, ShaderArtifact artifact)
+    {
+        using IGraphicsShader shader = device.CreateShader(artifact);
+        using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsShaderDataBuffer<UnifiedTransferValue> upload = device.CreateShaderDataBuffer<UnifiedTransferValue>(artifact, 3, MemoryPreference.Upload);
+        using IGraphicsShaderDataBuffer<UnifiedTransferValue> data = device.CreateShaderDataBuffer<UnifiedTransferValue>(artifact, 3);
+        using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.CopySource });
+        using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+        IGpuRef<uint> outputs = table.WriteBuffer(0, output.SliceElements(0, 4), ShaderBufferAccess.ReadWrite);
+        UnifiedTransferValue[] rows = [new() { Value = 11, Output = outputs.GetElement(0) }, new() { Value = 22, Output = outputs.GetElement(1) }, new() { Value = 33, Output = outputs.GetElement(2) }];
+        var root = new UnifiedTransferReadRoot { Values = table.WriteBuffer(1, data.SliceElements(0, 3)) };
+        await upload.MapAsync();
+        Assert.Throws<ArgumentException>(() => upload.CopyFrom([default(UnifiedTransferValue)], elementOffset: 1));
+        upload.CopyFrom(rows);
+        upload.Unmap();
+        using (IGraphicsCommandBuffer initial = device.CreateCommandBuffer(new()))
+        {
+            initial.Barrier(new ShaderDataBufferBarrierDesc<UnifiedTransferValue> { Buffer = upload.SliceElements(0, 3), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+            initial.CopyBuffer(upload.SliceElements(0, 3), data.SliceElements(0, 3));
+            initial.Finish();
+            using IGraphicsSubmission submission = device.Queue.Submit([initial]);
+            await submission.WaitAsync();
+        }
+
+        var destinationMetadata = (IShaderDataSource)data;
+        IShaderReferenceMetadata destinationFirst = destinationMetadata.ReadReferences(0);
+        IShaderReferenceMetadata destinationLast = destinationMetadata.ReadReferences(2);
+        var uploadMetadata = (IShaderDataSource)upload;
+        IShaderReferenceMetadata? first = uploadMetadata.ReadReferences(0);
+        IShaderReferenceMetadata? last = uploadMetadata.ReadReferences(2);
+        await upload.MapAsync();
+        {
+            ref UnifiedTransferValue middle = ref rows[1];
+            middle.Value = 77;
+            middle.Output = outputs.GetElement(3);
+            upload.CopyFrom(rows.AsSpan(1, 1), elementOffset: 1);
+        }
+
+        upload.Unmap();
+        Assert.Same(first, uploadMetadata.ReadReferences(0));
+        Assert.Same(last, uploadMetadata.ReadReferences(2));
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new ShaderDataBufferBarrierDesc<UnifiedTransferValue> { Buffer = upload.SliceElements(1, 1), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.Barrier(new ShaderDataBufferBarrierDesc<UnifiedTransferValue> { Buffer = data.SliceElements(1, 1), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
+        commands.CopyBuffer(upload.SliceElements(1, 1), data.SliceElements(1, 1));
+        commands.Barrier(new ShaderDataBufferBarrierDesc<UnifiedTransferValue> { Buffer = data.SliceElements(0, 3), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead) });
+        IComputeEncoder encoder = commands.BeginComputePass(new());
+        encoder.SetPipeline(pipeline);
+        encoder.SetArgumentTable(table);
+        encoder.SetArguments(in root);
+        encoder.Dispatch(3);
+        encoder.End();
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 4), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(output.SliceElements(0, 4), readback.SliceElements(0, 4));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 4), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Finish();
+        using IGraphicsSubmission complete = device.Queue.Submit([commands]);
+        await complete.WaitAsync();
+        Assert.Same(destinationFirst, destinationMetadata.ReadReferences(0));
+        Assert.Same(destinationLast, destinationMetadata.ReadReferences(2));
+        IShaderReference replacement = Assert.Single(destinationMetadata.ReadReferences(1).References);
+        Assert.Same(((IShaderReference)rows[1].Output!).Resource, replacement.Resource);
+        Assert.Equal(((IShaderReference)rows[1].Output!).OffsetInBytes, replacement.OffsetInBytes);
+        await readback.MapAsync();
+        uint[] actual = new uint[4];
+        readback.CopyTo(actual);
+        readback.Unmap();
+        Assert.Equal(11u, actual[0]);
+        Assert.Equal(33u, actual[2]);
+        Assert.Equal(77u, actual[3]);
+    }
+
     private static async Task CheckGraphAutomaticBindingAsync(IGraphicDevice device, IGraphicsComputePipeline pipeline)
     {
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using var graph = new global::Lumyte.Graphics.RenderGraph.RenderGraph(device);
         RenderGraphBuffer<uint> target = graph.ImportBuffer(output, default);
-        graph.AddPass("same class automatically binds graph root", context =>
+        graph.AddPass("same struct automatically binds graph root", context =>
         {
             var value = new UnifiedTransferValue { Value = 29, Output = context.GetGpuRef(target) };
             using RenderGraphComputeEncoder encoder = context.BeginComputePass();
@@ -224,7 +301,7 @@ public sealed class UnifiedTransferInterfaceTests
         RenderGraphShaderDataBuffer<UnifiedTransferValue> source = graph.ImportShaderDataBuffer(upload, new(PipelineStage.Copy, ResourceAccess.CopyRead));
         RenderGraphShaderDataBuffer<UnifiedTransferValue> destination = graph.CreateShaderDataBuffer<UnifiedTransferValue>(artifact, 1);
         bool recorded = false;
-        graph.AddPass("same IShaderArguments class typed copy", context =>
+        graph.AddPass("same IShaderArguments struct typed copy", context =>
         {
             IGraphicsShaderDataBuffer<UnifiedTransferValue> buffer = context.GetShaderDataBuffer(destination);
             Assert.Equal(1ul, buffer.Count);

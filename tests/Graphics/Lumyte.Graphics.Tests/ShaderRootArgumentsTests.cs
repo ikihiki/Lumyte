@@ -274,15 +274,15 @@ public sealed class ShaderRootArgumentsTests
         Assert.Equal(0, factory.Items[0].Seals);
     }
 
-    /// <summary>Diagnostics probe class providers explicitly and derive struct metadata without interface probes.</summary>
+    /// <summary>Diagnostics inspect static struct metadata without boxing providers.</summary>
     [Fact]
-    public void EnabledDiagnosticsValidateClassAndStructMetadata()
+    public void EnabledDiagnosticsValidateStaticStructMetadata()
     {
         ShaderDataLayout layout = DiagnosticLayout();
         var factory = new StorageFactory();
         var value = new NumericArguments { Value = 19 };
-        using TestRootOwner classRoot = TestShaderTransfer.Create(in value, factory.Create, Encode, layout);
-        Assert.Equal(1, value.Probes);
+        using TestRootOwner manualRoot = TestShaderTransfer.Create(in value, factory.Create, Encode, layout);
+        Assert.Equal(0, value.Probes);
         Assert.Equal(19u, Read(factory.Items[0]));
         var numeric = new NumericStruct { Value = 31 };
         using TestRootOwner structRoot = TestShaderTransfer.Create(in numeric, factory.Create, Encode, layout);
@@ -294,11 +294,11 @@ public sealed class ShaderRootArgumentsTests
     public void DiagnosticFailureDisposesStorageAndPreservesException()
     {
         var failure = new InvalidOperationException("Metadata failed.");
-        var value = new NumericArguments { Failure = failure };
+        var value = default(FailingDiagnosticArguments);
+        FailingDiagnosticArguments.Failure = failure;
         var factory = new StorageFactory { ThrowOnDispose = true };
         Assert.Same(failure, Record.Exception(() => TestShaderTransfer.Create(in value, factory.Create, Encode, DiagnosticLayout())));
         Assert.Equal(1, Assert.Single(factory.Items).Disposes);
-        Assert.Equal(1, value.Probes);
     }
 
     /// <summary>Each execution refreshes transitive metadata while the selected root identities stay stable.</summary>
@@ -419,16 +419,20 @@ public sealed class ShaderRootArgumentsTests
 
         public static int TransferSize => 4;
 
-        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("Use type-derived fields.");
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("Do not box diagnostic providers.");
+        public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Value", 0, 4, typeof(uint))];
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
     }
 
-    private sealed class Arguments : IShaderArguments
+    private struct Arguments : IShaderArguments
     {
+        private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
+
+        public Arguments()
+        {
+        }
+
         public static string ShaderTypeName => "Wire";
 
         public static int TransferSize => 32;
@@ -443,15 +447,9 @@ public sealed class ShaderRootArgumentsTests
 
         internal Exception? Failure { get; set; }
 
-        internal int Writes { get; private set; }
+        internal int Writes => _counter.Value;
 
         internal int Probes { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            Probes++;
-            throw new InvalidOperationException("Diagnostics disabled.");
-        }
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
@@ -461,7 +459,7 @@ public sealed class ShaderRootArgumentsTests
                 throw new InvalidOperationException("Root selection must not capture a numeric snapshot first.");
             }
 
-            Writes++;
+            _counter.Value++;
             if (Failure is { } failure)
             {
                 throw failure;
@@ -503,28 +501,37 @@ public sealed class ShaderRootArgumentsTests
         }
     }
 
-    private sealed class NumericArguments : IShaderArguments
+    private readonly struct FailingDiagnosticArguments : IShaderArguments
+    {
+        internal static Exception Failure = new InvalidOperationException();
+
+        public static string ShaderTypeName => "Wire";
+
+        public static int TransferSize => 4;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => throw Failure;
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            uint value = 0;
+            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
+        }
+    }
+
+    private struct NumericArguments : IShaderArguments
     {
         public static string ShaderTypeName => "Wire";
 
         public static int TransferSize => 4;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Value", 0, 4, typeof(uint))];
 
         internal uint Value { get; set; }
 
         internal int Probes { get; private set; }
 
         internal Exception? Failure { get; init; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            Probes++;
-            if (Failure is { } failure)
-            {
-                throw failure;
-            }
-
-            return [new("Value", 0, 4, typeof(uint))];
-        }
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
@@ -668,7 +675,7 @@ public sealed class ShaderRootArgumentsTests
             where T : unmanaged => throw new NotSupportedException();
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : IShaderArguments => throw new NotSupportedException();
+            where T : struct, IShaderArguments => throw new NotSupportedException();
 
         public void ReleaseTexture(uint slot) => throw new NotSupportedException();
 

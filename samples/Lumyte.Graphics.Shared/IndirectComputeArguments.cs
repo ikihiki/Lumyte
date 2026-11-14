@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Supplies the command and output storage for GPU-generated dispatch.</summary>
-public sealed partial record class IndirectComputeArguments : IShaderArguments
+public partial record struct IndirectComputeArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="IndirectComputeArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="IndirectComputeArguments"/> structure.</summary>
     /// <param name="command">The writable dispatch command.</param>
     /// <param name="output">The writable execution result.</param>
     public IndirectComputeArguments(IGpuRef<DispatchIndirectArguments> command, IGpuRef<uint> output)

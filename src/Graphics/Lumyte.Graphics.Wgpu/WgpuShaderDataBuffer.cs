@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Wgpu;
 
 internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
-    where T : IShaderArguments
+    where T : struct, IShaderArguments
 {
     private readonly IShaderReferenceMetadata?[] _values;
     private readonly ShaderDataLayout? _diagnosticLayout;

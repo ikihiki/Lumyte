@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.UI.SampleSupport;
 
-internal sealed partial record class UiPresentArguments : IShaderArguments
+internal partial record struct UiPresentArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="UiPresentArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="UiPresentArguments"/> structure.</summary>
     public UiPresentArguments(IGpuRef<IGraphicsTextureView> image, IGpuRef<IGraphicsSampler> sampler, Vector2 size)
     {
         _data = new()

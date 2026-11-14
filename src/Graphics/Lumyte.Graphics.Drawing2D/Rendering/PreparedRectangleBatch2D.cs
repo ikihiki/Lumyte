@@ -180,7 +180,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
         private readonly IDisposable _retained;
         private readonly IDisposable _tableLease;
         private SolidRectangleResources2D.Entry? _entry;
-        private SolidRectangleArguments2D _arguments = null!;
+        private SolidRectangleArguments2D _arguments;
         private IGpuRef<Vector4>? _dataRef;
         private ShaderResources? _reservation;
         private int _vectors;

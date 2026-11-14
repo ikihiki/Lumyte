@@ -26,6 +26,11 @@ internal struct TestShaderValueWriter<TDestination>(TDestination destination, in
         ValidateWrite(16);
         var value = new ShaderValue(typeof(T), reference, _position);
         diagnostic?.ValidateReference(value);
+        if (reference is not IShaderReference dependency)
+        {
+            throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
+        }
+
         byte[] bytes = encode(value);
         if (bytes.Length != 16)
         {
@@ -33,11 +38,6 @@ internal struct TestShaderValueWriter<TDestination>(TDestination destination, in
         }
 
         destination.Write(bytes, _position);
-        if (reference is not IShaderReference dependency)
-        {
-            throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
-        }
-
         (_dependencies ??= []).Add(dependency);
         _referenceCount++;
         _position += 16;

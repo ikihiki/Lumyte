@@ -86,7 +86,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         NativeBuffers++;
         return new ShaderBuffer<T>(this, count, memory);
@@ -178,7 +178,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
             where T : unmanaged => Write<T>(slot, BufferCapacity, range.Count, range.Buffer, range.OffsetInBytes, range.SizeInBytes, access);
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : IShaderArguments => Write<T>(slot, BufferCapacity, range.Count, range.Buffer, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes);
+            where T : struct, IShaderArguments => Write<T>(slot, BufferCapacity, range.Count, range.Buffer, range.Offset * range.Buffer.ShaderElementStrideInBytes, range.Count * range.Buffer.ShaderElementStrideInBytes);
 
         public void ReleaseTexture(uint slot)
         {
@@ -275,7 +275,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
     }
 
     private sealed class ShaderBuffer<T>(ProfilingDevice device, ulong count, MemoryPreference memory) : IGraphicsShaderDataBuffer<T>
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         public ulong Count => count;
 

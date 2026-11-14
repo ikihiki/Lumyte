@@ -689,7 +689,7 @@ public sealed class ValidationSubmissionTests
         /// <param name="source">The source slice.</param>
         /// <param name="destination">The destination slice.</param>
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : IShaderArguments => throw new NotSupportedException();
+            where T : struct, IShaderArguments => throw new NotSupportedException();
 
         /// <summary>Rejects native texture copies.</summary>
         /// <param name="source">The source region.</param>
@@ -718,7 +718,7 @@ public sealed class ValidationSubmissionTests
         /// <summary>Rejects native buffer barriers.</summary>
         /// <param name="barrier">The dependency description.</param>
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : IShaderArguments => throw new NotSupportedException();
+            where T : struct, IShaderArguments => throw new NotSupportedException();
 
         /// <summary>Rejects native barriers.</summary>
         /// <param name="barrier">The dependency description.</param>

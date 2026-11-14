@@ -265,7 +265,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
 
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 

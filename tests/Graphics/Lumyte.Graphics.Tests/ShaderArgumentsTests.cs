@@ -150,10 +150,10 @@ public sealed class ShaderArgumentsTests
     }
 
     private static void WriteStack<T>(in T value, ref StackWriter writer)
-        where T : IShaderArguments => value.Write(ref writer);
+        where T : struct, IShaderArguments => value.Write(ref writer);
 
     private static void Write<T>(in T value, ref CountingWriter writer)
-        where T : IShaderArguments => value.Write(ref writer);
+        where T : struct, IShaderArguments => value.Write(ref writer);
 
     private readonly record struct ManualArguments(uint Value) : IShaderArguments
     {

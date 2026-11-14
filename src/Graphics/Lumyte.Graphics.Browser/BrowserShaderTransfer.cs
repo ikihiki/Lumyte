@@ -7,13 +7,8 @@ namespace Lumyte.Graphics.Browser;
 internal static class BrowserShaderTransfer
 {
     internal static BrowserRootStorage CreateRoot<T>(BrowserDevice owner, in T value, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
-        if (!typeof(T).IsValueType)
-        {
-            ArgumentNullException.ThrowIfNull(value);
-        }
-
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
@@ -57,7 +52,7 @@ internal static class BrowserShaderTransfer
     }
 
     internal static void CopyFrom<T>(BrowserDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -87,11 +82,6 @@ internal static class BrowserShaderTransfer
 
             for (int i = 0; i < source.Length; i++)
             {
-                if (!typeof(T).IsValueType)
-                {
-                    ArgumentNullException.ThrowIfNull(source[i]);
-                }
-
                 var writer = new BrowserShaderValueWriter(owner, stride, null, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();

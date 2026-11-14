@@ -33,7 +33,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     }
 
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ValidateRootSelection();
         WgpuComputePipeline program = _pipeline!;

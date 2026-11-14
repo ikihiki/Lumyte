@@ -86,7 +86,7 @@ public sealed class FinalRootGenerationTests
         IGpuRef<uint> outputA = outputs.GetElement(0);
         IGpuRef<uint> outputB = outputs.GetElement(1);
         IGpuRef<uint> outputSnapshot = outputs.GetElement(2);
-        var root = new Arguments(validation) { Number = 7, Input = inputA, Output = outputA };
+        var root = new Arguments() { Number = 7, Input = inputA, Output = outputA };
 
         // Forty wire bytes require a 48-byte native root allocation, not a truncated uniform.
         Assert.Equal(40, Arguments.TransferSize);
@@ -116,7 +116,7 @@ public sealed class FinalRootGenerationTests
             }
 
             Assert.Equal(1, root.Writes);
-            Assert.Equal(validation ? 1 : 0, root.Probes);
+            Assert.Equal(0, root.Probes);
             root.Number = 9;
             root.Input = inputB;
             root.Output = outputB;
@@ -134,7 +134,7 @@ public sealed class FinalRootGenerationTests
             Assert.Same(failure, Record.Exception(() => compute.SetArguments(in root)));
             root.Failure = null;
             Assert.Equal(3, root.Writes);
-            Assert.Equal(validation ? 2 : 0, root.Probes);
+            Assert.Equal(0, root.Probes);
 
             // All malformed codecs must leave the previous valid generation selected.
             int writesBeforeMalformed = root.Writes;
@@ -194,7 +194,7 @@ public sealed class FinalRootGenerationTests
             root.Number = 999;
             compute.Dispatch(1);
             Assert.Equal(8, root.Writes);
-            Assert.Equal(validation ? 4 : 0, root.Probes);
+            Assert.Equal(0, root.Probes);
         }
         finally
         {
@@ -240,8 +240,10 @@ public sealed class FinalRootGenerationTests
     private static bool IsDisposed(object owner)
         => (bool)owner.GetType().GetField("_disposed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
 
-    private sealed class Arguments(bool diagnostics) : IShaderArguments
+    private struct Arguments() : IShaderArguments
     {
+        private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
+
         public static string ShaderTypeName => "FinalRootWire";
 
         public static int TransferSize => Marshal.SizeOf<Wire>();
@@ -264,20 +266,9 @@ public sealed class FinalRootGenerationTests
 
         internal Exception? Failure { get; set; }
 
-        internal int Writes { get; private set; }
+        internal int Writes => _counter.Value;
 
         internal int Probes { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            Probes++;
-            if (!diagnostics)
-            {
-                throw new InvalidOperationException("Disabled diagnostics must not probe the application object.");
-            }
-
-            return TransferFields;
-        }
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
@@ -287,7 +278,7 @@ public sealed class FinalRootGenerationTests
                 throw new InvalidOperationException("Generic Set must not capture an intermediate numeric snapshot.");
             }
 
-            Writes++;
+            _counter.Value++;
             if (BadCodec != 0)
             {
                 if (BadCodec != 1)

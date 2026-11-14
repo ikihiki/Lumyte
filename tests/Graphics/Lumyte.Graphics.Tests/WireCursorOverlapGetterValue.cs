@@ -3,31 +3,33 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class WireCursorOverlapGetterValue(IGpuRef<uint> a, IGpuRef<uint> b) : IShaderArguments
+internal partial struct WireCursorOverlapGetterValue(IGpuRef<uint> a, IGpuRef<uint> b) : IShaderArguments
 {
+    private readonly System.Runtime.CompilerServices.StrongBox<int> _a = new();
+    private readonly System.Runtime.CompilerServices.StrongBox<int> _b = new();
     private Storage _data = default;
 
-    public IGpuRef<uint> A
+    public readonly IGpuRef<uint> A
     {
         get
         {
-            AGetterCalls++;
+            _a.Value++;
             return a;
         }
     }
 
-    public IGpuRef<uint> B
+    public readonly IGpuRef<uint> B
     {
         get
         {
-            BGetterCalls++;
+            _b.Value++;
             return b;
         }
     }
 
-    internal int AGetterCalls { get; private set; }
+    internal int AGetterCalls => _a.Value;
 
-    internal int BGetterCalls { get; private set; }
+    internal int BGetterCalls => _b.Value;
 
     [StructLayout(LayoutKind.Explicit, Size = 32)]
     private struct Storage

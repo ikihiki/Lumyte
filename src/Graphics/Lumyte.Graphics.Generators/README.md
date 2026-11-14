@@ -10,14 +10,14 @@ SetArguments(in value) accepts ordinary unmanaged root structs on native and gra
 The C# type name is the default shader structure name (intrinsic numeric types use
 their shader names, e.g. Vector3 maps to float3); root calls can override it.
 
-The generator is for reference-containing classes, or explicitly opted-in
-IShaderArguments implementations on partial types.
+The generator accepts non-ref partial structs/record structs implementing
+IShaderArguments, including managed outer structs with typed IGpuRef members.
 There is no codec registry, per-numeric-field serialization, or reflected repacking.
 
 - Unmanaged structs (including record structs) transfer their **entire C# representation**
   through one `writer.WriteValue` over the whole unmanaged representation.
   Nested structs and padding are not rewritten.
-- Values containing IGpuRef are partial classes with one **private unmanaged storage
+- Values containing IGpuRef are partial structs with one **private unmanaged storage
   struct**. That explicitly authored struct determines field order, packing, padding
   and stride. A same-named ShaderReferenceSlot reserves 16 bytes per reference.
   The generator takes a value copy of storage at the beginning of Write, then passes
@@ -41,12 +41,12 @@ There is no codec registry, per-numeric-field serialization, or reflected repack
 
 Example (using System.Numerics and System.Runtime.InteropServices):
 
-    public sealed partial class DrawArguments : IShaderArguments
+    public partial record struct DrawArguments : IShaderArguments
     {
         private WireData _data;
 
-        public partial Matrix4x4 Transform { get; set; }
-        public IGpuRef<Vertex> Vertices { get; set; } = null!;
+        public partial Matrix4x4 Transform { readonly get; set; }
+        public IGpuRef<Vertex> Vertices { get; set; }
 
         [StructLayout(LayoutKind.Sequential, Pack = 4)]
         private struct WireData
@@ -60,14 +60,14 @@ Keep shader declarations in the same order and with matching offsets. The genera
 never rearranges fields or chooses packing. GPU references remain opaque and non-owning.
 Explicit inspection snapshots copy wire bytes and reference identities; native Set
 instead writes a fresh command-owned backend-owned opaque root generation. Neither is changed by
-later property writes. Reference-containing classes themselves are never copied to GPU memory.
+later property writes. Reference-containing structs themselves are never copied to GPU memory.
 
 Project reference:
 
     <ProjectReference Include="path/to/Lumyte.Graphics.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 
-Generic/nested generator targets, managed structs, missing private unmanaged storage,
+Class/record-class/ref-struct targets (even with handwritten Write), generic/nested targets, missing private unmanaged storage,
 and missing or mistyped reference slots produce LUMG001 diagnostics. Handwritten
 implementations must implement the same mandatory value-only writer contract.
 
@@ -75,10 +75,19 @@ For ordinary structs, built-in backends diagnose named storage layouts only afte
 explicit per-device EnableValidation(), in both Debug and Release. Cached managed
 field reflection and offset probes never choose or rewrite transferred bytes.
 Where dynamic code is unavailable (Browser or AOT), names and sizes remain
-checkable while unavailable field offsets are skipped. Ordinary capture stores
-a type identity, not a diagnostic callback. Generated classes retain an unboxed
-metadata provider and initialize diagnostic field tables only when explicitly
-requested; native transfer never invokes the provider when diagnostics are disabled. The disabled transfer path has no managed field
+checkable while unavailable raw reflected field offsets are skipped. Raw unmanaged
+Capture stores a type identity. Argument Capture instead retains DiagnosticType and
+a cached static generic DiagnosticFields callback, not the input struct, boxing or
+an instance closure. Capture and Copy never invoke this callback. The first explicit
+GetDiagnosticFields initializes `ArgumentDiagnosticCache<T>` through direct
+T.TransferFields static dispatch; `Fields<T>(in T)` uses the same AOT-safe path.
+Generated static metadata therefore needs neither DynamicMethod nor MakeGenericMethod
+on Browser/NativeAOT. Type-only inspection of an arbitrary unknown T and raw
+unmanaged reflected-field fallback are unavailable on AOT. On JIT, handwritten
+unmanaged IShaderArguments with default empty TransferFields retain reflected-field
+fallback. Managed outer structs without static metadata return empty diagnostics,
+not numeric transfer of their managed layout. ClassDiagnosticSource/GetTransferFields
+are removed. The disabled transfer path has no managed field
 reflection, diagnostic table initialization, or runtime code generation. This does
 not remove shader/artifact reflection: mandatory capacity preflight still reads
 logical root metadata before native shader/pipeline creation.
@@ -94,6 +103,27 @@ keeps Set-time value semantics by writing directly into a new command-owned opaq
 generation; it does not allocate an intermediate numeric snapshot.
 A failed upload may partially modify bytes and invalidates the requested reference
 metadata range; it does not roll back values or retain a hidden numeric history.
+
+## Struct constraints and explicit element updates
+
+Every interface-consuming native/root, buffer/slice, factory, Graph and resource
+API requires `where T : struct, IShaderArguments`, not unmanaged: typed managed
+IGpuRef fields are allowed. Manual classes can implement the interface in C#, but
+consumer generics reject them with CS0453 even without this generator.
+Generated Write is readonly; numeric partial properties can use readonly get with
+a mutable set. Generated partial properties preserve the exact declaration readonly
+modifiers for C# partial-member compatibility; a non-readonly get stays non-readonly. Generic in/ref readonly dispatch may copy the outer struct; there
+is no zero-outer-copy guarantee. Only private unmanaged wire is serialized raw.
+
+Edit array elements by ref or write a modified local back. Callers select complete
+element ranges for CopyFrom and explicitly CopyBuffer matching slices; there is no
+field-range transfer, dirty tracking, automatic coalescing or hidden numeric cache.
+Keep upload sources alive and unchanged until GPU consumption. default(T) and
+array initialization skip constructors; references remain null until filled by the
+caller, and null default-root IGpuRef is rejected. DrawingInstruction new() preserves
+resource indices of -1 and initializes references with default!, which only suppresses
+nullable analysis. Browser build success does not establish AOT publication or
+runtime AOT execution; neither has been tested.
 
 ## Mandatory value-only writer
 
@@ -112,7 +142,7 @@ are encoded inline into a cleared stackalloc byte[16], then passed directly to
 the Vulkan/D3D12 root span, Wgpu/Browser root storage.Write, or upload CopyBytesFrom; borrowed spans never escape. Numeric-only
 codecs call WriteValue once over the complete unmanaged value, including padding.
 
-Reference-containing classes first copy the complete private unmanaged wire to a
+Reference-containing structs first copy the complete private unmanaged wire to a
 local value. A private static plan uses actual C# offsets only for physical order
 and slot validity, independently of optional diagnostic field tables. Invalid,
 overlapping or out-of-range slots are rejected before getters. Raw ranges alternate
@@ -120,10 +150,12 @@ with WriteReference calls; no emitter structs are generated. IShaderWireSink,
 IShaderReferenceCursor, IShaderReferenceEmitter, ShaderWire, ShaderWireCursor and
 WriteWire are removed without compatibility aliases.
 
-Reference fields, auto-properties, virtual properties and custom getters all use
+Reference fields, auto-properties, custom getters all use
 this path. Each getter runs once in physical slot order after the local wire copy.
-Getter mutations of numeric storage do not change this transfer; mutations of
-reference properties remain visible to subsequent getters. The local preserves
+Generated Write is readonly and copies only wire storage before getters. Numeric
+changes after that copy do not affect these raw bytes. Non-readonly custom getters
+may execute on defensive outer-struct copies; their mutations need not propagate
+to the original value or subsequent getters. The local preserves
 padding and is borrowed synchronously, not retained as a CPU snapshot. Handwritten
 IShaderArguments implementations use the same two writer methods. IShaderArguments
 is the sole transfer interface; the old IShaderData marker is removed.

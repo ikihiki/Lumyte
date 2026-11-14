@@ -79,7 +79,7 @@ public sealed class ShaderFlatWriterTests
 
         TestShaderDataUpload.CopyFrom<WireCursorGetterValue>([value], buffer, 0, new IShaderReferenceMetadata?[1], EncodeSlot, null);
         Assert.Equal(17U, MemoryMarshal.Read<uint>(buffer.Bytes));
-        Assert.Equal(999U, value.Number);
+        Assert.Equal(17U, value.Number);
         Assert.Equal(1, value.GetterCalls);
         Assert.Equal(3, buffer.WriteCount);
         Assert.StartsWith("W:0:8:", events[0]);
@@ -104,7 +104,7 @@ public sealed class ShaderFlatWriterTests
         Assert.Equal(new[] { "A", "B" }, getters);
         Assert.Equal(new[] { 8, 32 }, offsets);
         Assert.Equal(17u, MemoryMarshal.Read<uint>(buffer.Bytes));
-        Assert.Equal(999u, value.Number);
+        Assert.Equal(17u, value.Number);
         Assert.Equal(5, buffer.WriteCount);
     }
 
@@ -381,6 +381,66 @@ public sealed class ShaderFlatWriterTests
         public uint Number;
     }
 
+    private struct CursorValue(List<string> events) : IShaderArguments
+    {
+        private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
+
+        public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
+
+        public static int TransferSize => 64;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No field diagnostics.");
+
+        public int Writes => _counter.Value;
+
+        public int DiagnosticCalls { get; private set; }
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            _counter.Value++;
+            var wire = new CursorWire { Number = 17 };
+            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
+            writer.WriteValue(bytes[..8]);
+            events.Add("G:8");
+            writer.WriteReference<uint>(new Reference(1));
+            writer.WriteValue(bytes[24..32]);
+            events.Add("G:32");
+            writer.WriteReference<uint>(new Reference(2));
+            writer.WriteValue(bytes[48..]);
+        }
+    }
+
+    private struct CursorSlotValue(int first, int second) : IShaderArguments
+    {
+        private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
+
+        public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
+
+        public static int TransferSize => 32;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No field diagnostics.");
+
+        public int Writes => _counter.Value;
+
+        public int DiagnosticCalls { get; private set; }
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            _counter.Value++;
+            if (first > 0)
+            {
+                writer.WriteValue(new byte[first]);
+            }
+
+            for (int index = 0; index < second; index++)
+            {
+                writer.WriteReference<uint>(new Reference((uint)index + 1));
+            }
+        }
+    }
+
     private sealed class IdentityMetadata(IEnumerable<IShaderReference> references) : IShaderReferenceMetadata
     {
         public IReadOnlyList<IShaderReference> References { get; } = Array.AsReadOnly(references.ToArray());
@@ -407,74 +467,6 @@ public sealed class ShaderFlatWriterTests
         public ulong RegistrationSizeInBytes => 4;
 
         public IGpuRef<uint> GetElement(ulong index) => throw new NotSupportedException();
-    }
-
-    private sealed class CursorValue(List<string> events) : IShaderArguments
-    {
-        public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
-
-        public static int TransferSize => 64;
-
-        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No field diagnostics.");
-
-        public int Writes { get; private set; }
-
-        public int DiagnosticCalls { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            DiagnosticCalls++;
-            throw new InvalidOperationException("No instance diagnostics.");
-        }
-
-        public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter, allows ref struct
-        {
-            Writes++;
-            var wire = new CursorWire { Number = 17 };
-            ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in wire, 1));
-            writer.WriteValue(bytes[..8]);
-            events.Add("G:8");
-            writer.WriteReference<uint>(new Reference(1));
-            writer.WriteValue(bytes[24..32]);
-            events.Add("G:32");
-            writer.WriteReference<uint>(new Reference(2));
-            writer.WriteValue(bytes[48..]);
-        }
-    }
-
-    private sealed class CursorSlotValue(int first, int second) : IShaderArguments
-    {
-        public static string ShaderTypeName => throw new InvalidOperationException("No type diagnostics.");
-
-        public static int TransferSize => 32;
-
-        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No field diagnostics.");
-
-        public int Writes { get; private set; }
-
-        public int DiagnosticCalls { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            DiagnosticCalls++;
-            throw new InvalidOperationException("No instance diagnostics.");
-        }
-
-        public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter, allows ref struct
-        {
-            Writes++;
-            if (first > 0)
-            {
-                writer.WriteValue(new byte[first]);
-            }
-
-            for (int index = 0; index < second; index++)
-            {
-                writer.WriteReference<uint>(new Reference((uint)index + 1));
-            }
-        }
     }
 
     private sealed class RootStorage(int size) : ITestShaderRootStorage

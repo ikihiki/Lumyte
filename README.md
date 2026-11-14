@@ -94,14 +94,48 @@ CI は Linux／Windows の x64／aarch64 で、mise セットアップ後に同�
 
 診断画面の見た目は [GitHub Pagesの画面プレビュー](https://ikihiki.github.io/Lumyte/) でmain・PRごとに確認できます。
 
+## Struct-only interface transfer
+
+Every native/root, shader-data buffer, slice, factory, Graph and resource declaration
+consuming IShaderArguments requires `where T : struct, IShaderArguments`; managed
+references are allowed, so this is not an unmanaged constraint. Generated providers
+are mutable partial structs/record structs with private unmanaged wire and typed
+IGpuRef members. Classes, record classes and ref structs are rejected with LUMG001
+even with handwritten codecs. A manual class can implement the C# interface, but
+consumer generics reject it with CS0453 even without the generator.
+Generated readonly Write copies only the wire before getters; generic in calls
+and non-readonly getters may defensively copy the outer struct. No zero-outer-copy
+or allocation-free guarantee follows. Generated partial properties preserve the exact
+readonly modifiers of their declarations; a plain get does not gain readonly.
+Argument Capture retains DiagnosticType and a cached static generic DiagnosticFields
+callback, never the input struct, boxing or an instance closure. Capture and Copy
+do not invoke it; the first explicit GetDiagnosticFields accesses the lazy
+`ArgumentDiagnosticCache<T>` through direct T.TransferFields static dispatch.
+`Fields<T>(in T)` uses the same AOT-safe path. Type-only unknown-T inspection and raw
+unmanaged reflected offsets require dynamic code and are unavailable on AOT.
+Handwritten unmanaged arguments with default empty TransferFields keep the JIT
+reflected-field fallback; managed outer structs without static metadata return
+empty diagnostics, never numeric transfer of their managed layout.
+
+Callers choose whole-element upload ranges, with no dirty tracking, field ranges,
+automatic coalescing or hidden value cache. Edit array elements by ref or write back
+a local copy; then explicitly CopyFrom and CopyBuffer the chosen range. Keep upload
+sources unchanged and alive until consumed by GPU work. default(T)/array elements
+skip constructors and leave reference members null until filled by the caller;
+null IGpuRef in a default root is rejected during encoding. DrawingInstruction
+new() preserves resource indices of -1 and initializes references with default!;
+this nullable-analysis suppression does not create valid GPU references.
+Browser build success is not AOT publication or runtime AOT execution evidence;
+AOT publication and execution have not been tested.
+
 ## Shader data transfer
 
 Ordinary unmanaged C# structs need no IShaderArguments, partial declaration,
 generator or registration. `CreateShaderDataBuffer<T>` returns raw `IGraphicsBuffer<T>`
 storage; CopyFrom preserves C# bytes, padding and stride. Use BufferBarrierDesc,
 CopyBuffer and argument-table WriteBuffer explicitly. SetArguments(in value) also
-accepts unmanaged root structs. Reference-containing classes remain generated partial
-IShaderArguments types with private unmanaged storage. Shader layout must
+accepts unmanaged root structs. Reference-containing values use mutable partial structs/record structs implementing
+IShaderArguments with private unmanaged wire storage. Shader layout must
 match C#; diagnostics require explicit per-device EnableValidation() in both Debug and Release. See the [transfer contract](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md).
 
 IShaderArguments is the sole transfer interface for generated/handwritten codecs.

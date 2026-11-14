@@ -7,9 +7,9 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks one handwritten codec at both synchronous transfer boundaries.</summary>
 public sealed class UnifiedManualTransferTests
 {
-    /// <summary>The same manual class writes independently owned root and upload bytes.</summary>
+    /// <summary>The same manual struct writes independently owned root and upload bytes.</summary>
     [Fact]
-    public void ManualClassSupportsRootAndTypedUpload()
+    public void ManualStructSupportsRootAndTypedUpload()
     {
         var value = new ManualValue { Value = 7 };
         int encodes = 0;
@@ -42,11 +42,33 @@ public sealed class UnifiedManualTransferTests
         Assert.Empty(Assert.IsType<ShaderDependencyMetadata>(metadata[0]).References);
         Assert.Equal(0, encodes);
 
-        // Closing the public generic interface proves a class needs only IShaderArguments.
+        // Closing the public generic interface proves a managed struct implements the contract.
         Assert.Equal(typeof(ManualValue), Assert.Single(typeof(IGraphicsShaderDataBuffer<ManualValue>).GenericTypeArguments));
     }
 
-    private sealed class ManualValue : IShaderArguments
+    /// <summary>A default managed struct cannot silently serialize a missing GPU reference.</summary>
+    [Fact]
+    public void DefaultManagedStructRejectsMissingReferenceBeforeEncoding()
+    {
+        UnifiedTransferValue value = default;
+        int encodes = 0;
+        using var upload = new MappedBuffer(UnifiedTransferSize());
+        byte[] Encode(ShaderValue reference)
+        {
+            encodes++;
+            return new byte[16];
+        }
+
+        Assert.Throws<ArgumentException>(() => TestShaderDataUpload.CopyFrom<UnifiedTransferValue>([value], upload, 0, new IShaderReferenceMetadata?[1], Encode, diagnostic: null));
+        Assert.Equal(0, encodes);
+    }
+
+    private static int UnifiedTransferSize() => Size<UnifiedTransferValue>();
+
+    private static int Size<T>()
+        where T : struct, IShaderArguments => T.TransferSize;
+
+    private struct ManualValue : IShaderArguments
     {
         private uint _value;
 

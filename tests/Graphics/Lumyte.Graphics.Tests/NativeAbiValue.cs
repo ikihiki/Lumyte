@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Tests;
 
 // Generated numeric segments and references reach actual native storage unchanged.
-internal partial class NativeAbiValue : IShaderArguments
+internal partial struct NativeAbiValue : IShaderArguments
 {
     private Storage _data;
 
-    public partial uint Number { get; set; }
+    public partial uint Number { readonly get; set; }
 
     public IGpuRef<IGraphicsSampler>? Sampler { get; set; }
 

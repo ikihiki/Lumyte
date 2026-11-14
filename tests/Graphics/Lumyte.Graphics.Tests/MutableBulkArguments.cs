@@ -4,16 +4,20 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class MutableBulkArguments : IShaderArguments
+internal partial struct MutableBulkArguments : IShaderArguments
 {
     private readonly uint _counter = 42;
     private Storage _data;
 
+    public MutableBulkArguments()
+    {
+    }
+
     public uint Counter => _counter;
 
-    public partial uint Number { get; set; }
+    public partial uint Number { readonly get; set; }
 
-    public partial Matrix4x4 Transform { get; set; }
+    public partial Matrix4x4 Transform { readonly get; set; }
 
     public IGpuRef<uint>? Resource { get; set; }
 

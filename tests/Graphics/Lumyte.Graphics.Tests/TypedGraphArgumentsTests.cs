@@ -107,7 +107,7 @@ public sealed class TypedGraphArgumentsTests
         // The invalid execution was never emitted or submitted.
     }
 
-    private sealed record class NativeGraphArguments(IGpuRef<uint> Output, uint Index, uint Value) : IShaderArguments
+    private record struct NativeGraphArguments(IGpuRef<uint> Output, uint Index, uint Value) : IShaderArguments
     {
         public static string ShaderTypeName => "NativeGraphArguments";
 

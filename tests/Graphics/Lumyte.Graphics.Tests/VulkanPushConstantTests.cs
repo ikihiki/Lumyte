@@ -79,39 +79,46 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
         using IGraphicsComputePipeline other = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 1 });
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         IComputeEncoder encoder = commands.BeginComputePass(new());
-        encoder.SetPipeline(pipeline);
-        uint value = 7;
-        encoder.SetArguments(in value);
-        foreach (Action mutation in new Action[] { encoder.End, () => encoder.SetPipeline(other), () => encoder.SetArguments(in value), () => encoder.Dispatch(1), () => encoder.SetArgumentValidation(null) })
+        try
         {
+            encoder.SetPipeline(pipeline);
+            uint value = 7;
+            encoder.SetArguments(in value);
+            foreach (Action mutation in new Action[] { encoder.End, () => encoder.SetPipeline(other), () => encoder.SetArguments(in value), () => encoder.Dispatch(1), () => encoder.SetArgumentValidation(null) })
+            {
+                encoder.SetArgumentValidation(_ =>
+                {
+                    mutation();
+                    return null;
+                });
+                Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in value));
+            }
+
             encoder.SetArgumentValidation(_ =>
             {
-                mutation();
+                encoder.SetArgumentTable(table);
                 return null;
             });
-            Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in value));
+            encoder.SetArguments(in value);
+            encoder.SetArgumentValidation(_ =>
+            {
+                pipeline.Dispose();
+                return null;
+            });
+            Exception disposed = Record.Exception(() => encoder.SetArguments(in value))!;
+            Assert.True(disposed is ObjectDisposedException or InvalidOperationException, $"Unexpected disposal result: {disposed}");
+            encoder.SetArgumentValidation(null);
+            encoder.SetPipeline(other);
+            encoder.SetArguments(in value);
+        }
+        finally
+        {
+            encoder.End();
         }
 
-        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 1 });
-        encoder.SetArgumentValidation(_ =>
-        {
-            encoder.SetArgumentTable(table);
-            return null;
-        });
-        encoder.SetArguments(in value);
-        encoder.SetArgumentValidation(_ =>
-        {
-            pipeline.Dispose();
-            return null;
-        });
-        Exception disposed = Record.Exception(() => encoder.SetArguments(in value))!;
-        Assert.True(disposed is ObjectDisposedException or InvalidOperationException, $"Unexpected disposal result: {disposed}");
-        encoder.SetArgumentValidation(null);
-        encoder.SetPipeline(other);
-        encoder.SetArguments(in value);
-        encoder.End();
         commands.Finish();
     }
 
@@ -203,30 +210,38 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
             IGpuRef<uint> target = table.WriteBuffer(0, result.SliceElements(0, count), ShaderBufferAccess.ReadWrite);
             using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
             IComputeEncoder encoder = commands.BeginComputePass(new());
-            encoder.SetPipeline(pipeline);
-            encoder.SetArgumentTable(table);
-            var value = new BoundaryRoot<TSize>(7, target);
-            encoder.SetArguments(in value);
-            value.Number = 999;
-            if (limit == 128)
+            try
             {
-                var rejected = new BoundaryRoot<Size132>(11, target);
-                Assert.Throws<NotSupportedException>(() => encoder.SetArguments(in rejected));
-                Assert.Equal(0, rejected.WriteCount);
+                encoder.SetPipeline(pipeline);
+                encoder.SetArgumentTable(table);
+                var value = new BoundaryRoot<TSize>(7, target);
+                encoder.SetArguments(in value);
+                Assert.Equal(1, value.WriteCount);
+                value.Number = 999;
+                if (limit == 128)
+                {
+                    var rejected = new BoundaryRoot<Size132>(11, target);
+                    Assert.Throws<NotSupportedException>(() => encoder.SetArguments(in rejected));
+                    Assert.Equal(0, rejected.WriteCount);
+                }
+                else
+                {
+                    var rejected = new BoundaryRoot<Size260>(11, target);
+                    Assert.Throws<NotSupportedException>(() => encoder.SetArguments(in rejected));
+                    Assert.Equal(0, rejected.WriteCount);
+                }
+
+                encoder.SetArgumentValidation(_ => throw new InvalidOperationException("admission rejected"));
+                var replacement = new BoundaryRoot<TSize>(17, target);
+                Assert.Equal("admission rejected", Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in replacement)).Message);
+                encoder.SetArgumentValidation(null);
+                encoder.Dispatch(1);
             }
-            else
+            finally
             {
-                var rejected = new BoundaryRoot<Size260>(11, target);
-                Assert.Throws<NotSupportedException>(() => encoder.SetArguments(in rejected));
-                Assert.Equal(0, rejected.WriteCount);
+                encoder.End();
             }
 
-            encoder.SetArgumentValidation(_ => throw new InvalidOperationException("admission rejected"));
-            var replacement = new BoundaryRoot<TSize>(17, target);
-            Assert.Equal("admission rejected", Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in replacement)).Message);
-            encoder.SetArgumentValidation(null);
-            encoder.Dispatch(1);
-            encoder.End();
             if (TSize.Size > 4)
             {
                 commands.Barrier(new BufferBarrierDesc<uint> { Buffer = result.SliceElements(0, count), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
@@ -281,33 +296,28 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
         public static int Size => 260;
     }
 
-    private sealed class BoundaryRoot<TSize>(uint number, IGpuRef<uint> target) : IShaderArguments
+    private struct BoundaryRoot<TSize>(uint number, IGpuRef<uint> target) : IShaderArguments
         where TSize : struct, ISize
     {
+        private static readonly IReadOnlyList<ShaderTransferField> _fields = CreateFields();
+
+        // Capture writes a struct copy; keep observations outside that copy.
+        private readonly WriteCounter _writes = new();
+
         public static string ShaderTypeName => "Payload";
 
         public static int TransferSize => TSize.Size;
 
+        public static IReadOnlyList<ShaderTransferField> TransferFields => _fields;
+
         internal uint Number { get; set; } = number;
 
-        internal int WriteCount { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            int count = TSize.Size == 4 ? 1 : (TSize.Size - 16) / 4;
-            var fields = Enumerable.Range(0, count).Select(index => new ShaderTransferField($"Value{index}", index * 4, 4, typeof(uint))).ToList();
-            if (TSize.Size > 4)
-            {
-                fields.Add(new("Output", count * 4, 16, typeof(IGpuRef<uint>), true));
-            }
-
-            return fields;
-        }
+        internal int WriteCount => _writes.Count;
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
         {
-            WriteCount++;
+            _writes.Count++;
             int count = TSize.Size == 4 ? 1 : (TSize.Size - 16) / 4;
             for (int index = 0; index < count; index++)
             {
@@ -320,5 +330,28 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
                 writer.WriteReference(target);
             }
         }
+
+        private static IReadOnlyList<ShaderTransferField> CreateFields()
+        {
+            // Describe Write's wire payload, not the managed wrapper or test counter.
+            int count = TSize.Size == 4 ? 1 : (TSize.Size - 16) / 4;
+            List<ShaderTransferField> fields = [];
+            for (int index = 0; index < count; index++)
+            {
+                fields.Add(new($"Value{index}", index * 4, 4, typeof(uint)));
+            }
+
+            if (TSize.Size > 4)
+            {
+                fields.Add(new("Output", count * 4, 16, typeof(IGpuRef<uint>), IsReference: true));
+            }
+
+            return fields.AsReadOnly();
+        }
+    }
+
+    private sealed class WriteCounter
+    {
+        internal int Count { get; set; }
     }
 }

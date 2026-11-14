@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Defines application root values for compute checks.</summary>
-public sealed partial record class BindingComputeArguments : IShaderArguments
+public partial record struct BindingComputeArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="BindingComputeArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="BindingComputeArguments"/> structure.</summary>
     /// <param name="camera">The row-major camera matrix.</param>
     /// <param name="factor">The integer payload.</param>
     /// <param name="node">The first linked data element.</param>

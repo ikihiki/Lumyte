@@ -47,7 +47,7 @@ internal sealed class CompileOnlyDevice : IGraphicDevice
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw Unsupported();
 
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : IShaderArguments => throw Unsupported();
+        where T : struct, IShaderArguments => throw Unsupported();
 
     private static NotSupportedException Unsupported() => new("This diagnostic sample only compiles render graphs; GPU operations are unavailable.");
 }

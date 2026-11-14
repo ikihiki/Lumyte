@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Drawing;
 
 /// <summary>Defines lighting, transforms and texture references for model drawing.</summary>
-public sealed partial record class ModelDrawArguments : IShaderArguments
+public partial record struct ModelDrawArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="ModelDrawArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="ModelDrawArguments"/> structure.</summary>
     /// <param name="vertices">The object-space vertex range.</param>
     /// <param name="world">The row-vector object-to-world transform.</param>
     /// <param name="viewProjection">The row-vector world-to-clip transform.</param>

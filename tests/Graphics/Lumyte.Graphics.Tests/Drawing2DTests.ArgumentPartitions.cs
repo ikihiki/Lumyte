@@ -298,7 +298,7 @@ public sealed partial class Drawing2DTests
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => _native.CreateComputePipeline(desc);
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : IShaderArguments => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
+            where T : struct, IShaderArguments => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
     }
 
     private sealed class PartitionCommands(IGraphicsCommandBuffer native) : IGraphicsCommandBuffer
@@ -331,10 +331,10 @@ public sealed partial class Drawing2DTests
         public void Finish() => native.Finish();
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : IShaderArguments => native.CopyBuffer(source, destination);
+            where T : struct, IShaderArguments => native.CopyBuffer(source, destination);
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : IShaderArguments => native.Barrier(barrier);
+            where T : struct, IShaderArguments => native.Barrier(barrier);
 
         public void Dispose() => native.Dispose();
 
@@ -396,7 +396,7 @@ public sealed partial class Drawing2DTests
         }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments
+            where T : struct, IShaderArguments
         {
             ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
             native.SetArguments(in arguments);

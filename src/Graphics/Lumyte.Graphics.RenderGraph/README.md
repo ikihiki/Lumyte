@@ -128,6 +128,33 @@ factoryが返す状態やimportsは借用ビューであり、型がIDisposable�
 
 ResourceManagerからの取得・世代検証は`Lumyte.Resources.Graphics`の拡張が担当します。RenderGraph本体はその型やパッケージを参照しません。
 
+## Struct-only arguments and explicit element ranges
+
+All IShaderArguments-consuming root, buffer, slice, factory and Graph/resource APIs
+require `where T : struct, IShaderArguments`, allowing managed IGpuRef fields.
+Providers are mutable partial structs/record structs, not classes. Ordinary
+interface-free unmanaged paths are unchanged. Generated readonly Write copies
+only private unmanaged wire before getters; in/ref readonly generic dispatch may
+defensively copy the outer struct. Generated partial property implementations retain
+the declaration readonly modifiers rather than synthesizing readonly get. Argument
+Capture retains DiagnosticType plus a cached static generic DiagnosticFields callback,
+never the input struct, boxing or an instance closure. Capture/Copy do not invoke it;
+explicit GetDiagnosticFields and `Fields<T>(in T)` use lazy direct T.TransferFields
+static dispatch, including generated metadata on Browser/NativeAOT. Type-only
+unknown-T reflection and raw unmanaged reflected offsets remain unavailable on AOT.
+JIT retains reflected-field fallback for handwritten unmanaged arguments with default
+empty TransferFields; managed outer structs without static metadata return empty
+diagnostics, not numeric transfer of managed layout. Browser build success does not
+establish AOT publication or runtime execution; both remain untested.
+Graph compilation does not cache values or discover dirty elements. The caller
+selects CopyFrom/CopyBuffer whole-element ranges, edits array elements by ref or
+writeback, and owns upload-source lifetime and immutability until GPU consumption.
+There is no field-range upload, automatic dirty tracking or coalescing. default(T)
+and array elements skip constructors and keep references null until the caller fills
+them; encoding rejects null root references. DrawingInstruction new() retains -1
+resource indices and default! reference initialization, not valid GPU references.
+ShaderRootArguments remains a reference-only metadata class, not a shader provider.
+
 ## Shader inputs and execution
 
 The pass itself owns its declared inputs. UseTexture, UseBuffer, UseShaderDataBuffer and UseSampler are the only declaration source; there is no resource-set factory, attachment step, member-name value bag or required artifact/root pin. Obtain IGpuRef values through the AddPass callback and reuse the ordinary IShaderArguments type and codec. A reference cached from callback B may also be used in A when A declares the native resource, range and access and the native table is compatible; callback origin, registration group and slot are not use permissions.

@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Vulkan;
 
 internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage, IVulkanShaderBuffer
-    where T : IShaderArguments
+    where T : struct, IShaderArguments
 {
     private readonly IShaderReferenceMetadata?[] _values;
     private readonly ShaderDataLayout? _diagnosticLayout;

@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Drawing;
 
 /// <summary>Defines root values for vertex-color drawing.</summary>
-public sealed partial record class ColorDrawArguments : IShaderArguments
+public partial record struct ColorDrawArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="ColorDrawArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="ColorDrawArguments"/> structure.</summary>
     /// <param name="vertices">The vertex range read using SV_VertexID.</param>
     /// <param name="transform">The object-to-clip matrix used with row vectors.</param>
     /// <param name="tint">The linear, straight-alpha color multiplier.</param>

@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Defines application-owned material values and independent resource references.</summary>
-public sealed partial record class BindingMaterial : IShaderArguments
+public partial record struct BindingMaterial : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="BindingMaterial"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="BindingMaterial"/> structure.</summary>
     /// <param name="color">The material multiplier.</param>
     /// <param name="texture">The sampled texture.</param>
     /// <param name="sampler">The independently registered sampler.</param>

@@ -3,9 +3,13 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class ExplicitTransferRoot : IShaderArguments
+internal partial struct ExplicitTransferRoot : IShaderArguments
 {
     private Storage _data = default;
+
+    public ExplicitTransferRoot()
+    {
+    }
 
     public IGpuRef<uint>? Numeric { get; set; }
 

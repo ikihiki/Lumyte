@@ -140,7 +140,7 @@ public sealed class ShaderResourcesUnmanagedTests
         }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => throw new InvalidOperationException("Unexpected interface serializer.");
+            where T : struct, IShaderArguments => throw new InvalidOperationException("Unexpected interface serializer.");
 
         public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
         {
@@ -250,6 +250,6 @@ public sealed class ShaderResourcesUnmanagedTests
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : IShaderArguments => throw new NotSupportedException();
+            where T : struct, IShaderArguments => throw new NotSupportedException();
     }
 }

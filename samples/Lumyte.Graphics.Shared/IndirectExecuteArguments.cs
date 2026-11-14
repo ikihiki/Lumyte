@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Supplies writable results for the indirect compute consumer.</summary>
-public sealed partial record class IndirectExecuteArguments : IShaderArguments
+public partial record struct IndirectExecuteArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="IndirectExecuteArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="IndirectExecuteArguments"/> structure.</summary>
     /// <param name="output">The writable execution result.</param>
     public IndirectExecuteArguments(IGpuRef<uint> output)
     {

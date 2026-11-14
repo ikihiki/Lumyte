@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Tests;
 
 // One generated provider is both a uniform root and a typed-buffer element.
-internal partial class UnifiedTransferValue : IShaderArguments
+internal partial struct UnifiedTransferValue : IShaderArguments
 {
     private Storage _data;
 
-    public partial uint Value { get; set; }
+    public partial uint Value { readonly get; set; }
 
     public IGpuRef<uint>? Output { get; set; }
 

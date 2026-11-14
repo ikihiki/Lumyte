@@ -4,11 +4,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Drawing;
 
 /// <summary>Defines root values for textured drawing.</summary>
-public sealed partial record class TextureDrawArguments : IShaderArguments
+public partial record struct TextureDrawArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="TextureDrawArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="TextureDrawArguments"/> structure.</summary>
     /// <param name="vertices">The vertex range read using SV_VertexID.</param>
     /// <param name="transform">The object-to-clip matrix used with row vectors.</param>
     /// <param name="tint">The linear, straight-alpha color multiplier.</param>

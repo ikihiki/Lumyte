@@ -42,6 +42,12 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             return;
         }
 
+        if (type.TypeKind != TypeKind.Struct || type.IsRefLikeType)
+        {
+            Report(output, type, "shader arguments must be non-ref structs or record structs; classes and ref structs are unsupported");
+            return;
+        }
+
         bool generateWrite = type.FindImplementationForInterfaceMember(contract.GetMembers("Write").Single()) == null;
         if (!generateWrite)
         {
@@ -54,17 +60,19 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
             return;
         }
 
-        bool isClass = type.TypeKind == TypeKind.Class;
-        IFieldSymbol[] candidates = isClass
+        IPropertySymbol[] partialProperties = type.GetMembers().OfType<IPropertySymbol>()
+            .Where(p => p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is PropertyDeclarationSyntax syntax && syntax.Modifiers.Any(SyntaxKind.PartialKeyword))).ToArray();
+        bool needsStorage = !type.IsUnmanagedType || partialProperties.Length != 0 || type.GetMembers().Any(IsReferenceMember);
+        IFieldSymbol[] candidates = needsStorage
             ? type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic && !f.IsImplicitlyDeclared && f.DeclaredAccessibility == Accessibility.Private && f.Type.IsUnmanagedType && f.Type is INamedTypeSymbol { TypeKind: TypeKind.Struct, SpecialType: SpecialType.None }).ToArray()
             : [];
-        if ((isClass && candidates.Length != 1) || (!isClass && !type.IsUnmanagedType))
+        if (needsStorage && candidates.Length != 1)
         {
-            Report(output, type, "reference-containing values must be classes with exactly one private unmanaged storage struct");
+            Report(output, type, "reference-containing structs and partial numeric properties require exactly one private unmanaged wire storage struct");
             return;
         }
 
-        IFieldSymbol? storage = isClass ? candidates[0] : null;
+        IFieldSymbol? storage = needsStorage ? candidates[0] : null;
         var wire = (INamedTypeSymbol)(storage?.Type ?? type);
         var fields = new StringBuilder();
         var offsets = new StringBuilder();
@@ -72,23 +80,60 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         var referenceMembers = new List<ISymbol>();
         var referenceOffsets = new List<string>();
         var properties = new StringBuilder();
-        if (isClass)
+        foreach (IPropertySymbol property in partialProperties)
         {
-            foreach (IPropertySymbol property in type.GetMembers().OfType<IPropertySymbol>())
+            var syntax = (PropertyDeclarationSyntax)property.DeclaringSyntaxReferences.First(r => r.GetSyntax() is PropertyDeclarationSyntax p && p.Modifiers.Any(SyntaxKind.PartialKeyword)).GetSyntax();
+            if (property.IsStatic || property.IsIndexer || property.RefKind != RefKind.None || property.SetMethod?.IsInitOnly == true || syntax.AccessorList == null)
             {
-                if (!property.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is PropertyDeclarationSyntax syntax && syntax.Modifiers.Any(SyntaxKind.PartialKeyword)))
+                Report(output, property, "partial numeric properties must be instance, non-indexed value properties with get and optional set accessors; init is unsupported");
+                return;
+            }
+
+            if (syntax.Modifiers.Any(SyntaxKind.ProtectedKeyword) || syntax.AccessorList.Accessors.Any(a => a.Modifiers.Any(SyntaxKind.ProtectedKeyword)))
+            {
+                Report(output, property, "partial numeric properties and accessors cannot use protected accessibility in structs");
+                return;
+            }
+
+            IFieldSymbol? field = wire.GetMembers(property.Name).OfType<IFieldSymbol>().SingleOrDefault(f => !f.IsStatic && SymbolEqualityComparer.Default.Equals(f.Type, property.Type));
+            if (!property.Type.IsUnmanagedType || field == null || (property.SetMethod != null && (type.IsReadOnly || storage!.IsReadOnly || field.IsReadOnly)))
+            {
+                Report(output, property, "partial numeric properties require a same-named unmanaged wire field, writable when a setter is declared");
+                return;
+            }
+
+            properties.Append("    ").Append(syntax.Modifiers.ToFullString().Trim()).Append(' ');
+            properties.Append(Full(property.Type)).Append(" @").Append(property.Name).Append(" { ");
+            foreach (AccessorDeclarationSyntax accessor in syntax.AccessorList.Accessors)
+            {
+                string modifiers = accessor.Modifiers.ToFullString().Trim();
+                if (modifiers.Length != 0)
                 {
-                    continue;
+                    properties.Append(modifiers).Append(' ');
                 }
 
-                if (!property.Type.IsUnmanagedType || !wire.GetMembers(property.Name).OfType<IFieldSymbol>().Any(f => SymbolEqualityComparer.Default.Equals(f.Type, property.Type)))
+                if (accessor.IsKind(SyntaxKind.GetAccessorDeclaration))
                 {
-                    Report(output, property, "partial numeric properties require a same-named wire field of the same unmanaged type");
+                    properties.Append("get => this.@").Append(storage!.Name).Append(".@").Append(property.Name).Append("; ");
+                }
+                else if (accessor.IsKind(SyntaxKind.SetAccessorDeclaration))
+                {
+                    properties.Append("set => this.@").Append(storage!.Name).Append(".@").Append(property.Name).Append(" = value; ");
+                }
+                else
+                {
+                    Report(output, property, "only get/set partial numeric accessors are supported");
                     return;
                 }
-
-                properties.Append("    public partial ").Append(Full(property.Type)).Append(" @").Append(property.Name).Append(" { get => this.@").Append(storage!.Name).Append(".@").Append(property.Name).Append("; set => this.@").Append(storage.Name).Append(".@").Append(property.Name).AppendLine(" = value; }");
             }
+
+            properties.AppendLine("}");
+        }
+
+        foreach (IPropertySymbol property in type.GetMembers().OfType<IPropertySymbol>().Where(p => p.IsIndexer && p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is IndexerDeclarationSyntax syntax && syntax.Modifiers.Any(SyntaxKind.PartialKeyword))))
+        {
+            Report(output, property, "partial indexers are unsupported");
+            return;
         }
 
         // Diagnostic offsets and tables live in a separate lazy type. Only reference
@@ -118,7 +163,7 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
 
         bool hasReferences = referenceMembers.Count != 0;
         string plan = hasReferences ? ReferencePlan(wire, referenceMembers, referenceOffsets) : string.Empty;
-        string wireExpression = isClass ? "this.@" + storage!.Name : "this";
+        string wireExpression = storage != null ? "this.@" + storage.Name : "this";
         string writeBody = hasReferences
             ? ReferenceWrite(wire, wireExpression, referenceMembers, referenceOffsets)
             : "        writer.WriteValue(global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in " + wireExpression + ", 1)));\n";
@@ -127,15 +172,14 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         bool generateName = type.FindImplementationForInterfaceMember(contract.GetMembers("ShaderTypeName").Single()) == null;
         string source = "// <auto-generated/>\n#nullable enable\n" +
             (type.ContainingNamespace.IsGlobalNamespace ? string.Empty : "namespace " + type.ContainingNamespace.ToDisplayString() + ";\n") +
-            (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (isClass ? (type.IsRecord ? "record class " : "class ") : (type.IsRecord ? "record struct " : "struct ")) + "@" + type.Name + "\n{\n" +
+            (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
             (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(name) + ";\n" : string.Empty) +
             "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferSize => global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + Full(wire) + ">();\n" +
             offsets + plan + "    private static class __TransferDiagnostics\n    {\n" +
             "        static __TransferDiagnostics() { }\n" + diagnosticOffsets +
             "        internal static readonly global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> Fields = global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderTransferField[] {\n" + fields + "        });\n    }\n" +
             "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferFields => __TransferDiagnostics.Fields;\n" +
-            "    global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.GetTransferFields() => __TransferDiagnostics.Fields;\n" +
-            "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + writeBody + "    }\n" + properties + "}\n";
+            "    readonly void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + writeBody + "    }\n" + properties + "}\n";
         output.AddSource("ShaderArguments_" + string.Concat(type.ToDisplayString().Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".g.cs", SourceText.From(source, Encoding.UTF8));
     }
 
@@ -175,6 +219,9 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         source.AppendLine("        {");
         source.AppendLine("            throw new global::System.ArgumentException(\"Reference slots must be non-overlapping and inside the wire value.\");");
         source.AppendLine("        }");
+
+        // Freeze only the unmanaged wire before evaluating reference getters. A
+        // non-readonly user getter can still cause a C# defensive outer-struct copy.
         source.Append("        global::System.Runtime.CompilerServices.Unsafe.SkipInit(out ").Append(Full(wire)).AppendLine(" wire);");
         source.Append("        global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in ").Append(wireExpression).AppendLine(", 1)).CopyTo(global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref wire, 1)));");
         source.AppendLine("        global::System.ReadOnlySpan<byte> bytes = global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in wire, 1));");
@@ -220,6 +267,12 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
                 fields.Append("        new(").Append(Quote(path)).Append(", ").Append(offset).Append(", global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(Full(field.Type)).Append(">(), typeof(").Append(Full(field.Type)).Append("), ").Append(slot ? "true" : "false").AppendLine("),");
             }
         }
+    }
+
+    private static bool IsReferenceMember(ISymbol member)
+    {
+        ITypeSymbol? type = member is IPropertySymbol p ? p.Type : member is IFieldSymbol f && !f.IsImplicitlyDeclared ? f.Type : null;
+        return !member.IsStatic && type is INamedTypeSymbol named && named.OriginalDefinition.ToDisplayString() == "Lumyte.Graphics.Abstractions.IGpuRef<T>";
     }
 
     private static bool Numeric(ITypeSymbol type) => type.ToDisplayString() is "System.Numerics.Vector2" or "System.Numerics.Vector3" or "System.Numerics.Vector4" or "System.Numerics.Matrix4x4";

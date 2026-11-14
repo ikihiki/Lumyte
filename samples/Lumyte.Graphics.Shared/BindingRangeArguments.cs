@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Selects elements from independently registered buffer ranges.</summary>
-public sealed partial record class BindingRangeArguments : IShaderArguments
+public partial record struct BindingRangeArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="BindingRangeArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="BindingRangeArguments"/> structure.</summary>
     /// <param name="first">The first selected element.</param>
     /// <param name="second">The second selected element.</param>
     /// <param name="output">The writable result.</param>

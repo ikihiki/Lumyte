@@ -5,7 +5,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 // Explicit application wire layout shared by direct encoders and external graph consumers.
-internal sealed record class ConsumerArguments(float Float, Func<float>? Read = null) : IShaderArguments
+internal record struct ConsumerArguments(float Float, Func<float>? Read = null) : IShaderArguments
 {
     public static string ShaderTypeName => "ConsumerInputs";
 

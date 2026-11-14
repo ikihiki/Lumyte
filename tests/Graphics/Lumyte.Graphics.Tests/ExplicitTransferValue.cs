@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class ExplicitTransferValue : IShaderArguments
+internal partial struct ExplicitTransferValue : IShaderArguments
 {
     private Storage _data;
 
-    public partial uint Value { get; set; }
+    public partial uint Value { readonly get; set; }
 
     public IGpuRef<uint>? Target { get; set; }
 

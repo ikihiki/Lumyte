@@ -36,7 +36,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
     }
 
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ValidateRootSelection();
         Direct3D12ComputePipeline pipeline = _pipeline!;

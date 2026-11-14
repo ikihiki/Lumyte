@@ -18,7 +18,7 @@ internal static class TestShaderDataUpload
     /// <param name="metadataFactory">The backend-owned immutable dependency factory, or the default identity-only owner.</param>
     /// <remarks>Any failure invalidates metadata for the requested range. Destination bytes may already be partially modified.</remarks>
     public static void CopyFrom<T>(ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -48,14 +48,9 @@ internal static class TestShaderDataUpload
         {
             for (int i = 0; i < source.Length; i++)
             {
-                if (!typeof(T).IsValueType)
-                {
-                    ArgumentNullException.ThrowIfNull(source[i]);
-                }
-
                 if (diagnostic != null)
                 {
-                    diagnostic.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
+                    diagnostic.ValidateTransferLayout(stride, T.TransferFields, T.ShaderTypeName);
                 }
 
                 var writer = new TestShaderValueWriter<TestShaderUploadDestination>(new(storage, checked(offset + ((ulong)i * (ulong)stride))), stride, encode, metadataFactory, diagnostic);

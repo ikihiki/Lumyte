@@ -8,13 +8,8 @@ internal static class Direct3D12ShaderTransfer
 {
     // The caller owns the exact DWORD-rounded stack span until commands_root_constants returns.
     internal static ShaderRootArguments CreateRoot<T>(Direct3D12Device owner, in T value, Span<byte> payload, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
-        if (!typeof(T).IsValueType)
-        {
-            ArgumentNullException.ThrowIfNull(value);
-        }
-
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
@@ -40,7 +35,7 @@ internal static class Direct3D12ShaderTransfer
     }
 
     internal static void CopyFrom<T>(Direct3D12Device owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -69,11 +64,6 @@ internal static class Direct3D12ShaderTransfer
 
             for (int i = 0; i < source.Length; i++)
             {
-                if (!typeof(T).IsValueType)
-                {
-                    ArgumentNullException.ThrowIfNull(source[i]);
-                }
-
                 var writer = new Direct3D12ShaderValueWriter(owner, stride, default, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();

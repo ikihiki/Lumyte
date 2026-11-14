@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Selects shader data arrays with independently checked layouts.</summary>
-public sealed partial record class BindingLayoutArguments : IShaderArguments
+public partial record struct BindingLayoutArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="BindingLayoutArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="BindingLayoutArguments"/> structure.</summary>
     /// <param name="vectors">The three-component vector array.</param>
     /// <param name="packed">The scalar and vector array.</param>
     /// <param name="nested">The nested structure array.</param>

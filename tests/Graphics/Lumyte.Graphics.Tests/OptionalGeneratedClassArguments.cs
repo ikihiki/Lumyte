@@ -2,11 +2,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class OptionalGeneratedClassArguments : IShaderArguments
+internal partial struct OptionalGeneratedClassArguments : IShaderArguments
 {
     private NumericData _data;
 
-    public partial uint Value { get; set; }
+    public partial uint Value { readonly get; set; }
 
     private struct NumericData
     {

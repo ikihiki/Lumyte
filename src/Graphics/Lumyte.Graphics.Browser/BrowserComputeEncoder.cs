@@ -33,7 +33,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
     }
 
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ValidateRootSelection();
         BrowserComputePipeline program = _pipeline!;

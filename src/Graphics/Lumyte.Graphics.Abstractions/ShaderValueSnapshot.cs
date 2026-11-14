@@ -8,19 +8,15 @@ namespace Lumyte.Graphics.Abstractions;
 /// <param name="Fields">Explicitly supplied C# diagnostic metadata; captured values normally defer this probe.</param>
 public sealed record ShaderValueSnapshot(string RootParameter, string ShaderTypeName, ReadOnlyMemory<byte> Data, IReadOnlyList<ShaderValue> Values, IReadOnlyList<ShaderTransferField> Fields)
 {
-    /// <summary>Gets an explicitly supplied diagnostic override. Ordinary captures never create a callback.</summary>
+    /// <summary>Gets a deferred CPU diagnostic provider or explicit override. Argument captures use a static generic provider, never an instance closure.</summary>
     public Func<IReadOnlyList<ShaderTransferField>>? DiagnosticFields { get; init; }
 
     /// <summary>Gets the value type inspected only when diagnostics are explicitly requested.</summary>
     public Type? DiagnosticType { get; init; }
 
-    /// <summary>Gets a reference-type metadata provider, retained without a delegate or boxed value.</summary>
-    public IShaderArguments? DiagnosticSource { get; init; }
-
     /// <summary>Explicitly probes diagnostic metadata in any build configuration.</summary>
     /// <returns>The deferred C# layout, or the metadata supplied with this snapshot.</returns>
     public IReadOnlyList<ShaderTransferField> GetDiagnosticFields() => DiagnosticFields?.Invoke()
-        ?? (DiagnosticSource is { } source ? ShaderTransfer.InterfaceFields(source) : null)
         ?? (DiagnosticType is { } type ? ShaderTransfer.Fields(type) : Fields);
 
     /// <summary>Copies the member list and numeric bytes without taking ownership of referenced GPU resources.</summary>

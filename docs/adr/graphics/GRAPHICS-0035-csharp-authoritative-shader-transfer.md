@@ -16,15 +16,15 @@
 
 ### rootとbuffer要素の転送契約を統合する
 
-追加memberを持たない旧IShaderData markerは削除し、IShaderArgumentsだけを転送契約とする。互換aliasは残さない。同じIShaderArguments実装classを、SetArgumentsのrootとIGraphicsShaderDataBufferの要素の両方で使用できる。shader-data buffer／slice／factory／Graph／resource宣言の制約もIShaderArgumentsへ統一する。手書きcodecと生成型は同じ必須の値だけを渡すwriter契約を使う。通常のunmanaged型はこのinterfaceを実装せず、従来どおりraw buffer overloadを選ぶ。数値のfield別変換、snapshot書き込みの復活、GPU copy／所有権や同期契約の変更は行わない。
+追加memberを持たない旧IShaderData markerは削除し、IShaderArgumentsだけを転送契約とする。互換aliasは残さない。同じIShaderArguments実装structを、SetArgumentsのrootとIGraphicsShaderDataBufferの要素の両方で使用できる。shader-data buffer／slice／factory／Graph／resource宣言の制約もstruct, IShaderArgumentsへ統一する。手書きcodecと生成型は同じ必須の値だけを渡すwriter契約を使う。通常のunmanaged型はこのinterfaceを実装せず、従来どおりraw buffer overloadを選ぶ。数値のfield別変換、snapshot書き込みの復活、GPU copy／所有権や同期契約の変更は行わない。
 
 ## 決定
 
-C#のunmanaged構造体の配置を正とし、数値を一括コピーする。参照を含む引数は非公開の格納用構造体を持つクラスへ移し、生成コードが参照だけを解決する。数値の再構築をなくし、格納用構造体は通常の利用側APIに露出させない。
+C#のunmanaged構造体の配置を正とし、数値を一括コピーする。参照を含む引数は非公開のunmanaged格納領域と型付きIGpuRefを持つmutable partial structとし、生成コードが参照だけを解決する。数値の再構築をなくし、格納用構造体は通常の利用側APIに露出させない。
 
 ### 利用者の変更前・変更後
 
-変更前は、利用側で参照を含む引数構造体を宣言し、数値メンバーを個別に書き出していた。変更後は、数値だけの通常のunmanaged構造体を、インターフェース、partial宣言、ジェネレーター、登録なしでそのまま転送する。参照を含む引数は、非公開のunmanaged格納領域と通常の公開プロパティを持つpartialクラスにする。値の取得、明示的なコピー、送信、完了待機、解放の境界は変更しない。
+変更前は、利用側で参照を含む引数構造体を宣言し、数値メンバーを個別に書き出していた。変更後は、数値だけの通常のunmanaged構造体を、インターフェース、partial宣言、ジェネレーター、登録なしでそのまま転送する。参照を含む引数は、非公開のunmanaged格納領域と通常の公開プロパティを持つmutable partial structにする。値の取得、明示的なコピー、送信、完了待機、解放の境界は変更しない。
 
 数値だけのバッファ要素は、変更前にはpartial構造体へのIShaderArguments実装を必要とした。変更後は通常の構造体でよく、同じ準備と書き込みは次のように変わる。後続のバリア、コピー、送信、完了待機と解放は両例とも省略している。
 
@@ -65,11 +65,11 @@ encoder.Draw(vertexCount);
 変更後は参照を含む型を次のように宣言する。同じ描画に対するSetPipeline、SetArgumentTable、SetArguments、Drawの順序は維持する。
 
 ```csharp
-public sealed partial class DrawArguments : IShaderArguments
+public partial record struct DrawArguments : IShaderArguments
 {
     private TransferData _data;
-    public partial Matrix4x4 ViewProjection { get; set; }
-    public IGpuRef<MaterialData> Material { get; set; } = null!;
+    public partial Matrix4x4 ViewProjection { readonly get; set; }
+    public IGpuRef<MaterialData> Material { get; set; }
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private struct TransferData
@@ -103,13 +103,33 @@ IGpuRef<uint> output = table.WriteBuffer(0, storage.SliceElements(0, 4));
 IGpuRef<uint> output = table.WriteBuffer(0, storage.SliceElements(0, 4), ShaderBufferAccess.ReadWrite);
 ```
 
+### struct限定と利用者による要素範囲の選択
+
+本決定では、参照を含む引数をclassへ移す案よりも、structだけを転送する判断を優先する。native/root、shader-data buffer/slice、factory、Graph、resource宣言のIShaderArguments経路をすべて`where T : struct, IShaderArguments`とする。管理参照を含むためunmanaged制約にはしない。interfaceなしの通常unmanaged経路は変更しない。生成対象のclass、record class、ref structは手書きWriteがあってもLUMG001で拒否する。C#自体はclassのinterface実装を許すが、generatorなしの手書きclassもconsumer genericではCS0453となることを実際の負例コンパイルで確認する。
+
+生成readonly Writeはprivate unmanaged wireだけをgetter前にコピーし、型付きIGpuRefを順に符号化する。管理参照を含む外側structをraw bytesとして転送しない。数値partial propertyは`{ readonly get; set; }`で可変値を提供できる。生成実装は宣言のreadonly修飾を正確に保持し、通常のget宣言へreadonly getを合成しない。これはC#のpartial propertyの互換性を保つためである。in/ref readonlyからのgeneric interface呼び出しやreadonlyでないgetterには外側structの防御的コピーがあり得る。外側コピーゼロや全体allocation-freeは保証しない。引数CaptureはDiagnosticTypeとキャッシュ済み静的generic DiagnosticFields callbackを保存し、入力struct、boxingやinstance closureを保持しない。CaptureとCopyはcallbackを呼ばず、静的TransferFieldsの遅延取得は次節の明示診断契約に従う。
+
+利用者は要素範囲を選択して転送する。次の例は初期化済みのDrawArguments配列values、mapped upload、gpu、互換のmaterialRefとcommandsを使用する。必要なbarrier、map/unmap、Submit、完了待機と解放は省略している。
+
+```csharp
+ref DrawArguments changed = ref values[1];
+changed.ViewProjection = camera.ViewProjection;
+changed.Material = materialRef;
+upload.CopyFrom(values.AsSpan(1, 1), elementOffset: 1);
+commands.CopyBuffer(upload.SliceElements(1, 1), gpu.SliceElements(1, 1));
+```
+
+一つのpropertyだけを変更しても、選択した要素のwire全体を転送する。field範囲転送、dirty tracking、自動coalescingや隠れた値cacheは追加しない。`var changed = values[1]`は値のコピーなので、配列を変更するには上例のrefまたは変更後の書き戻しが必要である。CopyFrom後の編集は次の明示転送まで反映しない。利用者はupload元をGPUが消費するまで変更・解放せず、同期を管理する。
+
+structの`new()`はparameterless constructorを呼ぶが、default(T)と配列初期要素は呼ばない。DrawingInstructionの`new()`はresource indexの-1と参照のdefault!初期化を保つが、defaultや配列初期値のindexは0となり、参照は利用者が設定するまでnullである。default!はnullable解析を抑制するだけで有効なGPU参照を生成しない。default rootのnull IGpuRefは符号化時に拒否されるため、転送前に必要な参照を設定する。ShaderRootArgumentsは転送providerではなくmetadataのclassとして維持する。
+
 ### 転送形式と生成コードの契約
 
 C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時には、実際のパディングを含むメモリ表現全体を一括コピーする。数値メンバーの個別シリアライズ、並べ替え、行列の転置、型変換、リフレクションのオフセットに合わせた再配置は行わない。入れ子の構造体とMatrix4x4も元のバイト列を維持する。シェーダー側はC#のフィールド順、オフセット、パッキング、要素間隔を一致させる。どちらかの変更もABIの変更となる。
 
-通常の数値データにはIShaderArguments不要である。`CreateShaderDataBufferのunmanagedオーバーロードは既存のIGraphicsBuffer<T>`を返し、`BufferSlice<T>`、`BufferBarrierDesc<T>`、CopyBuffer、WriteBufferとRenderGraphの通常のバッファ経路を使う。RenderGraph.CreateShaderDataBufferにもunmanagedオーバーロードを用意し、`RenderGraphBuffer<T>`を返す。`Lumyte.Resources.Graphicsでは既存のGraphicsBufferDefinition<T>`と生バッファのインポートをそのまま利用する。参照依存メタデータがないため、要素ごとの取得・符号化は行わず`ReadOnlySpan<T>`をそのままコピーする。既存のインターフェースを明示実装する数値型も同じ必須の値だけを渡すwriter経路で使用できる。IGpuRefを含む型はpartialクラスにする。数値データは1つの非公開unmanaged構造体に保持し、利用側には通常の読み書き可能なプロパティを提供する。.NET 10のpartialプロパティはジェネレーターで実装できる。利用者が定義する格納用構造体には、参照プロパティと同名の16バイトのShaderReferenceSlotフィールドも配置する。ジェネレーターは非公開の格納領域をローカルへ一括コピーし、参照の識別情報をC#側のスロット位置で同期符号化する。管理オブジェクト自体のメモリは転送しない。
+通常の数値データにはIShaderArguments不要である。`CreateShaderDataBufferのunmanagedオーバーロードは既存のIGraphicsBuffer<T>`を返し、`BufferSlice<T>`、`BufferBarrierDesc<T>`、CopyBuffer、WriteBufferとRenderGraphの通常のバッファ経路を使う。RenderGraph.CreateShaderDataBufferにもunmanagedオーバーロードを用意し、`RenderGraphBuffer<T>`を返す。`Lumyte.Resources.Graphicsでは既存のGraphicsBufferDefinition<T>`と生バッファのインポートをそのまま利用する。参照依存メタデータがないため、要素ごとの取得・符号化は行わず`ReadOnlySpan<T>`をそのままコピーする。既存のインターフェースを明示実装する数値型も同じ必須の値だけを渡すwriter経路で使用できる。IGpuRefを含む型はmutable partial structにする。数値データは1つの非公開unmanaged構造体に保持し、利用側には通常の読み書き可能なプロパティを提供する。.NET 10のpartialプロパティはジェネレーターで実装できる。利用者が定義する格納用構造体には、参照プロパティと同名の16バイトのShaderReferenceSlotフィールドも配置する。ジェネレーターは非公開の格納領域をローカルへ一括コピーし、参照の識別情報をC#側のスロット位置で同期符号化する。管理オブジェクト自体のメモリは転送しない。
 
-通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のクラスは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、任意の診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体では検証を明示的に有効にした場合に限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。取得済みsnapshotは型またはinstanceの配置providerだけを保持し、通常の取得で診断delegateやfield tableを生成しない。生成型の診断情報も初めて明示的に要求したときだけ初期化する。無効時にはフィールド走査も実行時コード生成も実行しない。動的コード生成ができないBrowserやAOTでも、通常構造体を直接転送できる。その場合は名前とサイズを診断し、取得できないフィールドオフセットの診断だけを省略する。生成型の静的な配置情報はその環境でも使用する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
+通常の構造体は`Unsafe.SizeOf<T>()`で、生成対象のstructは静的なTransferSizeで、バッファの要素間隔と割り当てサイズを決める。バッファ生成時に値のインスタンスを生成したり、default(T)から値を取得したりしない。生成型の静的なTransferFieldsは、任意の診断に使う実際の管理メモリ上のオフセットを表す。通常の構造体では検証を明示的に有効にした場合に限ってフィールドのリフレクションと実際の管理オフセットを求めるコードを型ごとに一度実行してキャッシュする。通常のunmanaged CaptureはDiagnosticTypeを保持する。引数CaptureはDiagnosticTypeに加えてキャッシュ済み静的generic DiagnosticFields callbackを保持するが、入力struct、boxingやinstance closureは保持しない。CaptureとCopyではcallbackを呼ばず、最初の明示GetDiagnosticFieldsで`ArgumentDiagnosticCache<T>`を初期化し、T.TransferFieldsを直接静的dispatchする。`Fields<T>(in T)`も同じ経路を使うため、Browser／NativeAOTでも生成metadataの取得にDynamicMethodやMakeGenericMethodを必要としない。ClassDiagnosticSourceとGetTransferFieldsは削除する。明示診断を要求しない転送ではフィールド走査、診断table初期化や実行時コード生成を実行しない。Typeだけで任意の未知Tを調べるreflectionとraw unmanagedの反射field fallbackは動的コードが必要であり、AOTでは利用できず空の診断を返す。動的コードを使えるJITでは、default TransferFieldsが空の手書きunmanaged IShaderArgumentsについて反射field fallbackを維持する。静的metadataのない管理参照入り外側structは空の診断を返し、その管理配置を数値転送しない。動的コードがない環境でも通常構造体の直接転送と名前・サイズの診断は可能で、利用できないraw field offsetの診断だけを省略する。シェーダーのスキーマから求めた要素間隔でC#の要素間隔を上書きしない。
 
 シェーダー書き込みはIShaderValueWriterのWriteValueとWriteReferenceへ統一する。数値だけの値は、パディングを含む全領域を一回のWriteValueで渡す。数値メンバー別のwriter、WriteWire、取得済みsnapshotを詰め直すPackは提供しない。参照のある場合の処理順は「値だけを渡すwriterとbackend固有metadata」の契約に従う。参照の種類は参照先リソースとArgumentTableの登録から解決し、シェーダーの名前やパスから実行時のアクセス種別を決めない。
 
@@ -117,7 +137,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
 
 ### 公開APIの差分
 
-比較元は基準コミットのsrc/Graphics/Lumyte.Graphics.AbstractionsにあるIShaderArguments、IShaderValueWriter、IGraphicsShaderDataBufferとする。以下は変更する主要宣言の抜粋である。数値の格納型は引数クラスの非公開実装であり、利用側の公開シグネチャに追加しない。
+比較元は基準コミットのsrc/Graphics/Lumyte.Graphics.AbstractionsにあるIShaderArguments、IShaderValueWriter、IGraphicsShaderDataBufferとする。以下は変更する主要宣言の抜粋である。数値の格納型は引数structの非公開実装であり、利用側の公開シグネチャに追加しない。
 
 ```diff
  namespace Lumyte.Graphics.Abstractions
@@ -162,8 +182,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
 +        static abstract int TransferSize { get; }
 +        static virtual IReadOnlyList<ShaderTransferField> TransferFields => [];
          public static ShaderValueSnapshot Capture<T>(in T value)
--            where T : struct, IShaderArguments;
-+            where T : IShaderArguments;
+             where T : struct, IShaderArguments;
      }
 +    public static class ShaderTransfer
 +    {
@@ -199,8 +218,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
      public interface IRenderEncoder
      {
          void SetArguments<T>(in T arguments)
--            where T : struct, IShaderArguments;
-+            where T : IShaderArguments;
+             where T : struct, IShaderArguments;
 +        // 実装必須。Captureへ委譲するdefault実装は提供しない。
 +        void SetArguments<T>(in T arguments, string rootParameter = "arguments",
 +            string? shaderTypeName = null) where T : unmanaged;
@@ -208,8 +226,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
      public interface IComputeEncoder
      {
          void SetArguments<T>(in T arguments)
--            where T : struct, IShaderArguments;
-+            where T : IShaderArguments;
+             where T : struct, IShaderArguments;
 +        void SetArguments<T>(in T arguments, string rootParameter = "arguments",
 +            string? shaderTypeName = null) where T : unmanaged;
      }
@@ -219,8 +236,7 @@ C#のunmanaged構造体の定義を転送ABIの正とする。値の取得時に
 +    // C#の配置を任意の診断へ渡す。GPUアドレスは含まない。
 +    public sealed record ShaderTransferField(
 +        string Path, int Offset, int Size, Type ValueType, bool IsReference = false);
--    public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : struct, IShaderArguments
-+    public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : IShaderArguments
+     public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : struct, IShaderArguments
      {
      }
  }
@@ -321,7 +337,7 @@ Setではwriter.Complete、任意の配置診断、参照準備hook、不変meta
 
 Vulkan／D3D12のrender／compute全四encoderはcodecとprepare中を_settingArgumentsで保護し、入れ子のSet、pipeline変更、End、Draw／Dispatchなどの再入を拒否する。Graph準備のtable自動選択に必要なSetArgumentTableだけは許可する。callback後は、捕捉したpipelineのValidateAlive、owner.ValidatePassとpipeline identity一致をすべてnative発行より前に再検査する。raw command bufferやpipelineのDisposeがguardを迂回しても、解放済みhandleを使うnative発行を阻止する。host失敗では旧root選択を保持するが、呼び出し側が明示したresource Dispose、table自動選択や発行済みdriver commandは取り消さない。
 
-Draw／Dispatchはnumeric rootを再送せず、不変の参照metadataとadmissionを使う。元のmutable classやstackのin参照を借用しない。転送済み要素のtransitive metadata、table照合とGraphのresource・範囲・access宣言は実行ごとに更新する。program一致検査も維持する。per-Set GPU uniform／CBVや容量超過fallbackは設けない。Wgpu／Browserは従来のbackend-private uniform emulationとstorage ownerを維持し、最初の実行でsealする。WGSLのbinding pool／remapも実行ごとに更新する。BrowserのMemoryView→JSコピーも残り、metadataの配列・参照collection、owner、delegateや実行ごとのbinding／descriptor heap確保まで除去するzero allocation／zero copyの主張ではない。公開の新しいimmediate APIやpackage更新は不要である。
+Draw／Dispatchはnumeric rootを再送せず、不変の参照metadataとadmissionを使う。元のmutable structやstackのin参照を借用しない。転送済み要素のtransitive metadata、table照合とGraphのresource・範囲・access宣言は実行ごとに更新する。program一致検査も維持する。per-Set GPU uniform／CBVや容量超過fallbackは設けない。Wgpu／Browserは従来のbackend-private uniform emulationとstorage ownerを維持し、最初の実行でsealする。WGSLのbinding pool／remapも実行ごとに更新する。BrowserのMemoryView→JSコピーも残り、metadataの配列・参照collection、owner、delegateや実行ごとのbinding／descriptor heap確保まで除去するzero allocation／zero copyの主張ではない。公開の新しいimmediate APIやpackage更新は不要である。
 
 VulkanDevice.MaxPushConstantsSizeはphysical deviceから取得するpublic容量queryである。Radeon8060Sで確認した256 byteを他deviceに一般化しない。push rangeはbind pointごとにoffset 0、size MaxPushConstantsSizeへ固定し、computeの全pipeline variantはCompute、graphics／partialの全variantはVertex|Fragmentを宣言する。Setのstage maskは対応rangeと完全一致し、compute／graphicsのnative push状態を分離する。全三stageの重複rangeに対して一部stageだけを更新する設計にはしない。descriptor visibilityはこれと独立にVertex|Fragment|Computeを許容する。この固定契約はpush rangeに限り、descriptor数などが異なるpipeline layout全体のsingleton化を意味しない。実際のpush量は論理wireの4-byte切り上げだけで、uint4宣言のpaddingとは区別する。Setには物理容量に加えて64 KiBのbackend host stack guardを適用し、異常に大きい物理上限でも無制限stack確保やheap fallbackを行わない。公開する物理上限やlayoutのrangeは変更しない。
 
@@ -355,7 +371,7 @@ IShaderValueWriterは`WriteValue(ReadOnlySpan<byte> value)`と`WriteReference<T>
 
 生成codecは非公開unmanaged wire全体をパディング込みでローカルへコピーし、raw prefixをWriteValue、参照をWriteReference、次のraw区間、最後のraw tailという物理順で渡す。数値だけの型は全領域を一回のWriteValueで渡す。数値のfield別シリアライズや全wireの転送後の参照差し替え、Completeでの参照再走査は行わない。source spanとin参照は同期呼び出し外へ保持せず、destinationとaliasさせない。
 
-生成型のprivate static planは実際のC#オフセットによる参照順序とスロット妥当性のためだけに使う。任意診断のreflectionや数値field tableとは独立し、範囲外、負値、重複、交差をgetterの呼び出し前に拒否する。field、auto-property、virtual propertyと副作用のあるcustom getterも同じ経路を使い、wireローカルコピーの後に各参照getterを物理順で一回だけ評価する。getterによる数値格納領域の変更は今回のraw bytesへ反映せず、参照プロパティの変更は後続getterが観測する。emitter structは生成しない。
+生成型のprivate static planは実際のC#オフセットによる参照順序とスロット妥当性のためだけに使う。任意診断のreflectionや数値field tableとは独立し、範囲外、負値、重複、交差をgetterの呼び出し前に拒否する。field、auto-propertyとcustom getterも同じ経路を使い、wireローカルコピーの後に各参照getterを物理順で一回だけ評価する。生成Writeはreadonlyであり、wireコピー後の数値変更は今回のraw bytesへ反映しない。readonlyでない利用者getterは外側structの防御的コピー上で実行され得るため、副作用が後続getterや元の値へ伝播するとは保証しない。emitter structは生成しない。
 
 VulkanShaderValueWriter、Direct3D12ShaderValueWriter、WgpuShaderValueWriter、BrowserShaderValueWriterを、それぞれのbackend内部でIShaderValueWriterとして直接実装する。各backendのShaderTransfer helperがSetと型付きCopyFromの両方でvalue.Write(ref writer)を呼ぶ。各writerが暗黙の現在位置とexpectedTransferSizeを所有し、raw区間をVulkan／D3D12の`Span<byte>`、Wgpu／Browserの非公開具象RootStorage.WriteまたはuploadのCopyBytesFromへ直接渡す。Sharedのwriterから参照encoder callbackを呼ぶ構造にはしない。WriteValueは渡された長さ、WriteReferenceは必ず16バイトだけ位置を進め、参照はその場でbackendの表現へ符号化する。残容量の検査はlength > expectedTransferSize - positionという減算形式でoverflowを避ける。Completeは一回だけ成功でき、position == expectedTransferSizeを必須とする。短い出力も長い出力も公開しない。
 
@@ -434,7 +450,7 @@ callback Bで取得して保存した参照も、使用するpass A自身がnati
 
 ### 値の取得・転送・寿命
 
-明示的なCaptureは、従来どおり呼び出し時点の独立したCPU値snapshotを作る。SetArgumentsは同じ値固定の意味を維持するが、前述のbackend固有の同期転送先へ直接書き、numericの中間snapshotを作らない。一方、参照付きCopyFromは現在のC# wire bytesを同期的にupload領域へ書き、bindingに必要な参照identityだけを保持する。転送のために数値のShaderValueSnapshotを作成・保存しない。宣言、登録、RenderGraph Compileより後、CopyFromより前の変更はすべて反映する。CopyFrom後の元のクラス変更には、次の明示CopyFromが必要である。GPU copyが実際に読む瞬間までCPU objectやstack参照を保持するものではない。
+明示的なCaptureは、従来どおり呼び出し時点の独立したCPU値snapshotを作る。SetArgumentsは同じ値固定の意味を維持するが、前述のbackend固有の同期転送先へ直接書き、numericの中間snapshotを作らない。一方、参照付きCopyFromは現在のC# wire bytesを同期的にupload領域へ書き、bindingに必要な参照identityだけを保持する。転送のために数値のShaderValueSnapshotを作成・保存しない。宣言、登録、RenderGraph Compileより後、CopyFromより前の変更はすべて反映する。CopyFrom後の元のstruct変更には、次の明示CopyFromが必要である。GPU copyが実際に読む瞬間までCPU objectやstack参照を保持するものではない。
 
 CopyFromの失敗atomicityは要求しない。codec、参照符号化、native mapped書き込みで失敗すると、指定したupload範囲のbyteは部分更新され得る。旧byteへrollbackせず、要求した範囲のreference metadataを全て無効にし、元の例外を返す。範囲外のmetadataは変更しない。成功した全範囲の明示再転送で回復する。無効なmetadataを読むcopy／bindingは、native使用前に拒否する。in-flight GPU使用中のstaging変更を許す判断ではなく、従来の所有権・同期責任は維持する。
 
@@ -450,20 +466,24 @@ MemoryPreference.UploadのバッファはCPUステージング領域、Automatic
 
 ### 検証方針
 
+参照を含むmutable structの配列について、ref values[1]から数値partial propertyとIGpuRefを変更し、要素1だけのCopyFromおよび明示CopyBufferで対応するwireと参照metadataが更新され、範囲外の要素が変わらないことを確認する。ローカルコピーだけの編集では配列が変わらないこと、new()とdefault/配列初期値の差、default rootのnull参照拒否も受け入れ条件とする。class/record class/ref structのLUMG001とgeneratorなしmanual classのCS0453は実際の負例コンパイルで確認し、静的検索だけをコンパイル失敗の証拠としない。
+
 Vulkanはbind point内のrange一致と発行stage maskの完全一致をsourceで照合し、実機でSet後の値保持とgraphics／compute状態の独立を検査する。任意のnative validation layerによる検査は実機実行とは別の確認とし、layerなしの成功をlayer検査の成功とは扱わない。codecやprepareからの再入拒否、GraphのSetArgumentTable自動選択、callback内のcommand buffer／pipeline解放後の再検査も受け入れ条件とする。native定数記録はSetの責務で、可変PSOに数値を保持せず、metadataは参照情報だけを持ちframe入力を保持しない。
 
 値だけを渡すwriterの受け入れ条件は、二つの必須メソッドと各一引数、数値だけの一回のWriteValue、custom getterの物理順一回評価、getter前のwireコピーと不正plan拒否、減算形式の容量検査とCompleteのサイズ一致、失敗した準備による旧世代保持とする。Graph callbackのfinally解除、End前の解除、Set中の再入拒否、passごとに一つのActionと許可配列だけのcapture、command-local copy後の最新推移的参照による毎回一度のadmissionも検査する。別callbackで取得した参照は互換tableと使用passのresource・範囲・access宣言が揃えば許可し、共有tableだけの未宣言使用は検証無効時にも拒否する。snapshotを受けるbackend入力、Pack、遅延fixupが公開契約に残らないことも確認する。四backendのSetと型付きCopyFromが内部writerを直接使うこと、予約ゼロを含む16-byte ABI、Wgpu／Browserの相対offsetとcountのchecked変換、D3D12の絶対offset、SharedのAllocate／Createの所有権境界とcleanup時の元例外保持を検査する。native参照ごとのShaderValue、byte[16]配列、encode callbackやsnapshot代替入力を残さず、生成コードにEmitScopeがないことも確認する。
-テストでは、インターフェースもpartial宣言もない構造体と外部の数値型、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、クラスの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、有効時の不一致検出、無効時のバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映、登録ごとのアクセス種別と能力の検査、同じバッファの別登録、GetElementによる登録の保持、置換前後の独立したCPUメタデータとremapのlane分離も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。
+テストでは、インターフェースもpartial宣言もない構造体と外部の数値型、1回の一括書き込み、入れ子の構造体、行列、実際のパディング、C#の要素間隔、管理参照を含むstructの非公開格納領域とプロパティ書き込み、取得済みの値の独立性、参照差し替えの範囲、インスタンス生成なしの静的サイズ取得、有効時の不一致検出、無効時のバイト列の保持を確認する。バックエンドの動作確認では、明示的な転送、登録範囲を基準とするオフセット、循環参照、送信成功後だけのメタデータ反映、登録ごとのアクセス種別と能力の検査、同じバッファの別登録、GetElementによる登録の保持、置換前後の独立したCPUメタデータとremapのlane分離も確認する。GPU、Browser、Direct3D12の検証範囲は、CPUテストの成功件数と区別して報告する。Browserのbuild成功をAOT publicationやAOT runtime実行の証拠とせず、それぞれの検証を区別する。
 
 ## 検討した代替案
 
 - 数値型にもインターフェースと生成コードを必須にする: 外部のunmanaged型や通常の構造体をそのまま使えないため採用しない。
-- 型制約だけを外して任意の管理型を受け付ける: 参照を含む値と生のunmanagedバイト列の境界が不明確になるため採用しない。生バッファはunmanaged制約、参照を含む値は既存のインターフェース制約で分離する。
+- 型制約だけを外して任意の管理型を受け付ける: 参照を含む値と生のunmanagedバイト列の境界が不明確になるため採用しない。生バッファはunmanaged制約、参照を含む値はstruct, IShaderArguments制約で分離する。
 - Sharedの汎用writerとbackend参照符号化callbackを維持する: 共通化はできるが、native転送で論理参照記録や一時配列を介さずbackendが直接ABIを書き込む境界にするため採用しない。Graphの参照だけの準備hookは別の責務として維持する。
 - 数値ごとのwriterを維持する: バイト列を再構築し、ABIの定義が重複するため採用しない。
 - Releaseでリフレクションのオフセットに詰め直す: 不整合な宣言によってC#のメモリ表現を暗黙に変更しない方針のため採用しない。
+- 参照を含む引数をclassにする: 値の所有と配列要素の明示編集をstructへ統一するため採用しない。
+- 自動dirty trackingで変更箇所を検出する: 利用者が要素範囲と転送時点を選び、隠れた比較・cache・coalescingを持たない契約を優先する。
 - 管理クラスのメモリを直接転送する: 転送可能な領域は非公開のunmanaged格納領域だけとし、採用しない。
 
 ## 結果と影響
 
-シェーダー引数とソース生成の契約に対する破壊的変更となる。利用側は参照を含む構造体をクラスへ移行し、シェーダー宣言の配置を一致させる責務を持つ。検証を有効にした場合に配置診断を提供し、いずれの構成でも元の数値バイト列を保持する。所有権の管理、リソース検証、明示的なGPU同期は引き続き必要となる。
+シェーダー引数とソース生成の契約に対する破壊的変更となる。利用側は参照を含むクラスをmutable partial structへ移行し、シェーダー宣言の配置を一致させる責務を持つ。検証を有効にした場合に配置診断を提供し、いずれの構成でも元の数値バイト列を保持する。所有権の管理、リソース検証、明示的なGPU同期は引き続き必要となる。

@@ -76,7 +76,6 @@ public sealed class ColorShaderTransferTests
         Assert.Empty(snapshot.Values);
         Assert.Empty(snapshot.Fields);
         Assert.Null(snapshot.DiagnosticFields);
-        Assert.Null(snapshot.DiagnosticSource);
         Assert.Equal(typeof(T), snapshot.DiagnosticType);
     }
 

@@ -54,5 +54,5 @@ public interface IArgumentTable : IDisposable
     /// <param name="range">The nonempty range from this device.</param>
     /// <returns>The opaque range reference.</returns>
     IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : IShaderArguments;
+        where T : struct, IShaderArguments;
 }

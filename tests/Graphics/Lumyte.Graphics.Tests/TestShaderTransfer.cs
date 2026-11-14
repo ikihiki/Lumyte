@@ -18,13 +18,8 @@ internal static class TestShaderTransfer
     /// <param name="metadataFactory">The immutable backend dependency owner factory.</param>
     /// <returns>The independently owned root generation.</returns>
     public static TestRootOwner Create<T>(in T value, Func<int, ITestShaderRootStorage> factory, Func<ShaderValue, byte[]> encode, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null, Func<IEnumerable<IShaderReference>, IShaderReferenceMetadata>? metadataFactory = null)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
-        if (!typeof(T).IsValueType)
-        {
-            ArgumentNullException.ThrowIfNull(value);
-        }
-
         ArgumentNullException.ThrowIfNull(encode);
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
@@ -35,7 +30,7 @@ internal static class TestShaderTransfer
             var writer = new TestShaderValueWriter<TestShaderRootDestination>(new(storage), size, encode, metadataFactory, diagnostic);
             value.Write(ref writer);
             IShaderReferenceMetadata references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
+            diagnostic?.ValidateTransferLayout(size, T.TransferFields, name);
             return new(storage, ShaderRootArguments.Create(root, name, size, references, prepare));
         }
         catch

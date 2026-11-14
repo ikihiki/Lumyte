@@ -3,25 +3,29 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class WireCursorGetterValue : IShaderArguments
+internal partial struct WireCursorGetterValue : IShaderArguments
 {
+    private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
     private Storage _data;
 
-    public partial uint Number { get; set; }
+    public WireCursorGetterValue()
+    {
+    }
 
-    public IGpuRef<uint>? A
+    public partial uint Number { readonly get; set; }
+
+    public readonly IGpuRef<uint>? A
     {
         get
         {
-            GetterCalls++;
-            Number = 999;
+            _counter.Value++;
             return (IGpuRef<uint>?)Reference;
         }
     }
 
     internal object? Reference { get; set; }
 
-    internal int GetterCalls { get; private set; }
+    internal int GetterCalls => _counter.Value;
 
     [StructLayout(LayoutKind.Explicit, Size = 32)]
     private struct Storage

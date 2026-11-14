@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Defines application root values selecting a logical material range.</summary>
-public sealed partial record class BindingDrawArguments : IShaderArguments
+public partial record struct BindingDrawArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="BindingDrawArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="BindingDrawArguments"/> structure.</summary>
     /// <param name="materials">The logical material range.</param>
     /// <param name="count">The number of materials drawn by the shader.</param>
     public BindingDrawArguments(IGpuRef<BindingMaterial> materials, uint count)

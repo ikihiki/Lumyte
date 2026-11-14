@@ -75,14 +75,14 @@ public class ShaderResources
     /// <param name="range">The device-memory shader-data range.</param>
     /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
     public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved)
-        where T : IShaderArguments => _reservation.RegisterBuffer(range, resolved);
+        where T : struct, IShaderArguments => _reservation.RegisterBuffer(range, resolved);
 
     /// <summary>Registers a shader-data range resolved during preparation.</summary>
     /// <typeparam name="T">The logical shader element type.</typeparam>
     /// <param name="resolve">The final shader-data range resolver.</param>
     /// <param name="resolved">Receives the real native reference once all tables are installed.</param>
     public void RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve, Action<IGpuRef<T>> resolved)
-        where T : IShaderArguments => _reservation.RegisterShaderData(resolve, resolved);
+        where T : struct, IShaderArguments => _reservation.RegisterShaderData(resolve, resolved);
 
     /// <summary>Adds a resource identity and shader-access validation before native allocation.</summary>
     /// <param name="inspect">The resource declaration validator.</param>
@@ -116,7 +116,7 @@ public class ShaderResources
     /// <param name="firstVertex">The first vertex.</param>
     /// <param name="firstInstance">The first instance.</param>
     public void Draw<T>(IRenderEncoder encoder, in T arguments, uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(encoder);
         IArgumentTable? table = _reservation.RecordingTable(graphics: true);
@@ -139,7 +139,7 @@ public class ShaderResources
     /// <param name="baseVertex">The signed vertex offset.</param>
     /// <param name="firstInstance">The first instance.</param>
     public void DrawIndexed<T>(IRenderEncoder encoder, in T arguments, uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(encoder);
         IArgumentTable? table = _reservation.RecordingTable(graphics: true);
@@ -160,7 +160,7 @@ public class ShaderResources
     /// <param name="y">The Y workgroup count.</param>
     /// <param name="z">The Z workgroup count.</param>
     public void Dispatch<T>(IComputeEncoder encoder, in T arguments, uint x, uint y = 1, uint z = 1)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(encoder);
         IArgumentTable? table = _reservation.RecordingTable(graphics: false);

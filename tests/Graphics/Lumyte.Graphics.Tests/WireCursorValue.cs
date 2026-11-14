@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Tests;
 
-internal partial class WireCursorValue : IShaderArguments
+internal partial struct WireCursorValue : IShaderArguments
 {
     private Storage _data;
 
@@ -21,7 +21,7 @@ internal partial class WireCursorValue : IShaderArguments
 
     public IGpuRef<uint>? A { get; set; }
 
-    public partial uint Number { get; set; }
+    public partial uint Number { readonly get; set; }
 
     internal byte[] RawBytes() => MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in _data, 1)).ToArray();
 

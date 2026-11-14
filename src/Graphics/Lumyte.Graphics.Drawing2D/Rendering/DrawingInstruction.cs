@@ -3,11 +3,18 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed partial record class DrawingInstruction : IShaderArguments
+internal partial record struct DrawingInstruction : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="DrawingInstruction"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="DrawingInstruction"/> structure.</summary>
+    public DrawingInstruction()
+    {
+        Texture = default!;
+        Sampler = default!;
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="DrawingInstruction"/> structure.</summary>
     public DrawingInstruction(Vector4 t0, Vector4 t1, Vector4 a, Vector4 b, Vector4 c, Vector4 d, uint kind, uint first, uint count, uint mode, IGpuRef<IGraphicsTextureView> texture, IGpuRef<IGraphicsSampler> sampler)
     {
         _data = new()

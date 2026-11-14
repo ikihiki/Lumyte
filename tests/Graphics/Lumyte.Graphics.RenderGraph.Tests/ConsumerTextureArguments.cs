@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
-internal sealed record class ConsumerTextureArguments(IGpuRef<IGraphicsTextureView> Input, IGpuRef<IGraphicsTextureView> Backdrop, float Float) : IShaderArguments
+internal record struct ConsumerTextureArguments(IGpuRef<IGraphicsTextureView> Input, IGpuRef<IGraphicsTextureView> Backdrop, float Float) : IShaderArguments
 {
     public static string ShaderTypeName => "ConsumerTextureInputs";
 

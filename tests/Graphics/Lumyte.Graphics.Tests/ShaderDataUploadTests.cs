@@ -17,9 +17,9 @@ public sealed class ShaderDataUploadTests
     public void FailedUploadClearsRequestedMetadataAndCanRecover(int failureKind)
     {
         using var storage = new MappedBuffer(4 * UploadValue.TransferSize);
-        var first = new UploadValue { Number = 17, Reference = new TestReference(1) };
-        var second = new UploadValue { Number = 29, Reference = new TestReference(2) };
-        UploadValue[] source = [first, second];
+        UploadValue[] source = [new() { Number = 17, Reference = new TestReference(1) }, new() { Number = 29, Reference = new TestReference(2) }];
+        ref UploadValue first = ref source[0];
+        ref UploadValue second = ref source[1];
         IShaderReferenceMetadata?[] metadata = SeedMetadata();
         IShaderReferenceMetadata? before = metadata[0];
         IShaderReferenceMetadata? after = metadata[3];
@@ -120,7 +120,7 @@ public sealed class ShaderDataUploadTests
         Exception? failure;
         if (rangeKind == 3)
         {
-            HugeValue[] source = [new(), new()];
+            HugeValue[] source = [default, default];
             failure = Record.Exception(() => TestShaderDataUpload.CopyFrom<HugeValue>(source, storage, 0, metadata, Encode, null));
             Assert.IsType<OverflowException>(failure);
         }
@@ -224,8 +224,14 @@ public sealed class ShaderDataUploadTests
         public ShaderReferenceSlot Reference;
     }
 
-    private sealed class UploadValue : IShaderArguments
+    private struct UploadValue : IShaderArguments
     {
+        private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
+
+        public UploadValue()
+        {
+        }
+
         public static string ShaderTypeName => throw new InvalidOperationException("Type diagnostics must remain disabled.");
 
         public static int TransferSize => 20;
@@ -240,20 +246,14 @@ public sealed class ShaderDataUploadTests
 
         public bool? ExtraReference { get; set; }
 
-        public int Writes { get; set; }
+        public int Writes { get => _counter.Value; set => _counter.Value = value; }
 
         public int Probes { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
-        {
-            Probes++;
-            throw new InvalidOperationException("Instance diagnostics must remain disabled.");
-        }
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
         {
-            Writes++;
+            _counter.Value++;
             if (Failure != null)
             {
                 throw Failure;
@@ -274,7 +274,7 @@ public sealed class ShaderDataUploadTests
         }
     }
 
-    private sealed class HugeValue : IShaderArguments
+    private struct HugeValue : IShaderArguments
     {
         public static string ShaderTypeName => throw new InvalidOperationException("No diagnostics expected.");
 

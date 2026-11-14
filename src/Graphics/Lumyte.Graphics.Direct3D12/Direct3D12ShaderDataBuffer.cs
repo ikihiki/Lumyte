@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Direct3D12;
 
 internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage
-    where T : IShaderArguments
+    where T : struct, IShaderArguments
 {
     private readonly IShaderReferenceMetadata?[] _values;
     private readonly ShaderDataLayout? _diagnosticLayout;

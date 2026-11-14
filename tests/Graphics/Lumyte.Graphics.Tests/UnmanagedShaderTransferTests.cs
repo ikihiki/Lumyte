@@ -38,7 +38,6 @@ public sealed class UnmanagedShaderTransferTests
         Assert.Equal(64UL, layout.GetSizeInBytes(2));
         Assert.Empty(snapshot.Fields);
         Assert.Null(snapshot.DiagnosticFields);
-        Assert.Null(snapshot.DiagnosticSource);
         Assert.Equal(typeof(PaddedValue), snapshot.DiagnosticType);
         IReadOnlyList<ShaderTransferField> fields = snapshot.GetDiagnosticFields();
         Assert.Contains(fields, field => field.Path == "Position" && field.Offset == 8 && field.Size == 12);
@@ -163,7 +162,7 @@ public sealed class UnmanagedShaderTransferTests
         public TestRootStorage? Storage { get; private set; }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => throw new InvalidOperationException("The numeric path must not call an interface serializer.");
+            where T : struct, IShaderArguments => throw new InvalidOperationException("The numeric path must not call an interface serializer.");
 
         public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
             where T : unmanaged => Root = TestShaderTransfer.CreateUnmanaged(in arguments, rootParameter, shaderTypeName, size => Storage = new TestRootStorage(size));

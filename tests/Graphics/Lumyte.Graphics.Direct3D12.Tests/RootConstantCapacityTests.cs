@@ -61,7 +61,7 @@ public sealed class RootConstantCapacityTests
         Span<byte> payload = stackalloc byte[words * 4];
         payload.Clear();
         BytesRoot.TransferSize = bytes;
-        var value = new BytesRoot();
+        BytesRoot value = default;
         ShaderRootArguments root = Direct3D12ShaderTransfer.CreateRoot(device, in value, payload);
         Assert.All(payload[..bytes].ToArray(), item => Assert.Equal((byte)37, item));
         Assert.All(payload[bytes..].ToArray(), item => Assert.Equal((byte)0, item));
@@ -182,7 +182,7 @@ public sealed class RootConstantCapacityTests
             where TWriter : IShaderValueWriter, allows ref struct => throw new InvalidOperationException("Must reject before writing.");
     }
 
-    private sealed class BytesRoot : IShaderArguments
+    private struct BytesRoot : IShaderArguments
     {
         public static string ShaderTypeName => "Bytes";
 

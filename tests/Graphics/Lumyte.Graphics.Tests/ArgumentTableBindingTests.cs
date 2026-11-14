@@ -227,7 +227,7 @@ public sealed class ArgumentTableBindingTests
         return bytes;
     }
 
-    private sealed class PoolArguments(IGpuRef<uint>[] references) : IShaderArguments
+    private struct PoolArguments(IGpuRef<uint>[] references) : IShaderArguments
     {
         public static string ShaderTypeName => "Pools";
 
@@ -344,7 +344,7 @@ public sealed class ArgumentTableBindingTests
             where T : unmanaged => throw new NotSupportedException();
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : IShaderArguments => throw new NotSupportedException();
+            where T : struct, IShaderArguments => throw new NotSupportedException();
 
         public void ReleaseTexture(uint slot) => throw new NotSupportedException();
 

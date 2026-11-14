@@ -15,7 +15,7 @@ public interface IComputeEncoder
     /// <typeparam name="T">The generated argument structure.</typeparam>
     /// <param name="arguments">The root values for the selected program.</param>
     void SetArguments<T>(in T arguments)
-        where T : IShaderArguments;
+        where T : struct, IShaderArguments;
 
     /// <summary>Copies an ordinary unmanaged value directly without an interface or generated code.</summary>
     /// <typeparam name="T">The unmanaged argument type.</typeparam>

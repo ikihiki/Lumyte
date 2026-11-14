@@ -7,13 +7,8 @@ namespace Lumyte.Graphics.Vulkan;
 internal static class VulkanShaderTransfer
 {
     internal static ShaderRootArguments CreateRoot<T>(VulkanDevice owner, in T value, Span<byte> destination, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
-        if (!typeof(T).IsValueType)
-        {
-            ArgumentNullException.ThrowIfNull(value);
-        }
-
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
@@ -39,7 +34,7 @@ internal static class VulkanShaderTransfer
     }
 
     internal static void CopyFrom<T>(VulkanDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, IShaderReferenceMetadata?[] metadata, ShaderDataLayout? diagnostic)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -68,11 +63,6 @@ internal static class VulkanShaderTransfer
 
             for (int i = 0; i < source.Length; i++)
             {
-                if (!typeof(T).IsValueType)
-                {
-                    ArgumentNullException.ThrowIfNull(source[i]);
-                }
-
                 var writer = new VulkanShaderValueWriter(owner, stride, storage, checked(offset + ((ulong)i * (ulong)stride)), diagnostic);
                 source[i].Write(ref writer);
                 IShaderReferenceMetadata references = writer.Complete();

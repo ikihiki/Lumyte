@@ -69,7 +69,7 @@ public sealed class RenderGraphPreparationContext
     /// <param name="buffer">The declared shader data.</param>
     /// <returns>The borrowed allocation.</returns>
     public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphPass pass, RenderGraphShaderDataBuffer<T> buffer)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         Check(pass, buffer, ResourceAccess.ShaderRead);
         return (IGraphicsShaderDataBuffer<T>)_plan.Resolve(buffer);

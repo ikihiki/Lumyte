@@ -3,20 +3,20 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Tests;
 
 // A manual producer using exactly the generated value's ABI and actual backend writer.
-internal sealed class ManualBadAbiValue(NativeAbiValue value, int mode = 0) : IShaderArguments
+internal struct ManualBadAbiValue(NativeAbiValue value, int mode = 0) : IShaderArguments
 {
     public static string ShaderTypeName => "NativeAbiValue";
 
     public static int TransferSize => 88;
 
-    public IReadOnlyList<ShaderTransferField> GetTransferFields() => ((IShaderArguments)value).GetTransferFields();
+    public static IReadOnlyList<ShaderTransferField> TransferFields => Fields<NativeAbiValue>();
 
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter, allows ref struct
     {
         if (mode == 0)
         {
-            ((IShaderArguments)value).Write(ref writer);
+            Forward(in value, ref writer);
             return;
         }
 
@@ -26,4 +26,11 @@ internal sealed class ManualBadAbiValue(NativeAbiValue value, int mode = 0) : IS
             writer.WriteValue(new byte[85]);
         }
     }
+
+    private static IReadOnlyList<ShaderTransferField> Fields<T>()
+        where T : struct, IShaderArguments => T.TransferFields;
+
+    private static void Forward<T, TWriter>(in T value, ref TWriter writer)
+        where T : struct, IShaderArguments
+        where TWriter : IShaderValueWriter, allows ref struct => value.Write(ref writer);
 }

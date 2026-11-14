@@ -122,7 +122,7 @@ public sealed class GraphShaderResourceExecutionTests
         using CompiledRenderGraph compiled = graph.Compile();
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
-        DrawingArguments arguments = null!;
+        DrawingArguments arguments = default;
         Assert.Throws<InvalidOperationException>(() =>
         {
             if (graphics)
@@ -170,7 +170,7 @@ public sealed class GraphShaderResourceExecutionTests
             Assert.True(first.IsReady);
             Assert.True(later.IsReady);
             Assert.Same(ProfilingDevice.Owner(firstHandle!), ProfilingDevice.Owner(laterHandle!));
-            DrawingArguments arguments = null!;
+            DrawingArguments arguments = default;
             Assert.Throws<InvalidOperationException>(() => first.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
             Assert.Throws<InvalidOperationException>(() => first.Draw(callbackCommands.BeginRenderPass(new()), in arguments, 3));
             earlierRan = true;
@@ -185,7 +185,7 @@ public sealed class GraphShaderResourceExecutionTests
         Assert.False(later.IsReady);
         Assert.NotNull(firstHandle);
         Assert.NotNull(laterHandle);
-        DrawingArguments arguments = null!;
+        DrawingArguments arguments = default;
         Assert.Throws<InvalidOperationException>(() => first.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
         Assert.Throws<InvalidOperationException>(() => later.Dispatch(callbackCommands.BeginComputePass(new()), in arguments, 1));
         Assert.Empty(commands.Events);

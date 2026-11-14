@@ -221,7 +221,7 @@ internal static class BindingRegressionExercise
     }
 
     private static async Task WriteAsync<T>(IGraphicsShaderDataBuffer<T> staging, T[] values)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         await staging.MapAsync();
         staging.CopyFrom(values);
@@ -229,7 +229,7 @@ internal static class BindingRegressionExercise
     }
 
     private static void RecordUpload<T>(IGraphicsCommandBuffer commands, IGraphicsShaderDataBuffer<T> staging, IGraphicsShaderDataBuffer<T> gpu, ulong destinationOffset = 0)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = staging.SliceElements(0, staging.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
         commands.CopyBuffer(staging.SliceElements(0, staging.Count), gpu.SliceElements(destinationOffset, staging.Count));

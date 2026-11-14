@@ -250,7 +250,7 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         where T : unmanaged => Preparation().GetBuffer(Pass(resources), buffer, access);
 
     internal IGraphicsShaderDataBuffer<T> Buffer<T>(ShaderResources resources, RenderGraphShaderDataBuffer<T> buffer)
-        where T : IShaderArguments => Preparation().GetShaderDataBuffer(Pass(resources), buffer);
+        where T : struct, IShaderArguments => Preparation().GetShaderDataBuffer(Pass(resources), buffer);
 
     internal IGraphicsSampler Sampler(ShaderResources resources, RenderGraphSampler sampler) => Preparation().GetSampler(Pass(resources), sampler);
 

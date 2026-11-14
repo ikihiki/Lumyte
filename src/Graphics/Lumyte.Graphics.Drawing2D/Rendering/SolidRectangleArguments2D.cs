@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed partial record class SolidRectangleArguments2D : IShaderArguments
+internal partial record struct SolidRectangleArguments2D : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="SolidRectangleArguments2D"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="SolidRectangleArguments2D"/> structure.</summary>
     public SolidRectangleArguments2D(IGpuRef<Vector4> data, Vector2 size)
     {
         _data = new()

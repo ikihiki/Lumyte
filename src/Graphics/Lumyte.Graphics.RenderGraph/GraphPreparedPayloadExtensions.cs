@@ -29,7 +29,7 @@ internal static class GraphPreparedPayloadExtensions
     }
 
     internal static void ConnectPreparedBuffer<T>(this RenderGraph graph, ShaderResources resources, RenderGraphShaderDataBuffer<T> buffer, ulong offset, ulong count, Action<IGpuRef<T>> resolved)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         var owner = GraphShaderResourceOwner.Get(graph);
         owner.ValidateModule(resources);

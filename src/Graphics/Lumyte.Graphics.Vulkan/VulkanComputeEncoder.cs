@@ -37,7 +37,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     }
 
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ValidateRootSelection();
         VulkanComputePipeline pipeline = _pipeline!;

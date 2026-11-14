@@ -8,7 +8,7 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Root and typed-buffer transfers share one public interface.</summary>
 public sealed class TransferInterfaceContractTests
 {
-    /// <summary>No marker alias remains; the same generated class satisfies both public surfaces.</summary>
+    /// <summary>No marker alias remains; the same generated managed struct satisfies both public surfaces.</summary>
     [Fact]
     public void ArgumentsAreTheOnlyTransferContract()
     {
@@ -16,8 +16,17 @@ public sealed class TransferInterfaceContractTests
         Assert.Equal(typeof(IShaderArguments), Assert.Single(typeof(UnifiedTransferValue).GetInterfaces()));
         Assert.Equal(typeof(UnifiedTransferValue), typeof(IGraphicsShaderDataBuffer<UnifiedTransferValue>).GenericTypeArguments[0]);
         Assert.Equal(typeof(UnifiedTransferValue), typeof(RenderGraphShaderDataBuffer<UnifiedTransferValue>).GenericTypeArguments[0]);
-        Assert.Equal(typeof(IShaderArguments), Assert.Single(typeof(IGraphicsShaderDataBuffer<>).GetGenericArguments()[0].GetGenericParameterConstraints()));
-        Assert.Equal(typeof(IShaderArguments), Assert.Single(typeof(ShaderDataSlice<>).GetGenericArguments()[0].GetGenericParameterConstraints()));
+        foreach (Type surface in new[] { typeof(IGraphicsShaderDataBuffer<>), typeof(ShaderDataSlice<>), typeof(RenderGraphShaderDataBuffer<>) })
+        {
+            Type parameter = surface.GetGenericArguments()[0];
+            Assert.Contains(typeof(IShaderArguments), parameter.GetGenericParameterConstraints());
+            Assert.True((parameter.GenericParameterAttributes & System.Reflection.GenericParameterAttributes.NotNullableValueTypeConstraint) != 0);
+        }
+
+        Assert.True(typeof(UnifiedTransferValue).IsValueType);
+        Assert.True(System.Runtime.CompilerServices.RuntimeHelpers.IsReferenceOrContainsReferences<UnifiedTransferValue>());
+        Assert.Null(typeof(ShaderValueSnapshot).GetProperty("DiagnosticSource"));
+        Assert.DoesNotContain(typeof(ShaderValueSnapshot).GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance), field => typeof(IShaderArguments).IsAssignableFrom(field.FieldType));
         Assert.False(typeof(IShaderArguments).IsAssignableFrom(typeof(Vector4)));
         Assert.False(typeof(IShaderArguments).IsAssignableFrom(typeof(uint)));
         Assert.Contains(typeof(IGraphicDevice).GetMethods(), method => method.Name == "CreateShaderDataBuffer" && method.IsGenericMethodDefinition && method.GetGenericArguments()[0].GetGenericParameterConstraints().Contains(typeof(IShaderArguments)));

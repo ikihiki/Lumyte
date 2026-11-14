@@ -14,22 +14,25 @@ public sealed class OptionalLayoutCostTests
     [Fact]
     public void CaptureCopyAndPackLeaveDiagnosticsDeferred()
     {
-        var value = new CountedArguments();
+        var value = default(CountedArguments);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         ShaderValueSnapshot copy = snapshot.Copy();
         byte[] packed = copy.Data.ToArray();
 
-        Assert.Equal(0, value.Probes);
-        Assert.Null(snapshot.DiagnosticFields);
-        Assert.Null(copy.DiagnosticFields);
-        Assert.Null(snapshot.DiagnosticType);
-        Assert.Same(value, snapshot.DiagnosticSource);
-        Assert.Same(value, copy.DiagnosticSource);
+        Assert.Equal(0, CountedArguments.Probes);
+        AssertStaticProvider(snapshot);
+        AssertStaticProvider(copy);
+        Assert.Equal(value.GetType(), snapshot.DiagnosticType);
         Assert.Empty(snapshot.Fields);
         Assert.Empty(copy.Fields);
         Assert.Equal(snapshot.Data.ToArray(), packed);
         Assert.Equal("Value", Assert.Single(copy.GetDiagnosticFields()).Path);
-        Assert.Equal(1, value.Probes);
+        Assert.Equal(1, CountedArguments.Probes);
+        Assert.Same(copy.GetDiagnosticFields(), snapshot.GetDiagnosticFields());
+        Assert.Same(snapshot.DiagnosticFields, IShaderArguments.Capture(in value).DiagnosticFields);
+        Assert.Same(ShaderTransfer.Fields(in value), snapshot.GetDiagnosticFields());
+        Assert.Same(ShaderTransfer.Fields(typeof(CountedArguments)), snapshot.GetDiagnosticFields());
+        Assert.Equal(1, CountedArguments.Probes);
     }
 
     /// <summary>WGSL packing needs no root schema, even for a fresh target with unreadable reflection.</summary>
@@ -76,8 +79,7 @@ public sealed class OptionalLayoutCostTests
         Type holder = Assert.Single(typeof(OptionalGeneratedArguments).GetNestedTypes(BindingFlags.NonPublic));
         Assert.False((holder.Attributes & TypeAttributes.BeforeFieldInit) != 0);
         Assert.Empty(snapshot.Fields);
-        Assert.Null(snapshot.DiagnosticFields);
-        Assert.Null(snapshot.DiagnosticSource);
+        AssertStaticProvider(snapshot);
         Assert.Equal(typeof(OptionalGeneratedArguments), snapshot.DiagnosticType);
         Assert.Null(typeof(OptionalGeneratedArguments).TypeInitializer);
         ShaderTransferField field = Assert.Single(snapshot.GetDiagnosticFields());
@@ -132,18 +134,16 @@ public sealed class OptionalLayoutCostTests
         Assert.Throws<ArgumentException>(() => ShaderDataLayout.ValidateSnapshot(snapshot));
     }
 
-    /// <summary>Generated class metadata has no eager initializer and is reached only through the explicit instance probe.</summary>
+    /// <summary>Generated struct metadata has no eager initializer and is reached through the deferred static provider.</summary>
     [Fact]
-    public void GeneratedClassCaptureRetainsProviderWithoutMetadataCallbacks()
+    public void GeneratedManagedStructCaptureRetainsOnlyTypeMetadata()
     {
         var value = new OptionalGeneratedClassArguments { Value = 31 };
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         ShaderValueSnapshot copy = snapshot.Copy();
-        Assert.Null(snapshot.DiagnosticFields);
-        Assert.Null(copy.DiagnosticFields);
-        Assert.Null(snapshot.DiagnosticType);
-        Assert.Same(value, snapshot.DiagnosticSource);
-        Assert.Same(value, copy.DiagnosticSource);
+        AssertStaticProvider(snapshot);
+        AssertStaticProvider(copy);
+        Assert.Equal(value.GetType(), snapshot.DiagnosticType);
         Assert.Empty(snapshot.Fields);
         Assert.Equal(31u, System.Runtime.InteropServices.MemoryMarshal.Read<uint>(snapshot.Data.Span));
 
@@ -166,31 +166,97 @@ public sealed class OptionalLayoutCostTests
     [Fact]
     public void ExplicitCallbackOverridesTypeAndInstanceDiagnostics()
     {
-        var value = new CountedArguments();
+        var value = default(TypeOnlyArguments);
         ShaderValueSnapshot instance = IShaderArguments.Capture(in value);
         var plain = new PlainValue(17);
         ShaderValueSnapshot numeric = ShaderTransfer.Capture(in plain);
         IReadOnlyList<ShaderTransferField> fields = [new("Override", 0, sizeof(uint), typeof(uint))];
         Assert.Same(fields, (instance with { DiagnosticFields = () => fields }).GetDiagnosticFields());
         Assert.Same(fields, (numeric with { DiagnosticFields = () => fields }).GetDiagnosticFields());
-        Assert.Equal(0, value.Probes);
     }
 
-    /// <summary>Value-type capture stores only its Type, never a boxed provider or static diagnostic callback.</summary>
+    /// <summary>Value-type capture stores its Type and a static generic provider, never a boxed argument.</summary>
     [Fact]
     public void ValueTypeCaptureUsesSharedTypeMetadataWithoutBoxedProvider()
     {
         var value = new TypeOnlyArguments(17);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         ShaderValueSnapshot copy = snapshot.Copy();
-        Assert.Null(snapshot.DiagnosticFields);
-        Assert.Null(snapshot.DiagnosticSource);
-        Assert.Null(copy.DiagnosticSource);
+        AssertStaticProvider(snapshot);
         Assert.Equal(typeof(TypeOnlyArguments), snapshot.DiagnosticType);
         Assert.Equal(typeof(TypeOnlyArguments), copy.DiagnosticType);
         Assert.Empty(snapshot.Fields);
         Assert.Equal("Value", Assert.Single(copy.GetDiagnosticFields()).Path);
         Assert.Same(ShaderTransfer.Fields<TypeOnlyArguments>(), snapshot.GetDiagnosticFields());
+    }
+
+    /// <summary>Handwritten unmanaged arguments with default metadata retain JIT raw-field diagnostics.</summary>
+    [Fact]
+    public void UnmanagedArgumentsWithoutStaticFieldsUseRawFallback()
+    {
+        var value = new NoFieldsArguments { Number = 41 };
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        AssertStaticProvider(snapshot);
+        if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+        {
+            ShaderTransferField field = Assert.Single(ShaderTransfer.Fields(in value));
+            Assert.Equal("Number", field.Path);
+            Assert.Equal(0, field.Offset);
+            Assert.Equal(sizeof(uint), field.Size);
+            Assert.Same(ShaderTransfer.Fields(typeof(NoFieldsArguments)), snapshot.GetDiagnosticFields());
+        }
+        else
+        {
+            Assert.Empty(snapshot.GetDiagnosticFields());
+        }
+    }
+
+    /// <summary>A managed application wrapper without static wire metadata cannot use outer raw offsets.</summary>
+    [Fact]
+    public void ManagedArgumentsWithoutStaticFieldsDoNotReflectOuterLayout()
+    {
+        var value = new ManagedNoFieldsArguments { Text = "not wire bytes" };
+        Assert.Empty(ShaderTransfer.Fields(in value));
+        Assert.Empty(IShaderArguments.Capture(in value).GetDiagnosticFields());
+    }
+
+    private static void AssertStaticProvider(ShaderValueSnapshot snapshot)
+    {
+        Func<IReadOnlyList<ShaderTransferField>> provider = Assert.IsType<Func<IReadOnlyList<ShaderTransferField>>>(snapshot.DiagnosticFields);
+        Assert.Null(provider.Target);
+        Assert.True(provider.Method.IsStatic);
+        Assert.True(provider.Method.IsGenericMethod);
+        Assert.Equal("ArgumentFields", provider.Method.Name);
+        Assert.Equal(typeof(ShaderTransfer), provider.Method.DeclaringType);
+        Assert.Equal(snapshot.DiagnosticType, Assert.Single(provider.Method.GetGenericArguments()));
+    }
+
+    private struct NoFieldsArguments : IShaderArguments
+    {
+        public uint Number;
+
+        public static string ShaderTypeName => "NoFields";
+
+        public static int TransferSize => sizeof(uint);
+
+        public readonly void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in Number, 1)));
+    }
+
+    private struct ManagedNoFieldsArguments : IShaderArguments
+    {
+        public string Text;
+
+        public static string ShaderTypeName => "ManagedNoFields";
+
+        public static int TransferSize => sizeof(uint);
+
+        public readonly void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            uint number = (uint)Text.Length;
+            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in number, 1)));
+        }
     }
 
     private readonly record struct TypeOnlyArguments(uint Value) : IShaderArguments
@@ -199,9 +265,7 @@ public sealed class OptionalLayoutCostTests
 
         public static int TransferSize => sizeof(uint);
 
-        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("No static diagnostic callback expected.");
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("No boxed provider expected.");
+        public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Value", 0, sizeof(uint), typeof(uint))];
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in this, 1)));
@@ -209,20 +273,21 @@ public sealed class OptionalLayoutCostTests
 
     private readonly record struct PlainValue(uint Value);
 
-    private sealed class CountedArguments : IShaderArguments
+    private struct CountedArguments : IShaderArguments
     {
+        public static int Probes;
+
         public static string ShaderTypeName => "Counted";
 
         public static int TransferSize => sizeof(uint);
 
-        public static IReadOnlyList<ShaderTransferField> TransferFields => throw new InvalidOperationException("Capture must not retain the static diagnostic callback.");
-
-        public int Probes { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
+        public static IReadOnlyList<ShaderTransferField> TransferFields
         {
-            Probes++;
-            return [new("Value", 0, sizeof(uint), typeof(uint))];
+            get
+            {
+                Interlocked.Increment(ref Probes);
+                return [new("Value", 0, sizeof(uint), typeof(uint))];
+            }
         }
 
         public void Write<TWriter>(ref TWriter writer)

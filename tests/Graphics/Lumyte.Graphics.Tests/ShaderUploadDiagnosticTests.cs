@@ -8,28 +8,26 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Preserves explicit direct-upload diagnostics for handwritten argument providers.</summary>
 public sealed class ShaderUploadDiagnosticTests
 {
-    /// <summary>Reference-type uploads query instance-only metadata exactly when diagnostics are enabled.</summary>
-    /// <param name="enabled">Whether a compiled diagnostic layout is supplied.</param>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ClassInstanceMetadataRemainsCompatible(bool enabled)
+    /// <summary>Managed struct uploads use static metadata when diagnostics are enabled.</summary>
+    [Fact]
+    public void ManagedStructStaticMetadataRemainsCompatible()
     {
         using var storage = new MappedBuffer();
         var value = new InstanceData { Number = 37 };
         var metadata = new IShaderReferenceMetadata?[1];
         ShaderDataLayout layout = CreateLayout();
 
-        // The previous streaming call used this empty static default and rejected the valid provider.
-        Assert.Empty(StaticFields<InstanceData>());
-        if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
-        {
-            Assert.Throws<ArgumentException>(() => layout.ValidateTransferLayout(4, StaticFields<InstanceData>(), "UploadNumber"));
-        }
-
-        TestShaderDataUpload.CopyFrom<InstanceData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
-
-        Assert.Equal(enabled ? 1 : 0, value.Probes);
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        ShaderValueSnapshot copy = snapshot.Copy();
+        Assert.Equal(0, InstanceData.Probes);
+        TestShaderDataUpload.CopyFrom<InstanceData>(new[] { value }, storage, 0, metadata, UnexpectedReference, null);
+        Assert.Equal(0, InstanceData.Probes);
+        Assert.Single(copy.GetDiagnosticFields());
+        Assert.Equal(1, InstanceData.Probes);
+        Assert.Same(copy.GetDiagnosticFields(), snapshot.GetDiagnosticFields());
+        Assert.Equal(1, InstanceData.Probes);
+        TestShaderDataUpload.CopyFrom<InstanceData>(new[] { value }, storage, 0, metadata, UnexpectedReference, layout);
+        Assert.Equal(2, InstanceData.Probes);
         Assert.Equal(37U, MemoryMarshal.Read<uint>(storage.Bytes));
         Assert.Empty(Assert.IsAssignableFrom<IShaderReferenceMetadata>(metadata[0]).References);
     }
@@ -46,12 +44,7 @@ public sealed class ShaderUploadDiagnosticTests
         var metadata = new IShaderReferenceMetadata?[1];
         ShaderDataLayout layout = CreateLayout();
 
-        Assert.Empty(StaticFields<TypeData>());
-        if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
-        {
-            Assert.Throws<ArgumentException>(() => layout.ValidateTransferLayout(4, StaticFields<TypeData>(), "UploadNumber"));
-        }
-
+        Assert.Single(StaticFields<TypeData>());
         TestShaderDataUpload.CopyFrom<TypeData>(new[] { value }, storage, 0, metadata, UnexpectedReference, enabled ? layout : null);
 
         Assert.Equal(73U, MemoryMarshal.Read<uint>(storage.Bytes));
@@ -59,7 +52,7 @@ public sealed class ShaderUploadDiagnosticTests
     }
 
     private static IReadOnlyList<ShaderTransferField> StaticFields<T>()
-        where T : IShaderArguments => T.TransferFields;
+        where T : struct, IShaderArguments => T.TransferFields;
 
     private static byte[] UnexpectedReference(ShaderValue value)
         => throw new InvalidOperationException("Numeric-only uploads must not encode references.");
@@ -96,28 +89,30 @@ public sealed class ShaderUploadDiagnosticTests
 
         public static int TransferSize => sizeof(uint);
 
-        public readonly IReadOnlyList<ShaderTransferField> GetTransferFields()
-            => throw new InvalidOperationException("Value-type diagnostics must not query an instance provider.");
+        public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Number", 0, sizeof(uint), typeof(uint))];
 
         public readonly void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in Number, 1)));
     }
 
-    private sealed class InstanceData : IShaderArguments
+    private struct InstanceData : IShaderArguments
     {
+        public static int Probes;
+
         public static string ShaderTypeName => "UploadNumber";
 
         public static int TransferSize => sizeof(uint);
 
-        public uint Number { get; init; }
-
-        public int Probes { get; private set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields()
+        public static IReadOnlyList<ShaderTransferField> TransferFields
         {
-            Probes++;
-            return [new("Number", 0, sizeof(uint), typeof(uint))];
+            get
+            {
+                Interlocked.Increment(ref Probes);
+                return [new("Number", 0, sizeof(uint), typeof(uint))];
+            }
         }
+
+        public uint Number { get; init; }
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct

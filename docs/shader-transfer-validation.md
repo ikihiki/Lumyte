@@ -4,6 +4,60 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## struct限定のshader引数とuser選択の要素範囲（2026-11-14）
+
+共通storage契約を削除したcheckpointはd7eb189592f5e170b0399525e6eee0ed9beac7e4。
+続く明示要求により、IShaderArgumentsを使うroot／typed buffer／slice／factory／Graph／helperのgeneric境界を
+struct, IShaderArgumentsへ限定した。unmanaged制約へは置換せず、typed IGpuRefを持つmanaged outer structも許可する。
+生のunmanaged型をinterfaceなしで転送する経路は変更しない。
+
+生成対象はpartial struct／record structである。参照を含むouterはprivate unmanaged wire storageとtyped reference memberを持ち、
+生成readonly Writeはwireだけをlocalへ固定してからraw区間と16-byte参照を物理順に書く。
+managed outer全体をMemoryMarshalへ渡さず、数値field別の変換も行わない。
+class／record class／ref structにはLUMG001を出し、generatorなしの手書きclassもroot／buffer／Graph呼び出しでCS0453となる。
+partial numeric propertyのreadonly modifier／accessor accessibilityは定義と一致させ、get-only／readonly storage／
+readonly outer／private setter／managed outerの実compiled fixtureを実行した。
+
+class用GetTransferFields、DiagnosticSourceとnative null-check boxingを除去した。
+CaptureはTypeとstatic generic metadata callbackだけを保持し、入力structをboxing／保持しない。
+Capture／Copy中に診断getterは呼ばない。明示的な診断時だけgeneric static cacheからT.TransferFieldsを取得するため、
+生成metadataを使う経路はDynamicMethod／MakeGenericMethodを必要としない。
+手書きunmanagedのstatic metadata未指定時はJIT reflected-field fallbackを維持する。
+任意Typeだけからの反射診断やstatic metadataのないraw型の動的fallbackはBrowser／NativeAOTでは利用できない。
+Browser buildは検証したが、NativeAOT publish／実行は検証していない。
+
+91のgeneric制約とproduction／samplesの17 class providerを移行し、rendererのinstruction再代入を確認した。
+structは値copyであり、in parameterのconstrained interface callや非readonly custom getterにはdefensive outer copyが生じ得る。
+zero-copy／転送全体のzero-allocationは主張しない。metadata／dependency ownerとbackend-private emulationのallocationは残る。
+DrawingInstructionのnew()は従来のindex -1を維持するが、defaultとarrayの初期要素はconstructorを実行せず0／nullとなる。
+参照は使用前に設定し、未設定IGpuRefはwriterで拒否する。
+
+変更検出は追加しない。ユーザーがref values[index]へ変更し、既存CopyFrom(values.AsSpan(index, count), elementOffset)で
+入力要素範囲とupload先を選び、既存CopyBufferのsource／destination sliceでGPU転送範囲を選ぶ。
+auto dirty tracking、範囲coalescing、partial-field APIや新しいcacheはない。upload sourceのGPU消費までの寿命は従来どおりである。
+実Vulkan／Wgpuのvalidation off/onで三要素の中央だけの数値／参照更新とcopyを行い、前後要素のreadbackとmetadata identityが
+変わらないことを確認した。value-returning arrayアクセスを編集する場合はrefまたは明示的な書き戻しを使う。
+
+最終source gate:
+
+- Graphics Debug／Release各269成功・失敗0・95skip（364件）。
+- RenderGraph Debug／Release各133成功・失敗0・skip0。
+- 全ホストRelease3,242成功・失敗0・116skip。Drawing／Drawing2D／Effects／UI／samplesを現行generatorでcompile。
+- targeted Debug／Release各47成功・失敗0・skip0。CPUのcontract／partial-property検査も含み、全件をGPU実行とは呼ばない。
+- D3D12管理側Release50成功・Windows依存7skip。Browser Release compile／JS syntax成功。
+- 生成class／ref struct negativeはLUMG001、generatorなしclass negativeはroot／buffer／Graph各CS0453。
+- 遅延診断counterを実際に増加するgetterで検査し、AOT-safe static providerとJIT fallbackを追加検証した。
+  Vulkan境界fixtureの早期失敗をcleanup例外が隠す問題はfinally Endで修正し、wire専用static metadataを与えて再実行した。
+- 独立read-only reviewはAOT診断欠落を指摘し、修正後reviewはcritical blockerなし。
+
+最終ログはartifacts/validation16-final-{fullhost,debug,hardware-debug,hardware-release,graph-debug,d3d-release,browser-release,markdown}.log。
+negative compilerログはartifacts/validation16-negative-{consumers,generator,ref}.log、partial-property matrixはvalidation16-partial-*。
+Windows native／Browser実行、Khronos validation layer実行、NativeAOT publish／presentationは未検証。
+過去のclass benchmarkは元revision専用の凍結sourceとして保持し、最新API向けに書き換えたり旧値を流用したりしない。
+新規性能campaign、CI／workflow変更、過去ADR変更、binary／gzip復元はない。
+
+以下はstruct限定前の履歴であり、class providerの許可は最新契約ではない。
+
 ## 共通root storage契約の削除（2026-11-14）
 
 IShaderRootStorageを削除し、alias／代替public storage interface／opaque object bagは残さない。

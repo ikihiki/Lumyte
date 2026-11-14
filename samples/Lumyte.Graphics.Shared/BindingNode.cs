@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Samples;
 
 /// <summary>Defines application-owned linked shader data for dependency traversal checks.</summary>
-public sealed partial record class BindingNode : IShaderArguments
+public partial record struct BindingNode : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="BindingNode"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="BindingNode"/> structure.</summary>
     /// <param name="value">The numeric payload.</param>
     /// <param name="next">The next logical element, which may form a cycle.</param>
     public BindingNode(uint value, IGpuRef<BindingNode> next)

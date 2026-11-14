@@ -91,7 +91,7 @@ public interface IGraphicDevice
     /// <param name="memory">Automatic for GPU storage or Upload for CPU staging.</param>
     /// <returns>The backend's shader data allocation.</returns>
     IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : IShaderArguments;
+        where T : struct, IShaderArguments;
 
     /// <summary>Creates ordinary unmanaged shader storage without generated code or conversion.</summary>
     /// <typeparam name="T">The unmanaged element type; its C# layout is the shader ABI.</typeparam>

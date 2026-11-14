@@ -3,11 +3,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.ImageEffects;
 
-internal sealed partial record class EffectArguments : IShaderArguments
+internal partial record struct EffectArguments : IShaderArguments
 {
     private TransferData _data;
 
-    /// <summary>Initializes a new instance of the <see cref="EffectArguments"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="EffectArguments"/> structure.</summary>
     public EffectArguments(IGpuRef<IGraphicsTextureView> input, IGpuRef<IGraphicsTextureView> backdrop, IGpuRef<IGraphicsSampler> sampler, Vector4 inputBounds, Vector4 backdropBounds, Vector4 outputBounds, Vector4 settings, Vector4 row0, Vector4 row1, Vector4 row2, Vector4 row3, Vector4 constant)
     {
         _data = new()

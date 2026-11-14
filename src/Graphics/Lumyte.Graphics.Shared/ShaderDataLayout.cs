@@ -159,7 +159,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
     /// <param name="target">The active backend target.</param>
     /// <returns>The C#-stride storage layout.</returns>
     public static ShaderDataLayout Data<T>(ShaderArtifact artifact, ShaderTarget target)
-        where T : IShaderArguments => new(T.ShaderTypeName, T.TransferSize);
+        where T : struct, IShaderArguments => new(T.ShaderTypeName, T.TransferSize);
 
     /// <summary>Checks an ordinary unmanaged storage layout without changing its C# stride.</summary>
     /// <typeparam name="T">The unmanaged C# element type.</typeparam>

@@ -216,7 +216,7 @@ public sealed class ShaderResourcesUnmanagedGpuTests
         }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments => throw new InvalidOperationException("An ordinary unmanaged root has no interface serializer.");
+            where T : struct, IShaderArguments => throw new InvalidOperationException("An ordinary unmanaged root has no interface serializer.");
 
         public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
 

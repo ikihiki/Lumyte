@@ -29,7 +29,7 @@ public sealed class GraphFinalRootTests
             encoder.Dispatch(2);
             TestRootOwner root = commands.Encoder.Selected!;
             Assert.Equal(17u, MemoryMarshal.Read<uint>(((MemoryStorage)root.Storage).Bytes.AsSpan(16)));
-            AssertNoInputFields(root, arguments);
+            AssertNoInputFields(root);
             var admit = (Action<IReadOnlyCollection<IShaderReference>>?)typeof(ShaderRootArguments)
                 .GetField("_admit", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(root.Metadata);
             Assert.Null(admit);
@@ -316,12 +316,12 @@ public sealed class GraphFinalRootTests
     private static ShaderDependencyMetadata Metadata(IGpuRef<IGraphicsTextureView> reference)
         => new([Assert.IsAssignableFrom<IShaderReference>(reference)]);
 
-    private static void AssertNoInputFields(TestRootOwner root, RootInput input)
+    private static void AssertNoInputFields(TestRootOwner root)
     {
         foreach (FieldInfo field in root.Metadata.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
         {
             Assert.False(field.FieldType == typeof(ShaderValueSnapshot) || field.FieldType == typeof(byte[]) || field.FieldType == typeof(ReadOnlyMemory<byte>));
-            Assert.NotSame(input, field.GetValue(root.Metadata));
+            Assert.False(typeof(IShaderArguments).IsAssignableFrom(field.FieldType));
         }
     }
 
@@ -341,8 +341,14 @@ public sealed class GraphFinalRootTests
         return ShaderArtifact.PackTarget(ShaderTarget.SpirV, ShaderStage.Compute, "main", "metadata-only-test-fixture", code, reflection);
     }
 
-    private sealed class RootInput : IShaderArguments
+    private struct RootInput : IShaderArguments
     {
+        private readonly System.Runtime.CompilerServices.StrongBox<int> _counter = new();
+
+        public RootInput()
+        {
+        }
+
         public static string ShaderTypeName => "ConsumerLinkRoot";
 
         public static int TransferSize => 32;
@@ -353,11 +359,9 @@ public sealed class GraphFinalRootTests
 
         internal IGpuRef<ConsumerLink>? Data { get; set; }
 
-        internal int Writes { get; private set; }
+        internal int Writes => _counter.Value;
 
         internal Exception? Failure { get; set; }
-
-        public IReadOnlyList<ShaderTransferField> GetTransferFields() => throw new InvalidOperationException("Unexpected diagnostic probe.");
 
         public void Write<TWriter>(ref TWriter writer)
             where TWriter : IShaderValueWriter, allows ref struct
@@ -367,7 +371,7 @@ public sealed class GraphFinalRootTests
                 throw new InvalidOperationException("Graph used the compatibility snapshot path.");
             }
 
-            Writes++;
+            _counter.Value++;
             if (Failure is { } failure)
             {
                 throw failure;
@@ -443,7 +447,7 @@ public sealed class GraphFinalRootTests
         }
 
         public void SetArguments<T>(in T arguments)
-            where T : IShaderArguments
+            where T : struct, IShaderArguments
             => Selected = TestShaderTransfer.Create(in arguments, Allocate, Encode, prepare: _prepare);
 
         public void SetArguments<T>(in T arguments, string rootParameter, string? shaderTypeName)
@@ -494,14 +498,14 @@ public sealed class GraphFinalRootTests
         public void Barrier(TextureBarrierDesc barrier) => _inner.Barrier(barrier);
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : IShaderArguments => _inner.Barrier(barrier);
+            where T : struct, IShaderArguments => _inner.Barrier(barrier);
 
         public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
             where TSource : unmanaged
             where TDestination : unmanaged => _inner.CopyBuffer(source, destination);
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : IShaderArguments => _transfers.Record((IShaderDataSource)source.Buffer, source.Offset, (IShaderDataSource)destination.Buffer, destination.Offset, source.Count, () => _inner.CopyBuffer(source, destination));
+            where T : struct, IShaderArguments => _transfers.Record((IShaderDataSource)source.Buffer, source.Offset, (IShaderDataSource)destination.Buffer, destination.Offset, source.Count, () => _inner.CopyBuffer(source, destination));
 
         public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => _inner.CopyTexture(source, destination);
 

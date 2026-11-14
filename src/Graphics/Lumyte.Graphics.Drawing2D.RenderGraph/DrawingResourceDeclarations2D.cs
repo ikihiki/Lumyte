@@ -26,7 +26,7 @@ internal sealed class DrawingResourceDeclarations2D(RenderGraphPass pass, Render
         where T : unmanaged => Add(buffer, scope, actual => pass.UseBuffer(bindings.GetBuffer(buffer), actual));
 
     public void UseShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : IShaderArguments => Add(buffer, scope, actual => pass.UseShaderDataBuffer(bindings.GetShaderDataBuffer(buffer), actual));
+        where T : struct, IShaderArguments => Add(buffer, scope, actual => pass.UseShaderDataBuffer(bindings.GetShaderDataBuffer(buffer), actual));
 
     public void UseTextureView(IGraphicsTextureView view, BarrierScope scope)
     {
@@ -66,13 +66,13 @@ internal sealed class DrawingResourceDeclarations2D(RenderGraphPass pass, Render
         where T : unmanaged => Add(buffer, scope, actual => pass.UseLocalBuffer(buffer, actual));
 
     private void PreparedShaderData<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-        where T : IShaderArguments => Add(buffer, scope, actual => pass.UseLocalShaderDataBuffer(buffer, actual));
+        where T : struct, IShaderArguments => Add(buffer, scope, actual => pass.UseLocalShaderDataBuffer(buffer, actual));
 
     private void PreparedBuffer<T>(BufferSlice<T> range, BarrierScope scope)
         where T : unmanaged => _bindingDeclarations.Add(new(scope, actual => pass.UseLocalBuffer(range, actual)));
 
     private void PreparedShaderData<T>(ShaderDataSlice<T> range, BarrierScope scope)
-        where T : IShaderArguments => _bindingDeclarations.Add(new(scope, actual => pass.UseLocalShaderDataBuffer(range, actual)));
+        where T : struct, IShaderArguments => _bindingDeclarations.Add(new(scope, actual => pass.UseLocalShaderDataBuffer(range, actual)));
 
     private sealed class Declaration(BarrierScope scope, Action<BarrierScope> apply)
     {
@@ -87,7 +87,7 @@ internal sealed class DrawingResourceDeclarations2D(RenderGraphPass pass, Render
             where T : unmanaged => owner.PreparedBuffer(range, scope);
 
         public void UseShaderDataBuffer<T>(ShaderDataSlice<T> range, BarrierScope scope)
-            where T : IShaderArguments => owner.PreparedShaderData(range, scope);
+            where T : struct, IShaderArguments => owner.PreparedShaderData(range, scope);
 
         public void UseTexture(IGraphicsTexture texture, TextureState state, BarrierScope scope) => throw new InvalidOperationException("Prepared-root declarations describe only module-owned GPU buffers.");
 
@@ -95,6 +95,6 @@ internal sealed class DrawingResourceDeclarations2D(RenderGraphPass pass, Render
             where T : unmanaged => owner.PreparedBuffer(buffer, scope);
 
         public void UseShaderDataBuffer<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
-            where T : IShaderArguments => owner.PreparedShaderData(buffer, scope);
+            where T : struct, IShaderArguments => owner.PreparedShaderData(buffer, scope);
     }
 }

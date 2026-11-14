@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.RenderGraph;
 /// <summary>Identifies an imported shader data allocation including its transfer metadata.</summary>
 /// <typeparam name="T">The application shader data structure.</typeparam>
 public sealed class RenderGraphShaderDataBuffer<T> : RenderGraphResource
-    where T : IShaderArguments
+    where T : struct, IShaderArguments
 {
     private readonly ShaderArtifact? _artifact;
     private readonly ulong _count;

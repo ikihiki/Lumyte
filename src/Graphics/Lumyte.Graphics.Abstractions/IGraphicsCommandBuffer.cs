@@ -63,11 +63,11 @@ public interface IGraphicsCommandBuffer : IDisposable
     /// <param name="source">The unmapped upload staging range.</param>
     /// <param name="destination">The compatible GPU destination range.</param>
     void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : IShaderArguments;
+        where T : struct, IShaderArguments;
 
     /// <summary>Records a dependency for a shader data range.</summary>
     /// <typeparam name="T">The application shader data structure.</typeparam>
     /// <param name="barrier">The explicit dependency.</param>
     void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : IShaderArguments;
+        where T : struct, IShaderArguments;
 }

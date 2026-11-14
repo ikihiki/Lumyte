@@ -247,7 +247,7 @@ public static class ShaderBindingExercise
     }
 
     private static void RecordUpload<T>(IGraphicsCommandBuffer commands, IGraphicsShaderDataBuffer<T> staging, IGraphicsShaderDataBuffer<T> gpu, ulong? count = null, PipelineStage stage = PipelineStage.ComputeShader)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ulong length = count ?? staging.Count;
         commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = staging.SliceElements(0, length), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });

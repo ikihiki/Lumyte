@@ -35,7 +35,7 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
     public void SetArgumentTable(IArgumentTable table) => _table = table;
 
     public void SetArguments<T>(in T arguments)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ThrowSelectionError();
         var layout = ShaderDataLayout.Root(_target!, T.RootParameter);

@@ -45,7 +45,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
     }
 
     public void SetArguments<T>(in T value)
-        where T : IShaderArguments
+        where T : struct, IShaderArguments
     {
         ValidateRootSelection();
         WgpuGraphicsPipeline program = _pipeline!;
