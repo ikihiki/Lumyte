@@ -1,5 +1,8 @@
 # 保持描画の製品実装データ
 
+> 2026-11-15: 旧Graphics計測harnessは現行treeから撤去しました。以下の手順は[撤去前の履歴](https://github.com/ikihiki/Lumyte/tree/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks)用です。
+> 現行のCPU計測入口は `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen` です。GPUを含む統合計測は別profileとして整備します。
+
 測定sourceは `c217c08847db36802fc96f18445652f560a101af`。`manifest.json` の accepted だけを正式集計に使用します。checks は単体テスト・GPU画素・AOT等、rejected-disposal-hardening は旧sourceの比較であり集計しません。
 
 公開コピーはhome/checkout/host/userを伏せています。`sha256` と `bytes` は展開後の公開コピー、`originalSha256` は伏せる前のデータです。gzipはmtime=0で保存しています。

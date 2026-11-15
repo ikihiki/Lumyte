@@ -367,10 +367,12 @@ public sealed class BenchmarkCatalogTests
     [InlineData("src/Graphics/Renderer.cs")]
     [InlineData("tools/shaders/shape.slang")]
     [InlineData("build/Targets/Shader.targets")]
+    [InlineData("native/lumyte_text_parley/src/lib.rs")]
+    [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
     public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
-        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets" })
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
         }
@@ -395,6 +397,35 @@ public sealed class BenchmarkCatalogTests
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
+    /// <summary>CPU defaults cannot accidentally select a hardware-integrated executable.</summary>
+    [Fact]
+    public void GraphicsEntryPointsSelectDisjointProjects()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "Graphics catalog " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (string name in new[] { "Lumyte.Graphics", "Lumyte.Graphics.Drawing2D" })
+            {
+                string directory = Path.Combine(root, "benchmarks", "Graphics", name + ".Benchmark");
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, name + ".Benchmark.csproj"), "<Project />");
+            }
+
+            string[] cpu = BenchmarkCatalog.SelectProjects(root, "*", "Graphics", integratedGraphics: false);
+            string[] gpu = BenchmarkCatalog.SelectProjects(root, "*", "Graphics", integratedGraphics: true);
+            Assert.Single(cpu);
+            Assert.Single(gpu);
+            Assert.EndsWith("Lumyte.Graphics.Drawing2D.Benchmark.csproj", cpu[0], StringComparison.Ordinal);
+            Assert.EndsWith("Lumyte.Graphics.Benchmark.csproj", gpu[0], StringComparison.Ordinal);
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.Graphics", "Graphics", integratedGraphics: false));
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.Graphics.Drawing2D", "Graphics", integratedGraphics: true));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static void AddProject(string root, string name)

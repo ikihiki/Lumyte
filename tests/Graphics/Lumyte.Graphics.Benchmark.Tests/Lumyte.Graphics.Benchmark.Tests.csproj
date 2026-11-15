@@ -13,5 +13,14 @@
     <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Lumyte.Graphics.Drawing2D.Benchmark.csproj" />
     <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.RenderGraph.Benchmark/Lumyte.Graphics.RenderGraph.Benchmark.csproj" />
     <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.ImageEffects.Benchmark/Lumyte.Graphics.ImageEffects.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Drawing.Benchmark/Lumyte.Graphics.Drawing.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Text.Benchmark/Lumyte.Graphics.Text.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Text.Parley.Benchmark/Lumyte.Graphics.Text.Parley.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Shaders.Benchmark/Lumyte.Graphics.Shaders.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Generators.Benchmark/Lumyte.Graphics.Generators.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Hosting.Benchmark/Lumyte.Graphics.Hosting.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Resources.Graphics.Benchmark/Lumyte.Resources.Graphics.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Benchmark/Lumyte.Graphics.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Validation.Benchmark/Lumyte.Graphics.Validation.Benchmark.csproj" />
   </ItemGroup>
 </Project>
