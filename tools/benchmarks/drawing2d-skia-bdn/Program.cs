@@ -51,7 +51,7 @@ if (Environment.GetEnvironmentVariable("LUMYTE_RECORD_BENCH") == "1")
     var records = ManualConfig.Create(DefaultConfig.Instance)
         .AddJob(Job.Default.WithId("AdaptiveCompletedRecordFrame").WithOutlierMode(OutlierMode.DontRemove)
             .WithMinWarmupCount(6).WithMaxWarmupCount(10).WithMinIterationCount(15).WithMaxIterationCount(30)
-            .WithMaxRelativeError(0.01))
+            .WithMaxRelativeError(0.01).WithIterationTime(Perfolizer.Horology.TimeInterval.FromMilliseconds(100)))
         .AddColumn(StatisticColumn.Median, StatisticColumn.P95)
         .AddExporter(JsonExporter.Full)
         .AddDiagnoser(MemoryDiagnoser.Default);
