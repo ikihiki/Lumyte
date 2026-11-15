@@ -53,9 +53,13 @@ internal static class BindingRegressionExercise
 
     private static ShaderArtifact Artifact(string name) => ShaderArtifact.LoadEmbedded(typeof(BindingRegressionExercise).Assembly, "Lumyte.Shaders." + name + ".lshader");
 
-    [System.Diagnostics.Conditional("DEBUG")]
     private static void CheckIncompatibleStages(IGraphicDevice device)
     {
+        if (!device.ValidationEnabled)
+        {
+            return;
+        }
+
         using IGraphicsShader vertex = device.CreateShader(Artifact("binding-mismatch-vertex"));
         using IGraphicsShader fragment = device.CreateShader(Artifact("binding-mismatch-fragment"));
         try

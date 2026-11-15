@@ -41,10 +41,10 @@ public sealed class SubmissionCompletionTests
         await submission.WaitAsync();
     }
 
-    /// <summary>Checks disposal of the submission cannot free event/fence storage still owned by a native wait.</summary>
+    /// <summary>Checks pending disposal is rejected without interrupting the native fence wait.</summary>
     /// <returns>The asynchronous verification.</returns>
     [AgilityFact]
-    public async Task NativeWaitRetainsFenceAfterSubmissionDisposalAsync()
+    public async Task NativeWaitSurvivesRejectedPendingDisposalAsync()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -53,15 +53,23 @@ public sealed class SubmissionCompletionTests
 
         using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
         device.Check(NativeMethods.FenceCreate(device.Native, out nint fence));
-        var submission = new Direct3D12Submission(device, [], fence);
+        using var submission = new Direct3D12Submission(device, [], fence);
         Task waiting = submission.WaitAsync().AsTask();
-        submission.Dispose();
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => submission.Dispose());
+            Assert.Equal(SubmissionStatus.Pending, submission.Status);
+            Assert.False(waiting.IsCompleted);
+        }
+        finally
+        {
+            device.Check(NativeMethods.QueueSignal(device.Native, fence));
+            await waiting.WaitAsync(TimeSpan.FromSeconds(10));
+        }
 
-        // The completion registration owns its own COM reference even though
-        // the submission has released its reference. Signal that retained fence.
-        device.Check(NativeMethods.QueueSignal(device.Native, fence));
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(10)));
+        submission.Dispose();
         Assert.Equal(SubmissionStatus.Disposed, submission.Status);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => submission.WaitAsync().AsTask());
         submission.Dispose();
     }
 }
