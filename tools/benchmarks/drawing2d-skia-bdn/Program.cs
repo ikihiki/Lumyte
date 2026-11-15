@@ -58,6 +58,18 @@ if (Environment.GetEnvironmentVariable("LUMYTE_CLIP_CPU_BENCH") == "1")
     return;
 }
 
+if (Environment.GetEnvironmentVariable("LUMYTE_OWNER_BENCH") == "1")
+{
+    var owner = ManualConfig.Create(DefaultConfig.Instance)
+        .AddJob(Job.Default.WithId("OwnerAccounting").WithOutlierMode(OutlierMode.DontRemove)
+            .WithMinWarmupCount(6).WithMaxWarmupCount(10).WithMinIterationCount(15).WithMaxIterationCount(30)
+            .WithMaxRelativeError(0.01).WithIterationTime(Perfolizer.Horology.TimeInterval.FromMilliseconds(100)))
+        .AddColumn(StatisticColumn.Median, StatisticColumn.P95)
+        .AddExporter(JsonExporter.Full).AddDiagnoser(MemoryDiagnoser.Default);
+    BenchmarkSwitcher.FromTypes([typeof(OwnerAccountingFrameBenchmarks), typeof(OwnerAccountingStatisticsBenchmarks)]).Run(args, owner);
+    return;
+}
+
 if (Environment.GetEnvironmentVariable("LUMYTE_RECORD_BENCH") == "1")
 {
     var records = ManualConfig.Create(DefaultConfig.Instance)

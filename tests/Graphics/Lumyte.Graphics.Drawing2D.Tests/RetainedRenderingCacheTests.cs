@@ -215,11 +215,199 @@ public sealed class RetainedRenderingCacheTests
         Assert.Equal(16, cache.Statistics.CachedBytes);
     }
 
+    /// <summary>Repeated observations reuse scratch capacity without retaining allocation owners.</summary>
+    [Fact]
+    public void AccountingReusesEmptyStorageAndRereadsMutableContributions()
+    {
+        using var cache = new RetainedDrawingCache2D(new());
+        var batch = new Batch();
+        RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+        frame.Assets.Add(new(Key(), batch));
+        cache.ReleaseFrame(frame, true);
+        Dictionary<object, long> storage = batch.LastOwners!;
+        int calls = batch.AccountCalls;
+        Assert.Empty(storage);
+        for (int index = 0; index < 5; index++)
+        {
+            batch.Bytes = 17 + index;
+            Assert.Equal(batch.Bytes, cache.Statistics.CachedBytes);
+            Assert.Same(storage, batch.LastOwners);
+            Assert.Empty(storage);
+        }
+
+        Assert.Equal(calls + 5, batch.AccountCalls);
+    }
+
+    /// <summary>A failed traversal clears owners before the next independent observation.</summary>
+    [Fact]
+    public void FailedAccountingDoesNotLeakOwnersIntoLaterReads()
+    {
+        using var cache = new RetainedDrawingCache2D(new());
+        var batch = new Batch();
+        RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+        frame.Assets.Add(new(Key(), batch));
+        cache.ReleaseFrame(frame, true);
+        Dictionary<object, long> storage = batch.LastOwners!;
+        batch.AfterAccount = () => throw new InvalidOperationException("Injected estimate failure.");
+        Assert.Throws<InvalidOperationException>(() => cache.Statistics);
+        Assert.Empty(storage);
+        batch.AfterAccount = null;
+        batch.Owner = new();
+        batch.Bytes = 37;
+        Assert.Equal(37, cache.Statistics.CachedBytes);
+        Assert.Same(storage, batch.LastOwners);
+        Assert.Empty(storage);
+    }
+
+    /// <summary>Recursive observations borrow independent scratch storage from their outer reader.</summary>
+    [Fact]
+    public void ReentrantAccountingDoesNotClearTheOuterOwnerSet()
+    {
+        using var cache = new RetainedDrawingCache2D(new());
+        var first = new Batch();
+        var second = new Batch();
+        RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+        frame.Assets.Add(new(Key(), first));
+        frame.Assets.Add(new(Key(), second));
+        cache.ReleaseFrame(frame, true);
+        bool entered = false;
+        var observed = new List<Dictionary<object, long>>();
+        first.AfterAccount = () =>
+        {
+            if (entered)
+            {
+                return;
+            }
+
+            entered = true;
+            Dictionary<object, long> outer = first.LastOwners!;
+            observed.Add(outer);
+            for (int index = 0; index < 2; index++)
+            {
+                Assert.Equal(32, cache.Statistics.CachedBytes);
+                Assert.NotSame(outer, first.LastOwners);
+                observed.Add(first.LastOwners!);
+                Assert.Single(outer);
+            }
+
+            second.AfterAccount = () => throw new InvalidOperationException("Nested estimate failure.");
+            Assert.Throws<InvalidOperationException>(() => cache.Statistics);
+            observed.Add(second.LastOwners!);
+            second.AfterAccount = null;
+            Assert.Single(outer);
+        };
+        Assert.Equal(32, cache.Statistics.CachedBytes);
+        Assert.True(entered);
+        Assert.All(observed, owners => Assert.Empty(owners));
+    }
+
+    /// <summary>Mutable owner identities and saturated sums match independent full recomputation.</summary>
+    /// <param name="budget">The exact retained-byte admission budget.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(128)]
+    [InlineData(long.MaxValue)]
+    public void AccountingMatchesFreshDictionaryAcrossDeterministicTransitions(long budget)
+    {
+        var random = new Random(1979);
+        object[] owners = [new(), new(), new(), new()];
+        for (int cycle = 0; cycle < 40; cycle++)
+        {
+            using var cache = new RetainedDrawingCache2D(new() { MaxCachedBytes = budget });
+            Batch[] batches = Enumerable.Range(0, 7).Select(_ => new Batch
+            {
+                Owner = owners[random.Next(owners.Length)],
+                Bytes = random.Next(3) == 0 ? long.MaxValue : random.Next(1, 100),
+            }).ToArray();
+            RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+            foreach (Batch batch in batches)
+            {
+                frame.Assets.Add(new(Key(), batch));
+            }
+
+            cache.ReleaseFrame(frame, true);
+            for (int change = 0; change < 3; change++)
+            {
+                foreach (Batch batch in batches)
+                {
+                    batch.Owner = owners[random.Next(owners.Length)];
+                    batch.Bytes = random.Next(2) == 0 ? long.MaxValue : random.Next(1, 100);
+                }
+
+                var reference = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
+                foreach (Batch batch in batches.Where(batch => batch.Disposals == 0))
+                {
+                    reference.TryAdd(batch.Owner!, batch.Bytes);
+                }
+
+                long expected = 0;
+                foreach (long count in reference.Values)
+                {
+                    expected = count > long.MaxValue - expected ? long.MaxValue : expected + count;
+                }
+
+                Assert.Equal(expected, cache.Statistics.CachedBytes);
+            }
+
+            // Drain this generation through ordinary take/abandon transitions.
+            RetainedDrawingCache2D.FrameLease drain = cache.AcquireFrame();
+            while (cache.Take(Key()) is { } asset)
+            {
+                drain.Assets.Add(asset);
+            }
+
+            cache.ReleaseFrame(drain, false);
+
+            // Previously completed assets remain resident after abandonment.
+            cache.Dispose();
+            Assert.All(batches, batch => Assert.Equal(1, batch.Disposals));
+        }
+    }
+
+    /// <summary>Shared pages are charged once and active snapshots reserve the exact boundary.</summary>
+    [Fact]
+    public void SharedPagesAndMixedActiveOwnersPreserveExactBudget()
+    {
+        using var cache = new RetainedDrawingCache2D(new() { MaxCachedBytes = 288 });
+        var page = new DrawList2D([]);
+        RetainedDrawingCache2D.Key key = Key() with { Pages = [page] };
+        var first = new Batch();
+        var second = new Batch();
+        RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+        frame.Assets.Add(new(key, first));
+        frame.Assets.Add(new(key with { Width = 128 }, second));
+        cache.ReleaseFrame(frame, true);
+        Assert.Equal(288, cache.Statistics.CachedBytes);
+        Assert.Equal(0, first.Disposals);
+        RetainedDrawingCache2D.FrameLease active = cache.AcquireFrame();
+        var third = new Batch();
+        active.Assets.Add(new(key with { Width = 256 }, third));
+        Assert.Equal(288, cache.Statistics.CachedBytes);
+        cache.AdmitFrame(active);
+        Assert.Equal(1, first.Disposals);
+        Assert.Equal(0, second.Disposals);
+        Assert.Equal(0, third.Disposals);
+        Assert.Equal(272, cache.Statistics.CachedBytes);
+        cache.ReleaseFrame(active, true);
+        Assert.Equal(288, cache.Statistics.CachedBytes);
+    }
+
     private static RetainedDrawingCache2D.Key Key() => new([], Matrix3x2.Identity, [], 64, 64, TextureFormat.Rgba8Srgb, 1);
 
     private sealed class Batch : IRetainedCommandBatch2D, IRetainedMemory2D
     {
-        public long EstimatedBytes => 16;
+        public long EstimatedBytes => Bytes;
+
+        internal long Bytes { get; set; } = 16;
+
+        internal object? Owner { get; set; }
+
+        internal Dictionary<object, long>? LastOwners { get; private set; }
+
+        internal int AccountCalls { get; private set; }
+
+        internal Action? AfterAccount { get; set; }
 
         internal int Disposals { get; private set; }
 
@@ -227,7 +415,13 @@ public sealed class RetainedRenderingCacheTests
 
         internal int FailuresRemaining { get; set; }
 
-        public void AccountMemory(Dictionary<object, long> owners) => owners.TryAdd(SharedOwner ?? this, EstimatedBytes);
+        public void AccountMemory(Dictionary<object, long> owners)
+        {
+            LastOwners = owners;
+            AccountCalls++;
+            owners.TryAdd(Owner ?? SharedOwner ?? this, EstimatedBytes);
+            AfterAccount?.Invoke();
+        }
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources)
         {

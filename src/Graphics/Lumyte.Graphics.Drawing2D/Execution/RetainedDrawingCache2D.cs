@@ -11,6 +11,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
     private readonly List<FrameLease> _active = [];
     private readonly List<IDisposable> _retiring = [];
     private readonly object _gate = new();
+    private Dictionary<object, long>? _memoryOwners = new(ReferenceEqualityComparer.Instance);
     private DrawingResourceState2D? _storageOwner;
     private int _frames;
     private bool _disposed;
@@ -214,8 +215,46 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     private long OwnedBytes(bool includeActive, bool includePool = true)
     {
-        var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
-        foreach (Asset asset in _idle.Concat(includeActive ? _active.SelectMany(frame => frame.Assets) : []))
+        // Reuse traversal storage, never estimates: plans and pooled capacity can change.
+        Dictionary<object, long> owners = _memoryOwners ?? new(ReferenceEqualityComparer.Instance);
+        _memoryOwners = null;
+        try
+        {
+            foreach (Asset asset in _idle)
+            {
+                Account(asset);
+            }
+
+            if (includeActive)
+            {
+                foreach (FrameLease frame in _active)
+                {
+                    foreach (Asset asset in frame.Assets)
+                    {
+                        Account(asset);
+                    }
+                }
+            }
+
+            long bytes = includePool ? _storageOwner?.IdleRecordBytes ?? 0 : 0;
+            foreach (long count in owners.Values)
+            {
+                bytes = count > long.MaxValue - bytes ? long.MaxValue : bytes + count;
+            }
+
+            return bytes;
+        }
+        finally
+        {
+            // An observation must not keep pages or shared plans alive, even on failure.
+            owners.Clear();
+
+            // Dictionary arrays retain their high-water capacity only while this live
+            // cache has assets. They are traversal scratch, not cached drawing bytes.
+            _memoryOwners = _disposed || (_idle.Count == 0 && _active.Count == 0) ? null : owners;
+        }
+
+        void Account(Asset asset)
         {
             if (asset.Batch is IRetainedMemory2D shared)
             {
@@ -231,14 +270,6 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                 owners.TryAdd(page, checked(256L + ((long)page.Commands.Count * 256)));
             }
         }
-
-        long bytes = includePool ? _storageOwner?.IdleRecordBytes ?? 0 : 0;
-        foreach (long count in owners.Values)
-        {
-            bytes = count > long.MaxValue - bytes ? long.MaxValue : bytes + count;
-        }
-
-        return bytes;
     }
 
     internal sealed class FrameLease(RetainedDrawingCache2D owner)

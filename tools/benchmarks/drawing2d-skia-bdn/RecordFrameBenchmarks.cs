@@ -24,6 +24,8 @@ public class RecordFrameBenchmarks
     long profilingFrame;
     bool initialized;
     public bool Diagnostics { get; set; }
+    public int StatisticsReads { get; set; } = 2;
+    public DrawingRetentionStatistics2D ObserveStatistics() => renderer.RetentionStatistics;
     public int LastRecordedState { get; private set; }
     public (uint First, uint Count)? RangeSelection { get; set; }
     bool submitAttempted;
@@ -42,7 +44,12 @@ public class RecordFrameBenchmarks
         view = texture.CreateView();
         scene = new();
         node = scene.Insert(scene.Root, 0, Record(0));
+        int observations = StatisticsReads;
+        StatisticsReads = 2;
         using (Activity setup = StartDiagnosticFrame(-1)) await CompletedFrameAsync();
+        // Validate the same reuse/compile contract outside timing even in observer-free mode.
+        if (observations == 0) await CompletedFrameAsync();
+        StatisticsReads = observations;
         drawingProvider = EventSource.GetSources().FirstOrDefault(source => source.Name == "Lumyte-Drawing2D-Profiling");
         Console.WriteLine($"case={Case};1920x1080;completed+command-disposed+retired; dynamic includes record/CPU-clip/pack/transfers; cached reuses published prepared GPU assets");
     }
@@ -96,13 +103,13 @@ public class RecordFrameBenchmarks
         long start = Diagnostics ? Stopwatch.GetTimestamp() : 0;
         if (!Case.EndsWith("cached")) scene.ReplaceContent(node, Record(++state));
         long recorded = Diagnostics ? Stopwatch.GetTimestamp() : 0;
-        DrawingRetentionStatistics2D before = renderer.RetentionStatistics;
+        DrawingRetentionStatistics2D before = StatisticsReads == 2 ? renderer.RetentionStatistics : default;
         using (DrawingSceneReadLease2D read = scene.Borrow())
             pending = await renderer.PrepareAsync(read, new() { View = view, LoadOp = AttachmentLoadOp.Clear });
-        DrawingRetentionStatistics2D after = renderer.RetentionStatistics;
-        if (initialized && Case.EndsWith("cached") && (after.ReusedRuns <= before.ReusedRuns || after.CompiledRuns != before.CompiledRuns))
+        DrawingRetentionStatistics2D after = StatisticsReads == 2 ? renderer.RetentionStatistics : default;
+        if (StatisticsReads == 2 && initialized && Case.EndsWith("cached") && (after.ReusedRuns <= before.ReusedRuns || after.CompiledRuns != before.CompiledRuns))
             throw new InvalidOperationException("Static cached fixture did not reuse its prepared mask asset");
-        if (initialized && !Case.EndsWith("cached") && after.CompiledRuns <= before.CompiledRuns)
+        if (StatisticsReads == 2 && initialized && !Case.EndsWith("cached") && after.CompiledRuns <= before.CompiledRuns)
             throw new InvalidOperationException("Dynamic fixture did not compile fresh prepared work");
         long prepared = Diagnostics ? Stopwatch.GetTimestamp() : 0;
         commands = device.CreateCommandBuffer(new());
