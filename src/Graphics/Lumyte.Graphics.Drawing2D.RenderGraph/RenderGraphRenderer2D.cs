@@ -447,12 +447,12 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         }
     }
 
-    private static bool FitsPass(int commands, int sampledViews, int customSamplers, IGraphicDevice device)
+    private static bool FitsPass(int commands, int sampledViews, int customSamplers, IGraphicDevice device, uint? fixedBuffers = null)
     {
         ArgumentTableBindingLimits limits = device.Caps.ArgumentTableBindingLimits;
         uint textures = checked((uint)sampledViews + 1);
         uint samplers = checked((uint)customSamplers + 1);
-        uint buffers = checked((uint)commands * 2);
+        uint buffers = fixedBuffers ?? checked((uint)commands * 2);
         uint textureBindings = Math.Max(textures, limits.MinimumTextureBindings);
         uint samplerBindings = Math.Max(samplers, limits.MinimumSamplerBindings);
         ulong combined = limits.ReservedBindings + limits.ColorAttachmentBindingWeight +
@@ -526,25 +526,38 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             }
 
             int firstReservation = argumentPlan.Reservations.Count;
-            IPreparedCommandBatch2D batch = commands[index] switch
-            {
-                FillRectCommand2D => await _renderers.FillRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                FillRoundedRectCommand2D => await _renderers.FillRoundedRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRoundedRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                FillCircleCommand2D => await _renderers.FillCircle.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillCircleCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                DrawLineCommand2D => await _renderers.DrawLine.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawLineCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                FillPathCommand2D => await _renderers.FillPath.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillPathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                StrokePathCommand2D => await _renderers.StrokePath.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<StrokePathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                DrawImageCommand2D => await _renderers.DrawImage.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawImageCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                DrawCoverageMaskCommand2D => await _renderers.DrawCoverageMask.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawCoverageMaskCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                DrawDistanceFieldCommand2D => await _renderers.DrawDistanceField.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawDistanceFieldCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                DrawMeshCommand2D => await _renderers.DrawMesh.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawMeshCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawPaintGraphCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                _ => throw new InvalidOperationException("The drawing snapshot contains an unsupported structural command."),
-            };
+            RenderPreparationContext2D preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan);
+            IPreparedCommandBatch2D batch = IsBuiltinRenderer(commands[index]) && preparation.RecordResources() is not null
+                ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end), cancellationToken).ConfigureAwait(false)
+                : commands[index] switch
+                {
+                    FillRectCommand2D => await _renderers.FillRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillRoundedRectCommand2D => await _renderers.FillRoundedRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRoundedRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillCircleCommand2D => await _renderers.FillCircle.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillCircleCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawLineCommand2D => await _renderers.DrawLine.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawLineCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillPathCommand2D => await _renderers.FillPath.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillPathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    StrokePathCommand2D => await _renderers.StrokePath.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<StrokePathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawImageCommand2D => await _renderers.DrawImage.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawImageCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawCoverageMaskCommand2D => await _renderers.DrawCoverageMask.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawCoverageMaskCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawDistanceFieldCommand2D => await _renderers.DrawDistanceField.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawDistanceFieldCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawMeshCommand2D => await _renderers.DrawMesh.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawMeshCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawPaintGraphCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    _ => throw new InvalidOperationException("The drawing snapshot contains an unsupported structural command."),
+                };
             ArgumentNullException.ThrowIfNull(batch);
             owner.Own(batch);
             cancellationToken.ThrowIfCancellationRequested();
-            AppendBatch(graph, target, bindings, batch, argumentPlan.Reservations.Skip(firstReservation).ToArray(), argumentPlan);
+            if (batch is PreparedRecordBatch2D records)
+            {
+                foreach ((IPreparedCommandBatch2D page, IReadOnlyList<ShaderResources> reservations) in records.GraphPages)
+                {
+                    AppendBatch(graph, target, bindings, page, reservations, argumentPlan);
+                }
+            }
+            else
+            {
+                AppendBatch(graph, target, bindings, batch, argumentPlan.Reservations.Skip(firstReservation).ToArray(), argumentPlan);
+            }
         }
     }
 
@@ -599,5 +612,38 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         IPreparedGraphCommandBatch2D replacement = await DrawingGraphCompositor.PrepareAsync(context, ImageSource(effected), WithClip(command.State, output), original: original, replace: true, ct: cancellationToken).ConfigureAwait(false);
         owner.Own(replacement);
         replacement.AppendPasses(context.Graph, context.Target);
+    }
+
+    private bool IsBuiltinRenderer(DrawingCommand2D command) => command switch
+    {
+        FillRectCommand2D => _renderers.FillRect is DefaultFillRectRenderer2D,
+        FillRoundedRectCommand2D => _renderers.FillRoundedRect is DefaultFillRoundedRectRenderer2D,
+        FillCircleCommand2D => _renderers.FillCircle is DefaultFillCircleRenderer2D,
+        DrawLineCommand2D => _renderers.DrawLine is DefaultDrawLineRenderer2D,
+        FillPathCommand2D => _renderers.FillPath is DefaultFillPathRenderer2D,
+        StrokePathCommand2D => _renderers.StrokePath is DefaultStrokePathRenderer2D,
+        DrawImageCommand2D => _renderers.DrawImage is DefaultDrawImageRenderer2D,
+        DrawCoverageMaskCommand2D => _renderers.DrawCoverageMask is DefaultDrawCoverageMaskRenderer2D,
+        DrawDistanceFieldCommand2D => _renderers.DrawDistanceField is DefaultDrawDistanceFieldRenderer2D,
+        DrawMeshCommand2D => _renderers.DrawMesh is DefaultDrawMeshRenderer2D,
+        DrawPaintGraphCommand2D => _renderers.DrawPaintGraph is DefaultDrawPaintGraphRenderer2D,
+        _ => false,
+    };
+
+    private ReadOnlyMemory<DrawingCommand2D> TakeRecordBatch(DrawList2D list, ref int index, int end)
+    {
+        int first = index;
+        while (index < end && IsBuiltinRenderer(list.Commands[index]))
+        {
+            index++;
+        }
+
+        var selected = new DrawingCommand2D[index - first];
+        for (int i = 0; i < selected.Length; i++)
+        {
+            selected[i] = list.Commands[first + i];
+        }
+
+        return selected;
     }
 }

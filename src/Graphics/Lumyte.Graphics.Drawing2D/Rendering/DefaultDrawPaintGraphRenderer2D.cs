@@ -13,5 +13,5 @@ public sealed class DefaultDrawPaintGraphRenderer2D : IDrawPaintGraphRenderer2D
         RenderPreparationContext2D context,
         ReadOnlyMemory<DrawPaintGraphCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRecordBatch2D.PrepareAsync(context, commands, cancellationToken);
 }

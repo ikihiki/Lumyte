@@ -13,5 +13,5 @@ public sealed class DefaultFillCircleRenderer2D : IFillCircleRenderer2D
         RenderPreparationContext2D context,
         ReadOnlyMemory<FillCircleCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRecordBatch2D.PrepareAsync(context, commands, cancellationToken);
 }

@@ -8,8 +8,10 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 {
     private readonly DrawingRetentionOptions2D _options;
     private readonly List<Asset> _idle = [];
+    private readonly List<FrameLease> _active = [];
     private readonly List<IDisposable> _retiring = [];
     private readonly object _gate = new();
+    private DrawingResourceState2D? _storageOwner;
     private int _frames;
     private bool _disposed;
     private long _compiled;
@@ -47,6 +49,19 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
+    internal void BindStorageOwner(DrawingResourceState2D owner)
+    {
+        lock (_gate)
+        {
+            if (_storageOwner is not null && !ReferenceEquals(_storageOwner, owner))
+            {
+                throw new InvalidOperationException("The retained cache already has a different storage owner.");
+            }
+
+            _storageOwner = owner;
+        }
+    }
+
     internal void RetryCleanup()
     {
         lock (_gate)
@@ -71,7 +86,27 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
             var frame = new FrameLease(this);
             _frames++;
+            _active.Add(frame);
             return frame;
+        }
+    }
+
+    internal void AdmitFrame(FrameLease frame)
+    {
+        lock (_gate)
+        {
+            if (!_active.Contains(frame))
+            {
+                throw new ArgumentException("The frame is not active in this cache.", nameof(frame));
+            }
+
+            while (_idle.Count > 0 && OwnedBytes(includeActive: true) > _options.MaxCachedBytes)
+            {
+                _retiring.Add(_idle[0].Batch);
+                _idle.RemoveAt(0);
+            }
+
+            DisposeRetiring();
         }
     }
 
@@ -128,7 +163,10 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                     }
                 }
 
-                while (_idle.Count > _options.MaxCachedAssets || IdleBytes() > _options.MaxCachedBytes)
+                frame.Released = true;
+                _frames--;
+                _active.Remove(frame);
+                while (_idle.Count > 0 && (_idle.Count > _options.MaxCachedAssets || OwnedBytes(includeActive: true) > _options.MaxCachedBytes))
                 {
                     _retiring.Add(_idle[0].Batch);
                     _idle.RemoveAt(0);
@@ -136,8 +174,6 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
                 // At this boundary the caller proved completion or no submission.
                 // The cache owns every failed cleanup independently of the frame slot.
-                frame.Released = true;
-                _frames--;
             }
 
             DisposeRetiring();
@@ -160,6 +196,9 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             }
         }
 
+        long held = OwnedBytes(includeActive: true, includePool: false);
+        _storageOwner?.TrimIdleRecordStorage(Math.Max(0, _options.MaxCachedBytes - held));
+
         if (failures is { Count: 1 })
         {
             ExceptionDispatchInfo.Capture(failures[0]).Throw();
@@ -171,12 +210,31 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
-    private long IdleBytes()
+    private long IdleBytes() => OwnedBytes(includeActive: false);
+
+    private long OwnedBytes(bool includeActive, bool includePool = true)
     {
-        long bytes = 0;
-        foreach (Asset asset in _idle)
+        var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
+        foreach (Asset asset in _idle.Concat(includeActive ? _active.SelectMany(frame => frame.Assets) : []))
         {
-            long count = ((IRetainedCommandBatch2D)asset.Batch).EstimatedBytes;
+            if (asset.Batch is IRetainedMemory2D shared)
+            {
+                shared.AccountMemory(owners);
+            }
+            else if (asset.Batch is IRetainedCommandBatch2D retained)
+            {
+                owners.TryAdd(asset.Batch, retained.EstimatedBytes);
+            }
+
+            foreach (DrawList2D page in asset.Key.Pages)
+            {
+                owners.TryAdd(page, checked(256L + ((long)page.Commands.Count * 256)));
+            }
+        }
+
+        long bytes = includePool ? _storageOwner?.IdleRecordBytes ?? 0 : 0;
+        foreach (long count in owners.Values)
+        {
             bytes = count > long.MaxValue - bytes ? long.MaxValue : bytes + count;
         }
 
@@ -217,11 +275,11 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         public void Dispose() => throw new InvalidOperationException("Compiled assets are owned by the frame cache.");
     }
 
-    internal sealed record Key(DrawList2D[] Pages, Matrix3x2 Transform, DrawingSceneClip2D[] Clips, uint Width, uint Height, TextureFormat Format, float PixelScale)
+    internal sealed record Key(DrawList2D[] Pages, Matrix3x2 Transform, DrawingSceneClip2D[] Clips, uint Width, uint Height, TextureFormat Format, float PixelScale, int FirstCommand = 0, int CommandCount = int.MaxValue)
     {
         internal bool Matches(Key other)
         {
-            if (Transform != other.Transform || Width != other.Width || Height != other.Height || Format != other.Format || PixelScale != other.PixelScale || Pages.Length != other.Pages.Length || Clips.Length != other.Clips.Length)
+            if (FirstCommand != other.FirstCommand || CommandCount != other.CommandCount || Transform != other.Transform || Width != other.Width || Height != other.Height || Format != other.Format || PixelScale != other.PixelScale || Pages.Length != other.Pages.Length || Clips.Length != other.Clips.Length)
             {
                 return false;
             }

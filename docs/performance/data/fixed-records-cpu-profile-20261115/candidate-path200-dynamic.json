@@ -1,0 +1,969 @@
+{
+  "Windows": [
+    {
+      "Start": 1804.046828,
+      "End": 1903.236944,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 1913.596106,
+      "End": 2017.617143,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2027.629331,
+      "End": 2129.656765,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2138.304196,
+      "End": 2239.881662,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2249.538214,
+      "End": 2354.157017,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2363.455655,
+      "End": 2467.986863,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2477.97066,
+      "End": 2581.81894,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2592.266786,
+      "End": 2688.849673,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2697.426201,
+      "End": 2794.384784,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2804.083898,
+      "End": 2896.084715,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 2906.211347,
+      "End": 2992.087548,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3000.77082,
+      "End": 3088.500858,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3098.38216,
+      "End": 3184.852326,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3194.901335,
+      "End": 3282.31544,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3292.318377,
+      "End": 3378.663678,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3388.524869,
+      "End": 3475.171572,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3484.969411,
+      "End": 3571.074901,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3579.992303,
+      "End": 3667.239301,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3676.906955,
+      "End": 3762.89666,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3771.860384,
+      "End": 3858.217225,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3866.869866,
+      "End": 3953.122543,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 3963.322988,
+      "End": 4050.649309,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4060.375425,
+      "End": 4145.022715,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4154.280251,
+      "End": 4241.976758,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4252.455614,
+      "End": 4335.886974,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4344.305145,
+      "End": 4425.879876,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4434.988466,
+      "End": 4519.645266,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4529.631422,
+      "End": 4611.751687,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4620.974141,
+      "End": 4705.625551,
+      "Kind": "WorkloadActual/Start"
+    },
+    {
+      "Start": 4714.177548,
+      "End": 4797.846767,
+      "Kind": "WorkloadActual/Start"
+    }
+  ],
+  "SampleKinds": {
+    "Type=Managed": 2337,
+    "Type=External": 10153
+  },
+  "ManagedSelf": [
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 851
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 688
+    },
+    {
+      "Name": "System.Runtime.CompilerServices.RuntimeHelpers.<GetHashCode>g__GetHashCodeWorker|15_0(class System.Object)",
+      "Count": 381
+    },
+    {
+      "Name": "System.Threading.Thread.<PollGC>g__PollGCWorker|67_0()",
+      "Count": 181
+    },
+    {
+      "Name": "System.Buffer.MemmoveInternal(unsigned int8&,unsigned int8&,unsigned int)",
+      "Count": 120
+    },
+    {
+      "Name": "System.Diagnostics.Tracing.EventPipeEventProvider.EventWriteTransfer(required_modifier System.Runtime.InteropServices.InAttribute value class System.Diagnostics.Tracing.EventDescriptor&,int,value class System.Guid*,value class System.Guid*,int32,value class EventData*)",
+      "Count": 14
+    },
+    {
+      "Name": "System.Diagnostics.Tracing.EventSource.WriteEventWithRelatedActivityIdCore(int32,value class System.Guid*,int32,value class EventData*)",
+      "Count": 12
+    },
+    {
+      "Name": "System.Threading.Monitor.Enter_Slowpath(class System.Object)",
+      "Count": 8
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.Cubic(value class System.Numerics.Vector2,value class System.Numerics.Vector2,value class System.Numerics.Vector2,value class System.Numerics.Vector2,float32,!!0&,int32,int32)",
+      "Count": 7
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProgram2D.Compile(class Lumyte.Graphics.Drawing2D.DrawingCommand2D)",
+      "Count": 7
+    },
+    {
+      "Name": "Silk.NET.Vulkan.Vk.FreeMemory(value class Silk.NET.Vulkan.Device,value class Silk.NET.Vulkan.DeviceMemory,value class Silk.NET.Vulkan.AllocationCallbacks*)",
+      "Count": 5
+    },
+    {
+      "Name": "Silk.NET.Vulkan.Vk.AllocateMemory(value class Silk.NET.Vulkan.Device,value class Silk.NET.Vulkan.MemoryAllocateInfo*,value class Silk.NET.Vulkan.AllocationCallbacks*,value class Silk.NET.Vulkan.DeviceMemory*)",
+      "Count": 5
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawRecordPage2D.TrySharedGradient(class System.Collections.Generic.List`1<value class System.Numerics.Vector4>,value class Lumyte.Graphics.Drawing2D.DrawingInstruction,unsigned int32&)",
+      "Count": 4
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanBuffer`1[System.Byte]..ctor(class Lumyte.Graphics.Vulkan.VulkanDevice,class Lumyte.Graphics.Abstractions.BufferDesc`1<!0>,value class Lumyte.Graphics.Abstractions.BufferLayout`1<!0>,unsigned int64)",
+      "Count": 4
+    },
+    {
+      "Name": "Silk.NET.Vulkan.Vk.MapMemory(value class Silk.NET.Vulkan.Device,value class Silk.NET.Vulkan.DeviceMemory,unsigned int64,unsigned int64,value class Silk.NET.Vulkan.MemoryMapFlags,void**)",
+      "Count": 3
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanShaderBinding..ctor(class Lumyte.Graphics.Vulkan.VulkanDevice,class Lumyte.Graphics.Vulkan.VulkanArgumentTable,class Lumyte.Graphics.Abstractions.IShaderReference[],value class Silk.NET.Vulkan.DescriptorSetLayout)",
+      "Count": 3
+    },
+    {
+      "Name": "System.Threading.Thread.Sleep(int32)",
+      "Count": 2
+    },
+    {
+      "Name": "System.Threading.SpinWait.SpinOnceCore(int32)",
+      "Count": 2
+    },
+    {
+      "Name": "System.Threading.LowLevelSpinWaiter.Wait(int32,int32,bool)",
+      "Count": 2
+    },
+    {
+      "Name": "System.Threading.LowLevelLifoSemaphore.WaitNative(class Microsoft.Win32.SafeHandles.SafeWaitHandle,int32)",
+      "Count": 2
+    }
+  ],
+  "ManagedInclusive": [
+    {
+      "Name": "RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext()",
+      "Count": 2312
+    },
+    {
+      "Name": "BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData)",
+      "Count": 2278
+    },
+    {
+      "Name": "BenchmarkDotNet.Engines.Engine.Run()",
+      "Count": 2278
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String)",
+      "Count": 2278
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*)",
+      "Count": 2278
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags)",
+      "Count": 2278
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo)",
+      "Count": 2278
+    },
+    {
+      "Name": "System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo)",
+      "Count": 2278
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[])",
+      "Count": 2278
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[])",
+      "Count": 2278
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3()",
+      "Count": 2277
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64)",
+      "Count": 2277
+    },
+    {
+      "Name": "BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64)",
+      "Count": 2277
+    },
+    {
+      "Name": "System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&)",
+      "Count": 2269
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext()",
+      "Count": 2249
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken)",
+      "Count": 2186
+    },
+    {
+      "Name": "RecordFrameBenchmarks.CompletedFrameAsync()",
+      "Count": 2087
+    },
+    {
+      "Name": "System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&)",
+      "Count": 1617
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 1553
+    },
+    {
+      "Name": "System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&)",
+      "Count": 1209
+    }
+  ],
+  "ManagedNearest": [
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 851
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 688
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawRecordPage2D.TrySharedClip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D,unsigned int32&)",
+      "Count": 341
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D)",
+      "Count": 147
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.Cubic(value class System.Numerics.Vector2,value class System.Numerics.Vector2,value class System.Numerics.Vector2,value class System.Numerics.Vector2,float32,!!0&,int32,int32)",
+      "Count": 76
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.RetainedDrawingCache2D.OwnedBytes(bool,bool)",
+      "Count": 22
+    },
+    {
+      "Name": "Lumyte.Graphics.Abstractions.ArgumentTablePlan.Materialize(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Abstractions.ArgumentTableReservation>,value class System.Threading.CancellationToken,bool)",
+      "Count": 21
+    },
+    {
+      "Name": "[no Lumyte frame]",
+      "Count": 15
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[Lumyte.Mathematics.Geometry.Segment2D`1[System.Double]].ToArray()",
+      "Count": 13
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProfilingEvents.StageBegin(value class System.Guid,int64,int64,int64,int32)",
+      "Count": 13
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run()",
+      "Count": 11
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingArgumentPlan2D.Reserve()",
+      "Count": 11
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProfilingEvents.StageCounter(value class System.Guid,int64,int64,int64,int32,int32,int64)",
+      "Count": 10
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.ClipStack2D..ctor(class System.Collections.Generic.IEnumerable`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>)",
+      "Count": 9
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D.Get(class System.Object,value class System.Numerics.Matrix3x2,class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,bool)",
+      "Count": 8
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProgram2D.Compile(class Lumyte.Graphics.Drawing2D.DrawingCommand2D)",
+      "Count": 8
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanBuffer`1[System.Byte]..ctor(class Lumyte.Graphics.Vulkan.VulkanDevice,class Lumyte.Graphics.Abstractions.BufferDesc`1<!0>,value class Lumyte.Graphics.Abstractions.BufferLayout`1<!0>,unsigned int64)",
+      "Count": 7
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanBuffer`1[System.Byte].Dispose()",
+      "Count": 6
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken)",
+      "Count": 6
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProgram2D.Path(class Lumyte.Graphics.Drawing2D.Path2D,value class Lumyte.Graphics.Drawing2D.FillRule2D,value class System.Numerics.Matrix3x2,bool)",
+      "Count": 5
+    }
+  ],
+  "ManagedGroups": {
+    "other": 52,
+    "intermediate program compiler": 106,
+    "clip normalization/winding": 1553,
+    "clip stream dedup/packing": 340,
+    "profiling overhead": 10,
+    "other Vulkan managed": 4,
+    "submission/completion": 31,
+    "other fixed-record preparation/record": 69,
+    "retained owner accounting": 24,
+    "capacity admission": 148
+  },
+  "Self": [
+    {
+      "Name": "System.Threading.LowLevelLifoSemaphore.WaitNative(class Microsoft.Win32.SafeHandles.SafeWaitHandle,int32)",
+      "Count": 3010
+    },
+    {
+      "Name": "System.Threading.WaitHandle.WaitOneNoCheck(int32,bool,class System.Object,value class WaitHandleWaitSourceMap)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Threading.LowLevelLifoSemaphore.WaitForSignal(int32)",
+      "Count": 1930
+    },
+    {
+      "Name": "System.Threading.Monitor.Wait(class System.Object,int32)",
+      "Count": 1158
+    },
+    {
+      "Name": "System.Threading.SemaphoreSlim.WaitCore(int64,value class System.Threading.CancellationToken)",
+      "Count": 899
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 851
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 688
+    },
+    {
+      "Name": "System.Runtime.CompilerServices.RuntimeHelpers.<GetHashCode>g__GetHashCodeWorker|15_0(class System.Object)",
+      "Count": 381
+    },
+    {
+      "Name": "System.Threading.SemaphoreSlim.WaitUntilCountOrTimeout(int64,int64,value class System.Threading.CancellationToken)",
+      "Count": 353
+    },
+    {
+      "Name": "System.Threading.Thread.<PollGC>g__PollGCWorker|67_0()",
+      "Count": 181
+    },
+    {
+      "Name": "System.Buffer.MemmoveInternal(unsigned int8&,unsigned int8&,unsigned int)",
+      "Count": 130
+    },
+    {
+      "Name": "Silk.NET.Vulkan.Vk.WaitForFences(value class Silk.NET.Vulkan.Device,unsigned int32,value class Silk.NET.Vulkan.Fence*,value class Silk.NET.Core.Bool32,unsigned int64)",
+      "Count": 122
+    },
+    {
+      "Name": "System.Threading.ManualResetEventSlim.Wait(int32,value class System.Threading.CancellationToken)",
+      "Count": 108
+    },
+    {
+      "Name": "System.Threading.Tasks.Task.InternalWaitCore(int32,value class System.Threading.CancellationToken)",
+      "Count": 25
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanSubmission.WaitNative(class System.Threading.Tasks.TaskCompletionSource)",
+      "Count": 21
+    },
+    {
+      "Name": "System.Diagnostics.Tracing.EventPipeEventProvider.EventWriteTransfer(required_modifier System.Runtime.InteropServices.InAttribute value class System.Diagnostics.Tracing.EventDescriptor&,int,value class System.Guid*,value class System.Guid*,int32,value class EventData*)",
+      "Count": 14
+    },
+    {
+      "Name": "System.Diagnostics.Tracing.EventSource.WriteEventWithRelatedActivityIdCore(int32,value class System.Guid*,int32,value class EventData*)",
+      "Count": 13
+    },
+    {
+      "Name": "Silk.NET.Vulkan.Vk.DestroyCommandPool(value class Silk.NET.Vulkan.Device,value class Silk.NET.Vulkan.CommandPool,value class Silk.NET.Vulkan.AllocationCallbacks*)",
+      "Count": 9
+    },
+    {
+      "Name": "System.Threading.Monitor.Enter_Slowpath(class System.Object)",
+      "Count": 8
+    },
+    {
+      "Name": "Silk.NET.Vulkan.Vk.FreeMemory(value class Silk.NET.Vulkan.Device,value class Silk.NET.Vulkan.DeviceMemory,value class Silk.NET.Vulkan.AllocationCallbacks*)",
+      "Count": 7
+    }
+  ],
+  "Inclusive": [
+    {
+      "Name": "System.Threading.Thread.StartCallback()",
+      "Count": 7494
+    },
+    {
+      "Name": "System.Threading.PortableThreadPool+WorkerThread.WorkerThreadStart()",
+      "Count": 4996
+    },
+    {
+      "Name": "System.Threading.LowLevelLifoSemaphore.WaitForSignal(int32)",
+      "Count": 4943
+    },
+    {
+      "Name": "System.Threading.LowLevelLifoSemaphore.WaitNative(class Microsoft.Win32.SafeHandles.SafeWaitHandle,int32)",
+      "Count": 3010
+    },
+    {
+      "Name": "System.Threading.ExecutionContext.RunInternal(class System.Threading.ExecutionContext,class System.Threading.ContextCallback,class System.Object)",
+      "Count": 2543
+    },
+    {
+      "Name": "BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData)",
+      "Count": 2498
+    },
+    {
+      "Name": "BenchmarkDotNet.Engines.Engine.Run()",
+      "Count": 2498
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo)",
+      "Count": 2498
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[])",
+      "Count": 2498
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[])",
+      "Count": 2498
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run()",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Threading.Thread+StartHelper.Callback(class System.Object)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Threading.WaitHandle.WaitOneNoCheck(int32,bool,class System.Object,value class WaitHandleWaitSourceMap)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Threading.PortableThreadPool+GateThread.GateThreadStart()",
+      "Count": 2498
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3()",
+      "Count": 2497
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64)",
+      "Count": 2497
+    }
+  ],
+  "NearestLumyte": [
+    {
+      "Name": "[no Lumyte frame]",
+      "Count": 7651
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run()",
+      "Count": 2353
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 851
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 688
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawRecordPage2D.TrySharedClip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D,unsigned int32&)",
+      "Count": 341
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D)",
+      "Count": 147
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanSubmission.WaitNative(class System.Threading.Tasks.TaskCompletionSource)",
+      "Count": 143
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Geometry2D.Cubic(value class System.Numerics.Vector2,value class System.Numerics.Vector2,value class System.Numerics.Vector2,value class System.Numerics.Vector2,float32,!!0&,int32,int32)",
+      "Count": 76
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.RetainedDrawingCache2D.OwnedBytes(bool,bool)",
+      "Count": 22
+    },
+    {
+      "Name": "Lumyte.Graphics.Abstractions.ArgumentTablePlan.Materialize(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Abstractions.ArgumentTableReservation>,value class System.Threading.CancellationToken,bool)",
+      "Count": 21
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[Lumyte.Mathematics.Geometry.Segment2D`1[System.Double]].ToArray()",
+      "Count": 13
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProfilingEvents.StageBegin(value class System.Guid,int64,int64,int64,int32)",
+      "Count": 13
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanBuffer`1[System.Numerics.Vector4].Lumyte.Graphics.Abstractions.IGraphicsBuffer<T>.CopyBytesFrom(value class System.ReadOnlySpan`1<unsigned int8>,unsigned int64,unsigned int64)",
+      "Count": 12
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanBuffer`1[System.Byte]..ctor(class Lumyte.Graphics.Vulkan.VulkanDevice,class Lumyte.Graphics.Abstractions.BufferDesc`1<!0>,value class Lumyte.Graphics.Abstractions.BufferLayout`1<!0>,unsigned int64)",
+      "Count": 11
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingArgumentPlan2D.Reserve()",
+      "Count": 11
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProfilingEvents.StageCounter(value class System.Guid,int64,int64,int64,int32,int32,int64)",
+      "Count": 10
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.ClipStack2D..ctor(class System.Collections.Generic.IEnumerable`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>)",
+      "Count": 9
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanCommandBuffer.DisposeNative()",
+      "Count": 9
+    },
+    {
+      "Name": "Lumyte.Graphics.Vulkan.VulkanBuffer`1[System.Byte].Dispose()",
+      "Count": 8
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D.Get(class System.Object,value class System.Numerics.Matrix3x2,class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,bool)",
+      "Count": 8
+    }
+  ],
+  "CallTree": [
+    {
+      "Name": "System.Threading.Thread.StartCallback();System.Threading.PortableThreadPool+WorkerThread.WorkerThreadStart();System.Threading.LowLevelLifoSemaphore.WaitForSignal(int32);System.Threading.LowLevelLifoSemaphore.WaitNative(class Microsoft.Win32.SafeHandles.SafeWaitHandle,int32)",
+      "Count": 3010
+    },
+    {
+      "Name": "System.Threading.Thread.StartCallback();System.Threading.PortableThreadPool+GateThread.GateThreadStart();System.Threading.WaitHandle.WaitOneNoCheck(int32,bool,class System.Object,value class WaitHandleWaitSourceMap)",
+      "Count": 2498
+    },
+    {
+      "Name": "System.Threading.Thread.StartCallback();System.Threading.PortableThreadPool+WorkerThread.WorkerThreadStart();System.Threading.LowLevelLifoSemaphore.Wait(int32,bool);System.Threading.LowLevelLifoSemaphore.WaitForSignal(int32)",
+      "Count": 1930
+    },
+    {
+      "Name": "System.Threading.ExecutionContext.RunInternal(class System.Threading.ExecutionContext,class System.Threading.ContextCallback,class System.Object);System.Threading.Thread+StartHelper.Callback(class System.Object);Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run();System.Collections.Concurrent.BlockingCollection`1+<GetConsumingEnumerable>d__68[System.ValueTuple`3[System.__Canon,System.__Canon,System.Boolean]].MoveNext();System.Collections.Concurrent.BlockingCollection`1[System.ValueTuple`3[System.__Canon,System.__Canon,System.Boolean]].TryTakeWithNoTimeValidation(!0&,int32,value class System.Threading.CancellationToken,class System.Threading.CancellationTokenSource);System.Threading.SemaphoreSlim.WaitCore(int64,value class System.Threading.CancellationToken);System.Threading.SemaphoreSlim.WaitUntilCountOrTimeout(int64,int64,value class System.Threading.CancellationToken);System.Threading.Monitor.Wait(class System.Object,int32)",
+      "Count": 1091
+    },
+    {
+      "Name": "System.Threading.ExecutionContext.RunInternal(class System.Threading.ExecutionContext,class System.Threading.ContextCallback,class System.Object);System.Threading.Thread+StartHelper.Callback(class System.Object);Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run();System.Collections.Concurrent.BlockingCollection`1+<GetConsumingEnumerable>d__68[System.ValueTuple`3[System.__Canon,System.__Canon,System.Boolean]].MoveNext();System.Collections.Concurrent.BlockingCollection`1[System.ValueTuple`3[System.__Canon,System.__Canon,System.Boolean]].TryTakeWithNoTimeValidation(!0&,int32,value class System.Threading.CancellationToken,class System.Threading.CancellationTokenSource);System.Threading.SemaphoreSlim.WaitCore(int64,value class System.Threading.CancellationToken)",
+      "Count": 899
+    },
+    {
+      "Name": "System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks.CompletedFrameAsync();System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D.Get(class System.Object,value class System.Numerics.Matrix3x2,class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,bool);Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 658
+    },
+    {
+      "Name": "System.Threading.ExecutionContext.RunInternal(class System.Threading.ExecutionContext,class System.Threading.ContextCallback,class System.Object);System.Threading.Thread+StartHelper.Callback(class System.Object);Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run();System.Collections.Concurrent.BlockingCollection`1+<GetConsumingEnumerable>d__68[System.ValueTuple`3[System.__Canon,System.__Canon,System.Boolean]].MoveNext();System.Collections.Concurrent.BlockingCollection`1[System.ValueTuple`3[System.__Canon,System.__Canon,System.Boolean]].TryTakeWithNoTimeValidation(!0&,int32,value class System.Threading.CancellationToken,class System.Threading.CancellationTokenSource);System.Threading.SemaphoreSlim.WaitCore(int64,value class System.Threading.CancellationToken);System.Threading.SemaphoreSlim.WaitUntilCountOrTimeout(int64,int64,value class System.Threading.CancellationToken)",
+      "Count": 353
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks.CompletedFrameAsync();System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D.Get(class System.Object,value class System.Numerics.Matrix3x2,class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,bool);Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool);Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 241
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks.CompletedFrameAsync();RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool);Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 184
+    },
+    {
+      "Name": "System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks.CompletedFrameAsync();System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D.Get(class System.Object,value class System.Numerics.Matrix3x2,class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,bool);Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool);Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 156
+    },
+    {
+      "Name": "System.Threading.ExecutionContext.RunInternal(class System.Threading.ExecutionContext,class System.Threading.ContextCallback,class System.Object);System.Threading.Thread+StartHelper.Callback(class System.Object);Lumyte.Graphics.Vulkan.VulkanCompletionDispatcher.Run();Lumyte.Graphics.Vulkan.VulkanSubmission.<.ctor>b__9_0();Lumyte.Graphics.Vulkan.VulkanSubmission.WaitNative(class System.Threading.Tasks.TaskCompletionSource);Silk.NET.Vulkan.Vk.WaitForFences(value class Silk.NET.Vulkan.Device,unsigned int32,value class Silk.NET.Vulkan.Fence*,value class Silk.NET.Core.Bool32,unsigned int64)",
+      "Count": 122
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Helpers.AwaitHelper.GetResult(class System.Threading.Tasks.Task);System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(class System.Threading.Tasks.Task,value class System.Threading.Tasks.ConfigureAwaitOptions);System.Threading.Tasks.Task.InternalWait(int32,value class System.Threading.CancellationToken);System.Threading.Tasks.Task.InternalWaitCore(int32,value class System.Threading.CancellationToken);System.Threading.Tasks.Task.SpinThenBlockingWait(int32,value class System.Threading.CancellationToken);System.Threading.ManualResetEventSlim.Wait(int32,value class System.Threading.CancellationToken)",
+      "Count": 108
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks.CompletedFrameAsync();RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.FitsAddition(class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,class Lumyte.Graphics.Drawing2D.NormalizedClip2D,value class Lumyte.Mathematics.Colors.SRgba`1<float32>,unsigned int64,unsigned int32&,bool&);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.TrySharedClip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D,unsigned int32&);System.Runtime.CompilerServices.RuntimeHelpers.<GetHashCode>g__GetHashCodeWorker|15_0(class System.Object)",
+      "Count": 99
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks.CompletedFrameAsync();RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool)",
+      "Count": 86
+    },
+    {
+      "Name": "BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool);Lumyte.Mathematics.Geometry.Geometry2D.AccumulateWindingFused(value class System.ReadOnlySpan`1<value class Lumyte.Mathematics.Geometry.Segment2D`1<!!0>>,value class Lumyte.Mathematics.Geometry.Point2D`1<!!0>)",
+      "Count": 78
+    }
+  ],
+  "AllocationTypes": [
+    {
+      "Name": "System.Numerics.Vector4[]",
+      "Count": 173097648
+    },
+    {
+      "Name": "System.ValueTuple`2[System.Collections.Generic.List`1[System.Numerics.Vector4],Lumyte.Graphics.Drawing2D.DrawingInstruction][]",
+      "Count": 31207624
+    },
+    {
+      "Name": "System.Numerics.Vector2[]",
+      "Count": 25138968
+    },
+    {
+      "Name": "Entry[System.Object,System.Int64][]",
+      "Count": 24554392
+    },
+    {
+      "Name": "System.ValueTuple`3[System.Collections.Generic.List`1[System.Numerics.Vector4],Lumyte.Graphics.Drawing2D.DrawingInstruction,System.UInt32][]",
+      "Count": 17409072
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingInstruction[]",
+      "Count": 16976624
+    },
+    {
+      "Name": "System.Int32[]",
+      "Count": 16481672
+    },
+    {
+      "Name": "Entry[System.ValueTuple`4[Lumyte.Graphics.Drawing2D.NormalizedClipKind2D,Lumyte.Graphics.Abstractions.ScissorRect,System.Numerics.Vector4,System.Int32],System.Collections.Generic.List`1[System.ValueTuple`2[Lumyte.Graphics.Drawing2D.NormalizedClip2D,System.UInt32]]][]",
+      "Count": 11795784
+    },
+    {
+      "Name": "Entry[System.Numerics.Matrix3x2,System.UInt32][]",
+      "Count": 11283056
+    },
+    {
+      "Name": "System.Collections.Generic.HashSet`1[System.Object]",
+      "Count": 9094912
+    },
+    {
+      "Name": "UnionIterator2`1[System.Object]",
+      "Count": 9045728
+    },
+    {
+      "Name": "Lumyte.Mathematics.Geometry.Segment2D`1[System.Double][]",
+      "Count": 7611824
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawDirectoryEntry2D[]",
+      "Count": 6821840
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.ClipElement2D[]",
+      "Count": 6665392
+    },
+    {
+      "Name": "System.Collections.Generic.HashSet`1[Lumyte.Graphics.Abstractions.IGraphicsSampler]",
+      "Count": 5332856
+    },
+    {
+      "Name": "System.ValueTuple`3[Lumyte.Graphics.Abstractions.ArgumentTableReservation,Lumyte.Graphics.Abstractions.ArgumentPartition,System.Collections.Generic.List`1[System.ValueTuple`2[Lumyte.Graphics.Abstractions.ArgumentRequest,Lumyte.Graphics.Abstractions.ResolvedArgument]]][]",
+      "Count": 4797000
+    },
+    {
+      "Name": "Contour",
+      "Count": 4370296
+    },
+    {
+      "Name": "AppendPrepend1Iterator`1[Lumyte.Graphics.Drawing2D.ClipElement2D]",
+      "Count": 4351192
+    },
+    {
+      "Name": "Entry[Lumyte.Graphics.Drawing2D.PaintNode2D,System.Collections.Generic.Dictionary`2[System.Numerics.Matrix3x2,System.UInt32]][]",
+      "Count": 4195560
+    },
+    {
+      "Name": "ListSelectIterator`2[Lumyte.Graphics.Abstractions.ArgumentRequest,Lumyte.Graphics.Abstractions.IShaderReference]",
+      "Count": 3724408
+    }
+  ],
+  "AllocationStacks": [
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].set_Capacity(int32);System.Collections.Generic.List`1[System.Numerics.Vector4].Grow(int32);System.Collections.Generic.List`1[System.Numerics.Vector4].AddRange(class System.Collections.Generic.IEnumerable`1<!0>);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Add(class Lumyte.Graphics.Drawing2D.DrawingCommand2D,class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,value class Lumyte.Graphics.Abstractions.ScissorRect,class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64)",
+      "Count": 28658536
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].set_Capacity(int32);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Add(class Lumyte.Graphics.Drawing2D.DrawingCommand2D,class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,value class Lumyte.Graphics.Abstractions.ScissorRect,class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo)",
+      "Count": 21273208
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool);Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D.Get(class System.Object,value class System.Numerics.Matrix3x2,class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,bool);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String)",
+      "Count": 17690664
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].set_Capacity(int32);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Add(class Lumyte.Graphics.Drawing2D.DrawingCommand2D,class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,value class Lumyte.Graphics.Abstractions.ScissorRect,class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags)",
+      "Count": 17524408
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].set_Capacity(int32);System.Collections.Generic.List`1[System.Numerics.Vector4].Grow(int32);System.Collections.Generic.List`1[System.Numerics.Vector4].AddWithResize(!0);Lumyte.Graphics.Drawing2D.DrawingProgram2D.Path(class Lumyte.Graphics.Drawing2D.Path2D,value class Lumyte.Graphics.Drawing2D.FillRule2D,value class System.Numerics.Matrix3x2,bool);Lumyte.Graphics.Drawing2D.DrawingProgram2D.Compile(class Lumyte.Graphics.Drawing2D.DrawingCommand2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64)",
+      "Count": 13931648
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].set_Capacity(int32);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Add(class Lumyte.Graphics.Drawing2D.DrawingCommand2D,class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,value class Lumyte.Graphics.Abstractions.ScissorRect,class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run()",
+      "Count": 11957408
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].AddWithResize(!0);Lumyte.Graphics.Drawing2D.DrawingProgram2D.Compile(class Lumyte.Graphics.Drawing2D.DrawingCommand2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[])",
+      "Count": 10473704
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].AddWithResize(!0);Lumyte.Graphics.Drawing2D.DrawingProgram2D.Compile(class Lumyte.Graphics.Drawing2D.DrawingCommand2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo)",
+      "Count": 9093280
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.Numerics.Vector4].set_Capacity(int32);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Clip(class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.Add(class Lumyte.Graphics.Drawing2D.DrawingCommand2D,class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,value class Lumyte.Graphics.Abstractions.ScissorRect,class Lumyte.Graphics.Drawing2D.NormalizedClip2D);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[])",
+      "Count": 8814704
+    },
+    {
+      "Name": "System.Collections.Generic.List`1[System.ValueTuple`2[System.__Canon,Lumyte.Graphics.Drawing2D.DrawingInstruction]].set_Capacity(int32);System.Collections.Generic.List`1[System.ValueTuple`2[System.__Canon,Lumyte.Graphics.Drawing2D.DrawingInstruction]].Grow(int32);System.Collections.Generic.List`1[System.ValueTuple`2[System.__Canon,Lumyte.Graphics.Drawing2D.DrawingInstruction]].AddWithResize(!0);System.Collections.Generic.List`1[System.ValueTuple`2[System.__Canon,Lumyte.Graphics.Drawing2D.DrawingInstruction]].Add(!0);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.<FitsAddition>g__CountPaint|39_2(unsigned int32,value class <>c__DisplayClass39_0&);Lumyte.Graphics.Drawing2D.DrawRecordPage2D.FitsAddition(class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,class Lumyte.Graphics.Drawing2D.NormalizedClip2D,value class Lumyte.Mathematics.Colors.SRgba`1<float32>,unsigned int64,unsigned int32&,bool&);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D+Page.CanAdmit(class Lumyte.Graphics.Drawing2D.DrawingProgram2D,unsigned int32,class Lumyte.Graphics.Drawing2D.NormalizedClip2D,value class Lumyte.Mathematics.Colors.SRgba`1<float32>);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3()",
+      "Count": 8770464
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.NormalizedClip2D.Create(class System.Collections.Generic.IReadOnlyList`1<class Lumyte.Graphics.Drawing2D.ClipElement2D>,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,bool);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*);System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(class System.Object,value class System.Span`1<class System.Object>,value class System.Reflection.BindingFlags);System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);System.Reflection.RuntimeMethodInfo.Invoke(class System.Object,value class System.Reflection.BindingFlags,class System.Reflection.Binder,class System.Object[],class System.Globalization.CultureInfo);BenchmarkDotNet.Autogenerated.UniqueProgramName.AfterAssemblyLoadingAttached(class System.String[]);BenchmarkDotNet.Autogenerated.UniqueProgramName.Main(class System.String[])",
+      "Count": 8572176
+    },
+    {
+      "Name": "Lumyte.Graphics.Drawing2D.DrawingProgram2D..ctor(class Lumyte.Graphics.Abstractions.ShaderResources,class Lumyte.Graphics.Drawing2D.DrawingTargetInfo2D,class Lumyte.Graphics.Drawing2D.ClipNormalizationCache2D,bool);Lumyte.Graphics.Drawing2D.PreparedRecordBatch2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.RenderPreparationContext2D,value class System.ReadOnlyMemory`1<!!0>,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D+<PrepareRetainedAsync>d__23.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1[System.__Canon].Start(!!0&);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareRetainedAsync(class Lumyte.Graphics.Drawing2D.IDrawingSceneSource2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);Lumyte.Graphics.Drawing2D.Renderer2D.PrepareAsync(class Lumyte.Graphics.Drawing2D.DrawingSceneReadLease2D,class Lumyte.Graphics.Drawing2D.RenderTarget2D,value class System.Threading.CancellationToken);RecordFrameBenchmarks+<CompletedFrameAsync>d__34.MoveNext();System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start(!!0&);System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start(!!0&);RecordFrameBenchmarks.CompletedFrameAsync();BenchmarkDotNet.Autogenerated.Runnable_1.<.ctor>b__3_3();BenchmarkDotNet.Autogenerated.Runnable_1.WorkloadActionNoUnroll(int64);BenchmarkDotNet.Engines.Engine.Measure(class System.Action`1<int64>,int64);BenchmarkDotNet.Engines.Engine.RunIteration(value class BenchmarkDotNet.Engines.IterationData);BenchmarkDotNet.Engines.Engine.Run();BenchmarkDotNet.Autogenerated.Runnable_1.Run(class BenchmarkDotNet.Engines.IHost,class System.String);System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(class System.Object,int*)",
+      "Count": 7195856
+    }
+  ],
+  "StageStats": [
+    {
+      "Stage": "3",
+      "Count": 120,
+      "MeanWallMs": 0.08229349166665353,
+      "TotalInclusiveWallMs": 9.875218999998424
+    },
+    {
+      "Stage": "6",
+      "Count": 120,
+      "MeanWallMs": 19.796845216666643,
+      "TotalInclusiveWallMs": 2375.621425999997
+    },
+    {
+      "Stage": "4",
+      "Count": 120,
+      "MeanWallMs": 19.817875341666692,
+      "TotalInclusiveWallMs": 2378.145041000003
+    },
+    {
+      "Stage": "7",
+      "Count": 120,
+      "MeanWallMs": 0.09991190000002348,
+      "TotalInclusiveWallMs": 11.989428000002817
+    },
+    {
+      "Stage": "13",
+      "Count": 120,
+      "MeanWallMs": 0.43374814999998346,
+      "TotalInclusiveWallMs": 52.049777999998014
+    },
+    {
+      "Stage": "2",
+      "Count": 120,
+      "MeanWallMs": 20.571567133333293,
+      "TotalInclusiveWallMs": 2468.588055999995
+    },
+    {
+      "Stage": "10",
+      "Count": 120,
+      "MeanWallMs": 0.10561439166665802,
+      "TotalInclusiveWallMs": 12.673726999998962
+    },
+    {
+      "Stage": "12",
+      "Count": 240,
+      "MeanWallMs": 0.12475264166666401,
+      "TotalInclusiveWallMs": 29.940633999999363
+    }
+  ],
+  "StageSamples": {
+    "[no same-thread span; not guessed]": 10182,
+    "6": 2190,
+    "13": 32,
+    "3": 3,
+    "2": 24,
+    "10": 14,
+    "12": 26,
+    "7": 17,
+    "4": 2
+  },
+  "Counters": {
+    "4/5": 120,
+    "7/8": 45406080,
+    "13/15": 120,
+    "13/16": 0,
+    "13/17": 0,
+    "13/18": 600,
+    "13/19": 0,
+    "13/20": 0,
+    "13/21": 0,
+    "13/22": 120,
+    "13/23": 0,
+    "2/2": 120,
+    "2/3": 0,
+    "2/4": 120,
+    "2/11": 120,
+    "2/12": 4080,
+    "2/13": 7820674560,
+    "10/14": 0,
+    "12/11": 0,
+    "12/12": 8400,
+    "12/13": 16101388800
+  },
+  "Joins": {
+    "Paired": 1458,
+    "UnmatchedBegins": 0,
+    "unmatchedEnds": 0,
+    "mismatches": 0,
+    "duplicateBegins": 0,
+    "joined": 3888,
+    "missing": 0,
+    "counterMismatch": 0,
+    "unassociated": 0,
+    "parentMissing": 0,
+    "ActualFrames": 120
+  },
+  "EventsLost": 0,
+  "GcStarts": [],
+  "SuspensionEventCounts": {
+    "GC/SuspendEEStart": 2497,
+    "GC/SuspendEEStop": 2498,
+    "GC/RestartEEStart": 2498,
+    "GC/RestartEEStop": 2498
+  },
+  "GcPauses": [],
+  "OtherSuspensions": {
+    "Count": 2497,
+    "TotalWallMs": 86.30407999999761,
+    "Reasons": {
+      "SuspendOther": 2497
+    }
+  }
+}
