@@ -1,0 +1,119 @@
+diff --git a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/ClipNormalizationCache2D.cs b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/ClipNormalizationCache2D.cs
+index 4c909851..c740719e 100644
+--- a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/ClipNormalizationCache2D.cs
++++ b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/ClipNormalizationCache2D.cs
+@@ -24,6 +24,7 @@ internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
+     {
+         if (_clips.TryGetValue((key, transform, pixelSpace), out NormalizedClip2D? clip))
+         {
++            ClipWorkCounters2D.IdentityHits++;
+             return clip;
+         }
+
+@@ -57,6 +58,7 @@ internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
+             geometryBytes = checked(geometryBytes + ((long)element.Path.Segments.Count * 32));
+             foreach (PathSegment2D segment in element.Path.Segments)
+             {
++                ClipWorkCounters2D.HashedSegments++;
+                 hash.Add(segment);
+             }
+         }
+@@ -68,6 +70,7 @@ internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
+             {
+                 if (entry.PixelSpace == pixelSpace && Equal(entry.Elements, elements))
+                 {
++                    ClipWorkCounters2D.StructuralHits++;
+                     clip = entry.Clip;
+                     long aliasBytes = checked(geometryBytes + ((long)elements.Count * 256));
+                     if (_clips.Count < 4096 && _bytes + _geometryBytes + aliasBytes <= 32 * 1024 * 1024)
+@@ -121,6 +124,7 @@ internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
+             {
+                 for (int j = 0; j < a.Path.Segments.Count; j++)
+                 {
++                    ClipWorkCounters2D.ComparedSegments++;
+                     if (a.Path.Segments[j] != b.Path.Segments[j])
+                     {
+                         return false;
+diff --git a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/DrawRecordPage2D.cs b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/DrawRecordPage2D.cs
+index 60ad04b2..494a6e02 100644
+--- a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/DrawRecordPage2D.cs
++++ b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/DrawRecordPage2D.cs
+@@ -659,6 +659,7 @@ internal sealed class DrawRecordPage2D
+         if (clip.Kind == NormalizedClipKind2D.SampleMask)
+         {
+             uint mask = checked((uint)Numeric.Count);
++            ClipWorkCounters2D.MaskCopyCells += clip.Mask.Length;
+             Numeric.AddRange(clip.Mask);
+             first = checked((uint)Numeric.Count);
+             Numeric.Add(Bits(clip.Bounds.X, clip.Bounds.Y, clip.Bounds.Width, clip.Bounds.Height));
+@@ -739,6 +740,7 @@ internal sealed class DrawRecordPage2D
+         {
+             foreach ((NormalizedClip2D Clip, uint Id) candidate in candidates)
+             {
++                ClipWorkCounters2D.MaskCompareCells += clip.Mask.Length;
+                 if (clip.Mask.AsSpan().SequenceEqual(candidate.Clip.Mask))
+                 {
+                     id = candidate.Id;
+diff --git a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/NormalizedClip2D.cs b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/NormalizedClip2D.cs
+index 0b270def..0ee1152b 100644
+--- a/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/NormalizedClip2D.cs
++++ b/src/Graphics/Lumyte.Graphics.Drawing2D/Rendering/NormalizedClip2D.cs
+@@ -19,6 +19,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
+ {
+     internal static NormalizedClip2D Create(IReadOnlyList<ClipElement2D> elements, DrawingTargetInfo2D target, bool pixelSpace = false)
+     {
++        ClipWorkCounters2D.Creates++;
+         const int MaximumMaskPixels = 1048576;
+         const long MaximumSampleEdges = 268435456;
+         uint width = target.Description.Width, height = target.Description.Height;
+@@ -82,6 +83,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
+                         (double Left, double Top, double Right, double Bottom) edgeBounds = Geometry2D.EncloseBoundsEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
+                         (double Left, double Top, double Right, double Bottom) enclosed = Geometry2D.EncloseBoundsEdges((pathBounds.Left, pathBounds.Top, pathBounds.Right, pathBounds.Bottom), edgeBounds);
+                         pathBounds = new(enclosed.Left, enclosed.Top, enclosed.Right, enclosed.Bottom);
++                        ClipWorkCounters2D.Edges++;
+                         edges.Add(new(a, b));
+                     }
+                 }
+@@ -125,6 +127,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
+         uint endY = (uint)Math.Clamp(Math.Ceiling(bottom), y, height);
+         int maskWidth = checked((int)(endX - x)), maskHeight = checked((int)(endY - y));
+         long area = (long)maskWidth * maskHeight;
++        ClipWorkCounters2D.MaskPixels += area;
+         if (area > MaximumMaskPixels || checked(area * 16 * (edgeCount + 1)) > MaximumSampleEdges)
+         {
+             throw new NotSupportedException("Normalized clip exceeds the 1048576 pixel or 268435456 sample-edge budget.");
+@@ -170,6 +173,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
+                         {
+                             int middle = low + ((high - low) / 2);
+                             double sampleX = x + ((middle + 0.5) / 4);
++                            ClipWorkCounters2D.Predicates++;
+                             int contribution = Geometry2D.GetWindingContributionFused(edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y, sampleX, sampleY);
+                             if (contribution != 0)
+                             {
+diff --git a/tools/benchmarks/drawing2d-skia-bdn/Program.cs b/tools/benchmarks/drawing2d-skia-bdn/Program.cs
+index 7396690b..d617ff9a 100644
+--- a/tools/benchmarks/drawing2d-skia-bdn/Program.cs
++++ b/tools/benchmarks/drawing2d-skia-bdn/Program.cs
+@@ -9,6 +9,22 @@ using Microsoft.Diagnostics.NETCore.Client;
+ using Microsoft.Diagnostics.Tracing.Parsers;
+ using Perfolizer.Mathematics.OutlierDetection;
+
++if (args.Length == 2 && args[0] == "--clip-counts")
++{
++    var type = typeof(Lumyte.Graphics.Drawing2D.Canvas2D).Assembly.GetType("Lumyte.Graphics.Drawing2D.ClipWorkCounters2D")!;
++    var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
++    var fixture = new RecordFrameBenchmarks { Case = args[1] };
++    await fixture.Setup();
++    try
++    {
++        type.GetMethod("Reset", flags)!.Invoke(null, null);
++        await fixture.CompletedFrameAsync();
++        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(type.GetFields(flags).ToDictionary(f => f.Name, f => f.GetValue(null))));
++    }
++    finally { fixture.Cleanup(); }
++    return;
++}
++
+ if (args.Length == 2 && args[0] == "--verify-quality")
+ {
+     await QualityVerification.RunAsync(args[1]);

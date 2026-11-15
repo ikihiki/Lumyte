@@ -742,6 +742,7 @@ internal sealed class DrawRecordPage2D
                 if (clip.Mask.AsSpan().SequenceEqual(candidate.Clip.Mask))
                 {
                     id = candidate.Id;
+                    _clipCache.Add(clip, id);
                     return true;
                 }
             }

@@ -1,5 +1,11 @@
 # Drawing2D / Skia GPU — BenchmarkDotNet
 
+## Clip winding CPU comparison
+
+Eight-case completed-frame runner は `LUMYTE_RECORD_BENCH=1`、cold CPU 正規化は `LUMYTE_CLIP_CPU_BENCH=1` で選択します。後者は cold triangle／128-edge、同一準備内の別 stack 200件、毎回新しい transform 200件を分離し、準備 cache を各 timed invocation 内で作成します。内部関数 delegate の binding のみ setup です。GPU completion を含む frame 結果と混同しません。両 runner は BDN 0.15.8 の15〜30 actual iteration・100ms target・outlier保持・median/p95/full JSON/MemoryDiagnoser を使います。
+
+`docs/performance/data/path-clip-winding-20261116/run-abba.sh` が固定 source/harness の A1/B1/B2/A2 再現手順、同 directory の JSON が測定データ・provenance・精度判定です。測定値と制約は PR description に集約し、ADR の契約や既存比較を上書きしません。
+
 The completed clip-normalization comparison is documented in
 [ADR-GRAPHICS-0033](../../../docs/adr/graphics/GRAPHICS-0033-drawing2d-normalized-clips.md).
 The authoring-only status below refers to the original six-case Skia comparison,
