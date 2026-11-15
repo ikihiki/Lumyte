@@ -13,7 +13,7 @@ public interface IShaderArguments
     static abstract int TransferSize { get; }
 
     /// <summary>Gets the exact number of declared 16-byte reference slots in every wire value, including repeated references to the same resource.</summary>
-    /// <remarks>This instance-independent static provider must not inspect values or invoke reference getters. Numeric-only values return zero. The count must be nonnegative and no greater than <see cref="TransferSize"/> divided by sixteen; each successful write must emit exactly this many reference fixups.</remarks>
+    /// <remarks>This instance-independent static provider must not inspect values or invoke reference getters. Numeric-only values return zero. The count must be nonnegative and no greater than <see cref="TransferSize"/> divided by sixteen; each valid codec must emit exactly this many reference fixups. The explicit validation layer diagnoses these declaration semantics. Raw backend Set and typed CopyFrom do not read this provider or compare reference-call counts; declaration consistency is the caller's precondition there. Actual byte capacity, complete wire size, completion state, and checked reference ABI element-count and offset encoding remain mandatory in every mode.</remarks>
     static abstract int ReferenceCount { get; }
 
     /// <summary>Gets C# field locations for explicit generic diagnostics; capture defers this getter through a static provider without retaining the value.</summary>

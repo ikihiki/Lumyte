@@ -13,7 +13,7 @@ internal static class VulkanShaderTransfer
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
         VulkanPushConstants.ValidateSize(owner, size);
-        var writer = new VulkanShaderValueWriter(owner, size, destination, T.ReferenceCount);
+        var writer = new VulkanShaderValueWriter(owner, size, destination);
         value.Write(ref writer);
         writer.Complete();
         return (ShaderRootArguments.Create(root, name, size, null), writer.Table);
@@ -25,7 +25,7 @@ internal static class VulkanShaderTransfer
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
         VulkanPushConstants.ValidateSize(owner, size);
-        var writer = new VulkanShaderValueWriter(owner, size, destination, 0);
+        var writer = new VulkanShaderValueWriter(owner, size, destination);
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         writer.Complete();
         return ShaderRootArguments.Create(rootParameter, name, size, null);
@@ -45,8 +45,6 @@ internal static class VulkanShaderTransfer
             throw new ArgumentOutOfRangeException(nameof(elementOffset));
         }
 
-        int referenceCount = T.ReferenceCount;
-        VulkanShaderValueWriter.ValidateExpectedCount(stride, referenceCount);
         ulong offset = checked(elementOffset * (ulong)stride);
         int length = checked(source.Length * stride);
         if (storage is not VulkanBuffer<byte> native)
@@ -57,7 +55,7 @@ internal static class VulkanShaderTransfer
         Span<byte> destination = native.GetMappedUploadSpan(offset, length);
         for (int i = 0; i < source.Length; i++)
         {
-            var writer = new VulkanShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride), referenceCount);
+            var writer = new VulkanShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride));
             source[i].Write(ref writer);
             writer.Complete();
         }

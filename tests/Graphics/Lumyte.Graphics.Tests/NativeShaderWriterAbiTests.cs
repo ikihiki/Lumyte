@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Reflection;
+using System.Reflection.Emit;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
 using Lumyte.Graphics.Validation;
@@ -33,6 +34,8 @@ public sealed class NativeShaderWriterAbiTests
 
     private delegate Span<byte> MappedUpload(ulong offset, int count);
 
+    private delegate void WriteNative(object owner, IGpuRef<uint>? reference, Span<byte> destination, int size, bool recover);
+
     /// <summary>WGSL stores stable slots, relative subranges, exact counts, and reserved zeros.</summary>
     /// <returns>The native checks with validation disabled and enabled.</returns>
     [GpuFact]
@@ -64,6 +67,64 @@ public sealed class NativeShaderWriterAbiTests
             await CheckAsync(device, artifact, ShaderTarget.SpirV, validation);
             await CheckAddressLifetimeAsync(raw);
         }
+    }
+
+    private static WriteNative NativeAdapter(IGraphicDevice owner)
+    {
+        string backend = owner is WgpuDevice ? "Wgpu" : "Vulkan";
+        Type writer = owner.GetType().Assembly.GetType($"Lumyte.Graphics.{backend}.{backend}ShaderValueWriter", true)!;
+        var method = new DynamicMethod("WriteNativeReference", typeof(void), [typeof(object), typeof(IGpuRef<uint>), typeof(Span<byte>), typeof(int), typeof(bool)], typeof(NativeShaderWriterAbiTests).Module, true);
+        ILGenerator il = method.GetILGenerator();
+        LocalBuilder local = il.DeclareLocal(writer);
+        il.Emit(OpCodes.Ldloca, local);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Castclass, owner.GetType());
+        il.Emit(OpCodes.Ldarg_3);
+        if (backend == "Wgpu")
+        {
+            il.Emit(OpCodes.Ldnull);
+        }
+
+        il.Emit(OpCodes.Ldarg_2);
+        il.Emit(OpCodes.Call, Assert.Single(writer.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)));
+        MethodInfo write = writer.GetMethod("WriteReference")!.MakeGenericMethod(typeof(uint));
+        Label normal = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_S, (byte)4);
+        il.Emit(OpCodes.Brfalse, normal);
+        il.BeginExceptionBlock();
+        il.Emit(OpCodes.Ldloca, local);
+        il.Emit(OpCodes.Ldnull);
+        il.Emit(OpCodes.Call, write);
+        il.BeginCatchBlock(typeof(ArgumentException));
+        il.Emit(OpCodes.Pop);
+        il.EndExceptionBlock();
+        il.MarkLabel(normal);
+        il.Emit(OpCodes.Ldloca, local);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Call, write);
+        il.Emit(OpCodes.Ldloca, local);
+        il.Emit(OpCodes.Call, writer.GetMethod("Complete", BindingFlags.Instance | BindingFlags.NonPublic)!);
+        il.Emit(OpCodes.Ret);
+        return method.CreateDelegate<WriteNative>();
+    }
+
+    private static void CheckDirectReference(IGraphicDevice device, IGpuRef<uint> reference, byte[] expected)
+    {
+        WriteNative write = NativeAdapter(device);
+        foreach (bool recover in new[] { false, true })
+        {
+            byte[] destination = Enumerable.Repeat((byte)0xCD, 24).ToArray();
+            write(device, reference, destination.AsSpan(4, 16), 16, recover);
+            Assert.Equal(expected, destination[4..20]);
+            Assert.All(destination[..4], item => Assert.Equal((byte)0xCD, item));
+            Assert.All(destination[20..], item => Assert.Equal((byte)0xCD, item));
+        }
+
+        byte[] shortDestination = Enumerable.Repeat((byte)0xA7, 24).ToArray();
+        Assert.Throws<ArgumentOutOfRangeException>(() => write(device, reference, shortDestination.AsSpan(4, 15), 15, false));
+        Assert.All(shortDestination, item => Assert.Equal((byte)0xA7, item));
+        Assert.Throws<ArgumentException>(() => write(device, null, shortDestination.AsSpan(4, 16), 16, false));
+        Assert.All(shortDestination, item => Assert.Equal((byte)0xA7, item));
     }
 
     private static async Task CheckAddressLifetimeAsync(VulkanDevice device)
@@ -119,9 +180,15 @@ public sealed class NativeShaderWriterAbiTests
         var value = new NativeAbiValue { Number = 0x12345678, Sampler = table.WriteSampler(2, sampler), Texture = table.WriteTexture(5, view), Writable = writable, First = first, Second = second };
         Assert.Equal(88UL, upload.ShaderElementStrideInBytes);
         await upload.MapAsync();
+        object backendUpload = NativeIdentity(upload);
+        object storage = backendUpload.GetType().GetProperty("Storage", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backendUpload)!;
+        MappedUpload mapped = storage.GetType().GetMethod("GetMappedUploadSpan", BindingFlags.Instance | BindingFlags.NonPublic)!.CreateDelegate<MappedUpload>(storage);
+        mapped(0, 88).Fill(0xCD);
         upload.CopyFrom([value]);
+        byte[] firstBytes = mapped(0, 88).ToArray();
         IShaderReferenceMetadata? firstRevision = QueryDependencies((IShaderDataSource)upload, validation);
         IShaderReference[] captured = firstRevision?.References.ToArray() ?? [];
+        mapped(0, 88).Fill(0xA7);
         upload.CopyFrom([value]); // Repeated physical references reuse the same allocation address.
         IShaderReferenceMetadata? nextRevision = QueryDependencies((IShaderDataSource)upload, validation);
         if (validation)
@@ -134,9 +201,6 @@ public sealed class NativeShaderWriterAbiTests
 
         // Inspect the actual mapped backend allocation without adopting its raw buffer
         // into the validation domain or recording commands with mixed identities.
-        object backendUpload = NativeIdentity(upload);
-        object storage = backendUpload.GetType().GetProperty("Storage", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backendUpload)!;
-        MappedUpload mapped = storage.GetType().GetMethod("GetMappedUploadSpan", BindingFlags.Instance | BindingFlags.NonPublic)!.CreateDelegate<MappedUpload>(storage);
         byte[] actual = mapped(0, 88).ToArray();
         upload.Unmap();
 
@@ -158,6 +222,12 @@ public sealed class NativeShaderWriterAbiTests
             AddressSlot(expected.AsSpan(72, 16), address + 32, 2);
         }
 
+        if (!validation)
+        {
+            CheckDirectReference(device, first, expected[56..72]);
+        }
+
+        Assert.Equal(expected, firstBytes);
         Assert.Equal(expected, actual);
         await CheckMalformedAsync(device, artifact, value, validation);
     }

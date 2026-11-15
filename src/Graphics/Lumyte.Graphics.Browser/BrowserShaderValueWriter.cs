@@ -12,23 +12,26 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
     private readonly BrowserRootStorage? _root;
     private readonly JSObject? _upload;
     private readonly int _baseOffset;
-    private readonly int _expectedCount;
     private BrowserArgumentTable? _table;
     private int _position;
-    private int _referenceCount;
     private bool _written;
     private bool _completed;
 
-    internal BrowserShaderValueWriter(BrowserDevice owner, int size, BrowserRootStorage? root, JSObject? upload, int baseOffset, int expectedCount)
+    internal BrowserShaderValueWriter(BrowserDevice owner, int size, BrowserRootStorage? root, JSObject? upload, int baseOffset)
     {
         this = default;
-        ValidateExpectedCount(size, expectedCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        ArgumentOutOfRangeException.ThrowIfNegative(baseOffset);
+        if (root != null && root.Size < size)
+        {
+            throw new ArgumentException("Destination is smaller than the C# wire size.", nameof(root));
+        }
+
         _owner = owner;
         _size = size;
         _root = root;
         _upload = upload;
         _baseOffset = baseOffset;
-        _expectedCount = expectedCount;
     }
 
     internal BrowserArgumentTable? Table => _table;
@@ -52,11 +55,6 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
     public void WriteReference<T>(IGpuRef<T>? reference)
     {
         ValidateWrite(16);
-        if (_referenceCount >= _expectedCount)
-        {
-            throw new InvalidOperationException("The codec exceeds its declared reference count.");
-        }
-
         if (reference is not GpuReference<T> dependency)
         {
             throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
@@ -74,34 +72,37 @@ internal ref struct BrowserShaderValueWriter : IShaderValueWriter
             throw new ArgumentException("Shader references must use one argument table.", nameof(reference));
         }
 
-        _table = table;
-        Span<byte> wire = stackalloc byte[16];
-        wire.Clear();
         if (dependency.Resource is IShaderDataSource data && data.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Upload staging cannot be referenced by a shader.", nameof(reference));
         }
 
-        // WGSL helper ABI: stable slot, registration-relative byte offset, count, reserved zero.
-        BinaryPrimitives.WriteUInt32LittleEndian(wire, dependency.Slot);
-        BinaryPrimitives.WriteUInt32LittleEndian(wire[4..], checked((uint)(dependency.OffsetInBytes - dependency.RegistrationOffsetInBytes)));
-        BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], checked((uint)dependency.Count));
-        WriteValue(wire);
-
-        _referenceCount++;
-    }
-
-    internal static void ValidateExpectedCount(int size, int expectedCount)
-    {
-        if (size < 0 || expectedCount < 0 || expectedCount > size / 16)
+        uint offset = checked((uint)(dependency.OffsetInBytes - dependency.RegistrationOffsetInBytes));
+        uint slot = dependency.Slot;
+        uint count = checked((uint)dependency.Count);
+        int uploadOffset = _root == null ? checked(_baseOffset + _position) : 0;
+        Span<byte> wire = stackalloc byte[16];
+        BinaryPrimitives.WriteUInt32LittleEndian(wire, slot);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire[4..], offset);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], count);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire[12..], 0);
+        if (_root != null)
         {
-            throw new ArgumentOutOfRangeException(nameof(expectedCount));
+            _root.Write(wire, _position);
         }
+        else
+        {
+            BrowserInterop.CopyMappedUploadRange(_upload!, wire, uploadOffset);
+        }
+
+        _table = table;
+        _position += 16;
+        _written = true;
     }
 
     internal void Complete()
     {
-        if (!_written || _completed || _position != _size || _referenceCount != _expectedCount)
+        if (!_written || _completed || _position != _size)
         {
             throw new InvalidOperationException("The codec must write exactly the complete C# wire value.");
         }

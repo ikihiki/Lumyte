@@ -77,22 +77,17 @@ public sealed class ShaderCopyHotPathTests
         Assert.Empty(new ShaderDependencyMetadata([]).References);
     }
 
-    /// <summary>Impossible declared counts fail in the static guard, before any writer allocation.</summary>
+    /// <summary>Raw writers have no semantic count fields, constructor parameters or guards.</summary>
     /// <param name="backend">The backend under test.</param>
     [Theory]
     [InlineData("Wgpu")]
     [InlineData("Vulkan")]
-    public void InvalidCountsRejectBeforeAllocation(string backend)
+    public void RawWritersHaveNoReferenceCountContract(string backend)
     {
         Type writer = Assembly.Load("Lumyte.Graphics." + backend).GetType($"Lumyte.Graphics.{backend}.{backend}ShaderValueWriter", true)!;
-        Action<int, int> validate = writer.GetMethod("ValidateExpectedCount", BindingFlags.Static | BindingFlags.NonPublic)!.CreateDelegate<Action<int, int>>();
-        foreach (int invalid in new[] { -1, 4, int.MaxValue })
-        {
-            Assert.Throws<ArgumentOutOfRangeException>(() => validate(48, invalid));
-        }
-
-        validate(48, 0);
-        validate(48, 3);
+        Assert.Null(writer.GetMethod("ValidateExpectedCount", BindingFlags.Static | BindingFlags.NonPublic));
+        Assert.DoesNotContain(writer.GetFields(Hidden), field => field.Name.Contains("referenceCount", StringComparison.OrdinalIgnoreCase) || field.Name.Contains("expectedCount", StringComparison.OrdinalIgnoreCase));
+        Assert.All(writer.GetConstructors(Hidden), constructor => Assert.DoesNotContain(constructor.GetParameters(), parameter => parameter.Name == "expectedCount"));
     }
 
     /// <summary>Leases reject every overlapping writer and release safely on exception unwinding.</summary>
@@ -164,11 +159,17 @@ public sealed class ShaderCopyHotPathTests
         string writer = ReadSource($"src/Graphics/Lumyte.Graphics.{backend}/{backend}ShaderValueWriter.cs");
         Assert.DoesNotContain("CopyBytesFrom(", writer);
         Assert.Contains(backend == "Browser" ? "BrowserInterop.CopyMappedUploadRange(" : backend == "Wgpu" ? "value.CopyTo(_upload.Slice(" : "value.CopyTo(_destination.Slice(", writer);
-        Assert.Contains("_referenceCount >= _expectedCount", writer);
-        Assert.Contains("_referenceCount != _expectedCount", writer);
+        Assert.DoesNotContain("_referenceCount", writer);
+        Assert.DoesNotContain("_expectedCount", writer);
+        Assert.DoesNotContain("T.ReferenceCount", transfer);
         Assert.DoesNotContain("IShaderReferenceMetadata", writer);
         Assert.DoesNotContain("new IShaderReference[", writer);
-        Assert.Contains("ValidateExpectedCount(size, expectedCount)", writer);
+        Assert.DoesNotContain("ValidateExpectedCount", writer);
+        Assert.Equal(backend == "Browser" ? 1 : 0, Occurrences(writer, "stackalloc byte[16]"));
+        string referenceWrite = writer[writer.IndexOf("public void WriteReference", StringComparison.Ordinal)..];
+        referenceWrite = referenceWrite[..referenceWrite.IndexOf("internal void Complete", StringComparison.Ordinal)];
+        Assert.DoesNotContain("WriteValue(", referenceWrite);
+        Assert.Equal(1, Occurrences(referenceWrite, "ValidateWrite("));
         string decorator = ReadSource("src/Graphics/Lumyte.Graphics.Validation/ValidationShaderDataBuffer.cs");
         Assert.Contains("Tracker.BeginHostWrite(this, offset, length)", decorator);
         Assert.Contains("new ShaderDependencyMetadata(", decorator);
@@ -191,11 +192,14 @@ public sealed class ShaderCopyHotPathTests
         (System.Reflection.Emit.OpCode Code, MemberInfo? Member)[] instructions = ImmediateRootCommandTests.Instructions(copy).ToArray();
         Assert.Single(instructions, item => item.Member?.Name == "GetMappedUploadSpan");
         Assert.DoesNotContain(instructions, item => item.Member?.Name == "BeginHostWrite");
-        Assert.Single(instructions, item => item.Member?.Name == "get_ReferenceCount");
+        Assert.DoesNotContain(instructions, item => item.Member?.Name == "get_ReferenceCount");
         Type writer = assembly.GetType($"Lumyte.Graphics.{backend}.{backend}ShaderValueWriter", true)!;
         MethodInfo write = writer.GetMethod("WriteValue")!;
         Assert.DoesNotContain(ImmediateRootCommandTests.Instructions(write), item => item.Member?.Name == "CopyBytesFrom");
-        Assert.DoesNotContain(ImmediateRootCommandTests.Instructions(writer.GetMethod("WriteReference")!), item => item.Member?.Name == "GetBufferDeviceAddress");
+        (OpCode Code, MemberInfo? Member)[] referenceInstructions = ImmediateRootCommandTests.Instructions(writer.GetMethod("WriteReference")!).ToArray();
+        Assert.DoesNotContain(referenceInstructions, item => item.Member?.Name is "GetBufferDeviceAddress" or "WriteValue");
+        Assert.DoesNotContain(referenceInstructions, item => item.Code == OpCodes.Localloc);
+        Assert.Single(referenceInstructions, item => item.Member?.Name == "ValidateWrite");
     }
 
     /// <summary>The Vulkan native address query is constructor-only; D3D caches at allocation.</summary>
@@ -393,6 +397,18 @@ public sealed class ShaderCopyHotPathTests
         CheckBadRoot(device, new CountedValue<DeclaredThree>(reference));
         CheckBadRoot(device, new CountedValue<DeclaredNegative>(reference));
         CheckBadRoot(device, new CountedValue<DeclaredHuge>(reference));
+        var throwing = new CountedValue<DeclaredThrowing>(reference);
+        using (CreateRoot(device, in throwing, out ShaderRootArguments throwingRoot))
+        {
+            Assert.Equal(48, throwingRoot.WireSize);
+        }
+
+        Assert.Equal(1, throwing.Calls[0]);
+        var pair = new TwoReferences(reference);
+        using (CreateRoot(device, in pair, out ShaderRootArguments pairRoot))
+        {
+            Assert.Equal(32, pairRoot.WireSize);
+        }
     }
 
     private static void CheckRoot<T>(IGraphicDevice device, T value, int expected)
@@ -411,16 +427,8 @@ public sealed class ShaderCopyHotPathTests
         {
             using IDisposable? root = CreateRoot(device, in value, out _);
         });
-        if (TCount.Count < 0 || TCount.Count > 3)
-        {
-            Assert.IsType<ArgumentOutOfRangeException>(failure);
-            Assert.Equal(0, value.Calls[0]);
-        }
-        else
-        {
-            Assert.IsType<InvalidOperationException>(failure);
-            Assert.Equal(1, value.Calls[0]);
-        }
+        Assert.Null(failure); // Semantic declarations belong exclusively to validation.
+        Assert.Equal(1, value.Calls[0]);
     }
 
     private static IDisposable? CreateRoot<T>(IGraphicDevice device, in T value, out ShaderRootArguments arguments)
@@ -522,13 +530,13 @@ public sealed class ShaderCopyHotPathTests
         if (TCount.Count < 0 || TCount.Count > 3)
         {
             Assert.IsType<ArgumentOutOfRangeException>(failure);
-            Assert.Equal(0, value.Calls[0]); // Raw factory guards impossible counts before the codec.
+            Assert.Equal(0, value.Calls[0]); // The decorator rejects impossible declarations before the application codec.
         }
         else
         {
             if (TCount.Count == 1)
             {
-                Assert.IsType<InvalidOperationException>(failure); // Native writer rejects the undeclared slot.
+                Assert.IsType<InvalidOperationException>(failure); // The decorator rejects the undeclared slot before native encoding.
             }
             else
             {
@@ -619,32 +627,14 @@ public sealed class ShaderCopyHotPathTests
         try
         {
             Exception? error = Record.Exception(() => upload.CopyFrom([value]));
-            if (TCount.Count < 0 || TCount.Count > 3)
-            {
-                Assert.IsType<ArgumentOutOfRangeException>(error);
-                Assert.Equal(0, value.Calls[0]);
-            }
-            else
-            {
-                Assert.IsType<InvalidOperationException>(error);
-                Assert.Equal(1, value.Calls[0]);
-            }
-
+            Assert.Null(error);
+            Assert.Equal(1, value.Calls[0]);
             AssertUnknownDependencies((IShaderDataSource)upload, enabled);
             byte[] bytes = borrow(0, 48).ToArray();
-            if (TCount.Count < 0 || TCount.Count > 3)
-            {
-                Assert.All(bytes, item => Assert.Equal((byte)0xCD, item));
-            }
-            else
-            {
-                Assert.All(bytes[..16], item => Assert.Equal((byte)0, item));
-                if (TCount.Count == 1)
-                {
-                    // The undeclared second reference must fail before touching its physical slot.
-                    Assert.All(bytes[32..], item => Assert.Equal((byte)0xCD, item));
-                }
-            }
+            Assert.All(bytes[..16], item => Assert.Equal((byte)0, item));
+            Assert.Equal(bytes[16..32], bytes[32..48]);
+            Assert.All(bytes[28..32], item => Assert.Equal((byte)0, item));
+            Assert.All(bytes[44..48], item => Assert.Equal((byte)0, item));
         }
         finally
         {
@@ -735,9 +725,30 @@ public sealed class ShaderCopyHotPathTests
         public static int Count => -1;
     }
 
+    private readonly struct DeclaredThrowing : ICount
+    {
+        public static int Count => throw new ApplicationException("Raw writers must never read semantic counts.");
+    }
+
     private readonly struct DeclaredHuge : ICount
     {
         public static int Count => int.MaxValue;
+    }
+
+    private readonly struct TwoReferences(IGpuRef<uint> reference) : IShaderArguments
+    {
+        public static string ShaderTypeName => "TwoReferences";
+
+        public static int TransferSize => 32;
+
+        public static int ReferenceCount => 1;
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            writer.WriteReference(reference);
+            writer.WriteReference(reference);
+        }
     }
 
     private struct CountedValue<TCount>(IGpuRef<uint> reference) : IShaderArguments

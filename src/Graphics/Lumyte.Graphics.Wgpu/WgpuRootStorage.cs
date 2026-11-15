@@ -100,7 +100,9 @@ internal sealed unsafe class WgpuRootStorage : IDisposable
         ImplicitTable = table;
     }
 
-    internal void Write(ReadOnlySpan<byte> bytes, int offset)
+    internal void Write(ReadOnlySpan<byte> bytes, int offset) => bytes.CopyTo(GetWriteSpan(offset, bytes.Length));
+
+    internal Span<byte> GetWriteSpan(int offset, int length)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_sealed)
@@ -109,12 +111,13 @@ internal sealed unsafe class WgpuRootStorage : IDisposable
         }
 
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        if (offset > Size || bytes.Length > Size - offset)
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (offset > Size || length > Size - offset)
         {
             throw new ArgumentOutOfRangeException(nameof(offset));
         }
 
-        bytes.CopyTo(new Span<byte>(_mapped, Size).Slice(offset, bytes.Length));
+        return new Span<byte>(_mapped, Size).Slice(offset, length);
     }
 
     internal void Seal()

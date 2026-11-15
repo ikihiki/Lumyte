@@ -13,12 +13,10 @@ internal static class BrowserShaderTransfer
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
-        int referenceCount = T.ReferenceCount;
-        BrowserShaderValueWriter.ValidateExpectedCount(size, referenceCount);
         var storage = new BrowserRootStorage(owner, size);
         try
         {
-            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, referenceCount);
+            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0);
             value.Write(ref writer);
             writer.Complete();
             storage.Initialize(ShaderRootArguments.Create(root, name, size, null), writer.Table);
@@ -36,11 +34,10 @@ internal static class BrowserShaderTransfer
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
-        BrowserShaderValueWriter.ValidateExpectedCount(size, 0);
         var storage = new BrowserRootStorage(owner, size);
         try
         {
-            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, 0);
+            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
             writer.Complete();
             storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, null), writer.Table);
@@ -69,8 +66,6 @@ internal static class BrowserShaderTransfer
             ulong offset = checked(elementOffset * (ulong)stride);
             int length = checked(source.Length * stride);
 
-            int referenceCount = T.ReferenceCount;
-            BrowserShaderValueWriter.ValidateExpectedCount(stride, referenceCount);
             if (storage is not BrowserBuffer<byte> buffer || !ReferenceEquals(buffer.Owner, owner))
             {
                 throw new ArgumentException("Upload storage belongs to another backend or device.", nameof(storage));
@@ -90,7 +85,7 @@ internal static class BrowserShaderTransfer
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new BrowserShaderValueWriter(owner, stride, null, upload, checked(i * stride), referenceCount);
+                var writer = new BrowserShaderValueWriter(owner, stride, null, upload, checked(i * stride));
                 source[i].Write(ref writer);
                 writer.Complete();
             }

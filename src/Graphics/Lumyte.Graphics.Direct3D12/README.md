@@ -180,7 +180,7 @@ Stable の WARP（debug layer 有効）では共通 suite 全体も成功しま�
 
 このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
 
-raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIとReferenceCount、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
+raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIと実際のwire容量・完了状態、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
 
 wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
 

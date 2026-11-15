@@ -20,13 +20,16 @@ internal readonly struct ValidationArguments<T>(in T value, ValidationWriteConte
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter, allows ref struct
     {
-        if (TransferSize <= 0 || ReferenceCount < 0 || ReferenceCount > TransferSize / 16)
+        int size = TransferSize;
+        int referenceCount = ReferenceCount;
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        if (referenceCount < 0 || referenceCount > size / 16)
         {
-            throw new ArgumentException("Invalid static shader transfer shape.");
+            throw new ArgumentOutOfRangeException(nameof(referenceCount));
         }
 
-        context.Diagnostic?.ValidateTransferLayout(TransferSize, ShaderTransfer.Fields(in _value), ShaderTypeName);
-        var adapter = new ValidationWriter<TWriter>(writer, context, TransferSize, ReferenceCount);
+        context.Diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in _value), ShaderTypeName);
+        var adapter = new ValidationWriter<TWriter>(writer, context, size, referenceCount);
         _value.Write(ref adapter);
         adapter.Complete();
         context.Prepare?.Invoke(new ShaderDependencyMetadata(adapter.References));

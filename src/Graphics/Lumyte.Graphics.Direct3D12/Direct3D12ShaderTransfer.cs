@@ -13,7 +13,7 @@ internal static class Direct3D12ShaderTransfer
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
         ValidateRootSize(size);
-        var writer = new Direct3D12ShaderValueWriter(owner, size, destination, T.ReferenceCount);
+        var writer = new Direct3D12ShaderValueWriter(owner, size, destination);
         value.Write(ref writer);
         writer.Complete();
         return (ShaderRootArguments.Create(root, name, size, null), writer.Table);
@@ -25,7 +25,7 @@ internal static class Direct3D12ShaderTransfer
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
         ValidateRootSize(size);
-        var writer = new Direct3D12ShaderValueWriter(owner, size, destination, 0);
+        var writer = new Direct3D12ShaderValueWriter(owner, size, destination);
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
         writer.Complete();
         return ShaderRootArguments.Create(rootParameter, name, size, null);
@@ -45,8 +45,6 @@ internal static class Direct3D12ShaderTransfer
             throw new ArgumentOutOfRangeException(nameof(elementOffset));
         }
 
-        int referenceCount = T.ReferenceCount;
-        Direct3D12ShaderValueWriter.ValidateExpectedCount(stride, referenceCount);
         ulong offset = checked(elementOffset * (ulong)stride);
         int length = checked(source.Length * stride);
         if (storage is not Direct3D12Buffer<byte> native)
@@ -57,7 +55,7 @@ internal static class Direct3D12ShaderTransfer
         Span<byte> destination = native.GetMappedUploadSpan(offset, length);
         for (int i = 0; i < source.Length; i++)
         {
-            var writer = new Direct3D12ShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride), referenceCount);
+            var writer = new Direct3D12ShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride));
             source[i].Write(ref writer);
             writer.Complete();
         }

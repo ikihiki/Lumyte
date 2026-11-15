@@ -8,17 +8,15 @@ internal ref struct Direct3D12ShaderValueWriter : IShaderValueWriter
     private readonly Direct3D12Device _owner;
     private readonly int _size;
     private readonly Span<byte> _destination;
-    private readonly int _expectedCount;
     private Direct3D12ArgumentTable? _table;
     private int _position;
-    private int _referenceCount;
     private bool _written;
     private bool _completed;
 
-    internal Direct3D12ShaderValueWriter(Direct3D12Device owner, int size, Span<byte> destination, int expectedCount)
+    internal Direct3D12ShaderValueWriter(Direct3D12Device owner, int size, Span<byte> destination)
     {
         this = default;
-        ValidateExpectedCount(size, expectedCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
         if (destination.Length < size)
         {
             throw new ArgumentException("Destination is smaller than the C# wire size.", nameof(destination));
@@ -27,7 +25,6 @@ internal ref struct Direct3D12ShaderValueWriter : IShaderValueWriter
         _owner = owner;
         _size = size;
         _destination = destination;
-        _expectedCount = expectedCount;
     }
 
     internal Direct3D12ArgumentTable? Table => _table;
@@ -44,11 +41,6 @@ internal ref struct Direct3D12ShaderValueWriter : IShaderValueWriter
     public void WriteReference<T>(IGpuRef<T>? reference)
     {
         ValidateWrite(16);
-        if (_referenceCount >= _expectedCount)
-        {
-            throw new InvalidOperationException("The codec exceeds its declared reference count.");
-        }
-
         if (reference is not GpuReference<T> dependency)
         {
             throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
@@ -65,29 +57,24 @@ internal ref struct Direct3D12ShaderValueWriter : IShaderValueWriter
             throw new ArgumentException("Shader references must use one argument table.", nameof(reference));
         }
 
-        _table = table;
-        Span<byte> wire = stackalloc byte[16];
-        wire.Clear();
         _owner.RequireReady();
-        BinaryPrimitives.WriteUInt32LittleEndian(wire, dependency.Slot);
-        BinaryPrimitives.WriteUInt32LittleEndian(wire[4..], checked((uint)dependency.OffsetInBytes));
-        BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], checked((uint)dependency.Count));
-        WriteValue(wire);
+        uint offset = checked((uint)dependency.OffsetInBytes);
+        uint slot = dependency.Slot;
+        uint count = checked((uint)dependency.Count);
+        Span<byte> wire = _destination.Slice(_position, 16);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire, slot);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire[4..], offset);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], count);
+        BinaryPrimitives.WriteUInt32LittleEndian(wire[12..], 0);
 
-        _referenceCount++;
-    }
-
-    internal static void ValidateExpectedCount(int size, int expectedCount)
-    {
-        if (size < 0 || expectedCount < 0 || expectedCount > size / 16)
-        {
-            throw new ArgumentOutOfRangeException(nameof(expectedCount));
-        }
+        _table = table;
+        _position += 16;
+        _written = true;
     }
 
     internal void Complete()
     {
-        if (!_written || _completed || _position != _size || _referenceCount != _expectedCount)
+        if (!_written || _completed || _position != _size)
         {
             throw new InvalidOperationException("The codec must write exactly the complete C# wire value.");
         }

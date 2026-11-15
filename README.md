@@ -248,7 +248,7 @@ CPU CopyFromの依存更新は検証層が所有します。GPU copyも検証層
 
 ### 厳密な参照数とmapped batchの契約
 
-IShaderArgumentsのstatic abstract ReferenceCountは重複も数えた物理16-byte slot数です。backend writerは全modeで0 <= N <= wireSize / 16、WriteReferenceの超過とCompleteの不足、位置・容量・型・範囲を検査します。rootの直接参照配列とprepare hookは検証層だけが保持します。raw backendはscalar countと単一の暗黙table hintだけを保持し、非nullのSetArgumentValidationは未対応として拒否します。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
+IShaderArgumentsのstatic abstract ReferenceCountは必須の宣言APIであり、重複も数えた物理16-byte slot数を返します。生成型の正確な静的プロパティも維持します。ただし宣言値の妥当性と実際のWriteReference回数との一致は検証層だけが診断します。四つのraw backendのSetと型付きCopyFromはReferenceCountを読み取らず、expected countや実行参照数も保持しません。誤った宣言値でも実際のwire bytesが合法ならraw転送は成功し得るため、一致は利用者の事前条件です。rawで必須なのは実際のbyte容量・完全サイズ一致・完了状態、参照ABIの型・範囲とchecked演算です。符号化する論理要素数Countは宣言ReferenceCountとは別であり、uint変換のoverflowとaddress／offset演算の検査は全modeで維持します。宣言値は機能上の配列indexには使いません。rootの直接参照配列とprepare hookは検証層だけが保持し、rawは単一の暗黙table hintを維持します。非nullのSetArgumentValidationはrawでは未対応です。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
 
 ShaderRootArgumentsはstorageを持たない不変metadata classです。Referencesはnullableでnullは未収集を表し、Createにprepareを渡す場合は利用可能なmetadataが必須です。rootの単一table hintは自動選択を補助しますが、明示SelectedTableが優先します。異なるtableが混在すればnative Set発行前に拒否します。
 
@@ -267,4 +267,4 @@ IGraphicDevice device = validated;
 // 以降の子資源はすべてdeviceから生成し、validatedより先にDisposeする。
 ```
 
-任意診断は[Lumyte.Graphics.Validation](src/Graphics/Lumyte.Graphics.Validation/README.md)のValidationDeviceで選択します。backendを借用し、すべての子資源をwrapperから作ります。rawはValidationEnabledがfalseで診断engineを持たず、wrapperはtrueです。Graphの参照準備、依存query、寿命・同期・配置診断はこの層が担当します。native backendの必須bounds／memory safety／ABI／ReferenceCount検査は継続します。既存の固定checkpoint測定からこの新しい層の性能は主張しません。
+任意診断は[Lumyte.Graphics.Validation](src/Graphics/Lumyte.Graphics.Validation/README.md)のValidationDeviceで選択します。backendを借用し、すべての子資源をwrapperから作ります。rawはValidationEnabledがfalseで診断engineを持たず、wrapperはtrueです。Graphの参照準備、依存query、寿命・同期・配置診断はこの層が担当します。native backendの必須bounds／memory safety／ABI／実際のwire容量・完了検査は継続します。既存の固定checkpoint測定からこの新しい層の性能は主張しません。
