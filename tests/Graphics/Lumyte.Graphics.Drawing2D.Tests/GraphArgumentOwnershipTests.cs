@@ -296,13 +296,16 @@ public sealed class GraphArgumentOwnershipTests
         compiled.Record(commands);
         Assert.Contains("image-effect", compiled.PassNames);
         Assert.Equal(4, device.Tables.Count);
-        Assert.Equal(new uint[] { 1, 1, 1, 2 }, device.Tables.Select(table => table.TextureCapacity));
+        Assert.Equal(new uint[] { 0, 0, 1, 2 }, device.Tables.Select(table => table.TextureCapacity));
         Assert.Equal(new uint[] { 2, 2, 0, 2 }, device.Tables.Select(table => table.BufferCapacity));
         Assert.Equal(4, commands.Events.OfType<IArgumentTable>().Distinct().Count());
-        DrawingArguments[] roots = commands.Events.OfType<DrawingArguments>().ToArray();
-        Assert.Equal(3, roots.Length);
-        Assert.Equal(3, roots.Select(root => ProfilingDevice.Owner(root.Instructions)).Distinct().Count());
-        Assert.All(roots, root => Assert.Same(ProfilingDevice.Owner(root.Instructions), ProfilingDevice.Owner(root.Data)));
+        RecordedDrawRange[] records = commands.Events.OfType<RecordedDrawRange>().ToArray();
+        Assert.Equal(2, records.Length);
+        Assert.NotSame(ProfilingDevice.Owner(records[0].Records), ProfilingDevice.Owner(records[1].Records));
+        Assert.All(records, root => Assert.Same(ProfilingDevice.Owner(root.Records), ProfilingDevice.Owner(root.PageMetadata)));
+        DrawingArguments compositor = Assert.Single(commands.Events.OfType<DrawingArguments>());
+        Assert.Same(ProfilingDevice.Owner(compositor.Instructions), ProfilingDevice.Owner(compositor.Data));
+        Assert.DoesNotContain(records, root => ReferenceEquals(ProfilingDevice.Owner(root.Records), ProfilingDevice.Owner(compositor.Instructions)));
         Assert.All(device.Instructions, instruction =>
             Assert.Same(ProfilingDevice.Owner(instruction.Texture), ProfilingDevice.Owner(instruction.Sampler)));
         commands.Dispose();

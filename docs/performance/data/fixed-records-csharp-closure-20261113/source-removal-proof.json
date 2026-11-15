@@ -1,0 +1,1 @@
+{"source":"2bb360be8b6ab68b1785199e08f738bcb6eac693","checks":{"IShaderValueWriter.cs":{"stringOnlyWriter":false,"stringReferenceKind":false},"IShaderDataLayout.cs":{"stringOnlyWriter":false,"stringReferenceKind":false},"generic":{"namePlacement":false,"explicitPlacement":true,"csharpStrideChecked":true}}}

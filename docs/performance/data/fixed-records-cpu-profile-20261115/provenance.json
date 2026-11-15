@@ -1,0 +1,13 @@
+{
+  "baselineProduction": "40ecd0f7e979301c630917815613bdb8947732ff",
+  "candidateProduction": "c1795683aa0a0b486ecfd8d34f0f3569cb7f2d3b",
+  "evidenceHead": "7a7232602cdd773b7fb406e8b97f39cb82eead01",
+  "rawRoot": "/home/hideaki/.cache/lumyte-fixed-records-cpu-profile-20261115",
+  "SDK": "10.0.403",
+  "runtime": "10.0.14",
+  "slang": "2026.19",
+  "device": "Radeon 8060S Graphics (RADV STRIX_HALO), vendor=1002 device=1586, Mesa 26.0.8-1ubuntu0.3",
+  "ICD": "/usr/share/vulkan/icd.d/radeon_icd.json",
+  "qualityReuse": "prior 256 full RGBA pairs, zero differing channels; unchanged original runner binary hashes verified before/after captures",
+  "captureFailure": "Initial long TMPDIR caused diagnostic child Unknown Acknowledgment before collection; no traces. Successful common short TMPDIR retry retained separately. Initial attempt overlapped unrelated graphics worker build and is excluded."
+}

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
@@ -113,11 +114,12 @@ public sealed partial class Drawing2DTests
         try
         {
             commands.AssertOwners(device.Tables, views);
-            Assert.Equal(10, commands.Roots.Count);
-            Assert.Equal(4, commands.Roots.Select(root => root.Table).Distinct().Count());
-            for (int x = 0; x < 10; x++)
+            bool instanced = device.Caps.ShaderTarget == ShaderTarget.SpirV;
+            Assert.Equal(instanced ? 3 : 10, commands.Roots.Count);
+            Assert.Equal(3, commands.Roots.Select(root => root.Table).Distinct().Count());
+            for (int x = 0; x < commands.Roots.Count; x++)
             {
-                Assert.Same(device.Tables[x / 3].Table, commands.Roots[x].Table);
+                Assert.Same(device.Tables[instanced ? x : x / 4].Table, commands.Roots[x].Table);
             }
 
             await submission.WaitAsync();
@@ -170,20 +172,20 @@ public sealed partial class Drawing2DTests
             // Submit publishes shader-data transfer metadata; inspect before prepared/plan disposal.
             commands.AssertOwners(device.Tables, views);
             AssertPartitionDescriptions(device, graph: true);
-            Assert.Equal(7, commands.Roots.Select(root => root.Table).Distinct().Count());
+            Assert.Equal(6, commands.Roots.Select(root => root.Table).Distinct().Count());
 
-            // Attachment producers, the effect and its compositor use isolated tables.
-            // Image draws still partition together within their opaque drawing pass.
-            Assert.Equal(13, commands.Roots.Count);
+            // Background, image pages, effect sampling and compositor retain isolated scopes.
+            bool instanced = device.Caps.ShaderTarget == ShaderTarget.SpirV;
+            Assert.Equal(instanced ? 6 : 13, commands.Roots.Count);
             Assert.Same(device.Tables[0].Table, commands.Roots[0].Table);
-            for (int x = 0; x < 10; x++)
+            for (int x = 0; x < (instanced ? 3 : 10); x++)
             {
-                Assert.Same(device.Tables[1 + (x / 3)].Table, commands.Roots[x + 1].Table);
+                Assert.Same(device.Tables[1 + (instanced ? x : x / 4)].Table, commands.Roots[x + 1].Table);
             }
 
-            Assert.Same(device.Tables[5].Table, commands.Roots[^2].Table);
-            Assert.Same(device.Tables[6].Table, commands.Roots[^1].Table);
             Assert.NotSame(commands.Roots[^3].Table, commands.Roots[^2].Table);
+            Assert.Same(device.Tables[4].Table, commands.Roots[^2].Table);
+            Assert.Same(device.Tables[5].Table, commands.Roots[^1].Table);
             Assert.NotSame(commands.Roots[^2].Table, commands.Roots[^1].Table);
             await submission.WaitAsync();
             await AssertPartitionPixelsAsync(plan.GetBuffer(result), pitch, graph: true);
@@ -196,14 +198,15 @@ public sealed partial class Drawing2DTests
 
     private static void AssertPartitionDescriptions(PartitionDevice device, bool graph)
     {
-        // Fallback + three distinct caller views; the last image partition has only one view.
-        // Graph attachment producers, effect sampling and composition cannot share tables.
-        Assert.Equal(graph ? 7 : 4, device.Tables.Count); // Native tables, NOT one count per resource kind.
-        Assert.Equal(graph ? new uint[] { 0, 4, 4, 4, 2, 1, 2 } : new uint[] { 4, 4, 4, 2 }, device.Tables.Select(item => item.Desc.TextureCapacity));
-        Assert.Equal(graph ? new uint[] { 0, 1, 1, 1, 1, 1, 1 } : new uint[] { 1, 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
+        // Four actual image views fit directly, without a page-local fallback.
 
-        // Two exact ranges per image; graph adds isolated rectangle and compositor ranges.
-        Assert.Equal(graph ? new uint[] { 1, 6, 6, 6, 2, 0, 2 } : new uint[] { 6, 6, 6, 2 }, device.Tables.Select(item => item.Desc.BufferCapacity));
+        // Graph source/effect/compositor references are counted only in their actual scopes.
+        Assert.Equal(graph ? 6 : 3, device.Tables.Count); // Native tables, NOT one count per resource kind.
+        Assert.Equal(graph ? new uint[] { 0, 4, 4, 2, 1, 2 } : new uint[] { 4, 4, 2 }, device.Tables.Select(item => item.Desc.TextureCapacity));
+        Assert.Equal(graph ? new uint[] { 0, 1, 1, 1, 1, 1 } : new uint[] { 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
+
+        // Image-only ranges use five streams; background palette uses two, compositor two.
+        Assert.Equal(graph ? new uint[] { 2, 5, 5, 5, 0, 2 } : new uint[] { 5, 5, 5 }, device.Tables.Select(item => item.Desc.BufferCapacity));
     }
 
     private static uint PartitionPitch(IGraphicDevice device)
@@ -248,6 +251,61 @@ public sealed partial class Drawing2DTests
     }
 
     // Only the admitted slot span is reduced. Every factory returns its REAL native object.
+    private readonly record struct SelectedRangeArguments<T>(T Value, uint First, uint Count) : IShaderArguments
+        where T : struct, IShaderArguments
+    {
+        public static string RootParameter => T.RootParameter;
+
+        public static string ShaderTypeName => T.ShaderTypeName;
+
+        public static int TransferSize => T.TransferSize;
+
+        public static int ReferenceCount => T.ReferenceCount;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => T.TransferFields;
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            var selected = new RangeWriter<TWriter>(writer, First, Count);
+            Value.Write(ref selected);
+            writer = selected.Destination;
+        }
+    }
+
+    private ref struct RangeWriter<TWriter>(TWriter writer, uint first, uint count) : IShaderValueWriter
+        where TWriter : IShaderValueWriter, allows ref struct
+    {
+        public TWriter Destination = writer;
+
+        private int _position;
+
+        public void WriteValue(ReadOnlySpan<byte> value)
+        {
+            byte[] bytes = value.ToArray();
+            Span<byte> selectionBytes = stackalloc byte[8];
+            BinaryPrimitives.WriteUInt32LittleEndian(selectionBytes, first);
+            BinaryPrimitives.WriteUInt32LittleEndian(selectionBytes[4..], count);
+            for (int index = 0; index < value.Length; index++)
+            {
+                int selectedIndex = _position + index - 32;
+                if ((uint)selectedIndex < 8)
+                {
+                    bytes[index] = selectionBytes[selectedIndex];
+                }
+            }
+
+            Destination.WriteValue(bytes);
+            _position += value.Length;
+        }
+
+        public void WriteReference<TElement>(IGpuRef<TElement>? value)
+        {
+            Destination.WriteReference(value);
+            _position += 16;
+        }
+    }
+
     private sealed class PartitionDevice : IGraphicDevice
     {
         private readonly IGraphicDevice _native;
@@ -306,7 +364,7 @@ public sealed partial class Drawing2DTests
             where T : struct, IShaderArguments => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
     }
 
-    private sealed class PartitionCommands(IGraphicsCommandBuffer native) : IGraphicsCommandBuffer
+    private sealed class PartitionCommands(IGraphicsCommandBuffer native, (uint First, uint Count)? selection = null) : IGraphicsCommandBuffer
     {
         public CommandBufferState State => native.State;
 
@@ -329,7 +387,7 @@ public sealed partial class Drawing2DTests
 
         public void Barrier(TextureBarrierDesc barrier) => native.Barrier(barrier);
 
-        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots);
+        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots, selection);
 
         public IComputeEncoder BeginComputePass(ComputePassDesc desc) => native.BeginComputePass(desc);
 
@@ -381,9 +439,10 @@ public sealed partial class Drawing2DTests
         }
     }
 
-    private sealed class PartitionRenderEncoder(IRenderEncoder native, List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> roots) : IRenderEncoder
+    private sealed class PartitionRenderEncoder(IRenderEncoder native, List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> roots, (uint First, uint Count)? selection) : IRenderEncoder
     {
         private IArgumentTable? _table;
+
         private ShaderValueSnapshot? _arguments;
 
         public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
@@ -398,6 +457,14 @@ public sealed partial class Drawing2DTests
             where T : struct, IShaderArguments
         {
             ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
+            if (selection is not null && snapshot.ShaderTypeName == "DrawRangeArguments2D")
+            {
+                var selected = new SelectedRangeArguments<T>(arguments, selection.Value.First, selection.Value.Count);
+                native.SetArguments(in selected);
+                _arguments = IShaderArguments.Capture(in selected);
+                return;
+            }
+
             native.SetArguments(in arguments);
             _arguments = snapshot;
         }
@@ -405,9 +472,8 @@ public sealed partial class Drawing2DTests
         public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
             where T : unmanaged
         {
-            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+            _arguments = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
             native.SetArguments(in arguments, rootParameter, shaderTypeName);
-            _arguments = snapshot;
         }
 
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);
@@ -425,6 +491,12 @@ public sealed partial class Drawing2DTests
         public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
         {
             CaptureDraw();
+            if (selection is { } selected && _arguments?.ShaderTypeName == "DrawRangeArguments2D")
+            {
+                instanceCount = selected.Count;
+                firstInstance = 0;
+            }
+
             native.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
         }
 

@@ -64,7 +64,7 @@ public sealed class PreparedWholeTableBudgetTests
                 },
             },
         };
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        using var renderer = new Renderer2D(device, LegacyDrawRenderers2D.Create());
         using var target = new DispatchTexture();
         using var atlas = new DispatchTexture();
         using IGraphicsTextureView targetView = target.CreateView();

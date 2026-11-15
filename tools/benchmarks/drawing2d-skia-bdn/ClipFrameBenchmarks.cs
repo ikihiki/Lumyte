@@ -1,3 +1,4 @@
+using Lumyte.Mathematics.Colors;
 using System.Numerics;
 using BenchmarkDotNet.Attributes;
 using Lumyte.Graphics.Abstractions;
@@ -51,7 +52,7 @@ public class ClipFrameBenchmarks
             canvas.ClipRect(new(10.2f, 8.3f, 175.6f, 155.4f));
         }
         for (int i = 0; i < 128; i++)
-            canvas.FillRect(new((i % 16) * 14, (i / 16) * 21, 18, 24), new Color2D(1, 0.25f, 0.5f, 0.75f));
+            canvas.FillRect(new((i % 16) * 14, (i / 16) * 21, 18, 24), new SRgba<float>(1, 0.25f, 0.5f, 0.75f));
         return canvas.End();
     }
 
