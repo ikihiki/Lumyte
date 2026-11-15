@@ -25,6 +25,17 @@ dotnet run --project build -c Release -- --target TestWasm
 Chromiumの別の実行ファイルは`CHROME`環境変数で指定できます。
 `LUMYTE_SCREENSHOT`にPNGの保存先を指定すると、検証成功時の画面も保存します。
 
+## CIの進捗診断
+
+`LUMYTE_BROWSER_PROGRESS=1`を指定すると、atlas準備、描画準備、GPU submit / 完了、
+readback mapの進捗を検証runnerへ逐次表示します。アプリの期限は180秒のままです。
+
+WGSLでは、共有argument tableの全登録が各drawの実bindingになります。
+独立したdrawのbufferまで共有すると、有限bindingへのシェーダ分岐が膨らみ、
+SwiftShaderでGPU完了が期限に達するため、直接Drawing2Dの準備ではdrawごとにtableを分離します。
+同じdraw内の重複登録は引き続き共有し、SPIR-V / DXILのtable共有方針は変更しません。
+GPUの画素検証、合成演算、counter判定、期限や既知のtimeout許可は緩和しません。
+
 ## Rust / .NETの接続
 
 Browser用のRust static libraryは、アプリと同じ.NET wasm-toolsのEmscriptenを使います。

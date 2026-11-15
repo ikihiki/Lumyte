@@ -86,15 +86,15 @@ public sealed class PreparedWholeTableBudgetTests
         prepared.Record(commands);
         DrawingArguments[] roots = commands.Events.OfType<DrawingArguments>().ToArray();
         Assert.Equal(24, roots.Length);
-        Assert.Equal(8, device.Tables.Count);
+        Assert.Equal(24, device.Tables.Count);
         Assert.All(device.Tables, table =>
         {
-            Assert.Equal(6u, table.BufferCapacity);
+            Assert.Equal(2u, table.BufferCapacity);
             Assert.True(table.BufferCapacity <= device.Caps.ArgumentTableBindingLimits.BuffersPerDraw);
             Assert.Equal(2u, table.TextureCapacity);
             Assert.Equal(1u, table.SamplerCapacity);
         });
-        Assert.Equal(8, roots.Select(root => ProfilingDevice.Owner(root.Instructions)).Distinct().Count());
+        Assert.Equal(24, roots.Select(root => ProfilingDevice.Owner(root.Instructions)).Distinct().Count());
         Assert.All(roots, root =>
         {
             Assert.Same(ProfilingDevice.Owner(root.Instructions), ProfilingDevice.Owner(root.Data));

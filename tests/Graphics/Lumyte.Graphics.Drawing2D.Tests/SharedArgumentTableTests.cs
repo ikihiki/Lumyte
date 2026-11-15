@@ -188,13 +188,13 @@ public sealed class SharedArgumentTableTests
         Assert.False(Assert.Single(plan.Reservations).IsReady);
     }
 
-    /// <summary>Two hundred independent clips share one table without merging buffers or draws.</summary>
+    /// <summary>Native draws share tables; WGSL keeps each complete binding set draw-local.</summary>
     /// <param name="portable">Whether the individual portable route is selected.</param>
     /// <returns>The asynchronous test completion.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task TwoHundredClippedProgramsShareOneTableAsync(bool portable)
+    public async Task TwoHundredClippedProgramsUseTargetAppropriateTablesAsync(bool portable)
     {
         var device = new ProfilingDevice { Caps = new() { ShaderTarget = portable ? ShaderTarget.Wgsl : ShaderTarget.SpirV, MaxBufferSize = 1UL << 30 } };
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
@@ -211,27 +211,35 @@ public sealed class SharedArgumentTableTests
         }
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
-        ArgumentTableDesc desc = Assert.Single(device.Tables);
-        Assert.Equal(1u, desc.TextureCapacity);
-        Assert.Equal(1u, desc.SamplerCapacity);
-        Assert.Equal(400u, desc.BufferCapacity);
+        Assert.Equal(portable ? 200 : 1, device.Tables.Count);
+        Assert.All(device.Tables, desc =>
+        {
+            Assert.Equal(1u, desc.TextureCapacity);
+            Assert.Equal(1u, desc.SamplerCapacity);
+            Assert.Equal(portable ? 2u : 400u, desc.BufferCapacity);
+        });
         Assert.Equal(800, device.NativeBuffers);
         using var commands = new ProfilingCommands();
         prepared.Record(commands);
-        Assert.Equal(200, commands.Events.OfType<DrawingArguments>().Count());
-        IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
-        foreach (DrawingArguments arguments in commands.Events.OfType<DrawingArguments>())
+        DrawingArguments[] draws = commands.Events.OfType<DrawingArguments>().ToArray();
+        Assert.Equal(200, draws.Length);
+        Assert.Equal(portable ? 200 : 1, commands.Events.OfType<IArgumentTable>().Distinct().Count());
+        int offset = 0;
+        foreach (DrawingArguments arguments in draws)
         {
-            Assert.Same(table, ProfilingDevice.Owner(arguments.Instructions));
+            IArgumentTable table = ProfilingDevice.Owner(arguments.Instructions);
             Assert.Same(table, ProfilingDevice.Owner(arguments.Data));
+            foreach (DrawingInstruction instruction in device.Instructions.Skip(offset).Take(checked((int)arguments.Count)))
+            {
+                Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
+                Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
+            }
+
+            offset += checked((int)arguments.Count);
         }
 
-        Assert.All(device.Instructions, instruction =>
-        {
-            Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
-            Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
-            Assert.DoesNotContain(typeof(DrawingInstruction).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance), property => property.PropertyType.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
-        });
+        Assert.Equal(device.Instructions.Count, offset);
+        Assert.DoesNotContain(typeof(DrawingInstruction).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance), property => property.PropertyType.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
         prepared.Dispose();
         Assert.Equal(0, device.ActiveTables);
     }

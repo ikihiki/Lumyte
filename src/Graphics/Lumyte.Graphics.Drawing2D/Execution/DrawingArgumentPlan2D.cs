@@ -230,7 +230,9 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         using var profile = DrawingProfileScope.Start(13);
         try
         {
-            Registrations.Materialize(cancellationToken: cancellationToken);
+            // WGSL binds every table registration, including unrelated draws.
+            // Keep portable shader dispatch proportional to this draw, not its neighbors.
+            Registrations.Materialize(cancellationToken: cancellationToken, shareTables: _device.Caps.ShaderTarget != ShaderTarget.Wgsl);
             foreach (Upload upload in _uploads)
             {
                 if (upload.Trigger.IsReady)
