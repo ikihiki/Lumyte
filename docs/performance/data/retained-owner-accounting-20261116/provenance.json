@@ -1,0 +1,104 @@
+{
+  "baselineProduction": "b9c93f001f960221dc13eed5f6edc0bf04914c02",
+  "candidateProductionAndHarness": "149ab21b9237ed71cbdbd811d63947b495c0b83d",
+  "branch": "perf/retained-owner-accounting",
+  "baselineWorktree": "/home/hideaki/owner-accounting-base",
+  "candidateWorktree": "/home/hideaki/owner-accounting",
+  "SDK": "10.0.403",
+  "runtime": "10.0.14",
+  "slang": "2026.19",
+  "device": "Radeon 8060S Graphics (RADV STRIX_HALO), vendor=1002 device=1586, Mesa 26.0.8-1ubuntu0.3",
+  "ICD": "/usr/share/vulkan/icd.d/radeon_icd.json",
+  "PR140": {
+    "state": "MERGED",
+    "head": "746446575110f864e3da0b9fe0e04db323e5dd56",
+    "merge": "b9c93f001f960221dc13eed5f6edc0bf04914c02",
+    "reviews": 0,
+    "checks": "all successful at live observation"
+  },
+  "PR127": {
+    "state": "MERGED",
+    "merge": "94eaef43d112a3cb788580ccc2ed2bd4c92515e2"
+  },
+  "dependency": "Fresh merged main, no stack dependency or merge operations",
+  "preflight": "Existing project Dictionary/reference identity accounting and BDN fixture adequate; no new dependency",
+  "tests": {
+    "Drawing2D": {
+      "passed": 390,
+      "failed": 0,
+      "skipped": 0
+    },
+    "baselineGeneratedSemanticOracle": {
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    "RenderGraph": {
+      "passed": 141,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ResourcesGraphics": {
+      "passed": 48,
+      "failed": 0,
+      "skipped": 0
+    },
+    "UI": {
+      "passed": 404,
+      "failed": 0,
+      "skipped": 0
+    },
+    "UIApplicationGpuEnabled": {
+      "passed": 118,
+      "failed": 0,
+      "skipped": 0
+    },
+    "RadeonDrawingAndRectanglePool": {
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ReleaseAnalyzers": "0 warnings / 0 errors in frozen benchmark builds",
+    "formatProduction": "exit 0; workspace-loading warning retained",
+    "formatTests": "exit 0; workspace-loading warning retained",
+    "strictAotHeadlessUi": {
+      "publishExit": 0,
+      "executeExit": 0,
+      "ILLinkTreatWarningsAsErrors": true,
+      "IlcTreatWarningsAsErrors": true
+    }
+  },
+  "review": "One bounded independent source review found no blockers. Before freeze: added terminal scratch release/documentation, repeated nested/throwing reads, partial budget and shared-page tests.",
+  "precision": {
+    "frameQualified": 0,
+    "frameTotal": 32,
+    "readQualified": 3,
+    "readTotal": 8
+  },
+  "limits": [
+    "0/2 explicit observer frame cases only; one-read completed frame unmeasured",
+    "All frame precision targets unmet; retained capped iterations/outliers; no universal FPS claim",
+    "No GPU timestamp attribution; completed-frame CPU/GPU wait wall time",
+    "Managed allocation not retained managed/native/VRAM residency",
+    "Scratch high-water arrays excluded from asset CachedBytes; dropped when empty or disposed",
+    "AccountMemory call counts unchanged; no O(1) statistics or incremental owner refcounts",
+    "No whole NativeGraphics/presentation suite or other OS GPUs",
+    "No per-process generated child executable hashes; launcher directory hashes and generated project references recorded"
+  ],
+  "pilotsExcluded": [
+    {
+      "path": "artifacts/owner-accounting/baseline",
+      "reason": "Omitted selector environment found zero selected benchmarks, no timing"
+    },
+    {
+      "path": "artifacts/owner-accounting/baseline-pilot",
+      "reason": "Launch cwd differed from selected source root; generated project provenance unsafe"
+    },
+    {
+      "path": "artifacts/owner-accounting/candidate-pilot",
+      "reason": "Superseded pre-terminal-release source, exploratory only"
+    }
+  ],
+  "validUnchangedDefaultPilot": "artifacts/owner-accounting/baseline-pilot-cwd: original record job launched from baseline root; rect1000-dynamic 855.1 KiB/op; not used in headline ABBA",
+  "profile": "Historical profile not reused as current frame attribution. Latest-source direct accounting diagnostics and observer-free completed frames measured instead."
+}
