@@ -1,10 +1,13 @@
 # 用途別レンダリングworkload suite
 
+> 2026-11-15: 旧Graphics計測harnessは現行treeから撤去しました。以下の手順は[撤去前の履歴](https://github.com/ikihiki/Lumyte/tree/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks)用です。
+> 現行のCPU計測入口は `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen` です。GPUを含む統合計測は `BenchmarkGraphicsIntegration` を明示して選び、実GPUのopt-inとdevice確認を別途必要とします。
+>
 > 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
 > JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
 
 2026-11-02、2Dコンテンツ・ゲームUI・エディタUIを独立選択できるbenchmarkを追加した。
-[全case・引数・測定scope](../../tools/benchmarks/drawing2d-incremental/WORKLOADS.md)を正本とする。
+[全case・引数・測定scope](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/drawing2d-incremental/WORKLOADS.md)を正本とする。
 fixture実装は `46d1907`。製品APIの変更はなく、通常のCanvas/Renderer/UIを使う。
 
 正式設定でのmain/#105比較は[12ワークロード正式比較](formal-rendering-workload-comparison.md)へ保存した。以下のquick/smoke記録とは区別する。

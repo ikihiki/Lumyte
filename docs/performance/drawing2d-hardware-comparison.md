@@ -5,7 +5,7 @@
 
 - 日付: 2026-11-02
 - baseline: main `fbc8105`、PR #105 `ffe075c`
-- 計測source: `bc185cf`。[ハーネス](../../tools/benchmarks/drawing2d-incremental/README.md)
+- 計測source: `bc185cf`。[ハーネス](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/drawing2d-incremental/README.md)
 - [先行CPU/ソフトウェア比較](drawing2d-incremental-comparison.md)を実GPUで追試。製品コードの最適化やGPU resident cacheの実装ではない。
 
 後続の[保持page直接描画の試作](drawing2d-direct-pages.md)では全Replay/Endを省き、resident GPU bufferの差分更新まで実装して比較した。本書の保持型は旧「保持＋平坦化」経路であり、新しいdirect経路の評価ではない。

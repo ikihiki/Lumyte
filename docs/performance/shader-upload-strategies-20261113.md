@@ -72,7 +72,7 @@ GPU行はCPU wall through completionであり、GPU timestampや描画frame全�
 
 ## 再現と保存した証拠
 
-- [Harnessと境界](../../tools/benchmarks/shader-upload-strategies/README.md)。凍結harness commitはf350c81b（計測本体はその後変更していない）。
+- [Harnessと境界](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/shader-upload-strategies/README.md)。凍結harness commitはf350c81b（計測本体はその後変更していない）。
 - [summary.json](data/shader-upload-strategies-20261113/summary.json)、[summary.csv](data/shader-upload-strategies-20261113/summary.csv)。
 - [manifest.json](data/shader-upload-strategies-20261113/manifest.json)に最終／pilot raw JSON、log、環境、正当性、source patchとhash、最終candidate source全文のgzipを列挙した。全entryの展開byte数とSHA-256を検証した。
 - base693b969fへ同じharnessを配置し、directは最終production source、bufferedは保存した候補sourceを使う。両者の--verifyを先に成功させ、run-comparison.shで直列ABBA、analyze.mjsでfull JSONを集計する。生成BDN wrapperは既定cleanupで残していないが、計測本体・依存DLLのhashとengine logは保持する。

@@ -359,6 +359,75 @@ public sealed class BenchmarkCatalogTests
         Assert.Equal(commands, fixture.Records("dotnet").Length);
     }
 
+    /// <summary>Rejects CPU test-device, product or shader changes before stale binary execution.</summary>
+    /// <param name="input">The transitive input path.</param>
+    /// <returns>The stale-input assertion.</returns>
+    [Theory]
+    [InlineData("benchmarks/Graphics/Shared/CpuGraphics/Device.cs")]
+    [InlineData("src/Graphics/Renderer.cs")]
+    [InlineData("tools/shaders/shape.slang")]
+    [InlineData("build/Targets/Shader.targets")]
+    [InlineData("native/lumyte_text_parley/src/lib.rs")]
+    [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
+    public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
+    {
+        using var fixture = new BuildFixture();
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        {
+            Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
+        }
+
+        string project = Path.Combine(fixture.Root, "benchmarks", "Graphics", "Lumyte.Graphics.Drawing2D.Benchmark");
+        Directory.CreateDirectory(project);
+        File.WriteAllText(Path.Combine(project, "Lumyte.Graphics.Drawing2D.Benchmark.csproj"), "<Project />");
+        string source = Path.Combine(fixture.Root, input);
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        File.WriteAllText(source, "original input");
+        string shared = Path.Combine(fixture.Root, "benchmarks", "Core", "Shared");
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(Path.Combine(shared, "BenchmarkEntry.cs"), "shared runner");
+        string output = Path.Combine(project, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "Lumyte.Graphics.Drawing2D.Benchmark.dll"), "fixture output");
+        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkGraphics", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(first.ExitCode == 0, first.Output + first.Error);
+        int commands = fixture.Records("dotnet").Length;
+        File.WriteAllText(source, "changed input");
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkGraphics", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, stale.ExitCode);
+        Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
+        Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
+    /// <summary>CPU defaults cannot accidentally select a hardware-integrated executable.</summary>
+    [Fact]
+    public void GraphicsEntryPointsSelectDisjointProjects()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "Graphics catalog " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (string name in new[] { "Lumyte.Graphics", "Lumyte.Graphics.Drawing2D" })
+            {
+                string directory = Path.Combine(root, "benchmarks", "Graphics", name + ".Benchmark");
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, name + ".Benchmark.csproj"), "<Project />");
+            }
+
+            string[] cpu = BenchmarkCatalog.SelectProjects(root, "*", "Graphics", integratedGraphics: false);
+            string[] gpu = BenchmarkCatalog.SelectProjects(root, "*", "Graphics", integratedGraphics: true);
+            Assert.Single(cpu);
+            Assert.Single(gpu);
+            Assert.EndsWith("Lumyte.Graphics.Drawing2D.Benchmark.csproj", cpu[0], StringComparison.Ordinal);
+            Assert.EndsWith("Lumyte.Graphics.Benchmark.csproj", gpu[0], StringComparison.Ordinal);
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.Graphics", "Graphics", integratedGraphics: false));
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.Graphics.Drawing2D", "Graphics", integratedGraphics: true));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static void AddProject(string root, string name)
     {
         string directory = Path.Combine(root, "benchmarks", "Core", name + ".Benchmark");

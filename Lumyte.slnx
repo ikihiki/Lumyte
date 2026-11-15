@@ -1,4 +1,19 @@
 <Solution>
+  <Folder Name="/benchmarks/Graphics/">
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Validation.Benchmark/Lumyte.Graphics.Validation.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Resources.Graphics.Benchmark/Lumyte.Resources.Graphics.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Text.Parley.Benchmark/Lumyte.Graphics.Text.Parley.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Text.Benchmark/Lumyte.Graphics.Text.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Shaders.Benchmark/Lumyte.Graphics.Shaders.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Hosting.Benchmark/Lumyte.Graphics.Hosting.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Generators.Benchmark/Lumyte.Graphics.Generators.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Drawing.Benchmark/Lumyte.Graphics.Drawing.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Benchmark/Lumyte.Graphics.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Lumyte.Graphics.Drawing2D.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.ImageEffects.Benchmark/Lumyte.Graphics.ImageEffects.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Lumyte.Graphics.RenderGraph.Benchmark/Lumyte.Graphics.RenderGraph.Benchmark.csproj" />
+    <Project Path="benchmarks/Graphics/Shared/CpuGraphics/Lumyte.Graphics.BenchmarkDevice.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/Audio/">
     <Project Path="benchmarks/Audio/Lumyte.Audio.Execution.Benchmark/Lumyte.Audio.Execution.Benchmark.csproj" />
     <Project Path="benchmarks/Audio/Lumyte.Audio.OpenAL.Benchmark/Lumyte.Audio.OpenAL.Benchmark.csproj" />
@@ -218,6 +233,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Benchmark.Tests/Lumyte.Graphics.Benchmark.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Lumyte.Graphics.Text.Parley.Tests.csproj" />

@@ -10,10 +10,10 @@ internal static class BenchmarkCatalog
     internal static string NormalizeMode(string mode) => mode is "screen" or "compare" or "diagnose"
         ? mode : throw new ArgumentException("Explicit benchmark mode must be screen, compare, or diagnose. Use --benchmark-list to enumerate without timing.", nameof(mode));
 
-    internal static string[] SelectProjects(string repository, string pattern, string area = "Core")
+    internal static string[] SelectProjects(string repository, string pattern, string area = "Core", bool? integratedGraphics = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-        if (area is not ("Core" or "Animation" or "Input" or "Audio"))
+        if (area is not ("Core" or "Animation" or "Input" or "Audio" or "Graphics"))
         {
             throw new ArgumentException("Unsupported benchmark area.", nameof(area));
         }
@@ -27,6 +27,8 @@ internal static class BenchmarkCatalog
         string[] projects = Directory.GetDirectories(root, "*.Benchmark", SearchOption.TopDirectoryOnly)
             .Select(directory => Path.Combine(directory, Path.GetFileName(directory) + ".csproj"))
             .Where(File.Exists)
+            .Where(project => area != "Graphics" || integratedGraphics is null
+                || (Path.GetFileNameWithoutExtension(project) == "Lumyte.Graphics.Benchmark") == integratedGraphics.Value)
             .Where(project => FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileNameWithoutExtension(project), ignoreCase: false)
                 || FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileNameWithoutExtension(project).AsSpan()[..^".Benchmark".Length], ignoreCase: false))
             .Order(StringComparer.Ordinal).ToArray();
