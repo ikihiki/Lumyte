@@ -66,7 +66,7 @@ paddingのbyte一致／raw coverage、slot順／overflow／交差、custom gette
 
 ## 保存と再現
 
-- [同一harnessと実行手順](../../tools/benchmarks/wire-cursor-metadata/README.md)
+- [同一harnessと実行手順](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/wire-cursor-metadata/README.md)
 - [summary.json](data/wire-cursor-metadata-20261113/summary.json)／[summary.csv](data/wire-cursor-metadata-20261113/summary.csv)
 - [manifest.json](data/wire-cursor-metadata-20261113/manifest.json)には最終・superseded pilotのraw JSON／log／環境／hash／source patch／全candidate変更sourceを圧縮保存する。展開byte数とSHA-256を検証する。main列はbaseline、pr列はcandidate。
 - baseline7e89と保存candidate source・削除listへ同じharnessを配置し、--verify成功後にrun-comparison.sh、analyze.mjsを使用する。過去harnessは当時のrevisionの再現用で、API移行後の比較には今回の互換harnessを使う。

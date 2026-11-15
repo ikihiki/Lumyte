@@ -5,7 +5,7 @@
 
 - 日付: 2026-11-02
 - 比較元: main `fbc8105`、PR #105 `ffe075c`
-- 計測ハーネス: `9e402e9`。[試作と実行手順](../../tools/benchmarks/drawing2d-incremental/README.md)
+- 計測ハーネス: `9e402e9`。[試作と実行手順](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/drawing2d-incremental/README.md)
 - [設計検討案](../design/drawing2d-incremental-rendering.md)の固定要素数CPU fragment置換を試作した結果。製品実装・設計採用の完了ではない。
 
 実GPUアクセス復旧後の追試は[実GPU比較レポート](drawing2d-hardware-comparison.md)へ保存した。本書のsoftware結果と権限blockedの記述は、先行測定時点の記録として残す。

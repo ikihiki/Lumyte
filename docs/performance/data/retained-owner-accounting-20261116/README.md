@@ -11,6 +11,12 @@ bash docs/performance/data/retained-owner-accounting-20261116/run-abba.sh
 node docs/performance/data/retained-owner-accounting-20261116/summarize.mjs artifacts/owner-accounting/final
 ~~~
 
+## 公開後の main 同期
+
+公開時に main が c025240ae94b2b9538eec6e344897d5f9fd22a85 へ進み、旧 runner が撤去されました。main を通常 merge し、その削除を尊重しています。PR の active tree に旧 runner を復活させません。production owner 集計の変更は固定測定時と同一です。
+
+run-abba.sh は固定 SHA の専用 worktree を作り、基準へ固定 harness の3ファイルをコピーして当時の実験を再現します。git history に両 SHA が必要です。新 main の標準 benchmark framework を置換するものではなく、保存結果を新 main の再測定結果とも呼びません。
+
 ## 測定境界
 
 Headline は四 workload（rect1000 dynamic/cached、path200 dynamic、mixed200 dynamic）×明示的 stats 読取 0/2 回×A1/B1/B2/A2 の **32 completed-frame cases** です。記録・準備・submit・GPU completion wait・command Dispose・retire を含みます。0 回でも library の予算検査は残り、compile/reuse 契約を setup で検証します。2 回は既存 fixture の観測で、全 application の必須処理ではありません。1 回の completed-frame case は未測定です。

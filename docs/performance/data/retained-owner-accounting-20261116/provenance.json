@@ -100,5 +100,36 @@
     }
   ],
   "validUnchangedDefaultPilot": "artifacts/owner-accounting/baseline-pilot-cwd: original record job launched from baseline root; rect1000-dynamic 855.1 KiB/op; not used in headline ABBA",
-  "profile": "Historical profile not reused as current frame attribution. Latest-source direct accounting diagnostics and observer-free completed frames measured instead."
+  "profile": "Historical profile not reused as current frame attribution. Latest-source direct accounting diagnostics and observer-free completed frames measured instead.",
+  "postSync": {
+    "base": "c025240ae94b2b9538eec6e344897d5f9fd22a85",
+    "reason": "Main merged PR141 and retired legacy harness while this change was measured/published",
+    "resolution": "Ordinary merge, honor legacy runner deletions including the new owner harness; no legacy benchmark source paths remain in PR diff. Measurement runner remains accessible at frozen historical SHA.",
+    "productionOwnerSource": "Byte-identical to measured 149ab21b source, recorded candidate-source hash unchanged",
+    "tests": {
+      "Drawing2D": {
+        "passed": 390,
+        "failed": 0,
+        "skipped": 0
+      },
+      "RadeonDrawingAndRectanglePool": {
+        "passed": 38,
+        "failed": 0,
+        "skipped": 0
+      },
+      "currentStandardBenchmarkSuite": {
+        "passed": 76,
+        "failed": 0,
+        "skipped": 0,
+        "hardwareOptIn": "LUMYTE_GRAPHICS_INTEGRATION_GPU=1; Radeon8060S; twelve expanded input/depth cases"
+      },
+      "markdown": {
+        "files": 321,
+        "issues": 0
+      }
+    },
+    "priorOptInAttempt": "Standard benchmark suite initially ran 75 passed / 1 real skip because its distinct opt-in was unset; final explicit hardware run is 76 passed / 0 skipped",
+    "frozenHarnessPreparation": "Created dedicated frozen A/B worktrees; both complete harness hash manifests reproduce published measurements; no timing rerun",
+    "AotAndBroaderSuites": "Reported in original tests object at measured production freeze before synchronization; current owner implementation unchanged"
+  }
 }

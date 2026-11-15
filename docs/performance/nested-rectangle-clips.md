@@ -1,5 +1,8 @@
 # Nested rectangular clip compilation
 
+> 2026-11-15: 旧Graphics計測harnessは現行treeから撤去しました。以下の手順は[撤去前の履歴](https://github.com/ikihiki/Lumyte/tree/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks)用です。
+> 現行のCPU計測入口は `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen` です。GPUを含む統合計測は `BenchmarkGraphicsIntegration` を明示して選び、実GPUのopt-inとdevice確認を別途必要とします。
+
 ## Scope and result
 
 An internal compiler optimization preserves the public API, painter order, four-by-four sample coverage, cache budgets and resource retirement. Canonical positive rectangular paths in **nested clip stacks** use the existing rectangle instruction instead of flattening and uploading four winding edges per clip per glyph. Standalone paths, paint graphs and single clips keep the previous compiler route. Curves, additional contours, reversed/empty rectangles, overflowing or inexactly reconstructed extents fall back unchanged.

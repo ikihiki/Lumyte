@@ -17,6 +17,8 @@
         "BenchmarkAudio",
         "BenchmarkCore",
         "BenchmarkCoreEvaluate",
+        "BenchmarkGraphics",
+        "BenchmarkGraphicsIntegration",
         "BenchmarkInput",
         "BenchmarkSignals",
         "CheckFormat",

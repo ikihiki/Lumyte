@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
-A=${A:-/home/hideaki/owner-accounting-base}
-B=${B:-/home/hideaki/owner-accounting}
-E=${E:-/home/hideaki/owner-accounting/artifacts/owner-accounting/final}
+ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+A=${A:-/home/hideaki/owner-accounting-repro-base}
+B=${B:-/home/hideaki/owner-accounting-repro-candidate}
+E=${E:-$ROOT/artifacts/owner-accounting/reproduction}
+BASE=b9c93f001f960221dc13eed5f6edc0bf04914c02
+FROZEN=149ab21b9237ed71cbdbd811d63947b495c0b83d
+# Main subsequently retired this runner. Reproduce the frozen experiment without
+# restoring it into the active tree or relabeling old measurements as current-main.
+for pair in "$A:$BASE" "$B:$FROZEN"; do
+ D=${pair%:*}; SHA=${pair##*:}
+ if [[ ! -d "$D" ]]; then git -C "$ROOT" worktree add --detach "$D" "$SHA"; fi
+ [[ $(git -C "$D" rev-parse HEAD) == "$SHA" ]] || { echo "Unexpected checkout: $D" >&2; exit 1; }
+ git -C "$D" diff --exit-code -- src
+ done
+for file in Program.cs RecordFrameBenchmarks.cs OwnerAccountingBenchmarks.cs; do
+ git -C "$ROOT" show "$FROZEN:tools/benchmarks/drawing2d-skia-bdn/$file" > "$A/tools/benchmarks/drawing2d-skia-bdn/$file"
+done
 P=tools/benchmarks/drawing2d-skia-bdn
 export LUMYTE_ENV_ROOT=/home/hideaki/.openclaw/workspace/Lumyte/artifacts/dev-env
 export TMPDIR=/home/hideaki/.cache/oa-tmp

@@ -32,6 +32,10 @@ internal sealed partial class Build
 
     private Target BenchmarkAudio => definition => definition.Executes(() => RunBenchmarksAsync("Audio"));
 
+    private Target BenchmarkGraphics => definition => definition.Executes(() => RunBenchmarksAsync("Graphics"));
+
+    private Target BenchmarkGraphicsIntegration => definition => definition.Executes(() => RunBenchmarksAsync("Graphics", integratedGraphics: true));
+
     private Target BenchmarkCoreEvaluate => definition => definition.Executes(EvaluateCoreAsync);
 
     private async Task EvaluateCoreAsync()
@@ -343,7 +347,7 @@ internal sealed partial class Build
         }
     }
 
-    private async Task RunBenchmarksAsync(string area)
+    private async Task RunBenchmarksAsync(string area, bool integratedGraphics = false)
     {
         string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
         if (Configuration != "Release")
@@ -356,7 +360,7 @@ internal sealed partial class Build
             throw new ArgumentOutOfRangeException(nameof(BenchmarkTimeoutSeconds), "The shared deadline must be positive and at most 900 seconds.");
         }
 
-        string[] projects = BenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject, area);
+        string[] projects = BenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject, area, area == "Graphics" ? integratedGraphics : null);
         string root = Path.GetFullPath(Output ?? Path.Combine(ArtifactRoot, area.ToLowerInvariant() + "-benchmarks", DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffff", System.Globalization.CultureInfo.InvariantCulture)));
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(Path.Combine(RepositoryDirectory, "artifacts", "nuget"));
@@ -368,6 +372,7 @@ internal sealed partial class Build
         var manifest = new JsonObject
         {
             ["schema"] = area.ToLowerInvariant() + "-benchmark-run-v1",
+            ["execution_kind"] = area == "Graphics" ? (integratedGraphics ? "gpu-integrated" : "cpu-only") : "component",
             ["area"] = area,
             ["mode"] = BenchmarkList ? "catalog" : mode,
             ["project_filter"] = BenchmarkProject,
@@ -540,6 +545,14 @@ internal sealed partial class Build
         if (area == "Input")
         {
             inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, "src", "Diagnostics")));
+        }
+
+        if (area == "Graphics")
+        {
+            foreach (string path in new[] { "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+            {
+                inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, path)));
+            }
         }
 
         foreach (string name in new[] { "global.json", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "NuGet.config" })
