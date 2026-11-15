@@ -1,0 +1,370 @@
+{
+  "topic": "2969f76fb8fdd7a946b1e2290338b0b898688769",
+  "base": "c025240ae94b2b9538eec6e344897d5f9fd22a85",
+  "chrome": "156.0.8078.47",
+  "dotnet": "10.0.403",
+  "slang": "2026.19",
+  "node": "24.22.2",
+  "knownTimeoutAllowance": false,
+  "softwareAdapterRequired": true,
+  "runs": {
+    "topicExact": {
+      "exitCode": 0,
+      "logSha256": "4d1f03e88a6b3eb75b87beb073d20d174922ee75b2182abb75ad1dc590a5dead",
+      "log": [
+        "WebGPU host ready",
+        "Entry presented; opening Hosted popup",
+        "Hosted popup open",
+        "Hosted popup exit and cleanup completed",
+        "Element exit presented; requesting connected page",
+        "Software WebGPU verified: [{\"adapter\":{\"vendor\":\"google\",\"architecture\":\"swiftshader\",\"device\":\"\",\"description\":\"\",\"isFallbackAdapter\":true}}]",
+        "ExitThenEnter UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown."
+      ],
+      "captures": []
+    },
+    "baseExact": {
+      "exitCode": 0,
+      "logSha256": "4d1f03e88a6b3eb75b87beb073d20d174922ee75b2182abb75ad1dc590a5dead",
+      "log": [
+        "WebGPU host ready",
+        "Entry presented; opening Hosted popup",
+        "Hosted popup open",
+        "Hosted popup exit and cleanup completed",
+        "Element exit presented; requesting connected page",
+        "Software WebGPU verified: [{\"adapter\":{\"vendor\":\"google\",\"architecture\":\"swiftshader\",\"device\":\"\",\"description\":\"\",\"isFallbackAdapter\":true}}]",
+        "ExitThenEnter UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown."
+      ],
+      "captures": []
+    },
+    "topicTwoCpu": {
+      "exitCode": 0,
+      "logSha256": "aa277dc578601d2396bec09f85a5feb804bac137b8ccb112024c86f634fe0425",
+      "log": [
+        "WebGPU host ready",
+        "PNG 1 start 1794766906448",
+        "PNG 1 elapsed 56 ms",
+        "PNG 2 start 1794766906504",
+        "PNG 2 elapsed 102 ms",
+        "PNG 3 start 1794766906667",
+        "PNG 3 elapsed 13705 ms",
+        "PNG 4 start 1794766920449",
+        "PNG 4 elapsed 7005 ms",
+        "PNG 5 start 1794766927512",
+        "PNG 5 elapsed 6824 ms",
+        "PNG 6 start 1794766934381",
+        "PNG 6 elapsed 3677 ms",
+        "PNG 7 start 1794766938062",
+        "PNG 7 elapsed 192 ms",
+        "PNG 8 start 1794766938255",
+        "PNG 8 elapsed 131 ms",
+        "Entry presented; opening Hosted popup",
+        "Hosted popup open",
+        "PNG 9 start 1794766938580",
+        "PNG 9 elapsed 91 ms",
+        "PNG 10 start 1794766938673",
+        "PNG 10 elapsed 130 ms",
+        "PNG 11 start 1794766938826",
+        "PNG 11 elapsed 145 ms",
+        "PNG 12 start 1794766938971",
+        "PNG 12 elapsed 134 ms",
+        "PNG 13 start 1794766939137",
+        "PNG 13 elapsed 368 ms",
+        "PNG 14 start 1794766939552",
+        "PNG 14 elapsed 370 ms",
+        "Hosted popup exit and cleanup completed",
+        "PNG 15 start 1794766940136",
+        "PNG 15 elapsed 185 ms",
+        "PNG 16 start 1794766940321",
+        "PNG 16 elapsed 130 ms",
+        "PNG 17 start 1794766940469",
+        "PNG 17 elapsed 532 ms",
+        "PNG 18 start 1794766941050",
+        "PNG 18 elapsed 504 ms",
+        "Element exit presented; requesting connected page",
+        "PNG 19 start 1794766942135",
+        "PNG 19 elapsed 15736 ms",
+        "PNG 20 start 1794766957889",
+        "PNG 20 elapsed 9298 ms",
+        "PNG 21 start 1794766967317",
+        "PNG 21 elapsed 11986 ms",
+        "PNG 22 start 1794766979385",
+        "PNG 22 elapsed 5552 ms",
+        "PNG 23 start 1794766984954",
+        "PNG 23 elapsed 4915 ms",
+        "PNG 24 start 1794766990807",
+        "PNG 24 elapsed 9662 ms",
+        "PNG 25 start 1794767000500",
+        "PNG 25 elapsed 4967 ms",
+        "Software WebGPU verified: [{\"adapter\":{\"vendor\":\"google\",\"architecture\":\"swiftshader\",\"device\":\"\",\"description\":\"\",\"isFallbackAdapter\":true}}]",
+        "ExitThenEnter UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown."
+      ],
+      "captures": [
+        {
+          "capture": 1,
+          "milliseconds": 56
+        },
+        {
+          "capture": 2,
+          "milliseconds": 102
+        },
+        {
+          "capture": 3,
+          "milliseconds": 13705
+        },
+        {
+          "capture": 4,
+          "milliseconds": 7005
+        },
+        {
+          "capture": 5,
+          "milliseconds": 6824
+        },
+        {
+          "capture": 6,
+          "milliseconds": 3677
+        },
+        {
+          "capture": 7,
+          "milliseconds": 192
+        },
+        {
+          "capture": 8,
+          "milliseconds": 131
+        },
+        {
+          "capture": 9,
+          "milliseconds": 91
+        },
+        {
+          "capture": 10,
+          "milliseconds": 130
+        },
+        {
+          "capture": 11,
+          "milliseconds": 145
+        },
+        {
+          "capture": 12,
+          "milliseconds": 134
+        },
+        {
+          "capture": 13,
+          "milliseconds": 368
+        },
+        {
+          "capture": 14,
+          "milliseconds": 370
+        },
+        {
+          "capture": 15,
+          "milliseconds": 185
+        },
+        {
+          "capture": 16,
+          "milliseconds": 130
+        },
+        {
+          "capture": 17,
+          "milliseconds": 532
+        },
+        {
+          "capture": 18,
+          "milliseconds": 504
+        },
+        {
+          "capture": 19,
+          "milliseconds": 15736
+        },
+        {
+          "capture": 20,
+          "milliseconds": 9298
+        },
+        {
+          "capture": 21,
+          "milliseconds": 11986
+        },
+        {
+          "capture": 22,
+          "milliseconds": 5552
+        },
+        {
+          "capture": 23,
+          "milliseconds": 4915
+        },
+        {
+          "capture": 24,
+          "milliseconds": 9662
+        },
+        {
+          "capture": 25,
+          "milliseconds": 4967
+        }
+      ]
+    },
+    "baseTwoCpu": {
+      "exitCode": 0,
+      "logSha256": "e74e5b2342984205a0a1f0398e6f578b6466c4fc756425f78722340f8e81d9fd",
+      "log": [
+        "WebGPU host ready",
+        "PNG 1 start 1794767033212",
+        "PNG 1 elapsed 70 ms",
+        "PNG 2 start 1794767033282",
+        "PNG 2 elapsed 104 ms",
+        "PNG 3 start 1794767033446",
+        "PNG 3 elapsed 13838 ms",
+        "PNG 4 start 1794767047361",
+        "PNG 4 elapsed 6855 ms",
+        "PNG 5 start 1794767054313",
+        "PNG 5 elapsed 6853 ms",
+        "PNG 6 start 1794767061194",
+        "PNG 6 elapsed 3593 ms",
+        "PNG 7 start 1794767064791",
+        "PNG 7 elapsed 192 ms",
+        "PNG 8 start 1794767064983",
+        "PNG 8 elapsed 131 ms",
+        "Entry presented; opening Hosted popup",
+        "Hosted popup open",
+        "PNG 9 start 1794767065469",
+        "PNG 9 elapsed 131 ms",
+        "PNG 10 start 1794767065602",
+        "PNG 10 elapsed 131 ms",
+        "PNG 11 start 1794767065753",
+        "PNG 11 elapsed 146 ms",
+        "PNG 12 start 1794767065899",
+        "PNG 12 elapsed 134 ms",
+        "PNG 13 start 1794767066051",
+        "PNG 13 elapsed 11146 ms",
+        "PNG 14 start 1794767077266",
+        "PNG 14 elapsed 565 ms",
+        "Hosted popup exit and cleanup completed",
+        "PNG 15 start 1794767078048",
+        "PNG 15 elapsed 185 ms",
+        "PNG 16 start 1794767078233",
+        "PNG 16 elapsed 131 ms",
+        "PNG 17 start 1794767078384",
+        "PNG 17 elapsed 498 ms",
+        "PNG 18 start 1794767078899",
+        "PNG 18 elapsed 517 ms",
+        "Element exit presented; requesting connected page",
+        "PNG 19 start 1794767080013",
+        "PNG 19 elapsed 16035 ms",
+        "PNG 20 start 1794767096067",
+        "PNG 20 elapsed 9281 ms",
+        "PNG 21 start 1794767105506",
+        "PNG 21 elapsed 11825 ms",
+        "PNG 22 start 1794767117394",
+        "PNG 22 elapsed 5652 ms",
+        "PNG 23 start 1794767123065",
+        "PNG 23 elapsed 4982 ms",
+        "PNG 24 start 1794767129088",
+        "PNG 24 elapsed 9607 ms",
+        "PNG 25 start 1794767138730",
+        "PNG 25 elapsed 4881 ms",
+        "Software WebGPU verified: [{\"adapter\":{\"vendor\":\"google\",\"architecture\":\"swiftshader\",\"device\":\"\",\"description\":\"\",\"isFallbackAdapter\":true}}]",
+        "ExitThenEnter UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown."
+      ],
+      "captures": [
+        {
+          "capture": 1,
+          "milliseconds": 70
+        },
+        {
+          "capture": 2,
+          "milliseconds": 104
+        },
+        {
+          "capture": 3,
+          "milliseconds": 13838
+        },
+        {
+          "capture": 4,
+          "milliseconds": 6855
+        },
+        {
+          "capture": 5,
+          "milliseconds": 6853
+        },
+        {
+          "capture": 6,
+          "milliseconds": 3593
+        },
+        {
+          "capture": 7,
+          "milliseconds": 192
+        },
+        {
+          "capture": 8,
+          "milliseconds": 131
+        },
+        {
+          "capture": 9,
+          "milliseconds": 131
+        },
+        {
+          "capture": 10,
+          "milliseconds": 131
+        },
+        {
+          "capture": 11,
+          "milliseconds": 146
+        },
+        {
+          "capture": 12,
+          "milliseconds": 134
+        },
+        {
+          "capture": 13,
+          "milliseconds": 11146
+        },
+        {
+          "capture": 14,
+          "milliseconds": 565
+        },
+        {
+          "capture": 15,
+          "milliseconds": 185
+        },
+        {
+          "capture": 16,
+          "milliseconds": 131
+        },
+        {
+          "capture": 17,
+          "milliseconds": 498
+        },
+        {
+          "capture": 18,
+          "milliseconds": 517
+        },
+        {
+          "capture": 19,
+          "milliseconds": 16035
+        },
+        {
+          "capture": 20,
+          "milliseconds": 9281
+        },
+        {
+          "capture": 21,
+          "milliseconds": 11825
+        },
+        {
+          "capture": 22,
+          "milliseconds": 5652
+        },
+        {
+          "capture": 23,
+          "milliseconds": 4982
+        },
+        {
+          "capture": 24,
+          "milliseconds": 9607
+        },
+        {
+          "capture": 25,
+          "milliseconds": 4881
+        }
+      ]
+    }
+  }
+}
