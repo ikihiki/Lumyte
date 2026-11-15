@@ -281,7 +281,7 @@ public sealed partial class ShaderDataLayout : IShaderDataLayout
             return false;
         }
 
-        if ((member.Kind == "GpuBufferRef" && reference.BufferAccess != ShaderBufferAccess.ReadOnly) ||
+        if ((member.Kind == "GpuBufferRef" && reference.BufferAccess is not (ShaderBufferAccess.ReadOnly or ShaderBufferAccess.ReadWrite)) ||
             (member.Kind == "GpuRWBufferRef" && reference.BufferAccess != ShaderBufferAccess.ReadWrite))
         {
             return false;

@@ -138,37 +138,71 @@ public static class ShaderBindingExercise
             IGpuRef<BindingMaterial> materialRef = table.WriteBuffer(0, materials.SliceElements(0, Count));
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, Before = default, AfterState = TextureState.ColorAttachment, After = colorWrite });
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = targetView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
-            render.SetPipeline(pipeline);
-            render.SetArgumentTable(table);
-            render.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
-            render.SetViewport(new(0, 0, Width, 4, 0, 1));
-            render.SetBlendConstant(new(0, 0, 0, 0));
-            render.SetStencilReference(0);
-
-            // One draw reaches five independent textures sharing one sampler, exceeding the old four-pair limit.
-            var rangeArguments = new BindingDrawArguments(table.WriteBuffer(1, materials.SliceElements(0, 5)), 5);
-            render.SetArguments(in rangeArguments);
-            render.SetScissor(new(0, 0, 20, 4));
-            using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 2 });
-            using IGraphicsBuffer<DrawIndirectArguments> indirect = device.CreateBuffer<DrawIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect });
-            render.SetArgumentTable(outside);
-            BindingRegressionExercise.Expect<ArgumentException>(() => render.Draw(3));
-            BindingRegressionExercise.Expect<ArgumentException>(() => render.DrawIndirect(indirect.SliceElements(0, 1)));
-            outside.Dispose();
-            BindingRegressionExercise.Expect<ObjectDisposedException>(() => render.SetArgumentTable(outside));
-            BindingRegressionExercise.Expect<ArgumentNullException>(() => render.SetArgumentTable(null!));
-            render.SetArgumentTable(table);
-            render.Draw(3);
-            for (int i = 5; i < Count; i++)
+            try
             {
-                // Select one element per primitive; the backend collects only this material's dependencies.
-                var arguments = new BindingDrawArguments(materialRef.GetElement((ulong)i), 1);
-                render.SetArguments(in arguments);
-                render.SetScissor(new((uint)i * 4, 0, 4, 4));
+                render.SetPipeline(pipeline);
+                render.SetArgumentTable(table);
+                render.SetRenderState(new() { ColorTargets = [new()], Rasterization = new() { Cull = CullMode.None } });
+                render.SetViewport(new(0, 0, Width, 4, 0, 1));
+                render.SetBlendConstant(new(0, 0, 0, 0));
+                render.SetStencilReference(0);
+
+                // One draw reaches five independent textures sharing one sampler, exceeding the old four-pair limit.
+                var rangeArguments = new BindingDrawArguments(table.WriteBuffer(1, materials.SliceElements(0, 5)), 5);
+                render.SetArguments(in rangeArguments);
+                render.SetScissor(new(0, 0, 20, 4));
+                using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+                using IGraphicsBuffer<DrawIndirectArguments> indirect = device.CreateBuffer<DrawIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect });
+                render.SetArgumentTable(outside);
+                BindingRegressionExercise.Expect<ArgumentException>(() => render.Draw(3));
+                BindingRegressionExercise.Expect<ArgumentException>(() => render.DrawIndirect(indirect.SliceElements(0, 1)));
+                outside.Dispose();
+                BindingRegressionExercise.Expect<ObjectDisposedException>(() => render.SetArgumentTable(outside));
+                BindingRegressionExercise.Expect<ArgumentNullException>(() => render.SetArgumentTable(null!));
+                render.SetArgumentTable(table);
+                if (device.Caps.MaxSampledTexturesPerStage < Count)
+                {
+                    // The whole selected table is bound, even when roots reach fewer entries.
+                    BindingRegressionExercise.Expect<NotSupportedException>(() => render.Draw(3));
+                    BindingRegressionExercise.Expect<NotSupportedException>(() => render.DrawIndirect(indirect.SliceElements(0, 1)));
+                    for (uint slot = 5; slot < Count; slot++)
+                    {
+                        table.ReleaseTexture(slot);
+                    }
+                }
+
                 render.Draw(3);
+                for (int i = 5; i < Count; i++)
+                {
+                    // Explicitly partition the table instead of relying on backend dependency discovery.
+                    if (device.Caps.MaxSampledTexturesPerStage < Count)
+                    {
+                        if (i == 5)
+                        {
+                            for (uint slot = 0; slot < 5; slot++)
+                            {
+                                table.ReleaseTexture(slot);
+                            }
+                        }
+                        else
+                        {
+                            table.ReleaseTexture((uint)i - 1);
+                        }
+
+                        table.WriteTexture((uint)i, views[i]);
+                    }
+
+                    var arguments = new BindingDrawArguments(materialRef.GetElement((ulong)i), 1);
+                    render.SetArguments(in arguments);
+                    render.SetScissor(new((uint)i * 4, 0, 4, 4));
+                    render.Draw(3);
+                }
+            }
+            finally
+            {
+                render.End();
             }
 
-            render.End();
             commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = colorWrite, After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyTextureToBuffer(new() { Texture = target, Width = Width, Height = 4 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
             commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });

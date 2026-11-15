@@ -60,6 +60,11 @@ internal ref struct Direct3D12ShaderValueWriter : IShaderValueWriter
         _owner.RequireReady();
         uint offset = checked((uint)dependency.OffsetInBytes);
         uint slot = dependency.Slot;
+        if (dependency.BufferAccess == ShaderBufferAccess.ReadWrite)
+        {
+            slot |= 0x80000000u;
+        }
+
         uint count = checked((uint)dependency.Count);
         Span<byte> wire = _destination.Slice(_position, 16);
         BinaryPrimitives.WriteUInt32LittleEndian(wire, slot);

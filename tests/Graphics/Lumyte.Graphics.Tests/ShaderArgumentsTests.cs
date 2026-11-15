@@ -47,6 +47,8 @@ public sealed class ShaderArgumentsTests
         var data = new BindingVector(new Vector3(11, 12, 13));
         ShaderValueSnapshot root = ShaderTransfer.Capture(in camera);
         ShaderValueSnapshot element = ShaderTransfer.Capture(in data);
+        ShaderTransfer.ReflectFields(typeof(BindingCameraArguments));
+        ShaderTransfer.ReflectFields(typeof(BindingVector));
 
         Assert.Equal("BindingCameraArguments", root.ShaderTypeName);
         Assert.Empty(root.Values);

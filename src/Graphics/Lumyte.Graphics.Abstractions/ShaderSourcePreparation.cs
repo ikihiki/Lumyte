@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -7,15 +6,21 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Prepares the compiler-owned helper ABI and type schema probes consistently offline and online.</summary>
 public static class ShaderSourcePreparation
 {
-    /// <summary>Prepares source only when it explicitly includes the Lumyte shader helpers.</summary>
+    /// <summary>Prepares logical schemas and opaque wire storage, including helper-free roots.</summary>
     /// <param name="source">The application Slang source.</param>
     /// <returns>The source with schema probes and a reserved root binding.</returns>
     public static string Prepare(string source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if (!source.Contains("lumyte.slang", StringComparison.Ordinal))
+        bool hasRoots = Regex.IsMatch(source, @"\bConstantBuffer\s*<");
+        if (!hasRoots && !source.Contains("lumyte.slang", StringComparison.Ordinal))
         {
-            return Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<$1> $2;\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
+            return source;
+        }
+
+        if (hasRoots && !source.Contains("lumyte.slang", StringComparison.Ordinal))
+        {
+            source = "#include \"lumyte.slang\"\n" + source;
         }
 
         // A native aggregate has backend-specific vector/struct alignment.
@@ -25,19 +30,13 @@ public static class ShaderSourcePreparation
         {
             string type = match.Groups[1].Value.Trim();
             string name = match.Groups[2].Value;
-            return $"\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
+            return $"\nStructuredBuffer<Ptr<{type}>> __lumyte_schema_root_{name};\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
         });
 
-        var probes = new StringBuilder();
-        foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{"))
-        {
-            string name = type.Groups[1].Value;
-            probes.AppendLine($"StructuredBuffer<Ptr<{name}>> __lumyte_schema_{name};");
-        }
-
-        // Pointer reflection describes the natural layout used by T* and ByteAddressBuffer.Load<T>.
-        // Emit probes first so a same-name root uniform cannot supply its different layout.
-        return probes.Append(source).ToString();
+        // Keep probes in the declaration's preprocessor/namespace scope. Slang
+        // resolves forward declarations and pointer layouts before root uniforms.
+        return Regex.Replace(source, @"\bstruct\s+(\w+)\s*\{", match =>
+            $"StructuredBuffer<Ptr<{match.Groups[1].Value}>> __lumyte_schema_{match.Groups[1].Value};\n" + match.Value);
     }
 
     /// <summary>Records the compiler-owned resource ABI version in target metadata.</summary>
@@ -70,19 +69,58 @@ public static class ShaderSourcePreparation
         // is opaque words. Its declaration rounds up to 16 bytes, not its native count;
         // TransferSize remains the exact C# size and is never rounded/repacked.
         JsonArray parameters = metadata["parameters"]!.AsArray();
-        if (source.Contains("lumyte.slang", StringComparison.Ordinal))
+
+        // Probes beside declarations follow their #if scope and let Slang resolve
+        // type expressions (including aliases). Only compiled active wires exist here.
+        foreach (JsonObject wire in parameters.OfType<JsonObject>()
+            .Where(parameter => parameter["name"]!.GetValue<string>().StartsWith("__lumyte_wire_", StringComparison.Ordinal)))
         {
-            foreach (Match root in Regex.Matches(source, @"ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;"))
+            string name = wire["name"]!.GetValue<string>()["__lumyte_wire_".Length..];
+            JsonObject probe = parameters.OfType<JsonObject>().Single(parameter => parameter["name"]!.GetValue<string>() == "__lumyte_schema_root_" + name);
+            JsonNode logical = probe["type"]!["resultType"]!["valueType"]!;
+            if (logical is JsonValue)
             {
-                string name = root.Groups[2].Value;
-                JsonObject wire = parameters.OfType<JsonObject>().Single(p => p["name"]!.GetValue<string>() == "__lumyte_wire_" + name);
-                JsonObject probe = parameters.OfType<JsonObject>().Single(p => p["name"]!.GetValue<string>() == "__lumyte_schema_" + root.Groups[1].Value.Trim());
-                wire["name"] = name;
-                wire["type"]!["elementType"] = probe["type"]!["resultType"]!["valueType"]!.DeepClone();
+                string typeName = logical.GetValue<string>();
+                logical = FindStructure(parameters, typeName)
+                    ?? throw new ArgumentException("Missing logical root schema: " + typeName, nameof(reflection));
             }
+
+            wire["name"] = name;
+            wire["type"]!["elementType"] = logical.DeepClone();
         }
 
         metadata["lumyteReferenceTargets"] = targets;
         return metadata.ToJsonString();
+    }
+
+    private static JsonNode? FindStructure(JsonNode node, string name)
+    {
+        if (node is JsonObject obj)
+        {
+            if (obj["kind"]?.GetValue<string>() == "struct" && obj["name"]?.GetValue<string>() == name)
+            {
+                return obj;
+            }
+
+            foreach (KeyValuePair<string, JsonNode?> property in obj)
+            {
+                if (property.Value is { } value && FindStructure(value, name) is { } found)
+                {
+                    return found;
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (JsonNode? value in array)
+            {
+                if (value != null && FindStructure(value, name) is { } found)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
     }
 }

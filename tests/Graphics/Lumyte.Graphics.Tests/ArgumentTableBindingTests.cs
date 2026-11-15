@@ -211,9 +211,9 @@ public sealed class ArgumentTableBindingTests
         var binding = new ShaderBindingData(values.Select(value => (IShaderReference)value.Reference!).ToArray(), target, caps);
         Assert.Equal(2, binding.Buffers.Count);
         Assert.Equal(2, binding.Writable.Count);
-        Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 8)));
+        Assert.Equal(mismatch ? 0x80000001u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 8)));
         Assert.Equal(mismatch ? 1u : 0u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((2 * 16) + 12)));
-        Assert.Equal(mismatch ? 1u : 0u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 8)));
+        Assert.Equal(mismatch ? 1u : 0x80000001u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 8)));
         Assert.Equal(mismatch ? 0u : 1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 12)));
         for (int i = 0; i < values.Length; i++)
         {
@@ -245,6 +245,86 @@ public sealed class ArgumentTableBindingTests
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((5 * 16) + 8)));
         Assert.All(binding.Map.AsSpan(2 * 16, 3 * 16).ToArray(), item => Assert.Equal((byte)0, item));
         Assert.Contains(new ShaderBufferBinding(second, 0, 16), binding.Writable.Keys);
+    }
+
+    /// <summary>Both logical helper classes accept one writable registration, but RO cannot promise writes.</summary>
+    /// <param name="access">The native registration class.</param>
+    /// <param name="rejected">Whether a writable logical field must be rejected.</param>
+    [Theory]
+    [InlineData(ShaderBufferAccess.ReadWrite, false)]
+    [InlineData(ShaderBufferAccess.ReadOnly, true)]
+    public void LogicalReadAndWriteFieldsRequireWritableRegistration(ShaderBufferAccess access, bool rejected)
+    {
+        using var table = new Table();
+        var reference = new Reference(table, new RawSource(), access: access);
+        string[] names = ["Read", "Write"];
+        string json = JsonSerializer.Serialize(new
+        {
+            lumyteReferenceTargets = names.ToDictionary(name => "Both." + name, _ => "uint"),
+            parameters = new[]
+            {
+                new
+                {
+                    name = "arguments",
+                    type = new
+                    {
+                        kind = "constantBuffer",
+                        elementType = new
+                        {
+                            kind = "struct",
+                            name = "Both",
+                            sizes = new[] { new { kind = "uniform", value = 32, alignment = 4 } },
+                            fields = names.Select((name, i) => new
+                            {
+                                name,
+                                type = new { kind = "struct", name = i == 0 ? "GpuBufferRef" : "GpuRWBufferRef" },
+                                binding = new { offset = i * 16, size = 16 },
+                            }).ToArray(),
+                        },
+                    },
+                },
+            },
+        });
+        var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [], json);
+        var root = new ShaderValueSnapshot(
+            "arguments",
+            "Both",
+            new byte[32],
+            [new(typeof(uint), reference, 0), new(typeof(uint), reference, 16)],
+            [new("Read", 0, 16, typeof(ShaderReferenceSlot), true), new("Write", 16, 16, typeof(ShaderReferenceSlot), true)]);
+        var layout = ShaderDataLayout.Root(target, "arguments");
+        if (rejected)
+        {
+            Assert.Throws<ArgumentException>(() => layout.ValidateArguments(root, validateReferences: true));
+        }
+        else
+        {
+            layout.ValidateArguments(root, validateReferences: true);
+        }
+    }
+
+    /// <summary>A writable registration supplies logical reads without a second physical binding.</summary>
+    [Fact]
+    public void WritableRegistrationRoutesReadOnlyHelperToWritablePool()
+    {
+        using var table = new Table();
+        var reference = new Reference(table, new RawSource(), slot: 3, access: ShaderBufferAccess.ReadWrite);
+        var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [], "{}");
+        var caps = new DeviceCaps { MaxStorageBufferBindingSize = 1024, MaxStorageBuffersPerStage = 2 };
+        var binding = new ShaderBindingData([reference], target, caps);
+        Assert.Empty(binding.Buffers);
+        Assert.Single(binding.Writable);
+        Assert.Equal(0x80000000u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 8)));
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(binding.Map.AsSpan((3 * 16) + 12)));
+        const string Source = """
+            struct Ref { Id_0: u32, Offset_0: u32, Count_0: u32, Reserved_0: u32, }
+            @binding(2) @group(0) var<storage, read> lumyteBuffer0_0: array<u32>;
+            fn GpuBufferRef_Load_uint(receiver: Ref, index: u32) -> u32 { return lumyteBuffer0_0[receiver.Offset_0 / 4u + index]; }
+            """;
+        string specialized = WgslBindingSpecializer.Specialize(Source, 0, 0, 0, 1);
+        Assert.DoesNotContain("var<storage, read> lumyteBuffer", specialized);
+        Assert.Contains("case 2147483648u", specialized);
+        Assert.Contains("return lumyteRWBuffer0_0[", specialized);
     }
 
     /// <summary>Unavailable dependencies are not confused with a known empty numeric buffer.</summary>

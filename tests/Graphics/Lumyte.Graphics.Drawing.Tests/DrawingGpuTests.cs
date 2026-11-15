@@ -92,6 +92,9 @@ public sealed class DrawingGpuTests
 
     private static async Task RenderAsync(bool lit, int expected, bool transformed = false, bool strongEmission = false, bool transparent = false, bool toneMap = false, float vignette = 0, float? litRoughness = null, float? normalUvScale = null)
     {
+        // Keep the original raw-device pixel coverage. ValidationDevice remains blocked on
+        // per-resource stage usage (vertex buffers versus fragment textures), not broader barriers.
+        // Diagnostic evidence: artifacts/model-root-before.log and model-validation-debug.log.
         using var device = VulkanDevice.Create();
         ShaderArtifact vertexArtifact = DrawingShaders.LoadModelVertex();
         ModelVertex[] vertices =
@@ -146,7 +149,9 @@ public sealed class DrawingGpuTests
         TextureCopyLayout copyLayout = device.GetTextureCopyLayout(TextureFormat.Rgba16Float);
         uint pitch = ((64 + copyLayout.BytesPerRowAlignment - 1) / copyLayout.BytesPerRowAlignment) * copyLayout.BytesPerRowAlignment;
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
-        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 1, TextureCapacity = 3, SamplerCapacity = 1 });
+        using IGraphicsShaderDataBuffer<ModelDrawArguments> drawData = device.CreateShaderDataBuffer<ModelDrawArguments>(vertexArtifact, 1);
+        using IGraphicsShaderDataBuffer<ModelDrawArguments> drawUpload = device.CreateShaderDataBuffer<ModelDrawArguments>(vertexArtifact, 1, MemoryPreference.Upload);
+        using IArgumentTable table = device.CreateArgumentTable(new() { BufferCapacity = 2, TextureCapacity = 3, SamplerCapacity = 1 });
         IGpuRef<ModelVertex> vertexRef = table.WriteBuffer(0, mesh.Vertices.SliceElements(0, mesh.Vertices.Count));
         object vertexResource = Assert.IsAssignableFrom<IShaderReference>(vertexRef).Resource;
         Assert.IsAssignableFrom<IShaderRawBuffer>(vertexResource);
@@ -200,7 +205,19 @@ public sealed class DrawingGpuTests
             };
         }
 
+        // Both allocations and the table outlive the submission below; staging is not rewritten in flight.
+        await drawUpload.MapAsync();
+        drawUpload.CopyFrom([arguments]);
+        drawUpload.Unmap();
+        var root = new ModelDrawRoot(table.WriteBuffer(1, drawData.SliceElements(0, 1)));
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new ShaderDataBufferBarrierDesc<ModelDrawArguments>
+        {
+            Buffer = drawUpload.SliceElements(0, 1),
+            Before = new(PipelineStage.Host, ResourceAccess.HostWrite),
+            After = new(PipelineStage.Copy, ResourceAccess.CopyRead),
+        });
+        commands.CopyBuffer(drawUpload.SliceElements(0, 1), drawData.SliceElements(0, 1));
         var copyRead = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead);
         var copyWrite = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite);
         var sampleRead = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
@@ -217,6 +234,7 @@ public sealed class DrawingGpuTests
             graph,
             new(PipelineStage.VertexShader, ResourceAccess.ShaderRead),
             new(PipelineStage.IndexInput, ResourceAccess.IndexRead));
+        RenderGraphShaderDataBuffer<ModelDrawArguments> drawHandle = graph.ImportShaderDataBuffer(drawData, copyWrite);
         RenderGraphTexture sceneHandle = graph.ImportTexture(scene, TextureState.Undefined, default);
         RenderGraphTexture depthHandle = graph.ImportTexture(depth, TextureState.Undefined, default);
         RenderGraphTexture whiteHandle = graph.ImportTexture(white, TextureState.Sampled, sampleRead);
@@ -230,10 +248,11 @@ public sealed class DrawingGpuTests
             });
             Setup(render, pipeline, ModelDrawing.CreateRenderState(material, doubleSided: true));
             render.SetArgumentTable(table);
-            render.SetArguments(in arguments);
+            render.SetArguments(in root);
             mesh.Draw(render);
             render.End();
-        }).UseTexture(sceneHandle, TextureState.ColorAttachment, colorWrite)
+        }).UseShaderDataBuffer(drawHandle, new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead))
+            .UseTexture(sceneHandle, TextureState.ColorAttachment, colorWrite)
             .UseTexture(depthHandle, TextureState.DepthStencilAttachment, new(PipelineStage.DepthStencil, ResourceAccess.DepthStencilWrite))
             .UseTexture(whiteHandle, TextureState.Sampled, sampleRead)
             .UseTexture(normalHandle, TextureState.Sampled, sampleRead);

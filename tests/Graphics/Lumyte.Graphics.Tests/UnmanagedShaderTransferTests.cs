@@ -40,7 +40,8 @@ public sealed class UnmanagedShaderTransferTests
         Assert.Empty(snapshot.Fields);
         Assert.Null(snapshot.DiagnosticFields);
         Assert.Equal(typeof(PaddedValue), snapshot.DiagnosticType);
-        IReadOnlyList<ShaderTransferField> fields = snapshot.GetDiagnosticFields();
+        IReadOnlyList<ShaderTransferField> fields = ShaderTransfer.ReflectFields(typeof(PaddedValue));
+        Assert.Same(fields, snapshot.GetDiagnosticFields());
         Assert.Contains(fields, field => field.Path == "Position" && field.Offset == 8 && field.Size == 12);
         Assert.Same(ShaderTransfer.Fields<PaddedValue>(), fields);
         Assert.Same(ShaderTransfer.Fields(typeof(PaddedValue)), fields);

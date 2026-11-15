@@ -36,6 +36,69 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
         return stages;
     }
 
+    internal static IReadOnlyList<(ulong Offset, ulong End, ResourceAccess Access)> Partition(IEnumerable<(ulong Offset, ulong End, ResourceAccess Access)> ranges)
+    {
+        var events = new SortedDictionary<ulong, List<(ResourceAccess Access, int Delta)>>();
+        foreach ((ulong Offset, ulong End, ResourceAccess Access) range in ranges)
+        {
+            if (range.Offset >= range.End || range.Access == ResourceAccess.None)
+            {
+                continue;
+            }
+
+            Add(range.Offset, range.Access, 1);
+            Add(range.End, range.Access, -1);
+        }
+
+        var result = new List<(ulong Offset, ulong End, ResourceAccess Access)>();
+        var counts = new Dictionary<ResourceAccess, int>();
+        ulong previous = 0;
+        ResourceAccess active = ResourceAccess.None;
+        foreach (KeyValuePair<ulong, List<(ResourceAccess Access, int Delta)>> point in events)
+        {
+            if (previous < point.Key && active != ResourceAccess.None)
+            {
+                if (result.Count > 0 && result[^1].End == previous && result[^1].Access == active)
+                {
+                    result[^1] = (result[^1].Offset, point.Key, active);
+                }
+                else
+                {
+                    result.Add((previous, point.Key, active));
+                }
+            }
+
+            foreach ((ResourceAccess Access, int Delta) change in point.Value)
+            {
+                counts.TryGetValue(change.Access, out int count);
+                counts[change.Access] = count + change.Delta;
+            }
+
+            active = ResourceAccess.None;
+            foreach (KeyValuePair<ResourceAccess, int> count in counts)
+            {
+                if (count.Value > 0)
+                {
+                    active |= count.Key;
+                }
+            }
+
+            previous = point.Key;
+        }
+
+        return result;
+
+        void Add(ulong offset, ResourceAccess access, int delta)
+        {
+            if (!events.TryGetValue(offset, out List<(ResourceAccess Access, int Delta)>? changes))
+            {
+                events.Add(offset, changes = []);
+            }
+
+            changes.Add((access, delta));
+        }
+    }
+
     internal void Check(bool allowSetting = false)
     {
         if (_executing || (_setting && !allowSetting))
@@ -121,7 +184,7 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
         _admit = admit;
     }
 
-    internal void Execute(bool requiresArguments, PipelineStage stages)
+    internal void Execute(bool requiresArguments, PipelineStage stages, bool executes = true)
     {
         Check();
         if (_program == null)
@@ -198,7 +261,7 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
             ((IValidationReference)reference).ValidateRegistration();
         }
 
-        ShaderAccesses(owner, references, stages);
+        ShaderAccesses(owner, references, stages, executes);
     }
 
     private static IArgumentTable? RootHint(IShaderReferenceMetadata metadata)
@@ -222,7 +285,7 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
         return table;
     }
 
-    private static void ShaderAccesses(ValidationCommandBuffer command, IEnumerable<IShaderReference> references, PipelineStage stages)
+    private static void ShaderAccesses(ValidationCommandBuffer command, IEnumerable<IShaderReference> references, PipelineStage stages, bool executes)
     {
         GraphicsValidation validation = command.Device.Tracker;
         var buffers = new List<(object Storage, ulong Offset, ulong End, ResourceAccess Access)>();
@@ -231,6 +294,11 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
             validation.Reference(command, (IValidatedShaderReference)reference);
             validation.Use(command, reference.Table);
             validation.Use(command, reference.Resource);
+            if (!executes)
+            {
+                continue;
+            }
+
             if (reference.Resource is IGraphicsTextureView view)
             {
                 TextureViewInfo info = view.Info;
@@ -242,26 +310,18 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
                 object storage = command.Device.ResourceIdentity(reference.Resource);
                 ulong offset = reference.OffsetInBytes;
                 ulong end = checked(offset + reference.SizeInBytes);
-                for (int index = 0; index < buffers.Count; ++index)
-                {
-                    (object Storage, ulong Offset, ulong End, ResourceAccess Access) previous = buffers[index];
-                    if (ReferenceEquals(previous.Storage, storage) && previous.Offset < end && offset < previous.End)
-                    {
-                        offset = Math.Min(offset, previous.Offset);
-                        end = Math.Max(end, previous.End);
-                        access |= previous.Access;
-                        buffers.RemoveAt(index);
-                        index = -1;
-                    }
-                }
-
                 buffers.Add((storage, offset, end, access));
             }
         }
 
-        foreach ((object Storage, ulong Offset, ulong End, ResourceAccess Access) buffer in buffers)
+        // Partition each allocation once per execution: overlapping views must not
+        // create self WAW hazards or widen writes into read-only prefixes/suffixes.
+        foreach (IGrouping<object, (object Storage, ulong Offset, ulong End, ResourceAccess Access)> allocation in buffers.GroupBy(buffer => buffer.Storage, ReferenceEqualityComparer.Instance))
         {
-            validation.Access(command, buffer.Storage, new(stages, buffer.Access), buffer.Offset, checked(buffer.End - buffer.Offset));
+            foreach ((ulong Offset, ulong End, ResourceAccess Access) segment in Partition(allocation.Select(buffer => (buffer.Offset, buffer.End, buffer.Access))))
+            {
+                validation.Access(command, allocation.Key, new(stages, segment.Access), segment.Offset, checked(segment.End - segment.Offset));
+            }
         }
     }
 }

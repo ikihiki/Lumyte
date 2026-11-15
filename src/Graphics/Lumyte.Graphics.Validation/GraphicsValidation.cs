@@ -8,6 +8,7 @@ public sealed class GraphicsValidation
 {
     private readonly Dictionary<object, object> _parents = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<object, HashSet<object>> _uses = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<object, RecordingState> _recordings = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<object, List<Operation>> _commands = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<object, HashSet<IValidatedShaderReference>> _references = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<object> _submitted = new(ReferenceEqualityComparer.Instance);
@@ -45,6 +46,7 @@ public sealed class GraphicsValidation
         // a new source scope, rather than pretending a GPU barrier performed it.
         State state = _global.Copy();
         Apply(state, new(resource, offset, End(offset, size), new(PipelineStage.Host, access), default, false, null, default, Host: true), false);
+        state.Undo.Clear();
         _global = state;
     }
 
@@ -107,9 +109,11 @@ public sealed class GraphicsValidation
         _released.GetValue(resource, static _ => new object());
         _global.Buffers.Remove(resource);
         _acquisitions.Remove(resource);
+        _global.ReadyImages.Remove(resource);
         foreach (State snapshot in _signalStates.Values)
         {
             snapshot.Buffers.Remove(resource);
+            snapshot.ReadyImages.Remove(resource);
             foreach ((object Resource, uint Mip, uint Layer) key in snapshot.Textures.Keys.Where(key => ReferenceEquals(key.Resource, resource)).ToArray())
             {
                 snapshot.Textures.Remove(key);
@@ -150,7 +154,7 @@ public sealed class GraphicsValidation
                 throw new InvalidOperationException("Validation: use after release.");
             }
         }
-        while (uses.Add(resource) && _parents.TryGetValue(resource, out resource!));
+        while (AddUse(command, uses, resource) && _parents.TryGetValue(resource, out resource!));
     }
 
     /// <summary>Retains registration identities for submission-time revalidation.</summary>
@@ -164,7 +168,10 @@ public sealed class GraphicsValidation
             _references.Add(command, references = []);
         }
 
-        references.Add(reference);
+        if (references.Add(reference) && _recordings.TryGetValue(command, out RecordingState? recording) && recording.Depth != 0)
+        {
+            recording.Value.Undo.Add(() => references.Remove(reference));
+        }
     }
 
     /// <summary>Rejects mapping while recorded or submitted GPU users remain.</summary>
@@ -273,9 +280,10 @@ public sealed class GraphicsValidation
         }
 
         State state = _global.Copy();
+        var visibility = new Dictionary<object, PipelineStage>(ReferenceEqualityComparer.Instance);
         foreach (SemaphoreWaitDesc wait in desc.WaitSemaphores)
         {
-            ApplySemaphoreWait(state, wait);
+            ApplySemaphoreWait(state, wait, visibility);
         }
 
         var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
@@ -298,7 +306,7 @@ public sealed class GraphicsValidation
             {
                 foreach (Operation operation in operations)
                 {
-                    if (operation.Range != null && operation.Resource != null && _acquisitions.TryGetValue(operation.Resource, out (object Operation, IGraphicsSemaphore? Semaphore) acquisition) && _semaphores.ContainsKey(acquisition.Operation))
+                    if (operation.Range != null && operation.Resource != null && _acquisitions.TryGetValue(operation.Resource, out (object Operation, IGraphicsSemaphore? Semaphore) acquisition) && _semaphores.ContainsKey(acquisition.Operation) && !_global.ReadyImages.Contains(operation.Resource))
                     {
                         SemaphoreWaitDesc? wait = desc.WaitSemaphores.FirstOrDefault(value => ReferenceEquals(value.Semaphore, acquisition.Semaphore));
                         if (acquisition.Semaphore == null || wait == null || (wait.Stages & operation.Scope.Stages) != operation.Scope.Stages)
@@ -320,6 +328,7 @@ public sealed class GraphicsValidation
     public void CommitSubmission(SubmissionState state)
     {
         state.Value.Metadata.Clear();
+        state.Value.Undo.Clear();
         _global = state.Value;
     }
 
@@ -412,6 +421,12 @@ public sealed class GraphicsValidation
     /// <param name="semaphore">The acquisition signal, or null for explicit native completion waiting.</param>
     public void AcquireTexture(object operation, IGraphicsTexture texture, IGraphicsSemaphore? semaphore)
     {
+        _global.ReadyImages.Remove(texture);
+        foreach (State snapshot in _signalStates.Values)
+        {
+            snapshot.ReadyImages.Remove(texture);
+        }
+
         _acquisitions[texture] = (operation, semaphore);
         _ = SemaphoreUses(operation);
     }
@@ -532,7 +547,7 @@ public sealed class GraphicsValidation
                 }
             }
 
-            state.Metadata[source] = operation.Value!;
+            state.Set(state.Metadata, source, operation.Value!);
             return;
         }
 
@@ -540,7 +555,7 @@ public sealed class GraphicsValidation
         {
             foreach (object resource in state.Buffers.Keys.ToArray())
             {
-                state.Buffers[resource] = state.Buffers[resource].Select(previous =>
+                state.Set(state.Buffers, resource, state.Buffers[resource].Select(previous =>
                 {
                     if (previous.Used ? !CoversSource(operation.Before, previous.Scope) : previous.Available == null || (operation.Before.Stages & previous.Available.Value.Stages) == 0)
                     {
@@ -548,8 +563,8 @@ public sealed class GraphicsValidation
                     }
 
                     AccessState next = Transition(new(previous.Scope, previous.Used, previous.Available), operation);
-                    return previous with { Scope = next.Scope, Used = next.Used, Available = next.Available };
-                }).ToList();
+                    return new BufferAccess(previous.Offset, previous.End, next.Scope, next.Used, next.Available);
+                }).ToList());
             }
 
             foreach ((object Resource, uint Mip, uint Layer) key in state.Textures.Keys.ToArray())
@@ -558,7 +573,7 @@ public sealed class GraphicsValidation
                 if (previous.Used ? CoversSource(operation.Before, previous.Scope) : previous.Available != null && (operation.Before.Stages & previous.Available.Value.Stages) != 0)
                 {
                     AccessState next = Transition(new(previous.Scope, previous.Used, previous.Available), operation);
-                    state.Textures[key] = previous with { Scope = next.Scope, Used = next.Used, Available = next.Available };
+                    state.Set(state.Textures, key, new TextureAccessState(previous.State, next.Scope, next.Used, next.Available));
                 }
             }
 
@@ -575,13 +590,13 @@ public sealed class GraphicsValidation
                     bool known = state.Textures.TryGetValue(key, out TextureAccessState? previous);
                     previous ??= new(TextureState.Undefined, default, false);
                     TextureState expected = operation.Barrier ? operation.BeforeState : operation.TextureState;
-                    if ((!recording || known) && previous.State != expected)
+                    if ((!recording || known) && previous.State != expected && !(operation.Barrier && operation.BeforeState == TextureState.Undefined))
                     {
                         throw new InvalidOperationException("Validation: texture Before/use state differs from queue state.");
                     }
 
                     AccessState next = Transition(new(previous.Scope, previous.Used, previous.Available), operation);
-                    state.Textures[key] = new(operation.TextureState, next.Scope, next.Used, next.Available);
+                    state.Set(state.Textures, key, new TextureAccessState(operation.TextureState, next.Scope, next.Used, next.Available));
                 }
             }
 
@@ -590,7 +605,7 @@ public sealed class GraphicsValidation
 
         if (!state.Buffers.TryGetValue(operation.Resource, out List<BufferAccess>? ranges))
         {
-            state.Buffers.Add(operation.Resource, ranges = []);
+            ranges = [];
         }
 
         var nextRanges = new List<BufferAccess>();
@@ -624,7 +639,7 @@ public sealed class GraphicsValidation
             nextRanges.Add(new(points[index], points[index + 1], next.Scope, next.Used, next.Available));
         }
 
-        state.Buffers[operation.Resource] = nextRanges;
+        state.Set(state.Buffers, operation.Resource, nextRanges);
     }
 
     private void ValidateNoHostWrites(object resource)
@@ -648,6 +663,31 @@ public sealed class GraphicsValidation
         }
     }
 
+    private bool AddUse(object command, HashSet<object> uses, object resource)
+    {
+        if (!uses.Add(resource))
+        {
+            return false;
+        }
+
+        if (_recordings.TryGetValue(command, out RecordingState? recording) && recording.Depth != 0)
+        {
+            recording.Value.Undo.Add(() => uses.Remove(resource));
+        }
+
+        return true;
+    }
+
+    private RecordingState Recording(object command)
+    {
+        if (!_recordings.TryGetValue(command, out RecordingState? recording))
+        {
+            _recordings.Add(command, recording = new());
+        }
+
+        return recording;
+    }
+
     private void Record(object command, Operation operation)
     {
         if (!_commands.TryGetValue(command, out List<Operation>? operations))
@@ -655,26 +695,50 @@ public sealed class GraphicsValidation
             _commands.Add(command, operations = []);
         }
 
-        var local = new State();
-        foreach (Operation previous in operations)
+        // Keep the local state between calls. Only changed buckets enter the undo
+        // journal; neither the operation tape nor growing metadata maps are copied.
+        RecordingState recording = Recording(command);
+        State local = recording.Value;
+        int checkpoint = local.Undo.Count;
+        try
         {
-            Apply(local, previous, true);
-        }
+            Apply(local, operation, true);
+            if (operation.Resource != null)
+            {
+                Use(command, operation.Resource);
+            }
 
-        Apply(local, operation, true);
-        if (operation.Resource != null)
+            operations.Add(operation);
+        }
+        catch
         {
-            Use(command, operation.Resource);
+            local.Rollback(checkpoint);
+            throw;
         }
-
-        operations.Add(operation);
+        finally
+        {
+            if (recording.Depth == 0)
+            {
+                local.Undo.Clear();
+            }
+        }
     }
 
-    private void ApplySemaphoreWait(State state, SemaphoreWaitDesc wait)
+    private void ApplySemaphoreWait(State state, SemaphoreWaitDesc wait, Dictionary<object, PipelineStage> visibility)
     {
         if (!_signals.Contains(wait.Semaphore))
         {
             throw new InvalidOperationException("Validation: semaphore wait has no preceding signal.");
+        }
+
+        // Readiness is separate from the native acquisition fence/lease lifetime.
+        // This private state is published only after successful native submission.
+        foreach ((object texture, (object Operation, IGraphicsSemaphore? Semaphore) acquisition) in _acquisitions)
+        {
+            if (ReferenceEquals(acquisition.Semaphore, wait.Semaphore))
+            {
+                state.ReadyImages.Add(texture);
+            }
         }
 
         if (!_signalStates.TryGetValue(wait.Semaphore, out State? signal))
@@ -683,20 +747,40 @@ public sealed class GraphicsValidation
         }
 
         const ResourceAccess DeviceAccess = ResourceAccess.CopyRead | ResourceAccess.CopyWrite | ResourceAccess.IndexRead | ResourceAccess.IndirectRead | ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite | ResourceAccess.ColorRead | ResourceAccess.ColorWrite | ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite;
-        var destination = new BarrierScope(wait.Stages, DeviceAccess);
+
+        // Wait transformations preserve producer identity, while destination stages
+        // accumulate independently of semaphore order. New accesses get new identity.
+        BarrierScope Destination(object provenance)
+        {
+            visibility.TryGetValue(provenance, out PipelineStage stages);
+            stages |= wait.Stages;
+            visibility[provenance] = stages;
+            return new(stages, DeviceAccess);
+        }
+
         foreach ((object resource, List<BufferAccess> ranges) in state.Buffers.ToArray())
         {
             if (signal.Buffers.TryGetValue(resource, out List<BufferAccess>? produced))
             {
-                state.Buffers[resource] = ranges.Select(access => produced.Any(value => ReferenceEquals(value, access)) ? access with { Scope = destination, Used = false, Available = destination } : access).ToList();
+                state.Buffers[resource] = ranges.Select(access =>
+                {
+                    if (!produced.Any(value => ReferenceEquals(value.Provenance, access.Provenance)))
+                    {
+                        return access;
+                    }
+
+                    BarrierScope destination = Destination(access.Provenance);
+                    return access with { Scope = destination, Used = false, Available = destination };
+                }).ToList();
             }
         }
 
         foreach ((object Resource, uint Mip, uint Layer) key in state.Textures.Keys.ToArray())
         {
             TextureAccessState access = state.Textures[key];
-            if (signal.Textures.TryGetValue(key, out TextureAccessState? produced) && ReferenceEquals(produced, access))
+            if (signal.Textures.TryGetValue(key, out TextureAccessState? produced) && ReferenceEquals(produced.Provenance, access.Provenance))
             {
+                BarrierScope destination = Destination(access.Provenance);
                 state.Textures[key] = access with { Scope = destination, Used = false, Available = destination };
             }
         }
@@ -716,6 +800,7 @@ public sealed class GraphicsValidation
     {
         _uses.Remove(command);
         _commands.Remove(command);
+        _recordings.Remove(command);
         _references.Remove(command);
     }
 
@@ -758,45 +843,46 @@ public sealed class GraphicsValidation
     {
         private readonly GraphicsValidation _owner;
         private readonly object _command;
-        private readonly List<Operation>? _operations;
-        private readonly HashSet<object>? _uses;
-        private readonly HashSet<IValidatedShaderReference>? _references;
+        private readonly RecordingState _recording;
+        private readonly int _operationCount;
+        private readonly int _checkpoint;
         private bool _committed;
+        private bool _disposed;
 
         internal RecordingTransaction(GraphicsValidation owner, object command)
         {
             _owner = owner;
             _command = command;
-            _operations = owner._commands.TryGetValue(command, out List<Operation>? operations) ? new(operations) : null;
-            _uses = owner._uses.TryGetValue(command, out HashSet<object>? uses) ? new(uses, ReferenceEqualityComparer.Instance) : null;
-            _references = owner._references.TryGetValue(command, out HashSet<IValidatedShaderReference>? references) ? new(references) : null;
+            _recording = owner.Recording(command);
+            _recording.Depth++;
+            _operationCount = owner._commands.TryGetValue(command, out List<Operation>? operations) ? operations.Count : 0;
+            _checkpoint = _recording.Value.Undo.Count;
         }
 
         /// <summary>Accepts diagnostics after native recording succeeds.</summary>
         public void Commit() => _committed = true;
 
-        /// <summary>Restores pre-call diagnostics on failed recording.</summary>
+        /// <summary>Restores only changed buckets and dependencies on failed recording.</summary>
         public void Dispose()
         {
-            if (_committed)
+            if (_disposed)
             {
                 return;
             }
 
-            _owner.Clear(_command);
-            if (_operations != null)
+            _disposed = true;
+            if (!_committed)
             {
-                _owner._commands.Add(_command, _operations);
+                _recording.Value.Rollback(_checkpoint);
+                if (_owner._commands.TryGetValue(_command, out List<Operation>? operations))
+                {
+                    operations.RemoveRange(_operationCount, operations.Count - _operationCount);
+                }
             }
 
-            if (_uses != null)
+            if (--_recording.Depth == 0)
             {
-                _owner._uses.Add(_command, _uses);
-            }
-
-            if (_references != null)
-            {
-                _owner._references.Add(_command, _references);
+                _recording.Value.Undo.Clear();
             }
         }
     }
@@ -812,9 +898,15 @@ public sealed class GraphicsValidation
         internal State Value { get; }
     }
 
-    internal sealed record BufferAccess(ulong Offset, ulong End, BarrierScope Scope, bool Used, BarrierScope? Available = null);
+    internal sealed record BufferAccess(ulong Offset, ulong End, BarrierScope Scope, bool Used, BarrierScope? Available = null)
+    {
+        internal object Provenance { get; } = new();
+    }
 
-    internal sealed record TextureAccessState(TextureState State, BarrierScope Scope, bool Used, BarrierScope? Available = null);
+    internal sealed record TextureAccessState(TextureState State, BarrierScope Scope, bool Used, BarrierScope? Available = null)
+    {
+        internal object Provenance { get; } = new();
+    }
 
     internal sealed class State
     {
@@ -824,9 +916,42 @@ public sealed class GraphicsValidation
 
         internal Dictionary<(object Resource, uint Mip, uint Layer), TextureAccessState> Textures { get; } = [];
 
+        internal HashSet<object> ReadyImages { get; } = new(ReferenceEqualityComparer.Instance);
+
+        internal List<Action> Undo { get; } = [];
+
+        internal void Rollback(int checkpoint)
+        {
+            for (int index = Undo.Count - 1; index >= checkpoint; index--)
+            {
+                Undo[index]();
+            }
+
+            Undo.RemoveRange(checkpoint, Undo.Count - checkpoint);
+        }
+
+        internal void Set<TKey, TValue>(Dictionary<TKey, TValue> dictionary, TKey key, TValue value)
+            where TKey : notnull
+        {
+            bool existed = dictionary.TryGetValue(key, out TValue? previous);
+            Undo.Add(() =>
+            {
+                if (existed)
+                {
+                    dictionary[key] = previous!;
+                }
+                else
+                {
+                    dictionary.Remove(key);
+                }
+            });
+            dictionary[key] = value;
+        }
+
         internal State Copy()
         {
             var result = new State();
+            result.ReadyImages.UnionWith(ReadyImages);
             foreach ((object resource, List<BufferAccess> accesses) in Buffers)
             {
                 result.Buffers.Add(resource, new(accesses));
@@ -844,6 +969,13 @@ public sealed class GraphicsValidation
 
             return result;
         }
+    }
+
+    private sealed class RecordingState
+    {
+        internal State Value { get; } = new();
+
+        internal int Depth { get; set; }
     }
 
     private sealed record Operation(object? Resource, ulong Offset, ulong End, BarrierScope Scope, BarrierScope Before, bool Barrier, TextureSubresourceRange? Range, TextureState TextureState, TextureState BeforeState = default, bool Host = false, IShaderDataSource? MetadataSource = null, IShaderReferenceMetadata? Value = null, bool MetadataWrite = false);

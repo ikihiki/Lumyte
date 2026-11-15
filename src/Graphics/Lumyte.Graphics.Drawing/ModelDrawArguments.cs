@@ -3,7 +3,8 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing;
 
-/// <summary>Defines lighting, transforms and texture references for model drawing.</summary>
+/// <summary>Defines buffer-resident lighting, transforms and texture references for model drawing.</summary>
+/// <remarks>Explicitly upload these values to a shader data buffer and select the draw using <see cref="ModelDrawRoot"/>; this large structure is not a native root.</remarks>
 public partial record struct ModelDrawArguments : IShaderArguments
 {
     private TransferData _data;

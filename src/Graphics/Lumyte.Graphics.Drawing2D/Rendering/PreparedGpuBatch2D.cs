@@ -179,11 +179,19 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
                 fits = FitsSharedStorage(instructionCount, dataCount, probe.ShaderElementStrideInBytes, context.Device.Caps.MaxBufferSize);
             }
 
-            if (!fits)
+            if (!fits || !batch.FitsSharedTable())
             {
                 batch.Dispose();
                 context.ArgumentPlan.Rollback(checkpoint);
                 return await PreparedIndividualGpuBatch2D.PrepareAsync(context, commands, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Aggregate shader-data metadata belongs to one native table, even when
+            // individual instruction ranges are bound by different draws.
+            var shared = new SharedInstructionResources(batch._commands[0].Reservation);
+            foreach (PreparedCommand command in batch._commands.Skip(1))
+            {
+                shared.KeepTable(command.Reservation);
             }
 
             batch.AllocateStorage();
@@ -257,6 +265,24 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         plan.Fallback(reservation, reference => preparedCommand.ResolvedFallback = reference);
         _commands.Add(preparedCommand);
         _estimatedBytes = checked(_estimatedBytes + ((long)program.Instructions.Count * 256) + ((long)program.Data.Count * 32) + 65536);
+    }
+
+    private bool FitsSharedTable()
+    {
+        ArgumentTableBindingLimits limits = _context.Device.Caps.ArgumentTableBindingLimits;
+
+        // Include defaults; counting duplicate defaults conservatively may choose the
+        // existing individual route, but never admits a cross-table shared payload.
+        uint textures = checked((uint)_commands.SelectMany(command => command.Program.Views).Distinct(ReferenceEqualityComparer.Instance).Count() + 1);
+        uint samplers = checked((uint)_commands.SelectMany(command => command.Program.Samplers).Append(_sampler).Distinct(ReferenceEqualityComparer.Instance).Count());
+        uint buffers = checked((uint)_commands.Count * 2);
+        uint textureBindings = Math.Max(textures, limits.MinimumTextureBindings);
+        uint samplerBindings = Math.Max(samplers, limits.MinimumSamplerBindings);
+        ulong combined = ((ulong)textureBindings * limits.TextureBindingWeight) + ((ulong)samplerBindings * limits.SamplerBindingWeight)
+            + ((ulong)buffers * limits.BufferBindingWeight) + limits.ReservedBindings + limits.ColorAttachmentBindingWeight;
+        return textures <= limits.TextureSlots && samplers <= limits.SamplerSlots && buffers <= limits.BufferSlots
+            && textureBindings <= limits.TexturesPerDraw && samplerBindings <= limits.SamplersPerDraw
+            && buffers <= limits.BuffersPerDraw && combined <= limits.CombinedBindings;
     }
 
     private void AllocateStorage()
@@ -347,23 +373,30 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
                 throw new InvalidOperationException("Prepare staging maps before synchronous payload finalization.");
             }
 
-            ulong instructionOffset = 0;
+            // One opaque batch belongs to one graph pass: all scopes are live or culled together.
+            // Reference metadata starts unknown and requires one complete semantic write, not
+            // per-program partial initialization. Allocate only the actual instruction count.
+            if (!_commands[0].Reservation.IsReady)
+            {
+                profile?.Success();
+                return;
+            }
+
+            var instructions = new DrawingInstruction[checked((int)_upload.Count)];
+            int instructionOffset = 0;
             ulong dataOffset = 0;
             foreach (PreparedCommand command in _commands)
             {
-                // One opaque batch belongs to one graph pass, so all its command scopes are live or culled together.
-                if (command.Reservation.IsReady)
-                {
-                    command.Program.ResolveReferences(command.Fallback, command.Sampler);
-                    _upload.CopyFrom(CollectionsMarshal.AsSpan(command.Program.Instructions), instructionOffset);
-                    copied += (long)((ulong)command.Program.Instructions.Count * _upload.ShaderElementStrideInBytes);
-                    _data.SliceElements(dataOffset, (ulong)command.Program.Data.Count).CopyFrom(CollectionsMarshal.AsSpan(command.Program.Data));
-                    copied += (long)command.Program.Data.Count * 16;
-                }
-
-                instructionOffset += (ulong)command.Program.Instructions.Count;
+                command.Program.ResolveReferences(command.Fallback, command.Sampler);
+                CollectionsMarshal.AsSpan(command.Program.Instructions).CopyTo(instructions.AsSpan(instructionOffset));
+                _data.SliceElements(dataOffset, (ulong)command.Program.Data.Count).CopyFrom(CollectionsMarshal.AsSpan(command.Program.Data));
+                copied += (long)command.Program.Data.Count * 16;
+                instructionOffset += command.Program.Instructions.Count;
                 dataOffset += (ulong)command.Program.Data.Count;
             }
+
+            _upload.CopyFrom(instructions);
+            copied += (long)(_upload.Count * _upload.ShaderElementStrideInBytes);
 
             profile?.Success();
         }
@@ -424,6 +457,11 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
     {
         _owned.Add(resource);
         return resource;
+    }
+
+    private sealed class SharedInstructionResources(ShaderResources resources) : ShaderResources(resources)
+    {
+        internal void KeepTable(ShaderResources other) => JoinTable(other);
     }
 
     private sealed record PreparedCommand(DrawingProgram2D Program, ShaderResources Reservation, uint Root, ScissorRect Scissor)

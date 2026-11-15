@@ -56,7 +56,11 @@ struct ModelDrawArguments
     GpuTextureRef EmissiveTexture;
     GpuSamplerRef EmissiveSampler;
 };
-ConstantBuffer<ModelDrawArguments> arguments;
+struct ModelDrawRoot
+{
+    GpuBufferRef<ModelDrawArguments> Draw;
+};
+ConstantBuffer<ModelDrawRoot> arguments;
 
 float3 SafeNormalize(float3 value)
 {
@@ -76,31 +80,32 @@ float4 main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
     float4 tangent : TEXCOORD2, float2 uv : TEXCOORD3,
     float4 color : COLOR0, bool front : SV_IsFrontFace) : SV_Target0
 {
-    float2 baseUv = TransformUv(uv, arguments.Material.BaseColorUv);
-    float2 mrUv = TransformUv(uv, arguments.Material.MetallicRoughnessUv);
-    float2 normalUv = TransformUv(uv, arguments.Material.NormalUv);
-    float2 aoUv = TransformUv(uv, arguments.Material.OcclusionUv);
-    float2 emissiveUv = TransformUv(uv, arguments.Material.EmissiveUv);
+    ModelDrawArguments draw = arguments.Draw.Load(0);
+    float2 baseUv = TransformUv(uv, draw.Material.BaseColorUv);
+    float2 mrUv = TransformUv(uv, draw.Material.MetallicRoughnessUv);
+    float2 normalUv = TransformUv(uv, draw.Material.NormalUv);
+    float2 aoUv = TransformUv(uv, draw.Material.OcclusionUv);
+    float2 emissiveUv = TransformUv(uv, draw.Material.EmissiveUv);
     float2 baseDx = ddx(baseUv), baseDy = ddy(baseUv);
     float2 mrDx = ddx(mrUv), mrDy = ddy(mrUv);
     float2 normalDx = ddx(normalUv), normalDy = ddy(normalUv);
     float2 aoDx = ddx(aoUv), aoDy = ddy(aoUv);
     float2 emissiveDx = ddx(emissiveUv), emissiveDy = ddy(emissiveUv);
     float3 positionDx = ddx(position), positionDy = ddy(position);
-    float4 base = arguments.Material.BaseColor * color *
-        LumyteSampleGrad(arguments.BaseColorTexture, arguments.BaseColorSampler, baseUv, baseDx, baseDy);
-    if (arguments.Material.AlphaMode == 1 && base.a < arguments.Material.AlphaCutoff)
+    float4 base = draw.Material.BaseColor * color *
+        LumyteSampleGrad(draw.BaseColorTexture, draw.BaseColorSampler, baseUv, baseDx, baseDy);
+    if (draw.Material.AlphaMode == 1 && base.a < draw.Material.AlphaCutoff)
     {
         discard;
     }
     float3 result = base.rgb;
-    if (arguments.Material.Unlit == 0)
+    if (draw.Material.Unlit == 0)
     {
         float3 n = SafeNormalize(normal);
         float3 t = SafeNormalize(tangent.xyz - n * dot(n, tangent.xyz));
         float3 b = cross(n, t) * tangent.w;
         // Rebuild the tangent frame when the normal texture changes its UV axes.
-        if (any(arguments.Material.NormalUv.Scale != float2(1)) || arguments.Material.NormalUv.Rotation != 0)
+        if (any(draw.Material.NormalUv.Scale != float2(1)) || draw.Material.NormalUv.Rotation != 0)
         {
             // Normalize the Jacobian before testing degeneracy so viewport size and uniform UV scale cancel.
             float gradientScale = max(max(abs(normalDx.x), abs(normalDx.y)), max(abs(normalDy.x), abs(normalDy.y)));
@@ -115,16 +120,16 @@ float4 main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
                 b = cross(n, t) * (dot(cross(n, t), uvBitangent) < 0 ? -1 : 1);
             }
         }
-        float3 mapped = LumyteSampleGrad(arguments.NormalTexture, arguments.NormalSampler, normalUv, normalDx, normalDy).xyz * 2 - 1;
-        mapped.xy *= arguments.Material.NormalScale;
+        float3 mapped = LumyteSampleGrad(draw.NormalTexture, draw.NormalSampler, normalUv, normalDx, normalDy).xyz * 2 - 1;
+        mapped.xy *= draw.Material.NormalScale;
         n = SafeNormalize(t * mapped.x + b * mapped.y + n * mapped.z);
         n *= front ? 1 : -1;
-        float3 v = SafeNormalize(arguments.CameraPosition - position);
-        float3 l = SafeNormalize(arguments.LightDirection);
+        float3 v = SafeNormalize(draw.CameraPosition - position);
+        float3 l = SafeNormalize(draw.LightDirection);
         float3 h = SafeNormalize(l + v);
-        float4 mr = LumyteSampleGrad(arguments.MetallicRoughnessTexture, arguments.MetallicRoughnessSampler, mrUv, mrDx, mrDy);
-        float metallic = saturate(arguments.Material.Metallic * mr.b);
-        float roughness = clamp(arguments.Material.Roughness * mr.g, 0.045, 1);
+        float4 mr = LumyteSampleGrad(draw.MetallicRoughnessTexture, draw.MetallicRoughnessSampler, mrUv, mrDx, mrDy);
+        float metallic = saturate(draw.Material.Metallic * mr.b);
+        float roughness = clamp(draw.Material.Roughness * mr.g, 0.045, 1);
         float nl = saturate(dot(n, l));
         float nv = max(saturate(dot(n, v)), 1e-4);
         float nh = saturate(dot(n, h));
@@ -139,14 +144,14 @@ float4 main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
         float3 f0 = lerp(float3(0.04), base.rgb, metallic);
         float3 fresnel = f0 + (1 - f0) * pow(1 - vh, 5);
         float3 diffuse = (1 - fresnel) * (1 - metallic) * base.rgb / 3.14159265;
-        float occlusion = lerp(1, LumyteSampleGrad(arguments.OcclusionTexture, arguments.OcclusionSampler, aoUv, aoDx, aoDy).r,
-            arguments.Material.OcclusionStrength);
-        float3 emissive = arguments.Material.Emissive * arguments.Material.EmissiveStrength *
-            LumyteSampleGrad(arguments.EmissiveTexture, arguments.EmissiveSampler, emissiveUv, emissiveDx, emissiveDy).rgb;
-        result = (diffuse + distribution * visibility * fresnel) * arguments.LightColor * nl +
-            base.rgb * (1 - metallic) * arguments.AmbientColor * occlusion + emissive;
+        float occlusion = lerp(1, LumyteSampleGrad(draw.OcclusionTexture, draw.OcclusionSampler, aoUv, aoDx, aoDy).r,
+            draw.Material.OcclusionStrength);
+        float3 emissive = draw.Material.Emissive * draw.Material.EmissiveStrength *
+            LumyteSampleGrad(draw.EmissiveTexture, draw.EmissiveSampler, emissiveUv, emissiveDx, emissiveDy).rgb;
+        result = (diffuse + distribution * visibility * fresnel) * draw.LightColor * nl +
+            base.rgb * (1 - metallic) * draw.AmbientColor * occlusion + emissive;
     }
-    float fog = 1 - exp(-max(arguments.FogDensity, 0) * length(arguments.CameraPosition - position));
-    result = lerp(result, arguments.FogColor, saturate(fog));
-    return float4(result, arguments.Material.AlphaMode == 2 ? base.a : 1);
+    float fog = 1 - exp(-max(draw.FogDensity, 0) * length(draw.CameraPosition - position));
+    result = lerp(result, draw.FogColor, saturate(fog));
+    return float4(result, draw.Material.AlphaMode == 2 ? base.a : 1);
 }

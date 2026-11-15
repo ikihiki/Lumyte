@@ -269,10 +269,10 @@ public sealed class GraphArgumentOwnershipTests
         commands.Dispose();
     }
 
-    /// <summary>Ordinary drawing and real image-effect scopes share the graph allocator when limits permit.</summary>
+    /// <summary>Ordinary drawing and real effects use one graph allocator but isolate sampled attachments.</summary>
     /// <returns>The asynchronous test completion.</returns>
     [Fact]
-    public async Task OrdinaryAndEffectPassesShareGraphOwnedTableAsync()
+    public async Task OrdinaryAndEffectAttachmentsUseIsolatedGraphOwnedTablesAsync()
     {
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
@@ -295,19 +295,16 @@ public sealed class GraphArgumentOwnershipTests
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
         Assert.Contains("image-effect", compiled.PassNames);
-        Assert.Single(device.Tables);
-        IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
-        Assert.True(commands.Events.OfType<DrawingArguments>().Count() >= 2);
-        Assert.All(commands.Events.OfType<DrawingArguments>(), root =>
-        {
-            Assert.Same(table, ProfilingDevice.Owner(root.Instructions));
-            Assert.Same(table, ProfilingDevice.Owner(root.Data));
-        });
+        Assert.Equal(4, device.Tables.Count);
+        Assert.Equal(new uint[] { 1, 1, 1, 2 }, device.Tables.Select(table => table.TextureCapacity));
+        Assert.Equal(new uint[] { 2, 2, 0, 2 }, device.Tables.Select(table => table.BufferCapacity));
+        Assert.Equal(4, commands.Events.OfType<IArgumentTable>().Distinct().Count());
+        DrawingArguments[] roots = commands.Events.OfType<DrawingArguments>().ToArray();
+        Assert.Equal(3, roots.Length);
+        Assert.Equal(3, roots.Select(root => ProfilingDevice.Owner(root.Instructions)).Distinct().Count());
+        Assert.All(roots, root => Assert.Same(ProfilingDevice.Owner(root.Instructions), ProfilingDevice.Owner(root.Data)));
         Assert.All(device.Instructions, instruction =>
-        {
-            Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
-            Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
-        });
+            Assert.Same(ProfilingDevice.Owner(instruction.Texture), ProfilingDevice.Owner(instruction.Sampler)));
         commands.Dispose();
         compiled.Dispose();
         prepared.Dispose();

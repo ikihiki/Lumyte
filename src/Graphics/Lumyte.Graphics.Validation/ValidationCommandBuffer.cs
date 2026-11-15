@@ -147,7 +147,7 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
 
         if (desc.DepthStencilAttachment is { } d)
         {
-            Attachment(d.View, TextureState.DepthStencilAttachment, PipelineStage.DepthStencil, ResourceAccess.DepthStencilWrite | ((d.DepthLoadOp == AttachmentLoadOp.Load || d.StencilLoadOp == AttachmentLoadOp.Load) ? ResourceAccess.DepthStencilRead : ResourceAccess.None));
+            Attachment(d.View, TextureState.DepthStencilAttachment, PipelineStage.DepthStencil, ResourceAccess.DepthStencilWrite | ((d.DepthLoadOp == AttachmentLoadOp.Load || (d.View.Info.Format == TextureFormat.Depth24Stencil8 && d.StencilLoadOp == AttachmentLoadOp.Load)) ? ResourceAccess.DepthStencilRead : ResourceAccess.None));
         }
 
         var encoder = new ValidationRenderEncoder(this, Raw.BeginRenderPass(native));

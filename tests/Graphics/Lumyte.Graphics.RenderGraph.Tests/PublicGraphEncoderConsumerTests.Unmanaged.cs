@@ -12,6 +12,8 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void OrdinaryUnmanagedGraphRootNeedsNoCodec()
     {
+        // This validation-enabled fixture explicitly opts into ordinary field diagnostics.
+        ShaderTransfer.ReflectFields(typeof(PlainInputs));
         using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var pipeline = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute));
         graph.AddPass("plain numeric", context =>

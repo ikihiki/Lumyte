@@ -105,6 +105,7 @@ public sealed partial class Drawing2DTests
         prepared.Record(commands);
         commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = attachment, After = _copyRead });
         PartitionCopy(commands, target, readback, pitch);
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
 
         // Native queues accept the original native recording, never the observer wrapper.
@@ -169,18 +170,21 @@ public sealed partial class Drawing2DTests
             // Submit publishes shader-data transfer metadata; inspect before prepared/plan disposal.
             commands.AssertOwners(device.Tables, views);
             AssertPartitionDescriptions(device, graph: true);
-            Assert.Equal(4, commands.Roots.Select(root => root.Table).Distinct().Count());
+            Assert.Equal(7, commands.Roots.Select(root => root.Table).Distinct().Count());
 
-            // The final image, real effect and layer compositor fit the SAME last partition.
+            // Attachment producers, the effect and its compositor use isolated tables.
+            // Image draws still partition together within their opaque drawing pass.
             Assert.Equal(13, commands.Roots.Count);
             Assert.Same(device.Tables[0].Table, commands.Roots[0].Table);
             for (int x = 0; x < 10; x++)
             {
-                Assert.Same(device.Tables[x / 3].Table, commands.Roots[x + 1].Table);
+                Assert.Same(device.Tables[1 + (x / 3)].Table, commands.Roots[x + 1].Table);
             }
 
-            Assert.Same(commands.Roots[^3].Table, commands.Roots[^2].Table);
-            Assert.Same(commands.Roots[^2].Table, commands.Roots[^1].Table);
+            Assert.Same(device.Tables[5].Table, commands.Roots[^2].Table);
+            Assert.Same(device.Tables[6].Table, commands.Roots[^1].Table);
+            Assert.NotSame(commands.Roots[^3].Table, commands.Roots[^2].Table);
+            Assert.NotSame(commands.Roots[^2].Table, commands.Roots[^1].Table);
             await submission.WaitAsync();
             await AssertPartitionPixelsAsync(plan.GetBuffer(result), pitch, graph: true);
         }
@@ -192,15 +196,14 @@ public sealed partial class Drawing2DTests
 
     private static void AssertPartitionDescriptions(PartitionDevice device, bool graph)
     {
-        // Fallback + three distinct caller views; the last direct partition has only one view.
+        // Fallback + three distinct caller views; the last image partition has only one view.
+        // Graph attachment producers, effect sampling and composition cannot share tables.
+        Assert.Equal(graph ? 7 : 4, device.Tables.Count); // Native tables, NOT one count per resource kind.
+        Assert.Equal(graph ? new uint[] { 0, 4, 4, 4, 2, 1, 2 } : new uint[] { 4, 4, 4, 2 }, device.Tables.Select(item => item.Desc.TextureCapacity));
+        Assert.Equal(graph ? new uint[] { 0, 1, 1, 1, 1, 1, 1 } : new uint[] { 1, 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
 
-        // In the graph, the layer source and effect output fill its two remaining slots.
-        Assert.Equal(4, device.Tables.Count); // Native tables, NOT one count per resource kind.
-        Assert.Equal(new uint[] { 4, 4, 4, graph ? 4u : 2u }, device.Tables.Select(item => item.Desc.TextureCapacity));
-        Assert.Equal(new uint[] { 1, 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
-
-        // Two exact ranges per image; graph adds one rectangle range and two compositor ranges.
-        Assert.Equal(graph ? new uint[] { 7, 6, 6, 4 } : new uint[] { 6, 6, 6, 2 }, device.Tables.Select(item => item.Desc.BufferCapacity));
+        // Two exact ranges per image; graph adds isolated rectangle and compositor ranges.
+        Assert.Equal(graph ? new uint[] { 1, 6, 6, 6, 2, 0, 2 } : new uint[] { 6, 6, 6, 2 }, device.Tables.Select(item => item.Desc.BufferCapacity));
     }
 
     private static uint PartitionPitch(IGraphicDevice device)
@@ -209,11 +212,10 @@ public sealed partial class Drawing2DTests
         return ((80 + alignment - 1) / alignment) * alignment;
     }
 
+    // The caller owns the transition: direct recording emits it explicitly;
+    // graph recording uses ExportBuffer so its tracked final scope stays accurate.
     private static void PartitionCopy(IGraphicsCommandBuffer commands, IGraphicsTexture target, IGraphicsBuffer<byte> readback, uint pitch)
-    {
-        commands.CopyTextureToBuffer(new() { Texture = target, Width = 10, Height = 4 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
-    }
+        => commands.CopyTextureToBuffer(new() { Texture = target, Width = 10, Height = 4 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
 
     private static async Task AssertPartitionPixelsAsync(IGraphicsBuffer<byte> readback, uint pitch, bool graph)
     {

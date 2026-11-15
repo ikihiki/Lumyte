@@ -180,7 +180,8 @@ API void object_release(IUnknown* object) noexcept
     }
 }
 
-API HRESULT buffer_create(Device* device, UINT64 size, int memory, int writable, ID3D12Resource** output, UINT64* gpu_address) noexcept
+API HRESULT buffer_create(Device* device, UINT64 size, int memory, int writable, ID3D12Resource** output,
+                          UINT64* gpu_address) noexcept
 {
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = memory == 1 ? D3D12_HEAP_TYPE_UPLOAD : memory == 2 ? D3D12_HEAP_TYPE_READBACK : D3D12_HEAP_TYPE_DEFAULT;
@@ -198,7 +199,7 @@ API HRESULT buffer_create(Device* device, UINT64 size, int memory, int writable,
                        : memory == 2 ? D3D12_RESOURCE_STATE_COPY_DEST
                                      : D3D12_RESOURCE_STATE_COMMON;
     CHECK(device->device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, nullptr,
-                                                   IID_PPV_ARGS(output)));
+                                                  IID_PPV_ARGS(output)));
     *gpu_address = (*output)->GetGPUVirtualAddress();
     return S_OK;
 }

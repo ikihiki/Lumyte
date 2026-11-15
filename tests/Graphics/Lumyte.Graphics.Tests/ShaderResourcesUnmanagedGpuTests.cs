@@ -31,6 +31,12 @@ public sealed class ShaderResourcesUnmanagedGpuTests
         float4 main() : SV_Target { return arguments.Color; }
         """;
 
+    static ShaderResourcesUnmanagedGpuTests()
+    {
+        ShaderTransfer.ReflectFields(typeof(HelperColorRoot));
+        ShaderTransfer.ReflectFields(typeof(UniformColorRoot));
+    }
+
     /// <summary>Vulkan renders an ordinary unmanaged root with diagnostics disabled and enabled.</summary>
     /// <returns>The completed pixel checks.</returns>
     [GpuFact]

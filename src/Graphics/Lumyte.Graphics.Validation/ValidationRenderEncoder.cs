@@ -156,7 +156,7 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
     {
         _checks.Check();
         using GraphicsValidation.RecordingTransaction tx = _owner.Device.Tracker.BeginRecording(_owner);
-        PrepareExecution();
+        PrepareExecution(vertexCount != 0 && instanceCount != 0);
         _raw.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
         tx.Commit();
     }
@@ -165,8 +165,9 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
     {
         _checks.Check();
         using GraphicsValidation.RecordingTransaction tx = _owner.Device.Tracker.BeginRecording(_owner);
-        PrepareExecution();
-        IndexAccess(firstIndex, indexCount);
+        bool executes = indexCount != 0 && instanceCount != 0;
+        PrepareExecution(executes);
+        IndexAccess(firstIndex, indexCount, executes);
         _raw.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
         tx.Commit();
     }
@@ -196,7 +197,7 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
 
     private ShaderDataLayout Diagnostic(string root) => ValidationEncoderChecks.RenderRoot(_owner.Device, _pipeline!, root);
 
-    private void PrepareExecution()
+    private void PrepareExecution(bool executes = true)
     {
         _checks.Check();
         if (_pipeline == null)
@@ -205,14 +206,14 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
         }
 
         bool required = ShaderDataLayout.HasRoot(ValidationEncoderChecks.Target(_owner.Device, _pipeline.Desc.VertexShader)) || (_pipeline.Desc.FragmentShader is { } fragment && ShaderDataLayout.HasRoot(ValidationEncoderChecks.Target(_owner.Device, fragment)));
-        _checks.Execute(required, required ? ValidationEncoderChecks.RenderStages(_owner.Device, _pipeline, _rootParameter) : PipelineStage.None);
+        _checks.Execute(required, required ? ValidationEncoderChecks.RenderStages(_owner.Device, _pipeline, _rootParameter) : PipelineStage.None, executes);
     }
 
     private void Indirect<T>(BufferSlice<T> arguments)
         where T : unmanaged
         => _owner.Device.Tracker.Access(_owner, arguments.Buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
 
-    private void IndexAccess(uint firstIndex, uint? count)
+    private void IndexAccess(uint firstIndex, uint? count, bool executes = true)
     {
         if (_indexBuffer == null)
         {
@@ -224,6 +225,11 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
         if (offset > _indexSize || size > _indexSize - offset)
         {
             throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
+        if (!executes)
+        {
+            return;
         }
 
         _owner.Device.Tracker.Access(_owner, _indexBuffer, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), checked(_indexOffset + offset), size);

@@ -190,25 +190,17 @@ public sealed class OptionalLayoutCostTests
         Assert.Same(ShaderTransfer.Fields<TypeOnlyArguments>(), snapshot.GetDiagnosticFields());
     }
 
-    /// <summary>Handwritten unmanaged arguments with default metadata retain JIT raw-field diagnostics.</summary>
+    /// <summary>Missing static metadata is unavailable consistently, not inferred from the outer application layout.</summary>
     [Fact]
-    public void UnmanagedArgumentsWithoutStaticFieldsUseRawFallback()
+    public void UnmanagedArgumentsWithoutStaticFieldsReportUnavailable()
     {
         var value = new NoFieldsArguments { Number = 41 };
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
         AssertStaticProvider(snapshot);
-        if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
-        {
-            ShaderTransferField field = Assert.Single(ShaderTransfer.Fields(in value));
-            Assert.Equal("Number", field.Path);
-            Assert.Equal(0, field.Offset);
-            Assert.Equal(sizeof(uint), field.Size);
-            Assert.Same(ShaderTransfer.Fields(typeof(NoFieldsArguments)), snapshot.GetDiagnosticFields());
-        }
-        else
-        {
-            Assert.Empty(snapshot.GetDiagnosticFields());
-        }
+        Assert.Empty(ShaderTransfer.Fields(in value));
+        Assert.Empty(snapshot.GetDiagnosticFields());
+        Assert.Empty(ShaderTransfer.Fields(typeof(NoFieldsArguments)));
+        Assert.Throws<ArgumentException>(() => ShaderTransfer.ReflectFields(typeof(NoFieldsArguments)));
     }
 
     /// <summary>A managed application wrapper without static wire metadata cannot use outer raw offsets.</summary>

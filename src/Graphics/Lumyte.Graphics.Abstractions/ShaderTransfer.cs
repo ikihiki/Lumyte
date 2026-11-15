@@ -1,6 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Reflection;
-using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -30,12 +30,11 @@ public static class ShaderTransfer
     public static string TypeName<T>()
         where T : unmanaged => TypeName(typeof(T));
 
-    /// <summary>Explicitly gets cached diagnostic C# field metadata in any configuration.</summary>
+    /// <summary>Gets previously initialized diagnostics, or an empty list when metadata is unavailable.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <returns>Diagnostic metadata only; it never determines transferred bytes.</returns>
     public static IReadOnlyList<ShaderTransferField> Fields<T>()
-        where T : unmanaged
-        => Fields(typeof(T));
+        where T : unmanaged => Fields(typeof(T));
 
     /// <summary>Explicitly gets cached diagnostic metadata for a shader argument struct.</summary>
     /// <typeparam name="T">The application shader argument type.</typeparam>
@@ -44,8 +43,8 @@ public static class ShaderTransfer
     public static IReadOnlyList<ShaderTransferField> Fields<T>(in T value)
         where T : struct, IShaderArguments => ArgumentFields<T>();
 
-    /// <summary>Explicitly gets cached CPU diagnostic field metadata for a value type; this never writes GPU data.</summary>
-    /// <remarks>Type-only inspection requires dynamic code. On AOT, use generic argument inspection or captured argument snapshots for static metadata. Raw unmanaged reflection fallback is unavailable on AOT.</remarks>
+    /// <summary>Gets previously initialized CPU diagnostic metadata; an empty list means unavailable.</summary>
+    /// <remarks>Use the constrained argument overload for static wire metadata. Ordinary unmanaged reflection is an explicit opt-in through <see cref="ReflectFields"/> and requires preserved fields. Type-only lookup never constructs a generic method at runtime.</remarks>
     /// <param name="type">The C# value type to inspect.</param>
     /// <returns>Diagnostic metadata only; it never determines transferred bytes.</returns>
     public static IReadOnlyList<ShaderTransferField> Fields(Type type)
@@ -56,7 +55,30 @@ public static class ShaderTransfer
             throw new ArgumentException("Type-based shader diagnostics require a value type.", nameof(type));
         }
 
-        return DiagnosticCache.Fields.GetValue(type, static key => new DiagnosticMetadata(key)).Fields;
+        return DiagnosticCache.Fields.TryGetValue(type, out DiagnosticMetadata? metadata) ? metadata.Fields : [];
+    }
+
+    /// <summary>Explicitly reflects and caches ordinary blittable C# field diagnostics without emitted code.</summary>
+    /// <remarks>This optional inspection requires all recursively inspected fields to be preserved. Managed wrappers, automatic layouts and non-blittable primitive fields are rejected rather than reporting marshalled offsets as managed wire offsets. Argument wire metadata must instead be obtained through the constrained argument overload.</remarks>
+    /// <param name="type">The ordinary blittable value type whose field metadata is preserved.</param>
+    /// <returns>Diagnostic field metadata, unrelated to transfer serialization.</returns>
+    [RequiresUnreferencedCode("Preserve all instance fields of the inspected type and its nested field types, or use static IShaderArguments.TransferFields metadata.")]
+    public static IReadOnlyList<ShaderTransferField> ReflectFields(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        if (!type.IsValueType || typeof(IShaderArguments).IsAssignableFrom(type) || !IsBlittable(type))
+        {
+            throw new ArgumentException("Reflection diagnostics require an ordinary blittable value type with sequential or explicit layout.", nameof(type));
+        }
+
+        if (DiagnosticCache.Fields.TryGetValue(type, out DiagnosticMetadata? metadata))
+        {
+            return metadata.Fields;
+        }
+
+        List<ShaderTransferField> fields = [];
+        Describe(type, string.Empty, 0, fields);
+        return DiagnosticCache.Fields.GetValue(type, _ => new(fields.AsReadOnly())).Fields;
     }
 
     // Capturing this method group does not initialize the diagnostic holder.
@@ -71,32 +93,41 @@ public static class ShaderTransfer
         : type == typeof(Vector4) ? "float4"
         : type == typeof(Matrix4x4) ? "float4x4" : type.Name;
 
+    private static int LeafSize(Type type)
+    {
+        if (type.IsEnum)
+        {
+            return LeafSize(Enum.GetUnderlyingType(type));
+        }
+
+        return type == typeof(byte) || type == typeof(sbyte) ? 1
+            : type == typeof(short) || type == typeof(ushort) || type == typeof(Half) ? 2
+            : type == typeof(int) || type == typeof(uint) || type == typeof(float) ? 4
+            : type == typeof(long) || type == typeof(ulong) || type == typeof(double) || type == typeof(Vector2) ? 8
+            : type == typeof(Vector3) ? 12
+            : type == typeof(Vector4) ? 16
+            : type == typeof(Matrix4x4) ? 64
+            : type == typeof(nint) || type == typeof(nuint) || type.IsPointer ? IntPtr.Size : 0;
+    }
+
+    [RequiresUnreferencedCode("Recursively inspects instance fields of the supplied type.")]
+    private static bool IsBlittable(Type type) => LeafSize(type) != 0
+        || (type.IsValueType && !type.IsPrimitive && !type.IsAutoLayout
+            && type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).All(field => IsBlittable(field.FieldType)));
+
+    [RequiresUnreferencedCode("Recursively inspects instance fields of the supplied type.")]
     private static void Describe(Type type, string prefix, int offset, List<ShaderTransferField> fields)
     {
         foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
         {
             string name = field.Name.StartsWith('<') ? field.Name[1..field.Name.IndexOf('>')] : field.Name;
             string path = prefix + name;
-            var method = new DynamicMethod("ManagedFieldOffset", typeof(int), Type.EmptyTypes, typeof(ShaderTransfer).Module, true);
-            ILGenerator il = method.GetILGenerator();
-            LocalBuilder local = il.DeclareLocal(type);
-            il.Emit(OpCodes.Ldloca, local);
-            il.Emit(OpCodes.Ldflda, field);
-            il.Emit(OpCodes.Conv_I);
-            il.Emit(OpCodes.Ldloca, local);
-            il.Emit(OpCodes.Conv_I);
-            il.Emit(OpCodes.Sub);
-            il.Emit(OpCodes.Conv_I4);
-            il.Emit(OpCodes.Ret);
-            int location = checked(offset + method.CreateDelegate<Func<int>>()());
+            int location = checked(offset + Marshal.OffsetOf(type, field.Name).ToInt32());
             Type member = field.FieldType;
-            if (member.IsPrimitive || member.IsEnum || member == typeof(Half) || member == typeof(Vector2) || member == typeof(Vector3) || member == typeof(Vector4) || member == typeof(Matrix4x4))
+            int size = LeafSize(member);
+            if (size != 0)
             {
-                var size = new DynamicMethod("ManagedSize", typeof(int), Type.EmptyTypes, typeof(ShaderTransfer).Module, true);
-                ILGenerator sizeIl = size.GetILGenerator();
-                sizeIl.Emit(OpCodes.Sizeof, member);
-                sizeIl.Emit(OpCodes.Ret);
-                fields.Add(new(path, location, size.CreateDelegate<Func<int>>()(), member));
+                fields.Add(new(path, location, size, member));
             }
             else
             {
@@ -116,21 +147,9 @@ public static class ShaderTransfer
 
         private static IReadOnlyList<ShaderTransferField> Create()
         {
+            // Static constrained dispatch is available on NativeAOT and browser WASM.
             IReadOnlyList<ShaderTransferField> fields = T.TransferFields;
-            if (fields.Count != 0)
-            {
-                return fields;
-            }
-
-            // Raw outer offsets describe the wire layout only for unmanaged values.
-            if (RuntimeFeature.IsDynamicCodeSupported && !RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-            {
-                List<ShaderTransferField> reflected = [];
-                Describe(typeof(T), string.Empty, 0, reflected);
-                return reflected.AsReadOnly();
-            }
-
-            return fields;
+            return DiagnosticCache.Fields.GetValue(typeof(T), _ => new(fields)).Fields;
         }
     }
 
@@ -144,26 +163,8 @@ public static class ShaderTransfer
         }
     }
 
-    private sealed class DiagnosticMetadata(Type type)
+    private sealed class DiagnosticMetadata(IReadOnlyList<ShaderTransferField> fields)
     {
-        internal IReadOnlyList<ShaderTransferField> Fields { get; } = Create(type);
-
-        private static IReadOnlyList<ShaderTransferField> Create(Type type)
-        {
-            if (!RuntimeFeature.IsDynamicCodeSupported)
-            {
-                return [];
-            }
-
-            if (typeof(IShaderArguments).IsAssignableFrom(type))
-            {
-                MethodInfo method = typeof(ShaderTransfer).GetMethod(nameof(ArgumentFields), BindingFlags.Static | BindingFlags.NonPublic)!;
-                return (IReadOnlyList<ShaderTransferField>)method.MakeGenericMethod(type).Invoke(null, null)!;
-            }
-
-            List<ShaderTransferField> fields = [];
-            Describe(type, string.Empty, 0, fields);
-            return fields.AsReadOnly();
-        }
+        internal IReadOnlyList<ShaderTransferField> Fields { get; } = fields;
     }
 }

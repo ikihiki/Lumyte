@@ -129,7 +129,16 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
             }
 
             _collectingDeclarations = false;
-            _registrations.MaterializeResources(active);
+
+            // Whole-table binding makes even root-unreachable sampled entries active.
+            // Isolate pass groups when a graph attachment is sampled by another pass;
+            // otherwise retain sharing, including cached cross-callback references.
+            var attachments = _uses.Values.SelectMany(uses => uses)
+                .Where(use => use.State is TextureState.ColorAttachment or TextureState.DepthStencilAttachment)
+                .Select(use => Canonical(context.Resolve(use.Resource))).ToHashSet(ReferenceEqualityComparer.Instance);
+            bool attachmentAlias = _uses.Values.SelectMany(uses => uses)
+                .Any(use => use.State == TextureState.Sampled && attachments.Contains(Canonical(context.Resolve(use.Resource))));
+            _registrations.MaterializeResources(active, shareTables: !attachmentAlias);
             if (_allowed is not null)
             {
                 foreach (RenderGraphPass pass in context.LivePasses)

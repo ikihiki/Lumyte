@@ -31,6 +31,8 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     internal List<DrawingInstruction> Instructions { get; } = [];
 
+    internal List<(ulong Count, ulong Offset, int Written)> InstructionUploads { get; } = [];
+
     internal int ActiveTables { get; private set; }
 
     internal int Writes { get; private set; }
@@ -291,6 +293,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0)
         {
+            device.InstructionUploads.Add((Count, elementOffset, source.Length));
             device.Copy(source.Length * 144L);
             foreach (T item in source)
             {

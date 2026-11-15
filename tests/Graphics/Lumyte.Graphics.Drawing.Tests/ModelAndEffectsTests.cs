@@ -15,6 +15,8 @@ public sealed class ModelAndEffectsTests
     [Fact]
     public void ModelAndEffectSchemasPackGeneratedValues()
     {
+        ShaderTransfer.ReflectFields(typeof(ModelVertex));
+        ShaderTransfer.ReflectFields(typeof(ModelMaterial));
         var vertex = new ModelVertex(Vector3.UnitX, Vector3.UnitY, new(1, 0, 0, -1), new(0.25f, 0.5f), Vector4.One);
         ModelMaterial material = ModelDrawing.DefaultMaterial;
         ModelDrawArguments arguments = new ModelDrawArguments(null!, default, default, default, default, default, default, default, default, default, default, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!) with
@@ -43,11 +45,20 @@ public sealed class ModelAndEffectsTests
             Assert.Equal(1, BitConverter.ToSingle(packed, 0));
             var materialLayout = ShaderDataLayout.Data(vs, "ModelMaterial");
             materialLayout.ValidateTransferLayout(Unsafe.SizeOf<ModelMaterial>(), ShaderTransfer.Fields<ModelMaterial>(), "ModelMaterial");
-            var root = ShaderDataLayout.Root(vs, "arguments");
+            var root = ShaderDataLayout.Data(vs, "ModelDrawArguments");
             ShaderValueSnapshot diagnostic = IShaderArguments.Capture(in arguments);
             root.ValidateTransferLayout(diagnostic.Data.Length, diagnostic.GetDiagnosticFields(), diagnostic.ShaderTypeName);
             root.ValidateArguments(diagnostic);
             Assert.Equal(11, diagnostic.Values.Count);
+            var nativeRoot = ShaderDataLayout.Root(vs, "arguments");
+            var rootArguments = new ModelDrawRoot(new TestReference<ModelDrawArguments>());
+            ShaderValueSnapshot rootDiagnostic = IShaderArguments.Capture(in rootArguments);
+            nativeRoot.ValidateTransferLayout(rootDiagnostic.Data.Length, rootDiagnostic.GetDiagnosticFields(), rootDiagnostic.ShaderTypeName);
+            nativeRoot.ValidateArguments(rootDiagnostic);
+            Assert.Equal(16, rootDiagnostic.Data.Length);
+            Assert.Single(rootDiagnostic.Values);
+            Assert.Throws<ArgumentException>(() => nativeRoot.ValidateTransferLayout(diagnostic.Data.Length, diagnostic.GetDiagnosticFields(), diagnostic.ShaderTypeName));
+            Assert.True(root.Matches(ShaderDataLayout.Data(fs, "ModelDrawArguments")));
         }
     }
 
@@ -55,7 +66,7 @@ public sealed class ModelAndEffectsTests
     [Fact]
     public void UnresolvedReferencesCannotSelectNativeRoots()
     {
-        ModelDrawArguments arguments = new(null!, default, default, default, default, default, default, default, default, default, default, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!);
+        ModelDrawRoot arguments = new(null!);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {

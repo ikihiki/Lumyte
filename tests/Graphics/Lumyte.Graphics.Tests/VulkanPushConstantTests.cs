@@ -67,6 +67,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
     [GpuFact]
     public async Task AdmissionCannotInvalidateNativeSelectionAsync()
     {
+        ShaderTransfer.ReflectFields(typeof(AdmissionPayload));
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         ShaderArtifact artifact = await new SlangShaderCompiler().CompileAsync(
             new()

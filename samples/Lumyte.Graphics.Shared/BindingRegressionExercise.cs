@@ -105,8 +105,8 @@ internal static class BindingRegressionExercise
         RecordUpload(commands, nestedStaging, nested);
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(pipeline);
-        compute.SetArguments(in arguments);
         Expect<InvalidOperationException>(() => compute.Dispatch(1));
+        compute.SetArguments(in arguments);
         using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 4 });
         using IGraphicsBuffer<DispatchIndirectArguments> indirect = device.CreateBuffer<DispatchIndirectArguments>(new() { Count = 1, Usage = BufferUsage.Indirect });
         compute.SetArgumentTable(outside);
@@ -156,7 +156,7 @@ internal static class BindingRegressionExercise
         uint[] values = await ReadOutputAsync(device, commands, output, readback);
         Require(values[0] == 13, "A reference stored in shader data did not follow the cycle across separate buffer allocations.");
 
-        // The root references still belong to table; only the copied node points outside it.
+        // Opaque GPU bytes are not traversed on the CPU; reject mixed tables at root transfer.
         using IArgumentTable outside = device.CreateArgumentTable(new() { BufferCapacity = 1 });
         IGpuRef<BindingNode> foreign = outside.WriteBuffer(0, second.SliceElements(elementOffset, 1));
         await WriteAsync(firstStaging, [new(3, foreign)]);
@@ -165,8 +165,8 @@ internal static class BindingRegressionExercise
         IComputeEncoder invalid = rejected.BeginComputePass(new());
         invalid.SetPipeline(pipeline);
         invalid.SetArgumentTable(table);
-        invalid.SetArguments(in arguments);
-        Expect<ArgumentException>(() => invalid.Dispatch(1));
+        var mixedArguments = new BindingComputeArguments(default, 0, foreign, result);
+        Expect<ArgumentException>(() => invalid.SetArguments(in mixedArguments));
         invalid.End();
         rejected.Finish();
     }

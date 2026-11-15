@@ -1,10 +1,77 @@
-# Shader transfer migration validation
+# シェーダー転送の検証記録
 
-The breaking contract is documented in
-[GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
-[generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
+## 現行契約と検証結果の読み方
 
-## WriteReference単一境界とReferenceCount診断の分離（2026-11-15）
+設計の正本は[GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md)である。
+生成型の記述方法は[generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md)、
+診断の利用方法は[Validation README](../src/Graphics/Lumyte.Graphics.Validation/README.md)を使う。
+この文書は検証対象、再現入口、実行した範囲と凍結した過去証拠を管理し、設計契約を重複定義しない。
+
+以下の表は実装checkpoint8c2ec6f369a37334a394a38dee41c98095d3516eに対して記録された結果である。
+文書記録時のheadは1a726d7f898c8ce0180ede290e380bca5c65c1cfである。
+今回のレビュー修正後のheadやリモートCIで再成功したという意味ではない。修正後は同じ入口を再実行し、
+対象SHA・configuration・結果と残る失敗を別途確認する必要がある。
+
+## 検証マトリクス
+
+| 検証対象 | 記録済みcheckpointの結果 | 保証しない範囲 |
+| --- | --- | --- |
+| 全host Release | 3,360成功、失敗0、120skip | 全host Debug、修正後headのCI成功 |
+| Graphics Debug／Release | 各283成功、99skip | skipをGPU実行成功に数えない |
+| Validation Debug／Release | 各97成功 | native validation layerの実行とは別 |
+| RenderGraph Debug／Release | 各140成功、skip0 | GPU内の動的参照・unsafe書き換えの観測 |
+| raw／wrapped Vulkan・Wgpu targeted Debug／Release | 各70成功、失敗0、skip0 | 全Graphics GPU suite、他GPU／driverへの一般化 |
+| D3D12管理側 Debug／Release | 各55成功、Windows依存7skip | Windows native D3D12のGPU実行 |
+| Browser | Release compile、JS syntax検査成功 | Browser WebGPU runtime、NativeAOT publish／runtime |
+| 文書・差分 | 当時のMarkdown／diff検査成功 | この整理後の文書検査とは別 |
+| 提示とnative layer | 実行成功の記録なし | physical presentation、Khronos layer成功を主張しない |
+
+確認する振る舞いは、ABIの予約ゼロ・sentinel・tail・checked offset／Count、書き込み失敗後の位置、
+rawのReferenceCount getter非読取り、検証層だけの宣言数診断、codec一回評価、即時Set、
+全登録binding、依存の未知／既知空・全体回復、Graph宣言とcanonical resourceの照合である。
+対象testの詳細とログ名は下記のcheckpoint別履歴に保持する。
+
+## 再現入口と実行境界
+
+[テスト手順](../tests/README.md)と[共通runner](../build/README.md)の環境を使い、リポジトリルートで実行する。
+configurationを省略してDebug／Releaseを混同せず、GPU testsは対応driverで明示的に有効にする。
+
+使用する公式入口は次のとおりである。
+
+    dotnet run --project build -c Release -- --target Test --host-only --configuration Release
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Validation.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
+    dotnet run --project build -c Release -- --target CheckMarkdown
+    node tools/markdown/adr-rules.test.mjs
+
+対象projectをReleaseでも実行する。GPU実行時はLUMYTE_GRAPHICS_GPU_TESTS=1と実際のICDを指定し、
+実行したfilter・driver・件数を記録する。compile、管理側fault injection、GPU readback、Browser runtimeとAOTは別の検証である。
+Markdown検査はビルド・実GPU検証の代わりにならない。rawでのunsafe寿命違反をnativeへ実行する負例は作らない。
+
+## 性能証拠の所在と限界
+
+checkpointを変えた後の速度へ過去の値を流用しない。現行全体のzero-allocation、zero-copy、FPS向上は主張しない。
+公開済みの[backend writer比較](performance/backend-native-writers.md)はf27→3582の固定比較であり、
+後続のnative定数・struct・独立Validation層の測定ではない。ほかの既存reportへのリンクも付録の対象SHAだけに適用する。
+三改善だけの6abc8883b3d3cf8c1bc990aaf5e1b401ac0655d7の証拠は別benchmark branch上の保存記録で、
+このheadに存在しないreportへのリンクは作らない。最新の限定reference-wire比較はlocal-only artifactsであり、公開済みraw証拠とは呼ばない。
+全測定の回帰・ばらつき・未測定境界は該当付録に保持する。
+
+ユーザー指定で削除した過去のbinary／gzip dataは復元せず、新しいarchiveも追加しない。
+既存の削除通知とtext summaryを維持する。local artifact名は所在記録であり、GitHubから取得できることを保証しない。
+
+## 付録：リビジョン別の凍結履歴
+
+以下は新しい順の過去記録である。節内の「最新」「維持」「未実装」は対象リビジョンでの表現に限る。
+class、cursor、snapshot setter、共通root storage、backend内EnableValidation、raw常時ReferenceCount検査、
+要素別依存や範囲別Graph admissionなどの記述を現在の仕様として読まない。現在の判断は冒頭のADRだけを参照する。
+数値・ログ・負対照・制限は履歴として保持し、今回のCI修正後の証拠へ読み替えない。
+
+### WriteReference単一境界とReferenceCount診断の分離（2026-11-15）
+
+対象リビジョン: `8c2ec6f369a37334a394a38dee41c98095d3516e`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 fc1f5484c9383e07cc4d7f6f8f83f2fa7c41e7d2→8c2ec6f369a37334a394a38dee41c98095d3516e。
 Vulkan／D3D12／WgpuのWriteReferenceは一度のwriter容量検査後、最終16-byte destinationを取得して直接little-endian符号化する。
@@ -53,7 +120,9 @@ Lumyte/artifacts/reference-wire-20261115/out/summary/およびA1／B1／B2／A2�
 ログはartifacts/validation22-{final-fullhost,graphics-debug,unit-debug,graph-debug,d3d-release,hardware-debug,hardware-release,browser,markdown}.log。
 以下は以前の検証分離・測定checkpoint履歴であり、raw常時ReferenceCount検査の記述は最新contractではない。
 
-## 独立ValidationDevice decorator project（2026-11-15）
+### 独立ValidationDevice decorator project（2026-11-15）
+
+対象リビジョン: `fc1f5484c9383e07cc4d7f6f8f83f2fa7c41e7d2`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 b2d61cdb621eaef4a17ac8991ebab360e0dd7196を基準に、明示要求された検証project分離を実装した。
 新src/Graphics/Lumyte.Graphics.ValidationはAbstractions／Sharedだけを参照し、backend assemblyは参照しない。
@@ -113,7 +182,9 @@ NativeAOT publish、native Khronos validation layer、Windows D3D12／Browser実
 性能campaign、過去ADR、CI／workflow変更、凍結benchmark／データ書換え、gzip追加は行わない。
 以下はbackend内で任意検証を切り替えた旧方式の履歴であり、最新contractではない。
 
-## 全table bindingと検証時だけのbuffer依存query（2026-11-15）
+### 全table bindingと検証時だけのbuffer依存query（2026-11-15）
+
+対象リビジョン: `b2d61cdb621eaef4a17ac8991ebab360e0dd7196`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 三改善checkpoint c1bdf69a972e5b0f01453d920396c736ab1a64c9とは別に、後続の明示承認に従って依存管理を変更した。
 選択ArgumentTableの現在登録済みentryを全てbinding対象とし、rootから到達した参照だけには限定しない。
@@ -170,7 +241,9 @@ CPU Copyは両ペア28.69–66.40%短縮、Ref112 Copy完了は13.84%／15.79%�
 この後続architectureへ旧値を流用せず、最新sourceの性能は未計測とする。CI／workflow・過去ADR・凍結harness変更やgzip復元はない。
 以下は旧方式の履歴であり、常時element metadata／常時Graph admissionの記述は最新契約ではない。
 
-## address／mapped batch／exact reference countの三改善（2026-11-15）
+### address／mapped batch／exact reference countの三改善（2026-11-15）
+
+対象リビジョン: `c1bdf69a972e5b0f01453d920396c736ab1a64c9`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 81949cf0を基準に、次の三点だけを先に独立checkpoint化した。
 
@@ -210,7 +283,9 @@ Vulkan／D3D12 Setのstack即時native記録、Wgpu／Browserのbackend-private 
 focused evidenceはvalidation17-focused-*。性能はこのcheckpointのSHAを固定した別worktreeで測定し、旧三者比較は変更しない。
 以下はこの三改善より前の履歴であり、動的Listによるmetadata生成は最新実装ではない。
 
-## struct限定のshader引数とuser選択の要素範囲（2026-11-14）
+### struct限定のshader引数とuser選択の要素範囲（2026-11-14）
+
+対象リビジョン: `81949cf0e1f28e090ed5653dc90f82f6ed1f0d2e`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 共通storage契約を削除したcheckpointはd7eb189592f5e170b0399525e6eee0ed9beac7e4。
 続く明示要求により、IShaderArgumentsを使うroot／typed buffer／slice／factory／Graph／helperのgeneric境界を
@@ -264,7 +339,9 @@ Windows native／Browser実行、Khronos validation layer実行、NativeAOT publ
 
 以下はstruct限定前の履歴であり、class providerの許可は最新契約ではない。
 
-## 共通root storage契約の削除（2026-11-14）
+### 共通root storage契約の削除（2026-11-14）
+
+対象リビジョン: `d7eb189592f5e170b0399525e6eee0ed9beac7e4`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 IShaderRootStorageを削除し、alias／代替public storage interface／opaque object bagは残さない。
 ShaderRootArgumentsはRootParameter、ShaderTypeName、WireSize、Referencesとdetached admissionだけのimmutable metadataとなる。
@@ -291,7 +368,9 @@ actual Wgpu final-root testはvalidation off/onで実concrete ownerを観測し�
 ログはartifacts/validation15-{fullhost,hardware-release,negative-control,positive-control}.logとmetadata-* evidence。
 以下は共通storage削除前の履歴であり、共通Storage／Seal／Disposeの記述は最新APIではない。
 
-## SetArguments内でのnative定数command記録（2026-11-14）
+### SetArguments内でのnative定数command記録（2026-11-14）
+
+対象リビジョン: `36daf8557b17ffb36d43d40f85221aceaa3ea8f3`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 2aa25f99までのDraw時payload再送を廃止し、Vulkan／D3D12はSetArgumentsが戻る前にnative commandへ定数を記録する。
 PSO objectを書き換えるのではなく、選択されたpipeline契約に対するcommand state更新である。
@@ -350,7 +429,9 @@ CI／workflow変更、過去ADR変更、binary／gzip復元はない。
 
 以下は2aa時点までの履歴であり、Draw時payload送信の記述は最新Set契約ではない。
 
-## native定数rootとbackend-private WebGPU emulation（2026-11-14）
+### native定数rootとbackend-private WebGPU emulation（2026-11-14）
+
+対象リビジョン: `2aa25f9924c0d25ff0b7c264af5caf777ecb524e`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 直前のbackend-native writer／uniform root checkpointは3582af8ada8c00ff38553eebc216bc64527171c1。
 その時点のf27→3582 ABBA測定は凍結したままであり、以下のnative定数rootへ適用しない。
@@ -407,7 +488,9 @@ offline shader packのtarget storage metadataにはtools/shaders/Slang.targets�
 
 以下はuniform-root checkpointまでの履歴であり、最新root transportと混同しない。
 
-## backend自身によるwriter実装（2026-11-14）
+### backend自身によるwriter実装（2026-11-14）
+
+対象リビジョン: `3582af8ada8c00ff38553eebc216bc64527171c1`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 Vulkan／Direct3D12／Wgpu／Browserがそれぞれ内部ShaderValueWriterでIShaderValueWriterを直接実装する。
 位置・容量・完了・16-byte参照符号化・依存収集はbackend内で行い、Shared writerへの委譲ではない。
@@ -448,7 +531,6 @@ literal ABI oracleで照合し、reserved zeroを確認した。実backendのsho
 - Windows native／Browser実行・AOT／presentationは未検証。独立source reviewでblockerなし。
 
 ログはartifacts/validation12-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,markdown}.log。
-
 凍結public-client BDNのABBA比較は[性能記録](performance/backend-native-writers.md)に全process値を記載した。
 Vulkan CopyFrom 64要素のmanaged allocationは24,640→11,264 B、paired medianは24.086%／27.047%低下。
 Set／full-completionのlatency改善は順序で逆転または0.5%未満で、安定したend-to-end高速化とは主張しない。
@@ -456,7 +538,9 @@ raw結果はlocal artifactsに保持し、repositoryには小さいtext summary�
 
 以下はf27以前のflat writer／Graph連携の履歴であり、旧Shared factoryは最新APIではない。
 
-## f27時点の値だけを渡すwriter／Graph連携履歴（2026-11-14）
+### f27時点の値だけを渡すwriter／Graph連携履歴（2026-11-14）
+
+対象リビジョン: `f27e4b29d02a7e5d78c37b91dc94d33881264e2b`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 最新の明示要求により、旧cursor-only契約を次の単一writerへ置き換えた。
 
@@ -515,7 +599,9 @@ API不在guardは旧9caでbuild成功後に旧WriteWireを検出して失敗し�
 
 以下はinterface統合・cursor導入時の履歴であり、最新writer／Graph APIとは区別する。
 
-## 9ca時点の転送interface統合履歴（2026-11-14）
+### 9ca時点の転送interface統合履歴（2026-11-14）
+
+対象リビジョン: `9ca26937d2b2723ba649b477fbe380b21f377070`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 旧IShaderData markerを削除し、IShaderArgumentsをrootとtyped shader-data bufferの単一契約とした。
 4 backend、buffer／slice／factory、Graph／resource宣言、samplesとtest consumerの制約を統一し、
@@ -547,7 +633,9 @@ API不在guard、single-interface制約、plain unmanagedの非interface経路�
 
 以下は前のcursor-only API変更時の履歴である。
 
-## cursor以外の書き込み経路の削除（2026-11-14）
+### cursor以外の書き込み経路の削除（2026-11-14）
+
+対象リビジョン: `0cb0b0f2a9ecfe3a62cfe109207ee9650f2f5537`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 利用者の明示的な破壊的変更要求により、以前残した互換書き込みを削除した。
 IShaderValueWriterは必須WriteWireだけ、IShaderReferenceEmitterは物理順Emitだけとする。
@@ -597,13 +685,14 @@ current HEADのconsumer build対象ではなく、過去C# workload・raw結果�
 - 独立read-only reviewでblockerなし。ModelVertexの不整合例外も元のArgumentException順を維持した。
 - 全ホストの一度の実行では全assertion成功後にUI test runnerのPortableSymbolReader.Disposeが
   NullReferenceExceptionとなった。ログを保存し、source／CI設定を緩和せず同じgateを再実行して成功した。
-
 ログはartifacts/validation9-{debug,graph-debug,fullhost,hardware-debug,hardware-release,d3d-release,browser-release,markdown,negative-control}.log。
 runnerの障害はartifacts/validation9-fullhost-testplatform-dispose-failure.logに保存した。
 
 以下のcursor導入時の記述／件数は当時のsourceの履歴であり、上記の削除後APIとは区別する。
 
-## ac52時点の同期cursor・backend metadata・helper検証履歴（2026-11-14）
+### ac52時点の同期cursor・backend metadata・helper検証履歴（2026-11-14）
+
+対象リビジョン: `ac52e086ed610a523f9f39ab495ed4833117f6d8`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 生成codecはraw区間（padding込み）→16-byte参照のinline符号化→次区間を
 一つの同期WriteWireで書く。source Span／in参照を呼び出し外に保持しない。
@@ -640,7 +729,9 @@ upload allocationは40B／要素減少、interface Setは40B／Set、snapshot Se
 
 以下は当時のrevisionの履歴であり、最新のcursor・metadata・Set参照符号化時点とは分けて読む。
 
-## 7e89時点のSetArguments最終uniform所有検証履歴（2026-11-13）
+### 7e89時点のSetArguments最終uniform所有検証履歴（2026-11-13）
+
+対象リビジョン: `7e89cd7e8cecd2a4a507758253b934c95b612cef`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 Vulkan／D3D12／Wgpu／Browserのgeneric interface・通常unmanaged SetArgumentsを、
 Set時点で新しいcommand所有の最終uniformへ直接書く経路に変更した。
@@ -689,7 +780,9 @@ interop費用も未測定である。今回のSetは参照解決を最初のDraw
 
 以下は旧revision時点の履歴であり、最新Set契約とは分けて読む。
 
-## abba2719時点のreference-only CopyFrom検証履歴（2026-11-13）
+### abba2719時点のreference-only CopyFrom検証履歴（2026-11-13）
+
+対象リビジョン: `abba27197abf33cf84f8d06b0d3eb40a2d09fe3a`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 20:36の承認により、IShaderDataSourceの完全なCPU値Read契約を廃止し、
 ReadReferences／SetTransferredReferencesとimmutableなShaderReferenceMetadataへ移した。
@@ -730,7 +823,9 @@ allocationも増えたため、直接方式を採用した。pooled scratchや�
 新decisionとbreaking API移行はADR0035だけへ反映し、過去ADRは変更しない。
 以下は各旧revision時点の履歴であり、今回の最新契約ではない。
 
-## 693b969f時点の転送境界・scratch検証履歴（2026-11-13）
+### 693b969f時点の転送境界・scratch検証履歴（2026-11-13）
+
+対象リビジョン: `693b969f85e3cd489de52050ed91c5df689cf21f`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 「転送前の変更はすべて有効」という要件について、cab86fd3の実装を先に追跡し、
 変更前に新しいGPU readback検査を実行した。buffer／slice作成、tableへの登録、
@@ -787,7 +882,9 @@ benchmark-only branch b2ca7c92の測定はcab86fd3に固定した過去結果で
 scratch変更後の速度を測ったものではない。CPU captureの約33µs／1024要素という
 独立stageの測定を、すべての転送の費用とも解釈しない。
 
-## main同期時の検証履歴（2026-11-13）
+### main同期時の検証履歴（2026-11-13）
+
+対象リビジョン: `cab86fd3677dbe42a069a65227e1e2cad7e3f90f`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 同期元mainは70db1cd8144c22256505a433531efb0e37a4a7d0、同期前のPR先端は
 7e2c3208d7de7c3e8c5498bbac86fc217b511f08である。開始済みの通常mergeを
@@ -835,7 +932,9 @@ RADV、Mesa26.0.8-1ubuntu0.3で成功した。presentationや全GPU suiteは再�
 検証は今回の範囲外であり、compileやbuffer copy成功から推論しない。
 過去Graphics ADR0009/0015/0018/0022/0023はef61258fと同一のまま維持する。
 
-## 同期前の任意検証レイヤの検証履歴（2026-11-13）
+### 同期前の任意検証レイヤの検証履歴（2026-11-13）
+
+対象リビジョン: `7e2c3208d7de7c3e8c5498bbac86fc217b511f08`。 この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 以下は777a7e11後、main同期前の任意検証レイヤを対象とする履歴である。
 再レビューで見つかったD3D12のnative device removal照会も、Lost状態を許す
@@ -888,7 +987,9 @@ Xwaylandのキーボード初期化失敗で有効な表示環境を確立でき
 同じartifacts内のcompositor/Xwaylandログに保持する。
 過去ADR0009/0015/0018/0022/0023はef61258fと同一のまま維持する。
 
-## D3D12部分提出の所有権修正（2026-11-13）
+### D3D12部分提出の所有権修正（2026-11-13）
+
+対象リビジョン: `ee18e08d3437e4016aeeb7606fb02c5b3e592856`（部分提出修正）。この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 wait・signalを個別に発行するD3D12経路では、最後のcompletion signalだけを
 成功境界にすると、途中まで成功した操作を失う。各native wait／signalが
@@ -933,7 +1034,9 @@ artifacts/validation3-{d3d-debug,d3d-release,graphics-debug,fullhost,negative-co
 保持する。negative controlのsourceと復元用sourceもignored artifacts内だけに保存し、
 実装・履歴には取り込まない。
 
-## Registration-owned access follow-up (2026-11-13)
+### Registration-owned access follow-up (2026-11-13)
+
+対象リビジョン: `777a7e11cb35474a94a727f860abd3639fb07916`（比較元は4e58e198）。この節のAPI・件数・性能値は当時の履歴であり、現在の受け入れ結果ではない。
 
 Starting at 4e58e198, raw-buffer WriteBuffer selects ShaderBufferAccess.ReadOnly
 (default) or ReadWrite at registration. Usage flags remain allocation capabilities;
@@ -990,5 +1093,3 @@ Final targeted results:
 - Drawing Debug and Release CPU tests: each 12 passed, 0 failed,
   10 native GPU tests skipped. Null references still fail host snapshot capture
   in both modes; shader-schema checks alone are Debug-only.
-
-The initial host compile exposed remaining callback fixture signatures and test

@@ -203,7 +203,7 @@ public sealed class EncoderValidationTests
             wrapped.Add(new ResourceReference(reference, resource));
         }
 
-        Invoke(ValidationType("ValidationEncoderChecks").GetMethod("ShaderAccesses", _hidden)!, null, command, wrapped, stages);
+        Invoke(ValidationType("ValidationEncoderChecks").GetMethod("ShaderAccesses", _hidden)!, null, command, wrapped, stages, true);
     }
 
     private static object ResourceIdentity(object command, object resource)

@@ -74,6 +74,8 @@ public sealed class ShaderBindingData
 
             if (reference.BufferAccess == ShaderBufferAccess.ReadWrite && _writable.TryGetValue(range, out int writable))
             {
+                // A logical read selects the same writable binding, never an overlapping RO alias.
+                BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 8), (uint)writable | 0x80000000u);
                 BinaryPrimitives.WriteUInt32LittleEndian(Map.AsSpan(offset + 12), (uint)writable);
             }
         }

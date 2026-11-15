@@ -92,6 +92,8 @@ struct GpuBufferRef<T>
         return LumyteLoadAddress<T>(address, index);
 #else
 #ifdef LUMYTE_DXIL
+        if ((Id & 0x80000000u) != 0)
+            return lumyteRWBuffers[NonUniformResourceIndex(Id & 0x7fffffffu)].Load<T>(Offset + index * sizeof(T));
         return lumyteBuffers[NonUniformResourceIndex(Id)].Load<T>(Offset + index * sizeof(T));
 #else
         return lumyteBuffer0.Load<T>(Offset + index * sizeof(T));
@@ -114,7 +116,7 @@ struct GpuRWBufferRef<T>
         return LumyteLoadAddress<T>(address, index);
 #else
 #ifdef LUMYTE_DXIL
-        return lumyteRWBuffers[NonUniformResourceIndex(Id)].Load<T>(Offset + index * sizeof(T));
+        return lumyteRWBuffers[NonUniformResourceIndex(Id & 0x7fffffffu)].Load<T>(Offset + index * sizeof(T));
 #else
         return lumyteRWBuffer0.Load<T>(Offset + index * sizeof(T));
 #endif
@@ -128,7 +130,7 @@ struct GpuRWBufferRef<T>
         LumyteStoreAddress<T>(address, index, value);
 #else
 #ifdef LUMYTE_DXIL
-        lumyteRWBuffers[NonUniformResourceIndex(Id)].Store<T>(Offset + index * sizeof(T), value);
+        lumyteRWBuffers[NonUniformResourceIndex(Id & 0x7fffffffu)].Store<T>(Offset + index * sizeof(T), value);
 #else
         lumyteRWBuffer0.Store<T>(Offset + index * sizeof(T), value);
 #endif
