@@ -1,6 +1,6 @@
 # Graphics integration GPU benchmarks
 
-This executable measures **CPU wall time per completed headless logical frame** on real Vulkan hardware. It does not measure GPU timestamps, presentation FPS, scanout or VSync. Unsupported D3D/WASM backends are not represented by fake cases.
+This executable measures **amortized wall time per completed headless logical frame** on real Vulkan hardware, not individual frame latency. It does not measure GPU timestamps, presentation FPS, scanout or VSync. Unsupported D3D/WASM backends are not represented by fake cases.
 
 The twelve cases are 1,024 / 10,000 opaque non-overlapping rectangles × static immutable input reuse / one rectangle changed / every rectangle changed × one / three frames in flight. The fixed target is 256×256 Rgba8Srgb. Each rectangle occupies one pixel in a 128-column grid; therefore count changes actual content coverage, not attachment dimensions.
 
@@ -19,4 +19,4 @@ GPU initialization occurs only in GlobalSetup, not catalog/list discovery. Execu
 
 The guard independently enumerates physical-device index zero using public Silk.NET Vulkan APIs, requires exactly one adapter, and checks integrated Radeon 8060S vendor 0x1002 / device 0x1586 before creating VulkanDevice at index zero. No reflection or software fallback. The test is genuinely skipped without opt-in; an incorrect manifest or hardware identity with opt-in fails.
 
-The category build owns BenchmarkGraphicsIntegrationGPU separately from CPU/default targets. Use the shared executable --catalog interface for untimed discovery; only Screening, Comparison and Diagnostic are purpose categories. Timing campaigns must run without competing builds/tests.
+The category build owns BenchmarkGraphicsIntegration separately from CPU/default targets. Use the shared executable --catalog interface for untimed discovery; only Screening, Comparison and Diagnostic are purpose categories. Timing campaigns must run without competing builds/tests.
