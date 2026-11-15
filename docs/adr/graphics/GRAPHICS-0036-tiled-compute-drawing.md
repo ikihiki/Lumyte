@@ -1,226 +1,229 @@
-# ADR-GRAPHICS-0036: 連続する複雑な2D描画をタイル単位のcomputeで合成する
+# ADR-GRAPHICS-0036: 同じ2D記録を三種類の描画方式で実行し、共通グラフで合成する
 
 - 状態: 提案
 - 日付: 2026-11-16
 - 基準コミット: `b9c93f001f960221dc13eed5f6edc0bf04914c02`
 - 変更関係: 一部変更
-- 変更元: [2D描画](GRAPHICS-0018-2d-graphics-engine.md#基本図形とpaintの標準gpu経路)の標準GPU実行、[固定長描画](GRAPHICS-0034-fixed-draw-records.md#決定)の連続recordの実行方式
-- 変更対象: 明示的に作成したcompute対応Renderer2Dの組込み描画の実行・中間丸め
-- 継続する判断: 既存constructorの標準描画、公開描画モデル、命令順、CPU clip正規化、資源所有と完了確認
+- 変更元: [基本2D描画](GRAPHICS-0018-2d-graphics-engine.md#決定)の標準GPU経路、[2Dレイヤー](GRAPHICS-0022-2d-render-graph-layers.md#決定)のCanvasに置いた合成入口
+- 変更対象: 描画方式の選択、coverage生成、グラフへの画像出力とレイヤー合成の責務
+- 継続する判断: Canvasの純粋な記録、命令順、paint内の隔離合成、CPU clip正規化、明示的なGPU所有権、3Dと共通のRenderGraph・ImageEffects
 
 ## 背景
 
-複雑なパスやpaintが連続する画面を描く利用者は、形状の評価に加え、描画ごとのattachment合成を負担する。現在の固定長recordは異種図形を連続格納できるが、画素を担当する処理が複数の描画に分かれ、同じ画素の結果を命令列全体でまとめて計算する経路を持たない。
+2D描画を使うアプリは、矩形・文字主体のUIと、動的なパス主体の画面に異なる実行方式を使いながら、同じ記録と3Dの画像処理・合成機能を再利用したい。方式ごとにCanvasやレイヤー専用の実行器を作ると、描画内容とGPU戦略が結合し、同じ内容の比較や2Dと3Dの合成が難しくなる。
 
-基準コミットの `src/Graphics/Lumyte.Graphics.Drawing2D/Execution/Renderer2D.cs` の `PrepareAsync` は組込みの連続命令を `PreparedRecordBatch2D` へ渡す。同プロジェクトの `Rendering/PreparedRecordBatch2D.cs` と `Shaders/draw-records-fragment.slang` は一つのrecordの形状・paint・clipを4×4位置で評価し、その平均色をattachmentへ合成する。単純な矩形や保持資産の再利用もあるため、computeの使用だけを目的に既存経路を一律置換する理由はない。
+基準コミットの `src/Graphics/Lumyte.Graphics.Drawing2D/Model/Canvas2D.cs` と `Model/DrawList2D.cs` は不変の描画記録を作り、同プロジェクトの `Execution/Renderer2D.cs` が実行を担当する。一方 `src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/RenderGraphCanvas2D.cs` はlayer/effect命令を記録し、`RenderGraphRenderer2D.cs` が親graphへ展開する。`src/Graphics/Lumyte.Graphics.ImageEffects/EffectImage.cs` と `ImageEffectRenderGraphExtensions.cs` には2D・3D共通の画像、合成、blur、tone mappingの境界が既にある。
 
 ## 決定
 
-Renderer2Dに明示的に選べるタイルcompute経路を追加し、対象となる連続命令の画素評価とSrcOver合成を一つのcompute処理へまとめる。CPUが既存の形状・paint・clipを準備してタイル別の順序付き参照列を作り、GPUは各画素を一つのスレッドだけで計算する。既存の標準constructorと単色矩形の描画を維持し、対応環境・数値上の違いを受け入れた利用者だけが選択する。
+CanvasとDrawList2Dを方式非依存の入力として維持し、Renderer2Dに標準方式、CPU疎strip方式、GPU compute方式の三つの実装を持たせる。標準方式は既存の専用描画とcomputeによるパスcoverage生成を組み合わせ、他の二方式は描画領域全体をそれぞれのパイプラインで処理する。各方式の結果を共通のEffectImageへ出力し、レイヤー・画像効果・3Dとの合成は親RenderGraphとImageEffectsで行う。
 
 ### 利用者の変更前・変更後
 
-変更前は基準コミットの公開constructorを使う。変更後もCanvasでの記録、PrepareAsync、Record、submit、完了確認と解放の順は同じで、rendererの作成だけを新しいfactoryへ変える。以下は `device`、同一deviceの `targetView`、記録済みの `list` の生成を省略した直接描画の例である。
-
-変更前:
+Canvasに図形・paint・clipを記録するコードは変えない。方式名をCanvas、DrawList2D、DrawingScene2Dの型や記録命令へ入れない。変更前は、レイヤーを扱うために別のCanvasと記録型を使う。基準コミットのAPIを使った抜粋は次のとおりで、device、target、bindingsの生成とGPU実行を省略している。
 
 ```csharp
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 
-using var renderer = new Renderer2D(
-    device, DrawingCommandRenderers2D.CreateDefault());
+var canvas = new RenderGraphCanvas2D();
+canvas.Begin();
+canvas.BeginLayer(new LayerOptions2D { ContentBounds = new Rect2D(0, 0, 512, 256) });
+canvas.FillCircle(new System.Numerics.Vector2(100, 100), 40, paint);
+canvas.EndLayer();
+RenderGraphDrawList2D layered = canvas.End();
+using var renderer = new RenderGraphRenderer2D(
+    DrawingCommandRenderers2D.CreateDefault(), layered, target, bindings);
+using PreparedDrawingPasses2D prepared = await parent.Append2D(renderer);
 ```
 
-変更後の提案例:
+変更後の提案では、同じ通常Canvasで作ったDrawList2Dを、実行時に選んだrendererへ渡す。次の `paint`、`device`、同一親graph内のDisplayLinearな `world` は生成済みとする。worldがSceneLinearなら、3D側が共通のtone mappingを済ませてから渡す。
 
 ```csharp
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
+using Lumyte.Graphics.ImageEffects;
+using FrameGraph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
-using var renderer = Renderer2D.CreateTiledCompute(
-    device, DrawingCommandRenderers2D.CreateDefault(),
-    new DrawingComputeOptions2D { MaxWorkingBytes = 256L * 1024 * 1024 });
-```
-
-どちらも次の実行手順を使う。targetはColorAttachment、入力画像はSampledへ可視化済みであることを利用側が保証する。例外時、送信の有無が不明な資源や待機取消後の資源をGPU完了扱いで解放しない責務も変わらない。
-
-```csharp
-using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Drawing2D;
-
-PreparedDraw2D prepared = await renderer.PrepareAsync(list, new RenderTarget2D
+var canvas = new Canvas2D();
+canvas.Begin();
+canvas.FillCircle(new System.Numerics.Vector2(100, 100), 40, paint);
+DrawList2D content = canvas.End();
+using var renderer = Renderer2D.Create(device, new DrawingRendererOptions2D
 {
-    View = targetView,
-    LoadOp = AttachmentLoadOp.Load,
+    Backend = DrawingBackend2D.Standard,
 });
-IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-prepared.Record(commands);
-commands.Finish();
-IGraphicsSubmission submission = device.Queue.Submit([commands]);
-await submission.WaitAsync();
-commands.Dispose();
-prepared.Dispose();
-submission.Dispose();
+// parentはworldを生成した、まだ構築中のFrameGraph。
+EffectImage layer = await parent.Append2D(renderer, content, new DrawingImageOptions2D
+{
+    Bounds = new EffectPixelRect(0, 0, 512, 256),
+});
+EffectImage faded = parent.AppendOpacity(layer, 0.8f);
+EffectImage output = parent.AppendComposite(faded, world, EffectCompositeMode.SrcOver);
+parent.MarkOutput(output.Texture);
 ```
 
-保持描画の `PrepareAsync(DrawingSceneReadLease2D, ...)` と `PrepareAsync(DrawingSnapshot2D, ...)` も同じ選択を使う。借用をPrepare完了まで維持し、返されたframeへ送信結果をAttachSubmissionして、完了とcommand破棄後にRetireする既存手順は変更しない。
+BackendをCpuSparseStripsまたはGpuComputeへ変えても、contentの再記録は不要である。例のlayer内の円は従来と同じ内容であり、レイヤー操作を記録からgraph構築側へ移す。独立した三つの描画内容を別方式で描き、そのEffectImageを同じparentで順に合成することもできる。
 
-### 選択境界と既存経路の維持
+呼出元が一つのparentをCompileし、そのplanをRecord、SubmitしてGPU完了を確認する。command、plan、借用renderer・入力資源の順に解放する。Appendはgraphへ固定資源tokenを移すため、rendererのDisposeは新規準備を閉じても追加済みpassを失効させない。送信結果不明や待機取消を完了と扱わない。独立したgraph、内部Submit、内部Wait、2D専用の画像合成実行器は作らない。
 
-compute選択はrendererの作成時に固定する。同一renderer内の配送は次の規則で決まり、計測時間、cache hit、メモリ圧力、命令数の閾値で切り替えない。
+### 共通入力と方式選択の境界
 
-| 入力 | 実行 |
-| --- | --- |
-| 既定実装のFillPath、StrokePath、DrawLine、FillCircle、FillRoundedRect、FillRect、DrawPaintGraphで、paintが下記の対象内 | タイルcompute |
-| SolidPaintNode2Dをrootに持つFillRect | 既存の矩形・固定長record経路 |
-| DrawImage、DrawCoverageMask、DrawDistanceField、DrawMesh | 既存の描画経路 |
-| 対象外paintを含む命令 | 既存の描画経路 |
-| 登録表で差し替えたcustom rendererの命令 | その実装へ配送 |
-| layer/effect命令 | 既存どおり直接描画ではNotSupportedException |
+方式はrendererの生成時に固定する。適応的な速度判定や、入力を見て別方式へ自動的に切り替える仕組みは入れない。メモリ不足や未対応入力でも方式を変更しない。同じ命令列を比較できるよう、backend、数値規則、対象範囲を準備結果の内部keyへ含める。
 
-表で条件が重なる場合は、layer/effectの拒否、customへの配送、単色FillRectの既存経路、残りのcompute対象判定の順に優先する。対象paintはSolid、Linear、Radial、Sweep、Opacity、Transform、Clip、Compositeと順序付きLayers、およびそれらの子だけからなるgraphである。Image・DistanceFieldを到達可能な子に持つgraphは全体を既存経路へ渡す。paintの一部だけを別経路で評価しない。これはcompute内のtexture微分・sampling契約を新設しないための入力分類であり、準備失敗後のfallbackではない。
+三方式の実装は `Lumyte.Graphics.Drawing2D` assembly内の実行モジュールに置く。internalのDrawList2D.Commands、保持ページ、DrawRecordPage2Dへ同じassemblyからアクセスする。DrawList2Dを公開配列へ変換したり、backendごとのCanvasや別の公開描画モデルを作ったりしない。Graph接続は既存のfriend assembly `Lumyte.Graphics.Drawing2D.RenderGraph` に置き、Drawing2DからRenderGraphやImageEffectsへの逆依存を追加しない。
 
-元の命令列を先頭から走査し、compute対象の最大連続区間を一つの合成区間とする。既存描画・custom renderer・保持内容ノードの境界で必ず区切り、区間の前後を並べ替えない。保持内容ノードをまたぐ統合は行わない。対象内の一命令だけでも同じ規則を適用する。空の描画を除去しても、そのために既存経路の両側を融合しない。
+直接描画のPrepareAsyncと保持描画の二つのPrepareAsyncは三方式とも維持する。既存constructorはStandardを選び、既存のDrawingResources2Dや型別custom rendererの設定を尊重する。新factoryは埋込みの組込み資源を使い、外部shaderやcustom戦略の自動変換は行わない。custom命令や外部shaderの独自ABIを使うアプリは既存constructorの標準方式を使う。
 
-custom rendererの既定判定は `Renderer2D.IsBuiltinRenderer` と同じ実装identity判定を共用し、型名や描画内容からcustomを組込みと推定しない。factoryが使う組込みshaderは埋込みの既定実装に固定する。外部DrawingResources2Dのshaderをcomputeへ翻訳する契約は追加しない。
+### 標準方式：専用描画とcompute coverage
 
-### CPU準備とタイル別参照列
+単純矩形・角丸・円は既存の解析的な形状評価とinstance描画、画像・mesh・文字atlasは既存の専用描画を優先する。残るFillPath、StrokePath、DrawLineの形状coverageをcomputeで生成し、fragment側で既存のpaintとclipを評価して、固定機能のSrcOverへ渡す。computeへ色評価や描画間合成を移さない。
 
-処理は `Lumyte.Graphics.Drawing2D` assembly内へ置き、Graphics.Abstractions以外のGPU実行基盤を追加しない。既存のDrawList2D.Commands、DrawRecordPage2D、保持ページはinternalのまま扱い、別assembly向けの公開命令列やfriendアクセスを追加しない。
+CPUは既存の0.125画素の平坦化・stroke展開を行う。computeは既存のshape点評価と同じ4×4位置を検査し、画素ごとの16 bit membershipをuint32のbufferへ格納する。fragmentはbitごとにpaintと正規化clipを評価する。平均coverage一個へ縮約してからpaint・clipへ乗算しない。shape maskは整数格子の保守的boundsだけに確保し、target全域を一律にmask化しない。
 
-CPUは既存の平坦化・stroke展開・DrawRecord2Dの96 B格納・paint directory・NumericPayloadを使う。[固定長描画の格納契約](GRAPHICS-0034-fixed-draw-records.md#96-b-の格納契約)と[C#を正とする転送](GRAPHICS-0035-csharp-authoritative-shader-transfer.md#型とc転送配置)を維持する。shader間で形状・paintの点評価を共通化し、同じ演算順と8/16/256の作業配列選択、既存の深さ・作業量上限を保つ。
+形状・transform・pixel origin・DPR・誤差規則・device generationが一致する完成済みmaskは再利用できる。paintだけの変更はshape maskを失効させない。直接描画の保持cacheへ登録するのは完了確認済みの資産だけである。外部shaderがこのmask ABIを持たない場合は既存fragment評価のままとし、shader契約を推測しない。
 
-タイルはtarget-localの16×16画素である。各recordの保守的なDeviceBoundsとtargetの交差から、触れるタイルの半開範囲を求める。参照先の画素でも元のrecordの整数scissor範囲を先に検査し、タイルへ拡大した範囲を図形の有効範囲と取り違えない。面積0の範囲は参照を出さず、有限でないboundsは準備失敗とする。保守的なboundsが得られないDrawPaintGraphはtarget全体を使う。
+この標準方式では、computeは形状生成の担当であり、元の描画順、paint、既存batch条件とattachment丸めを維持する。小さいパスや予算外maskを実行時に別方式へ切り替えることはせず、mask予算超過は準備を拒否する。専用経路の適用は入力と登録済み実装による決定的な分類である。
 
-二回のCPU走査でタイルごとの件数を数え、checkedなprefix sumで範囲を確保し、元のrecord順に参照を埋める。各タイルの参照は重複のない昇順である。内部の数値格納は次に固定する。uintは32 bit、要素は16 B境界、reservedは0とし、C#とshaderの配置を検査する。
+### CPU疎strip方式：CPUで形状をまとめ、GPUで塗る
 
-| 格納 | stride | 内容 |
-| --- | --- | --- |
-| TileHeader | 16 B | uint TileX、TileY、FirstReference、ReferenceCount |
-| TileReference | 16 B | uint RecordIndex、0、0、0 |
-| TileColor | 16 B | float32 linear premultiplied R、G、B、A |
+CPUが平坦化、タイル分類、4×4サンプルの内外判定を行い、描画命令ごとの疎な水平stripへ変換する。stripは連続する完全被覆領域と、境界の16 bit membership列からなる。空領域は出力せず、完全内側に境界maskを持たせない。各stripに元の描画ordinalとpaint・clipの参照を保持する。
 
-TileHeaderは参照を持つタイルだけをY優先・X昇順に格納する。TileColorはheader順に256要素を予約し、添字は `headerIndex*256+localY*16+localX` とする。空の合成区間はGPU資源もdispatchも作らない。線分のタイル別再分類は行わず、参照されたパスの形状評価は元の辺列を読む。したがって本方式だけで巨大な一つのパスの辺評価量が減るとは保証しない。
+GPUはstripをinstance描画し、各サンプルのpaintとCPU正規化clipを評価して、既存の固定機能で描画順に合成する。単純図形も同じstrip列へ取り込めるが、既知の完全被覆矩形を境界maskへ展開しない。画像・gradient・文字のpaint表現は共通のものを使う。image/mask/distance fieldは保守的な矩形stripと既存descriptorを保持し、samplingはGPUで行う。DrawMeshの画素中心での補間coverageは二値membershipへ変換せず、保守的strip内で既存の中心評価を実行し、各サンプルのpaint・clipへ乗算する。純粋なCPU rendererではなく、CPUで疎な描画表現を作ってGPUへ渡す方式である。
 
-### GPUの実行と数値契約
+同一描画内のstripを重複させず、別描画をpaint・texture順に並べ替えない。coverageの平均だけをstripへ保存せず、shapeとpaintとclipのサンプル相関を維持する。CPUのサンプル判定は[CPU clipの数値規則](GRAPHICS-0033-drawing2d-normalized-clips.md#数値規則と-16-サンプル相関)と同じbinary64の順序付きFMA、半開Y遷移と交差積の符号を使い、strokeは展開した三角形の和集合で判定する。CPUのサンプル判定を正とするため、従来GPUの境界とのbit完全一致は保証しない。独立したCPU oracleで新しい境界規則を確認する。
 
-computeのworkgroupは16×16×1とし、各スレッドが一画素を担当する。headerの配列をdeviceのdispatch各軸上限内の二次元格子に割り当て、余剰groupとtarget外laneは範囲検査する。group間の通信や画素色へのatomicは使用しない。各有効laneはTileColorを必ず上書きし、以前のframeの値を読まない。
+### GPU compute方式：単純図形も含めてタイルで合成する
 
-画素pに対する描画kの入力色は、既存と同じサンプル `s=(floor(p)+(i+0.5,j+0.5)/4)`、i,j=0..3について、`Ck=sum(shape_k(s)*paint_k(s)*clip_k(s))/16` とする。[CPU clip正規化](GRAPHICS-0033-drawing2d-normalized-clips.md#数値規則と-16-サンプル相関)の完成した16 bit membershipを読み、CPUのbinary64判定をcomputeで再計算しない。clipの予算・captured transform・origin・DPRも維持する。
+CPUは命令・曲線・変換・paintを符号化し、有限な保守的bounds、分割数上限、buffer容量を検証する。GPUが曲線の線分生成、辺のタイル分類とbackdrop伝播、タイル別の描画参照列の生成、coverage・paint評価、順序付き合成を担当する。CPU側の役割を曲線ごとの入力検査・容量計算に限定し、全辺への展開や各画素のshape評価をCPUへ戻さない。Canvasの保存済み状態は符号化時に解決するため、Canvasの可変stackをGPUで直接走査しない。
 
-各画素の区間色を透明黒A0から開始し、命令順に `Ak=Ck+Ak-1*(1-Ck.a)` をfloat32で計算する。shape、paint、clipを独立に平均して掛けたり、全命令をサンプル位置ごとに先に合成して最後に平均したりしない。例えば同じ8サンプルを覆う不透明な赤と青をこの順で描くと、平均後合成の区間色は `(0.25,0,0.5,0.75)` であり、サンプルごとに合成した `(0,0,0.5,0.5)` ではない。
+矩形・円・角丸なども同じ命令列へ取り込み、タイル内の専用処理で評価する。単色矩形のために区間を分割して通常描画へ戻さない。画像・gradient・coverage mask・distance field・meshも共通のpaint/descriptorから評価し、旧fragmentの暗黙微分を前提とせず、samplingに必要な勾配を明示的に与える。DrawMeshの画素中心coverageなど命令固有の既存規則は維持する。
 
-区間内の合成ではattachment形式への中間丸めを行わない。このため従来の描画ごとのRgba8SrgbまたはRgba16Floatへの丸めとは結果が異なり得る。さらに浮動小数点の結合順の違いにより、背景との最終合成もbit単位では一致しない。compute factoryはこの数値契約を選択する新APIであり、従来経路の画素完全互換を名乗らない。既存経路・custom・保持ノードの境界では通常のattachment丸めが入るため、ノード分割をまたぐ画素同一性も保証しない。
+一つの描画内の線分は順不同に集計できるが、異なる描画のordinalは保つ。タイル別の候補から境界を横切る辺だけを扱い、辺のない内側タイルはbackdropの巻数で判定する。nonzero/evenodd、穴、strokeのcap/joinを符号化して処理し、tile boundsだけで内包を推定しない。CPU正規化clipは三方式共通の入力として維持し、そのbinary64判定をGPUで再計算しない。
 
-色空間、各描画内のサンプル相関、paintの隔離合成は従来どおりである。CPU oracleは同じ描画平均後の順序付きfloat32演算を正とし、出力形式への変換誤差とshape/paintの既存数値誤差を分けて検査する。従来経路との差を許容するために既存GPUテストのtoleranceを広げない。
+画素のサンプルは `s=(x+(i+0.5)/4,y+(j+0.5)/4)`、i,j=0..3とする。描画kの色 `Ck=sum(shape_k(s)*paint_k(s)*clip_k(s))/16` を求めてから、透明黒A0へ `Ak=Ck+Ak-1*(1-Ck.a)` をfloat32で順に合成する。シーン全体をサンプルごとに先に合成して最後に平均するAAへ変更しない。
 
-### Load先を読まない最終合成と同期
+合成中のattachment丸めを省くため、StandardやCpuSparseStripsの各描画後のRgba16Float丸めとは結果が異なり得る。GPUでの曲線分割も既存CPU経路と異なる頂点列になり得る。三方式は同じ描画モデルを受けるが、丸め・輪郭の完全な画素同一性は保証せず、誤差規則とbackend別oracleを使う。既存GPUテストのtoleranceを広げて差を隠さない。
 
-TileColorは `IGraphicsBuffer<Vector4>` の `ShaderWrite | ShaderRead` 資源とする。同じ物理範囲を、compute専用の引数表にはShaderBufferAccess.ReadWriteだけ、最終描画専用の引数表にはReadOnlyだけで登録する。各passで対応する表を選び、一つの表へ同一範囲のReadOnlyとReadWriteを同時登録しない。基準コミットの `src/Graphics/Lumyte.Graphics.Shared/ShaderBindingData.cs` は選択表全体をbindingへ投影するため、二つの表の分離はbarrierとは別に必要である。storage textureやsRGB storage書込みは必要としない。
+### GPU前処理の有限容量
 
-区間のcompute終了後、出力bufferへComputeShader/ShaderWrite→FragmentShader/ShaderReadのbarrierを記録する。最終passは一つのactive tileにつき一つの矩形をinstance描画し、各fragmentが対応するTileColorを一度読み、既存のpremultiplied SrcOverでtargetへ合成する。タイル境界の矩形は重ならず、target外を切り詰め、色を補間・filterしない。
+GPUの可変長出力を無制限なappendへ任せない。CPUは曲線ごとの分割数と、生成線分が触れ得る保守的タイル範囲から出力上限を計算し、固定範囲を予約する。二次・三次Bezierのdevice空間の二階微分上限Mから、各区間の弦誤差が `M/(8*N*N)<=0.125` となるNを選び、線分出力の開始位置をprefix sumで固定する。三次は二つの二階差分のnormの最大値の6倍、二次は二階差分のnormの2倍をMとする。Nは `max(1,ceil(sqrt(M/(8*0.125))))` とし、直線・Close・塗りの暗黙閉辺を含む線分合計は既存の一path 65536辺上限以下にする。計算と上への丸めはbinary64で行い、非finiteや容量超過をPrepareで拒否する。この誤差は幾何的な弦近似の上限であり、GPU座標計算の丸め誤差は別に検証する。
 
-透明から作った区間色を背景へ一度合成できるのは、対象命令の外側合成をSrcOverに限定するためである。paint内のCompositeはその命令内で隔離評価し、targetの背景色を入力にしない。背景を読むblendやfilterをこの経路へ混ぜない。
+strokeは基準コミットのStrokeStyle2Dにあるwidth、cap、join、miter limitを扱い、GPUは予約済みの範囲にだけ出力する。CPUは同じPathFlattening2D.Strokeの式でroundの分割数r（8以上4096以下）を決めるが、全接続の三角形は展開しない。平坦化辺上限Eとcontour数Cから、bodyは2E、joinはE+C箇所、capと孤立点は合わせて3C箇所を上限とし、一箇所max(2,r)三角形を予約する。roundの必要分割が4096を超える場合、または三角形予約合計が既存の65536を超える場合は準備を拒否する。geometry・paint・clipを含む既存の累積262144 Vector4予算と総作業bytesにも準備時に課金し、上限へclampして誤差条件を破ることはしない。
 
-この構成によりLoad先のtextureにSampled、Storage、CopySourceを追加要求しない。targetは入口・出口ともColorAttachmentで、ClearはPreparedDraw2Dが全体の先頭で一度だけ行い、区間ごとの最終passはLoad/Storeとする。空描画のClearも実行する。描画間のColorOutputの依存を維持し、computeの前後に未終了passを残さない。
+辺参照の予約は各曲線のcontrol hullが触れる全タイル数とNの積を上限とし、strokeではwidth・square cap・round cap・miter limitを含む保守的なdevice外接領域へ拡張し、参照上限を「展開後の全三角形辺数上限 × 拡張後boundsのタイル数」とする。単なる元曲線のNをstroke辺数に流用しない。描画参照は描画boundsのタイル数を上限にする。backdropの行・列とprefix scan領域も描画boundsから固定長を予約し、輪郭がない内側タイルへの巻数伝播を辺参照容量から落とさない。実出力はGPUのcount/scanで詰めるが、容量を増やすためのreadback・再submitは行わない。
 
-CPUで準備したrecord・directory・参照列はCopyWrite→ComputeShader/ShaderReadへ可視化する。最終passのTileHeader読出しにも対応するShaderReadの可視性を与える。出力bufferを別区間で再利用するときはFragmentShader/ShaderRead→ComputeShader/ShaderWriteも記録する。引数登録表のaccess admissionとGPU barrierは別の責務であり、どちらも省略しない。
+保守的上限が大きいだけで実際は小さな入力も拒否され得る。この制約を隠して全シーン対応とはしない。GPUでの範囲検査とcapacity assertionを入れ、不正入力やoverflowで別領域へ書かない。入力検査・上限計算とGPU出力数の整合は受け入れ条件であり、予約上限を破る実装は描画の近似や黙った切捨てで扱わない。
 
-### 上限、失敗と対応環境
+### 画像出力と3Dとの共通合成
 
-MaxWorkingBytesは一つのPrepareで使用するcompute固有のCPU配列、upload、GPU入力、中間色、登録表の概算所有bytesを合計した上限である。共有する同一allocationは一回だけ課金し、GPU側だけを数えてCPU配列を無制限にしない。frame用の中間色は最大の区間の分を一つだけ確保し、順次再利用する。再利用した入力もそのPrepareが参照するallocationとして課金する。既存共通資産のretained予算は別途維持する。driver内部のpipeline・descriptor実装や物理VRAM全体の使用量を保証する値ではない。
+Graphの新しいAppend2Dは、boundsに対応する単一mip/layerのRgba16Float、linear premultiplied RGBA、DisplayLinearのEffectImageを返す。空の描画内容でも指定された正のbounds全体を透明に初期化する。PixelScaleは正の有限値、Boundsは有限な整数の半開区間で、左上がPixelOriginとなる。非整数座標の描画内容を丸めず、画像出力のextentだけを整数にする。
 
-| 対象 | 規則 |
-| --- | --- |
-| MaxWorkingBytes | 既定256 MiB。正数のみ |
-| タイル参照数 | 全区間合計で最大4,194,304。各参照16 Bも予算へ課金 |
-| record、geometry、paint、clip | 既存の受理上限を維持 |
-| bufferとbinding | MaxBufferSize、MaxStorageBufferBindingSize、引数表の実binding上限以下 |
-| workgroup | MaxComputeInvocationsPerWorkgroupが256以上、各軸sizeが16/16/1以上 |
-| dispatch | MaxComputeWorkgroupsPerDimensionを各軸で満たす |
+StandardとCpuSparseStripsはgraphのRenderAttachment | Sampled textureへ描く。GpuComputeはfloat32 RGBAの書込可能bufferへ結果を作り、通常のresolve passで同じtexture形式へ出力する。基準APIにはstorage textureがないため、新しいtexture usage/state/bindingを暗黙に仮定しない。Graph画像へのresolveは透明の出力先を上書きし、背景を読み込まず、buffer値の二重premultiplyやsRGB再decodeを行わない。
 
-既存のDeviceCapsと引数表のadmissionを使い、存在しないCompute feature flagを仮定しない。shader targetに対応するcompute artifactと最終描画artifactを用意し、両方のpipeline作成成功を必要とする。capability不足、予算超過、索引・byte数のchecked overflowはPrepare時のNotSupportedExceptionとし、途中まで成功した結果を返さない。optionsの不正値はArgumentOutOfRangeException、既存の入力不正は既存の例外、取消はOperationCanceledException、確保・backendの失敗は元の例外を保持する。
+既存の直接描画PrepareAsyncは別の出口契約を持つ。GpuComputeは透明から作った結果を、Loadした既存attachmentへ固定機能のpremultiplied SrcOverで合成し、上書きしない。Clearでは既存どおりclear色をsRGBからlinearへ変換・premultiplyして先頭で一回clearし、その後に同じ合成を行う。targetは入口・出口ともColorAttachmentで、Sampled/Storage/CopySourceを追加要求しない。空描画のClearも実行する。直接描画でも中間丸めを省く差は生じるが、既存背景を消す変更ではない。
 
-CPUの一時配列・カウンターの確保前にも、その長さと保守的な所有bytesをcheckedで計算し、上限内であることを確認する。全区間を事前計数して予算とbindingsを確認してからGPU資源を確保する。固定長recordのページ境界では、paint等の参照を区間内の論理IDへ再配置してcompute専用の登録表でmaterializeする。最終描画専用の表とは統合せず、両表を別々にbinding admissionへ通し、両方の所有bytesを作業予算へ課金する。収容できなければ準備を拒否し、binding容量の都合で区間を描画先へ追加flushして中間丸めを変えない。入力分類後の失敗で既存描画へ戻すことも、GPU実行中にbufferを増やすこともない。
+出力を3Dへ重ねる、2Dレイヤーを重ねる、opacity、blur、backdropの生成・置換はImageEffectsと親graphのpassで表現する。既存のAppendCompositeは同じColorSemanticの二画像を要求する。SceneLinearな3D画像へDisplayLinearな2Dをそのまま合成せず、3Dのtone mapping後に重ねる。3D面への貼付けも同じSampled画像を使えるが、色semanticを3D側で明示的に合わせる。depthを必要とする配置やpresentationは3D・host側の責務である。
 
-### 所有権、保持描画とRenderGraph境界
+方式の選択単位は独立した描画内容またはレイヤーであり、一つの命令列を図形種別ごとに三方式へ分割しない。各画像は隔離された群として扱われる。A、B、Cの描画順を保持したいとき、AとCだけを同じ画像へ先にまとめてBへ重ねてはならない。group opacityは個々の描画のopacityとは別に画像へ一度適用する。
 
-新しい内部batchは既存のIPreparedCommandBatch2Dを実装する。CPU準備はGPUへsubmitせず、Recordは一回だけ、内部のupload・compute・最終描画を呼出元のcommandへ記録する。rendererのDispose後も準備済みbatchの資源tokenは有効で、最後のGPU使用とcommand破棄が済むまで資源を保持する。[GPU寿命契約](GRAPHICS-0014-caller-managed-resource-validation.md#決定)を変更しない。
+### 親graphへのpass追加と資源寿命
 
-保持cacheに入るのは不変のrecord・paint・clip・タイル参照列と、その完了済みupload情報である。書換可能なTileColorとそれを含む登録表はframeが所有し、同時in-flight frame間では共有しない。共有immutable入力だけを既存のretained keyで再利用し、kind・順序・内容・transform・clip・extent・format・DPR・device/resource generationの変更をkeyに反映する。区間順序が変わればタイル参照列を再生成する。
+Append2Dは同じdeviceのparentがIsBuildingである間に呼ぶ。内部の共通準備処理はtargetのdescriptorとpixel originからpass用データを作り、実viewはCompile後のcallbackで解決する。直接描画のPrepareAsyncへ架空のviewを渡したり、async準備をRecord callback内で実行したりしない。
 
-既存の `IRetainedCommandBatch2D` / `IRetainedMemory2D` への参加を実装条件とし、immutable資産とframe scratchの所有者を分ける。既存cacheのassetは一つのframeへ排他的に貸し出されるため、その貸出し後、準備済みbatchへ内部のIComputeFrameBinding2D.BindFrameを一回呼ぶ。frameが持つComputeFrameResources2Dからscratchと区間用登録表を借用させ、戻ったbinding tokenもframeが保持する。RecordRetainedの公開されていない既存シグネチャは変えず、このbindingを介してscratchへ接続する。bindingなしのcompute Recordと二重bindはInvalidOperationExceptionとする。
+追加するcopy・compute・raster・resolveは独立したgraph passとして宣言する。UseBuffer/UseTextureのscopeとstateから、copy→compute、compute→fragment、raster→後続samplingの依存を親graphが作る。内部に大きな不透明な実行器を置いてgraphの依存解析を迂回しない。CPUで用意する入力のuploadとGPUで生成する出力を区別し、culled producerを読ませない。
 
-完了とcommand破棄を確認したRetire、または確実な未送信中断では、tokenの解除を先に済ませてからassetをcacheへ返す。解除後のcached assetはframe・scratch・登録表への参照を保持しない。tokenは貸出し世代を照合し、古いcleanup再試行で次のframeのbindingを解除しない。直接描画もPreparedDraw2Dの内部ownerが同じbindingとscratchを持ち、完了後のDisposeで解除する。解除失敗時はassetを再貸出しせず、既存cleanup ownerが再試行を保持する。Retireするまでscratchを再貸出しせず、取消・device loss・送信結果不明では隔離する。cache上限は使用中frameを追い出さず、shared ownerのbytesは一回だけ数える。未送信の中断、部分準備の失敗、cleanupの再試行、HotReloadとdevice lossは既存の保持描画の状態遷移を使う。DisposeからWaitは呼ばない。
+compute出力bufferのReadWrite登録とfragmentのReadOnly登録はpassごとの別表へ置く。選択表全体がbindingへ投影される基準コミットの `src/Graphics/Lumyte.Graphics.Shared/ShaderBindingData.cs` の制約に従い、同じ範囲のRO/RWを一表へ同時登録しない。表のbinding admissionとGPU barrierは両方必要である。GPU scanは複数dispatchとgraph依存で実装し、workgroup間をローカルbarrierだけで同期しない。
 
-本選択は直接描画と保持描画のRenderer2Dだけに適用する。Drawing2D.RenderGraphはRenderer2D factoryを入力としないため、今回の公開APIから自動的にcompute化されるとは説明しない。既存Graph adapterの出力・外部資源宣言・layer/effect経路は変更せず、Graphのbatch収集へ本compute batchを渡さない。GPUでのflatten/binning、画像samplingを含むcompute、Graph統合、damage領域の差分描画は今回の対象外である。
+GPU一時資源はgraphがCreateBuffer/CreateTextureで作り、固定pipeline、upload、rendererの資源tokenはIRenderGraphLifetimeへまとめて準備開始前にRetainする。成功したCompileでplanへ移し、未Compileの放棄、Append失敗、Compile失敗でも同じownerがcleanupを保持する。Append失敗後はparentを捨てて再構築し、部分的な追加を成功扱いしない。
+
+直接・保持描画では既存の一回Record、AttachSubmission、完了とcommand破棄後のRetireを維持する。immutableなCPU記録・形状・strip・paintのcacheと、frameごとに書くmask・tile・scan・色bufferを分け、in-flight frame間で可変領域を共有しない。cache keyにはbackend、入力identity、transform、clip、origin、DPR、extent、誤差規則、device/resource generationを含める。paint変更だけで再利用できるshape cacheと、paint込みの画像cacheを混同しない。
+
+Graph経路は公開APIに送信結果の通知を持たないため、RecordしただけでGPU residencyをrendererへ公開しない。Graphの一時GPU出力はplan内だけで使い、GPU完了後のplan解放で廃棄する。フレーム間ではCPUの不変データを再利用できるが、Graphをまたいだ完成済みGPU atlasや画像の再利用を自動で保証しない。呼出元が明示的に保持・importする画像は既存の外部資源寿命契約に従う。
+
+### 上限、失敗と既存APIの互換性
+
+MaxWorkingBytesは一つのPrepareまたはAppendで到達するCPU配列・upload・GPU入力・一時出力・登録表の保守的な所有bytes上限で、既定256 MiB、正数とする。cache hitでも使用するallocationを一度課金し、同一ownerを重複計上しない。既存のretained idle予算も別に維持し、driver全体のVRAM上限を保証する値とはしない。計数とbyte計算はcheckedで、CPU配列の確保前にも上限を検査する。
+
+mask/stripの境界データ、線分、tile参照を含め、既存のgeometry・paint・clip上限を維持する。tile参照は一回の準備で最大4,194,304、scan・mask・色bufferも総予算へ含める。buffer/binding/dispatch/workgroupはDeviceCapsと実際の引数表admissionで検証する。256 invocationの16×16workgroupを基本とし、対応artifactとpipelineの生成成功を必要とする。
+
+Standardの専用経路にcompute不要な入力しかなければcompute pipelineを作らない。compute対象を含む場合のcapability不足、予算超過、未対応入力はNotSupportedException、optionsやboundsの不正はArgumentOutOfRangeException/ArgumentException、取消はOperationCanceledExceptionとする。backendの生成・確保失敗は元の例外を保持する。失敗による方式変更、AA精度低下、入力の切捨ては行わない。
+
+RenderGraphCanvas2D、RenderGraphDrawList2D、既存のAppend2D(RenderGraphRenderer2D)とレイヤーAPIは互換入口として残す。新経路はそれらを要求せず、通常のDrawList2Dを直接画像化する。既存のlayer/effect命令を通常DrawList2Dへ混ぜたり、既存の直接描画がlayerを受理するように変えたりしない。既存APIの廃止・削除とResources/DIの方式別選択は今回の判断に含めない。
 
 ### 契約とAPI差分
 
-比較元は基準コミットの `src/Graphics/Lumyte.Graphics.Drawing2D/Execution/Renderer2D.cs` である。既存の5引数・6引数constructorを削除・変更せず、新規factoryとoptionsを同じnamespaceへ追加する。既存のDI登録とResources連携は従来constructorを使い続ける。factoryの返す型、Prepareの戻り値、公開Canvas・sceneのAPIは変えない。内部実装型は公開しない。
+以下は基準コミットの公開APIへの追加である。Renderer2Dの5引数・6引数constructor、直接・保持描画の戻り値は残す。三方式の実装は新しいCanvas型や外部ライブラリへの委譲ではなく、共通モデルを使う実行モジュールである。Graphの新入口は既存Append2Dへoverloadとして追加し、EffectImage自体とImageEffectsの合成APIは変更しない。
 
 ```diff
  namespace Lumyte.Graphics.Drawing2D
  {
-+    public sealed record DrawingComputeOptions2D
++    public enum DrawingBackend2D { Standard, CpuSparseStrips, GpuCompute }
++    public sealed record DrawingRendererOptions2D
 +    {
-+        // 一つのPrepareのcompute固有所有bytes上限。正数、既定256 MiB。
++        public DrawingBackend2D Backend { get; init; } = DrawingBackend2D.Standard;
++        // CPU・GPUの所有bytes上限。正数。方式ごとの動的fallbackには使わない。
 +        public long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
 +    }
-+
      public sealed partial class Renderer2D : IDisposable
      {
-+        // 描画平均後のfloat32区間合成を明示選択。自動fallbackなし。
-+        // deviceとrenderersは借用。optionsは作成時に検証・snapshot化する。
-+        // GPU資源はPrepareで遅延生成し、rendererと準備ownerが共有する。
-+        // custom rendererへの配送は維持。外部DrawingResources2Dは受け取らない。
-+        public static Renderer2D CreateTiledCompute(
-+            IGraphicDevice device,
-+            DrawingCommandRenderers2D renderers,
-+            DrawingComputeOptions2D? computeOptions = null,
++        // deviceは借用。optionsは検証・snapshot化。GPU資源は準備時に遅延生成。
++        // 同じDrawList2Dを全方式で受理。組込みshader・命令だけを構成する。
++        public static Renderer2D Create(IGraphicDevice device,
++            DrawingRendererOptions2D? options = null,
 +            DrawingRetentionOptions2D? retentionOptions = null);
+     }
+ }
+ namespace Lumyte.Graphics.Drawing2D.RenderGraph
+ {
++    public sealed record DrawingImageOptions2D
++    {
++        // 正の寸法とcheckedな整数端点。原点を共通device座標へ保持する。
++        public required EffectPixelRect Bounds { get; init; }
++        public float PixelScale { get; init; } = 1;
++    }
+     public static class Drawing2DRenderGraphExtensions
+     {
++        // 同じdeviceの構築中graphへ追加。固定資源はgraph/planが所有する。
++        // Rgba16Float・DisplayLinear・premultipliedの透明初期化済み画像。
++        public static ValueTask<EffectImage> Append2D(this RenderGraphBuilder graph,
++            Renderer2D renderer, DrawList2D content, DrawingImageOptions2D options,
++            CancellationToken cancellationToken = default);
++        // sourceはawait完了まで保持。frameへ可変sceneの借用を持ち越さない。
++        public static ValueTask<EffectImage> Append2D(this RenderGraphBuilder graph,
++            Renderer2D renderer, DrawingSceneReadLease2D source, DrawingImageOptions2D options,
++            CancellationToken cancellationToken = default);
++        public static ValueTask<EffectImage> Append2D(this RenderGraphBuilder graph,
++            Renderer2D renderer, DrawingSnapshot2D source, DrawingImageOptions2D options,
++            CancellationToken cancellationToken = default);
      }
  }
 ```
 
-保持batchとframeの接続に必要な内部追加は次のとおりである。対象namespaceとassemblyは上と同じで、既存の外部custom batchへ実装を要求しない。ComputeFrameResources2Dはframe専有のscratchと登録表のownerであり、そのDisposeはGPU完了、または確実な未送信を確認した後に行う。
-
-```diff
-+internal sealed class ComputeFrameResources2D : IDisposable
-+{
-+    public void Dispose();
-+}
-+
-+internal interface IComputeFrameBinding2D
-+{
-+    // 排他的なasset貸出し中に一回。frameは借用、tokenは世代付きbinding解除のみ。
-+    IDisposable BindFrame(ComputeFrameResources2D frame);
-+}
-```
+Graph宣言のRenderGraphBuilderは `Lumyte.Graphics.RenderGraph.RenderGraph` のalias、EffectImage/EffectPixelRectは `Lumyte.Graphics.ImageEffects`、CancellationTokenとValueTaskはSystemの既存型である。新しい公開backend interfaceや公開命令配列は不要である。Graph adapterは既存friend境界から、直接描画と共有する内部準備結果を取得する。その準備結果はpassごとの資源・実行callbackを持ち、公開CanvasへGPU資源やgraph handleを保存しない。
 
 ## 検討した代替案
 
-- 全描画をcomputeへ移す: 経路は統一できるが、単色矩形の既存最適化とcustom rendererを失い、画像のsampling契約も広げる。対象を明示した連続区間に限定する。
-- 全画素が全命令を走査する: 実装は単純だが、離れた図形まで画素ごとに判定する。CPUで保守的に絞ったタイル別参照列を使う。
-- GPUがflatten・binning・可変長確保まで行う: CPU前処理を減らせるが、既存のCPU clipの数値正本と有限予算、overflow処理を同時に変える。今回は前処理の境界を維持する。
-- computeで頂点だけを生成する: 固定機能を活用できるが、画素を担当する処理を連続命令間で共有するという今回の判断とは異なる。
-- targetを直接storageへ変更する: 最終passを省けるが、sRGB、Load先のusage、swapchainの対応を制限する。書込可能bufferから通常のattachment合成へ接続する。
-- パスの16 bit shape maskをCPUで作る: 辺評価をGPUから除けるが、面積比例のCPU作業と転送が増え、shapeの数値正本も変える。既存のshape点評価をcomputeで使う。
-- sampleごとにシーン全体を合成する: 別のAAモデルとしては有効だが、描画ごとに平均してから合成する既存の意味を変える。採用しない。
-- attachmentの中間丸めまで再現する: 互換性の利点はあるが、backendの変換規則をcomputeで模倣する必要がある。既存経路を残し、compute選択時の丸めの差を公開契約にする。
+- 方式ごとにCanvasを分ける: 型だけで実行を固定できるが、内容の再利用と比較、上位UIの方式非依存性を失う。同じ記録とrenderer選択へ分ける。
+- 単純図形を常に既存描画へ戻す: 標準方式には適するが、compute方式の区間を分断する。方式内部の専用処理へ統合する。
+- 全用途をcomputeへ統一する: 実行器は一種類になるが、既存の解析図形・文字atlas・固定機能合成を活かす通常経路を失う。用途に応じて三方式を明示選択する。
+- 全coverageを平均alpha一個にする: maskとstripは小さくなるが、paint・clipとのサンプル相関が失われる。境界のmembershipを保持する。
+- 各方式が独自のlayer/effect機構を持つ: 最適化は閉じるが、3Dと同じ処理・所有権を重複実装する。EffectImageと親RenderGraphを共通境界にする。
+- computeがtextureへ直接書く: resolveを減らせるが、基準のusage/state/bindingにない機能を必要とする。既存のbuffer書込みと通常passで画像化する。
+- GPU出力を読み戻して可変bufferを再確保する: 容量効率は改善し得るが、内部submit/waitとCPU往復が増える。保守的な上限の予約と事前拒否を選ぶ。
 
 ## 結果と影響
 
-対象の連続描画では画素色を担当スレッド内で保持し、区間のattachment合成を一回にまとめられる。利用者は作成APIだけで選択でき、targetのusageやGPU完了までの所有責任は増えない。一方、タイル参照のCPU生成と中間色buffer・最終passを負担し、孤立した図形や巨大な一パスで速くなる保証はない。
+利用者は同じ描画内容を三方式へ渡し、方式ごとのCanvasを作らずに、3Dと同じ画像処理・合成へ接続できる。方式をレイヤー単位で選べる一方、画像化と合成にはallocationと帯域の費用があり、単一の直接描画より常に速いとは保証しない。
 
-既存constructorの挙動と旧ADR本文を維持する。本書は新しい経路の設計提案であり、性能向上や描画品質の検証済み状態を意味しない。
+既存の96 B record、共有paint、CPU clip、明示的なGPU完了責任を共通基盤として使う。各方式の形状前処理と中間表現は異なり、同じ公開入力を受けることを理由に同じuploadや同じ画素結果を保証しない。旧ADRの本文は変更せず、採用・実装・性能検証を別の事実として扱う。
 
 ### 受け入れ条件
 
-- 参照列の順序・範囲・重複なし、16画素の境界、右下の端数、空区間、単一命令、custom前後、単色矩形前後、保持ノード前後を確認する。boundsの過小評価による描き落としを独立oracleで検出する。
-- 形状とpaintのpoint evaluatorをfragmentとcomputeで共通化し、NonZero/EvenOdd、strokeのcap/join/dash、退化gradient、paintの隔離合成、clipの全16 bit、origin/DPRを検証する。平均後合成の赤青例と、shape・gradient・clip相関の独立期待値を含める。
-- 中間TileColorを読んだテストでは単純な正確表現可能値をbit単位で確認する。最終形式への変換だけのテストはCPUのsRGB変換・premultiplyを分離し、Rgba8Srgbは各channelで1 code以内、Rgba16Floatは1 ULP以内とする。一般shape/paintでは既存の数値検証を維持し、旧attachment中間丸めとの差を別に記録する。
-- Clear/Load、透明区間、HDRを保持したRgba16Float背景、画像・MSDF・meshとの交互実行を検証する。RenderAttachmentだけのtargetで成功し、active targetをsamplingしないことを確認する。
-- capability不足、予算と参照上限の境界、checked overflow、binding不足、pipeline生成失敗、取消では準備結果を返さず、実行方式を変更しないことを確認する。
-- GPU validationでupload→compute→fragmentとscratch再利用のbarrier、passごとに分離した登録表のRead/ReadWrite、wgpuで同一範囲のReadOnly/ReadWriteが同時bindingされないこと、最終tile描画の非重複を確認する。Vulkan、DirectX、wgpuの対象backendごとに実行し、software GPUの結果をhardwareの性能根拠にしない。
-- 保持資産の再利用と失効、複数in-flight frameのscratch独立、Retire前の非再利用、未送信中断、待機取消、device loss、部分cleanup失敗の再試行を検証する。
-- 複雑パス、深いclip、半透明重なり、単純矩形、画像主体、静的保持、全面更新を分け、同じ入力と完了境界で比較する。CPU準備・GPU区間・最終合成・転送量・中間bytesを分離し、frame全体とbounded frames-in-flightも測る。未測定の高速化やdraw数削減だけを採用根拠にしない。
+- 同じDrawList2D、保持scene/snapshotを三方式へ渡し、Canvas再記録やbackend固有命令が不要なことを確認する。方式別のcacheとgenerationを分離し、transform・paint・order・extentだけの変更を個別に検証する。
+- Standardの単純図形・文字atlasの専用処理を維持し、mask生成の4×4 bitとpaint・clip相関を検証する。CpuSparseStripsは内側圧縮・境界bit・非重複と順序、GpuComputeは単純図形混在・辺分類・backdrop・scan・描画ordinalを検証する。
+- Bezierの分割誤差と予約上限、strokeのcap/join/miter、NonZero/EvenOdd、穴、特異変換、退化gradient、全paint・画像・mesh・distance fieldをbackend別oracleで検査する。三方式の画素差を保存し、既存テストのtoleranceを緩和しない。
+- bounds原点、DPR、空内容の透明初期化、group opacity、複数方式の重ね順、3D tone mapping後の合成を確認する。直接描画ではRenderAttachmentのみのLoad先の既存色を保持し、Clearの変換・空描画のclearも検証する。semantic不一致と別graphの画像は拒否する。
+- 親graphのcopy/compute/raster/resolve依存、pass別のRO/RW表、culling、未初期化read、Compile前放棄と失敗、renderer先行Dispose、GPU完了後のplan解放、待機取消とdevice lossを検証する。
+- capability・予算・参照数の境界とoverflowを試し、動的fallback・切捨て・GPU範囲外書込みがないことを確認する。GraphのRecordだけでGPU cacheをresidentにしない。
+- 専用矩形・文字、画像主体、静的保持、パス変形、単純図形混在、高overdraw、高解像度を分けて比較する。CPU準備、GPU前処理、画素評価、最終合成、転送・中間bytesを区別し、同じ出力範囲とGPU完了境界で測る。未測定の高速化を保証しない。
