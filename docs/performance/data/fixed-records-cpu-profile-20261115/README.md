@@ -4,7 +4,7 @@ Production main 40ecd0f7e979301c630917815613bdb8947732ff versus PR c1795683aa0a0
 
 ## Capture and interpretation
 
-Existing Program.cs uses EventPipeProfiler(CpuSampling, providers, performExtraBenchmarksRun: true), LUMYTE_RECORD_BENCH=1 LUMYTE_RECORD_TRACE=1. Run frozen DLL with --filter '*rect1000*' '*path200*' --artifacts <owned-output>. Activate tools/setup/activate.sh with the recorded dev environment; VK_DRIVER_FILES is the hardware Radeon ICD. Use a short HOME-local TMPDIR (successful: ~/.cache/cputmp); initial long path made all baseline diagnostic children fail before capture, although ordinary measurements completed. Those failures and interrupted candidate build are retained separately, not used. Successful capture processes were serialized after the unrelated graphics worker had exited; no power/affinity changes.
+Existing Program.cs uses EventPipeProfiler(CpuSampling, providers, performExtraBenchmarksRun: true), LUMYTE_RECORD_BENCH=1 LUMYTE_RECORD_TRACE=1. Run frozen DLL with `--filter '*rect1000*' '*path200*' --artifacts <owned-output>`. Activate tools/setup/activate.sh with the recorded dev environment; VK_DRIVER_FILES is the hardware Radeon ICD. Use a short HOME-local TMPDIR (successful: ~/.cache/cputmp); initial long path made all baseline diagnostic children fail before capture, although ordinary measurements completed. Those failures and interrupted candidate build are retained separately, not used. Successful capture processes were serialized after the unrelated graphics worker had exited; no power/affinity changes.
 
 Both variants retain original runner/dependency hashes before and after; BDN generates separate diagnostic executable builds from the same frozen sources. Prior 256-pair, full-RGBA zero-channel-difference quality evidence is reused, not rerun. Standard uninstrumented headline ABBA evidence remains unchanged: its iteration cap/precision qualification failure remains; these diagnostic timings are not new performance-gain claims.
 
@@ -15,7 +15,7 @@ All eight traces have zero lost events, duplicate starts, unmatched begin/end, s
 ## Results
 
 | Case | main / PR actual frames | main / PR managed samples | main / PR estimated allocation KiB/frame | main / PR GC starts; paired GC pause ms |
-|---|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: |
 | rect1000 dynamic | 1920 / 1440 | 1511 / 1113 | 514.1 / 1003.3 | 60 / 60; 306.58 / 116.95 |
 | rect1000 cached | 9120 / 8640 | 1848 / 1698 | 11.6 / 27.2 | 0 / 0; 0 / 0 |
 | path200 dynamic | 30 / 120 | 1677 / 2337 | 26946.1 / 3896.6 | 30 / 0; 73.57 / 0 |
