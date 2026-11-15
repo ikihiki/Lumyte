@@ -16,7 +16,7 @@
 
 ## 決定
 
-CanvasとDrawList2Dを方式非依存の入力として維持し、Renderer2Dに標準方式、CPU疎strip方式、GPU compute方式の三つの実装を持たせる。標準方式は既存の専用描画とcomputeによるパスcoverage生成を組み合わせ、他の二方式は描画領域全体をそれぞれのパイプラインで処理する。各方式の結果を共通のEffectImageへ出力し、レイヤー・画像効果・3Dとの合成は親RenderGraphとImageEffectsで行う。
+CanvasとDrawList2Dを方式非依存の入力として維持し、IRenderer2Dを共通契約とし、標準方式のRenderer2D、CPU疎strip方式のSparseStripRenderer2D、GPU compute方式のComputeRenderer2Dを別の具象型として実装する。標準方式は既存の専用描画とcomputeによるパスcoverage生成を組み合わせ、他の二方式は描画領域全体をそれぞれのパイプラインで処理する。各方式の結果を共通のEffectImageへ出力し、レイヤー・画像効果・3Dとの合成は親RenderGraphとImageEffectsで行う。
 
 ### 利用者の変更前・変更後
 
@@ -49,10 +49,7 @@ var canvas = new Canvas2D();
 canvas.Begin();
 canvas.FillCircle(new System.Numerics.Vector2(100, 100), 40, paint);
 DrawList2D content = canvas.End();
-using var renderer = Renderer2D.Create(device, new DrawingRendererOptions2D
-{
-    Backend = DrawingBackend2D.Standard,
-});
+using IRenderer2D renderer = Renderer2D.CreateDefault(device);
 // parentはworldを生成した、まだ構築中のFrameGraph。
 EffectImage layer = await parent.Append2D(renderer, content, new DrawingImageOptions2D
 {
@@ -63,17 +60,17 @@ EffectImage output = parent.AppendComposite(faded, world, EffectCompositeMode.Sr
 parent.MarkOutput(output.Texture);
 ```
 
-BackendをCpuSparseStripsまたはGpuComputeへ変えても、contentの再記録は不要である。例のlayer内の円は従来と同じ内容であり、レイヤー操作を記録からgraph構築側へ移す。独立した三つの描画内容を別方式で描き、そのEffectImageを同じparentで順に合成することもできる。
+生成する型を `new SparseStripRenderer2D(device)` または `new ComputeRenderer2D(device)` へ変えても、受け手はIRenderer2Dのままで、contentの再記録は不要である。例のlayer内の円は従来と同じ内容であり、レイヤー操作を記録からgraph構築側へ移す。独立した三つの描画内容を別方式で描き、そのEffectImageを同じparentで順に合成することもできる。
 
 呼出元が一つのparentをCompileし、そのplanをRecord、SubmitしてGPU完了を確認する。command、plan、借用renderer・入力資源の順に解放する。Appendはgraphへ固定資源tokenを移すため、rendererのDisposeは新規準備を閉じても追加済みpassを失効させない。送信結果不明や待機取消を完了と扱わない。独立したgraph、内部Submit、内部Wait、2D専用の画像合成実行器は作らない。
 
 ### 共通入力と方式選択の境界
 
-方式はrendererの生成時に固定する。適応的な速度判定や、入力を見て別方式へ自動的に切り替える仕組みは入れない。メモリ不足や未対応入力でも方式を変更しない。同じ命令列を比較できるよう、backend、数値規則、対象範囲を準備結果の内部keyへ含める。
+方式は生成する具象型で固定する。方式選択enumや全方式を内包する切替factoryは設けない。適応的な速度判定や、入力を見て別方式へ自動的に切り替える仕組みは入れない。メモリ不足や未対応入力でも方式を変更しない。同じ命令列を比較できるよう、backend、数値規則、対象範囲を準備結果の内部keyへ含める。
 
 三方式の実装は `Lumyte.Graphics.Drawing2D` assembly内の実行モジュールに置く。internalのDrawList2D.Commands、保持ページ、DrawRecordPage2Dへ同じassemblyからアクセスする。DrawList2Dを公開配列へ変換したり、backendごとのCanvasや別の公開描画モデルを作ったりしない。Graph接続は既存のfriend assembly `Lumyte.Graphics.Drawing2D.RenderGraph` に置き、Drawing2DからRenderGraphやImageEffectsへの逆依存を追加しない。
 
-直接描画のPrepareAsyncと保持描画の二つのPrepareAsyncは三方式とも維持する。既存constructorはStandardを選び、既存のDrawingResources2Dや型別custom rendererの設定を尊重する。新factoryは埋込みの組込み資源を使い、外部shaderやcustom戦略の自動変換は行わない。custom命令や外部shaderの独自ABIを使うアプリは既存constructorの標準方式を使う。
+直接描画のPrepareAsyncと保持描画の二つのPrepareAsyncは三方式とも維持する。Renderer2Dの既存constructorは標準方式として既存のDrawingResources2Dや型別custom rendererの設定を尊重する。Renderer2D.CreateDefaultと他二型のconstructorは埋込みの組込み資源を使い、外部shaderやcustom戦略の自動変換は行わない。custom命令や外部shaderの独自ABIを使うアプリは既存constructorの標準方式を使う。
 
 ### 標準方式：専用描画とcompute coverage
 
@@ -153,26 +150,56 @@ RenderGraphCanvas2D、RenderGraphDrawList2D、既存のAppend2D(RenderGraphRende
 
 ### 契約とAPI差分
 
-以下は基準コミットの公開APIへの追加である。Renderer2Dの5引数・6引数constructor、直接・保持描画の戻り値は残す。三方式の実装は新しいCanvas型や外部ライブラリへの委譲ではなく、共通モデルを使う実行モジュールである。Graphの新入口は既存Append2Dへoverloadとして追加し、EffectImage自体とImageEffectsの合成APIは変更しない。
+以下は基準コミットの公開APIとの差分である。Renderer2Dは標準方式の具象型として残し、既存の5引数・6引数constructorと直接・保持描画のメソッドを削除しない。IRenderer2Dに既存の準備・保持統計の契約を抽出し、借用deviceの照会を追加する。他二型は同じ契約を実装し、それぞれが自分のpipeline・cache・所有者を管理する。共有処理は内部の委譲で再利用し、publicな継承階層や方式switchへまとめない。
 
 ```diff
  namespace Lumyte.Graphics.Drawing2D
  {
-+    public enum DrawingBackend2D { Standard, CpuSparseStrips, GpuCompute }
++    public interface IRenderer2D : IDisposable
++    {
++        // 同一deviceの事前検査用。借用であり、rendererはdeviceを破棄しない。
++        IGraphicDevice Device { get; }
++        // 発行した準備・再利用と所有bytes。driver全体の統計ではない。
++        DrawingRetentionStatistics2D RetentionStatistics { get; }
++        // 一回Recordするowner。内部Submit/Waitなし。完了後の解放は共通契約。
++        ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list, RenderTarget2D target,
++            CancellationToken cancellationToken = default);
++        // sourceはawait完了まで保持。AttachSubmissionとRetireの契約を維持。
++        ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSceneReadLease2D source,
++            RenderTarget2D target, CancellationToken cancellationToken = default);
++        ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSnapshot2D source,
++            RenderTarget2D target, CancellationToken cancellationToken = default);
++    }
 +    public sealed record DrawingRendererOptions2D
 +    {
-+        public DrawingBackend2D Backend { get; init; } = DrawingBackend2D.Standard;
-+        // CPU・GPUの所有bytes上限。正数。方式ごとの動的fallbackには使わない。
++        // CPU・GPUの所有bytes上限。正数。方式を選ぶ設定は持たない。
 +        public long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
 +    }
-     public sealed partial class Renderer2D : IDisposable
+-    public sealed partial class Renderer2D : IDisposable
++    public sealed partial class Renderer2D : IRenderer2D
      {
-+        // deviceは借用。optionsは検証・snapshot化。GPU資源は準備時に遅延生成。
-+        // 同じDrawList2Dを全方式で受理。組込みshader・命令だけを構成する。
-+        public static Renderer2D Create(IGraphicDevice device,
++        public IGraphicDevice Device { get; }
++        // 標準方式だけを生成。optionsは検証・snapshot化、GPU資源は遅延生成。
++        public static Renderer2D CreateDefault(IGraphicDevice device,
 +            DrawingRendererOptions2D? options = null,
 +            DrawingRetentionOptions2D? retentionOptions = null);
      }
++    public sealed class SparseStripRenderer2D : IRenderer2D
++    {
++        // deviceは借用。optionsを検証・snapshot化し、GPU資源は準備時に生成。
++        public SparseStripRenderer2D(IGraphicDevice device,
++            DrawingRendererOptions2D? options = null,
++            DrawingRetentionOptions2D? retentionOptions = null);
++        // Device、RetentionStatistics、三つのPrepareAsync、Disposeを共通契約どおり実装。
++    }
++    public sealed class ComputeRenderer2D : IRenderer2D
++    {
++        // deviceは借用。optionsを検証・snapshot化し、GPU資源は準備時に生成。
++        public ComputeRenderer2D(IGraphicDevice device,
++            DrawingRendererOptions2D? options = null,
++            DrawingRetentionOptions2D? retentionOptions = null);
++        // Device、RetentionStatistics、三つのPrepareAsync、Disposeを共通契約どおり実装。
++    }
  }
  namespace Lumyte.Graphics.Drawing2D.RenderGraph
  {
@@ -187,23 +214,52 @@ RenderGraphCanvas2D、RenderGraphDrawList2D、既存のAppend2D(RenderGraphRende
 +        // 同じdeviceの構築中graphへ追加。固定資源はgraph/planが所有する。
 +        // Rgba16Float・DisplayLinear・premultipliedの透明初期化済み画像。
 +        public static ValueTask<EffectImage> Append2D(this RenderGraphBuilder graph,
-+            Renderer2D renderer, DrawList2D content, DrawingImageOptions2D options,
++            IRenderer2D renderer, DrawList2D content, DrawingImageOptions2D options,
 +            CancellationToken cancellationToken = default);
 +        // sourceはawait完了まで保持。frameへ可変sceneの借用を持ち越さない。
 +        public static ValueTask<EffectImage> Append2D(this RenderGraphBuilder graph,
-+            Renderer2D renderer, DrawingSceneReadLease2D source, DrawingImageOptions2D options,
++            IRenderer2D renderer, DrawingSceneReadLease2D source, DrawingImageOptions2D options,
 +            CancellationToken cancellationToken = default);
 +        public static ValueTask<EffectImage> Append2D(this RenderGraphBuilder graph,
-+            Renderer2D renderer, DrawingSnapshot2D source, DrawingImageOptions2D options,
++            IRenderer2D renderer, DrawingSnapshot2D source, DrawingImageOptions2D options,
 +            CancellationToken cancellationToken = default);
      }
  }
 ```
 
-Graph宣言のRenderGraphBuilderは `Lumyte.Graphics.RenderGraph.RenderGraph` のalias、EffectImage/EffectPixelRectは `Lumyte.Graphics.ImageEffects`、CancellationTokenとValueTaskはSystemの既存型である。新しい公開backend interfaceや公開命令配列は不要である。Graph adapterは既存friend境界から、直接描画と共有する内部準備結果を取得する。その準備結果はpassごとの資源・実行callbackを持ち、公開CanvasへGPU資源やgraph handleを保存しない。
+Graph宣言のRenderGraphBuilderは `Lumyte.Graphics.RenderGraph.RenderGraph` のalias、EffectImage/EffectPixelRectは `Lumyte.Graphics.ImageEffects`、CancellationTokenとValueTaskはSystemの既存型である。IRenderer2Dの利用側は具象型を調べず、constructor injectionでも同じ契約を受け取れる。利用側が生成した具象instanceをIRenderer2Dとして渡し、既存DI登録が自動的に方式を選ぶとはしない。Disposeは新規Prepareを閉じ、破棄後のPrepareはObjectDisposedExceptionとするが、既存の準備ownerやGraphへ移したtokenは完了まで保持する。同一instanceの並列Prepareは保証しない。公開CanvasへGPU資源やgraph handleを保存しない。
+
+### インターフェースからGraph準備への接続
+
+IRenderer2DはDrawing2D assemblyに置き、RenderGraphやImageEffectsの型を公開メンバーへ入れない。Graph adapterは、同じassemblyにある内部のIDrawingPassRenderer2Dを介してpass別の準備結果を取得する。組込みの三型が両方の契約を実装する。単なるRenderer2Dへのdowncast、型名判定、方式enumのswitchは使わない。
+
+内部の準備はtargetのdescriptorとoriginだけで実行し、戻り値はcopy・compute・raster・resolveごとの資源宣言と記録callback、保持すべきownerを持つ。既存friendのGraph adapterがそれを親graphへ変換する。新しい公開命令配列やCanvas別型、Drawing2DからGraphへの逆依存は不要である。
+
+```diff
+ namespace Lumyte.Graphics.Drawing2D
+ {
++    internal interface IDrawingPassRenderer2D
++    {
++        ValueTask<DrawingPassPlan2D> PreparePassesAsync(DrawList2D content,
++            DrawingTargetInfo2D target, CancellationToken cancellationToken);
++        ValueTask<DrawingPassPlan2D> PreparePassesAsync(DrawingSceneReadLease2D source,
++            DrawingTargetInfo2D target, CancellationToken cancellationToken);
++        ValueTask<DrawingPassPlan2D> PreparePassesAsync(DrawingSnapshot2D source,
++            DrawingTargetInfo2D target, CancellationToken cancellationToken);
++    }
++    // 内部準備結果。native targetを保持せず、pass列と固定ownerを所有する。
++    internal sealed class DrawingPassPlan2D : IDisposable
++    {
++        public void Dispose();
++    }
+ }
+```
+
+この内部契約は組込み三型のGraph統合用である。公開IRenderer2Dを第三者が実装しても、内部契約を自動取得するわけではない。新Append2Dへ内部契約のない実装を渡した場合は、graphを変更する前にNotSupportedExceptionで拒否し、標準方式へ置き換えない。第三者のGraph backend plugin境界を新設する判断は含めない。既存の型別custom rendererは標準Renderer2D内で引き続き使える。
 
 ## 検討した代替案
 
+- 一つのRenderer2Dと方式enumで切り替える: 生成入口は一つになるが、方式固有の依存・cache・制約が一型へ集中する。IRenderer2Dと別の具象型を使い、合成側は共通契約だけを受け取る。
 - 方式ごとにCanvasを分ける: 型だけで実行を固定できるが、内容の再利用と比較、上位UIの方式非依存性を失う。同じ記録とrenderer選択へ分ける。
 - 単純図形を常に既存描画へ戻す: 標準方式には適するが、compute方式の区間を分断する。方式内部の専用処理へ統合する。
 - 全用途をcomputeへ統一する: 実行器は一種類になるが、既存の解析図形・文字atlas・固定機能合成を活かす通常経路を失う。用途に応じて三方式を明示選択する。
@@ -220,10 +276,11 @@ Graph宣言のRenderGraphBuilderは `Lumyte.Graphics.RenderGraph.RenderGraph` �
 
 ### 受け入れ条件
 
-- 同じDrawList2D、保持scene/snapshotを三方式へ渡し、Canvas再記録やbackend固有命令が不要なことを確認する。方式別のcacheとgenerationを分離し、transform・paint・order・extentだけの変更を個別に検証する。
+- IRenderer2D経由で同じDrawList2D、保持scene/snapshotを三つの具象型へ渡し、Canvas再記録やbackend固有命令が不要なことを確認する。方式別のcacheとgenerationを分離し、transform・paint・order・extentだけの変更を個別に検証する。
 - Standardの単純図形・文字atlasの専用処理を維持し、mask生成の4×4 bitとpaint・clip相関を検証する。CpuSparseStripsは内側圧縮・境界bit・非重複と順序、GpuComputeは単純図形混在・辺分類・backdrop・scan・描画ordinalを検証する。
 - Bezierの分割誤差と予約上限、strokeのcap/join/miter、NonZero/EvenOdd、穴、特異変換、退化gradient、全paint・画像・mesh・distance fieldをbackend別oracleで検査する。三方式の画素差を保存し、既存テストのtoleranceを緩和しない。
 - bounds原点、DPR、空内容の透明初期化、group opacity、複数方式の重ね順、3D tone mapping後の合成を確認する。直接描画ではRenderAttachmentのみのLoad先の既存色を保持し、Clearの変換・空描画のclearも検証する。semantic不一致と別graphの画像は拒否する。
+- 三つの組込み型をIRenderer2Dで受けたGraph追加が具象型判定なしで動くこと、内部Graph契約のない外部実装はgraphを変更する前に拒否されることを確認する。
 - 親graphのcopy/compute/raster/resolve依存、pass別のRO/RW表、culling、未初期化read、Compile前放棄と失敗、renderer先行Dispose、GPU完了後のplan解放、待機取消とdevice lossを検証する。
 - capability・予算・参照数の境界とoverflowを試し、動的fallback・切捨て・GPU範囲外書込みがないことを確認する。GraphのRecordだけでGPU cacheをresidentにしない。
 - 専用矩形・文字、画像主体、静的保持、パス変形、単純図形混在、高overdraw、高解像度を分けて比較する。CPU準備、GPU前処理、画素評価、最終合成、転送・中間bytesを区別し、同じ出力範囲とGPU完了境界で測る。未測定の高速化を保証しない。
