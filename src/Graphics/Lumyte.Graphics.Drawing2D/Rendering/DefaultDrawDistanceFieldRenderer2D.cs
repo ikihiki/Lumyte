@@ -13,5 +13,5 @@ public sealed class DefaultDrawDistanceFieldRenderer2D : IDrawDistanceFieldRende
         RenderPreparationContext2D context,
         ReadOnlyMemory<DrawDistanceFieldCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRecordBatch2D.PrepareAsync(context, commands, cancellationToken);
 }

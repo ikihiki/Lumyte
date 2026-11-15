@@ -55,7 +55,7 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
             where T : unmanaged => owner.Events.Add(arguments);
 
         public void SetArguments<T>(in T arguments)
-            where T : struct, IShaderArguments => owner.Events.Add(arguments);
+            where T : struct, IShaderArguments => owner.Events.Add(T.ShaderTypeName == "DrawRangeArguments2D" ? RecordedDrawRange.Capture(IShaderArguments.Capture(arguments)) : arguments);
 
         public void SetPipeline(IGraphicsPipeline pipeline)
         {

@@ -9,7 +9,8 @@ public sealed record DrawingRetentionOptions2D
     /// <summary>Gets the maximum number of idle reusable batches.</summary>
     public int MaxCachedAssets { get; init; } = 512;
 
-    /// <summary>Gets the maximum estimated bytes of idle reusable batches.</summary>
+    /// <summary>Gets the retained-memory budget used when admitting idle reusable batches.</summary>
+    /// <remarks>Shared owned allocations and active immutable snapshots reserve this budget. Active frames are not evicted or retroactively rejected.</remarks>
     public long MaxCachedBytes { get; init; } = 64 * 1024 * 1024;
 
     internal void Validate()

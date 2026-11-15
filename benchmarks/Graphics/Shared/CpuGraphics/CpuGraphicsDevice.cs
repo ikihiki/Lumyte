@@ -69,6 +69,13 @@ public sealed class CpuGraphicsDevice : IGraphicDevice, IGraphicsDeviceOwner, ID
         get;
     }
 
+    /// <summary>Gets the total instance count consumed by direct and indexed draw commands since reset.</summary>
+    public long DrawnInstances
+    {
+        get;
+        internal set;
+    }
+
     /// <summary>Gets an immutable snapshot of bounded observations.</summary>
     public CpuGraphicsCounters Counters => new(Buffers, Textures, Shaders, Pipelines, Renders, Computes, DrawCount, DispatchCount, CopyCount, Barriers, Uploads, SubmitCount, Live, Hash);
 
@@ -168,6 +175,7 @@ public sealed class CpuGraphicsDevice : IGraphicDevice, IGraphicsDeviceOwner, ID
         Check();
         Buffers = Textures = Shaders = Pipelines = Renders = Computes = DrawCount = DispatchCount = CopyCount = Barriers = Uploads = SubmitCount = 0;
         Hash = 0;
+        DrawnInstances = 0;
     }
 
     /// <inheritdoc/>

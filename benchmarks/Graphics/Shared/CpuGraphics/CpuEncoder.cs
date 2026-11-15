@@ -127,6 +127,7 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
         }
 
         commands.Owner.DrawCount++;
+        commands.Owner.DrawnInstances += instanceCount;
         commands.Owner.Mix(((ulong)vertexCount << 32) | instanceCount);
     }
 

@@ -24,7 +24,10 @@ public sealed class RetainedAndPrimitiveCpuTests
             Assert.Equal(count, fixture.Statistics.CompiledRuns);
             Assert.Equal(count, fixture.Statistics.CachedAssets);
             Assert.Equal(0, fixture.Statistics.ActiveFrames);
-            Assert.Equal(count * 96L, device.Counters.UploadedBytes);
+
+            // Each independent resident run owns a 96-byte record and a 16-byte color payload.
+            Assert.Equal(count * 112L, device.Counters.UploadedBytes);
+            Assert.Equal(count, device.DrawnInstances);
             long live = device.Counters.LiveResources;
             for (int i = 0; i < 6; i++)
             {
@@ -113,7 +116,7 @@ public sealed class RetainedAndPrimitiveCpuTests
                 Assert.True(device.Counters.UploadedBytes > 0);
                 if (mutation != SceneMutation.Clip)
                 {
-                    Assert.Equal(96, device.Counters.UploadedBytes);
+                    Assert.Equal(112, device.Counters.UploadedBytes);
                 }
 
                 Assert.Equal(1, device.Counters.Submissions);
@@ -178,7 +181,8 @@ public sealed class RetainedAndPrimitiveCpuTests
             for (int wave = 0; wave < 8; wave++)
             {
                 Assert.NotEqual(0UL, fixture.PrepareRecordDispose());
-                Assert.Equal(64, device.Counters.Draws);
+                Assert.Equal(1, device.Counters.Draws);
+                Assert.Equal(64, device.DrawnInstances);
                 Assert.True(device.Counters.UploadedBytes > 0);
                 Assert.Equal(0, device.Counters.Submissions);
                 Assert.Equal(0, device.Counters.Dispatches);

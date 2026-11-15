@@ -10,7 +10,7 @@ public class RendererBenchmarks
     private DrawingCpuHarness _harness = null!;
     private DrawList2D _rectangles = null!;
 
-    /// <summary>Gets or sets rectangle counts bracketing the implementation's 1024-instance batch boundary.</summary>
+    /// <summary>Gets or sets neighboring rectangle counts around the historical 1024-instance split, now represented by fixed-record ranges.</summary>
     [Params(1023, 1024, 1025)]
     public int RectangleCount { get; set; }
 

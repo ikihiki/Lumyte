@@ -171,15 +171,63 @@ public sealed class RetainedRenderingCacheTests
         Assert.Equal(2, third.Disposals);
     }
 
+    /// <summary>Active snapshots reserve cache bytes without being disposed or retroactively rejected.</summary>
+    [Fact]
+    public void ActiveSnapshotBytesEvictOnlyCompletedIdleOwners()
+    {
+        using var cache = new RetainedDrawingCache2D(new() { MaxCachedBytes = 24 });
+        var idle = new Batch();
+        RetainedDrawingCache2D.FrameLease first = cache.AcquireFrame();
+        first.Assets.Add(new(Key(), idle));
+        cache.ReleaseFrame(first, true);
+        var active = new Batch();
+        RetainedDrawingCache2D.FrameLease second = cache.AcquireFrame();
+        second.Assets.Add(new(Key() with { Width = 128 }, active));
+        cache.AdmitFrame(second);
+        Assert.Equal(1, idle.Disposals);
+        Assert.Equal(0, active.Disposals);
+        Assert.Equal(0, cache.Statistics.CachedAssets);
+        cache.ReleaseFrame(second, false);
+        Assert.Equal(1, active.Disposals);
+    }
+
+    /// <summary>One shared allocation is charged once across idle and active assets.</summary>
+    [Fact]
+    public void SharedOwnerChargesAreDeduplicatedAcrossSnapshots()
+    {
+        using var cache = new RetainedDrawingCache2D(new() { MaxCachedBytes = 24 });
+        object shared = new();
+        var first = new Batch { SharedOwner = shared };
+        var second = new Batch { SharedOwner = shared };
+        RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+        frame.Assets.Add(new(Key(), first));
+        var other = new RetainedDrawingCache2D.Asset(Key() with { Width = 128 }, second);
+        frame.Assets.Add(other);
+        cache.ReleaseFrame(frame, true);
+        Assert.Equal(2, cache.Statistics.CachedAssets);
+        Assert.Equal(16, cache.Statistics.CachedBytes);
+        RetainedDrawingCache2D.FrameLease active = cache.AcquireFrame();
+        active.Assets.Add(cache.Take(other.Key)!);
+        cache.AdmitFrame(active);
+        Assert.Equal(0, first.Disposals);
+        Assert.Equal(0, second.Disposals);
+        cache.ReleaseFrame(active, true);
+        Assert.Equal(16, cache.Statistics.CachedBytes);
+    }
+
     private static RetainedDrawingCache2D.Key Key() => new([], Matrix3x2.Identity, [], 64, 64, TextureFormat.Rgba8Srgb, 1);
 
-    private sealed class Batch : IRetainedCommandBatch2D
+    private sealed class Batch : IRetainedCommandBatch2D, IRetainedMemory2D
     {
         public long EstimatedBytes => 16;
 
         internal int Disposals { get; private set; }
 
+        internal object? SharedOwner { get; init; }
+
         internal int FailuresRemaining { get; set; }
+
+        public void AccountMemory(Dictionary<object, long> owners) => owners.TryAdd(SharedOwner ?? this, EstimatedBytes);
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources)
         {

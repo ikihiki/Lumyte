@@ -310,6 +310,18 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         }
     }
 
+    internal void CancelUnpublished(ShaderResources resources)
+    {
+        if (!_scopes.Contains(resources))
+        {
+            throw new ArgumentException("The reservation does not belong to this preparation.", nameof(resources));
+        }
+
+        resources.Cancel();
+        _scopes.Remove(resources);
+        _preparedResources.Remove(resources);
+    }
+
     internal void RegisterPreparationCache(ClipNormalizationCache2D cache) => _preparationCaches.Add(cache);
 
     // Cache arrays are borrowed only while compiling/packing. Prepared payloads own their copies.

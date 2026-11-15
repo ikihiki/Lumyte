@@ -176,6 +176,13 @@ stage 間の schema 不整合を確認します。GPU テストは Vulkan と同
 一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
 Stable の WARP（debug layer 有効）では共通 suite 全体も成功しました。Preview partial program は未実行です。
 
+## シェーダー転送の検証
+
+shader-dataのCopyFromはmapped uploadのSpanへ直接書き込み、参照を最終16-byte領域へ符号化します。
+この経路はStable 620のWARP・native debug layerで、1／64／1024要素の一括転送、offset付き部分更新、
+DXIL shaderの読み取りを確認しています。rawとValidationDeviceの両方を含むDebug／Releaseの結果は
+[転送の検証記録](../../../docs/shader-transfer-validation.md#windows-direct3d-12-の追加検証2026-11-15)を参照してください。
+
 ## 任意のmanaged検証
 
 このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
