@@ -9,8 +9,7 @@ internal sealed record RecordedDrawRange(IGpuRef<DrawRecord2D> Records, IShaderR
 {
     internal static RecordedDrawRange Capture(ShaderValueSnapshot snapshot)
     {
-        ShaderValue Field(string name) => snapshot.Values.Single(value => value.Path == name);
-        uint UInt(string name) => BinaryPrimitives.ReadUInt32LittleEndian(Field(name).Data.Span);
-        return new((IGpuRef<DrawRecord2D>)Field("Records").Reference!, (IShaderReference)snapshot.Values.Single(value => value.IsReference && value.Path != "Records").Reference!, UInt("FirstRecord"), UInt("RecordCount"), MemoryMarshal.Read<Vector2>(Field("TargetSize").Data.Span), MemoryMarshal.Read<Vector2>(Field("PixelOrigin").Data.Span), UInt("Reserved0"), UInt("Reserved1"));
+        uint UInt(int offset) => BinaryPrimitives.ReadUInt32LittleEndian(snapshot.Data.Span[offset..]);
+        return new((IGpuRef<DrawRecord2D>)snapshot.Values.Single(value => value.Offset == 0).Reference!, (IShaderReference)snapshot.Values.Single(value => value.Offset == 16).Reference!, UInt(32), UInt(36), MemoryMarshal.Read<Vector2>(snapshot.Data.Span[40..]), MemoryMarshal.Read<Vector2>(snapshot.Data.Span[48..]), UInt(56), UInt(60));
     }
 }

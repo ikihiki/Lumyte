@@ -6,6 +6,7 @@
     <Description>Locator-based UI automation using normal pointer and keyboard input with host-driven frame waiting.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <ProjectReference Include="../Lumyte.UI/Lumyte.UI.csproj" />
     <InternalsVisibleTo Include="Lumyte.UI.Application" />
     <InternalsVisibleTo Include="Lumyte.UI.TextEditing.Automation" />

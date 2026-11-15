@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -105,9 +106,9 @@ public sealed class ArgumentPartitionTests
         Assert.All(device.Tables, desc => Assert.Equal(new ArgumentTableDesc { TextureCapacity = 1, SamplerCapacity = 1, BufferCapacity = 1 }, desc));
     }
 
-    /// <summary>Compact WGSL remapping allows a logical table larger than one draw's binding count.</summary>
+    /// <summary>Whole-table WGSL bindings roll over at the physical cap even below the logical slot cap.</summary>
     [Fact]
-    public void WgslLogicalTableGrowsUntilRemapSlotCap()
+    public void WgslWholeTablePartitionsAtPhysicalBindingCap()
     {
         ProfilingDevice device = Device(new() { TextureSlots = 3, TexturesPerDraw = 1, DirectSlotBindings = false }, ShaderTarget.Wgsl);
         using var plan = new ArgumentTablePlan(device);
@@ -122,8 +123,8 @@ public sealed class ArgumentPartitionTests
                 return scope;
             }).ToArray();
             plan.Materialize();
-            Assert.Equal(new uint[] { 3, 1 }, device.Tables.Select(desc => desc.TextureCapacity));
-            Assert.Same(scopes[0].Table, scopes[2].Table);
+            Assert.Equal(new uint[] { 1, 1, 1, 1 }, device.Tables.Select(desc => desc.TextureCapacity));
+            Assert.NotSame(scopes[0].Table, scopes[2].Table);
             Assert.NotSame(scopes[2].Table, scopes[3].Table);
         }
         finally
@@ -168,13 +169,13 @@ public sealed class ArgumentPartitionTests
         Assert.Null(pending);
     }
 
-    /// <summary>Exact typed ranges retain identity while read/write consumes both descriptor uses.</summary>
+    /// <summary>Exact typed read/write ranges use a single writable descriptor supporting both accesses.</summary>
     /// <param name="budget">The available storage descriptor count.</param>
     /// <param name="fits">Whether both descriptor accesses fit.</param>
     [Theory]
-    [InlineData(1u, false)]
-    [InlineData(2u, true)]
-    public void ReadWriteRangeConsumesTwoBindings(uint budget, bool fits)
+    [InlineData(0u, false)]
+    [InlineData(1u, true)]
+    public void ReadWriteRangeConsumesOneWritableBinding(uint budget, bool fits)
     {
         ProfilingDevice device = Device(new() { BuffersPerDraw = budget });
         using var plan = new ArgumentTablePlan(device);
@@ -297,7 +298,7 @@ public sealed class ArgumentPartitionTests
         {
             canvas.Save();
             canvas.ClipRect(new(0, 0, 16, 16));
-            canvas.FillCircle(new(8), 3, new Color2D(1, 0, 0, 1));
+            canvas.FillCircle(new(8), 3, new SRgba<float>(1, 0, 0, 1));
             canvas.Restore();
         }
 

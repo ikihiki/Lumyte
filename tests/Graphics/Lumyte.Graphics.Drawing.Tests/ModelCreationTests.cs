@@ -37,12 +37,17 @@ public sealed class ModelCreationTests
         /// <inheritdoc/>
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
+            if (targetMethod?.Name == "get_ValidationEnabled")
+            {
+                return false;
+            }
+
             if (targetMethod?.Name == "get_Caps")
             {
                 return new DeviceCaps { ShaderTarget = ShaderTarget.Wgsl };
             }
 
-            if (targetMethod?.Name == "CreateBuffer" && ++_allocations == 1)
+            if ((targetMethod?.Name is "CreateBuffer" or "CreateShaderDataBuffer") && ++_allocations == 1)
             {
                 return Buffer;
             }

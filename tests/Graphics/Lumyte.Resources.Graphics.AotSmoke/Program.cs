@@ -16,6 +16,7 @@ internal static class Program
     {
         using var profiling = new ProfilingListener();
         bool host = args.Contains("--host", StringComparer.Ordinal);
+        ShaderTransferDiagnostics.Verify();
         VerifyDirectImageEffects();
         VerifyShaderLoading(host);
         VerifyImageEffects(host, false);

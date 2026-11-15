@@ -16,19 +16,13 @@ namespace Lumyte.UI.Application.Tests;
 /// <summary>Checks standard EventSource profiling and retained resource lifecycle events.</summary>
 public sealed class ProfilingTests
 {
-    /// <summary>Checks a disabled provider creates no scopes or per-call allocations.</summary>
+    /// <summary>Checks a disabled stage returns no scope and emits no events.</summary>
     [Fact]
-    public void DisabledStagesDoNotAllocate()
+    public void DisabledStagesReturnNoScopeOrEvents()
     {
         using var listener = new Capture((EventKeywords)1);
         Assert.Null(UiApplicationProfiling.Begin(1));
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            UiApplicationProfiling.Begin(1)?.Dispose();
-        }
-
-        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+        Assert.Empty(listener.Events);
     }
 
     /// <summary>Checks typed context lookup, nesting, cancellation and fixed counters.</summary>

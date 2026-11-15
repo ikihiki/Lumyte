@@ -1,5 +1,8 @@
 # Drawing2D実GPU比較: Radeon 8060S / RADV
 
+> 2026-11-14: docs/performance/dataの圧縮バイナリ生データは削除しました。
+> JSON／CSV集計とmanifestは保持していますが、記載されたarchiveは現行treeには存在しません。
+
 - 日付: 2026-11-02
 - baseline: main `fbc8105`、PR #105 `ffe075c`
 - 計測source: `bc185cf`。[ハーネス](../../tools/benchmarks/drawing2d-incremental/README.md)

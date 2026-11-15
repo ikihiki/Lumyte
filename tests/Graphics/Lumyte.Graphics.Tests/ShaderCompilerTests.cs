@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
 using Lumyte.Graphics.Shaders;
+using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -62,6 +63,29 @@ public sealed class ShaderCompilerTests
         Assert.Contains(reflection.RootElement.GetProperty("parameters").EnumerateArray(), p => p.GetProperty("name").GetString() == "__lumyte_schema_BindingNode");
         ShaderTarget missing = target == ShaderTarget.Wgsl ? ShaderTarget.SpirV : ShaderTarget.Wgsl;
         Assert.Throws<NotSupportedException>(() => artifact.GetTarget(missing));
+    }
+
+    /// <summary>Online and offline preparation preserve members and parameters shadowing the root name.</summary>
+    /// <param name="target">The backend shader target.</param>
+    /// <returns>The scoped root compilation verification.</returns>
+    [Theory]
+    [InlineData(ShaderTarget.Wgsl)]
+    [InlineData(ShaderTarget.SpirV)]
+    [InlineData(ShaderTarget.Dxil)]
+    public async Task CompilerPreservesShadowedRootNamesAsync(ShaderTarget target)
+    {
+        using Stream source = typeof(ShaderBindingExercise).Assembly.GetManifestResourceStream("Lumyte.Shaders.binding-layout.slang")!;
+        using var reader = new StreamReader(source);
+        string original = await reader.ReadToEndAsync();
+        string prepared = ShaderSourcePreparation.Prepare(original);
+        Assert.Contains("struct BindingIdentifierProbe { uint arguments; };", prepared);
+        Assert.Contains("uint BindingIdentity(uint arguments)", prepared);
+        Assert.Contains("value.arguments = arguments;", prepared);
+        Assert.Contains("static BindingLayoutArguments arguments = __lumyte_wire_arguments.Load();", prepared);
+        IShaderCompiler compiler = new SlangShaderCompiler();
+        ShaderArtifact artifact = await compiler.CompileAsync(new() { Source = original, Target = target });
+        var offline = ShaderArtifact.LoadEmbedded(typeof(ShaderBindingExercise).Assembly, "Lumyte.Shaders.binding-layout.lshader");
+        Assert.True(ShaderDataLayout.Root(artifact.GetTarget(target), "arguments").Matches(ShaderDataLayout.Root(offline.GetTarget(target), "arguments")));
     }
 
     /// <summary>Checks failed Slang source returns diagnostics.</summary>

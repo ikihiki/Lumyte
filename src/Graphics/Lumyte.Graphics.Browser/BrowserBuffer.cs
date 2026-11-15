@@ -28,6 +28,10 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public object ShaderHandle => Native;
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }
@@ -136,6 +140,13 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
         }
 
         BrowserInterop.CopyBufferTo(_native, destination[..checked((int)length)], checked((int)offset));
+    }
+
+    internal JSObject AcquireMappedUploadRange(ulong offset, int length)
+    {
+        ValidateByteRange(offset, checked((ulong)length));
+        RequireMapping(MemoryPreference.Upload);
+        return BrowserInterop.AcquireMappedUploadRange(_native, offset, length);
     }
 
     private void RequireMapping(MemoryPreference memory)

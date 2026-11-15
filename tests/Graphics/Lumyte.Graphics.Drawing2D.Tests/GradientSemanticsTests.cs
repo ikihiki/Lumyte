@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -11,7 +12,7 @@ public sealed class GradientSemanticsTests
     [Fact]
     public void DegenerateGeometryAndColorLinesRemainRepresentable()
     {
-        ColorStop2D[] stops = [new(0.5f, new Color2D(1, 0, 0, 1)), new(0.5f, new Color2D(0, 0, 1, 1))];
+        ColorStop2D[] stops = [new(0.5f, new SRgba<float>(1, 0, 0, 1)), new(0.5f, new SRgba<float>(0, 0, 1, 1))];
         PaintGraph2D[] paints =
         [
             PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.Zero, Vector2.Zero, stops, ExtendMode2D.Pad),
@@ -43,7 +44,7 @@ public sealed class GradientSemanticsTests
     [Fact]
     public void SignedRadialRadiiReachTheShaderUnchanged()
     {
-        ColorStop2D[] stops = [new(0, new Color2D(1, 0, 0, 1)), new(1, new Color2D(0, 0, 1, 1))];
+        ColorStop2D[] stops = [new(0, new SRgba<float>(1, 0, 0, 1)), new(1, new SRgba<float>(0, 0, 1, 1))];
         var paint = PaintGraph2D.RadialGradient(new Vector2(2, 3), -10, new Vector2(5, 7), 20, stops, ExtendMode2D.Reflect);
         RadialPaintNode2D node = Assert.IsType<RadialPaintNode2D>(paint.Root);
         Assert.Equal(-10, node.R0);
@@ -61,9 +62,9 @@ public sealed class GradientSemanticsTests
     {
         ColorStop2D[] stops =
         [
-            new(-0.5f, new Color2D(0.5f, 0.5f, 0.5f, 0.5f)),
-            new(0.75f, new Color2D(1, 0, 0, 0.5f)),
-            new(0.75f, new Color2D(0, 0, 1, 1)),
+            new(-0.5f, new SRgba<float>(0.5f, 0.5f, 0.5f, 0.5f)),
+            new(0.75f, new SRgba<float>(1, 0, 0, 0.5f)),
+            new(0.75f, new SRgba<float>(0, 0, 1, 1)),
         ];
         var paint = PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.One, stops);
         DrawingProgram2D program = Compile(paint);

@@ -7,9 +7,11 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 {
     private BrowserComputePipeline? _pipeline;
 
-    private ShaderValueSnapshot? _arguments;
+    private BrowserRootStorage? _arguments;
     private object? _argumentProgram;
+    private bool _settingArguments;
     private BrowserArgumentTable? _table;
+    private BrowserArgumentTable? _currentRootHint;
 
     public void SetArgumentTable(IArgumentTable table)
     {
@@ -24,39 +26,55 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         _table = selected;
     }
 
+    public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        if (prepare != null)
+        {
+            throw new NotSupportedException("Use ValidationDevice for argument validation.");
+        }
+    }
+
     public void SetArguments<T>(in T value)
         where T : struct, IShaderArguments
     {
-        owner.ValidatePass(this);
-        if (_pipeline == null)
+        ThrowIfSettingArguments();
+        ValidateRootSelection();
+        BrowserComputePipeline program = _pipeline!;
+        _settingArguments = true;
+        try
         {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
+            BrowserRootStorage root = BrowserShaderTransfer.CreateRoot(owner.Owner, in value);
+            SelectRoot(root, program);
         }
-
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+        finally
+        {
+            _settingArguments = false;
+        }
     }
 
-    public void SetArguments(ShaderValueSnapshot arguments)
+    public void SetArguments<T>(in T value, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged
     {
-        owner.ValidatePass(this);
-        ArgumentNullException.ThrowIfNull(arguments);
-        if (_pipeline == null)
+        ThrowIfSettingArguments();
+        ValidateRootSelection();
+        BrowserComputePipeline program = _pipeline!;
+        _settingArguments = true;
+        try
         {
-            throw new InvalidOperationException("Select a program before setting its arguments.");
+            BrowserRootStorage root = BrowserShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName);
+            SelectRoot(root, program);
         }
-
-        _pipeline.ValidateAlive();
-        ShaderValueSnapshot snapshot = arguments.Copy();
-        ShaderDataLayout.Root(_pipeline.Data, snapshot.RootParameter).ValidateArguments(snapshot, validateReferences: true);
-        _arguments = snapshot;
-        _argumentProgram = _pipeline;
+        finally
+        {
+            _settingArguments = false;
+        }
     }
 
     public void SetPipeline(IGraphicsComputePipeline pipeline)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         ArgumentNullException.ThrowIfNull(pipeline);
         if (pipeline is not BrowserComputePipeline program || !ReferenceEquals(program.Owner, owner.Owner))
@@ -70,6 +88,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
         if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
@@ -83,6 +102,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 
     public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
     {
+        ThrowIfSettingArguments();
         owner.ValidatePass(this);
         if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
         {
@@ -94,7 +114,68 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         BrowserInterop.DispatchIndirect(handle, buffer.Native, arguments.OffsetInBytes);
     }
 
-    public void End() => owner.EndCompute(this, handle);
+    public void End()
+    {
+        ThrowIfSettingArguments();
+        owner.EndCompute(this, handle);
+    }
+
+    private void ThrowIfSettingArguments()
+    {
+        if (_settingArguments)
+        {
+            throw new InvalidOperationException("Root argument preparation is already active.");
+        }
+    }
+
+    private void ValidateRootSelection()
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a program before setting its arguments.");
+        }
+
+        _pipeline.ValidateAlive();
+    }
+
+    private void SelectRoot(BrowserRootStorage root, BrowserComputePipeline program)
+    {
+        try
+        {
+            owner.ValidatePass(this);
+            program.ValidateAlive();
+            if (!ReferenceEquals(_pipeline, program))
+            {
+                throw new InvalidOperationException("The selected program changed while preparing root arguments.");
+            }
+
+            if (_table != null && root.ImplicitTable != null && !ReferenceEquals(_table, root.ImplicitTable))
+            {
+                throw new ArgumentException("Selected table differs from root references.");
+            }
+
+            owner.KeepBinding(root);
+        }
+        catch
+        {
+            try
+            {
+                root.Dispose();
+            }
+            catch
+            {
+                // Preserve the original transfer or selection failure.
+            }
+
+            throw;
+        }
+
+        _currentRootHint = root.ImplicitTable;
+        _arguments = root;
+        _argumentProgram = program;
+    }
 
     private void PrepareDispatch()
     {
@@ -109,12 +190,23 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        ShaderBindingData? bindingData = null;
-        if (_pipeline.RequiresArguments && _arguments != null)
+        if (_pipeline.RequiresArguments && _arguments == null)
         {
-            _table?.ThrowIfDisposed();
-            var snapshot = ShaderBindingSnapshot.Capture(_arguments, _table, owner.ReadShaderData);
-            bindingData = new(snapshot, _pipeline.Data, owner.Owner.Caps);
+            throw new InvalidOperationException("Set arguments before drawing or dispatching.");
+        }
+
+        if (_table != null && _currentRootHint != null && !ReferenceEquals(_table, _currentRootHint))
+        {
+            throw new ArgumentException("Selected table differs from root references.");
+        }
+
+        BrowserArgumentTable? selectedTable = _table ?? _currentRootHint;
+        selectedTable?.ThrowIfDisposed();
+        IReadOnlyCollection<IShaderReference> registrations = selectedTable?.SnapshotRegistrations() ?? Array.Empty<IShaderReference>();
+        ShaderBindingData? bindingData = null;
+        if (_pipeline.RequiresArguments || selectedTable != null)
+        {
+            bindingData = new(registrations, _pipeline.Data, owner.Owner.Caps);
         }
 
         _pipeline.ValidateAlive();
@@ -122,7 +214,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         BrowserInterop.SetComputePipeline(handle, _pipeline.Resolve(bindingData));
         if (bindingData != null)
         {
-            var binding = new BrowserShaderBinding(owner.Owner, bindingData, true);
+            var binding = new BrowserShaderBinding(owner.Owner, bindingData, _pipeline.RequiresArguments ? _arguments : null, selectedTable, registrations, true);
             owner.KeepBinding(binding);
             BrowserInterop.SetShaderBinding(handle, binding.Native);
         }

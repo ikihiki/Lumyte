@@ -15,6 +15,7 @@ internal sealed unsafe partial class Direct3D12ComputePipeline
 
     private void Initialize()
     {
+        PipelineValidation.RootCapacity(Data);
         byte[] code = _compute.Native;
         fixed (byte* bytes = code)
         {

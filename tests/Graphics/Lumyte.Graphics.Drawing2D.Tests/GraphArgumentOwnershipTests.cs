@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -91,7 +92,7 @@ public sealed class GraphArgumentOwnershipTests
     [Fact]
     public void DirectUndeclaredAllocationIsRejectedBeforeNativeTablesOrCommands()
     {
-        var device = new ProfilingDevice();
+        var device = new ProfilingDevice { ValidationEnabled = true };
         using var graph = new Graph(device);
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
@@ -268,10 +269,10 @@ public sealed class GraphArgumentOwnershipTests
         commands.Dispose();
     }
 
-    /// <summary>Ordinary drawing and real image-effect scopes share the graph allocator when limits permit.</summary>
+    /// <summary>Ordinary drawing and real effects use one graph allocator but isolate sampled attachments.</summary>
     /// <returns>The asynchronous test completion.</returns>
     [Fact]
-    public async Task OrdinaryAndEffectPassesShareGraphOwnedTableAsync()
+    public async Task OrdinaryAndEffectAttachmentsUseIsolatedGraphOwnedTablesAsync()
     {
         var device = new ProfilingDevice();
         using var graph = new Graph(device);
@@ -279,9 +280,9 @@ public sealed class GraphArgumentOwnershipTests
         RenderGraphTexture target = graph.ImportTexture(targetTexture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite));
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillCircle(new(8), 2, new Color2D(1, 0, 0, 1));
+        canvas.FillCircle(new(8), 2, new SRgba<float>(1, 0, 0, 1));
         canvas.BeginLayer(new() { ContentBounds = new(0, 0, 16, 16), Effects = scope => scope.AppendOpacity(scope.Source, 0.5f) });
-        canvas.FillCircle(new(8), 3, new Color2D(0, 1, 0, 1));
+        canvas.FillCircle(new(8), 3, new SRgba<float>(0, 1, 0, 1));
         canvas.EndLayer();
         using var renderer = new RenderGraphRenderer2D(
             DrawingCommandRenderers2D.CreateDefault(),
@@ -294,26 +295,19 @@ public sealed class GraphArgumentOwnershipTests
         using var commands = new ProfilingCommands();
         compiled.Record(commands);
         Assert.Contains("image-effect", compiled.PassNames);
-        Assert.Single(device.Tables);
-        IArgumentTable table = Assert.Single(commands.Events.OfType<IArgumentTable>().Distinct());
-        Assert.Contains(commands.Events.OfType<ShaderValueSnapshot>(), root => root.ShaderTypeName == nameof(DrawingArguments));
-        Assert.All(commands.Events.OfType<ShaderValueSnapshot>().SelectMany(root => root.Values).Where(value => value.IsReference), value => Assert.Same(table, ((IShaderReference)value.Reference!).Table));
-        Assert.Equal(2, commands.Events.OfType<RecordedDrawRange>().Count());
-        Assert.All(commands.Events.OfType<RecordedDrawRange>(), root =>
-        {
-            Assert.Same(table, ProfilingDevice.Owner(root.Records));
-            Assert.Same(table, ProfilingDevice.Owner(root.PageMetadata));
-        });
-        Assert.All(commands.Events.OfType<DrawingArguments>(), root =>
-        {
-            Assert.Same(table, ProfilingDevice.Owner(root.Instructions));
-            Assert.Same(table, ProfilingDevice.Owner(root.Data));
-        });
+        Assert.Equal(4, device.Tables.Count);
+        Assert.Equal(new uint[] { 0, 0, 1, 2 }, device.Tables.Select(table => table.TextureCapacity));
+        Assert.Equal(new uint[] { 2, 2, 0, 2 }, device.Tables.Select(table => table.BufferCapacity));
+        Assert.Equal(4, commands.Events.OfType<IArgumentTable>().Distinct().Count());
+        RecordedDrawRange[] records = commands.Events.OfType<RecordedDrawRange>().ToArray();
+        Assert.Equal(2, records.Length);
+        Assert.NotSame(ProfilingDevice.Owner(records[0].Records), ProfilingDevice.Owner(records[1].Records));
+        Assert.All(records, root => Assert.Same(ProfilingDevice.Owner(root.Records), ProfilingDevice.Owner(root.PageMetadata)));
+        DrawingArguments compositor = Assert.Single(commands.Events.OfType<DrawingArguments>());
+        Assert.Same(ProfilingDevice.Owner(compositor.Instructions), ProfilingDevice.Owner(compositor.Data));
+        Assert.DoesNotContain(records, root => ReferenceEquals(ProfilingDevice.Owner(root.Records), ProfilingDevice.Owner(compositor.Instructions)));
         Assert.All(device.Instructions, instruction =>
-        {
-            Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
-            Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
-        });
+            Assert.Same(ProfilingDevice.Owner(instruction.Texture), ProfilingDevice.Owner(instruction.Sampler)));
         commands.Dispose();
         compiled.Dispose();
         prepared.Dispose();
@@ -342,7 +336,7 @@ public sealed class GraphArgumentOwnershipTests
     [Fact]
     public void InheritedBufferRegistrationCannotSmuggleAnUndeclaredGraphImport()
     {
-        var device = new ProfilingDevice();
+        var device = new ProfilingDevice { ValidationEnabled = true };
         using var graph = new Graph(device);
         using IGraphicsBuffer<uint> buffer = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead });
         graph.ImportBuffer(buffer, ShaderRead);

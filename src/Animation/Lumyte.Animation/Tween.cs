@@ -31,6 +31,8 @@ public sealed class Tween<T> : IAnimationSource<T>
 
         AnimationInterpolators.Validate(from);
         AnimationInterpolators.Validate(to);
+        interpolator.Validate(from);
+        interpolator.Validate(to);
         _from = from;
         _to = to;
         _interpolator = interpolator;

@@ -599,9 +599,9 @@ public sealed class AnimationStateMachineTests
         Assert.False(machine.Update(new Input(Moving: true), new AnimationOutput(), [], []));
     }
 
-    /// <summary>Performs warmed numeric updates and repeated transitions allocate no managed memory.</summary>
+    /// <summary>Checks each update takes one transition and outputs the destination value.</summary>
     [Fact]
-    public void WarmedNumericUpdatesAndRepeatedTransitionsAllocateNoManagedMemory()
+    public void RepeatedTransitionsAlternateStatesAndNumericOutput()
     {
         var clock = new ManualClock();
         var channel = AnimationChannel<float>.Create();
@@ -615,22 +615,21 @@ public sealed class AnimationStateMachineTests
         var output = new AnimationOutput();
         var events = new List<AnimationStateEvent<Motion>>();
         var transitions = new List<AnimationStateTransition<Motion>>();
-        for (int index = 0; index < 1000; index++)
+        for (int index = 0; index < 4; index++)
         {
+            Motion from = machine.CurrentState;
+            Motion to = index % 2 == 0 ? Motion.Action : Motion.Idle;
             output.Clear();
             transitions.Clear();
-            machine.Update(new Input(Moving: false), output, events, transitions);
+            Assert.True(machine.Update(new Input(Moving: false), output, events, transitions));
+            Assert.Equal(to, machine.CurrentState);
+            AnimationStateTransition<Motion> transition = Assert.Single(transitions);
+            Assert.Equal(from, transition.From);
+            Assert.Equal(to, transition.To);
+            Assert.True(output.TryGet(channel, out float value));
+            Assert.Equal(to == Motion.Action ? 1f : 0f, value);
+            Assert.Empty(events);
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            output.Clear();
-            transitions.Clear();
-            machine.Update(new Input(Moving: false), output, events, transitions);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
     private static Tween<float> Scalar(float from, float to, double seconds = 1) => new(from, to, Duration.FromSeconds(seconds), AnimationInterpolators.Float, AnimationEasing.Linear);

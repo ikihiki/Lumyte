@@ -49,9 +49,9 @@ internal static class DrawRecordAbi2D
         JsonElement pointer = probe.GetProperty("type").GetProperty("resultType");
         JsonElement type = pointer.TryGetProperty("valueType", out JsonElement value) ? value : pointer.GetProperty("elementType");
         int actualSize = type.GetProperty("sizes").EnumerateArray().Single(element => element.GetProperty("kind").GetString() == "uniform").GetProperty("value").GetInt32();
-        ShaderValueSnapshot codec = IShaderArguments.Capture(default(T));
+        IReadOnlyList<ShaderTransferField> codec = T.TransferFields;
         JsonElement[] fields = type.GetProperty("fields").EnumerateArray().ToArray();
-        if (actualSize != size || fields.Length != offsets.Length || codec.Values.Count != fields.Length)
+        if (actualSize != size || fields.Length != offsets.Length || codec.Count != fields.Length)
         {
             throw new NotSupportedException("The shader target does not implement the canonical fixed draw ABI: " + T.ShaderTypeName);
         }
@@ -59,8 +59,8 @@ internal static class DrawRecordAbi2D
         for (int i = 0; i < fields.Length; i++)
         {
             JsonElement binding = fields[i].GetProperty("binding");
-            if (fields[i].GetProperty("name").GetString() != codec.Values[i].Path || binding.GetProperty("offset").GetInt32() != offsets[i]
-                || binding.GetProperty("size").GetInt32() != (codec.Values[i].IsReference ? 16 : codec.Values[i].Data.Length))
+            if (fields[i].GetProperty("name").GetString() != codec[i].Path || binding.GetProperty("offset").GetInt32() != offsets[i]
+                || binding.GetProperty("size").GetInt32() != codec[i].Size)
             {
                 throw new NotSupportedException("The generated codec differs from the canonical fixed draw ABI: " + T.ShaderTypeName);
             }

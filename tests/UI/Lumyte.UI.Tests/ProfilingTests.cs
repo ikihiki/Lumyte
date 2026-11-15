@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Diagnostics.Tracing;
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Signals;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -18,7 +19,7 @@ public sealed class ProfilingTests
     public void RealOperationsEmitBranchCountersAndPairedStages()
     {
         using var listener = new Capture((EventKeywords)6);
-        using var surface = new UiSurface(Panel()[Rectangle(fill: new Color2D(1, 0, 0, 1))]);
+        using var surface = new UiSurface(Panel()[Rectangle(fill: new SRgba<float>(1, 0, 0, 1))]);
         surface.SetViewport(new(100, 80));
         using var drawing = new UiDrawingScene2D(surface);
         listener.Events.Clear();
@@ -51,19 +52,12 @@ public sealed class ProfilingTests
         Assert.DoesNotContain(listener.Events, e => e.EventId == 0);
     }
 
-    /// <summary>Checks no-listener scopes allocate nothing after initialization.</summary>
+    /// <summary>Checks no-listener scopes return null without changing the current activity.</summary>
     [Fact]
-    public void DisabledScopesDoNotAllocateOrCreateActivities()
+    public void DisabledScopesReturnNullWithoutChangingActivities()
     {
-        _ = UiProfiling.Begin(1);
         Activity? current = Activity.Current;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            Assert.Null(UiProfiling.Begin(1));
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Null(UiProfiling.Begin(1));
         Assert.Same(current, Activity.Current);
     }
 

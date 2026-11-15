@@ -100,7 +100,7 @@ public sealed partial class UiSurface
         return new(
             UiLayoutMath.FiniteFloat(bounds.Left),
             UiLayoutMath.FiniteFloat(bounds.Top),
-            UiLayoutMath.FiniteFloat(Math.Max(0, bounds.Right - bounds.Left)),
-            UiLayoutMath.FiniteFloat(Math.Max(0, bounds.Bottom - bounds.Top)));
+            UiLayoutMath.FiniteFloat(bounds.Width),
+            UiLayoutMath.FiniteFloat(bounds.Height));
     }
 }

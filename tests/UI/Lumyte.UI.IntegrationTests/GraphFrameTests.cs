@@ -2,6 +2,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Drawing2D.Tests;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI.SampleSupport;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -119,7 +120,7 @@ public sealed class GraphFrameTests
 
     private static RenderGraphDrawList2D List()
     {
-        using var surface = new UiSurface(Panel()[Rectangle(width: 8, height: 8, fill: new Lumyte.Graphics.Drawing2D.Color2D(1, 0, 0, 1))]);
+        using var surface = new UiSurface(Panel()[Rectangle(width: 8, height: 8, fill: new SRgba<float>(1, 0, 0, 1))]);
         surface.SetViewport(new(16, 16));
         surface.UpdateLayout();
         var canvas = new RenderGraphCanvas2D();

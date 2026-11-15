@@ -5,6 +5,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Shared;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
 
@@ -29,22 +30,20 @@ public sealed class DrawRecordTests
                 var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-" + stage + ".lshader");
                 DrawRecordAbi2D.Validate(artifact, target, mode);
                 var layout = ShaderDataLayout.Data(artifact, target, "DrawRecord2D");
-                layout.ValidateNumericWireData<DrawRecord2D>();
+                DrawRecord2D recordProbe = default;
+                layout.ValidateTransferLayout(96, ShaderTransfer.Fields(in recordProbe), "DrawRecord2D");
                 var record = new DrawRecord2D(2, 0, 0x7fc01234, 0xffffffff, new(1, 2, 3, 4), new(1, 0, 0, 0), new(0, 1, 0, 0), new(1, 2, 3, 4), 0x80000000, 3, 0, 0x7fa12345);
                 DrawRecord2D[] records = [record, record with { ExtraBits = 0x80000001 }];
-                byte[] direct = layout.Pack<DrawRecord2D>(records, (_, _) => throw new InvalidOperationException(), out ShaderValueSnapshot[] snapshots);
-                Assert.Equal(MemoryMarshal.AsBytes(records.AsSpan()).ToArray(), direct);
+                byte[] direct = MemoryMarshal.AsBytes(records.AsSpan()).ToArray();
                 for (int i = 0; i < records.Length; i++)
                 {
                     ShaderValueSnapshot generic = IShaderArguments.Capture(in records[i]);
-                    Assert.Equal(layout.Pack(generic, (_, _) => throw new InvalidOperationException()), direct.AsSpan(i * 96, 96).ToArray());
-                    for (int field = 0; field < generic.Values.Count; field++)
-                    {
-                        Assert.Equal(generic.Values[field].Data.ToArray(), snapshots[i].Values[field].Data.ToArray());
-                    }
+                    layout.ValidateArguments(generic);
+                    Assert.Equal(generic.Data.ToArray(), direct.AsSpan(i * 96, 96).ToArray());
+                    Assert.Empty(generic.Values);
                 }
 
-                foreach (ShaderNumericWireMember member in ((IShaderNumericWireData)record).NumericWireLayout.Members)
+                foreach (ShaderTransferField member in ShaderTransfer.Fields(in record))
                 {
                     Assert.Equal(member.Offset, Marshal.OffsetOf<DrawRecord2D>("<" + member.Path + ">k__BackingField").ToInt32());
                 }
@@ -144,9 +143,10 @@ public sealed class DrawRecordTests
     {
         var record = new DrawRecord2D(2, 0, 0x7fc01234, 0xffffffff, new(1, 2, 3, 4), new(1, 0, 0, 0), new(0, 1, 0, 0), new(1, 2, 3, 4), 0x80000000, 3, 0, 0x7fa12345);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(record);
-        Assert.Equal(12, snapshot.Values.Count);
-        Assert.Equal(0x7fc01234u, BinaryPrimitives.ReadUInt32LittleEndian(snapshot.Values.Single(value => value.Path == "PaintId").Data.Span));
-        Assert.Equal(0x7fa12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshot.Values.Single(value => value.Path == "ExtraBits").Data.Span));
+        Assert.Equal(12, snapshot.GetDiagnosticFields().Count);
+        Assert.Empty(snapshot.Values);
+        Assert.Equal(0x7fc01234u, BinaryPrimitives.ReadUInt32LittleEndian(snapshot.Data.Span[8..]));
+        Assert.Equal(0x7fa12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshot.Data.Span[92..]));
     }
 
     /// <summary>All eleven public commands lower to exactly one logical record with separate typed payloads.</summary>
@@ -159,7 +159,7 @@ public sealed class DrawRecordTests
         path.LineTo(new(4, 8));
         path.Close();
         Path2D triangle = path.Build();
-        var color = new Color2D(1, 0, 0, 1);
+        var color = new SRgba<float>(1, 0, 0, 1);
         var paint = PaintGraph2D.Solid(color);
         var sampler = new DispatchSampler();
         var imageView = new DispatchTextureView(new DispatchTexture { Width = 4, Height = 4, Usage = TextureUsage.Sampled, Format = TextureFormat.Rgba8Unorm }, null);
@@ -219,7 +219,7 @@ public sealed class DrawRecordTests
         canvas.Begin();
         for (int i = 0; i < 25; i++)
         {
-            canvas.FillCircle(new(8), 4, new Color2D(1, 0, 0, 0.5f));
+            canvas.FillCircle(new(8), 4, new SRgba<float>(1, 0, 0, 0.5f));
         }
 
         DrawingCommand2D[] source = canvas.End().Commands.ToArray();
@@ -269,11 +269,11 @@ public sealed class DrawRecordTests
         {
             if (i % 2 == 0)
             {
-                canvas.FillRect(new(1, 1, 8, 8), new Color2D(1, 0, 0, 1));
+                canvas.FillRect(new(1, 1, 8, 8), new SRgba<float>(1, 0, 0, 1));
             }
             else
             {
-                canvas.FillCircle(new(4), 3, new Color2D(0, 1, 0, 1));
+                canvas.FillCircle(new(4), 3, new SRgba<float>(0, 1, 0, 1));
             }
         }
 
@@ -300,7 +300,7 @@ public sealed class DrawRecordTests
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(1, 0, 0, 1));
         DrawList2D list = canvas.End();
         if (buffers == 2)
         {
@@ -329,7 +329,7 @@ public sealed class DrawRecordTests
         canvas.Begin();
         for (int i = 0; i < 1200; i++)
         {
-            canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(1, 0, 0, 1));
         }
 
         DrawList2D original = canvas.End();
@@ -339,7 +339,7 @@ public sealed class DrawRecordTests
         canvas.Begin();
         for (int i = 0; i < 64; i++)
         {
-            canvas.FillRect(new(0, 0, 8, 8), new Color2D(0, 0, 1, 1));
+            canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(0, 0, 1, 1));
         }
 
         scene.ReplaceContent(node, original.WithPage(0, canvas.End()));
@@ -422,7 +422,7 @@ public sealed class DrawRecordTests
         Path2D geometry = path.Build();
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
-        canvas.FillPath(geometry, new Color2D(1, 0, 0, 1));
+        canvas.FillPath(geometry, new SRgba<float>(1, 0, 0, 1));
         var distinct = new PathBuilder2D();
         distinct.MoveTo(new(0.125f, 0));
         for (int i = 1; i < 2200; i++)
@@ -431,7 +431,7 @@ public sealed class DrawRecordTests
         }
 
         distinct.Close();
-        canvas.FillPath(distinct.Build(), new Color2D(0, 0, 1, 1));
+        canvas.FillPath(distinct.Build(), new SRgba<float>(0, 0, 1, 1));
         using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), canvas.End(), new() { Texture = target, Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = texture.Usage } }, new DrawingGraphBindings2D(graph));
         using PreparedDrawingPasses2D prepared = await graph.Append2D(renderer);
         using CompiledRenderGraph plan = graph.Compile();
@@ -466,7 +466,7 @@ public sealed class DrawRecordTests
             path.Close();
             canvas.Save();
             canvas.ClipPath(path.Build());
-            canvas.FillRect(new(0, 0, extent, extent), new Color2D(1, 0, 0, 1));
+            canvas.FillRect(new(0, 0, extent, extent), new SRgba<float>(1, 0, 0, 1));
             canvas.Restore();
         }
 
@@ -485,7 +485,7 @@ public sealed class DrawRecordTests
             prepared.Record(commands);
             Assert.Equal(2, commands.Events.OfType<RecordedDrawRange>().Select(range => range.Records).Distinct().Count());
             Assert.Equal(5, device.Records.Count);
-            foreach (ShaderValue value in device.ShaderValues.SelectMany(snapshot => snapshot.Values).Where(value => value.IsReference && value.ValueType == typeof(Vector4)))
+            foreach (ShaderValue value in device.ShaderValues.SelectMany(snapshot => snapshot.Values).Where(value => value.ValueType == typeof(Vector4)))
             {
                 Assert.InRange(((IShaderReference)value.Reference!).SizeInBytes, 1ul, 65536ul);
             }

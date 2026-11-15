@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AllowUnsafeBlocks>true</AllowUnsafeBlocks><IsPackable>false</IsPackable><RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild><GenerateDocumentationFile>false</GenerateDocumentationFile><LumyteProjectRoot Condition="'$(LumyteProjectRoot)' == ''">$(MSBuildThisFileDirectory)../../..</LumyteProjectRoot></PropertyGroup>
+<ItemGroup><PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Graphics/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Graphics/Lumyte.Graphics.Shaders/Lumyte.Graphics.Shaders.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Core/Lumyte.Core/Lumyte.Core.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Core/Lumyte.Memory/Lumyte.Memory.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
+<ProjectReference Include="$(LumyteProjectRoot)/src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" /></ItemGroup>
+</Project>

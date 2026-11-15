@@ -30,6 +30,11 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+        if (signalSemaphore != null && (signalSemaphore is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner)))
+        {
+            throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
+        }
+
         Ahjo.Wgpu.SurfaceAcquireResult acquired = _surface.Native.GetCurrentTexture();
         SurfaceStatus status = acquired.Status switch
         {
@@ -47,6 +52,9 @@ internal sealed class WgpuSwapchain : IGraphicsSwapchain
         }
 
         var frame = new WgpuSurfaceFrame(this, acquired.Texture);
+
+        // Acquisition is synchronous, including when no semaphore was supplied;
+        // completion retires readiness without consuming the binary signal.
         return ValueTask.FromResult(new SurfaceAcquireResult(status, frame));
     }
 

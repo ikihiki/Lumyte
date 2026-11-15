@@ -4,6 +4,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -43,10 +44,10 @@ public sealed partial class Drawing2DTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(1, 1, 5, 5), new Color2D(1, 0, 0, 0.5f));
+        canvas.FillRect(new(1, 1, 5, 5), new SRgba<float>(1, 0, 0, 0.5f));
         canvas.Save();
         canvas.ClipRect(new(3, 1, 4, 5));
-        canvas.FillPath(Rectangle(2, 1, 5, 5), new Color2D(0, 0, 1, 0.5f));
+        canvas.FillPath(Rectangle(2, 1, 5, 5), new SRgba<float>(0, 0, 1, 0.5f));
         canvas.Restore();
         using var scene = new DrawingScene2D();
         scene.Insert(scene.Root, 0, canvas.End());

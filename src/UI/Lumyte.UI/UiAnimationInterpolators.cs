@@ -1,6 +1,7 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Lumyte.Animation;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -8,7 +9,7 @@ namespace Lumyte.UI;
 public static class UiAnimationInterpolators
 {
     /// <summary>Gets the sRGB straight-alpha interpolator using linear premultiplied intermediate colors.</summary>
-    public static IAnimationInterpolator<Color2D> Color { get; } = new ColorInterpolator();
+    public static IAnimationInterpolator<SRgba<float>> Color { get; } = new ColorInterpolator();
 
     /// <summary>Interpolates non-null endpoints and switches intervals involving null at their endpoint.</summary>
     /// <typeparam name="T">The non-null value type.</typeparam>
@@ -30,35 +31,29 @@ public static class UiAnimationInterpolators
     private sealed class NullableInterpolator<T>(IAnimationInterpolator<T> inner) : IAnimationInterpolator<T?>
         where T : struct
     {
+        public void Validate(T? value)
+        {
+            if (value is { } present)
+            {
+                inner.Validate(present);
+            }
+        }
+
         public T? Interpolate(T? from, T? to, float amount) => from is { } first && to is { } last ? inner.Interpolate(first, last, amount) : amount >= 1 ? to : from;
     }
 
-    private sealed class ColorInterpolator : IAnimationInterpolator<Color2D>
+    private sealed class ColorInterpolator : IAnimationInterpolator<SRgba<float>>
     {
-        public Color2D Interpolate(Color2D from, Color2D to, float amount)
+        public void Validate(SRgba<float> value) => UiColorPolicy.Unit(value, nameof(value));
+
+        public SRgba<float> Interpolate(SRgba<float> from, SRgba<float> to, float amount)
         {
-            if (amount == 0)
-            {
-                return from;
-            }
-
-            if (amount == 1)
-            {
-                return to;
-            }
-
-            double alpha = from.A + ((to.A - from.A) * (double)amount);
-            if (alpha == 0)
-            {
-                return default;
-            }
-
-            float Channel(float first, float last) => Encode(((Decode(first) * from.A) + (((Decode(last) * to.A) - (Decode(first) * from.A)) * amount)) / alpha);
-            return new(Channel(from.R, to.R), Channel(from.G, to.G), Channel(from.B, to.B), (float)alpha);
+            UiColorPolicy.Unit(from, nameof(from));
+            UiColorPolicy.Unit(to, nameof(to));
+            Vector4 result = Lumyte.Mathematics.Colors.Color.InterpolateSrgbLinearPremultipliedRaw(
+                new(from.R, from.G, from.B, from.A), new(to.R, to.G, to.B, to.A), amount);
+            UiColorPolicy.Validate(result.X, result.Y, result.Z, result.W, nameof(amount));
+            return new(result.X, result.Y, result.Z, result.W);
         }
-
-        private static double Decode(float value) => value <= 0.04045f ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
-
-        private static float Encode(double value) => (float)(value <= 0.0031308 ? value * 12.92 : (1.055 * Math.Pow(value, 1 / 2.4)) - 0.055);
     }
 }

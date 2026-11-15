@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -66,7 +67,7 @@ internal static class ModelValidation2D
         Finite(value.Y + value.Height, name);
     }
 
-    internal static void Color(Color2D value, string name)
+    internal static void Color(SRgba<float> value, string name)
     {
         Unit(value.R, name);
         Unit(value.G, name);

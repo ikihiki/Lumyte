@@ -6,6 +6,7 @@
     <Description>Shared linear image effects compiled into RenderGraph passes.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>

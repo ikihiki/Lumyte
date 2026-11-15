@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text.Parley.Interop;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Text.Parley;
 
@@ -46,7 +47,7 @@ internal sealed unsafe class ParleyPaintImporter2D(LpLayoutView view, Matrix3x2 
                     _clips.RemoveAt(_clips.Count - 1);
                     break;
                 case 5:
-                    Add(paint.mode != 0 ? PaintGraph2D.Opacity(paint.p3, foreground) : Transform(PaintGraph2D.Solid(new Color2D(paint.p0, paint.p1, paint.p2, paint.p3))));
+                    Add(paint.mode != 0 ? PaintGraph2D.Opacity(paint.p3, foreground) : Transform(PaintGraph2D.Solid(new SRgba<float>(paint.p0, paint.p1, paint.p2, paint.p3))));
                     break;
                 case 6:
                 case 7:
@@ -146,8 +147,8 @@ internal sealed unsafe class ParleyPaintImporter2D(LpLayoutView view, Matrix3x2 
             LpColorStop stop = nativeStops[i];
             bool isForeground = stop.is_foreground != 0;
             hasForeground |= isForeground;
-            colors[i] = new ColorStop2D(stop.offset, isForeground ? default : new Color2D(stop.r, stop.g, stop.b, stop.a));
-            weights[i] = new ColorStop2D(stop.offset, new Color2D(1, 1, 1, isForeground ? stop.a : 0));
+            colors[i] = new ColorStop2D(stop.offset, isForeground ? default : new SRgba<float>(stop.r, stop.g, stop.b, stop.a));
+            weights[i] = new ColorStop2D(stop.offset, new SRgba<float>(1, 1, 1, isForeground ? stop.a : 0));
         }
 
         PaintGraph2D result = Transform(CreateGradient(paint, colors));

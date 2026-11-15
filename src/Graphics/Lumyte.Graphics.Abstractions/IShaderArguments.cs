@@ -1,6 +1,6 @@
 namespace Lumyte.Graphics.Abstractions;
 
-/// <summary>Provides direct, AOT-safe serialization of application shader values.</summary>
+/// <summary>Provides an AOT-safe bulk transfer of C#-authoritative shader wire bytes from argument structs.</summary>
 public interface IShaderArguments
 {
     /// <summary>Gets the logical root parameter name.</summary>
@@ -9,19 +9,26 @@ public interface IShaderArguments
     /// <summary>Gets the logical shader structure name.</summary>
     static abstract string ShaderTypeName { get; }
 
-    /// <summary>Gets the declared C# wire stride, or zero to infer it from explicit codec writes.</summary>
-    static virtual int WireSizeInBytes => 0;
+    /// <summary>Gets the C# wire size, independent of shader reflection and instances.</summary>
+    static abstract int TransferSize { get; }
 
-    /// <summary>Writes numeric members and opaque references without GPU transfer.</summary>
-    /// <typeparam name="TWriter">The writer type, which can be a value type without boxing.</typeparam>
+    /// <summary>Gets the exact number of declared 16-byte reference slots in every wire value, including repeated references to the same resource.</summary>
+    /// <remarks>This instance-independent static provider must not inspect values or invoke reference getters. Numeric-only values return zero. The count must be nonnegative and no greater than <see cref="TransferSize"/> divided by sixteen; each valid codec must emit exactly this many reference fixups. The explicit validation layer diagnoses these declaration semantics. Raw backend Set and typed CopyFrom do not read this provider or compare reference-call counts; declaration consistency is the caller's precondition there. Actual byte capacity, complete wire size, completion state, and checked reference ABI element-count and offset encoding remain mandatory in every mode.</remarks>
+    static abstract int ReferenceCount { get; }
+
+    /// <summary>Gets C# field locations for explicit generic diagnostics; capture defers this getter through a static provider without retaining the value.</summary>
+    static virtual IReadOnlyList<ShaderTransferField> TransferFields => [];
+
+    /// <summary>Copies one complete unmanaged wire value and records opaque reference fixups.</summary>
+    /// <typeparam name="TWriter">The writer type, which can be a value type or ref struct without boxing.</typeparam>
     /// <param name="writer">The snapshot destination.</param>
     void Write<TWriter>(ref TWriter writer)
-        where TWriter : IShaderValueWriter;
+        where TWriter : IShaderValueWriter, allows ref struct;
 
     /// <summary>Captures values through the type's implementation without codec registration.</summary>
-    /// <typeparam name="T">The application value type.</typeparam>
+    /// <typeparam name="T">The application transfer struct.</typeparam>
     /// <param name="value">The application value.</param>
-    /// <returns>The member snapshot.</returns>
+    /// <returns>The immutable wire snapshot.</returns>
     public static ShaderValueSnapshot Capture<T>(in T value)
         where T : struct, IShaderArguments
     {
@@ -29,19 +36,14 @@ public interface IShaderArguments
         string name = T.ShaderTypeName;
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        int size = T.WireSizeInBytes;
-        var writer = new ShaderSnapshotWriter();
+        ShaderSnapshotWriter writer = new(T.TransferSize);
         value.Write(ref writer);
-        if (size == 0)
-        {
-            size = typeof(IShaderData).IsAssignableFrom(typeof(T)) ? writer.SizeInBytes : checked((writer.SizeInBytes + 15) / 16 * 16);
-        }
+        writer.Complete();
 
-        if (size < writer.SizeInBytes)
+        return new(root, name, writer.Data, writer.Values?.AsReadOnly() ?? (IReadOnlyList<ShaderValue>)[], [])
         {
-            throw new ArgumentException("The C# wire stride does not contain the codec writes.");
-        }
-
-        return new(root, name, writer.Values.AsReadOnly()) { SizeInBytes = size };
+            DiagnosticType = typeof(T),
+            DiagnosticFields = ShaderTransfer.ArgumentFields<T>,
+        };
     }
 }

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <Compile Include="../../../benchmarks/Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+    <ProjectReference Include="../../../benchmarks/Audio/Lumyte.Resources.Audio.Benchmark/Lumyte.Resources.Audio.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Audio/Lumyte.Audio.Execution.Benchmark/Lumyte.Audio.Execution.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/Audio/Lumyte.Audio.OpenAL.Benchmark/Lumyte.Audio.OpenAL.Benchmark.csproj" />
+  </ItemGroup>
+</Project>

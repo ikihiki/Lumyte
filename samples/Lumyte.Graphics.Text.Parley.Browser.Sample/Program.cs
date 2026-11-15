@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Browser;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Text.Parley.Browser.Sample;
 
@@ -46,14 +47,14 @@ internal static partial class Program
         var options = new ParleyTextOptions2D { FontFamily = family, FontSize = 26 };
         CheckShaping(engine, options, japanese);
         Console.WriteLine("Parley font registration and paragraph shaping checks passed.");
-        var ink = PaintGraph2D.Solid(new Color2D(0.1f, 0.15f, 0.25f, 1));
+        var ink = PaintGraph2D.Solid(new SRgba<float>(0.1f, 0.15f, 0.25f, 1));
         TextLayout2D counter = engine.CreateLayout("O", options with { FontSize = 100 }, ink);
         TextLayout2D smallCounter = engine.CreateLayout("O", options with { FontSize = 20 }, ink);
         TextLayout2D distance = engine.CreateLayout("OAV", options with { FontSize = 20 }, ink);
         TextLayout2D colorLayout = engine.CreateLayout("\U000F0500\U000F0503\U000F0200\U000F0A17", options with { FontFamily = color, FontSize = 70 });
-        var foreground = new Color2D(0.9f, 0.1f, 0.2f, 0.5f);
+        var foreground = new SRgba<float>(0.9f, 0.1f, 0.2f, 0.5f);
         TextLayout2D translucent = engine.CreateLayout("\U000F0B06", options with { FontFamily = color, FontSize = 80 }, PaintGraph2D.Solid(foreground));
-        var foregroundEnd = new Color2D(0.1f, 0.5f, 0.9f, 0.5f);
+        var foregroundEnd = new SRgba<float>(0.1f, 0.5f, 0.9f, 0.5f);
         TextLayout2D gradient = engine.CreateLayout("\U000F0B06", options with { FontFamily = color, FontSize = 80 }, PaintGraph2D.LinearGradient(
             Vector2.Zero,
             new Vector2(80, 0),
@@ -146,7 +147,7 @@ internal static partial class Program
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        var ink = PaintGraph2D.Solid(new Color2D(0.1f, 0.15f, 0.25f, 1));
+        var ink = PaintGraph2D.Solid(new SRgba<float>(0.1f, 0.15f, 0.25f, 1));
         canvas.DrawText(engine.CreateLayout("Parley / csbindgen / WebGPU", options with { FontSize = 34 }, ink), new Vector2(24, 20));
         ParleyTextOptions2D paragraphOptions = options with
         {
@@ -159,7 +160,7 @@ internal static partial class Program
                     Start = 2,
                     End = 20,
                     Decorations = ParleyTextDecorations2D.Underline,
-                    Paint = PaintGraph2D.Solid(new Color2D(0.08f, 0.4f, 0.8f, 1)),
+                    Paint = PaintGraph2D.Solid(new SRgba<float>(0.08f, 0.4f, 0.8f, 1)),
                 },
             ],
         };
@@ -197,7 +198,7 @@ internal static partial class Program
         uint pitch = (((Width * 4) + alignment - 1) / alignment) * alignment;
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * Height, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
-        using PreparedDraw2D prepared = await renderer.PrepareAsync(drawing, new RenderTarget2D { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new Color2D(1, 1, 1, 1) });
+        using PreparedDraw2D prepared = await renderer.PrepareAsync(drawing, new RenderTarget2D { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new SRgba<float>(1, 1, 1, 1) });
         using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
         {
             var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
@@ -283,7 +284,7 @@ internal static partial class Program
         }
     }
 
-    private static void CheckForeground(byte[] pixels, Rect2D bounds, Vector2 origin, Color2D start, Color2D end, float width)
+    private static void CheckForeground(byte[] pixels, Rect2D bounds, Vector2 origin, SRgba<float> start, SRgba<float> end, float width)
     {
         int x = (int)(origin.X + bounds.X + (bounds.Width / 2));
         int y = (int)(origin.Y + bounds.Y + (bounds.Height / 2));

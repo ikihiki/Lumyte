@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Lumyte.Graphics.Abstractions;
 
 // Diagnostic-only observer; native queues still receive the original command.
@@ -13,14 +14,15 @@ sealed class RecordDiagnosticCommands(IGraphicsCommandBuffer native, (uint First
     public HashSet<IGraphicsPipeline> Pipelines { get; } = new(ReferenceEqualityComparer.Instance);
     public long Instances { get; private set; }
     public List<string> Roots { get; } = [];
+    public int UntrackedDependencyBuffers { get; private set; }
     readonly List<ShaderValueSnapshot> snapshots = [];
     public void Barrier(MemoryBarrierDesc barrier) => native.Barrier(barrier);
     public void Barrier<T>(BufferBarrierDesc<T> barrier) where T : unmanaged => native.Barrier(barrier);
     public void Barrier(TextureBarrierDesc barrier) => native.Barrier(barrier);
-    public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier) where T : struct, IShaderData => native.Barrier(barrier);
+    public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier) where T : struct, IShaderArguments => native.Barrier(barrier);
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination) where TSource : unmanaged where TDestination : unmanaged
     { native.CopyBuffer(source, destination); Copies++; CopyBytes += checked((long)source.SizeInBytes); }
-    public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination) where T : struct, IShaderData
+    public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination) where T : struct, IShaderArguments
     { native.CopyBuffer(source, destination); Copies++; CopyBytes += checked((long)(source.Count * source.Buffer.ShaderElementStrideInBytes)); }
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => native.CopyTexture(source, destination);
     public void CopyBufferToTexture(BufferTextureCopyLayout source, TextureCopyRegion destination) => native.CopyBufferToTexture(source, destination);
@@ -35,21 +37,22 @@ sealed class RecordDiagnosticCommands(IGraphicsCommandBuffer native, (uint First
         var backing = new Dictionary<object, ulong>(ReferenceEqualityComparer.Instance);
         var ranges = new HashSet<(object Resource, ulong Offset, ulong Bytes)>();
         long bound = 0;
-        foreach (var snapshot in snapshots) Visit(snapshot);
+        UntrackedDependencyBuffers = 0;
+        foreach (var snapshot in snapshots) Visit(snapshot.Values.Select(value => value.Reference as IShaderReference
+            ?? throw new InvalidOperationException("A diagnostic reference is missing metadata.")));
         return (backing.Count, bound, checked((long)backing.Values.Aggregate(0ul, (sum, value) => checked(sum + value))));
-        void Visit(ShaderValueSnapshot snapshot)
+        void Visit(IEnumerable<IShaderReference> references)
         {
-            foreach (var value in snapshot.Values.Where(value => value.IsReference))
+            foreach (var reference in references)
             {
-                if (value.Reference is not IShaderReference reference) throw new InvalidOperationException("A diagnostic reference is missing metadata.");
                 bool buffer = reference.Resource is IShaderDataSource || reference.Resource is IGraphicsBuffer<System.Numerics.Vector4>;
                 if (!buffer || !ranges.Add((reference.Resource, reference.OffsetInBytes, reference.SizeInBytes))) continue;
                 bound += checked((long)reference.SizeInBytes);
                 if (reference.Resource is IShaderDataSource source)
                 {
                     backing.TryAdd(reference.Resource, source.SizeInBytes);
-                    ulong stride = checked((ulong)source.Layout.Size);
-                    for (ulong i = 0; i < reference.Count; i++) Visit(source.Read(reference.OffsetInBytes / stride + i));
+                    if (source.TryGetDependencies(out IShaderReferenceMetadata? dependencies)) Visit(dependencies.References);
+                    else UntrackedDependencyBuffers++;
                 }
                 else if (reference.Resource is IGraphicsBuffer<System.Numerics.Vector4> raw)
                     backing.TryAdd(reference.Resource, raw.SizeInBytes);
@@ -57,24 +60,93 @@ sealed class RecordDiagnosticCommands(IGraphicsCommandBuffer native, (uint First
         }
     }
 
+    readonly record struct SelectedRangeArguments<T>(T Value, uint First, uint Count, int FirstOffset, int CountOffset) : IShaderArguments
+        where T : struct, IShaderArguments
+    {
+        public static string RootParameter => T.RootParameter;
+        public static string ShaderTypeName => T.ShaderTypeName;
+        public static int TransferSize => T.TransferSize;
+        public static int ReferenceCount => T.ReferenceCount;
+        public static IReadOnlyList<ShaderTransferField> TransferFields => T.TransferFields;
+        public void Write<TWriter>(ref TWriter writer) where TWriter : IShaderValueWriter, allows ref struct
+        {
+            var selected = new RangeWriter<TWriter>(writer, First, Count, FirstOffset, CountOffset);
+            Value.Write(ref selected);
+            writer = selected.Destination;
+        }
+    }
+
+    ref struct RangeWriter<TWriter>(TWriter writer, uint first, uint count, int firstOffset, int countOffset) : IShaderValueWriter
+        where TWriter : IShaderValueWriter, allows ref struct
+    {
+        public TWriter Destination = writer;
+        int position;
+        public void WriteValue(ReadOnlySpan<byte> value)
+        {
+            // Bound stack use independently of the producer's numeric chunk size.
+            byte[] bytes = new byte[256];
+            Span<byte> firstBytes = stackalloc byte[4];
+            Span<byte> countBytes = stackalloc byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(firstBytes, first);
+            BinaryPrimitives.WriteUInt32LittleEndian(countBytes, count);
+            while (!value.IsEmpty)
+            {
+                int length = Math.Min(value.Length, bytes.Length);
+                Span<byte> chunk = bytes.AsSpan(0, length);
+                value[..length].CopyTo(chunk);
+                for (int index = 0; index < length; index++)
+                {
+                    int firstIndex = position + index - firstOffset;
+                    int countIndex = position + index - countOffset;
+                    if ((uint)firstIndex < 4) chunk[index] = firstBytes[firstIndex];
+                    if ((uint)countIndex < 4) chunk[index] = countBytes[countIndex];
+                }
+                Destination.WriteValue(chunk);
+                position += length;
+                value = value[length..];
+            }
+        }
+        public void WriteReference<TElement>(IGpuRef<TElement>? value)
+        {
+            Destination.WriteReference(value);
+            position += 16;
+        }
+    }
+
     sealed class Encoder(RecordDiagnosticCommands owner, IRenderEncoder native, (uint First, uint Count)? selection) : IRenderEncoder
     {
         public void SetArgumentTable(IArgumentTable table) => native.SetArgumentTable(table);
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
         public void SetArguments<T>(in T arguments) where T : struct, IShaderArguments
-        { if (selection is not null && T.ShaderTypeName == "DrawRangeArguments2D") { SetArguments(IShaderArguments.Capture(arguments)); return; } owner.Roots.Add(T.ShaderTypeName); owner.snapshots.Add(IShaderArguments.Capture(arguments)); native.SetArguments(in arguments); }
-        public void SetArguments(ShaderValueSnapshot arguments)
         {
-            owner.Roots.Add(arguments.ShaderTypeName);
-            owner.snapshots.Add(arguments);
-            if (selection is { } selected && arguments.ShaderTypeName == "DrawRangeArguments2D")
+            owner.Roots.Add(T.ShaderTypeName);
+            ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
+            owner.snapshots.Add(snapshot);
+            if (selection is { } selected && T.ShaderTypeName == "DrawRangeArguments2D")
             {
                 if (owner.selectedPage) { owner.skip = true; return; }
-                uint available = BitConverter.ToUInt32(arguments.Values.Single(value => value.Path == "RecordCount").Data.Span);
+                // Explicit diagnostic C# metadata, never numeric ShaderValue entries.
+                ShaderTransferField first = snapshot.GetDiagnosticFields().Single(field => field.Path == "FirstRecord");
+                ShaderTransferField count = snapshot.GetDiagnosticFields().Single(field => field.Path == "RecordCount");
+                if (first.IsReference || count.IsReference || first.Size != 4 || count.Size != 4 || first.ValueType != typeof(uint) || count.ValueType != typeof(uint)
+                    || first.Offset < 0 || count.Offset < 0 || first.Offset > snapshot.Data.Length - 4 || count.Offset > snapshot.Data.Length - 4
+                    || Math.Abs((long)first.Offset - count.Offset) < 4)
+                    throw new InvalidOperationException("Unexpected draw range wire layout.");
+                uint available = BinaryPrimitives.ReadUInt32LittleEndian(snapshot.Data.Span.Slice(count.Offset, 4));
                 if (selected.First > available || selected.Count > available - selected.First) throw new ArgumentOutOfRangeException(nameof(selection));
+                var range = new SelectedRangeArguments<T>(arguments, selected.First, selected.Count, first.Offset, count.Offset);
+                native.SetArguments(in range);
                 owner.selectedPage = true;
-                arguments = arguments with { Values = arguments.Values.Select(value => value.Path == "FirstRecord" ? value with { Data = BitConverter.GetBytes(selected.First) } : value.Path == "RecordCount" ? value with { Data = BitConverter.GetBytes(selected.Count) } : value).ToArray() };
+                return;
             }
-            native.SetArguments(arguments);
+            native.SetArguments(in arguments);
+        }
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null) where T : unmanaged
+        {
+            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+            owner.Roots.Add(snapshot.ShaderTypeName);
+            owner.snapshots.Add(snapshot);
+            native.SetArguments(in arguments, rootParameter, shaderTypeName);
         }
         public void SetPipeline(IGraphicsPipeline pipeline) { owner.Pipelines.Add(pipeline); native.SetPipeline(pipeline); }
         public void SetRenderState(GraphicsRenderStateDesc state) => native.SetRenderState(state);

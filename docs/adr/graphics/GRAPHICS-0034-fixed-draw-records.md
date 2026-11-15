@@ -3,6 +3,7 @@
 - 状態: 採用
 - 日付: 2026-11-12
 - 基準コミット: `1dbf62977a4805cb32d97811f8a890237bea20cb`
+- 転送契約の参照コミット: `40ecd0f7e979301c630917815613bdb8947732ff`（格納形式の比較元は基準コミットを維持する）
 - 変更関係: 一部変更
 - 変更元: [2D 描画](GRAPHICS-0018-2d-graphics-engine.md#決定)の内部描画表現、[共有登録表](GRAPHICS-0032-drawing2d-shared-argument-tables.md#materializemodule所有期間)の buffer 非統合方針
 - 変更対象: 組込み Drawing2D の GPU 描画格納と実行範囲
@@ -20,7 +21,7 @@ Drawing2D を保守する利用者は、異なる図形を連続格納し、そ�
 
 ### 利用者の変更前・変更後
 
-内部変更なので、利用者の Canvas、Renderer2D、DrawingScene2D、retained content の記述、準備・Record・submit・完了待ち・解放は変わらない。通常の描画 API の追加・削除はない。数値 wire 作成者と backend 向けの明示 opt-in は後述する。MaxCachedBytes の共有・in-flight 所有分の計上は「所有権と retained 更新」の契約へ変更する。内部の prepared batch は、現在の一描画一 interpreter 実行から、互換な連続 record 範囲のインスタンス実行へ変わる。custom renderer の独自 batch までこの格納形式へ強制しない。
+内部変更なので、利用者の Canvas、Renderer2D、DrawingScene2D、retained content の記述、準備・Record・submit・完了待ち・解放は変わらない。通常の描画 API の追加・削除はない。内部型の転送は、転送契約の参照コミットに存在する [C# を正とする一括転送](GRAPHICS-0035-csharp-authoritative-shader-transfer.md#型とc転送配置)に従う。MaxCachedBytes の共有・in-flight 所有分の計上は「所有権と retained 更新」の契約へ変更する。内部の prepared batch は、現在の一描画一 interpreter 実行から、互換な連続 record 範囲のインスタンス実行へ変わる。custom renderer の独自 batch までこの格納形式へ強制しない。
 
 変更前の内部呼び出しは、基準 SHA の `Rendering/PreparedGpuBatch2D.cs` の `RecordCommand` で次の形を取る。pipeline/state、引数生成、upload、所有者と失敗処理は抜粋外である。
 
@@ -41,7 +42,7 @@ render.Draw(vertexCount: 6, instanceCount: selected.RecordCount,
 
 ### 96 B の格納契約
 
-record は旧式命令ではなく一つの描画である。shader 配列の各要素の実際の先頭を 16 B 境界へ置き、stride は正確に 96 B とする。これは stream 開始位置と stride による保証であり、compiler の natural-layout reflection が報告する型の最小 alignment と同一であることは要求しない。C# の explicit Size/FieldOffset を数値 wire の正本とし、実 managed stride と shader layout を一度だけ照合する。宣言順だけからの sizeof 推測は使わない。数値以外の GPU 参照は record に埋めず、下表の uint ID は同じ参照集合内の論理索引である。
+record は旧式命令ではなく一つの描画である。shader 配列の各要素の実際の先頭を 16 B 境界へ置き、stride は正確に 96 B とする。これは stream 開始位置と stride による保証であり、compiler の natural-layout reflection が報告する型の最小 alignment と同一であることは要求しない。C# の explicit Size/FieldOffset を数値 wire の正本とし、実 managed stride と shader layout を specialization の導入条件として照合する。宣言順だけからの sizeof 推測は使わない。数値以外の GPU 参照は record に埋めず、下表の uint ID は同じ参照集合内の論理索引である。
 
 | byte offset | 長さ | 内容 |
 | --- | --- | --- |
@@ -137,7 +138,7 @@ leaf inverse は target-local sample から paint-local（image なら source-re
 
 #### typed image と mask/field descriptor
 
-ImagePaintData は **128 B stride**、MaskDescriptors は **80 B stride** を本決定の固定 wire とする。texture/sampler の 16 B wire は後述の backend 表に従うが、論理値は IGpuRef のまま generated serializer と登録表で解決する。生 uint4 の resource ID を自作して参照を偽装しない。
+ImagePaintData は **128 B stride**、MaskDescriptors は **80 B stride** を本決定の固定 wire とする。texture/sampler の 16 B wire は後述の backend 表に従うが、論理値は IGpuRef のまま生成 writer と登録表で解決する。生 uint4 の resource ID を自作して参照を偽装しない。
 
 | stream | byte offset | 長さ | 内容 |
 | --- | --- | --- | --- |
@@ -198,82 +199,37 @@ membership は各 pixel の 16 bit、bit(j*4+i) がその AA sample の所属を
 
 Vulkan は address + slice offset、D3D12 は raw buffer の byte offset、WGSL は登録範囲相対 offset を使う。根拠は基準 SHA の `src/Graphics/Lumyte.Graphics.Vulkan/VulkanShaderReferenceEncoding.cs`、`src/Graphics/Lumyte.Graphics.Direct3D12/Direct3D12ShaderReferenceEncoding.cs`、`src/Graphics/Lumyte.Graphics.Shared/ShaderReferenceEncoding.cs` の Pack である。WGSL の remap は同 `Shared/ShaderBindingData.cs` の Map に従い、slot ごとに +0 texture、+4 sampler、+8 read buffer、+12 writable buffer の各 uint index を持つ 16 B row である。この backend 所有 binding buffer は Drawing2D の payload や追加 page metadata ではない。
 
-基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/ShaderSourcePreparation.cs` は `StructuredBuffer<Ptr<T>>` probe を追加し、buffer target schema を保存する。`src/Graphics/Lumyte.Graphics.Shared/ShaderDataLayout.cs` は natural-layout の field offset/size を読み、`src/Graphics/Lumyte.Graphics.Generators/ShaderArgumentsGenerator.cs` は名前付き value/reference の writer を生成する。数値 wire は C# の explicit Size/FieldOffset を上の固定配置として宣言し、各 target の shader schema を生成した C# metadata へ照合する。reference-bearing logical 型は generated codec と既存 backend serializer を使う。root uniform の layout も別に照合する。96/16/80/128 B と下記48/64/80 B metadata・64 B range・144 B graph の offset/stride が一致しない backend は有効化しない。未知の reflected stride を受け入れて設計値を黙って変更しない。これは ABI の受け入れ gate とし、stride や field の一致を条件に specialization を有効化する。
+基準 SHA の `src/Graphics/Lumyte.Graphics.Abstractions/ShaderSourcePreparation.cs` は buffer target schema を保存する。転送契約の参照コミットの `src/Graphics/Lumyte.Graphics.Abstractions/ShaderTransfer.cs`、`IShaderArguments.cs`、`IShaderValueWriter.cs` に従い、配置の正本を C# の unmanaged 領域とする。shader reflection は配置を記述・比較するために使い、転送 bytes を再配置する根拠にしない。
 
-#### C# を正本とする数値 wire と CPU upload
+96/16/80/128 B と下記48/64/80 B metadata・64 B range・144 B graph の offset/stride は、Drawing2D の shader specialization の導入時に全 target で照合する。不一致の specialization は有効化せず、未知の reflected stride へ設計値を変更しない。この受け入れ gate は Drawing2D の固定 ABI を検証する条件であり、raw backend の全 buffer 作成に field 反射や必須の数値 metadata 検証を追加する契約ではない。実行時の任意配置診断と raw の必須安全性検査は [一括転送の検証境界](GRAPHICS-0035-csharp-authoritative-shader-transfer.md#独立した任意検証層)に従う。
 
-DrawRecord2D と directory は C# の `StructLayout(LayoutKind.Explicit, Size = ...)` と
-各 field の `FieldOffset` を正本とする。source generator がこの宣言から数値 wire metadata
-を生成し、backend は buffer 作成時に shader の型・field・offset・size・stride と一度だけ照合する。
-shader が一致しなければ作成を拒否し、backend の alignment 差を upload ごとの並べ替えで補わない。
+#### C# を正本とする転送と CPU upload
 
-描画利用者の `PrepareAsync`、Record、submit、完了待ち、解放と、typed buffer の
-`CopyFrom(ReadOnlySpan<T>)` は変わらない。内部の数値 wire 型の作成者は、従来の
-`IShaderData` 宣言に代えて `IShaderNumericWireData` を明示し、C# に offset/stride を宣言する。
-その span の連続 bytes を直接 upload し、record ごとの codec・field 名辞書・repacking は行わない。
-名前による照合は buffer 作成時の schema gate だけに使う。
+DrawRecord2D と directory の `StructLayout(LayoutKind.Explicit, Size = ...)` と `FieldOffset` を固定配置の正本とする。数値だけの型は通常の unmanaged 型として、実際の padding を含む span 全体を直接転送できる。数値型に専用 interface、partial 宣言、generator、登録を要求しない。既存の内部数値型が `IShaderArguments` を明示実装する場合も、全領域を一回の `WriteValue` で渡し、field 単位の pack はしない。
 
-変更前の内部型は offset を持たない `record struct DrawRecord2D(...) : IShaderData` であり、
-generated codec の値を shader reflection の offset へ pack する。変更後の最小例は次のとおり。
-省略した codec と numeric wire metadata は generator が生成する。buffer/table の作成と GPU 同期は既存契約に従う。
+描画利用者の `PrepareAsync`、Record、submit、完了待ち、解放と、mapped upload の `CopyFrom(ReadOnlySpan<T>)` の呼び方は変わらない。数値 buffer の型は通常の unmanaged 経路なら `IGraphicsBuffer<T>` / `BufferSlice<T>`、interface 経路なら `IGraphicsShaderDataBuffer<T>` / `ShaderDataSlice<T>` となる。最小の数値宣言例は次のとおりである。buffer/table の作成と GPU 同期は抜粋外であり、shader に本節の配置を一致させる。
 
 ```csharp
 [StructLayout(LayoutKind.Explicit, Size = 16)]
-internal readonly partial record struct DrawDirectoryEntry2D(
+internal readonly record struct DrawDirectoryEntry2D(
     [field: FieldOffset(0)] uint Kind,
     [field: FieldOffset(4)] uint PayloadOffset16,
     [field: FieldOffset(8)] uint PayloadLength16,
-    [field: FieldOffset(12)] uint Flags) : IShaderNumericWireData;
+    [field: FieldOffset(12)] uint Flags);
 
-// 変更前後とも mapped upload buffer に対する呼出しは同じ。
+// 変更前後とも mapped upload への呼出しは同じ。
 staging.CopyFrom(entries);
 ```
 
-新しい opt-in は managed reference を含まない explicit-layout 数値型に限る。logical な
-`IGpuRef` interface/object を含む image、mask、metadata、root arguments をそのまま blit しない。
-それらの opaque reference は table materialization 後に既存 backend serializer で解決する。
-この判断で reference-bearing C# wire ABI 全体を移行したとはしない。
+参照を含む metadata、image/mask descriptor と root arguments は mutable partial struct, `IShaderArguments` とする。非公開 unmanaged の TransferData に数値と16 Bの `ShaderReferenceSlot` を配置し、外側の通常プロパティに logical な `IGpuRef` を保持する。`TransferSize` はその領域の実長、`ReferenceCount` は重複も数える物理参照 slot 数、`TransferFields` は任意診断用の静的配置情報である。管理 interface/object の CLR 表現を blit しない。
 
-通常の `IShaderData` と手書き codec も、C# の固定 byte offset を出力する writer へ移行する。
-名前は診断専用であり、generic serializer に field 名から GPU 配置先を解決する経路を残さない。
-全 capture 後に型・offset・範囲・重複を検証して指定位置へ serialize し、opaque 参照は
-既存 backend encoder で解決する。codec と reference callback は一度だけ実行する。
+生成・手書きの writer は wire をローカルへ一括コピーしてから、物理順に raw 区間の `WriteValue(ReadOnlySpan<byte>)` と型付き `WriteReference<T>(IGpuRef<T>?)` を呼ぶ。公開 writer に offset、path、seek を渡さず、field 名から配置を選ぶ経路や snapshot の Pack を設けない。参照 getter と codec は一回だけ実行し、table materialization 後に backend 自身の writer がその場で参照を16 B ABIへ符号化する。範囲・overflow・実 byte 容量・完全な出力長は常時検査し、宣言 ReferenceCount の一致、配置、失効と依存の追加診断は検証層だけで行う。
 
-公開接続は次の差分に限定し、描画専用 factory と friend assembly を増やさない。
+`ShaderTransfer.Capture` と `IShaderArguments.Capture` は独立した CPU 検査値であり、後続編集、upload や staging disposal で変化しない。opaque slot はゼロと logical identity を保持し、native address を公開しない。snapshot を Set/upload の入力へ戻さず、実行経路に numeric-only snapshot owner を作らない。
 
-```diff
- namespace Lumyte.Graphics.Abstractions
- {
-+    public interface IShaderNumericWireData : IShaderData
-+    {
-+        ShaderNumericWireLayout NumericWireLayout { get; }
-+    }
-+    public sealed class ShaderNumericWireLayout
-+    {
-+        public ShaderNumericWireLayout(int stride, params ShaderNumericWireMember[] members);
-+        public int Stride { get; }
-+        public IReadOnlyList<ShaderNumericWireMember> Members { get; }
-+    }
-+    public sealed record ShaderNumericWireMember(string Path, Type ValueType, int Offset, int Size);
- }
- namespace Lumyte.Graphics.Shared
- {
-     public sealed partial class ShaderDataLayout
-     {
-+        // backend allocation 前の一度だけの C# wire compatibility gate。
-+        public void ValidateNumericWireData<T>() where T : struct, IShaderData;
-+        // C# wire opt-in は contiguous bytes、通常 IShaderData も固定 offset codec。
-+        public byte[] Pack<T>(ReadOnlySpan<T> source,
-+            Func<ShaderValue, string, byte[]> reference, out ShaderValueSnapshot[] snapshots)
-+            where T : struct, IShaderData;
-     }
- }
-```
+SetArguments は値を同期固定し、Vulkan/D3D12 は native root 定数を Set 中に記録する。Wgpu/Browser の uniform 所有は backend-private のままとし、Draw 時に数値 root を snapshot から再送しない。prepared storage の所有期間と、Set の一時転送領域の所有期間を混同しない。
 
-転送 metadata は独立所有の immutable numeric-only batch と element view を共有する。
-公開 snapshot の numeric backing から opaque GPU wire を読めず、返した packed bytes の変更、
-新しい upload、staging disposal は旧 snapshot を変更しない。copy 成功前に backend metadata
-を公開せず、table・generation・range・寿命・completion の契約は変更しない。
+CopyFrom の失敗は部分 byte 更新を許す。検証層の依存情報は失敗時に buffer 全体を無効化し、全体再転送で回復する。raw の依存 query は数値型を含め追跡不可であり、検証層だけが buffer 全体の不変 union と command-local copy overlay を保持する。GPU copy の依存公開は native copy 記録と Submit の成功後とし、古い command の revision を書き換えない。table、generation、範囲、寿命、completion は利用者責任のままとする。
 
 #### 参照集合の metadata と全引数
 
@@ -297,7 +253,7 @@ DrawPageMetadata2D という内部名は参照集合の metadata を表し、rec
 
 clip がなければ ClipDirectory は既存のゼロ entry を持つ PaintDirectory の同じ typed 参照を使い、clip buffer を追加しない。単色の rect/rounded rect/circle だけで clip が不要な specialization は metadata も directory も作らず、上の引数の offset16 を GpuBufferRef&lt;float4&gt; Palette とする64 B引数を使う。PaintId=0 は透明、正値は Palette[PaintId-1] であり、描画座標と96 B recordの形状契約は同じである。pipeline の対応 schema を固定値へ照合し、typed 参照を別種の値へ偽装しない。
 
-PixelOrigin は global graph pixel との変換用であり、通常 record の sample/DeviceBounds は target-local のままである。Records、directories、metadata、typed descriptors は IShaderData の ShaderDataSlice と generated serializer で登録する。NumericPayload の Vector4 は IShaderData ではないため `IGraphicsBuffer<Vector4>` の `BufferSlice<Vector4>` と `RegisterBuffer<T>` を用い、shader の `GpuBufferRef<float4>` target と 16 B stride を照合する。uint directory は scalar uint 四個の IShaderData とし、現行 writer に未対応な C# uint4 型を前提にしない。
+PixelOrigin は global graph pixel との変換用であり、通常 record の sample/DeviceBounds は target-local のままである。参照付き metadata と typed descriptors は `struct, IShaderArguments` の `ShaderDataSlice<T>` と生成 writer で登録する。Records と directories の内部数値型も同じ interface 経路を利用できるが、専用数値 interface は追加しない。NumericPayload の Vector4 は通常の unmanaged 型として `IGraphicsBuffer<Vector4>` の `BufferSlice<Vector4>` と `RegisterBuffer<T>` を用い、shader の `GpuBufferRef<float4>` target と 16 B stride を照合する。directory は scalar uint 四個を16 Bに配置し、C# uint4 型を前提にしない。
 
 graph 合成は新しい range arguments に GraphMode 等を暗黙追加せず、既存 DrawingArguments を使う別 route とする。その wire（基準 `Rendering/DrawingArguments.cs` と `Shaders/drawing-fragment.slang`、Drawing2D 配下）は次の **144 B**。effect kernel 自体の固有 arguments はこの描画 ABI に含めない。
 
@@ -315,9 +271,9 @@ graph 合成は新しい range arguments に GraphMode 等を暗黙追加せず�
 
 この route の DrawingInstruction は上の背景に記した既存 144 B element（T0/T1/A/B/C/D が 0/16/32/48/64/80、Kind/First/Count/Mode が 96/100/104/108、Texture/Sampler が 112/128）を維持する。Data は同じ float4 stride 16 B。Count/Root は旧命令数/terminal index であり FirstRecord/RecordCount に読み替えない。GraphMode=0 は通常 evaluator、1 は Source*Opacity*coverage、2 はそれに Original*(1-coverage) を加え、totalCoverage=0 の fragment を discard する。Source/OriginalBounds と global pixel=p+PixelOrigin の契約を維持し、graph coverage の既存 clip interpreter を通常描画の新 record evaluator と混ぜない。通常描画全種の固定長化に対し、pass 合成専用のこの既存経路は明示的な例外とする。
 
-有効化する specialization ごとに、root から必要な実 binding だけを予算化する。単色 palette は Records と Palette の2 read streams、通常の basic は Records、PaintDirectory、NumericPayload、metadata の4であり、clip、mask、image が存在するときだけ対応 stream を足す。全部必要な場合の上限は7 read streamsで、WGSL remapを加えると8 storage bindings/stageとなる。空 image/mask stream の独立 buffer、descriptor、upload や command ごとの dummy は作らない。clip NONE は entry を追加しない。
+有効化する specialization ごとに、必要な stream と選択 table の全登録による実 binding を予算化する。単色 palette は Records と Palette の2 read streams、通常の basic は Records、PaintDirectory、NumericPayload、metadata の4であり、clip、mask、image が存在するときだけ対応 stream を足す。全部必要な場合の Drawing2D stream は7 read streamsで、WGSL remapを加えると8 storage bindings/stageとなる。同じ table の他の登録も binding 対象であり、この数だけで pass 全体の native 容量内と判断しない。空 image/mask stream の独立 buffer、descriptor、upload や command ごとの dummy は作らない。clip NONE は entry を追加しない。
 
-各 field は既存 serializer が encode できる本物の typed 参照を使う。backend が必須とする fallback binding だけは device/renderer の共有 singleton 等で補い、その登録・初回初期化・所有・bytes を計上する。未登録のゼロ bit IGpuRef や別 table の参照を流用しない。root uniform、予約 binding、到達 texture/sampler を含む実際の容量を preflight する。metadata の indirection 自体は binding count を減らさない。Graph では、その pass の root から到達する参照だけを標準 Use 宣言し、登録表の全資源へ依存を広げない。graph 合成 route の既存2 read streamsとremap、Source/Original/GraphSamplerは別に検査する。
+各 field は backend writer が encode できる本物の typed 参照を使う。backend が必須とする fallback binding だけは device/renderer の共有 singleton 等で補い、その登録・初回初期化・所有・bytes を計上する。未登録のゼロ bit IGpuRef や別 table の参照を流用しない。root 定数の容量と backend-private uniform、予約 binding、選択 table の全 buffer/texture/sampler 登録を含む実際の容量を preflight する。metadata の indirection 自体は binding count を減らさない。Graph の標準 Use 宣言は pass が実際に使う直接・間接資源を完全に記述し、table 共有だけで全登録を使用依存にはしない。検証 OFF では root 走査や依存 query、admission callback を追加せず、宣言の完全性は利用者責任とする。検証 ON だけが buffer allocation / 元 image の identity と宣言 read/write の合併で照合し、wire 内の位置や参照取得元で許可を制限しない。graph 合成 route の既存2 read streamsとremap、Source/Original/GraphSamplerは別に検査する。
 
 stream 開始位置は binding alignment と各 stride（96/16/80/128、metadata 48/64/80）の最小公倍数へ揃える。16 B cell 内の論理 payload は別 binding ではなく 16 B alignment のみ。例として binding alignment=256 の MaskDescriptors は LCM(256,80)=1280 B、ImagePaintData は 256 B 境界である。offset16 の typed 変換と領域上限は開始・終端とも検査する。count と ID は uint32、byte 積と pool の合算は checked uint64。物理 bytes は record、directories、全 numeric cell、80/128 B descriptors、必要な48/64/80 B metadata、必須fallback、argument upload、alignment/tail を含め、CPU staging/GPU/in-flight ごとに計上する。旧 Data 262144 float4 の admission は前節の旧 Compile 換算を維持し、新 descriptor の存在でその counter を増減させない。
 
@@ -353,7 +309,7 @@ record、paint、clip、geometryのoffsetは対応する参照streamの先頭相
 
 ### 内部 API 差分
 
-以下は追加する宣言の抜粋で、namespace は既存 Drawing2D と同じにする。既存 DrawingArguments は graph 合成用として維持し、汎用 command の生成だけを新引数へ移す。IRenderEncoder.SetArguments/Draw と IShaderData の公開契約は変えない。DrawingRetentionOptions2D.MaxCachedBytes の説明は次の差分とし、frame の受理上限と caller-managed な寿命保証は維持する。
+以下は追加する宣言の抜粋で、namespace は既存 Drawing2D と同じにする。既存 DrawingArguments は graph 合成用として維持し、汎用 command の生成だけを新引数へ移す。公開描画 API と Draw は変更せず、SetArguments と転送型は [一括転送の公開 API](GRAPHICS-0035-csharp-authoritative-shader-transfer.md#公開apiの差分)をそのまま利用する。DrawingRetentionOptions2D.MaxCachedBytes の説明は次の差分とし、frame の受理上限と caller-managed な寿命保証は維持する。
 
 ```diff
  namespace Lumyte.Graphics.Drawing2D
@@ -370,58 +326,142 @@ record、paint、clip、geometryのoffsetは対応する参照streamの先頭相
 
 各 buffer の IGpuRef は通常の generated codec と選択済み table を使い、追加の公開 binding API を作らない。
 
+以下は数値型と mask/image の両方を使う specialization の配置宣言である。コンストラクター、生成される静的 metadata と Write は省略する。basic と片方だけの specialization は前節の48/64 B配置に従う。数値型の interface 実装は既存の内部経路を使う選択であり、通常の unmanaged 型への要件ではない。
+
 ```diff
  namespace Lumyte.Graphics.Drawing2D
  {
-+    // 数値のみの 96 B wire。offset は「96 B の格納契約」に固定する。
++    [StructLayout(LayoutKind.Explicit, Size = 96)]
 +    internal readonly partial record struct DrawRecord2D(
-+        uint Kind, uint Flags, uint PaintId, uint ClipId,
-+        Vector4 DeviceBounds, Vector4 InverseX, Vector4 InverseY,
-+        Vector4 Shape0, uint PayloadOffset16, uint PayloadCount,
-+        uint Mode, uint ExtraBits) : IShaderData;
++        [field: FieldOffset(0)] uint Kind, [field: FieldOffset(4)] uint Flags,
++        [field: FieldOffset(8)] uint PaintId, [field: FieldOffset(12)] uint ClipId,
++        [field: FieldOffset(16)] Vector4 DeviceBounds, [field: FieldOffset(32)] Vector4 InverseX,
++        [field: FieldOffset(48)] Vector4 InverseY, [field: FieldOffset(64)] Vector4 Shape0,
++        [field: FieldOffset(80)] uint PayloadOffset16, [field: FieldOffset(84)] uint PayloadCount,
++        [field: FieldOffset(88)] uint Mode, [field: FieldOffset(92)] uint ExtraBits) : IShaderArguments;
 +
-+    // 各参照の先頭は同じ参照集合内で固定。範囲を変えても子 ID/offset は不変。
-+    internal readonly partial record struct DrawRangeArguments2D(
-+        IGpuRef<DrawRecord2D> Records,
-+        IGpuRef<DrawPageMetadata2D> PageMetadata,
-+        uint FirstRecord, uint RecordCount,
-+        Vector2 TargetSize, Vector2 PixelOrigin,
-+        uint Reserved0, uint Reserved1) : IShaderArguments;
- }
-```
-
-PageMetadata は必要な参照集合のtyped element一個を指す。以下はmask/imageの両方を使う80 B specializationの抜粋であり、basic、片方だけ、paletteの各配置は前節に従う。allocationの最小容量やCPUのcontent page境界だけでは描画区間を閉じない。
-
-```diff
- namespace Lumyte.Graphics.Drawing2D
- {
-+    internal readonly partial record struct DrawPageMetadata2D(
-+        IGpuRef<DrawDirectoryEntry2D> PaintDirectory, IGpuRef<DrawDirectoryEntry2D> ClipDirectory,
-+        IGpuRef<Vector4> NumericPayload,
-+        IGpuRef<MaskDescriptor2D> MaskDescriptors,
-+        IGpuRef<ImagePaintData2D> ImagePaintData) : IShaderData;
-+
++    [StructLayout(LayoutKind.Explicit, Size = 16)]
 +    internal readonly partial record struct DrawDirectoryEntry2D(
-+        uint Kind, uint PayloadOffset16, uint PayloadLength16, uint Flags) : IShaderData;
++        [field: FieldOffset(0)] uint Kind, [field: FieldOffset(4)] uint PayloadOffset16,
++        [field: FieldOffset(8)] uint PayloadLength16, [field: FieldOffset(12)] uint Flags) : IShaderArguments;
 +
-+    // destination は DrawRecord2D.Shape0。未使用 mode/range は 0。
-+    internal readonly partial record struct MaskDescriptor2D(
-+        Vector4 Source, Vector4 TextureSizeAndRange,
-+        uint Encoding, uint Reserved0, uint Reserved1, uint Reserved2,
-+        IGpuRef<IGraphicsTextureView> Texture,
-+        IGpuRef<IGraphicsSampler> Sampler) : IShaderData;
++    internal partial record struct DrawPageMetadata2D : IShaderArguments
++    {
++        private TransferData _data;
 +
-+    // uint 群と typed 参照の正確な lane は「全 stream の byte 配置」に固定。
-+    internal readonly partial record struct ImagePaintData2D(
-+        Vector4 InverseX, Vector4 InverseY, Vector4 Source, Vector4 TextureSizeAndRange,
-+        uint ChildId, uint TileX, uint TileY, uint Filter,
-+        uint Alpha, uint FieldMode, uint Reserved0, uint Reserved1,
-+        IGpuRef<IGraphicsTextureView> Texture,
-+        IGpuRef<IGraphicsSampler> Sampler) : IShaderData;
++        public IGpuRef<DrawDirectoryEntry2D> PaintDirectory { get; set; }
++        public IGpuRef<DrawDirectoryEntry2D> ClipDirectory { get; set; }
++        public IGpuRef<Vector4> NumericPayload { get; set; }
++        public IGpuRef<MaskDescriptor2D> MaskDescriptors { get; set; }
++        public IGpuRef<ImagePaintData2D> ImagePaintData { get; set; }
++
++        [StructLayout(LayoutKind.Sequential, Pack = 4)]
++        private struct TransferData
++        {
++            public ShaderReferenceSlot PaintDirectory;
++            public ShaderReferenceSlot ClipDirectory;
++            public ShaderReferenceSlot NumericPayload;
++            public ShaderReferenceSlot MaskDescriptors;
++            public ShaderReferenceSlot ImagePaintData;
++        }
++    }
++
++    internal partial record struct DrawRangeArguments2D : IShaderArguments
++    {
++        private TransferData _data;
++
++        public IGpuRef<DrawRecord2D> Records { get; set; }
++        public IGpuRef<DrawPageMetadata2D> PageMetadata { get; set; }
++        public partial uint FirstRecord { get; set; }
++        public partial uint RecordCount { get; set; }
++        public partial Vector2 TargetSize { get; set; }
++        public partial Vector2 PixelOrigin { get; set; }
++        public partial uint Reserved0 { get; set; }
++        public partial uint Reserved1 { get; set; }
++
++        [StructLayout(LayoutKind.Sequential, Pack = 4)]
++        private struct TransferData
++        {
++            public ShaderReferenceSlot Records;
++            public ShaderReferenceSlot PageMetadata;
++            public uint FirstRecord;
++            public uint RecordCount;
++            public Vector2 TargetSize;
++            public Vector2 PixelOrigin;
++            public uint Reserved0;
++            public uint Reserved1;
++        }
++    }
++
++    internal partial record struct MaskDescriptor2D : IShaderArguments
++    {
++        private TransferData _data;
++
++        public partial Vector4 Source { get; set; }
++        public partial Vector4 TextureSizeAndRange { get; set; }
++        public partial uint Encoding { get; set; }
++        public partial uint Reserved0 { get; set; }
++        public partial uint Reserved1 { get; set; }
++        public partial uint Reserved2 { get; set; }
++        public IGpuRef<IGraphicsTextureView> Texture { get; set; }
++        public IGpuRef<IGraphicsSampler> Sampler { get; set; }
++
++        [StructLayout(LayoutKind.Sequential, Pack = 4)]
++        private struct TransferData
++        {
++            public Vector4 Source;
++            public Vector4 TextureSizeAndRange;
++            public uint Encoding;
++            public uint Reserved0;
++            public uint Reserved1;
++            public uint Reserved2;
++            public ShaderReferenceSlot Texture;
++            public ShaderReferenceSlot Sampler;
++        }
++    }
++
++    internal partial record struct ImagePaintData2D : IShaderArguments
++    {
++        private TransferData _data;
++
++        public partial Vector4 InverseX { get; set; }
++        public partial Vector4 InverseY { get; set; }
++        public partial Vector4 Source { get; set; }
++        public partial Vector4 TextureSizeAndRange { get; set; }
++        public partial uint ChildId { get; set; }
++        public partial uint TileX { get; set; }
++        public partial uint TileY { get; set; }
++        public partial uint Filter { get; set; }
++        public partial uint Alpha { get; set; }
++        public partial uint FieldMode { get; set; }
++        public partial uint Reserved0 { get; set; }
++        public partial uint Reserved1 { get; set; }
++        public IGpuRef<IGraphicsTextureView> Texture { get; set; }
++        public IGpuRef<IGraphicsSampler> Sampler { get; set; }
++
++        [StructLayout(LayoutKind.Sequential, Pack = 4)]
++        private struct TransferData
++        {
++            public Vector4 InverseX;
++            public Vector4 InverseY;
++            public Vector4 Source;
++            public Vector4 TextureSizeAndRange;
++            public uint ChildId;
++            public uint TileX;
++            public uint TileY;
++            public uint Filter;
++            public uint Alpha;
++            public uint FieldMode;
++            public uint Reserved0;
++            public uint Reserved1;
++            public ShaderReferenceSlot Texture;
++            public ShaderReferenceSlot Sampler;
++        }
++    }
  }
 ```
 
-NumericPayload は geometry、paint 数値、clip 数値の同じ参照集合内共通 16 B stream とする。directory の uint lane は uint4 wire を用い、NumericPayload 内で整数を扱う lane は bit-preserving な asuint/asfloat で読み書きし、float として数値 decode しない。mask の membership lane だけは既存の数値 float 方式を維持する。すべての reserved と未使用 lane を 0 にする。参照付き型も「全 stream の byte 配置」の固定 offset/stride を用い、全 backend の reflection と生成 codec で照合する。照合不一致は導入条件の不成立として拒否する。
+NumericPayload は geometry、paint 数値、clip 数値の同じ参照集合内共通 16 B stream とする。directory の uint lane は uint4 wire を用い、NumericPayload 内で整数を扱う lane は bit-preserving な asuint/asfloat で読み書きし、float として数値 decode しない。mask の membership lane だけは既存の数値 float 方式を維持する。すべての reserved と未使用 lane を 0 にする。参照付き型も「全 stream の byte 配置」の固定 offset/stride を用い、全 backend の reflection と C# の静的 TransferFields/TransferSize で照合する。照合不一致は導入条件の不成立として拒否する。
 
 ## 検討した代替案
 

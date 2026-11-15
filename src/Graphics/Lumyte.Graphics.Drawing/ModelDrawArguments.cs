@@ -3,83 +3,150 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing;
 
-/// <summary>Defines lighting, transforms and texture references for model drawing.</summary>
-/// <param name="Vertices">The object-space vertex range.</param>
-/// <param name="World">The row-vector object-to-world transform.</param>
-/// <param name="ViewProjection">The row-vector world-to-clip transform.</param>
-/// <param name="NormalTransform">The inverse transpose of World.</param>
-/// <param name="Material">The surface factors.</param>
-/// <param name="CameraPosition">The world-space camera position.</param>
-/// <param name="LightDirection">The world-space direction from the surface toward the light.</param>
-/// <param name="LightColor">The linear directional-light radiance.</param>
-/// <param name="AmbientColor">The linear ambient irradiance approximation.</param>
-/// <param name="FogColor">The linear fog color.</param>
-/// <param name="FogDensity">The nonnegative exponential fog density; zero disables fog.</param>
-/// <param name="BaseColorTexture">The BaseColor texture or a neutral fallback.</param>
-/// <param name="BaseColorSampler">The non-comparison BaseColor sampler.</param>
-/// <param name="MetallicRoughnessTexture">The MetallicRoughness texture or a neutral fallback.</param>
-/// <param name="MetallicRoughnessSampler">The non-comparison MetallicRoughness sampler.</param>
-/// <param name="NormalTexture">The Normal texture or a neutral fallback.</param>
-/// <param name="NormalSampler">The non-comparison Normal sampler.</param>
-/// <param name="OcclusionTexture">The Occlusion texture or a neutral fallback.</param>
-/// <param name="OcclusionSampler">The non-comparison Occlusion sampler.</param>
-/// <param name="EmissiveTexture">The Emissive texture or a neutral fallback.</param>
-/// <param name="EmissiveSampler">The non-comparison Emissive sampler.</param>
-public readonly partial record struct ModelDrawArguments(IGpuRef<ModelVertex> Vertices, Matrix4x4 World, Matrix4x4 ViewProjection, Matrix4x4 NormalTransform, ModelMaterial Material, Vector3 CameraPosition, Vector3 LightDirection, Vector3 LightColor, Vector3 AmbientColor, Vector3 FogColor, float FogDensity, IGpuRef<IGraphicsTextureView> BaseColorTexture, IGpuRef<IGraphicsSampler> BaseColorSampler, IGpuRef<IGraphicsTextureView> MetallicRoughnessTexture, IGpuRef<IGraphicsSampler> MetallicRoughnessSampler, IGpuRef<IGraphicsTextureView> NormalTexture, IGpuRef<IGraphicsSampler> NormalSampler, IGpuRef<IGraphicsTextureView> OcclusionTexture, IGpuRef<IGraphicsSampler> OcclusionSampler, IGpuRef<IGraphicsTextureView> EmissiveTexture, IGpuRef<IGraphicsSampler> EmissiveSampler) : IShaderArguments
+/// <summary>Defines buffer-resident lighting, transforms and texture references for model drawing.</summary>
+/// <remarks>Explicitly upload these values to a shader data buffer and select the draw using <see cref="ModelDrawRoot"/>; this large structure is not a native root.</remarks>
+public partial record struct ModelDrawArguments : IShaderArguments
 {
-    // This uniform wire is deliberately distinct from ModelMaterial storage wire.
-    // Fixed C# offsets preserve nested uniform padding without runtime name relocation.
+    private TransferData _data;
 
-    /// <inheritdoc/>
-    static int IShaderArguments.WireSizeInBytes => 688;
-
-    /// <inheritdoc/>
-    void IShaderArguments.Write<TWriter>(ref TWriter writer)
+    /// <summary>Initializes a new instance of the <see cref="ModelDrawArguments"/> structure.</summary>
+    /// <param name="vertices">The object-space vertex range.</param>
+    /// <param name="world">The row-vector object-to-world transform.</param>
+    /// <param name="viewProjection">The row-vector world-to-clip transform.</param>
+    /// <param name="normalTransform">The inverse transpose of World.</param>
+    /// <param name="material">The surface factors.</param>
+    /// <param name="cameraPosition">The world-space camera position.</param>
+    /// <param name="lightDirection">The world-space direction from the surface toward the light.</param>
+    /// <param name="lightColor">The linear directional-light radiance.</param>
+    /// <param name="ambientColor">The linear ambient irradiance approximation.</param>
+    /// <param name="fogColor">The linear fog color.</param>
+    /// <param name="fogDensity">The nonnegative exponential fog density; zero disables fog.</param>
+    /// <param name="baseColorTexture">The BaseColor texture or a neutral fallback.</param>
+    /// <param name="baseColorSampler">The non-comparison BaseColor sampler.</param>
+    /// <param name="metallicRoughnessTexture">The MetallicRoughness texture or a neutral fallback.</param>
+    /// <param name="metallicRoughnessSampler">The non-comparison MetallicRoughness sampler.</param>
+    /// <param name="normalTexture">The Normal texture or a neutral fallback.</param>
+    /// <param name="normalSampler">The non-comparison Normal sampler.</param>
+    /// <param name="occlusionTexture">The Occlusion texture or a neutral fallback.</param>
+    /// <param name="occlusionSampler">The non-comparison Occlusion sampler.</param>
+    /// <param name="emissiveTexture">The Emissive texture or a neutral fallback.</param>
+    /// <param name="emissiveSampler">The non-comparison Emissive sampler.</param>
+    public ModelDrawArguments(IGpuRef<ModelVertex> vertices, Matrix4x4 world, Matrix4x4 viewProjection, Matrix4x4 normalTransform, ModelMaterial material, Vector3 cameraPosition, Vector3 lightDirection, Vector3 lightColor, Vector3 ambientColor, Vector3 fogColor, float fogDensity, IGpuRef<IGraphicsTextureView> baseColorTexture, IGpuRef<IGraphicsSampler> baseColorSampler, IGpuRef<IGraphicsTextureView> metallicRoughnessTexture, IGpuRef<IGraphicsSampler> metallicRoughnessSampler, IGpuRef<IGraphicsTextureView> normalTexture, IGpuRef<IGraphicsSampler> normalSampler, IGpuRef<IGraphicsTextureView> occlusionTexture, IGpuRef<IGraphicsSampler> occlusionSampler, IGpuRef<IGraphicsTextureView> emissiveTexture, IGpuRef<IGraphicsSampler> emissiveSampler)
     {
-        writer.WriteReference(0, "Vertices", Vertices);
-        writer.WriteValue(16, "World", World);
-        writer.WriteValue(80, "ViewProjection", ViewProjection);
-        writer.WriteValue(144, "NormalTransform", NormalTransform);
-        writer.WriteValue(208, "Material.BaseColor", Material.BaseColor);
-        writer.WriteValue(224, "Material.Emissive", Material.Emissive);
-        writer.WriteValue(236, "Material.Metallic", Material.Metallic);
-        writer.WriteValue(240, "Material.Roughness", Material.Roughness);
-        writer.WriteValue(244, "Material.NormalScale", Material.NormalScale);
-        writer.WriteValue(248, "Material.OcclusionStrength", Material.OcclusionStrength);
-        writer.WriteValue(252, "Material.AlphaCutoff", Material.AlphaCutoff);
-        writer.WriteValue(256, "Material.AlphaMode", Material.AlphaMode);
-        writer.WriteValue(260, "Material.Unlit", Material.Unlit);
-        writer.WriteValue(272, "Material.BaseColorUv.Offset", Material.BaseColorUv.Offset);
-        writer.WriteValue(280, "Material.BaseColorUv.Scale", Material.BaseColorUv.Scale);
-        writer.WriteValue(288, "Material.BaseColorUv.Rotation", Material.BaseColorUv.Rotation);
-        writer.WriteValue(304, "Material.MetallicRoughnessUv.Offset", Material.MetallicRoughnessUv.Offset);
-        writer.WriteValue(312, "Material.MetallicRoughnessUv.Scale", Material.MetallicRoughnessUv.Scale);
-        writer.WriteValue(320, "Material.MetallicRoughnessUv.Rotation", Material.MetallicRoughnessUv.Rotation);
-        writer.WriteValue(336, "Material.NormalUv.Offset", Material.NormalUv.Offset);
-        writer.WriteValue(344, "Material.NormalUv.Scale", Material.NormalUv.Scale);
-        writer.WriteValue(352, "Material.NormalUv.Rotation", Material.NormalUv.Rotation);
-        writer.WriteValue(368, "Material.OcclusionUv.Offset", Material.OcclusionUv.Offset);
-        writer.WriteValue(376, "Material.OcclusionUv.Scale", Material.OcclusionUv.Scale);
-        writer.WriteValue(384, "Material.OcclusionUv.Rotation", Material.OcclusionUv.Rotation);
-        writer.WriteValue(400, "Material.EmissiveUv.Offset", Material.EmissiveUv.Offset);
-        writer.WriteValue(408, "Material.EmissiveUv.Scale", Material.EmissiveUv.Scale);
-        writer.WriteValue(416, "Material.EmissiveUv.Rotation", Material.EmissiveUv.Rotation);
-        writer.WriteValue(432, "Material.EmissiveStrength", new Vector4(Material.EmissiveStrength, 0, 0, 0));
-        writer.WriteValue(448, "CameraPosition", CameraPosition);
-        writer.WriteValue(464, "LightDirection", LightDirection);
-        writer.WriteValue(480, "LightColor", LightColor);
-        writer.WriteValue(496, "AmbientColor", AmbientColor);
-        writer.WriteValue(512, "FogColor", FogColor);
-        writer.WriteValue(524, "FogDensity", FogDensity);
-        writer.WriteReference(528, "BaseColorTexture", BaseColorTexture);
-        writer.WriteReference(544, "BaseColorSampler", BaseColorSampler);
-        writer.WriteReference(560, "MetallicRoughnessTexture", MetallicRoughnessTexture);
-        writer.WriteReference(576, "MetallicRoughnessSampler", MetallicRoughnessSampler);
-        writer.WriteReference(592, "NormalTexture", NormalTexture);
-        writer.WriteReference(608, "NormalSampler", NormalSampler);
-        writer.WriteReference(624, "OcclusionTexture", OcclusionTexture);
-        writer.WriteReference(640, "OcclusionSampler", OcclusionSampler);
-        writer.WriteReference(656, "EmissiveTexture", EmissiveTexture);
-        writer.WriteReference(672, "EmissiveSampler", EmissiveSampler);
+        _data = new()
+        {
+            World = world,
+            ViewProjection = viewProjection,
+            NormalTransform = normalTransform,
+            Material = material,
+            CameraPosition = cameraPosition,
+            LightDirection = lightDirection,
+            LightColor = lightColor,
+            AmbientColor = ambientColor,
+            FogColor = fogColor,
+            FogDensity = fogDensity,
+        };
+
+        Vertices = vertices;
+        BaseColorTexture = baseColorTexture;
+        BaseColorSampler = baseColorSampler;
+        MetallicRoughnessTexture = metallicRoughnessTexture;
+        MetallicRoughnessSampler = metallicRoughnessSampler;
+        NormalTexture = normalTexture;
+        NormalSampler = normalSampler;
+        OcclusionTexture = occlusionTexture;
+        OcclusionSampler = occlusionSampler;
+        EmissiveTexture = emissiveTexture;
+        EmissiveSampler = emissiveSampler;
+    }
+
+    /// <summary>Gets or sets the shader Vertices value.</summary>
+    public IGpuRef<ModelVertex> Vertices { get; set; }
+
+    /// <summary>Gets or sets the shader World value.</summary>
+    public partial Matrix4x4 World { get; set; }
+
+    /// <summary>Gets or sets the shader ViewProjection value.</summary>
+    public partial Matrix4x4 ViewProjection { get; set; }
+
+    /// <summary>Gets or sets the shader NormalTransform value.</summary>
+    public partial Matrix4x4 NormalTransform { get; set; }
+
+    /// <summary>Gets or sets the shader Material value.</summary>
+    public partial ModelMaterial Material { get; set; }
+
+    /// <summary>Gets or sets the shader CameraPosition value.</summary>
+    public partial Vector3 CameraPosition { get; set; }
+
+    /// <summary>Gets or sets the shader LightDirection value.</summary>
+    public partial Vector3 LightDirection { get; set; }
+
+    /// <summary>Gets or sets the shader LightColor value.</summary>
+    public partial Vector3 LightColor { get; set; }
+
+    /// <summary>Gets or sets the shader AmbientColor value.</summary>
+    public partial Vector3 AmbientColor { get; set; }
+
+    /// <summary>Gets or sets the shader FogColor value.</summary>
+    public partial Vector3 FogColor { get; set; }
+
+    /// <summary>Gets or sets the shader FogDensity value.</summary>
+    public partial float FogDensity { get; set; }
+
+    /// <summary>Gets or sets the shader BaseColorTexture value.</summary>
+    public IGpuRef<IGraphicsTextureView> BaseColorTexture { get; set; }
+
+    /// <summary>Gets or sets the shader BaseColorSampler value.</summary>
+    public IGpuRef<IGraphicsSampler> BaseColorSampler { get; set; }
+
+    /// <summary>Gets or sets the shader MetallicRoughnessTexture value.</summary>
+    public IGpuRef<IGraphicsTextureView> MetallicRoughnessTexture { get; set; }
+
+    /// <summary>Gets or sets the shader MetallicRoughnessSampler value.</summary>
+    public IGpuRef<IGraphicsSampler> MetallicRoughnessSampler { get; set; }
+
+    /// <summary>Gets or sets the shader NormalTexture value.</summary>
+    public IGpuRef<IGraphicsTextureView> NormalTexture { get; set; }
+
+    /// <summary>Gets or sets the shader NormalSampler value.</summary>
+    public IGpuRef<IGraphicsSampler> NormalSampler { get; set; }
+
+    /// <summary>Gets or sets the shader OcclusionTexture value.</summary>
+    public IGpuRef<IGraphicsTextureView> OcclusionTexture { get; set; }
+
+    /// <summary>Gets or sets the shader OcclusionSampler value.</summary>
+    public IGpuRef<IGraphicsSampler> OcclusionSampler { get; set; }
+
+    /// <summary>Gets or sets the shader EmissiveTexture value.</summary>
+    public IGpuRef<IGraphicsTextureView> EmissiveTexture { get; set; }
+
+    /// <summary>Gets or sets the shader EmissiveSampler value.</summary>
+    public IGpuRef<IGraphicsSampler> EmissiveSampler { get; set; }
+
+    // This declaration is the wire ABI. Keep shader declarations in exactly this order.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 4)]
+    private struct TransferData
+    {
+        public ShaderReferenceSlot Vertices;
+        public Matrix4x4 World;
+        public Matrix4x4 ViewProjection;
+        public Matrix4x4 NormalTransform;
+        public ModelMaterial Material;
+        public Vector3 CameraPosition;
+        public Vector3 LightDirection;
+        public Vector3 LightColor;
+        public Vector3 AmbientColor;
+        public Vector3 FogColor;
+        public float FogDensity;
+        public ShaderReferenceSlot BaseColorTexture;
+        public ShaderReferenceSlot BaseColorSampler;
+        public ShaderReferenceSlot MetallicRoughnessTexture;
+        public ShaderReferenceSlot MetallicRoughnessSampler;
+        public ShaderReferenceSlot NormalTexture;
+        public ShaderReferenceSlot NormalSampler;
+        public ShaderReferenceSlot OcclusionTexture;
+        public ShaderReferenceSlot OcclusionSampler;
+        public ShaderReferenceSlot EmissiveTexture;
+        public ShaderReferenceSlot EmissiveSampler;
     }
 }

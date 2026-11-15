@@ -2,6 +2,8 @@ using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Mathematics.Colors;
+using Lumyte.Mathematics.Geometry;
 using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 
 namespace Lumyte.Graphics.Drawing2D.RenderGraph;
@@ -141,11 +143,9 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private static bool IsInteger(float value) => float.IsFinite(value) && value == MathF.Truncate(value) && value >= int.MinValue && (double)value <= int.MaxValue;
 
-    private static bool ValidColor(Color2D color) => ValidChannel(color.R) && ValidChannel(color.G) && ValidChannel(color.B) && ValidChannel(color.A);
+    private static bool ValidColor(SRgba<float> color) => ValidChannel(color.R) && ValidChannel(color.G) && ValidChannel(color.B) && ValidChannel(color.A);
 
     private static bool ValidChannel(float value) => float.IsFinite(value) && value >= 0 && value <= 1;
-
-    private static double Linear(float value) => value <= 0.04045f ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
 
     private static void AppendClear(RenderGraphBuilder graph, RenderTargetBinding2D target)
     {
@@ -154,8 +154,9 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             return;
         }
 
-        Color2D color = target.ClearColor;
-        var clear = new ClearColor(Linear(color.R) * color.A, Linear(color.G) * color.A, Linear(color.B) * color.A, color.A);
+        SRgba<float> color = target.ClearColor;
+        LRgba<double> linear = color.ToLinear<double>().PremultiplyLinear<double>();
+        var clear = new ClearColor(linear.R, linear.G, linear.B, linear.A);
         graph.AddPass("drawing2d.clear", context =>
         {
             IRenderEncoder pass = context.Commands.BeginRenderPass(new RenderPassDesc
@@ -232,12 +233,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private static EffectPixelRect PixelBounds(Rect2D rect, Matrix3x2 transform, float pixelScale)
     {
-        Vector2 a = Vector2.Transform(new Vector2(rect.X, rect.Y), transform) * pixelScale;
-        Vector2 b = Vector2.Transform(new Vector2(rect.X + rect.Width, rect.Y), transform) * pixelScale;
-        Vector2 c = Vector2.Transform(new Vector2(rect.X, rect.Y + rect.Height), transform) * pixelScale;
-        Vector2 d = Vector2.Transform(new Vector2(rect.X + rect.Width, rect.Y + rect.Height), transform) * pixelScale;
-        var minimum = Vector2.Min(Vector2.Min(a, b), Vector2.Min(c, d));
-        var maximum = Vector2.Max(Vector2.Max(a, b), Vector2.Max(c, d));
+        Geometry2D.GetTransformedBoundsBcl(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, pixelScale, out Vector2 minimum, out Vector2 maximum);
         int x = checked((int)Math.Floor(minimum.X));
         int y = checked((int)Math.Floor(minimum.Y));
         int right = checked((int)Math.Ceiling(maximum.X));

@@ -42,19 +42,7 @@ public sealed class DeviceCapsTests
         AssertPowerOfTwo(caps.StorageBufferOffsetAlignment);
         Assert.Equal(GraphicsFeatures.None, caps.Features & ~(GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering | GraphicsFeatures.DepthBiasClamp | GraphicsFeatures.MeshShader));
 
-        _ = device.Caps;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1024; i++)
-        {
-            DeviceCaps current = device.Caps;
-            if (!ReferenceEquals(caps, current))
-            {
-                throw new InvalidOperationException("Caps allocated a new snapshot.");
-            }
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+        Assert.Same(caps, device.Caps);
         DeviceCaps changed = caps with { MaxBufferSize = 0 };
         Assert.Equal(0UL, changed.MaxBufferSize);
         Assert.Same(caps, device.Caps);

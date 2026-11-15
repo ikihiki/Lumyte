@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
@@ -226,13 +227,13 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
 
             try
             {
-                upload.CopyFrom(program.Instructions.ToArray());
+                upload.CopyFrom(CollectionsMarshal.AsSpan(program.Instructions));
                 if (profiling)
                 {
                     _profileCopied += (long)((ulong)program.Instructions.Count * upload.ShaderElementStrideInBytes);
                 }
 
-                data.CopyFrom(program.Data.ToArray());
+                data.CopyFrom(CollectionsMarshal.AsSpan(program.Data));
                 if (profiling)
                 {
                     _profileCopied += (long)program.Data.Count * 16;

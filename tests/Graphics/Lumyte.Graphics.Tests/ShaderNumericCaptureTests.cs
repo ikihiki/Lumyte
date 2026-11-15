@@ -1,32 +1,33 @@
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Shared;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
-/// <summary>Checks append-only logical numeric capture without native wire storage.</summary>
+/// <summary>Checks consecutive raw capture and independent historical wire bytes.</summary>
 public sealed class ShaderNumericCaptureTests
 {
-    /// <summary>Checks that twelve numeric leaves no longer require twelve payload arrays.</summary>
+    /// <summary>Numeric ranges share the one exact-sized snapshot allocation.</summary>
     [Fact]
     public void NumericLeavesShareBoundedCpuChunks()
     {
         var value = new NumericArguments(12, 0x7fc12345);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-        var arrays = new HashSet<byte[]>();
-        foreach (ShaderValue member in snapshot.Values)
+        Assert.True(MemoryMarshal.TryGetArray(snapshot.Data, out ArraySegment<byte> segment));
+        Assert.Equal(400, segment.Array!.Length);
+        Assert.Equal(400, snapshot.Data.Length);
+        Assert.Empty(snapshot.Values);
+        for (int i = 0; i < 12; i++)
         {
-            Assert.True(MemoryMarshal.TryGetArray(member.Data, out ArraySegment<byte> segment));
-            arrays.Add(segment.Array!);
-            Assert.InRange(segment.Array!.Length, 4, 128);
+            Assert.Equal(unchecked(0x7fc12345 + i), BinaryPrimitives.ReadInt32LittleEndian(snapshot.Data.Span[(i * 4)..]));
         }
 
-        Assert.Equal(12, snapshot.Values.Count);
-        Assert.Equal(2, arrays.Count);
+        Assert.All(snapshot.Data.ToArray().Skip(48), item => Assert.Equal((byte)0, item));
     }
 
-    /// <summary>Checks duplicate paths, chunk rollover and exact historic NaN payloads.</summary>
+    /// <summary>Repeated raw ranges and copies preserve every historical NaN payload.</summary>
     [Fact]
     public void DuplicateEmissionsKeepIndependentHistoricalBits()
     {
@@ -35,18 +36,20 @@ public sealed class ShaderNumericCaptureTests
         ShaderValueSnapshot copy = first.Copy();
         value = new NumericArguments(100, unchecked((int)0x80000000));
         ShaderValueSnapshot later = IShaderArguments.Capture(in value);
-
-        for (int i = 0; i < first.Values.Count; i++)
+        Assert.Equal(400, first.Data.Length);
+        Assert.Empty(first.Values);
+        Assert.Equal(first.Data.ToArray(), copy.Data.ToArray());
+        Assert.True(MemoryMarshal.TryGetArray(first.Data, out ArraySegment<byte> original));
+        Assert.True(MemoryMarshal.TryGetArray(copy.Data, out ArraySegment<byte> copied));
+        Assert.NotSame(original.Array, copied.Array);
+        for (int i = 0; i < 100; i++)
         {
-            Assert.Equal("Repeated", first.Values[i].Path);
-            Assert.Equal(typeof(float), first.Values[i].ValueType);
-            Assert.Equal(unchecked(0x7fc12345 + i), BinaryPrimitives.ReadInt32LittleEndian(first.Values[i].Data.Span));
-            Assert.Equal(first.Values[i].Data.ToArray(), copy.Values[i].Data.ToArray());
-            Assert.Equal(unchecked((int)0x80000000 + i), BinaryPrimitives.ReadInt32LittleEndian(later.Values[i].Data.Span));
+            Assert.Equal(unchecked(0x7fc12345 + i), BinaryPrimitives.ReadInt32LittleEndian(first.Data.Span[(i * 4)..]));
+            Assert.Equal(unchecked((int)0x80000000 + i), BinaryPrimitives.ReadInt32LittleEndian(later.Data.Span[(i * 4)..]));
         }
     }
 
-    /// <summary>Checks one invocation, shared writer aliases and exact opaque identity.</summary>
+    /// <summary>A handwritten codec runs once and shared helper aliases append in physical order.</summary>
     [Fact]
     public void HandwrittenCodecRunsOnceAndWriterAliasesAppendSafely()
     {
@@ -54,44 +57,57 @@ public sealed class ShaderNumericCaptureTests
         var reference = new TestReference();
         var value = new AliasedArguments(calls, reference);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
-
         Assert.Equal(new[] { "write" }, calls);
-        Assert.Equal(new[] { "First", "Second", "Texture", "Third", "Fourth", "Fifth" }, snapshot.Values.Select(member => member.Path));
-        Assert.Equal(11, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Values[0].Data.Span));
-        Assert.Equal(22, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Values[1].Data.Span));
-        Assert.Same(reference, snapshot.Values[2].Reference);
-        Assert.True(snapshot.Values[2].Data.IsEmpty);
-        Assert.Equal(33, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Values[3].Data.Span));
-        Assert.Equal(44, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Values[4].Data.Span));
-        Assert.Equal(55, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Values[5].Data.Span));
-        Assert.True(MemoryMarshal.TryGetArray(snapshot.Values[3].Data, out ArraySegment<byte> storage));
-        Assert.Equal(22, BinaryPrimitives.ReadInt32LittleEndian(storage.Array!.AsSpan(0)));
-        Assert.Equal(33, BinaryPrimitives.ReadInt32LittleEndian(storage.Array.AsSpan(4)));
-        Assert.Equal(44, BinaryPrimitives.ReadInt32LittleEndian(storage.Array.AsSpan(8)));
-        Assert.Equal(55, BinaryPrimitives.ReadInt32LittleEndian(storage.Array.AsSpan(12)));
-        Assert.All(storage.Array!.Skip(16), item => Assert.Equal((byte)0, item));
+        ShaderValue fixup = Assert.Single(snapshot.Values);
+        Assert.Same(reference, fixup.Reference);
+        Assert.Equal(typeof(IGraphicsTextureView), fixup.ValueType);
+        Assert.Equal(8, fixup.Offset);
+        Assert.All(snapshot.Data.ToArray().Skip(8).Take(16), item => Assert.Equal((byte)0, item));
+        Assert.Equal(11, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Data.Span));
+        Assert.Equal(22, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Data.Span[4..]));
+        Assert.Equal(33, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Data.Span[24..]));
+        Assert.Equal(44, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Data.Span[28..]));
+        Assert.Equal(55, BinaryPrimitives.ReadInt32LittleEndian(snapshot.Data.Span[32..]));
+        Assert.Equal(36, snapshot.Data.Length);
     }
 
-    /// <summary>Checks that capture still rejects unsupported unmanaged members.</summary>
+    /// <summary>Raw long bytes remain transferable but incompatible uint shader fields fail diagnostics.</summary>
     [Fact]
     public void UnsupportedNumericTypeStillThrows()
     {
         UnsupportedArguments value = default;
-        Assert.Throws<NotSupportedException>(() => IShaderArguments.Capture(in value));
+        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in value);
+        Assert.Equal(1L, BinaryPrimitives.ReadInt64LittleEndian(snapshot.Data.Span));
+        Assert.Empty(snapshot.Values);
+        const string Reflection = """
+            {"parameters":[{"name":"arguments","type":{"kind":"constantBuffer","elementType":{"kind":"struct","name":"UnsupportedArguments","sizes":[{"kind":"uniform","value":8,"alignment":4}],"fields":[{"name":"Unsupported","type":{"kind":"scalar","scalarType":"uint32"},"binding":{"offset":0,"size":4}}]}}}]}
+            """;
+        var target = new ShaderTargetData(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", "row-major", [32], Reflection);
+        Assert.Throws<ArgumentException>(() => ShaderDataLayout.Root(target, "arguments").ValidateArguments(snapshot, true));
     }
+
+    private static void WriteNumber<TWriter>(ref TWriter writer, int value)
+        where TWriter : IShaderValueWriter, allows ref struct
+        => writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
 
     private readonly record struct NumericArguments(int Count, int Bits) : IShaderArguments
     {
         public static string ShaderTypeName => "NumericArguments";
 
+        public static int TransferSize => 400;
+
+        public static int ReferenceCount => 0;
+
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             for (int i = 0; i < Count; i++)
             {
                 float value = BitConverter.Int32BitsToSingle(unchecked(Bits + i));
-                writer.WriteValue(0, "Repeated", value);
+                writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
             }
+
+            writer.WriteValue(new byte[TransferSize - (Count * 4)]);
         }
     }
 
@@ -99,17 +115,29 @@ public sealed class ShaderNumericCaptureTests
     {
         public static string ShaderTypeName => "AliasedArguments";
 
+        public static int TransferSize => 36;
+
+        public static int ReferenceCount => 1;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields =>
+            [new("First", 0, 4, typeof(int)), new("Second", 4, 4, typeof(int)), new("Texture", 8, 16, typeof(ShaderReferenceSlot), true), new("Third", 24, 4, typeof(int)), new("Fourth", 28, 4, typeof(int)), new("Fifth", 32, 4, typeof(int))];
+
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
+            where TWriter : IShaderValueWriter, allows ref struct
         {
             Calls.Add("write");
-            writer.WriteValue(0, "First", 11);
-            writer.WriteValue(4, "Second", 22);
-            TWriter alias = writer;
-            alias.WriteReference<IGraphicsTextureView>(8, "Texture", Reference);
-            alias.WriteValue(24, "Third", 33);
-            writer.WriteValue(28, "Fourth", 44);
-            alias.WriteValue(32, "Fifth", 55);
+            WriteNumber(ref writer, 11);
+            WriteNumber(ref writer, 22);
+            Append(ref writer, Reference);
+            WriteNumber(ref writer, 44);
+            WriteNumber(ref writer, 55);
+        }
+
+        private static void Append<TWriter>(ref TWriter alias, TestReference reference)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            alias.WriteReference<IGraphicsTextureView>(reference);
+            WriteNumber(ref alias, 33);
         }
     }
 
@@ -117,8 +145,18 @@ public sealed class ShaderNumericCaptureTests
     {
         public static string ShaderTypeName => "UnsupportedArguments";
 
+        public static int TransferSize => 8;
+
+        public static int ReferenceCount => 0;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => [new("Unsupported", 0, 8, typeof(long))];
+
         public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter => writer.WriteValue(0, "Unsupported", 1L);
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            long value = 1;
+            writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
+        }
     }
 
     private sealed class TestReference : IGpuRef<IGraphicsTextureView>

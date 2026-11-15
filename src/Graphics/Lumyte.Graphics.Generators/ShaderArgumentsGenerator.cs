@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -9,18 +8,18 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Lumyte.Graphics.Generators;
 
-/// <summary>Generates direct AOT-safe shader member readers for application structures.</summary>
+/// <summary>Generates consecutive wire ranges and physically ordered opaque references.</summary>
 [Generator]
 public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
 {
     private static readonly DiagnosticDescriptor _unsupported = new(
-        "LUMG001", "Unsupported shader value", "Shader arguments cannot serialize '{0}': {1}", "Lumyte.Graphics", DiagnosticSeverity.Error, true);
+        "LUMG001", "Unsupported shader transfer", "Shader transfer '{0}': {1}", "Lumyte.Graphics", DiagnosticSeverity.Error, true);
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<INamedTypeSymbol?> types = context.SyntaxProvider.CreateSyntaxProvider(
-            static (node, _) => node is TypeDeclarationSyntax declaration && (declaration.AttributeLists.Count != 0 || declaration.BaseList != null),
+            static (node, _) => node is TypeDeclarationSyntax declaration && declaration.BaseList != null,
             static (syntax, token) => syntax.SemanticModel.GetDeclaredSymbol(syntax.Node, token) as INamedTypeSymbol);
         context.RegisterSourceOutput(types.Collect(), static (output, candidates) =>
         {
@@ -35,241 +34,270 @@ public sealed class ShaderArgumentsGenerator : IIncrementalGenerator
         });
     }
 
-    private static void Emit(SourceProductionContext output, INamedTypeSymbol? type)
+    private static void Emit(SourceProductionContext output, INamedTypeSymbol type)
     {
-        if (type == null || type.TypeKind != TypeKind.Struct)
-        {
-            return;
-        }
-
         INamedTypeSymbol? contract = type.AllInterfaces.FirstOrDefault(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderArguments");
-        if (contract == null)
+        if (contract == null || type.TypeKind is not (TypeKind.Struct or TypeKind.Class))
         {
             return;
         }
 
-        bool generateName = type.FindImplementationForInterfaceMember(contract.GetMembers("ShaderTypeName").Single()) == null;
+        if (type.TypeKind != TypeKind.Struct || type.IsRefLikeType)
+        {
+            Report(output, type, "shader arguments must be non-ref structs or record structs; classes and ref structs are unsupported");
+            return;
+        }
+
         bool generateWrite = type.FindImplementationForInterfaceMember(contract.GetMembers("Write").Single()) == null;
-        bool generateSize = generateWrite && type.FindImplementationForInterfaceMember(contract.GetMembers("WireSizeInBytes").Single()) == null;
-        INamedTypeSymbol? wireContract = type.AllInterfaces.FirstOrDefault(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderNumericWireData");
-        bool generateWire = wireContract != null && type.FindImplementationForInterfaceMember(wireContract.GetMembers("NumericWireLayout").Single()) == null;
-        if (!generateName && !generateWrite && !generateWire)
+        if (!generateWrite)
         {
             return;
         }
 
-        if (type.IsGenericType || type.ContainingType != null || type.DeclaredAccessibility == Accessibility.Private)
+        if (type.IsGenericType || type.ContainingType != null || type.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is TypeDeclarationSyntax d && !d.Modifiers.Any(SyntaxKind.PartialKeyword)))
         {
-            Report(output, type, "generic or nested shader argument types are not supported");
+            Report(output, type, "generated types must be non-generic, top-level and partial");
             return;
         }
 
-        if (type.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is TypeDeclarationSyntax declaration && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword)))
+        IPropertySymbol[] partialProperties = type.GetMembers().OfType<IPropertySymbol>()
+            .Where(p => p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is PropertyDeclarationSyntax syntax && syntax.Modifiers.Any(SyntaxKind.PartialKeyword))).ToArray();
+        bool needsStorage = !type.IsUnmanagedType || partialProperties.Length != 0 || type.GetMembers().Any(IsReferenceMember);
+        IFieldSymbol[] candidates = needsStorage
+            ? type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic && !f.IsImplicitlyDeclared && f.DeclaredAccessibility == Accessibility.Private && f.Type.IsUnmanagedType && f.Type is INamedTypeSymbol { TypeKind: TypeKind.Struct, SpecialType: SpecialType.None }).ToArray()
+            : [];
+        if (needsStorage && candidates.Length != 1)
         {
-            Report(output, type, "generated shader value types must be partial");
+            Report(output, type, "reference-containing structs and partial numeric properties require exactly one private unmanaged wire storage struct");
             return;
         }
 
-        var body = new StringBuilder();
-        int wireSize = 0;
-        if (generateWrite && !Members(output, type, "this", string.Empty, 0, body, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default), out wireSize))
+        IFieldSymbol? storage = needsStorage ? candidates[0] : null;
+        var wire = (INamedTypeSymbol)(storage?.Type ?? type);
+        var fields = new StringBuilder();
+        var offsets = new StringBuilder();
+        var offsetNames = new Dictionary<IFieldSymbol, string>(SymbolEqualityComparer.Default);
+        var referenceMembers = new List<ISymbol>();
+        var referenceOffsets = new List<string>();
+        var properties = new StringBuilder();
+        foreach (IPropertySymbol property in partialProperties)
         {
-            return;
-        }
-
-        if (!type.AllInterfaces.Any(i => i.ToDisplayString() == "Lumyte.Graphics.Abstractions.IShaderData"))
-        {
-            long uniformSize = ((long)wireSize + 15) / 16 * 16;
-            if (uniformSize > int.MaxValue)
+            var syntax = (PropertyDeclarationSyntax)property.DeclaringSyntaxReferences.First(r => r.GetSyntax() is PropertyDeclarationSyntax p && p.Modifiers.Any(SyntaxKind.PartialKeyword)).GetSyntax();
+            if (property.IsStatic || property.IsIndexer || property.RefKind != RefKind.None || property.SetMethod?.IsInitOnly == true || syntax.AccessorList == null)
             {
-                Report(output, type, "C# wire stride exceeds the Int32 byte range");
+                Report(output, property, "partial numeric properties must be instance, non-indexed value properties with get and optional set accessors; init is unsupported");
                 return;
             }
 
-            wireSize = (int)uniformSize;
+            if (syntax.Modifiers.Any(SyntaxKind.ProtectedKeyword) || syntax.AccessorList.Accessors.Any(a => a.Modifiers.Any(SyntaxKind.ProtectedKeyword)))
+            {
+                Report(output, property, "partial numeric properties and accessors cannot use protected accessibility in structs");
+                return;
+            }
+
+            IFieldSymbol? field = wire.GetMembers(property.Name).OfType<IFieldSymbol>().SingleOrDefault(f => !f.IsStatic && SymbolEqualityComparer.Default.Equals(f.Type, property.Type));
+            if (!property.Type.IsUnmanagedType || field == null || (property.SetMethod != null && (type.IsReadOnly || storage!.IsReadOnly || field.IsReadOnly)))
+            {
+                Report(output, property, "partial numeric properties require a same-named unmanaged wire field, writable when a setter is declared");
+                return;
+            }
+
+            properties.Append("    ").Append(syntax.Modifiers.ToFullString().Trim()).Append(' ');
+            properties.Append(Full(property.Type)).Append(" @").Append(property.Name).Append(" { ");
+            foreach (AccessorDeclarationSyntax accessor in syntax.AccessorList.Accessors)
+            {
+                string modifiers = accessor.Modifiers.ToFullString().Trim();
+                if (modifiers.Length != 0)
+                {
+                    properties.Append(modifiers).Append(' ');
+                }
+
+                if (accessor.IsKind(SyntaxKind.GetAccessorDeclaration))
+                {
+                    properties.Append("get => this.@").Append(storage!.Name).Append(".@").Append(property.Name).Append("; ");
+                }
+                else if (accessor.IsKind(SyntaxKind.SetAccessorDeclaration))
+                {
+                    properties.Append("set => this.@").Append(storage!.Name).Append(".@").Append(property.Name).Append(" = value; ");
+                }
+                else
+                {
+                    Report(output, property, "only get/set partial numeric accessors are supported");
+                    return;
+                }
+            }
+
+            properties.AppendLine("}");
         }
 
-        string? wireMetadata = generateWire ? WireMetadata(output, type) : string.Empty;
-        if (wireMetadata == null)
+        foreach (IPropertySymbol property in type.GetMembers().OfType<IPropertySymbol>().Where(p => p.IsIndexer && p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is IndexerDeclarationSyntax syntax && syntax.Modifiers.Any(SyntaxKind.PartialKeyword))))
         {
+            Report(output, property, "partial indexers are unsupported");
             return;
         }
 
-        AttributeData? nameAttribute = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute");
-        string shaderName = nameAttribute?.ConstructorArguments[0].Value as string ?? type.Name;
-        string id = new string(type.ToDisplayString().Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
-        string source = "// <auto-generated/>\n#nullable enable\n" +
-            (type.ContainingNamespace.IsGlobalNamespace ? string.Empty : "namespace " + type.ContainingNamespace.ToDisplayString() + ";\n") +
-            (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
-            (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(shaderName) + ";\n" : string.Empty) +
-            (generateSize ? "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.WireSizeInBytes => " + wireSize.ToString(CultureInfo.InvariantCulture) + ";\n" : string.Empty) +
-            (generateWrite ? "    void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + body + "    }\n" : string.Empty) + wireMetadata + "}\n";
-        output.AddSource("ShaderArguments_" + id + ".g.cs", SourceText.From(source, Encoding.UTF8));
-    }
-
-    private static string? WireMetadata(SourceProductionContext output, INamedTypeSymbol type)
-    {
-        AttributeData? layout = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.StructLayoutAttribute");
-        int size = layout?.NamedArguments.FirstOrDefault(pair => pair.Key == "Size").Value.Value is int value ? value : 0;
-        if (!type.IsUnmanagedType || ConstructorInt(layout) is not int kind || kind != 2 || size <= 0)
+        // Diagnostic offsets and tables live in a separate lazy type. Only reference
+        // fixup offsets are initialized on the ordinary transfer path.
+        var diagnosticOffsets = new StringBuilder();
+        var diagnosticNames = new Dictionary<IFieldSymbol, string>(SymbolEqualityComparer.Default);
+        Describe(wire, string.Empty, "0", fields, diagnosticOffsets, diagnosticNames);
+        foreach (ISymbol member in type.GetMembers().Where(m => !m.IsStatic))
         {
-            Report(output, type, "numeric wire requires unmanaged explicit C# StructLayout with a positive Size");
-            return null;
-        }
-
-        var fields = new StringBuilder();
-        var occupied = new List<KeyValuePair<int, int>>();
-        foreach (IFieldSymbol field in type.GetMembers().OfType<IFieldSymbol>().Where(field => !field.IsStatic))
-        {
-            AttributeData? offset = field.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.FieldOffsetAttribute");
-            if (!Numeric(field.Type) || ConstructorInt(offset) is not int position)
-            {
-                Report(output, field, "numeric wire fields require supported numeric types and explicit FieldOffset");
-                return null;
-            }
-
-            string name = field.AssociatedSymbol?.Name ?? field.Name;
-            int length = NumericSize(field.Type);
-            if (position < 0 || (long)position + length > size ||
-                occupied.Any(range => position < range.Value && (long)position + length > range.Key))
-            {
-                Report(output, field, "numeric wire fields must be nonoverlapping and contained in the declared Size");
-                return null;
-            }
-
-            occupied.Add(new KeyValuePair<int, int>(position, position + length));
-            fields.Append(", new global::Lumyte.Graphics.Abstractions.ShaderNumericWireMember(")
-                .Append(Quote(name)).Append(", typeof(").Append(field.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-                .Append("), ").Append(position.ToString(CultureInfo.InvariantCulture)).Append(", ").Append(length.ToString(CultureInfo.InvariantCulture)).Append(")");
-        }
-
-        return "    private static readonly global::Lumyte.Graphics.Abstractions.ShaderNumericWireLayout __lumyteNumericWireLayout = __CreateNumericWireLayout();\n" +
-            "    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields, typeof(" + type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "))]\n" +
-            "    private static global::Lumyte.Graphics.Abstractions.ShaderNumericWireLayout __CreateNumericWireLayout() => new(" + size.ToString(CultureInfo.InvariantCulture) + fields + ");\n" +
-            "    global::Lumyte.Graphics.Abstractions.ShaderNumericWireLayout global::Lumyte.Graphics.Abstractions.IShaderNumericWireData.NumericWireLayout => __lumyteNumericWireLayout;\n";
-    }
-
-    // C# declarations alone determine placement: declaration order and four-byte
-    // scalar alignment for logical members, or explicitly declared C# offsets.
-    private static bool Members(SourceProductionContext output, INamedTypeSymbol type, string expression, string prefix, int start, StringBuilder body, HashSet<ITypeSymbol> stack, out int end)
-    {
-        end = start;
-        if (!stack.Add(type))
-        {
-            Report(output, type, "inline member cycle");
-            return false;
-        }
-
-        AttributeData? layout = Attribute(type, "System.Runtime.InteropServices.StructLayoutAttribute");
-        bool explicitLayout = ConstructorInt(layout) == 2;
-        int declaredSize = layout?.NamedArguments.FirstOrDefault(pair => pair.Key == "Size").Value.Value is int size ? size : 0;
-        foreach (ISymbol member in type.GetMembers().Where(m => !m.IsStatic && m.DeclaredAccessibility == Accessibility.Public))
-        {
-            ITypeSymbol? memberType = member is IFieldSymbol field ? field.Type : member is IPropertySymbol property && !property.IsIndexer && property.GetMethod != null ? property.Type : null;
-            if (memberType == null)
+            ITypeSymbol? mt = member is IPropertySymbol p ? p.Type : member is IFieldSymbol f && !f.IsImplicitlyDeclared ? f.Type : null;
+            if (mt is not INamedTypeSymbol reference || reference.OriginalDefinition.ToDisplayString() != "Lumyte.Graphics.Abstractions.IGpuRef<T>")
             {
                 continue;
             }
 
-            if (member is IPropertySymbol p && (p.GetMethod?.DeclaredAccessibility != Accessibility.Public ||
-                p.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is PropertyDeclarationSyntax syntax &&
-                    (syntax.ExpressionBody != null || syntax.AccessorList?.Accessors.Any(a => a.Body != null || a.ExpressionBody != null) == true))))
+            IFieldSymbol? slot = wire.GetMembers(member.Name).OfType<IFieldSymbol>().SingleOrDefault();
+            if (slot == null || slot.Type.ToDisplayString() != "Lumyte.Graphics.Abstractions.ShaderReferenceSlot")
             {
-                Report(output, member, "custom or inaccessible getters are not supported");
-                return false;
+                Report(output, member, "each reference needs a same-named ShaderReferenceSlot in the private wire struct");
+                return;
             }
 
-            AttributeData? logicalOffset = Attribute(member, "Lumyte.Graphics.Abstractions.ShaderMemberOffsetAttribute");
-            AttributeData? fieldOffset = Attribute(member, "System.Runtime.InteropServices.FieldOffsetAttribute");
-            if (member is IPropertySymbol)
-            {
-                IFieldSymbol? backingField = type.GetMembers().OfType<IFieldSymbol>()
-                    .FirstOrDefault(candidate => SymbolEqualityComparer.Default.Equals(candidate.AssociatedSymbol, member));
-                if (backingField != null)
-                {
-                    fieldOffset = Attribute(backingField, "System.Runtime.InteropServices.FieldOffsetAttribute");
-                }
-            }
+            string referenceOffset = Offset(wire, slot, offsets, offsetNames);
+            referenceMembers.Add(member);
+            referenceOffsets.Add(referenceOffset);
+        }
 
-            int? explicitOffset = explicitLayout ? ConstructorInt(fieldOffset) : null;
-            int? overrideOffset = ConstructorInt(logicalOffset);
-            if ((logicalOffset != null && overrideOffset == null) ||
-                (explicitLayout && explicitOffset == null) ||
-                (explicitOffset != null && overrideOffset != null && explicitOffset != overrideOffset))
-            {
-                Report(output, member, "wire offsets must be constant integers and agree with explicit C# FieldOffset");
-                return false;
-            }
+        bool hasReferences = referenceMembers.Count != 0;
+        string plan = hasReferences ? ReferencePlan(wire, referenceMembers, referenceOffsets) : string.Empty;
+        string wireExpression = storage != null ? "this.@" + storage.Name : "this";
+        string writeBody = hasReferences
+            ? ReferenceWrite(wire, wireExpression, referenceMembers, referenceOffsets)
+            : "        writer.WriteValue(global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in " + wireExpression + ", 1)));\n";
+        AttributeData? attr = type.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderTypeNameAttribute");
+        string name = attr?.ConstructorArguments[0].Value as string ?? type.Name;
+        bool generateName = type.FindImplementationForInterfaceMember(contract.GetMembers("ShaderTypeName").Single()) == null;
+        string source = "// <auto-generated/>\n#nullable enable\n" +
+            (type.ContainingNamespace.IsGlobalNamespace ? string.Empty : "namespace " + type.ContainingNamespace.ToDisplayString() + ";\n") +
+            (type.IsReadOnly ? "readonly " : string.Empty) + "partial " + (type.IsRecord ? "record struct " : "struct ") + "@" + type.Name + "\n{\n" +
+            (generateName ? "    static string global::Lumyte.Graphics.Abstractions.IShaderArguments.ShaderTypeName => " + Quote(name) + ";\n" : string.Empty) +
+            "    static int global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferSize => global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + Full(wire) + ">();\n" +
+            "    /// <summary>Gets the exact number of physical typed reference slots.</summary>\n" +
+            "    public static int ReferenceCount => " + referenceMembers.Count + ";\n" +
+            offsets + plan + "    private static class __TransferDiagnostics\n    {\n" +
+            "        static __TransferDiagnostics() { }\n" + diagnosticOffsets +
+            "        internal static readonly global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> Fields = global::System.Array.AsReadOnly(new global::Lumyte.Graphics.Abstractions.ShaderTransferField[] {\n" + fields + "        });\n    }\n" +
+            "    static global::System.Collections.Generic.IReadOnlyList<global::Lumyte.Graphics.Abstractions.ShaderTransferField> global::Lumyte.Graphics.Abstractions.IShaderArguments.TransferFields => __TransferDiagnostics.Fields;\n" +
+            "    readonly void global::Lumyte.Graphics.Abstractions.IShaderArguments.Write<TWriter>(ref TWriter writer)\n    {\n" + writeBody + "    }\n" + properties + "}\n";
+        output.AddSource("ShaderArguments_" + string.Concat(type.ToDisplayString().Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".g.cs", SourceText.From(source, Encoding.UTF8));
+    }
 
-            long relativeOffset = overrideOffset ?? explicitOffset ?? ((long)end - start + 3) / 4 * 4;
-            long absoluteOffset = (long)start + relativeOffset;
-            if (relativeOffset < 0 || absoluteOffset < end || absoluteOffset > int.MaxValue)
-            {
-                Report(output, member, "wire offsets must be nonnegative, monotonic, nonoverlapping Int32 byte offsets in declaration order");
-                return false;
-            }
+    private static string ReferencePlan(INamedTypeSymbol wire, List<ISymbol> members, List<string> offsets)
+    {
+        var source = new StringBuilder();
+        source.AppendLine("    private static class __ReferencePlan");
+        source.AppendLine("    {");
+        source.AppendLine("        static __ReferencePlan() { }");
+        source.AppendLine("        internal static readonly int[] OrderedReferencePlan = Create();");
+        source.AppendLine("        private static int[] Create()");
+        source.AppendLine("        {");
+        source.Append("            int[] offsets = new int[] { ").Append(string.Join(", ", offsets)).AppendLine(" };");
+        source.Append("            int[] order = new int[] { ").Append(string.Join(", ", Enumerable.Range(0, members.Count))).AppendLine(" };");
+        source.AppendLine("            global::System.Array.Sort(offsets, order);");
 
-            int position = (int)absoluteOffset;
-            string path = prefix + member.Name;
-            string access = expression + ".@" + member.Name;
-            bool referenceMember = memberType is INamedTypeSymbol reference && reference.OriginalDefinition.ToDisplayString() == "Lumyte.Graphics.Abstractions.IGpuRef<T>";
-            int length = referenceMember ? 16 : NumericSize(memberType);
-            if (length != 0)
-            {
-                if ((long)position + length > int.MaxValue)
-                {
-                    Report(output, member, "wire member exceeds the Int32 byte offset range");
-                    return false;
-                }
+        // Invalid layouts are cached as data, never as a poisoned type initializer.
+        source.AppendLine("            long end = 0;");
+        source.AppendLine("            foreach (int offset in offsets)");
+        source.AppendLine("            {");
+        source.Append("                if (offset < 0 || offset < end || (long)offset + 16 > global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(Full(wire)).AppendLine(">())");
+        source.AppendLine("                {");
+        source.AppendLine("                    return global::System.Array.Empty<int>();");
+        source.AppendLine("                }");
+        source.AppendLine("                end = (long)offset + 16;");
+        source.AppendLine("            }");
+        source.AppendLine("            return order;");
+        source.AppendLine("        }");
+        source.AppendLine("    }");
+        return source.ToString();
+    }
 
-                body.Append(referenceMember ? "        writer.WriteReference(" : "        writer.WriteValue(")
-                    .Append(position.ToString(CultureInfo.InvariantCulture)).Append(", ").Append(Quote(path)).Append(", ").Append(access).AppendLine(");");
-                end = position + length;
-            }
-            else if (memberType is INamedTypeSymbol nested && nested.TypeKind == TypeKind.Struct && nested.SpecialType == SpecialType.None && !nested.IsGenericType)
+    private static string ReferenceWrite(INamedTypeSymbol wire, string wireExpression, List<ISymbol> members, List<string> offsets)
+    {
+        var source = new StringBuilder();
+        source.Append("        if (__ReferencePlan.OrderedReferencePlan.Length != ").Append(members.Count).AppendLine(")");
+        source.AppendLine("        {");
+        source.AppendLine("            throw new global::System.ArgumentException(\"Reference slots must be non-overlapping and inside the wire value.\");");
+        source.AppendLine("        }");
+
+        // Freeze only the unmanaged wire before evaluating reference getters. A
+        // non-readonly user getter can still cause a C# defensive outer-struct copy.
+        source.Append("        global::System.Runtime.CompilerServices.Unsafe.SkipInit(out ").Append(Full(wire)).AppendLine(" wire);");
+        source.Append("        global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in ").Append(wireExpression).AppendLine(", 1)).CopyTo(global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref wire, 1)));");
+        source.AppendLine("        global::System.ReadOnlySpan<byte> bytes = global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(in wire, 1));");
+        source.AppendLine("        int position = 0;");
+        source.AppendLine("        foreach (int index in __ReferencePlan.OrderedReferencePlan)");
+        source.AppendLine("        {");
+        source.AppendLine("            switch (index)");
+        source.AppendLine("            {");
+        for (int i = 0; i < members.Count; i++)
+        {
+            source.Append("                case ").Append(i).AppendLine(":");
+            source.Append("                    if (").Append(offsets[i]).AppendLine(" != position)");
+            source.AppendLine("                    {");
+            source.Append("                        writer.WriteValue(bytes.Slice(position, ").Append(offsets[i]).AppendLine(" - position));");
+            source.AppendLine("                    }");
+            source.Append("                    writer.WriteReference(this.@").Append(members[i].Name).AppendLine(");");
+            source.Append("                    position = ").Append(offsets[i]).AppendLine(" + 16;");
+            source.AppendLine("                    break;");
+        }
+
+        source.AppendLine("            }");
+        source.AppendLine("        }");
+        source.AppendLine("        if (position != bytes.Length)");
+        source.AppendLine("        {");
+        source.AppendLine("            writer.WriteValue(bytes[position..]);");
+        source.AppendLine("        }");
+        return source.ToString();
+    }
+
+    private static void Describe(INamedTypeSymbol type, string prefix, string baseOffset, StringBuilder fields, StringBuilder offsets, Dictionary<IFieldSymbol, string> offsetNames)
+    {
+        foreach (IFieldSymbol field in type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic))
+        {
+            string path = prefix + (field.AssociatedSymbol?.Name ?? field.Name);
+            string offset = "(" + baseOffset + " + " + Offset(type, field, offsets, offsetNames) + ")";
+            bool slot = field.Type.ToDisplayString() == "Lumyte.Graphics.Abstractions.ShaderReferenceSlot";
+            if (!slot && field.Type is INamedTypeSymbol nested && nested.SpecialType == SpecialType.None && !Numeric(nested))
             {
-                if (!Members(output, nested, access, path + ".", position, body, stack, out end))
-                {
-                    return false;
-                }
+                Describe(nested, path + ".", offset, fields, offsets, offsetNames);
             }
             else
             {
-                Report(output, member, "unsupported member type " + memberType.ToDisplayString());
-                return false;
+                fields.Append("        new(").Append(Quote(path)).Append(", ").Append(offset).Append(", global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(Full(field.Type)).Append(">(), typeof(").Append(Full(field.Type)).Append("), ").Append(slot ? "true" : "false").AppendLine("),");
             }
         }
-
-        if (explicitLayout && declaredSize > 0)
-        {
-            long declaredEnd = (long)start + declaredSize;
-            if (declaredEnd < end || declaredEnd > int.MaxValue)
-            {
-                Report(output, type, "explicit C# Size must contain all wire members within the Int32 byte offset range");
-                return false;
-            }
-
-            // Reserve C# trailing padding before the next outer member.
-            end = (int)declaredEnd;
-        }
-
-        stack.Remove(type);
-        return true;
     }
 
-    private static AttributeData? Attribute(ISymbol symbol, string name) =>
-        symbol.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.ToDisplayString() == name);
+    private static bool IsReferenceMember(ISymbol member)
+    {
+        ITypeSymbol? type = member is IPropertySymbol p ? p.Type : member is IFieldSymbol f && !f.IsImplicitlyDeclared ? f.Type : null;
+        return !member.IsStatic && type is INamedTypeSymbol named && named.OriginalDefinition.ToDisplayString() == "Lumyte.Graphics.Abstractions.IGpuRef<T>";
+    }
 
-    private static int? ConstructorInt(AttributeData? attribute) =>
-        attribute != null && attribute.ConstructorArguments.Length != 0 && attribute.ConstructorArguments[0].Value is int value ? value : (int?)null;
+    private static bool Numeric(ITypeSymbol type) => type.ToDisplayString() is "System.Numerics.Vector2" or "System.Numerics.Vector3" or "System.Numerics.Vector4" or "System.Numerics.Matrix4x4";
 
-    private static int NumericSize(ITypeSymbol type) => type.SpecialType is SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Single ? 4
-        : type.ToDisplayString() == "System.Numerics.Vector2" ? 8
-        : type.ToDisplayString() == "System.Numerics.Vector3" ? 12
-        : type.ToDisplayString() == "System.Numerics.Vector4" ? 16
-        : type.ToDisplayString() == "System.Numerics.Matrix4x4" ? 64 : 0;
+    private static string Offset(INamedTypeSymbol type, IFieldSymbol field, StringBuilder offsets, Dictionary<IFieldSymbol, string> names)
+    {
+        if (names.TryGetValue(field, out string? name))
+        {
+            return name;
+        }
 
-    private static bool Numeric(ITypeSymbol type) => NumericSize(type) != 0;
+        name = "__offset" + names.Count;
+        names.Add(field, name);
+        string owner = Full(type);
+        string value = Full(field.Type);
+        offsets.Append("    private static readonly int ").Append(name).Append(" = ").Append(name).AppendLine("Get();");
+        offsets.Append("    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = ").Append(Quote(field.Name)).AppendLine(")]");
+        offsets.Append("    private static extern ref ").Append(value).Append(" ").Append(name).Append("Field(ref ").Append(owner).AppendLine(" value);");
+        offsets.Append("    private static int ").Append(name).Append("Get() { ").Append(owner).Append(" value = default; return checked((int)global::System.Runtime.CompilerServices.Unsafe.ByteOffset(ref global::System.Runtime.CompilerServices.Unsafe.As<").Append(owner).Append(", byte>(ref value), ref global::System.Runtime.CompilerServices.Unsafe.As<").Append(value).Append(", byte>(ref ").Append(name).AppendLine("Field(ref value)))); }");
+        return name;
+    }
+
+    private static string Full(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string Quote(string value) => SymbolDisplay.FormatLiteral(value, true);
 

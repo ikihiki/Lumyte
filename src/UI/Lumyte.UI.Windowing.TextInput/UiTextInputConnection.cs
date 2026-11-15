@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Platform.TextInput.Abstractions;
 using Lumyte.TextEditing;
@@ -458,11 +459,8 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
         {
             if (node.Widget.ClipToBounds)
             {
-                float left = Math.Max(clip.X, nodeOrigin.X);
-                float top = Math.Max(clip.Y, nodeOrigin.Y);
-                float right = Math.Min(clip.X + clip.Width, nodeOrigin.X + node.Bounds.Width);
-                float bottom = Math.Min(clip.Y + clip.Height, nodeOrigin.Y + node.Bounds.Height);
-                clip = new(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+                Bounds2D<float> bounds = Bounds2D<float>.FromOriginSize(clip.X, clip.Y, clip.Width, clip.Height).Intersect(Bounds2D<float>.FromOriginSize(nodeOrigin.X, nodeOrigin.Y, node.Bounds.Width, node.Bounds.Height));
+                clip = new(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
             }
 
             nodeOrigin -= new Vector2(node.Bounds.X, node.Bounds.Y) + (node.Parent is { } parent ? new Vector2(parent.ContentBounds.X, parent.ContentBounds.Y) : Vector2.Zero);

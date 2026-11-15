@@ -113,7 +113,7 @@ public sealed class ArgumentTableReservation
     /// <param name="range">The borrowed device-memory range.</param>
     /// <param name="resolved">Receives the real native reference after every table is installed.</param>
     public void RegisterBuffer<T>(ShaderDataSlice<T> range, Action<IGpuRef<T>> resolved)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ResolvedArgument request = Shader(range);
         Deferred(() => request, resolved);
@@ -124,7 +124,7 @@ public sealed class ArgumentTableReservation
     /// <param name="resolve">Resolves the final shader-data range.</param>
     /// <param name="resolved">Receives the real native reference after every table is installed.</param>
     public void RegisterShaderData<T>(Func<ShaderDataSlice<T>> resolve, Action<IGpuRef<T>> resolved)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(resolve);
         Deferred(() => Shader(resolve()), resolved);
@@ -279,11 +279,11 @@ public sealed class ArgumentTableReservation
         }
 
         var key = new ArgumentKey(range.Buffer, typeof(T), 2, range.OffsetInBytes, range.Count, range.Buffer.Layout.ElementStrideInBytes, access);
-        return new(key, (table, slot) => table.WriteBuffer(slot, range));
+        return new(key, (table, slot) => table.WriteBuffer(slot, range, (access & ArgumentBufferAccess.Write) != 0 ? ShaderBufferAccess.ReadWrite : ShaderBufferAccess.ReadOnly));
     }
 
     private static ResolvedArgument Shader<T>(ShaderDataSlice<T> range)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(range.Buffer);
         if (range.Buffer.Memory != MemoryPreference.Automatic)

@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Signals;
 using Lumyte.UI.Application.Headless;
 using Lumyte.UI.Windowing;
@@ -20,7 +21,7 @@ public sealed class RetainedValidationTests
     [InlineData(false)]
     public async Task LaterValidationRevisitsEarlierSurfacesAsync(bool applyImmediately)
     {
-        using UiSurface first = Surface(Rectangle(fill: new Color2D(1, 0, 0, 1)));
+        using UiSurface first = Surface(Rectangle(fill: new SRgba<float>(1, 0, 0, 1)));
         using UiSurface second = Surface(Panel());
         UiHostedDrawingSource source = Source();
         await using IUiWindowPresentation one = await source.PreparePresentationAsync(View(source), first, default);
@@ -32,14 +33,14 @@ public sealed class RetainedValidationTests
             if (ReferenceEquals(surface, second) && change)
             {
                 change = false;
-                first.Rebuild(Rectangle(fill: new Color2D(0, 1, 0, 1)));
+                first.Rebuild(Rectangle(fill: new SRgba<float>(0, 1, 0, 1)));
                 if (applyImmediately)
                 {
                     first.UpdateTree();
                 }
             }
         };
-        Assert.Equal(new Color2D(0, 1, 0, 1), Color(Frame(source).Single()));
+        Assert.Equal(new SRgba<float>(0, 1, 0, 1), Color(Frame(source).Single()));
     }
 
     /// <summary>Checks exceptions and nonconvergent callbacks release the unfinished frame.</summary>
@@ -91,13 +92,13 @@ public sealed class RetainedValidationTests
     [Fact]
     public async Task ValidationAppliesItsOwnSignalMutationAsync()
     {
-        var color = Signal.Create(new Color2D(1, 0, 0, 1));
+        var color = Signal.Create(new SRgba<float>(1, 0, 0, 1));
         using UiSurface surface = Surface(Rectangle(fill: color));
         UiHostedDrawingSource source = Source();
         await using IUiWindowPresentation presentation = await source.PreparePresentationAsync(View(source), surface, default);
         _ = Frame(source);
         source.ValidateSurface = _ => color.Value = new(0, 1, 0, 1);
-        Assert.Equal(new Color2D(0, 1, 0, 1), Color(Frame(source).Single()));
+        Assert.Equal(new SRgba<float>(0, 1, 0, 1), Color(Frame(source).Single()));
     }
 
     /// <summary>Checks staged candidate recording validates the post-callback tree too.</summary>
@@ -113,12 +114,12 @@ public sealed class RetainedValidationTests
             if (change)
             {
                 change = false;
-                value.Rebuild(Rectangle(fill: new Color2D(0, 1, 0, 1)));
+                value.Rebuild(Rectangle(fill: new SRgba<float>(0, 1, 0, 1)));
             }
         };
         source.PrepareCandidate = (commands, _) =>
         {
-            Assert.Equal(new Color2D(0, 1, 0, 1), Color(((IDrawingSceneSource2D)commands).Entries.SelectMany(entry => entry.Content.Commands).Single()));
+            Assert.Equal(new SRgba<float>(0, 1, 0, 1), Color(((IDrawingSceneSource2D)commands).Entries.SelectMany(entry => entry.Content.Commands).Single()));
             return ValueTask.CompletedTask;
         };
         await using IUiStagedWindowPresentation staged = source.BeginReplacement(null, View(source), surface);
@@ -183,7 +184,7 @@ public sealed class RetainedValidationTests
         await staged.DiscardAsync(default);
     }
 
-    private static Color2D Color(DrawingCommand2D command) => Assert.IsType<SolidPaintNode2D>(Assert.IsType<FillRectCommand2D>(command).Paint.Root).Color;
+    private static SRgba<float> Color(DrawingCommand2D command) => Assert.IsType<SolidPaintNode2D>(Assert.IsType<FillRectCommand2D>(command).Paint.Root).Color;
 
     private static UiSurface Surface(Widget root)
     {

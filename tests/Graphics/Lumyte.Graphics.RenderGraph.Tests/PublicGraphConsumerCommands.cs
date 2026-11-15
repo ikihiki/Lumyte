@@ -1,11 +1,10 @@
 using Lumyte.Graphics.Abstractions;
-using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
 {
-    private readonly ShaderDataTransferState _transfers = new();
+    private readonly TestShaderDataOverlay _transfers = new();
 
     public CommandBufferState State
     {
@@ -26,14 +25,14 @@ internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
     public void Barrier(TextureBarrierDesc barrier) => Events.Add(barrier);
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData => Events.Add(barrier);
+        where T : struct, IShaderArguments => Events.Add(barrier);
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
         where TDestination : unmanaged => Events.Add("copy");
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData => _transfers.Record((IShaderDataSource)source.Buffer, source.Offset, (IShaderDataSource)destination.Buffer, destination.Offset, source.Count, () => Events.Add("shader-copy"));
+        where T : struct, IShaderArguments => _transfers.Record((IShaderDataSource)source.Buffer, source.Offset, (IShaderDataSource)destination.Buffer, destination.Offset, source.Count, destination.Buffer.ShaderElementStrideInBytes, () => Events.Add("shader-copy"));
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 
@@ -43,13 +42,13 @@ internal sealed class PublicGraphConsumerCommands : IGraphicsCommandBuffer
 
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
     {
-        Encoder.ReadShaderData = _transfers.Read;
+        Encoder.ReadShaderData = _transfers.ReadDependencies;
         return Encoder;
     }
 
     public IComputeEncoder BeginComputePass(ComputePassDesc desc)
     {
-        Encoder.ReadShaderData = _transfers.Read;
+        Encoder.ReadShaderData = _transfers.ReadDependencies;
         return Encoder;
     }
 

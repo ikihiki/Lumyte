@@ -4,16 +4,21 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
-Color2Dは生成時と各成分のinit（withを含む）で、RGBAがfiniteかつ0〜1であることを検査します。不正値はArgumentOutOfRangeExceptionです。defaultは透明色として有効で、従来の名前付き引数・分解・値比較も使えます。UI側で同じ色検証を繰り返す必要はありません。
+色の公開APIは `Lumyte.Mathematics.Colors.SRgba<float>` を使います。SRgbaは有限なencoded raw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットの `SRgba8` は `SRgba<float>` 引数へ暗黙に byte /255f で正規化され、gamma変換・premultiplyはしません。一般の `SRgba<T>` はraw値のままです。rawコードのcastは `SRgba8.Red.ToCodes().ConvertChecked<float>()`、明示した結果型への正規化は `ToNormalized<double>()` を使います。
+
+名前付き色はC# 14のstatic extension propertyです。encoded描画には `SRgba<float>.Red`、linear値には `LRgba<float>.Red`、byteコードには `SRgba8.Red` を選びます。getterはofflineで焼き込んだreadonly値のcopyだけで、lookup時の変換はありません。CLR初期化とcopyはliteral constではありません。`CssColors.All/TryGet` は149件のreference catalogとして残ります。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.FillRect(new Rect2D(20, 20, 100, 50), SRgba<float>.Red);
 DrawList2D list = canvas.End();
+PaintGraph2D paint = PaintGraph2D.Solid(SRgba<float>.CornflowerBlue);
+SRgba<float> color = SRgba<float>.Red; // 既にtarget型の正規化encoded値。
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new RenderTarget2D
@@ -123,7 +128,7 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 ```csharp
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(0, 0, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.FillRect(new Rect2D(0, 0, 100, 50), new SRgba<float>(1, 0, 0, 1));
 DrawList2D content = canvas.End();
 
 using var scene = new DrawingScene2D();

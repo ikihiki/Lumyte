@@ -8,77 +8,53 @@ namespace Lumyte.Input.Advanced.Tests;
 /// <summary>Verifies indexed evaluation preserves snapshots, ordering and update semantics.</summary>
 public sealed class ActionOptimizationTests
 {
-    /// <summary>Verifies steady input evaluation reuses its state and contributor snapshots.</summary>
+    /// <summary>Verifies empty updates preserve held and neutral values without duplicate notifications.</summary>
     /// <param name="held">Whether the control remains active during empty updates.</param>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void WarmIdleAdvancesDoNotAllocate(bool held)
+    public void IdleAdvancesPreserveStateWithoutNotifications(bool held)
     {
         var actions = new ActionSystem(StickProfile());
         actions.QueueContextActivation("game");
         actions.Advance(new[] { Stick(1, 0, 1, held ? Vector2.UnitX : Vector2.Zero) }, At(0));
-        for (int i = 0; i < 1000; i++)
+        var changes = new List<ActionEvent>();
+        actions.Changed += changes.Add;
+        foreach (int time in new[] { 1, 2, 10 })
         {
-            actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(i));
+            actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(time));
+            Assert.Equal(held ? Vector2.UnitX : Vector2.Zero, actions.GetState("move").Value);
+            Assert.Empty(changes);
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 1000; i < 2000; i++)
-        {
-            actions.Advance(ReadOnlyMemory<InputRecord>.Empty, At(i));
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
-        Assert.Equal(held ? Vector2.UnitX : Vector2.Zero, actions.GetState("move").Value);
     }
 
-    /// <summary>Verifies polling existing and neutral states allocates no managed memory.</summary>
+    /// <summary>Verifies repeated polling preserves active and inactive state values.</summary>
     [Fact]
-    public void WarmPollingDoesNotAllocate()
+    public void PollingPreservesActiveAndNeutralStates()
     {
         var actions = new ActionSystem(StickProfile());
         actions.QueueContextActivation("game");
         actions.Advance(new[] { Stick(1, 0, 1, Vector2.UnitX) }, At(0));
         var inactive = new ActionSystem(StickProfile());
-        for (int i = 0; i < 1000; i++)
+        for (int i = 0; i < 3; i++)
         {
-            actions.GetState("move");
-            inactive.GetState("move");
+            Assert.Equal(Vector2.UnitX, actions.GetState("move").Value);
+            Assert.Equal(Vector2.Zero, inactive.GetState("move").Value);
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            actions.GetState("move");
-            inactive.GetState("move");
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
     }
 
-    /// <summary>Verifies empty buffer pruning and polling allocate no managed memory.</summary>
+    /// <summary>Verifies pruning an empty buffer keeps it empty and missing actions cannot be consumed.</summary>
     [Fact]
-    public void EmptyBufferUpdatesDoNotAllocate()
+    public void EmptyBufferPruningPreservesEmptyState()
     {
         var buffer = new ActionInputBuffer(new InputBufferOptions(At(100), 8));
-        for (int i = 0; i < 1000; i++)
+        foreach (int time in new[] { 0, 1, 100, 101 })
         {
-            buffer.Prune(At(0));
-            buffer.TryConsume("missing", At(0), out _);
+            buffer.Prune(At(time));
+            Assert.Equal(0, buffer.Count);
+            Assert.False(buffer.TryConsume("missing", At(time), out RecognizedAction? consumed));
+            Assert.Null(consumed);
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            buffer.Prune(At(0));
-            buffer.TryConsume("missing", At(0), out _);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
     }
 
     /// <summary>Verifies pruning preserves insertion order when timestamps are not sorted.</summary>

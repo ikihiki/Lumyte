@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -10,7 +11,7 @@ internal sealed class DrawRecordPage2D
 {
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Vector4, uint> _solidCache = [];
-    private readonly Dictionary<Color2D, uint> _colors = [];
+    private readonly Dictionary<SRgba<float>, uint> _colors = [];
     private readonly Dictionary<NormalizedClip2D, uint> _clipCache = new(ReferenceEqualityComparer.Instance);
 
     private readonly List<(DrawingProgram2D Program, uint Instruction, int Descriptor, bool Image)> _references = [];
@@ -79,7 +80,7 @@ internal sealed class DrawRecordPage2D
 
     internal List<MaskDescriptor2D> Masks { get; } = [];
 
-    internal static bool TrySimple(DrawingCommand2D command, DrawingTargetInfo2D target, NormalizedClip2D clip, out DrawRecord2D record, out Color2D color)
+    internal static bool TrySimple(DrawingCommand2D command, DrawingTargetInfo2D target, NormalizedClip2D clip, out DrawRecord2D record, out SRgba<float> color)
     {
         PaintGraph2D? paint = command switch
         {
@@ -165,7 +166,7 @@ internal sealed class DrawRecordPage2D
         return checked((offset + multiple - 1) / multiple * multiple);
     }
 
-    internal bool FitsAddition(DrawingProgram2D? program, uint root, NormalizedClip2D clip, Color2D color, ulong maximum, out uint buffers, out bool needsSampler)
+    internal bool FitsAddition(DrawingProgram2D? program, uint root, NormalizedClip2D clip, SRgba<float> color, ulong maximum, out uint buffers, out bool needsSampler)
     {
         int outerCells = AdditionalClipCells(clip);
         ulong numeric = checked((ulong)Numeric.Count + (ulong)outerCells);
@@ -336,7 +337,7 @@ internal sealed class DrawRecordPage2D
         return clip.Kind == NormalizedClipKind2D.SampleMask ? checked(clip.Mask.Length + 2) : 1;
     }
 
-    internal void AddSimple(DrawRecord2D record, Color2D color, NormalizedClip2D clip)
+    internal void AddSimple(DrawRecord2D record, SRgba<float> color, NormalizedClip2D clip)
     {
         if (_colors.TryGetValue(color, out uint known))
         {

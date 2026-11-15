@@ -175,6 +175,11 @@ Lumyte の呼出しは実 GPU 完了を await し、command memory、prepared re
 
 ## Fixed logical record comparison
 
+Historical record performance results and raw timing/evidence artifacts are frozen
+from before the main shader-transfer/C# geometry and colors API integration. They
+have not been remeasured after integration; this source compatibility update does
+not establish equivalent performance or quality on the integrated revision.
+
 `RecordFrameBenchmarks` is a separate selectable matrix using the same BDN
 framework. It retains the existing known 1,000-rectangle and 200-path fixtures,
 adds 341/342 count controls (not allocation or draw boundaries) and a
@@ -225,7 +230,15 @@ an exact independently constructed full-image oracle on each variant. Repeated
 state positions are preserved; the fixture geometries vary modulo four.
 Diagnostic inspection occurs after GPU completion and is excluded from the
 reported disposal interval. Observed payload backing sizes are public buffer
-sizes, not native driver heaps, pipeline scratch or total VRAM.
+sizes, not native driver heaps, pipeline scratch or total VRAM. Traversal uses
+public whole-buffer `TryGetDependencies` metadata, not historical per-element
+snapshots. Raw Vulkan shader buffers do not track dependencies: when
+`preparedBufferMetadataComplete` is false, the reported counts/bytes cover only
+reachable known buffers and must not be presented as complete prepared payload
+totals or compared with the historical fully traversed totals.
+Range selection forwards the original typed references through a constrained
+`IShaderArguments` wrapper and sequential value-writer interception; only the
+`FirstRecord`/`RecordCount` numeric byte ranges are replaced.
 
 `LUMYTE_RECORD_TRACE=1` adds EventPipeProfiler in a separate extra execution.
 Only that enabled execution creates per-frame diagnostic Activities; setup is

@@ -57,6 +57,7 @@ public sealed class UiAnimationClip
     public UiAnimated<T> Value<T>(AnimationChannel<T> channel, T initialValue)
     {
         ArgumentNullException.ThrowIfNull(channel);
+        UiColorPolicy.Value(initialValue, nameof(initialValue));
         if (_channels.TryGetValue(channel, out object? entry))
         {
             if (entry is not Channel<T> existing || !EqualityComparer<T>.Default.Equals(existing.Initial, initialValue))

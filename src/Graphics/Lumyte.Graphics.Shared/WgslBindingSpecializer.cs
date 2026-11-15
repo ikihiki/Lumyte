@@ -52,7 +52,12 @@ public static class WgslBindingSpecializer
             string prefix = writable ? "lumyteRWBuffer" : "lumyteBuffer";
             string variable = Variable(source, prefix + "0");
             int count = writable ? writableCount : bufferCount;
-            if (id.Length == 0 || variable.Length == 0 || count == 0)
+            if (!writable && variable.Length == 0)
+            {
+                variable = "lumyteBuffer0_0";
+            }
+
+            if (id.Length == 0 || variable.Length == 0 || (count == 0 && (writable || writableCount == 0)))
             {
                 throw new NotSupportedException("Unknown buffer helper resource ABI.");
             }
@@ -91,6 +96,17 @@ public static class WgslBindingSpecializer
                 }
 
                 wrapper.Append(clone).Append('(').Append(arguments).Append("); }\n");
+            }
+
+            if (!writable)
+            {
+                for (int i = 0; i < writableCount; i++)
+                {
+                    string clone = name + "_lumyte_writable_pool_" + i;
+                    clones.Append('\n').Append(declaration.AsSpan(0, nameOffset)).Append(clone).Append(declaration.AsSpan(nameOffset + name.Length));
+                    clones.Append('{').Append(Regex.Replace(body, @"\b" + Regex.Escape(variable) + @"\b", "lumyteRWBuffer" + i + "_0")).Append("}\n");
+                    wrapper.Append("case ").Append(0x80000000u | (uint)i).Append("u: { result = ").Append(clone).Append('(').Append(arguments).Append("); }\n");
+                }
             }
 
             wrapper.Append("default: {}\n}\n");

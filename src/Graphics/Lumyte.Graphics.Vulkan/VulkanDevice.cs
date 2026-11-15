@@ -16,16 +16,18 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly Queue _nativeQueue;
     private readonly VulkanPresentation? _presentation;
     private readonly GraphicsDeviceLifetime _lifetime;
+
     private readonly VulkanCompletionDispatcher _completions = new();
     private bool _disposed;
 
-    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
+    private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, uint maxPushConstantsSize, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
     {
         _lifetime = new(this);
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
         _presentation = presentation;
         SupportsCubeArrays = supportsCubeArrays;
+        MaxPushConstantsSize = maxPushConstantsSize;
         CacheGraphicsPipelines = cacheGraphicsPipelines;
         QueueFamily = queueFamily;
         api.GetDeviceQueue(device, queueFamily, 0, out _nativeQueue);
@@ -40,6 +42,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
+    public bool ValidationEnabled => false;
+
+    /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
 
     /// <inheritdoc />
@@ -50,6 +55,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the enabled capabilities and physical device limits captured during creation.</summary>
     public DeviceCaps Caps { get; }
+
+    /// <summary>Gets the physical device push-constant byte limit.</summary>
+    public uint MaxPushConstantsSize { get; }
 
     internal bool CacheGraphicsPipelines { get; }
 
@@ -158,7 +166,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
         try
         {
-            return new VulkanSurface(this, native);
+            var surface = new VulkanSurface(this, native);
+            return surface;
         }
         catch
         {
@@ -256,11 +265,27 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         return buffer;
     }
 
+    /// <summary>Creates raw unmanaged shader storage.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The compiled shader artifact.</param>
+    /// <param name="count">The element count.</param>
+    /// <param name="memory">The memory preference.</param>
+    /// <param name="usage">The GPU usages; upload staging uses CopySource.</param>
+    /// <returns>The typed raw buffer, without conversion or dependency metadata.</returns>
+    public IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+
+        return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
+    }
+
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new VulkanShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;
@@ -441,7 +466,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 presentation = new(surfaceApi!, swapchainApi!, maintenanceApi!);
             }
 
-            return new VulkanDevice(api, instance, device, physical, caps, enabled.ImageCubeArray, queueFamily, desc.CacheGraphicsPipelines, presentation);
+            return new VulkanDevice(api, instance, device, physical, caps, properties.Properties.Limits.MaxPushConstantsSize, enabled.ImageCubeArray, queueFamily, desc.CacheGraphicsPipelines, presentation);
         }
         catch
         {
@@ -545,7 +570,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 TexturesPerDraw = Math.Min(limits.MaxPerStageDescriptorSampledImages, limits.MaxDescriptorSetSampledImages),
                 SamplersPerDraw = Math.Min(limits.MaxPerStageDescriptorSamplers, limits.MaxDescriptorSetSamplers),
                 CombinedBindings = limits.MaxPerStageResources,
-                ReservedBindings = limits.MaxPerStageDescriptorUniformBuffers >= 1 && limits.MaxDescriptorSetUniformBuffers >= 1 && limits.MaxBoundDescriptorSets >= 1 ? 1u : uint.MaxValue,
+                ReservedBindings = 0,
                 SamplerBindingWeight = 0,
                 BufferBindingWeight = 0,
                 ColorAttachmentBindingWeight = 1,

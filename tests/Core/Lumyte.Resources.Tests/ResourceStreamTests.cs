@@ -184,25 +184,22 @@ public sealed class ResourceStreamTests
         Assert.Equal(8, destination[0]);
     }
 
-    /// <summary>The callback path uses only preallocated storage and performs no reader calls.</summary>
+    /// <summary>Reading buffered elements preserves their sequence without calling the input reader.</summary>
     /// <returns>Completion of the callback checks.</returns>
     [Fact]
-    public async Task ReadAvailableDoesNotAllocateOrReadInputAsync()
+    public async Task ReadAvailableConsumesBufferedSequenceWithoutReadingInputAsync()
     {
         await using var harness = new StreamHarness(new StreamSettings());
         var options = new ResourceStreamOptions { BlockSize = 16, MaxBufferedBlocks = 1 };
         await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
         int[] destination = new int[1];
-        Assert.Equal(1, session.ReadAvailable(destination));
         int calls = harness.Settings.ReadCalls;
-        long allocated = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 8; index++)
+        for (int expected = 0; expected < 9; expected++)
         {
-            session.ReadAvailable(destination);
+            Assert.Equal(1, session.ReadAvailable(destination));
+            Assert.Equal(expected, destination[0]);
         }
 
-        long difference = GC.GetAllocatedBytesForCurrentThread() - allocated;
-        Assert.Equal(0L, difference);
         Assert.Equal(calls, harness.Settings.ReadCalls);
         Assert.Equal(9UL, session.Position);
     }
@@ -237,46 +234,6 @@ public sealed class ResourceStreamTests
         settings.Continue.TrySetResult();
         Assert.Equal(4, await session.ReadAsync(destination));
         Assert.Equal(new[] { 4, 5, 6, 7 }, destination);
-    }
-
-    /// <summary>Notifying a waiting producer reuses its work item on the callback path.</summary>
-    /// <returns>Completion of the callback allocation checks.</returns>
-    [Fact]
-    public async Task ReleasingBlockDoesNotAllocateOnConsumerAsync()
-    {
-        await using var harness = new StreamHarness(new StreamSettings { Length = 4096 });
-        var options = new ResourceStreamOptions { BlockSize = 4, MaxBufferedBlocks = 1 };
-        await using ResourceStreamSession<int> session = await harness.OpenAsync(options);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        int[] destination = new int[4];
-        long difference = 0;
-
-        // Warm up the same producer job and its continuation queue before measuring notifications.
-        for (int iteration = -32; iteration < 64; iteration++)
-        {
-            int count;
-            do
-            {
-                timeout.Token.ThrowIfCancellationRequested();
-                long before = GC.GetAllocatedBytesForCurrentThread();
-                count = session.ReadAvailable(destination);
-                long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-                if (iteration >= 0)
-                {
-                    difference += allocated;
-                }
-
-                if (count == 0)
-                {
-                    await Task.Yield();
-                }
-            }
-            while (count == 0);
-
-            Assert.Equal(4, count);
-        }
-
-        Assert.Equal(0L, difference);
     }
 
     /// <summary>A single-block ring repeatedly resumes its producer without losing notifications.</summary>

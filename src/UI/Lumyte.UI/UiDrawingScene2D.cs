@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI;
 
@@ -310,7 +311,7 @@ public sealed class UiDrawingScene2D : IDisposable
 
         internal Compose.Definitions.Widget? Configuration { get; set; }
 
-        internal Color2D Fill { get; set; }
+        internal SRgba<float> Fill { get; set; }
 
         internal ulong VisualRevision { get; set; }
 

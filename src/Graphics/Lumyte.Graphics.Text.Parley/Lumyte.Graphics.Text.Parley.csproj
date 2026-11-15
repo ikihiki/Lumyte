@@ -9,6 +9,7 @@
     <Description>Parley paragraph layout and Skrifa vector glyphs for native and WebAssembly 2D rendering.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" GlobalPropertiesToRemove="LumyteParleyBrowser;LumyteBuildParleyNative;LumyteBuildParleyWasm" />
     <None Update="README.md" Pack="true" PackagePath="/" />
     <None Include="../../../native/lumyte_text_parley/THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

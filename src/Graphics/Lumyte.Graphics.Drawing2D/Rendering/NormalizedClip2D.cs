@@ -1,5 +1,8 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Geometry;
+using Edge = Lumyte.Mathematics.Geometry.Segment2D<double>;
+using Point = Lumyte.Mathematics.Geometry.Point2D<double>;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -37,9 +40,9 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
 
         Matrix3x2 pixels = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
         List<(Edge[] Edges, FillRule2D Rule)> paths = [];
-        double left = 0, top = 0, right = width, bottom = height;
+        Bounds2D<double> clipBounds = new(0, 0, width, height);
         bool rectangles = true;
-        double rectLeft = 0, rectTop = 0, rectRight = width, rectBottom = height;
+        Bounds2D<double> rectangleBounds = clipBounds;
         long edgeCount = 0;
         foreach (ClipElement2D element in elements)
         {
@@ -56,16 +59,13 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
             {
                 Point a = Transform(new(rect.X, rect.Y), transform);
                 Point b = Transform(new(rect.X + rect.Width, rect.Y + rect.Height), transform);
-                rectLeft = Math.Max(rectLeft, Math.Min(a.X, b.X));
-                rectTop = Math.Max(rectTop, Math.Min(a.Y, b.Y));
-                rectRight = Math.Min(rectRight, Math.Max(a.X, b.X));
-                rectBottom = Math.Min(rectBottom, Math.Max(a.Y, b.Y));
+                (double Left, double Top, double Right, double Bottom) rectangleEdges = Geometry2D.EncloseBoundsEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
+                rectangleBounds = rectangleBounds.Intersect(new(rectangleEdges.Left, rectangleEdges.Top, rectangleEdges.Right, rectangleEdges.Bottom));
                 continue;
             }
 
             List<Edge> edges = [];
-            double lowX = double.PositiveInfinity, lowY = double.PositiveInfinity;
-            double highX = double.NegativeInfinity, highY = double.NegativeInfinity;
+            Bounds2D<double> pathBounds = Bounds2D<double>.Empty;
             foreach (PathFlattening2D.Contour contour in PathFlattening2D.Flatten(element.Path, transform))
             {
                 for (int i = 0; i < contour.Points.Count; i++)
@@ -79,10 +79,9 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
                             throw new NotSupportedException("Clip normalization exceeds the 65536 aggregate edge budget.");
                         }
 
-                        lowX = Math.Min(lowX, Math.Min(a.X, b.X));
-                        lowY = Math.Min(lowY, Math.Min(a.Y, b.Y));
-                        highX = Math.Max(highX, Math.Max(a.X, b.X));
-                        highY = Math.Max(highY, Math.Max(a.Y, b.Y));
+                        (double Left, double Top, double Right, double Bottom) edgeBounds = Geometry2D.EncloseBoundsEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
+                        (double Left, double Top, double Right, double Bottom) enclosed = Geometry2D.EncloseBoundsEdges((pathBounds.Left, pathBounds.Top, pathBounds.Right, pathBounds.Bottom), edgeBounds);
+                        pathBounds = new(enclosed.Left, enclosed.Top, enclosed.Right, enclosed.Bottom);
                         edges.Add(new(a, b));
                     }
                 }
@@ -93,18 +92,13 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
                 return new(NormalizedClipKind2D.Empty, default, default, []);
             }
 
-            left = Math.Max(left, lowX);
-            top = Math.Max(top, lowY);
-            right = Math.Min(right, highX);
-            bottom = Math.Min(bottom, highY);
+            clipBounds = clipBounds.Intersect(pathBounds);
             paths.Add((edges.ToArray(), element.Rule));
             edgeCount = checked(edgeCount + edges.Count);
         }
 
-        left = Math.Max(left, rectLeft);
-        top = Math.Max(top, rectTop);
-        right = Math.Min(right, rectRight);
-        bottom = Math.Min(bottom, rectBottom);
+        clipBounds = clipBounds.Intersect(rectangleBounds);
+        (double left, double top, double right, double bottom) = clipBounds;
         if (right <= left || bottom <= top)
         {
             return new(NormalizedClipKind2D.Empty, default, default, []);
@@ -148,7 +142,7 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
                     for (int sx = 0; sx < 4; sx++)
                     {
                         var sample = new Point(x + column + ((sx + 0.5) / 4), y + row + ((sy + 0.5) / 4));
-                        bool covered = sample.X >= rectLeft && sample.X < rectRight && sample.Y >= rectTop && sample.Y < rectBottom;
+                        bool covered = rectangleBounds.Contains(sample.X, sample.Y);
                         foreach ((Edge[] edges, FillRule2D rule) in paths)
                         {
                             if (!covered || !Contains(edges, rule, sample))
@@ -194,31 +188,20 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
         && float.IsFinite(m.M22) && float.IsFinite(m.M31) && float.IsFinite(m.M32);
 
     private static Point Transform(Vector2 p, Matrix3x2 m)
-        => new(
-            Math.FusedMultiplyAdd(m.M11, p.X, Math.FusedMultiplyAdd(m.M21, p.Y, m.M31)),
-            Math.FusedMultiplyAdd(m.M12, p.X, Math.FusedMultiplyAdd(m.M22, p.Y, m.M32)));
+    {
+        try
+        {
+            return Geometry2D.TransformAffineFused(new Point(p.X, p.Y), m);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new NotSupportedException("Clip normalization requires finite transformed coordinates.", exception);
+        }
+    }
 
     private static bool Contains(Edge[] edges, FillRule2D rule, Point p)
     {
-        int winding = 0;
-        foreach (Edge edge in edges)
-        {
-            double side = Math.FusedMultiplyAdd(edge.B.X - edge.A.X, p.Y - edge.A.Y, -Math.FusedMultiplyAdd(edge.B.Y - edge.A.Y, p.X - edge.A.X, 0));
-            if (edge.A.Y <= p.Y && edge.B.Y > p.Y && side > 0)
-            {
-                winding++;
-            }
-
-            if (edge.B.Y <= p.Y && edge.A.Y > p.Y && side < 0)
-            {
-                winding--;
-            }
-        }
-
+        int winding = Geometry2D.AccumulateWindingFused<double>(edges, p);
         return rule == FillRule2D.NonZero ? winding != 0 : (Math.Abs(winding) % 2) != 0;
     }
-
-    private readonly record struct Point(double X, double Y);
-
-    private readonly record struct Edge(Point A, Point B);
 }

@@ -84,11 +84,12 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
     /// <summary>Materializes live opaque resource sets in their actual execution order.</summary>
     /// <param name="execution">Distinct, current resource sets owned by this generation.</param>
     /// <param name="cancellationToken">Cancels preparation without publishing partial resources.</param>
-    public void MaterializeResources(IReadOnlyList<ShaderResources> execution, CancellationToken cancellationToken = default)
+    /// <param name="shareTables">Whether independent execution groups may share native tables.</param>
+    public void MaterializeResources(IReadOnlyList<ShaderResources> execution, CancellationToken cancellationToken = default, bool shareTables = true)
     {
         ValidateCollecting();
         ArgumentNullException.ThrowIfNull(execution);
-        Materialize(execution.Select(FindScope).ToArray(), cancellationToken);
+        Materialize(execution.Select(FindScope).ToArray(), cancellationToken, shareTables);
     }
 
     /// <summary>Captures an unpublished collection boundary for an allocation-strategy rollback.</summary>
@@ -137,7 +138,8 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
     /// <summary>Resolves all active draws, greedily partitions them, then atomically publishes real native references.</summary>
     /// <param name="execution">Live reservations in actual execution order, or null for collection order; duplicates are rejected.</param>
     /// <param name="cancellationToken">Cancels without publishing partially populated tables.</param>
-    public void Materialize(IReadOnlyList<ArgumentTableReservation>? execution = null, CancellationToken cancellationToken = default)
+    /// <param name="shareTables">Whether independent execution groups may share native tables.</param>
+    public void Materialize(IReadOnlyList<ArgumentTableReservation>? execution = null, CancellationToken cancellationToken = default, bool shareTables = true)
     {
         ValidateCollecting();
         _state = 1;
@@ -187,6 +189,14 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
 
             foreach (var island in operations.GroupBy(operation => operation.Owner.TableGroup))
             {
+                // Graph passes have independent declared usage scopes. A future pass may sample
+                // an earlier pass's attachment, so its registrations cannot leak into that pass.
+                // Explicit table joins still preserve references stored in shared shader data.
+                if (!shareTables)
+                {
+                    current = null;
+                }
+
                 ResolvedArgument[] values = island.SelectMany(operation => operation.Values).ToArray();
                 if (values.Length == 0)
                 {

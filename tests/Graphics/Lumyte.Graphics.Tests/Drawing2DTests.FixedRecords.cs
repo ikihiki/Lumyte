@@ -4,6 +4,7 @@ using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;
@@ -58,11 +59,11 @@ public sealed partial class Drawing2DTests
         {
             for (int i = 0; i < 340; i++)
             {
-                canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 0, 0, 0));
+                canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(1, 0, 0, 0));
             }
 
-            canvas.FillCircle(new(4, 4), 100, new Color2D(1, 0, 0, 0.5f));
-            canvas.FillRect(new(0, 0, 8, 8), new Color2D(0, 0, 1, 0.5f));
+            canvas.FillCircle(new(4, 4), 100, new SRgba<float>(1, 0, 0, 0.5f));
+            canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(0, 0, 1, 0.5f));
         };
         Vector4[] boundary = await RenderAsync(device, 8, 8, boundaryDraw, useDefaultResources: true);
         Assert.All(boundary, pixel => Assert.InRange(Vector4.Distance(new(0.25f, 0, 0.5f, 0.75f), pixel), 0, 0.002f));

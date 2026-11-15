@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.Windowing;
 using Lumyte.Windowing.Abstractions;
 
@@ -21,11 +22,8 @@ internal static class UiHostDrawing
         while (path.TryPop(out WindowNode? current))
         {
             origin += new Vector2(current.Bounds.X, current.Bounds.Y);
-            float left = Math.Max(clip.X, origin.X);
-            float top = Math.Max(clip.Y, origin.Y);
-            float right = Math.Min(clip.X + clip.Width, origin.X + current.ClientSize.X);
-            float bottom = Math.Min(clip.Y + clip.Height, origin.Y + current.ClientSize.Y);
-            clip = new(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+            Bounds2D<float> bounds = Bounds2D<float>.FromOriginSize(clip.X, clip.Y, clip.Width, clip.Height).Intersect(Bounds2D<float>.FromOriginSize(origin.X, origin.Y, current.ClientSize.X, current.ClientSize.Y));
+            clip = new(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
         }
 
         return (origin, clip);

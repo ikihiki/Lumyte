@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Input;
 using Lumyte.Input.Abstractions;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Windowing;
 using Lumyte.Windowing.Abstractions;
@@ -256,11 +257,11 @@ internal sealed class UiHostInputRouter
     {
         if (target.Node is null)
         {
-            return (point, point.X >= 0 && point.Y >= 0 && point.X < target.Window.State.ClientSize.X && point.Y < target.Window.State.ClientSize.Y);
+            return (point, Bounds2D<float>.FromOriginSize(0, 0, target.Window.State.ClientSize.X, target.Window.State.ClientSize.Y).Contains(point.X, point.Y));
         }
 
         (Vector2 origin, Lumyte.Graphics.Drawing2D.Rect2D clip) = UiHostDrawing.Geometry(target.Node);
-        return (point - origin, point.X >= clip.X && point.Y >= clip.Y && point.X < clip.X + clip.Width && point.Y < clip.Y + clip.Height);
+        return (point - origin, Bounds2D<float>.FromOriginSize(clip.X, clip.Y, clip.Width, clip.Height).Contains(point.X, point.Y));
     }
 
     private bool Live(Target target) => UiHostDrawing.Drawable(target.Window.State) && _map.TryGetInputWindowId(target.Window.Id, out InputWindowId id) && id == target.Origin && (target.Node is null || (target.Node.IsEffectivelyVisible && target.Node.Lifetime == WindowLifetime.Open));

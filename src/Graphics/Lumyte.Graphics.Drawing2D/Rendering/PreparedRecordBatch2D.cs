@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -153,7 +154,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     continue;
                 }
 
-                if (DrawRecordPage2D.TrySimple(command, context.Target, clip, out DrawRecord2D simple, out Color2D color))
+                if (DrawRecordPage2D.TrySimple(command, context.Target, clip, out DrawRecord2D simple, out SRgba<float> color))
                 {
                     if (simple.Kind == 0)
                     {
@@ -320,7 +321,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
-        internal bool CanAdmit(DrawingProgram2D? program, uint root, NormalizedClip2D clip, Color2D color = default)
+        internal bool CanAdmit(DrawingProgram2D? program, uint root, NormalizedClip2D clip, SRgba<float> color = default)
         {
             ArgumentTableBindingLimits limits = _batch._context.Device.Caps.ArgumentTableBindingLimits;
             DeviceCaps caps = _batch._context.Device.Caps;
@@ -490,7 +491,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         }
 
         private void Draw<TMetadata>(IRenderEncoder render, DrawingTargetInfo2D info, IGpuRef<TMetadata> metadata, uint first, uint count)
-            where TMetadata : struct, IShaderData
+            where TMetadata : struct, IShaderArguments
         {
             var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
             if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
@@ -525,7 +526,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         }
 
         private Stream<T> Create<T>(int count, ulong stride)
-            where T : struct, IShaderData
+            where T : struct, IShaderArguments
         {
             var result = new Stream<T>(_batch, Reservation, count, stride, _pipeline.Desc.FragmentShader!.Artifact);
             _streams.Add(result);
@@ -641,7 +642,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     }
 
     private sealed class Stream<T> : IStream
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         private readonly ulong _count;
         private readonly IGraphicsShaderDataBuffer<T> _upload;

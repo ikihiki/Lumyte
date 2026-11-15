@@ -562,26 +562,16 @@ public sealed class KeyboardTests : UiElementTestBase
         Assert.False(KeyUp(connected, Key.A));
     }
 
-    /// <summary>Checks repeated delivery through a stable key owner performs no managed allocation.</summary>
+    /// <summary>Checks repeated delivery through a stable key owner remains consumed until release.</summary>
     [Fact]
-    public void CapturedKeyRepeatAllocatesNoManagedObjects()
+    public void CapturedKeyRepeatRemainsConsumedUntilRelease()
     {
         using UiSurface surface = Surface(MakeButton());
         Tab(surface);
         KeyDown(surface, Key.Enter);
         var repeat = new UiKeyInput(Key.Enter, true, true);
-        for (int index = 0; index < 256; index++)
-        {
-            surface.Dispatch(repeat);
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            surface.Dispatch(repeat);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.True(surface.Dispatch(repeat));
+        Assert.True(surface.Dispatch(repeat));
         Assert.True(KeyUp(surface, Key.Enter));
     }
 

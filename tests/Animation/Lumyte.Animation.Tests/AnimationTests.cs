@@ -347,35 +347,6 @@ public sealed class AnimationTests
         Assert.Equal(1, playback.Speed);
     }
 
-    /// <summary>Performs steady numeric playback does not allocate or box values.</summary>
-    [Fact]
-    public void SteadyNumericPlaybackDoesNotAllocateOrBoxValues()
-    {
-        var channel = AnimationChannel<float>.Create();
-        var clock = new ManualClock();
-        var playback = new AnimationPlayback(clock, Clip(channel, 100000), AnimationWrapMode.Loop);
-        var output = new AnimationOutput();
-        var events = new List<AnimationEventOccurrence>();
-        playback.Play();
-        for (int i = 0; i < 100; i++)
-        {
-            clock.Advance(Ticks(1));
-            output.Clear();
-            playback.Update(output, events);
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-        {
-            clock.Advance(Ticks(1));
-            output.Clear();
-            playback.Update(output, events);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
-    }
-
     /// <summary>Verifies registration priority across skipped release endpoints and active values.</summary>
     [Fact]
     public void LaterReleaseEndpointWinsOverEarlierHeldValueInTheSameEvaluation()

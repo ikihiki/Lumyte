@@ -41,6 +41,12 @@ public sealed class AnimationCurve<T> : IAnimationSource<T>
             }
 
             AnimationInterpolators.Validate(_keys[i].Value);
+            interpolator.Validate(_keys[i].Value);
+            if (i < snapshot.Length - 1 && !snapshot[i].Hold && snapshot[i].Interpolator is { } segmentInterpolator)
+            {
+                segmentInterpolator.Validate(snapshot[i].Value);
+                segmentInterpolator.Validate(snapshot[i + 1].Value);
+            }
         }
 
         if (hasSegments)

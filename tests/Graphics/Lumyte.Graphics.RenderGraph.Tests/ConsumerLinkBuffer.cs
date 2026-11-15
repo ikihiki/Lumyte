@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
 
@@ -5,7 +6,7 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 
 internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 1, MemoryPreference memory = MemoryPreference.Automatic) : IGraphicsShaderDataBuffer<ConsumerLink>, IShaderDataSource
 {
-    private readonly ShaderValueSnapshot?[] _values = new ShaderValueSnapshot?[checked((int)count)];
+    private readonly IShaderReferenceMetadata?[] _values = new IShaderReferenceMetadata?[checked((int)count)];
     private bool _disposed;
 
     public ulong Count => count;
@@ -22,6 +23,17 @@ internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 
 
     public object ShaderHandle => this;
 
+    internal bool ValidationEnabled { get; init; } = true;
+
+    internal bool ThrowOnDependencyQuery { get; init; }
+
+    internal int DependencyQueries { get; private set; }
+
+    internal IShaderReferenceMetadata Dependencies
+        => _values.Count(value => value != null) == 1
+            ? _values.First(value => value != null)!
+            : new ShaderDependencyMetadata(_values.OfType<IShaderReferenceMetadata>().SelectMany(value => value.References));
+
     public void CopyFrom(ReadOnlySpan<ConsumerLink> source, ulong elementOffset = 0) => throw new NotSupportedException();
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -30,15 +42,28 @@ internal sealed class ConsumerLinkBuffer(ShaderArtifact artifact, ulong count = 
 
     public ShaderDataSlice<ConsumerLink> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-    public ShaderValueSnapshot Read(ulong index)
+    public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
     {
-        ValidateAlive();
-        return _values[checked((int)index)] ?? new("element", "ConsumerLink", []);
-    }
+        DependencyQueries++;
+        if (ThrowOnDependencyQuery)
+        {
+            throw new InvalidOperationException("Unexpected dependency query.");
+        }
 
-    public void SetTransferredValue(ulong index, ShaderValueSnapshot value) => _values[checked((int)index)] = value;
+        ValidateAlive();
+        dependencies = ValidationEnabled ? Dependencies : null;
+        return dependencies != null;
+    }
 
     public void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     public void Dispose() => _disposed = true;
+
+    internal IShaderReferenceMetadata ElementDependencies(ulong index)
+    {
+        ValidateAlive();
+        return _values[checked((int)index)] ?? new ShaderDependencyMetadata([]);
+    }
+
+    internal void SetDependencies(ulong index, IShaderReferenceMetadata value) => _values[checked((int)index)] = value;
 }

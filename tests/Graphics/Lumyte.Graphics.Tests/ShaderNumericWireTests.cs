@@ -19,19 +19,23 @@ public sealed class ShaderNumericWireTests
         ShaderDataLayout layout = Layout();
         var value = new Wire(0x7fc12345u, -13, BitConverter.UInt32BitsToSingle(0xffc12345), new(1, 2), new(3, 4, 5), new(6, 7, 8, 9), Matrix4x4.CreateTranslation(10, 11, 12));
         Wire[] input = [value, value with { Unsigned = 0x80000000u }];
-        layout.ValidateNumericWireData<Wire>();
-        byte[] bytes = layout.Pack<Wire>(input, (_, _) => throw new InvalidOperationException(), out ShaderValueSnapshot[] snapshots);
+        _ = ShaderTransfer.ReflectFields(typeof(Wire));
+        ShaderDataLayout.ValidateUnmanaged<Wire>(Artifact(ShaderTarget.Wgsl), ShaderTarget.Wgsl);
+        ShaderValueSnapshot[] snapshots = input.Select(item => ShaderTransfer.Capture(in item)).ToArray();
+        byte[] bytes = snapshots.SelectMany(snapshot => snapshot.Data.ToArray()).ToArray();
+        Assert.All(snapshots, snapshot => layout.ValidateArguments(snapshot, true));
         Assert.Equal(MemoryMarshal.AsBytes(input.AsSpan()).ToArray(), bytes);
         Assert.Equal(224, bytes.Length);
-        Assert.Equal(0x7fc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Values[0].Data.Span));
-        Assert.Equal(0x80000000u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[1].Values[0].Data.Span));
-        Assert.Equal(0xffc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Values[2].Data.Span));
-        Assert.Equal(7, snapshots[0].Values.Count);
+        Assert.Equal(0x7fc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Data.Span));
+        Assert.Equal(0x80000000u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[1].Data.Span));
+        Assert.Equal(0xffc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Data.Span[8..]));
+        Assert.Equal(7, snapshots[0].GetDiagnosticFields().Count);
+        Assert.Empty(snapshots[0].Values);
         Array.Clear(bytes);
         input[0] = default;
-        _ = layout.Pack<Wire>(input, (_, _) => [], out _);
-        Assert.Equal(0x7fc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Values[0].Data.Span));
-        Assert.Empty(ShaderBindingSnapshot.Capture(snapshots[0], null).References);
+        _ = ShaderTransfer.Capture(in input[0]);
+        Assert.Equal(0x7fc12345u, BinaryPrimitives.ReadUInt32LittleEndian(snapshots[0].Data.Span));
+        Assert.Empty(snapshots[0].Values);
     }
 
     /// <summary>Mismatched shader strides or offsets fail admission rather than rearranging C# fields.</summary>
@@ -42,13 +46,17 @@ public sealed class ShaderNumericWireTests
     [InlineData(112, 4)]
     public void IncompatibleShaderFailsBeforeUpload(int stride, int offset)
     {
-        Assert.Throws<NotSupportedException>(() => Layout(stride, offset).ValidateNumericWireData<Wire>());
-        Assert.Throws<NotSupportedException>(() => Layout(stride, offset).Pack<Wire>(new Wire[1], (_, _) => [], out _));
+        IReadOnlyList<ShaderTransferField> fields = ShaderTransfer.ReflectFields(typeof(Wire));
+        Assert.Throws<ArgumentException>(() => Layout(stride, offset).ValidateTransferLayout(112, fields, "Wire"));
+        Wire value = default;
+        ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in value);
+        Assert.Throws<ArgumentException>(() => Layout(stride, offset).ValidateArguments(snapshot, true));
+        Assert.Equal(112, snapshot.Data.Length);
     }
 
     /// <summary>Opaque interface-bearing logical values cannot opt into numeric copying.</summary>
     [Fact]
-    public void ManagedLogicalReferenceCannotBeBlitted() => Assert.Throws<NotSupportedException>(() => Layout().ValidateNumericWireData<ManagedWire>());
+    public void ManagedLogicalReferenceCannotBeBlitted() => Assert.Throws<ArgumentException>(() => ShaderTransfer.ReflectFields(typeof(ManagedWire)));
 
     /// <summary>A handwritten manifest cannot relocate the actual C# field or omit extra storage.</summary>
     [Fact]
@@ -59,25 +67,58 @@ public sealed class ShaderNumericWireTests
             """;
         var artifact = ShaderArtifact.PackTarget(ShaderTarget.Wgsl, ShaderStage.Compute, "main", "test", [1], Reflection);
         var layout = ShaderDataLayout.Data(artifact, ShaderTarget.Wgsl, "Spoof");
-        Assert.Throws<NotSupportedException>(() => layout.ValidateNumericWireData<Spoof>());
-        Assert.Throws<NotSupportedException>(() => layout.ValidateNumericWireData<OmittedStorage>());
+        Assert.Throws<ArgumentException>(() => layout.ValidateTransferLayout(8, ShaderTransfer.ReflectFields(typeof(Spoof)), "Spoof"));
+        Assert.Throws<ArgumentException>(() => layout.ValidateTransferLayout(8, ShaderTransfer.ReflectFields(typeof(OmittedStorage)), "Spoof"));
     }
 
-    /// <summary>Backend creation and direct uploads never invoke the explicit numeric type's throwing codec.</summary>
+    /// <summary>Backend creation and direct uploads accept an ordinary explicit numeric type without a codec.</summary>
     /// <returns>The completion of native upload mapping and immutable metadata checks.</returns>
     [GpuFact]
     public async Task VulkanNumericWireConstructionDoesNotCaptureCodecAsync()
     {
         using var device = VulkanDevice.Create();
         var value = new Wire(17, -2, 3, Vector2.One, Vector3.One, Vector4.One, Matrix4x4.Identity);
-        using IGraphicsShaderDataBuffer<Wire> upload = ((IGraphicDevice)device).CreateShaderDataBuffer<Wire>(Artifact(ShaderTarget.SpirV), 2, MemoryPreference.Upload);
+        using IGraphicsBuffer<Wire> upload = ((IGraphicDevice)device).CreateBuffer<Wire>(new() { Count = 2, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
         await upload.MapAsync();
         upload.CopyFrom([value, value with { Unsigned = 29 }]);
-        ShaderValueSnapshot first = ((IShaderDataSource)upload).Read(0);
+        Wire[] first = await ReadUploadAsync(device, upload);
         upload.CopyFrom([value with { Unsigned = 41 }]);
+        Wire[] later = await ReadUploadAsync(device, upload);
         upload.Unmap();
-        Assert.Equal(17u, BinaryPrimitives.ReadUInt32LittleEndian(first.Values[0].Data.Span));
-        Assert.Equal(41u, BinaryPrimitives.ReadUInt32LittleEndian(((IShaderDataSource)upload).Read(0).Values[0].Data.Span));
+        Assert.Equal(17u, first[0].Unsigned);
+        Assert.Equal(29u, first[1].Unsigned);
+        Assert.Equal(41u, later[0].Unsigned);
+        Assert.Equal(value, first[0]);
+        Assert.Equal(224UL, upload.SizeInBytes);
+        Assert.False(typeof(IShaderArguments).IsAssignableFrom(typeof(Wire)));
+    }
+
+    private static async Task<Wire[]> ReadUploadAsync(IGraphicDevice device, IGraphicsBuffer<Wire> upload)
+    {
+        upload.Unmap();
+        using IGraphicsBuffer<Wire> readback = device.CreateBuffer<Wire>(new() { Count = 2, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new BufferBarrierDesc<Wire> { Buffer = upload.SliceElements(0, 2), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(upload.SliceElements(0, 2), readback.SliceElements(0, 2));
+        commands.Barrier(new BufferBarrierDesc<Wire> { Buffer = readback.SliceElements(0, 2), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Finish();
+        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        try
+        {
+            await submission.WaitAsync();
+        }
+        catch
+        {
+            await device.WaitForRetirementAsync();
+            throw;
+        }
+
+        await readback.MapAsync();
+        var result = new Wire[2];
+        readback.CopyTo(result);
+        readback.Unmap();
+        await upload.MapAsync();
+        return result;
     }
 
     private static ShaderDataLayout Layout(int stride = 112, int firstOffset = 0)
@@ -126,61 +167,15 @@ public sealed class ShaderNumericWireTests
         [field: FieldOffset(12)] Vector2 Pair,
         [field: FieldOffset(20)] Vector3 Triple,
         [field: FieldOffset(32)] Vector4 Quad,
-        [field: FieldOffset(48)] Matrix4x4 Matrix) : IShaderNumericWireData
-    {
-        private static readonly ShaderNumericWireLayout _wire = new(
-        112,
-        new(nameof(Unsigned), typeof(uint), 0, 4),
-        new(nameof(Signed), typeof(int), 4, 4),
-        new(nameof(Scalar), typeof(float), 8, 4),
-        new(nameof(Pair), typeof(Vector2), 12, 8),
-        new(nameof(Triple), typeof(Vector3), 20, 12),
-        new(nameof(Quad), typeof(Vector4), 32, 16),
-        new(nameof(Matrix), typeof(Matrix4x4), 48, 64));
+        [field: FieldOffset(48)] Matrix4x4 Matrix);
 
-        public static string ShaderTypeName => "Wire";
-
-        public ShaderNumericWireLayout NumericWireLayout => _wire;
-
-        public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
-            => throw new InvalidOperationException("Direct C# wire must not invoke the legacy codec.");
-    }
-
-    private readonly record struct ManagedWire(IGpuRef<IGraphicsTextureView>? Texture) : IShaderNumericWireData
-    {
-        public static string ShaderTypeName => "Wire";
-
-        public ShaderNumericWireLayout NumericWireLayout => new(112);
-
-        public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
-            => writer.WriteReference(0, nameof(Texture), Texture);
-    }
+    private readonly record struct ManagedWire(IGpuRef<IGraphicsTextureView>? Texture);
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    private readonly record struct Spoof([field: FieldOffset(4)] uint Value) : IShaderNumericWireData
-    {
-        public static string ShaderTypeName => "Spoof";
-
-        public ShaderNumericWireLayout NumericWireLayout => new(8, new ShaderNumericWireMember(nameof(Value), typeof(uint), 0, 4));
-
-        public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
-            => writer.WriteValue(4, nameof(Value), Value);
-    }
+    private readonly record struct Spoof([field: FieldOffset(4)] uint Value);
 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     private readonly record struct OmittedStorage(
         [field: FieldOffset(0)] uint Value,
-        [field: FieldOffset(0)] uint Overlap) : IShaderNumericWireData
-    {
-        public static string ShaderTypeName => "Spoof";
-
-        public ShaderNumericWireLayout NumericWireLayout => new(8, new ShaderNumericWireMember(nameof(Value), typeof(uint), 0, 4));
-
-        public void Write<TWriter>(ref TWriter writer)
-            where TWriter : IShaderValueWriter
-            => writer.WriteValue(0, nameof(Value), Value);
-    }
+        [field: FieldOffset(0)] uint Overlap);
 }

@@ -1,0 +1,44 @@
+name: Component screening notification
+
+on:
+  workflow_run:
+    workflows: [Component performance screening]
+    types: [completed]
+
+permissions: {}
+
+# Serialize read/check/write, including same-SHA reruns, to avoid stale comments.
+concurrency:
+  group: component-screening-notification
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  notify:
+    if: >-
+      github.repository == 'ikihiki/Lumyte' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.path == '.github/workflows/component-screening.yml'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      # Never check out PR code or execute/download a PR-produced artifact here.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Build trusted Fallout runner
+        run: |
+          mkdir -p artifacts/nuget
+          dotnet build build -c Release
+      - name: Update advisory PR result link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: dotnet run --project build -c Release --no-build --no-restore -- --target ComponentScreeningNotify

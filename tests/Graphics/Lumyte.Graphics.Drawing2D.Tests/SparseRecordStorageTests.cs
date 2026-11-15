@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -21,11 +22,11 @@ public sealed class SparseRecordStorageTests
         {
             if ((i & 1) == 0)
             {
-                canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 0, 0, 1));
+                canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(1, 0, 0, 1));
             }
             else
             {
-                canvas.FillCircle(new(4), 3, new Color2D(0, 1, 0, 1));
+                canvas.FillCircle(new(4), 3, new SRgba<float>(0, 1, 0, 1));
             }
         }
 
@@ -159,7 +160,7 @@ public sealed class SparseRecordStorageTests
                 canvas.Translate(new(1, 0));
             }
 
-            Color2D end = i == 1 && change == 3 ? new(0, 1, 0, 1) : new(0, 0, 1, 1);
+            SRgba<float> end = i == 1 && change == 3 ? new(0, 1, 0, 1) : new(0, 0, 1, 1);
             canvas.FillRect(new(0, 0, 8, 8), PaintGraph2D.LinearGradient(new(0), new(i == 1 && change == 1 ? 9 : 8, 0), [new(0, new(1, 0, 0, 1)), new(1, end)]));
         }
 
@@ -189,7 +190,7 @@ public sealed class SparseRecordStorageTests
         using IGraphicsTextureView target = texture.CreateView();
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 8, 8), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(1, 0, 0, 1));
         using var scene = new DrawingScene2D();
         scene.Insert(scene.Root, 0, canvas.End());
         using DrawingSceneReadLease2D read = scene.Borrow();
