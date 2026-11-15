@@ -31,6 +31,33 @@ rawのReferenceCount getter非読取り、検証層だけの宣言数診断、co
 全登録binding、依存の未知／既知空・全体回復、Graph宣言とcanonical resourceの照合である。
 対象testの詳細とログ名は下記のcheckpoint別履歴に保持する。
 
+## Windows Direct3D 12 の追加検証（2026-11-15）
+
+`0f931261b3f281c385116a6d64664661f27ae63c`を基点とする本変更の作業ツリーで、
+Windows x64、Agility SDK Stable 620、WARP、native debug layer有効で実行した。
+Debug／Releaseともに67成功、失敗0、Preview partial programsの1件のみskipだった。
+上表の過去checkpointに対する結果とは分けて扱う。
+
+`ShaderTransferGpuTests`は次を確認する。
+
+- Vulkan／Wgpuと共通のexerciseをDXILで実行し、rawとValidationDeviceの両方で数値・参照をshaderから読み出す。
+- CopyFrom前後のCPU変更、明示的な再転送、失敗した参照書き込み後の回復と依存metadataを確認する。
+- 1／64／1024要素をmapped uploadへ直接書き込み、非ゼロoffsetでの一括・単一要素更新後にGPU copyして全byteを照合する。
+- 20-byte stride、参照のabsolute byte offset・count・reserved zero、および更新範囲の前後要素を確認する。
+
+既存テストは明示的なValidationDeviceと提出完了後のDispose契約に合わせた。
+共有サンプルのstage間schema検査も、DEBUG定数ではなくValidationEnabledで選択する。
+バックエンドのmapped span書き込みと参照の直接符号化は既存実装を使用する。
+Direct3D 12での速度比較、hardware adapter、Preview、画面表示の追加検証は行っていない。
+
+    $env:LUMYTE_GRAPHICS_GPU_TESTS = '1'
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug --agility-channel Stable
+    dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release --agility-channel Stable
+
+実行ログはlocal-onlyの`artifacts/d3d12-debug-test.log`と`artifacts/d3d12-release-test.log`、
+TRXは`artifacts/test-results/`に保存した。NuGet監査情報のネットワーク取得が利用できなかったため、
+この実行では`NuGetAudit=false`として復元済みpackageを使用した。
+
 ## 再現入口と実行境界
 
 [テスト手順](../tests/README.md)と[共通runner](../build/README.md)の環境を使い、リポジトリルートで実行する。
