@@ -32,6 +32,8 @@ internal sealed partial class Build
 
     private Target BenchmarkAudio => definition => definition.Executes(() => RunBenchmarksAsync("Audio"));
 
+    private Target BenchmarkGraphics => definition => definition.Executes(() => RunBenchmarksAsync("Graphics"));
+
     private Target BenchmarkCoreEvaluate => definition => definition.Executes(EvaluateCoreAsync);
 
     private async Task EvaluateCoreAsync()
@@ -540,6 +542,14 @@ internal sealed partial class Build
         if (area == "Input")
         {
             inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, "src", "Diagnostics")));
+        }
+
+        if (area == "Graphics")
+        {
+            foreach (string path in new[] { "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets" })
+            {
+                inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, path)));
+            }
         }
 
         foreach (string name in new[] { "global.json", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "NuGet.config" })

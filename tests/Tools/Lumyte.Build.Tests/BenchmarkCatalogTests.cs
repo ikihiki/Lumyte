@@ -359,6 +359,44 @@ public sealed class BenchmarkCatalogTests
         Assert.Equal(commands, fixture.Records("dotnet").Length);
     }
 
+    /// <summary>Rejects CPU test-device, product or shader changes before stale binary execution.</summary>
+    /// <param name="input">The transitive input path.</param>
+    /// <returns>The stale-input assertion.</returns>
+    [Theory]
+    [InlineData("benchmarks/Graphics/Shared/CpuGraphics/Device.cs")]
+    [InlineData("src/Graphics/Renderer.cs")]
+    [InlineData("tools/shaders/shape.slang")]
+    [InlineData("build/Targets/Shader.targets")]
+    public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
+    {
+        using var fixture = new BuildFixture();
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets" })
+        {
+            Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
+        }
+
+        string project = Path.Combine(fixture.Root, "benchmarks", "Graphics", "Lumyte.Graphics.Drawing2D.Benchmark");
+        Directory.CreateDirectory(project);
+        File.WriteAllText(Path.Combine(project, "Lumyte.Graphics.Drawing2D.Benchmark.csproj"), "<Project />");
+        string source = Path.Combine(fixture.Root, input);
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        File.WriteAllText(source, "original input");
+        string shared = Path.Combine(fixture.Root, "benchmarks", "Core", "Shared");
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(Path.Combine(shared, "BenchmarkEntry.cs"), "shared runner");
+        string output = Path.Combine(project, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "Lumyte.Graphics.Drawing2D.Benchmark.dll"), "fixture output");
+        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkGraphics", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(first.ExitCode == 0, first.Output + first.Error);
+        int commands = fixture.Records("dotnet").Length;
+        File.WriteAllText(source, "changed input");
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkGraphics", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, stale.ExitCode);
+        Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
+        Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
     private static void AddProject(string root, string name)
     {
         string directory = Path.Combine(root, "benchmarks", "Core", name + ".Benchmark");
