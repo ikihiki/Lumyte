@@ -32,6 +32,8 @@ public sealed class RenderGraphContext
 
     internal RenderGraphPass Pass { get; }
 
+    internal bool ValidationEnabled => Pass.Owner.Device?.ValidationEnabled == true;
+
     internal ShaderTarget? DeviceTarget => Pass.Owner.Device?.Caps.ShaderTarget;
 
     /// <summary>Resolves the pass's predeclared sampled image view without changing its registration plan.</summary>
@@ -85,7 +87,7 @@ public sealed class RenderGraphContext
     /// <param name="count">The declared element count; null requests the whole buffer.</param>
     /// <returns>The existing native range reference.</returns>
     public IGpuRef<T> GetGpuRef<T>(RenderGraphShaderDataBuffer<T> buffer, ulong offset = 0, ulong? count = null)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(buffer);
@@ -117,7 +119,7 @@ public sealed class RenderGraphContext
     /// <param name="buffer">The graph-local handle.</param>
     /// <returns>The caller-owned shader data buffer.</returns>
     public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphShaderDataBuffer<T> buffer)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         Check(buffer);
         return (IGraphicsShaderDataBuffer<T>)_plan.Resolve(buffer);
@@ -256,17 +258,23 @@ public sealed class RenderGraphContext
         }
     }
 
-    internal (IReadOnlyList<ShaderResources>? Resources, ShaderValueSnapshot Snapshot) SelectArguments(ShaderValueSnapshot snapshot, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    internal IReadOnlyList<ShaderResources>? DeclaredArguments(IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
     {
         EnsureActive();
-        if (!snapshot.Values.Any(value => value.IsReference))
+        return _plan.ShaderResourceOwner?.DeclaredArguments(Pass, outputs, graphics);
+    }
+
+    internal (IReadOnlyList<ShaderResources>? Resources, Action<IReadOnlyCollection<IShaderReference>>? Admit) SelectArguments(IShaderReferenceMetadata references, IReadOnlyList<RenderGraphTexture> outputs, bool graphics)
+    {
+        EnsureActive();
+        if (references.References.Count == 0 && !_uses.Any(use => use.Bindings is { Count: > 0 }))
         {
-            return (null, snapshot);
+            return (null, null);
         }
 
         GraphShaderResourceOwner owner = _plan.ShaderResourceOwner ?? throw new ArgumentException("Declare shader resources on this pass before resolving references.");
-        IReadOnlyList<ShaderResources> resources = owner.SelectArguments(snapshot, Pass, outputs, graphics);
-        return (resources, owner.Constrain(resources, snapshot));
+        IReadOnlyList<ShaderResources> resources = owner.SelectArguments(references, Pass, outputs, graphics);
+        return (resources, owner.Admission(resources));
     }
 
     internal void BindResources(IReadOnlyList<ShaderResources> resources, IRenderEncoder encoder, IReadOnlyList<RenderGraphTexture> outputs)

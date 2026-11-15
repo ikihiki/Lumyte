@@ -3,6 +3,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
@@ -19,7 +20,8 @@ public sealed partial class Drawing2DTests
     [GpuFact]
     public async Task VulkanArgumentPartitionsAsync()
     {
-        using var device = VulkanDevice.Create();
+        using var raw = VulkanDevice.Create();
+        using var device = new ValidationDevice(raw);
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -28,7 +30,8 @@ public sealed partial class Drawing2DTests
     [GpuFact]
     public async Task WgpuArgumentPartitionsAsync()
     {
-        using var device = WgpuDevice.Create();
+        using var raw = WgpuDevice.Create();
+        using var device = new ValidationDevice(raw);
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -102,6 +105,7 @@ public sealed partial class Drawing2DTests
         prepared.Record(commands);
         commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = attachment, After = _copyRead });
         PartitionCopy(commands, target, readback, pitch);
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
         commands.Finish();
 
         // Native queues accept the original native recording, never the observer wrapper.
@@ -166,18 +170,21 @@ public sealed partial class Drawing2DTests
             // Submit publishes shader-data transfer metadata; inspect before prepared/plan disposal.
             commands.AssertOwners(device.Tables, views);
             AssertPartitionDescriptions(device, graph: true);
-            Assert.Equal(4, commands.Roots.Select(root => root.Table).Distinct().Count());
+            Assert.Equal(7, commands.Roots.Select(root => root.Table).Distinct().Count());
 
-            // The final image, real effect and layer compositor fit the SAME last partition.
+            // Attachment producers, the effect and its compositor use isolated tables.
+            // Image draws still partition together within their opaque drawing pass.
             Assert.Equal(13, commands.Roots.Count);
             Assert.Same(device.Tables[0].Table, commands.Roots[0].Table);
             for (int x = 0; x < 10; x++)
             {
-                Assert.Same(device.Tables[x / 3].Table, commands.Roots[x + 1].Table);
+                Assert.Same(device.Tables[1 + (x / 3)].Table, commands.Roots[x + 1].Table);
             }
 
-            Assert.Same(commands.Roots[^3].Table, commands.Roots[^2].Table);
-            Assert.Same(commands.Roots[^2].Table, commands.Roots[^1].Table);
+            Assert.Same(device.Tables[5].Table, commands.Roots[^2].Table);
+            Assert.Same(device.Tables[6].Table, commands.Roots[^1].Table);
+            Assert.NotSame(commands.Roots[^3].Table, commands.Roots[^2].Table);
+            Assert.NotSame(commands.Roots[^2].Table, commands.Roots[^1].Table);
             await submission.WaitAsync();
             await AssertPartitionPixelsAsync(plan.GetBuffer(result), pitch, graph: true);
         }
@@ -189,15 +196,14 @@ public sealed partial class Drawing2DTests
 
     private static void AssertPartitionDescriptions(PartitionDevice device, bool graph)
     {
-        // Fallback + three distinct caller views; the last direct partition has only one view.
+        // Fallback + three distinct caller views; the last image partition has only one view.
+        // Graph attachment producers, effect sampling and composition cannot share tables.
+        Assert.Equal(graph ? 7 : 4, device.Tables.Count); // Native tables, NOT one count per resource kind.
+        Assert.Equal(graph ? new uint[] { 0, 4, 4, 4, 2, 1, 2 } : new uint[] { 4, 4, 4, 2 }, device.Tables.Select(item => item.Desc.TextureCapacity));
+        Assert.Equal(graph ? new uint[] { 0, 1, 1, 1, 1, 1, 1 } : new uint[] { 1, 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
 
-        // In the graph, the layer source and effect output fill its two remaining slots.
-        Assert.Equal(4, device.Tables.Count); // Native tables, NOT one count per resource kind.
-        Assert.Equal(new uint[] { 4, 4, 4, graph ? 4u : 2u }, device.Tables.Select(item => item.Desc.TextureCapacity));
-        Assert.Equal(new uint[] { 1, 1, 1, 1 }, device.Tables.Select(item => item.Desc.SamplerCapacity));
-
-        // Two exact ranges per image; graph adds one rectangle range and two compositor ranges.
-        Assert.Equal(graph ? new uint[] { 7, 6, 6, 4 } : new uint[] { 6, 6, 6, 2 }, device.Tables.Select(item => item.Desc.BufferCapacity));
+        // Two exact ranges per image; graph adds isolated rectangle and compositor ranges.
+        Assert.Equal(graph ? new uint[] { 1, 6, 6, 6, 2, 0, 2 } : new uint[] { 6, 6, 6, 2 }, device.Tables.Select(item => item.Desc.BufferCapacity));
     }
 
     private static uint PartitionPitch(IGraphicDevice device)
@@ -206,11 +212,10 @@ public sealed partial class Drawing2DTests
         return ((80 + alignment - 1) / alignment) * alignment;
     }
 
+    // The caller owns the transition: direct recording emits it explicitly;
+    // graph recording uses ExportBuffer so its tracked final scope stays accurate.
     private static void PartitionCopy(IGraphicsCommandBuffer commands, IGraphicsTexture target, IGraphicsBuffer<byte> readback, uint pitch)
-    {
-        commands.CopyTextureToBuffer(new() { Texture = target, Width = 10, Height = 4 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
-    }
+        => commands.CopyTextureToBuffer(new() { Texture = target, Width = 10, Height = 4 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 4 });
 
     private static async Task AssertPartitionPixelsAsync(IGraphicsBuffer<byte> readback, uint pitch, bool graph)
     {
@@ -298,7 +303,7 @@ public sealed partial class Drawing2DTests
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => _native.CreateComputePipeline(desc);
 
         public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-            where T : struct, IShaderData => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
+            where T : struct, IShaderArguments => _native.CreateShaderDataBuffer<T>(artifact, count, memory);
     }
 
     private sealed class PartitionCommands(IGraphicsCommandBuffer native) : IGraphicsCommandBuffer
@@ -331,10 +336,10 @@ public sealed partial class Drawing2DTests
         public void Finish() => native.Finish();
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : struct, IShaderData => native.CopyBuffer(source, destination);
+            where T : struct, IShaderArguments => native.CopyBuffer(source, destination);
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-            where T : struct, IShaderData => native.Barrier(barrier);
+            where T : struct, IShaderArguments => native.Barrier(barrier);
 
         public void Dispose() => native.Dispose();
 
@@ -347,17 +352,16 @@ public sealed partial class Drawing2DTests
             {
                 Assert.Contains(tables, item => ReferenceEquals(item.Table, table));
                 var visited = new HashSet<(object Resource, ulong Offset, ulong Size)>();
-                Visit(snapshot, table, visited);
+                Visit(new ShaderDependencyMetadata(snapshot.Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference))).References, table, visited);
             }
 
-            Assert.True(nested >= 10, "Every sampled image must be reached through shader-data metadata.");
+            Assert.True(nested > 0, "Sampled images must be reached through whole-buffer shader-data metadata.");
             Assert.All(views, view => Assert.Contains(view, sampled));
 
-            void Visit(ShaderValueSnapshot snapshot, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
+            void Visit(IReadOnlyList<IShaderReference> values, IArgumentTable table, HashSet<(object Resource, ulong Offset, ulong Size)> visited)
             {
-                foreach (ShaderValue value in snapshot.Values.Where(value => value.IsReference))
+                foreach (IShaderReference reference in values)
                 {
-                    IShaderReference reference = Assert.IsAssignableFrom<IShaderReference>(value.Reference);
                     Assert.Same(table, reference.Table);
                     if (reference.Resource is IGraphicsTextureView view)
                     {
@@ -369,15 +373,9 @@ public sealed partial class Drawing2DTests
                         continue;
                     }
 
-                    ulong stride = checked((ulong)source.Layout.Size);
-                    Assert.Equal(0ul, reference.OffsetInBytes % stride);
-                    Assert.Equal(0ul, reference.SizeInBytes % stride);
-                    for (ulong offset = 0; offset < reference.SizeInBytes; offset += stride)
-                    {
-                        ShaderValueSnapshot child = source.Read((reference.OffsetInBytes + offset) / stride);
-                        nested++;
-                        Visit(child, table, visited);
-                    }
+                    Assert.True(source.TryGetDependencies(out IShaderReferenceMetadata? child));
+                    nested++;
+                    Visit(child.References, table, visited);
                 }
             }
         }
@@ -387,6 +385,8 @@ public sealed partial class Drawing2DTests
     {
         private IArgumentTable? _table;
         private ShaderValueSnapshot? _arguments;
+
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
 
         public void SetArgumentTable(IArgumentTable table)
         {
@@ -402,10 +402,11 @@ public sealed partial class Drawing2DTests
             _arguments = snapshot;
         }
 
-        public void SetArguments(ShaderValueSnapshot arguments)
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged
         {
-            ShaderValueSnapshot snapshot = arguments.Copy();
-            native.SetArguments(arguments);
+            ShaderValueSnapshot snapshot = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
+            native.SetArguments(in arguments, rootParameter, shaderTypeName);
             _arguments = snapshot;
         }
 

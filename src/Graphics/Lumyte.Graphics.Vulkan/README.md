@@ -154,7 +154,7 @@ textureとsamplerは種類別の論理slotをnative descriptor array indexとし
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
-shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+shader dataのstrideと配置はC# unmanaged structのTransferSizeと実際のfield offsetが正本です。pointee reflectionはDebug照合と参照access kindにのみ使用し、数値を再配置しません。physical addressからのshader load/storeはscalar wordsを使い、float3のalignment補正を必要としません。root uniformはuint4 wire lanesをinterpretし、allocation/binding capacityだけを16-byteへ切り上げます。C# wire sizeとoffsetは変更しません。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルは使用しません。native完了workerからのloss通知を安全に配送するための内部bridgeと回帰テストに限りInternalsVisibleToを使用します。
 
@@ -236,3 +236,13 @@ submissionのnative待機中はfenceを保持し、Statusが先に完了を観�
 VK_ERROR_DEVICE_LOSTをdevice・子資源・submission・presentationから共通状態へ接続します。Pending submissionはFailed、commandはFaultedとなり、WaitAsyncはGraphicsDeviceLostExceptionを返します。loss後のWaitForRetirementAsyncは明示的にvkDeviceWaitIdleを呼び、Success／ErrorDeviceLostを破棄安全性の確認として扱います。Engineがその後に子資源とdeviceを明示的にDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 任意のmanaged検証
+
+このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
+
+raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIと実際のwire容量・完了状態、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
+
+wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
+
+検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。

@@ -5,6 +5,26 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal static class PipelineValidation
 {
+    internal static void RootCapacity(ShaderTargetData target)
+    {
+        using var document = JsonDocument.Parse(target.ReflectionJson);
+        if (!document.RootElement.TryGetProperty("parameters", out JsonElement parameters))
+        {
+            return;
+        }
+
+        foreach (JsonElement parameter in parameters.EnumerateArray())
+        {
+            string name = parameter.GetProperty("name").GetString()!;
+            if (parameter.GetProperty("type").GetProperty("kind").GetString() == "constantBuffer" &&
+                name != "lumyteDrawInfo" && !name.StartsWith("__lumyte_schema_", StringComparison.Ordinal))
+            {
+                // Validate logical bytes: a valid 232-byte root declares 240 physical bytes.
+                Direct3D12ShaderTransfer.ValidateRootSize(ShaderDataLayout.Root(target, name).Size);
+            }
+        }
+    }
+
     internal static ShaderTargetData Shader(IGraphicsShader shader, ShaderTarget target, ShaderStage stage, DeviceCaps caps)
     {
         ArgumentNullException.ThrowIfNull(shader);
@@ -63,7 +83,6 @@ internal static class PipelineValidation
 
     internal static void Program(GraphicsPipelineDesc desc, ShaderTargetData vertex, ShaderTargetData? fragment)
     {
-        ShaderDataLayout.ValidateProgram(vertex, fragment);
         if (!Enum.IsDefined(desc.TopologyClass) || !Enum.IsDefined(desc.Optimization) || (desc.AlphaToCoverageEnable && fragment == null))
         {
             throw new ArgumentException("Invalid compilation options.");

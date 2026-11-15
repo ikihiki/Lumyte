@@ -8,16 +8,20 @@ public sealed class RenderGraphComputeEncoder : IDisposable
 {
     private readonly RenderGraphContext _context;
     private readonly IComputeEncoder _native;
+    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepareArguments;
     private IGraphicsComputePipeline? _pipeline;
     private IReadOnlyList<ShaderResources>? _arguments;
     private bool _hasArguments;
     private object? _argumentPipeline;
     private bool _ended;
+    private IReadOnlyList<ShaderResources>? _pendingResources;
+    private bool _settingArguments;
 
     internal RenderGraphComputeEncoder(RenderGraphContext context, IComputeEncoder native)
     {
         _context = context;
         _native = native;
+        _prepareArguments = context.ValidationEnabled ? PrepareArguments : null;
     }
 
     /// <summary>Selects the compute pipeline.</summary>
@@ -42,12 +46,94 @@ public sealed class RenderGraphComputeEncoder : IDisposable
             throw new InvalidOperationException("Select a pipeline before setting its arguments.");
         }
 
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
-        (IReadOnlyList<ShaderResources>? resources, ShaderValueSnapshot selected) = _context.SelectArguments(snapshot, [], graphics: false);
-        _native.SetArguments(selected);
-        _arguments = resources;
-        _hasArguments = true;
-        _argumentPipeline = _pipeline;
+        _settingArguments = true;
+        bool validationInstalled = false;
+        try
+        {
+            _pendingResources = _context.DeclaredArguments([], graphics: false);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
+            _native.SetArguments(in arguments);
+            _arguments = _pendingResources;
+            _hasArguments = true;
+            _argumentPipeline = _pipeline;
+        }
+        finally
+        {
+            try
+            {
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
+            }
+            finally
+            {
+                _pendingResources = null;
+                _settingArguments = false;
+            }
+        }
+    }
+
+    /// <summary>Snapshots an ordinary unmanaged root with the existing graph declaration rules.</summary>
+    /// <typeparam name="T">The unmanaged argument type.</typeparam>
+    /// <param name="arguments">The C# value to copy without conversion.</param>
+    /// <param name="rootParameter">The logical root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged
+    {
+        EnsureActive();
+        if (_pipeline is null)
+        {
+            throw new InvalidOperationException("Select a pipeline before setting its arguments.");
+        }
+
+        _settingArguments = true;
+        bool validationInstalled = false;
+        try
+        {
+            _pendingResources = _context.DeclaredArguments([], graphics: false);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
+            _native.SetArguments(in arguments, rootParameter, shaderTypeName);
+            _arguments = _pendingResources;
+            _hasArguments = true;
+            _argumentPipeline = _pipeline;
+        }
+        finally
+        {
+            try
+            {
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
+            }
+            finally
+            {
+                _pendingResources = null;
+                _settingArguments = false;
+            }
+        }
     }
 
     /// <summary>Records Dispatch with the previously selected arguments.</summary>
@@ -99,12 +185,30 @@ public sealed class RenderGraphComputeEncoder : IDisposable
         }
     }
 
+    private Action<IReadOnlyCollection<IShaderReference>>? PrepareArguments(IShaderReferenceMetadata references)
+    {
+        (IReadOnlyList<ShaderResources>? resources, Action<IReadOnlyCollection<IShaderReference>>? admit) =
+            _context.SelectArguments(references, [], graphics: false);
+        if (resources is not null)
+        {
+            _context.BindResources(resources, _native);
+        }
+
+        _pendingResources = resources;
+        return admit;
+    }
+
     private void ValidateExecution()
     {
         EnsureActive();
         if (_pipeline is null)
         {
             throw new InvalidOperationException("Select a pipeline before recording shader operations.");
+        }
+
+        if (_context.DeclaredArguments([], graphics: false) is { } declaredResources)
+        {
+            _context.BindResources(declaredResources, _native);
         }
 
         // Borrowed graphs without a device cannot create logical resources; native execution validates its own root contract.
@@ -136,6 +240,11 @@ public sealed class RenderGraphComputeEncoder : IDisposable
 
     private void EnsureActive()
     {
+        if (_settingArguments)
+        {
+            throw new InvalidOperationException("Argument selection cannot be reentered.");
+        }
+
         _context.EnsureActive();
         if (_ended)
         {

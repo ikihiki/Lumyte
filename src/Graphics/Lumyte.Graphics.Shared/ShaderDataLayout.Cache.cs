@@ -4,14 +4,31 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Shared;
 
-/// <summary>Shares immutable reflection and layouts for the lifetime of their shader owners.</summary>
+/// <summary>Shares explicitly requested reflection and layouts for the lifetime of their shader owners.</summary>
 public sealed partial class ShaderDataLayout
 {
-    private static readonly ConditionalWeakTable<ShaderTargetData, ReflectionCache> _targets = new();
-    private static readonly ConditionalWeakTable<ShaderArtifact, ArtifactCache> _artifacts = new();
-
+    // Required binding discovery (HasRoot/RootTarget) may read reflection independently
+    // of optional layout checks. Raw packing must never enter this cache.
     private static ReflectionCache GetReflection(ShaderTargetData target)
-        => _targets.GetValue(target, static value => new(value));
+        => BindingTargets.Values.GetValue(target, static value => new(value));
+
+    private static class BindingTargets
+    {
+        internal static readonly ConditionalWeakTable<ShaderTargetData, ReflectionCache> Values = new();
+
+        static BindingTargets()
+        {
+        }
+    }
+
+    private static class ArtifactTargets
+    {
+        internal static readonly ConditionalWeakTable<ShaderArtifact, ArtifactCache> Values = new();
+
+        static ArtifactTargets()
+        {
+        }
+    }
 
     private sealed class ArtifactCache
     {
@@ -35,10 +52,10 @@ public sealed partial class ShaderDataLayout
     private sealed class ReflectionCache
     {
         private readonly JsonElement _metadata;
-        private readonly Dictionary<string, ShaderDataLayout> _data = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, ShaderDataLayout> _roots = new(StringComparer.Ordinal);
         private readonly Lazy<HashSet<string>> _rootNames;
         private readonly object _gate = new();
+        private Dictionary<string, ShaderDataLayout>? _data;
+        private Dictionary<string, ShaderDataLayout>? _roots;
 
         internal ReflectionCache(ShaderTargetData target)
         {
@@ -66,7 +83,8 @@ public sealed partial class ShaderDataLayout
         {
             lock (_gate)
             {
-                if (_data.TryGetValue(name, out ShaderDataLayout? layout))
+                Dictionary<string, ShaderDataLayout> cache = _data ??= new(StringComparer.Ordinal);
+                if (cache.TryGetValue(name, out ShaderDataLayout? layout))
                 {
                     return layout;
                 }
@@ -83,7 +101,7 @@ public sealed partial class ShaderDataLayout
                 }
 
                 layout = new(type, _metadata);
-                _data.Add(name, layout);
+                cache.Add(name, layout);
                 return layout;
             }
         }
@@ -92,7 +110,8 @@ public sealed partial class ShaderDataLayout
         {
             lock (_gate)
             {
-                if (_roots.TryGetValue(name, out ShaderDataLayout? layout))
+                Dictionary<string, ShaderDataLayout> cache = _roots ??= new(StringComparer.Ordinal);
+                if (cache.TryGetValue(name, out ShaderDataLayout? layout))
                 {
                     return layout;
                 }
@@ -103,8 +122,8 @@ public sealed partial class ShaderDataLayout
                     throw new ArgumentException("The program does not declare this root parameter.", nameof(name));
                 }
 
-                layout = new(parameter.GetProperty("type").GetProperty("elementType"), _metadata, true);
-                _roots.Add(name, layout);
+                layout = new(parameter.GetProperty("type").GetProperty("elementType"), _metadata);
+                cache.Add(name, layout);
                 return layout;
             }
         }

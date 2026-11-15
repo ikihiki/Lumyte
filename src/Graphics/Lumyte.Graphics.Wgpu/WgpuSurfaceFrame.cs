@@ -10,6 +10,7 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
     internal WgpuSurfaceFrame(WgpuSwapchain swapchain, Ahjo.Wgpu.Texture native)
     {
         _swapchain = swapchain;
+        Lifetime = new(IsNativeReleased);
         SwapchainDesc desc = swapchain.Configuration;
         _texture = new(swapchain.Owner, new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage }, native, Lifetime);
     }
@@ -18,14 +19,24 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
 
     public IGraphicsTexture Texture => _texture;
 
-    internal SurfaceFrameLifetime Lifetime { get; } = new(() => true);
+    internal SurfaceFrameLifetime Lifetime { get; }
 
     internal WgpuDevice Owner => _swapchain.Owner;
 
     public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
+        IReadOnlyList<IGraphicsSemaphore> validationWaits = waitSemaphores ?? [];
+        foreach (IGraphicsSemaphore value in validationWaits)
+        {
+            if (value is not WgpuSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
+            }
+        }
+
         SurfaceStatus status = _swapchain.Present();
+
         Lifetime.MarkPresented();
         return status;
     }
@@ -39,7 +50,18 @@ internal sealed class WgpuSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
+        if (!IsNativeReleased())
+        {
+            throw new InvalidOperationException("Native presentation synchronization is still in flight.");
+        }
+
         _texture.DisposeLease();
         Lifetime.MarkDisposed();
     }
+
+    private bool IsNativeReleased() =>
+
+        // The surface-present call retains no caller semaphore: WebGPU binary
+        // semaphores model ordering on the device's single queue only.
+        true;
 }

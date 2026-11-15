@@ -66,6 +66,10 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
     public unsafe object ShaderHandle => (nint)Native.Handle;
 
+    public Type ElementType => typeof(T);
+
+    public string ShaderTypeName => ShaderTransfer.TypeName<T>();
+
     public BufferLayout<T> Layout { get; }
 
     public ulong Count { get; }
@@ -180,6 +184,18 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
         }
 
         GetMappedBytes().Slice(checked((int)offset), checked((int)length)).CopyTo(destination);
+    }
+
+    internal unsafe Span<byte> GetMappedUploadSpan(ulong offset, int length)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ValidateByteRange(offset, (ulong)length);
+        RequireMapping(MemoryPreference.Upload);
+        nuint start = checked((nuint)offset);
+        _ = checked(start + (nuint)length);
+        nuint address = checked((nuint)_mappedAddress + start);
+        _ = checked(address + (nuint)length);
+        return new Span<byte>((void*)address, length);
     }
 
     private void RequireMapping(MemoryPreference memory)

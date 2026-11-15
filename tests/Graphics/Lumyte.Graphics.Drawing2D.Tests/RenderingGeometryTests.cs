@@ -272,11 +272,11 @@ public sealed class RenderingGeometryTests
 
         public IGpuRef<IGraphicsSampler> WriteSampler(uint slot, IGraphicsSampler sampler) => throw new InvalidOperationException("Solid paint must not bind samplers.");
 
-        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
+        public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
             where T : unmanaged => throw new InvalidOperationException("Paint compilation must not bind buffers.");
 
         public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-            where T : struct, IShaderData => throw new InvalidOperationException("Paint compilation must not bind buffers.");
+            where T : struct, IShaderArguments => throw new InvalidOperationException("Paint compilation must not bind buffers.");
 
         public void ReleaseTexture(uint slot) => throw new InvalidOperationException("Paint compilation must not release textures.");
 

@@ -1,0 +1,6 @@
+# Performance data
+
+2026-11-14の依頼により、このディレクトリ内のgzipバイナリ生データを削除しました。
+テキストのJSON／CSV集計とmanifestは保持しています。
+manifestのarchive名・サイズ・hashは過去の測定時点の記録であり、現行treeでarchiveを取得・検証できることを意味しません。
+以前のarchiveは削除前のGit revisionから参照できます。Git履歴の書き換えは行っていません。

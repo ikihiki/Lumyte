@@ -175,3 +175,13 @@ GPU を使わないテストは DXIL container、helper の binding、natural／
 stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
 一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
 Stable の WARP（debug layer 有効）では共通 suite 全体も成功しました。Preview partial program は未実行です。
+
+## 任意のmanaged検証
+
+このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
+
+raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIと実際のwire容量・完了状態、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
+
+wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
+
+検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。

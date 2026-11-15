@@ -104,7 +104,7 @@ internal sealed unsafe partial class WgpuGraphicsPipeline
     {
         using Ahjo.Wgpu.ShaderModule? vertexModule = arguments == null ? null : _owner.NativeDevice.CreateShaderModule(new Ahjo.Wgpu.ShaderModuleDescriptor { Source = Ahjo.Wgpu.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(arguments.Specialize(VertexData))) });
         using Ahjo.Wgpu.ShaderModule? fragmentModule = arguments == null || FragmentData == null ? null : _owner.NativeDevice.CreateShaderModule(new Ahjo.Wgpu.ShaderModuleDescriptor { Source = Ahjo.Wgpu.ShaderSource.FromWgsl(Encoding.UTF8.GetBytes(arguments.Specialize(FragmentData!))) });
-        WGPUPipelineLayoutImpl* layout = arguments == null ? null : WgpuShaderBinding.CreateLayout(_owner, arguments);
+        WGPUPipelineLayoutImpl* layout = arguments == null ? null : WgpuShaderBinding.CreateLayout(_owner, arguments, RequiresArguments);
         try
         {
             byte[] vertexEntry = Encoding.UTF8.GetBytes(VertexData.EntryPoint);

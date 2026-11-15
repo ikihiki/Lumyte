@@ -38,10 +38,10 @@ internal sealed class PublicRetainedApiProbeCommands(IGraphicsCommandBuffer inne
     public void Finish() => inner.Finish();
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData => inner.CopyBuffer(source, destination);
+        where T : IShaderData => inner.CopyBuffer(source, destination);
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData => inner.Barrier(barrier);
+        where T : IShaderData => inner.Barrier(barrier);
 
     public void Dispose() => inner.Dispose();
 
@@ -50,7 +50,7 @@ internal sealed class PublicRetainedApiProbeCommands(IGraphicsCommandBuffer inne
         public void SetArgumentTable(IArgumentTable table) => inner.SetArgumentTable(table);
 
         public void SetArguments<T>(in T arguments)
-            where T : struct, IShaderArguments
+            where T : IShaderArguments
             => inner.SetArguments(in arguments);
 
         public void SetPipeline(IGraphicsPipeline pipeline) => inner.SetPipeline(pipeline);

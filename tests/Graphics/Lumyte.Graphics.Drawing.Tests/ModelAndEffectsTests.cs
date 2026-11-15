@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using Lumyte.Graphics.Abstractions;
@@ -14,9 +15,11 @@ public sealed class ModelAndEffectsTests
     [Fact]
     public void ModelAndEffectSchemasPackGeneratedValues()
     {
+        ShaderTransfer.ReflectFields(typeof(ModelVertex));
+        ShaderTransfer.ReflectFields(typeof(ModelMaterial));
         var vertex = new ModelVertex(Vector3.UnitX, Vector3.UnitY, new(1, 0, 0, -1), new(0.25f, 0.5f), Vector4.One);
         ModelMaterial material = ModelDrawing.DefaultMaterial;
-        ModelDrawArguments arguments = default(ModelDrawArguments) with
+        ModelDrawArguments arguments = new ModelDrawArguments(null!, default, default, default, default, default, default, default, default, default, default, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!) with
         {
             Material = material,
             World = Matrix4x4.Identity,
@@ -33,44 +36,45 @@ public sealed class ModelAndEffectsTests
             ShaderTargetData fs = DrawingShaders.LoadModelFragment().GetTarget(target);
             ShaderDataLayout.ValidateProgram(vs, fs);
             var layout = ShaderDataLayout.Data(vs, "ModelVertex");
-            byte[] packed = layout.Pack(IShaderArguments.Capture(in vertex), (_, _) => throw new InvalidOperationException());
+            layout.ValidateTransferLayout(Unsafe.SizeOf<ModelVertex>(), ShaderTransfer.Fields<ModelVertex>(), "ModelVertex");
+            byte[] packed = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in vertex, 1)).ToArray();
             Assert.Equal(ModelVertex.SizeInBytes, packed.Length);
             Assert.Equal(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref vertex, 1)).ToArray(), packed);
             Assert.Equal(vertex, ModelVertex.AsVertices(packed)[0]);
             Assert.True(layout.Matches(ShaderDataLayout.Data(fs, "ModelVertex")));
             Assert.Equal(1, BitConverter.ToSingle(packed, 0));
             var materialLayout = ShaderDataLayout.Data(vs, "ModelMaterial");
-            Assert.NotEmpty(materialLayout.Pack(IShaderArguments.Capture(in material), (_, _) => throw new InvalidOperationException()));
-            int references = 0;
-            var root = ShaderDataLayout.Root(vs, "arguments");
-            Assert.NotEmpty(root.Pack(IShaderArguments.Capture(in arguments), (_, _) =>
-            {
-                references++;
-                return new byte[16];
-            }));
-            Assert.Equal(11, references);
+            materialLayout.ValidateTransferLayout(Unsafe.SizeOf<ModelMaterial>(), ShaderTransfer.Fields<ModelMaterial>(), "ModelMaterial");
+            var root = ShaderDataLayout.Data(vs, "ModelDrawArguments");
+            ShaderValueSnapshot diagnostic = IShaderArguments.Capture(in arguments);
+            root.ValidateTransferLayout(diagnostic.Data.Length, diagnostic.GetDiagnosticFields(), diagnostic.ShaderTypeName);
+            root.ValidateArguments(diagnostic);
+            Assert.Equal(11, diagnostic.Values.Count);
+            var nativeRoot = ShaderDataLayout.Root(vs, "arguments");
+            var rootArguments = new ModelDrawRoot(new TestReference<ModelDrawArguments>());
+            ShaderValueSnapshot rootDiagnostic = IShaderArguments.Capture(in rootArguments);
+            nativeRoot.ValidateTransferLayout(rootDiagnostic.Data.Length, rootDiagnostic.GetDiagnosticFields(), rootDiagnostic.ShaderTypeName);
+            nativeRoot.ValidateArguments(rootDiagnostic);
+            Assert.Equal(16, rootDiagnostic.Data.Length);
+            Assert.Single(rootDiagnostic.Values);
+            Assert.Throws<ArgumentException>(() => nativeRoot.ValidateTransferLayout(diagnostic.Data.Length, diagnostic.GetDiagnosticFields(), diagnostic.ShaderTypeName));
+            Assert.True(root.Matches(ShaderDataLayout.Data(fs, "ModelDrawArguments")));
         }
     }
 
-    /// <summary>Custom layout encoding may handle unresolved references, but native argument admission remains strict.</summary>
+    /// <summary>Read-only diagnostics may inspect unresolved references, but native selection remains strict.</summary>
     [Fact]
-    public void CustomReferencePackingDoesNotRelaxNativeAdmission()
+    public void UnresolvedReferencesCannotSelectNativeRoots()
     {
-        ModelDrawArguments arguments = default;
+        ModelDrawRoot arguments = new(null!);
         ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
         foreach (ShaderTarget target in Enum.GetValues<ShaderTarget>())
         {
             var layout = ShaderDataLayout.Root(DrawingShaders.LoadModelVertex().GetTarget(target), "arguments");
             Assert.Throws<ArgumentException>(() => layout.ValidateArguments(snapshot, validateReferences: true));
-            int encoded = 0;
-            byte[] bytes = layout.Pack(snapshot, (member, _) =>
-            {
-                Assert.Null(member.Reference);
-                encoded++;
-                return new byte[16];
-            });
-            Assert.Equal(11, encoded);
-            Assert.Equal(layout.Size, bytes.Length);
+            layout.ValidateArguments(snapshot);
+
+            Assert.Throws<ArgumentException>(() => TestShaderTransfer.Create(in arguments, size => new MemoryStorage(size), _ => new byte[16]));
         }
     }
 
@@ -87,7 +91,7 @@ public sealed class ModelAndEffectsTests
             JsonNode size = type["sizes"]!.AsArray().Single(entry => entry!["kind"]!.GetValue<string>() == "uniform")!;
             size["value"] = 68;
             var changed = ShaderArtifact.PackTarget(target, data.Stage, data.EntryPoint, data.CompilerVersion, data.Code, reflection.ToJsonString());
-            Assert.Throws<NotSupportedException>(() => ModelVertex.ValidateShaderLayout(changed, target));
+            Assert.Throws<ArgumentException>(() => ModelVertex.ValidateShaderLayout(changed, target));
         }
     }
 
@@ -154,5 +158,22 @@ public sealed class ModelAndEffectsTests
         public ulong Count => 1;
 
         public IGpuRef<T> GetElement(ulong index) => index == 0 ? this : throw new ArgumentOutOfRangeException(nameof(index));
+    }
+
+    private sealed class MemoryStorage(int size) : ITestShaderRootStorage
+    {
+        private readonly byte[] _bytes = new byte[size];
+
+        public int Size => _bytes.Length;
+
+        public void Write(ReadOnlySpan<byte> bytes, int offset) => bytes.CopyTo(_bytes.AsSpan(offset));
+
+        public void Seal()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }

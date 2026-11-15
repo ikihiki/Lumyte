@@ -4,7 +4,6 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandBuffer
 {
-    private readonly ShaderDataTransferState _shaderData = new();
     private readonly List<IDisposable> _bindings = [];
     private readonly Direct3D12Device _owner;
     private object? _active;
@@ -12,6 +11,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     internal Direct3D12CommandBuffer(Direct3D12Device owner)
     {
         _owner = owner;
+
         Initialize();
     }
 
@@ -19,22 +19,22 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
 
     internal Direct3D12Device Owner => _owner;
 
-    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
-
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireRecording();
-        if (source.Buffer is not Direct3D12ShaderDataBuffer<T> src || destination.Buffer is not Direct3D12ShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
+        if (source.Buffer is not Direct3D12ShaderDataBuffer<T> src || destination.Buffer is not Direct3D12ShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count || dst.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+        src.ValidateAlive();
+        dst.ValidateAlive();
+        CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes)));
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);
@@ -234,8 +234,6 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         State = CommandBufferState.Disposed;
     }
 
-    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index);
-
     internal void ValidateSubmit()
     {
         if (State != CommandBufferState.Executable)
@@ -244,11 +242,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         }
     }
 
-    internal void MarkSubmitted()
-    {
-        _shaderData.Publish();
-        State = CommandBufferState.Submitted;
-    }
+    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
 
     internal void Complete(bool success)
     {

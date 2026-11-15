@@ -1,25 +1,57 @@
-using System.Numerics;
-using System.Runtime.InteropServices;
-
 namespace Lumyte.Graphics.Abstractions;
 
-internal readonly struct ShaderSnapshotWriter() : IShaderValueWriter
+// Explicit CPU inspection only. Snapshots are not a native upload destination.
+internal struct ShaderSnapshotWriter : IShaderValueWriter
 {
-    internal List<ShaderValue> Values { get; } = [];
+    internal readonly byte[] Data;
+    internal List<ShaderValue>? Values;
+    private int _position;
+    private bool _written;
+    private bool _completed;
 
-    public void WriteValue<T>(string path, in T value)
-        where T : unmanaged
+    internal ShaderSnapshotWriter(int size)
     {
-        Type type = typeof(T);
-        if (type != typeof(int) && type != typeof(uint) && type != typeof(float) && type != typeof(Vector2) && type != typeof(Vector3) && type != typeof(Vector4) && type != typeof(Matrix4x4))
-        {
-            throw new NotSupportedException("Unsupported numeric shader member type.");
-        }
-
-        T copy = value;
-        byte[] bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref copy, 1)).ToArray();
-        Values.Add(new(path, type, bytes, null, false));
+        ArgumentOutOfRangeException.ThrowIfNegative(size);
+        Data = new byte[size];
     }
 
-    public void WriteReference<T>(string path, IGpuRef<T>? value) => Values.Add(new(path, typeof(T), default, value, true));
+    public void WriteValue(ReadOnlySpan<byte> value)
+    {
+        ValidateWrite(value.Length);
+        value.CopyTo(Data.AsSpan(_position, value.Length));
+        _position += value.Length;
+        _written = true;
+    }
+
+    public void WriteReference<T>(IGpuRef<T>? value)
+    {
+        ValidateWrite(16);
+        (Values ??= []).Add(new(typeof(T), value, _position));
+        Data.AsSpan(_position, 16).Clear();
+        _position += 16;
+        _written = true;
+    }
+
+    internal void Complete()
+    {
+        if (_completed || !_written || _position != Data.Length)
+        {
+            throw new InvalidOperationException("The snapshot must contain exactly the static C# wire size and be completed once.");
+        }
+
+        _completed = true;
+    }
+
+    private readonly void ValidateWrite(int size)
+    {
+        if (_completed)
+        {
+            throw new InvalidOperationException("The snapshot is already complete.");
+        }
+
+        if (size > Data.Length - _position)
+        {
+            throw new ArgumentOutOfRangeException(nameof(size), "The write exceeds the static C# wire size.");
+        }
+    }
 }

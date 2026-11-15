@@ -29,6 +29,11 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+        if (signalSemaphore != null && (signalSemaphore is not BrowserSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner)))
+        {
+            throw new ArgumentException("Acquisition semaphore belongs to another device.", nameof(signalSemaphore));
+        }
+
         var status = (SurfaceStatus)BrowserInterop.GetSurfaceStatus(_surface.Native);
         if (status != SurfaceStatus.Success)
         {
@@ -36,6 +41,9 @@ internal sealed class BrowserSwapchain : IGraphicsSwapchain
         }
 
         var frame = new BrowserSurfaceFrame(this, BrowserInterop.AcquireSurfaceTexture(_surface.Native));
+
+        // Acquisition is synchronous, including when no semaphore was supplied;
+        // completion retires readiness without consuming the binary signal.
         return ValueTask.FromResult(new SurfaceAcquireResult(SurfaceStatus.Success, frame));
     }
 

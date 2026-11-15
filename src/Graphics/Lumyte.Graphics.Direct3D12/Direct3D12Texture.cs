@@ -66,7 +66,8 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         _ = Native;
-        return new Direct3D12TextureView(this, TextureValidation.Resolve(this, desc));
+        var view = new Direct3D12TextureView(this, TextureValidation.Resolve(this, desc));
+        return view;
     }
 
     public void Dispose()

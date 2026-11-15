@@ -4,7 +4,6 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
 {
-    private readonly ShaderDataTransferState _shaderData = new();
     private readonly List<IDisposable> _bindings = [];
     private readonly WgpuDevice _owner;
     private object? _active;
@@ -12,6 +11,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
     internal WgpuCommandBuffer(WgpuDevice owner)
     {
         _owner = owner;
+
         Initialize();
     }
 
@@ -19,10 +19,8 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
 
     internal WgpuDevice Owner => _owner;
 
-    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
-
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireRecording();
         if (source.Buffer is not WgpuShaderDataBuffer<T> src || destination.Buffer is not WgpuShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
@@ -30,11 +28,11 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+        CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes)));
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);
@@ -233,8 +231,6 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
         State = CommandBufferState.Disposed;
     }
 
-    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index);
-
     internal void ValidateSubmit()
     {
         if (State != CommandBufferState.Executable)
@@ -243,11 +239,7 @@ internal sealed unsafe partial class WgpuCommandBuffer : IGraphicsCommandBuffer
         }
     }
 
-    internal void MarkSubmitted()
-    {
-        _shaderData.Publish();
-        State = CommandBufferState.Submitted;
-    }
+    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
 
     internal void Complete(bool success)
     {

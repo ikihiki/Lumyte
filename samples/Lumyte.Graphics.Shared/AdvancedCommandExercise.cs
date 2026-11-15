@@ -239,7 +239,9 @@ public static class AdvancedCommandExercise
         using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
         using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 3, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using IArgumentTable table = device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1, BufferCapacity = 2 });
-        var root = new IndirectComputeArguments(table.WriteBuffer(0, command.SliceElements(0, 1)), table.WriteBuffer(1, output.SliceElements(0, 3)));
+        using IArgumentTable executorTable = device.CreateArgumentTable(new() { TextureCapacity = 1, SamplerCapacity = 1, BufferCapacity = 1 });
+        var execution = new IndirectExecuteArguments(executorTable.WriteBuffer(0, output.SliceElements(0, 3), ShaderBufferAccess.ReadWrite));
+        var root = new IndirectComputeArguments(table.WriteBuffer(0, command.SliceElements(0, 1), ShaderBufferAccess.ReadWrite), table.WriteBuffer(1, output.SliceElements(0, 3), ShaderBufferAccess.ReadWrite));
         using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
         IComputeEncoder compute = commands.BeginComputePass(new());
         compute.SetPipeline(generator);
@@ -251,8 +253,7 @@ public static class AdvancedCommandExercise
         commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 3), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
         compute = commands.BeginComputePass(new());
         compute.SetPipeline(consumer);
-        compute.SetArgumentTable(table);
-        var execution = new IndirectExecuteArguments(root.Output);
+        compute.SetArgumentTable(executorTable);
         compute.SetArguments(in execution);
         compute.DispatchIndirect(command.SliceElements(0, 1));
         compute.End();

@@ -97,8 +97,8 @@ public sealed class GraphPassCapacityTests
         Assert.Equal(2, plan.PassNames.Count(name => name == "drawing2d.batch"));
         using var commands = new ProfilingCommands();
         plan.Record(commands);
-        Assert.Single(device.Tables);
-        Assert.Equal(4u, device.Tables[0].BufferCapacity);
+        Assert.Equal(2, device.Tables.Count);
+        Assert.All(device.Tables, table => Assert.Equal(2u, table.BufferCapacity));
         commands.Dispose();
     }
 }

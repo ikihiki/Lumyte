@@ -10,16 +10,20 @@ public sealed class RenderGraphRenderEncoder : IDisposable
     private readonly IRenderEncoder _native;
     private readonly IReadOnlyList<RenderGraphTexture> _colorAttachments;
     private readonly RenderGraphTexture? _depthAttachment;
+    private readonly Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _prepareArguments;
     private IGraphicsPipeline? _pipeline;
     private IReadOnlyList<ShaderResources>? _arguments;
     private bool _hasArguments;
     private object? _argumentPipeline;
     private bool _ended;
+    private IReadOnlyList<ShaderResources>? _pendingResources;
+    private bool _settingArguments;
 
     internal RenderGraphRenderEncoder(RenderGraphContext context, IRenderEncoder native, RenderGraphTexture[] colorAttachments, RenderGraphTexture? depthAttachment)
     {
         _context = context;
         _native = native;
+        _prepareArguments = context.ValidationEnabled ? PrepareArguments : null;
         _colorAttachments = Array.AsReadOnly((RenderGraphTexture[])colorAttachments.Clone());
         _depthAttachment = depthAttachment;
     }
@@ -102,12 +106,94 @@ public sealed class RenderGraphRenderEncoder : IDisposable
             throw new InvalidOperationException("Select a pipeline before setting its arguments.");
         }
 
-        ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
-        (IReadOnlyList<ShaderResources>? resources, ShaderValueSnapshot selected) = _context.SelectArguments(snapshot, _colorAttachments, graphics: true);
-        _native.SetArguments(selected);
-        _arguments = resources;
-        _hasArguments = true;
-        _argumentPipeline = _pipeline;
+        _settingArguments = true;
+        bool validationInstalled = false;
+        try
+        {
+            _pendingResources = _context.DeclaredArguments(_colorAttachments, graphics: true);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native, _colorAttachments);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
+            _native.SetArguments(in arguments);
+            _arguments = _pendingResources;
+            _hasArguments = true;
+            _argumentPipeline = _pipeline;
+        }
+        finally
+        {
+            try
+            {
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
+            }
+            finally
+            {
+                _pendingResources = null;
+                _settingArguments = false;
+            }
+        }
+    }
+
+    /// <summary>Snapshots an ordinary unmanaged root with the existing graph declaration rules.</summary>
+    /// <typeparam name="T">The unmanaged argument type.</typeparam>
+    /// <param name="arguments">The C# value to copy without conversion.</param>
+    /// <param name="rootParameter">The logical root parameter name.</param>
+    /// <param name="shaderTypeName">The shader structure name, or the C# type name.</param>
+    public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+        where T : unmanaged
+    {
+        EnsureActive();
+        if (_pipeline is null)
+        {
+            throw new InvalidOperationException("Select a pipeline before setting its arguments.");
+        }
+
+        _settingArguments = true;
+        bool validationInstalled = false;
+        try
+        {
+            _pendingResources = _context.DeclaredArguments(_colorAttachments, graphics: true);
+            if (_pendingResources is { } resources)
+            {
+                _context.BindResources(resources, _native, _colorAttachments);
+            }
+
+            if (_prepareArguments is not null)
+            {
+                _native.SetArgumentValidation(_prepareArguments);
+                validationInstalled = true;
+            }
+
+            _native.SetArguments(in arguments, rootParameter, shaderTypeName);
+            _arguments = _pendingResources;
+            _hasArguments = true;
+            _argumentPipeline = _pipeline;
+        }
+        finally
+        {
+            try
+            {
+                if (validationInstalled)
+                {
+                    _native.SetArgumentValidation(null);
+                }
+            }
+            finally
+            {
+                _pendingResources = null;
+                _settingArguments = false;
+            }
+        }
     }
 
     /// <summary>Records Draw with the previously selected arguments.</summary>
@@ -180,12 +266,30 @@ public sealed class RenderGraphRenderEncoder : IDisposable
         }
     }
 
+    private Action<IReadOnlyCollection<IShaderReference>>? PrepareArguments(IShaderReferenceMetadata references)
+    {
+        (IReadOnlyList<ShaderResources>? resources, Action<IReadOnlyCollection<IShaderReference>>? admit) =
+            _context.SelectArguments(references, _colorAttachments, graphics: true);
+        if (resources is not null)
+        {
+            _context.BindResources(resources, _native, _colorAttachments);
+        }
+
+        _pendingResources = resources;
+        return admit;
+    }
+
     private void ValidateExecution()
     {
         EnsureActive();
         if (_pipeline is null)
         {
             throw new InvalidOperationException("Select a pipeline before recording shader operations.");
+        }
+
+        if (_context.DeclaredArguments(_colorAttachments, graphics: true) is { } declaredResources)
+        {
+            _context.BindResources(declaredResources, _native, _colorAttachments);
         }
 
         // Borrowed graphs without a device cannot create logical resources; native execution validates its own root contract.
@@ -217,6 +321,11 @@ public sealed class RenderGraphRenderEncoder : IDisposable
 
     private void EnsureActive()
     {
+        if (_settingArguments)
+        {
+            throw new InvalidOperationException("Argument selection cannot be reentered.");
+        }
+
         _context.EnsureActive();
         if (_ended)
         {

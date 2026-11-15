@@ -8,6 +8,42 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 /// <summary>Verifies separated logical argument selection from the consumer boundary.</summary>
 public sealed partial class PublicGraphEncoderConsumerTests
 {
+    /// <summary>Removed snapshot setters and optional native-root fallbacks cannot return.</summary>
+    [Fact]
+    public void ConsumerApiRequiresTypedNativeRootFactories()
+    {
+        foreach (Type type in new[] { typeof(RenderGraphRenderEncoder), typeof(RenderGraphComputeEncoder), typeof(IRenderEncoder), typeof(IComputeEncoder) })
+        {
+            Assert.DoesNotContain(type.GetMethods(), method => method.GetParameters().Any(parameter =>
+                parameter.ParameterType == typeof(ShaderValueSnapshot)));
+            Assert.DoesNotContain(type.GetMethods(), method => method.Name.Contains("Snapshot", StringComparison.Ordinal));
+        }
+
+        Assert.Null(typeof(IComputeEncoder).Assembly.GetType("Lumyte.Graphics.Abstractions.IShaderRootEncoder"));
+        Assert.Null(typeof(IComputeEncoder).Assembly.GetType("Lumyte.Graphics.Abstractions.IShaderArgumentScope"));
+        Assert.Null(typeof(RenderGraphContext).Assembly.GetType("Lumyte.Graphics.RenderGraph.GraphRootArgumentScope"));
+        foreach (Type native in new[] { typeof(IRenderEncoder), typeof(IComputeEncoder) })
+        {
+            MethodInfo hook = Assert.Single(native.GetMethods(), method => method.Name == "SetArgumentValidation");
+            Assert.True(hook.IsAbstract);
+            Assert.Equal(typeof(void), hook.ReturnType);
+            Assert.Equal(typeof(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>>), Assert.Single(hook.GetParameters()).ParameterType);
+            Assert.NotNull(native.GetMethod("SetArgumentTable"));
+            Assert.DoesNotContain(native.GetMethods(), method => method.Name == "SetRootArguments");
+        }
+
+        foreach (Type graph in new[] { typeof(RenderGraphRenderEncoder), typeof(RenderGraphComputeEncoder) })
+        {
+            Assert.Null(graph.GetMethod("SetArgumentTable"));
+            Assert.Null(graph.GetMethod("SetArgumentValidation"));
+        }
+
+        Assert.Null(typeof(Lumyte.Graphics.Shared.ShaderBindingDependencies).GetProperty("Root"));
+        Assert.DoesNotContain(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "CreateSnapshot");
+        MethodInfo create = Assert.Single(typeof(Lumyte.Graphics.Shared.ShaderRootArguments).GetMethods(), method => method.Name == "Create");
+        Assert.False(create.GetParameters()[2].IsOptional);
+    }
+
     /// <summary>Execution signatures including names and defaults exactly match the ordinary encoders.</summary>
     [Fact]
     public void PublicExecutionSignaturesMatchOrdinaryEncoders()
@@ -17,10 +53,19 @@ public sealed partial class PublicGraphEncoderConsumerTests
 
         static void Check(Type graph, Type ordinary, string[] names)
         {
-            MethodInfo setter = Assert.Single(graph.GetMethods(), method => method.Name == "SetArguments");
+            MethodInfo[] setters = graph.GetMethods().Where(method => method.Name == "SetArguments").ToArray();
+            Assert.Equal(2, setters.Length);
+            MethodInfo setter = Assert.Single(setters, method => method.GetParameters().Length == 1);
             Assert.True(setter.IsGenericMethodDefinition);
             Assert.True(Assert.Single(setter.GetParameters()).ParameterType.IsByRef);
             Assert.Contains(typeof(IShaderArguments), Assert.Single(setter.GetGenericArguments()).GetGenericParameterConstraints());
+            MethodInfo numeric = Assert.Single(setters, method => method.GetParameters().Length == 3);
+            Assert.True(numeric.IsGenericMethodDefinition);
+            Assert.True(numeric.GetParameters()[0].ParameterType.IsByRef);
+            Type numericParameter = Assert.Single(numeric.GetGenericArguments());
+            Assert.True((numericParameter.GenericParameterAttributes & GenericParameterAttributes.NotNullableValueTypeConstraint) != 0);
+            MethodInfo ordinaryNumeric = Assert.Single(ordinary.GetMethods(), method => method.Name == "SetArguments" && method.GetParameters().Length == 3);
+            Assert.Equal(ordinaryNumeric.GetParameters().Skip(1).Select(Parameter), numeric.GetParameters().Skip(1).Select(Parameter));
             foreach (string name in names)
             {
                 MethodInfo actual = Assert.Single(graph.GetMethods(), method => method.Name == name);
@@ -72,7 +117,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void RenderSelectionFreezesValuesAndPreservesLastValidSelection()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Vertex);
         using var pipeline = new PublicGraphConsumerPipeline(artifact);
         using var other = new PublicGraphConsumerPipeline(artifact);
@@ -128,7 +173,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ComputeSelectionFreezesValuesForDirectAndIndirectDispatch()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         using var other = new PublicGraphConsumerComputePipeline(artifact);
@@ -162,7 +207,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void ArgumentFreeProgramsExecuteWithoutSetArguments()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         using var graphics = new PublicGraphConsumerPipeline(Artifact(ShaderStage.Vertex, hasRoot: false));
         using var compute = new PublicGraphConsumerComputePipeline(Artifact(ShaderStage.Compute, hasRoot: false));
         using var image = new TestTexture();
@@ -191,7 +236,7 @@ public sealed partial class PublicGraphEncoderConsumerTests
     [Fact]
     public void NativeSetFailurePreservesPreviousResourceSelection()
     {
-        using var graph = new RenderGraph(new PublicGraphConsumerDevice());
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
         ShaderArtifact artifact = Artifact(ShaderStage.Compute);
         using var pipeline = new PublicGraphConsumerComputePipeline(artifact);
         var first = new ConsumerArguments(1f);
@@ -214,5 +259,5 @@ public sealed partial class PublicGraphEncoderConsumerTests
         commands.Dispose();
     }
 
-    private static float ReadFloat(ShaderValueSnapshot snapshot) => MemoryMarshal.Read<float>(snapshot.Values.Single(value => value.Path == "Float").Data.Span);
+    private static float ReadFloat(ShaderValueSnapshot snapshot) => MemoryMarshal.Read<float>(snapshot.Data.Span[snapshot.GetDiagnosticFields().Single(field => field.Path == "Float").Offset..]);
 }

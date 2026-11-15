@@ -37,6 +37,7 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+
         if (_acquired)
         {
             throw new InvalidOperationException("Dispose the previous frame before acquiring again.");
@@ -63,6 +64,14 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
             try
             {
                 signal?.Signal();
+                if (signalSemaphore != null)
+                {
+                    frame.TrackAcquireSignal();
+                }
+                else
+                {
+                    // No queued signal: native acquisition is already synchronous.
+                }
             }
             catch
             {

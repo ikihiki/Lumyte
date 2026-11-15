@@ -69,7 +69,7 @@ public sealed class RenderGraphPreparationContext
     /// <param name="buffer">The declared shader data.</param>
     /// <returns>The borrowed allocation.</returns>
     public IGraphicsShaderDataBuffer<T> GetShaderDataBuffer<T>(RenderGraphPass pass, RenderGraphShaderDataBuffer<T> buffer)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         Check(pass, buffer, ResourceAccess.ShaderRead);
         return (IGraphicsShaderDataBuffer<T>)_plan.Resolve(buffer);
@@ -83,6 +83,8 @@ public sealed class RenderGraphPreparationContext
         Check(pass, sampler, ResourceAccess.ShaderRead);
         return (IGraphicsSampler)_plan.Resolve(sampler);
     }
+
+    internal object Resolve(RenderGraphResource resource) => _plan.Resolve(resource);
 
     internal bool IsGraphAllocation(object allocation) => _plan.ContainsAllocation(allocation);
 

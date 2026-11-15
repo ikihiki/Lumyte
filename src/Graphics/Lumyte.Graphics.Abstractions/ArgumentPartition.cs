@@ -31,7 +31,10 @@ internal sealed class ArgumentPartition(ArgumentTableBindingLimits limits) : IDi
         var write = new HashSet<ArgumentKey>();
         uint textures = 0;
         uint samplers = 0;
-        foreach (ResolvedArgument value in values)
+
+        // The selected table is bound as a whole, including registrations not
+        // referenced by this operation. Budget its complete physical shape.
+        foreach (ResolvedArgument value in PlanningValues.Concat(values))
         {
             ArgumentKey key = value.Key;
             int kind = key.Namespace;
@@ -63,7 +66,9 @@ internal sealed class ArgumentPartition(ArgumentTableBindingLimits limits) : IDi
             else
             {
                 ArgumentKey physical = key with { Type = typeof(void), Kind = 2, Count = key.Size, Stride = 1, Access = ArgumentBufferAccess.Read };
-                if ((key.Access & ArgumentBufferAccess.Read) != 0)
+
+                // ReadWrite is one writable descriptor that also supports logical reads.
+                if (key.Access == ArgumentBufferAccess.Read)
                 {
                     read.Add(physical);
                 }
