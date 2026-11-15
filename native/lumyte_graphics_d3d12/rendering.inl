@@ -299,8 +299,8 @@ API void commands_dispatch(Commands* commands, UINT x, UINT y, UINT z) noexcept
 {
     commands->list->Dispatch(x, y, z);
 }
-API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource* buffer, UINT64 gpu_address, UINT64 offset, UINT kind,
-                              ID3D12CommandSignature** output) noexcept
+API HRESULT commands_indirect(Device* device, Commands* commands, ID3D12Resource* buffer, UINT64 gpu_address,
+                              UINT64 offset, UINT kind, ID3D12CommandSignature** output) noexcept
 {
     D3D12_INDIRECT_ARGUMENT_DESC argument{};
     argument.Type = kind == 0   ? D3D12_INDIRECT_ARGUMENT_TYPE_DRAW
