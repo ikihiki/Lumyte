@@ -22,6 +22,7 @@ public sealed class PreparedUploadInitializationTests
             Caps = new()
             {
                 ShaderTarget = target,
+                PreferDrawLocalArgumentTables = target == ShaderTarget.Wgsl,
                 MaxBufferSize = 1UL << 30,
                 ArgumentTableBindingLimits = new() { BuffersPerDraw = partitioned ? 2u : uint.MaxValue },
             },

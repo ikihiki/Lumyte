@@ -54,6 +54,7 @@ public sealed class PreparedWholeTableBudgetTests
             Caps = new()
             {
                 ShaderTarget = ShaderTarget.Wgsl,
+                PreferDrawLocalArgumentTables = true,
                 MaxBufferSize = 1UL << 30,
                 ArgumentTableBindingLimits = new()
                 {

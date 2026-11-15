@@ -81,7 +81,7 @@ public sealed partial class Renderer2D
             {
                 frame = _retained.AcquireFrame();
                 List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
-                var plan = new DrawingArgumentPlan2D(_device);
+                var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
                 var context = new RenderPreparationContext2D(_device, info, _resources, plan);
 

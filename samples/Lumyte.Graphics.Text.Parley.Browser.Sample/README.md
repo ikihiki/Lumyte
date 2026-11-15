@@ -79,3 +79,14 @@ SDK / workload setは10.0.401、WASM runtimeは10.0.12です。
 BrowserのGPU実行確認はLinux x64です。
 
 公開APIと制約は[Parleyパッケージ](../../src/Graphics/Lumyte.Graphics.Text.Parley/README.md)を参照してください。
+
+## 引数テーブルの選択
+
+Browserは実際に選択したadapterの`info.architecture`が`swiftshader`の場合のみ、
+描画単位の引数テーブルを推奨します。情報が欠落・非公開の場合や実GPUでは従来の共有を維持します。
+`Renderer2D.ArgumentTableMode`で`Auto`（既定）、`Shared`、`DrawLocal`を明示でき、
+明示指定はデバイスの推奨より優先します。同じ指定は`DrawingArgumentPlan2D`にもあります。
+この指定は直接描画とretained描画の準備が対象で、RenderGraph所有のmaterializationは変更しません。
+
+SwiftShaderの検出は性能方針であり、GPUの機能保証や安全性の判定ではありません。
+`isFallbackAdapter`だけではSwiftShaderと判断しません。

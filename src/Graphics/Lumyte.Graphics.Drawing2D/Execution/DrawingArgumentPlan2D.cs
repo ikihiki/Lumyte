@@ -61,6 +61,9 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         (_graphFallback, _sharedSampler, _samplerFactory) = (graphFallback, sharedSampler, samplerFactory);
     }
 
+    /// <summary>Gets the sharing policy. Explicit modes override the device hint.</summary>
+    public DrawingArgumentTableMode ArgumentTableMode { get; init; } = DrawingArgumentTableMode.Auto;
+
     /// <summary>Gets the borrowed physical device.</summary>
     public IGraphicDevice Device => _device;
 
@@ -230,9 +233,14 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         using var profile = DrawingProfileScope.Start(13);
         try
         {
-            // WGSL binds every table registration, including unrelated draws.
-            // Keep portable shader dispatch proportional to this draw, not its neighbors.
-            Registrations.Materialize(cancellationToken: cancellationToken, shareTables: _device.Caps.ShaderTarget != ShaderTarget.Wgsl);
+            bool shareTables = ArgumentTableMode switch
+            {
+                DrawingArgumentTableMode.Auto => !_device.Caps.PreferDrawLocalArgumentTables,
+                DrawingArgumentTableMode.Shared => true,
+                DrawingArgumentTableMode.DrawLocal => false,
+                _ => throw new ArgumentOutOfRangeException(nameof(ArgumentTableMode)),
+            };
+            Registrations.Materialize(cancellationToken: cancellationToken, shareTables: shareTables);
             foreach (Upload upload in _uploads)
             {
                 if (upload.Trigger.IsReady)

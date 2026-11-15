@@ -30,6 +30,9 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     {
     }
 
+    /// <summary>Gets the argument table policy used for direct and retained preparation.</summary>
+    public DrawingArgumentTableMode ArgumentTableMode { get; init; } = DrawingArgumentTableMode.Auto;
+
     /// <summary>Prepares one-shot batches; creates no RenderGraph and never submits work.</summary>
     /// <param name="list">The pure drawing snapshot.</param>
     /// <param name="target">The borrowed target, in ColorAttachment state at Record.</param>
@@ -57,7 +60,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             try
             {
                 _retained.RetryCleanup();
-                var plan = new DrawingArgumentPlan2D(_device);
+                var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
                 var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan);
                 int index = 0;

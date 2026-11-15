@@ -6,18 +6,23 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Checks independent usage scopes do not inherit future sampled resources.</summary>
 public sealed class ArgumentTableIsolationTests
 {
-    /// <summary>Portable draws bind only their own resources; native targets retain opportunistic sharing.</summary>
+    /// <summary>Device hints select the default while explicit modes override the hint.</summary>
     /// <param name="target">The backend shader target.</param>
+    /// <param name="hint">The resolved device preference.</param>
+    /// <param name="mode">The explicit selection policy.</param>
     /// <param name="tables">The expected physical table count.</param>
     /// <returns>The completed resource preparation.</returns>
     [Theory]
-    [InlineData(ShaderTarget.Wgsl, 2)]
-    [InlineData(ShaderTarget.SpirV, 1)]
-    [InlineData(ShaderTarget.Dxil, 1)]
-    public async Task DrawingPlansBoundPortableBindingFanoutAsync(ShaderTarget target, int tables)
+    [InlineData(ShaderTarget.Wgsl, true, DrawingArgumentTableMode.Auto, 2)]
+    [InlineData(ShaderTarget.Wgsl, false, DrawingArgumentTableMode.Auto, 1)]
+    [InlineData(ShaderTarget.Wgsl, true, DrawingArgumentTableMode.Shared, 1)]
+    [InlineData(ShaderTarget.Wgsl, false, DrawingArgumentTableMode.DrawLocal, 2)]
+    [InlineData(ShaderTarget.SpirV, false, DrawingArgumentTableMode.Auto, 1)]
+    [InlineData(ShaderTarget.Dxil, false, DrawingArgumentTableMode.Auto, 1)]
+    public async Task DrawingPlansRespectHintAndExplicitModeAsync(ShaderTarget target, bool hint, DrawingArgumentTableMode mode, int tables)
     {
-        var device = new ProfilingDevice { Caps = new() { ShaderTarget = target, MaxBufferSize = 1UL << 30 } };
-        using var plan = new DrawingArgumentPlan2D(device);
+        var device = new ProfilingDevice { Caps = new() { ShaderTarget = target, PreferDrawLocalArgumentTables = hint, MaxBufferSize = 1UL << 30 } };
+        using var plan = new DrawingArgumentPlan2D(device) { ArgumentTableMode = mode };
         using IGraphicsBuffer<uint> first = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead });
         using IGraphicsBuffer<uint> second = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderRead });
         ShaderResources a = plan.Reserve();
@@ -33,8 +38,8 @@ public sealed class ArgumentTableIsolationTests
 
         Assert.Equal(tables, device.Tables.Count);
         Assert.Same(firstReference, duplicate);
-        Assert.Equal(target == ShaderTarget.Wgsl, !ReferenceEquals(ProfilingDevice.Owner(firstReference!), ProfilingDevice.Owner(secondReference!)));
-        Assert.All(device.Tables, table => Assert.Equal(target == ShaderTarget.Wgsl ? 1u : 2u, table.BufferCapacity));
+        Assert.Equal(tables == 2, !ReferenceEquals(ProfilingDevice.Owner(firstReference!), ProfilingDevice.Owner(secondReference!)));
+        Assert.All(device.Tables, table => Assert.Equal(tables == 2 ? 1u : 2u, table.BufferCapacity));
     }
 
     /// <summary>Disabling opportunistic sharing preserves every declared member in its own table.</summary>
