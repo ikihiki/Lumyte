@@ -4,6 +4,55 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## WriteReference単一境界とReferenceCount診断の分離（2026-11-15）
+
+fc1f5484c9383e07cc4d7f6f8f83f2fa7c41e7d2→8c2ec6f369a37334a394a38dee41c98095d3516e。
+Vulkan／D3D12／WgpuのWriteReferenceは一度のwriter容量検査後、最終16-byte destinationを取得して直接little-endian符号化する。
+WriteValue経由の再検査・16-byte stack temporary・CopyToを除去した。kind／device／table／checked offset・count変換は
+書込み前に行い、成功後だけcursorとimplicit table hintを進める。全reserved bytesを非zero初期値から明示的に0へ戻す。
+Vulkanはcached GPU address＋offsetまたはslot、D3D12はslot＋absolute byte offset、Wgpuはslot＋registration-relative offsetを維持する。
+BrowserはJSObjectをnative Spanとして借りられないため、bounded stack16と同期bridge転送を残すが、WriteValueを呼び戻さない。
+Browserをzero-copyとは呼ばない。native Setのwhole-root stackとWebGPU uniform generation所有権は変更しない。
+
+四raw backendのexpectedCount／referenceCount state、ValidateExpectedCount、factory／typed CopyFromのT.ReferenceCount読取りを除去した。
+functional array indexingにdeclared countを使う箇所はない。必須static API／generatorのReferenceCount宣言は残し、
+その範囲・over／under契約検査はValidation layerだけが行う。layerは不可能なcountをproducer前に、overを余分なnative参照write前に、
+underをnative Set発行前に拒否する。producerは一度だけ。参照countに矛盾してもbytesが合法なraw codecはcaller preconditionとして扱う。
+一方、encoded logical element Countのuint変換、実byte容量・overflow・completed状態・full-byte completionは全構成で必須である。
+
+厳密検証:
+
+- 全host Release3,360成功・失敗0・120skip。Graphics Debug／Release各283成功・99skip、Graph各140成功・skip0。
+- Validation Debug／Release各97成功、raw／wrapped Vulkan・Wgpu targeted各70成功・失敗0・skip0。
+- D3D12管理側Debug／Release各55成功・Windows依存7skip。新規16ケースは実internal writer／table／registrationのmanaged seamを使う。
+- 非zero-prefill ABI、reserved zero、sentinel、15-byte tail、checked offset／count overflow、失敗後cursor再利用、foreign／disposed／mixed table、
+  full-byte completion、raw getter非読取り、layerの不正count拒否を検査した。IL／source guardはnative三backendのlocalloc／WriteValue再呼出しを拒否する。
+- Browser Release compile／JS syntax、Markdown／diff、独立source review成功。Windows／Browser runtimeは未検証。
+
+固定した同一public fixtureで、Radeon 8060S／RADV、SDK10.0.403／runtime10.0.14、Release raw Vulkanを小規模ABBA比較した。
+2refs／112-byteの再利用入力配列をCopyし、各観測7iterations、4ケース×4launch=16 child、112 iteration推定値を保存。
+各欄はbaseline→candidate median µs/op、括弧内はB/A差。機構二変更を組み合わせた結果であり、単独寄与は分離しない。
+
+| ケース | B1/A1 | B2/A2 | 判定 |
+| --- | --- | --- | --- |
+| mapped CPU Copy・1要素 | 0.065795900→0.065413841（−0.581%） | 0.065553620→0.066820727（+1.933%） | 方向不一致、安定改善なし |
+| mapped CPU Copy・64要素 | 2.499240914→2.371257337（−5.121%） | 2.544785558→2.350200966（−7.646%） | 両ペア5%以上短縮 |
+| mapped CPU Copy・1024要素 | 40.620183171→38.087531122（−6.235%） | 41.684157346→38.643375510（−7.295%） | 両ペア5%以上短縮 |
+| Set＋dispatch＋submit／completion・64回 | 1328.350429688→1304.595429688（−1.788%） | 1332.130625000→1326.248000000（−0.442%） | material E2E改善とはしない |
+
+事前基準は両ペアのmedianが同方向5%以上。Copy1の第2ペアには1.267 ns/opの回帰があり、隠さない。
+managed allocationはCPU Copyが両版0 B/op、Set完了が両版83,896 B/opで不変。11外れ値を全て残し、通常priorityで16件の
+Permission denied警告を記録した。入力更新は従来fixtureのCPU Copyに含み、input配列・参照作成とshader／pipeline setupは計測外。
+Set完了はGPU completionまでのCPU wallであり、pure CPU Set／GPU timestamp／FPSではない。intrusive変更を避けCPUSet probeは省略した。
+両版の全weighted Matrix16／Color4・参照・duplicate8・padding32・転送後mutation freeze oracleに成功。
+Source／harness／prebuilt binaryの実行前後manifest、全16 child exit0とfull JSONのOriginalValues／measurement対応を検証した。
+
+rawと未丸めmedian／P95／allocation／CSV／JSON／全観測はlocal-only:
+Lumyte/artifacts/reference-wire-20261115/out/summary/およびA1／B1／B2／A2。
+古い凍結benchmark source／結果は変更せず、新しいraw binaries／gzip／大きいdocs dataは追加しない。
+ログはartifacts/validation22-{final-fullhost,graphics-debug,unit-debug,graph-debug,d3d-release,hardware-debug,hardware-release,browser,markdown}.log。
+以下は以前の検証分離・測定checkpoint履歴であり、raw常時ReferenceCount検査の記述は最新contractではない。
+
 ## 独立ValidationDevice decorator project（2026-11-15）
 
 b2d61cdb621eaef4a17ac8991ebab360e0dd7196を基準に、明示要求された検証project分離を実装した。
