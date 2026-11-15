@@ -35,8 +35,6 @@ internal sealed class BrowserSampler : IGraphicsSampler
             return;
         }
 
-        _owner.Validation?.Release(this);
-
         _native.Dispose();
         _disposed = true;
     }

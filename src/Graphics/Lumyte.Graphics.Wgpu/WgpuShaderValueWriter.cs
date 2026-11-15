@@ -9,17 +9,14 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
     private readonly int _size;
     private readonly WgpuRootStorage? _root;
     private readonly Span<byte> _upload;
-    private readonly ShaderDataLayout? _diagnostic;
     private readonly int _expectedCount;
-    private readonly HashSet<IShaderReference>? _collector;
-    private IShaderReference[]? _dependencies;
     private WgpuArgumentTable? _table;
     private int _position;
     private int _referenceCount;
     private bool _written;
     private bool _completed;
 
-    internal WgpuShaderValueWriter(WgpuDevice owner, int size, WgpuRootStorage? root, Span<byte> upload, int expectedCount, ShaderDataLayout? diagnostic, bool collect = false, HashSet<IShaderReference>? collector = null)
+    internal WgpuShaderValueWriter(WgpuDevice owner, int size, WgpuRootStorage? root, Span<byte> upload, int expectedCount)
     {
         this = default;
         ValidateExpectedCount(size, expectedCount);
@@ -27,10 +24,7 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
         _size = size;
         _root = root;
         _upload = upload;
-        _diagnostic = diagnostic;
         _expectedCount = expectedCount;
-        _collector = collector;
-        _dependencies = collect ? (expectedCount == 0 ? Array.Empty<IShaderReference>() : new IShaderReference[expectedCount]) : null;
     }
 
     internal WgpuArgumentTable? Table => _table;
@@ -59,7 +53,6 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
             throw new InvalidOperationException("The codec exceeds its declared reference count.");
         }
 
-        _diagnostic?.ValidateReference(typeof(T), reference, _position);
         if (reference is not GpuReference<T> dependency)
         {
             throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
@@ -71,10 +64,6 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
         }
 
         table.ThrowIfDisposed();
-        if (_owner.Validation != null)
-        {
-            dependency.ValidateRegistration();
-        }
 
         if (_table != null && !ReferenceEquals(_table, table))
         {
@@ -94,12 +83,7 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
         BinaryPrimitives.WriteUInt32LittleEndian(wire[4..], checked((uint)(dependency.OffsetInBytes - dependency.RegistrationOffsetInBytes)));
         BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], checked((uint)dependency.Count));
         WriteValue(wire);
-        if (_dependencies != null)
-        {
-            _dependencies[_referenceCount] = dependency;
-        }
 
-        _collector?.Add(dependency);
         _referenceCount++;
     }
 
@@ -111,7 +95,7 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
         }
     }
 
-    internal IShaderReferenceMetadata? Complete()
+    internal void Complete()
     {
         if (!_written || _completed || _position != _size || _referenceCount != _expectedCount)
         {
@@ -119,10 +103,6 @@ internal ref struct WgpuShaderValueWriter : IShaderValueWriter
         }
 
         _completed = true;
-        _diagnostic?.ValidateReferenceCount(_referenceCount);
-        IShaderReference[]? dependencies = _dependencies;
-        _dependencies = null;
-        return dependencies == null ? null : WgpuReferenceMetadata.TakeOwnership(dependencies);
     }
 
     private readonly void ValidateWrite(int length)

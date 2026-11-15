@@ -14,7 +14,6 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
         Validate(desc);
         Owner.Check(NativeMethods.SwapchainCreate(Owner.Native, surface.Window, desc.Width, desc.Height, Direct3D12Texture.NativeFormat(desc.Format), desc.PresentMode == PresentMode.Immediate ? 1 : 0, out _native));
         Configuration = desc;
-        Owner.Validation?.Register(this, surface);
     }
 
     public SwapchainDesc Configuration { get; private set; }
@@ -24,8 +23,6 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
     public void Reconfigure(SwapchainDesc desc)
     {
         ValidateAlive();
-        Owner.Validation?.Release(this);
-        Owner.Validation?.Register(this, _surface);
         Validate(desc);
         if (_acquired)
         {
@@ -40,10 +37,6 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
-        if (signalSemaphore != null)
-        {
-            Owner.Validation?.PresentationSignalValidate(signalSemaphore);
-        }
 
         if (_acquired)
         {
@@ -71,19 +64,13 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
             try
             {
                 signal?.Signal();
-                Owner.Validation?.AcquireTexture(frame.AcquisitionOperation, frame.Texture, signalSemaphore);
                 if (signalSemaphore != null)
                 {
-                    Owner.Validation?.PresentationSignaled(frame.AcquisitionOperation, signalSemaphore);
-                    if (Owner.Validation != null)
-                    {
-                        frame.TrackAcquireSignal();
-                    }
+                    frame.TrackAcquireSignal();
                 }
                 else
                 {
                     // No queued signal: native acquisition is already synchronous.
-                    Owner.Validation?.CompleteSemaphores(frame.AcquisitionOperation);
                 }
             }
             catch
@@ -106,7 +93,6 @@ internal sealed class Direct3D12Swapchain : IGraphicsSwapchain
     {
         if (_native != 0)
         {
-            Owner.Validation?.Release(this);
             NativeMethods.SwapchainDestroy(_native);
         }
 

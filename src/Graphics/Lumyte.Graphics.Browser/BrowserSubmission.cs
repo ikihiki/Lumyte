@@ -16,7 +16,6 @@ internal sealed class BrowserSubmission(BrowserDevice owner, BrowserCommandBuffe
                 _status = owner.Status == GraphicsDeviceStatus.Lost ? SubmissionStatus.Failed : (SubmissionStatus)BrowserInterop.GetSubmissionStatus(handle);
                 if (_status != SubmissionStatus.Pending)
                 {
-                    owner.Validation?.CompleteSemaphores(this);
                     foreach (BrowserCommandBuffer command in commands)
                     {
                         command.Complete(_status == SubmissionStatus.Completed);

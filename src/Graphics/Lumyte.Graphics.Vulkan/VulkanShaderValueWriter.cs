@@ -8,17 +8,14 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
     private readonly VulkanDevice _owner;
     private readonly int _size;
     private readonly Span<byte> _destination;
-    private readonly ShaderDataLayout? _diagnostic;
     private readonly int _expectedCount;
-    private readonly HashSet<IShaderReference>? _collector;
-    private IShaderReference[]? _dependencies;
     private VulkanArgumentTable? _table;
     private int _position;
     private int _referenceCount;
     private bool _written;
     private bool _completed;
 
-    internal VulkanShaderValueWriter(VulkanDevice owner, int size, Span<byte> destination, int expectedCount, ShaderDataLayout? diagnostic, bool collect = false, HashSet<IShaderReference>? collector = null)
+    internal VulkanShaderValueWriter(VulkanDevice owner, int size, Span<byte> destination, int expectedCount)
     {
         this = default;
         ValidateExpectedCount(size, expectedCount);
@@ -30,10 +27,7 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         _owner = owner;
         _size = size;
         _destination = destination;
-        _diagnostic = diagnostic;
         _expectedCount = expectedCount;
-        _collector = collector;
-        _dependencies = collect ? (expectedCount == 0 ? Array.Empty<IShaderReference>() : new IShaderReference[expectedCount]) : null;
     }
 
     internal VulkanArgumentTable? Table => _table;
@@ -55,7 +49,6 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
             throw new InvalidOperationException("The codec exceeds its declared reference count.");
         }
 
-        _diagnostic?.ValidateReference(typeof(T), reference, _position);
         if (reference is not GpuReference<T> dependency)
         {
             throw new ArgumentException("A shader reference must originate from an argument table.", nameof(reference));
@@ -67,7 +60,6 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         }
 
         table.ThrowIfDisposed();
-        dependency.ValidateRegistration();
         if (_table != null && !ReferenceEquals(_table, table))
         {
             throw new ArgumentException("Shader references must use one argument table.", nameof(reference));
@@ -94,12 +86,7 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
 
         BinaryPrimitives.WriteUInt32LittleEndian(wire[8..], checked((uint)dependency.Count));
         WriteValue(wire);
-        if (_dependencies != null)
-        {
-            _dependencies[_referenceCount] = dependency;
-        }
 
-        _collector?.Add(dependency);
         _referenceCount++;
     }
 
@@ -111,7 +98,7 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         }
     }
 
-    internal IShaderReferenceMetadata? Complete()
+    internal void Complete()
     {
         if (!_written || _completed || _position != _size || _referenceCount != _expectedCount)
         {
@@ -119,10 +106,6 @@ internal unsafe ref struct VulkanShaderValueWriter : IShaderValueWriter
         }
 
         _completed = true;
-        _diagnostic?.ValidateReferenceCount(_referenceCount);
-        IShaderReference[]? dependencies = _dependencies;
-        _dependencies = null;
-        return dependencies == null ? null : VulkanReferenceMetadata.TakeOwnership(dependencies);
     }
 
     private readonly void ValidateWrite(int length)

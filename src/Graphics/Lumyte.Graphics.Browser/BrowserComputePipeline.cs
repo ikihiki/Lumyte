@@ -21,7 +21,6 @@ internal sealed partial class BrowserComputePipeline : IGraphicsComputePipeline
         Data = PipelineValidation.Shader(shader, owner.Caps.ShaderTarget, ShaderStage.Compute, owner.Caps);
         RequiresArguments = ShaderDataLayout.HasRoot(Data);
         Initialize();
-        owner.Validation?.Use(this, desc.ComputeShader);
     }
 
     public ComputePipelineDesc Desc { get; }
@@ -38,9 +37,6 @@ internal sealed partial class BrowserComputePipeline : IGraphicsComputePipeline
         {
             return;
         }
-
-        _owner.Validation?.Release(this);
-        _owner.Validation?.Discard(this);
 
         DisposeNative();
         _disposed = true;

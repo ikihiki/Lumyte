@@ -27,8 +27,6 @@ internal sealed unsafe class VulkanSemaphore : IGraphicsSemaphore
             return;
         }
 
-        Owner.Validation?.Release(this);
-
         Owner.Api.DestroySemaphore(Owner.NativeDevice, Native, null);
         _disposed = true;
     }

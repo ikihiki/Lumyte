@@ -12,14 +12,11 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private RenderStateSnapshot? _state;
     private IndexFormat? _indexFormat;
     private ulong _indexCount;
-    private object? _indexBuffer;
-    private ulong _indexOffset;
     private bool _viewport;
     private bool _scissor;
     private bool _blend;
     private bool _stencil;
 
-    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private BrowserRootStorage? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
@@ -36,7 +33,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         }
 
         selected.ThrowIfDisposed();
-        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -44,7 +40,10 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
-        _argumentValidation = prepare;
+        if (prepare != null)
+        {
+            throw new NotSupportedException("Use ValidationDevice for argument validation.");
+        }
     }
 
     public void SetArguments<T>(in T value)
@@ -56,7 +55,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         _settingArguments = true;
         try
         {
-            BrowserRootStorage root = BrowserShaderTransfer.CreateRoot(owner.Owner, in value, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            BrowserRootStorage root = BrowserShaderTransfer.CreateRoot(owner.Owner, in value);
             SelectRoot(root, program);
         }
         finally
@@ -74,7 +73,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         _settingArguments = true;
         try
         {
-            BrowserRootStorage root = BrowserShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+            BrowserRootStorage root = BrowserShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName);
             SelectRoot(root, program);
         }
         finally
@@ -94,7 +93,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         }
 
         program.ValidateAlive();
-        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
@@ -162,18 +160,15 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(false);
         BrowserInterop.Draw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
-        validationRecording?.Commit();
     }
 
     public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
         {
@@ -182,34 +177,25 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(true);
-        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), checked(_indexOffset + ((ulong)firstIndex * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul))), checked((ulong)indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         BrowserInterop.DrawIndexed(handle, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
-        validationRecording?.Commit();
     }
 
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         BrowserBuffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
-        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         BrowserInterop.DrawIndirect(handle, buffer.Native, arguments.OffsetInBytes, false);
-        validationRecording?.Commit();
     }
 
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         BrowserBuffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
-        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
-        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), _indexOffset, checked(_indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         BrowserInterop.DrawIndirect(handle, buffer.Native, arguments.OffsetInBytes, true);
-        validationRecording?.Commit();
     }
 
     public void End()
@@ -221,18 +207,11 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
         where T : unmanaged
     {
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         BrowserBuffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
         BrowserInterop.SetIndexBuffer(handle, buffer.Native, (int)format, indices.OffsetInBytes, indices.SizeInBytes);
-        validationRecording?.Commit();
         _indexFormat = format;
         _indexCount = indices.Count;
-        if (owner.Owner.Validation != null)
-        {
-            _indexBuffer = buffer;
-            _indexOffset = indices.OffsetInBytes;
-        }
     }
 
     private BrowserBuffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -265,8 +244,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
         _pipeline.ValidateAlive();
     }
-
-    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 
     private void SelectRoot(BrowserRootStorage root, BrowserGraphicsPipeline program)
     {
@@ -334,12 +311,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         ShaderBindingData? bindingData = null;
         if (_pipeline.RequiresArguments || selectedTable != null)
         {
-            if (_pipeline.RequiresArguments && owner.Owner.Validation is { } validation)
-            {
-                var dependencies = ShaderBindingDependencies.Collect(_arguments!.Arguments, selectedTable, owner.ReadShaderDependencies);
-                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
-            }
-
             bindingData = new(registrations, _pipeline.RequiresArguments ? ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, _arguments!.Arguments.RootParameter) : _pipeline.VertexData, owner.Owner.Caps);
         }
 

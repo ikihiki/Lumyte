@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -37,11 +38,9 @@ public sealed class ShaderResourcesUnmanagedGpuTests
     {
         foreach (bool validation in new[] { false, true })
         {
-            using var device = VulkanDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = VulkanDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await RenderAsync(device, ShaderTarget.SpirV);
         }
@@ -54,11 +53,9 @@ public sealed class ShaderResourcesUnmanagedGpuTests
     {
         foreach (bool validation in new[] { false, true })
         {
-            using var device = WgpuDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = WgpuDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await RenderAsync(device, ShaderTarget.Wgsl);
         }

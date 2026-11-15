@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Reflection;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -30,6 +31,8 @@ public sealed class NativeShaderWriterAbiTests
         void main() { NativeAbiValue value = arguments.Values.Load(0); value.Writable.Store(0, value.Number); }
         """;
 
+    private delegate Span<byte> MappedUpload(ulong offset, int count);
+
     /// <summary>WGSL stores stable slots, relative subranges, exact counts, and reserved zeros.</summary>
     /// <returns>The native checks with validation disabled and enabled.</returns>
     [GpuFact]
@@ -38,11 +41,9 @@ public sealed class NativeShaderWriterAbiTests
         ShaderArtifact artifact = await CompileAsync(ShaderTarget.Wgsl);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = WgpuDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = WgpuDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CheckAsync(device, artifact, ShaderTarget.Wgsl, validation);
         }
@@ -56,14 +57,12 @@ public sealed class NativeShaderWriterAbiTests
         ShaderArtifact artifact = await CompileAsync(ShaderTarget.SpirV);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = VulkanDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = VulkanDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CheckAsync(device, artifact, ShaderTarget.SpirV, validation);
-            await CheckAddressLifetimeAsync(device);
+            await CheckAddressLifetimeAsync(raw);
         }
     }
 
@@ -133,22 +132,13 @@ public sealed class NativeShaderWriterAbiTests
             Assert.All(captured, reference => Assert.Contains(reference, nextRevision!.References));
         }
 
+        // Inspect the actual mapped backend allocation without adopting its raw buffer
+        // into the validation domain or recording commands with mixed identities.
+        object backendUpload = NativeIdentity(upload);
+        object storage = backendUpload.GetType().GetProperty("Storage", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backendUpload)!;
+        MappedUpload mapped = storage.GetType().GetMethod("GetMappedUploadSpan", BindingFlags.Instance | BindingFlags.NonPublic)!.CreateDelegate<MappedUpload>(storage);
+        byte[] actual = mapped(0, 88).ToArray();
         upload.Unmap();
-
-        // Diagnostic reflection exposes only the existing raw storage, never a new production API.
-        IGraphicsBuffer<byte> raw = Assert.IsAssignableFrom<IGraphicsBuffer<byte>>(upload.GetType().GetProperty("Storage", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(upload));
-        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = 88, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
-        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = raw.SliceElements(0, 88), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-        commands.CopyBuffer(raw.SliceElements(0, 88), readback.SliceElements(0, 88));
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, 88), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
-        commands.Finish();
-        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
-        await submission.WaitAsync();
-        await readback.MapAsync();
-        byte[] actual = new byte[88];
-        readback.CopyTo(actual);
-        readback.Unmap();
 
         byte[] expected = new byte[88];
         BinaryPrimitives.WriteUInt32LittleEndian(expected, 0x12345678);
@@ -253,8 +243,28 @@ public sealed class NativeShaderWriterAbiTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes[8..], count);
     }
 
+    private static object NativeIdentity(object value)
+    {
+        if (value is ValidationDevice device)
+        {
+            return typeof(ValidationDevice).GetProperty("Backend", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(device)!;
+        }
+
+        for (Type? type = value.GetType(); type != null; type = type.BaseType)
+        {
+            if (type.GetProperty("Raw", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly) is { } raw)
+            {
+                return raw.GetValue(value)!;
+            }
+        }
+
+        return value;
+    }
+
     private static unsafe ulong Address(IGraphicDevice device, IGraphicsBuffer<uint> buffer)
     {
+        device = (IGraphicDevice)NativeIdentity(device);
+        buffer = (IGraphicsBuffer<uint>)NativeIdentity(buffer);
         BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var api = (Silk.NET.Vulkan.Vk)device.GetType().GetProperty("Api", flags)!.GetValue(device)!;
         var nativeDevice = (Silk.NET.Vulkan.Device)device.GetType().GetProperty("NativeDevice", flags)!.GetValue(device)!;

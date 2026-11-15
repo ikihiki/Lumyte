@@ -6,7 +6,6 @@ namespace Lumyte.Graphics.Vulkan;
 internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
 {
     private readonly VulkanSwapchain _swapchain;
-    private readonly object? _acquisitionOperation;
     private VulkanTexture? _texture;
     private uint _index;
     private bool _presented;
@@ -15,7 +14,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     internal VulkanSurfaceFrame(VulkanSwapchain swapchain)
     {
         _swapchain = swapchain;
-        _acquisitionOperation = Owner.Validation != null ? new object() : null;
         Lifetime = new(IsNativeReleased);
         var fenceInfo = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
         try
@@ -36,8 +34,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
 
     public IGraphicsTexture Texture => _texture ?? throw new InvalidOperationException("This frame has no acquired image.");
 
-    internal object AcquisitionOperation => _acquisitionOperation!;
-
     internal VulkanDevice Owner => _swapchain.Owner;
 
     internal SurfaceFrameLifetime Lifetime { get; }
@@ -50,8 +46,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     {
         Lifetime.ValidatePresent();
         IReadOnlyList<IGraphicsSemaphore> validationWaits = waitSemaphores ?? [];
-        Owner.Validation?.ValidatePresentTexture(_texture!, validationWaits);
-        Owner.Validation?.PresentationWaitValidate(validationWaits);
 
         var waits = new Silk.NET.Vulkan.Semaphore[waitSemaphores?.Count ?? 0];
         for (int i = 0; i < waits.Length; i++)
@@ -65,11 +59,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         }
 
         SurfaceStatus status = _swapchain.Present(_index, waits, PresentFence);
-        if (status is SurfaceStatus.Success or SurfaceStatus.Suboptimal)
-        {
-            Owner.Validation?.PresentationWaited(this, validationWaits);
-            Owner.Validation?.Use(this, _texture!);
-        }
 
         _presented = true;
         _deviceLost = status == SurfaceStatus.DeviceLost;
@@ -86,15 +75,9 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        if (Owner.Validation != null)
+        if (!IsNativeReleased())
         {
-            if (!IsNativeReleased())
-            {
-                throw new InvalidOperationException("Validation: native presentation synchronization is still in flight.");
-            }
-
-            // Check live views before touching the native image or its parent.
-            Owner.Validation.Release(_texture!);
+            throw new InvalidOperationException("Native presentation synchronization is still in flight.");
         }
 
         if (!_presented && !_deviceLost && Owner.Status == GraphicsDeviceStatus.Ready)
@@ -106,13 +89,10 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             catch
             {
                 // Preserve the ownership chain and borrowed lease for a retry.
-                Owner.Validation?.Register(_texture!, this);
-                Owner.Validation?.SetTextureState(_texture!, TextureState.Undefined);
                 throw;
             }
         }
 
-        Owner.Validation?.Release(this);
         _texture!.DisposeLease();
         ReleaseUnacquired();
         Lifetime.MarkDisposed();
@@ -123,9 +103,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         _index = index;
         SwapchainDesc desc = _swapchain.Configuration;
         _texture = new(Owner, new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage }, image, Lifetime);
-        Owner.Validation?.Register(this, _swapchain);
-        Owner.Validation?.Register(_texture, this);
-        Owner.Validation?.SetTextureState(_texture, TextureState.Undefined);
     }
 
     internal void ReleaseUnacquired()
@@ -164,10 +141,6 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         }
 
         Owner.CheckResult(acquired, "GetFenceStatus");
-        if (_acquisitionOperation != null)
-        {
-            Owner.Validation?.CompleteSemaphores(_acquisitionOperation);
-        }
 
         if (!_presented)
         {
@@ -196,12 +169,5 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
 
     private void CompleteNativeUses()
     {
-        if (_acquisitionOperation != null)
-        {
-            Owner.Validation?.CompleteSemaphores(_acquisitionOperation);
-        }
-
-        Owner.Validation?.CompleteSemaphores(this);
-        Owner.Validation?.Complete(this);
     }
 }

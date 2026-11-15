@@ -174,7 +174,6 @@ internal sealed class VulkanSubmission : IGraphicsSubmission
 
         _failed = result == Result.ErrorDeviceLost;
         _status = _failed ? SubmissionStatus.Failed : SubmissionStatus.Completed;
-        _owner.Validation?.CompleteSemaphores(this);
         foreach (VulkanCommandBuffer command in _commands)
         {
             command.Complete(result == Result.Success);

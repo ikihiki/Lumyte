@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -37,11 +38,9 @@ public sealed class FinalRootGenerationTests
         ShaderArtifact artifact = await CompileAsync(ShaderTarget.SpirV);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = VulkanDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = VulkanDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CheckAsync(device, artifact, validation);
         }
@@ -55,11 +54,9 @@ public sealed class FinalRootGenerationTests
         ShaderArtifact artifact = await CompileAsync(ShaderTarget.Wgsl);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = WgpuDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = WgpuDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CheckAsync(device, artifact, validation);
         }
@@ -112,14 +109,7 @@ public sealed class FinalRootGenerationTests
             {
                 var selected = (Lumyte.Graphics.Shared.ShaderRootArguments)compute.GetType().GetField("_arguments", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(compute)!;
                 Assert.Null(selected.GetType().GetProperty("Storage"));
-                if (device.ValidationEnabled)
-                {
-                    Assert.Equal(2, Assert.IsAssignableFrom<IShaderReferenceMetadata>(selected.References).References.Count);
-                }
-                else
-                {
-                    Assert.Null(selected.References);
-                }
+                Assert.Null(selected.References);
             }
 
             Assert.Equal(1, root.Writes);
@@ -172,27 +162,35 @@ public sealed class FinalRootGenerationTests
             compute.SetArgumentTable(table);
             Assert.Equal(6, root.Writes);
 
-            // A rejecting metadata-only hook must not consume or replace the selected generation.
-            var preparationFailure = new InvalidOperationException("Preparation rejected final metadata.");
-            int prepares = 0;
-            compute.SetArgumentValidation(metadata =>
+            if (validation)
             {
-                prepares++;
-                Assert.Equal(2, metadata.References.Count);
-                throw preparationFailure;
-            });
-            try
-            {
-                Assert.Same(preparationFailure, Record.Exception(() => compute.SetArguments(in root)));
+                // A rejecting metadata-only hook must not consume or replace the selected generation.
+                var preparationFailure = new InvalidOperationException("Preparation rejected final metadata.");
+                int prepares = 0;
+                compute.SetArgumentValidation(metadata =>
+                {
+                    prepares++;
+                    Assert.Equal(2, metadata.References.Count);
+                    throw preparationFailure;
+                });
+                try
+                {
+                    Assert.Same(preparationFailure, Record.Exception(() => compute.SetArguments(in root)));
+                }
+                finally
+                {
+                    compute.SetArgumentValidation(null);
+                }
+
+                Assert.Equal(1, prepares);
             }
-            finally
+            else
             {
-                compute.SetArgumentValidation(null);
+                Assert.Throws<NotSupportedException>(() => compute.SetArgumentValidation(_ => null));
             }
 
-            Assert.Equal(1, prepares);
             compute.Dispatch(1);
-            Assert.Equal(7, root.Writes);
+            Assert.Equal(validation ? 7 : 6, root.Writes);
 
             // Transition tables before selecting their matching root; stale roots still reject execution.
             IGpuRef<uint> otherInput = otherTable.WriteBuffer(0, input.SliceElements(0, 1), ShaderBufferAccess.ReadOnly);
@@ -215,7 +213,7 @@ public sealed class FinalRootGenerationTests
             CaptureWgpuOwner(device, compute, nativeOwners);
             root.Number = 999;
             compute.Dispatch(1);
-            Assert.Equal(10, root.Writes);
+            Assert.Equal(validation ? 10 : 9, root.Writes);
             Assert.Equal(0, root.Probes);
         }
         finally
@@ -248,9 +246,13 @@ public sealed class FinalRootGenerationTests
 
     private static void CaptureWgpuOwner(IGraphicDevice device, IComputeEncoder encoder, List<object> owners)
     {
-        if (device is WgpuDevice)
+        if (device.Caps.ShaderTarget == ShaderTarget.Wgsl)
         {
-            object owner = encoder.GetType().GetField("_arguments", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(encoder)!;
+            // Inspect only native storage lifetime; diagnostic metadata is queried on the decorator.
+            IComputeEncoder native = device.ValidationEnabled
+                ? (IComputeEncoder)encoder.GetType().GetField("_raw", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(encoder)!
+                : encoder;
+            object owner = native.GetType().GetField("_arguments", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(native)!;
             Assert.Equal("Lumyte.Graphics.Wgpu.WgpuRootStorage", owner.GetType().FullName);
             Assert.IsAssignableFrom<IDisposable>(owner);
             Assert.False(IsDisposed(owner));

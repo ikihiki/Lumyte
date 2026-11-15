@@ -5,7 +5,6 @@ namespace Lumyte.Graphics.Direct3D12;
 internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
 {
     private readonly Direct3D12Swapchain _swapchain;
-    private readonly object? _acquisitionOperation;
     private readonly Direct3D12Texture _texture;
     private readonly nint _fence;
     private readonly SurfaceFrameLifetime _lifetime;
@@ -18,14 +17,10 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
     internal Direct3D12SurfaceFrame(Direct3D12Swapchain swapchain, nint texture)
     {
         _swapchain = swapchain;
-        _acquisitionOperation = _swapchain.Owner.Validation != null ? new object() : null;
         swapchain.Owner.Check(NativeMethods.FenceCreate(swapchain.Owner.Native, out _fence));
         try
         {
-            if (_acquisitionOperation != null)
-            {
-                swapchain.Owner.Check(NativeMethods.FenceCreate(swapchain.Owner.Native, out _acquireFence));
-            }
+            swapchain.Owner.Check(NativeMethods.FenceCreate(swapchain.Owner.Native, out _acquireFence));
         }
         catch
         {
@@ -36,21 +31,15 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
         _lifetime = new(IsNativeReleased);
         SwapchainDesc desc = swapchain.Configuration;
         _texture = new(swapchain.Owner, new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage }, texture, _lifetime);
-        _swapchain.Owner.Validation?.Register(this, _swapchain);
-        _swapchain.Owner.Validation?.Register(_texture, this);
 
         // The abstract acquisition contract discards prior contents. D3D enhanced
         // barriers map Undefined to UNDEFINED + DISCARD, valid for a backbuffer
-
         // acquired natively in PRESENT/COMMON; no implicit transition is inserted.
-        _swapchain.Owner.Validation?.SetTextureState(_texture, TextureState.Undefined);
     }
 
     public SurfaceFrameStatus Status => _lifetime.Status;
 
     public IGraphicsTexture Texture => _texture;
-
-    internal object AcquisitionOperation => _acquisitionOperation!;
 
     public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
@@ -61,8 +50,6 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
         }
 
         IReadOnlyList<IGraphicsSemaphore> validationWaits = waitSemaphores ?? [];
-        _swapchain.Owner.Validation?.ValidatePresentTexture(_texture, validationWaits);
-        _swapchain.Owner.Validation?.PresentationWaitValidate(validationWaits);
 
         var waits = new Direct3D12Semaphore[validationWaits.Count];
         int waitIndex = 0;
@@ -79,19 +66,14 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
         }
 
         SurfaceStatus status;
-        List<IGraphicsSemaphore>? issuedWaits = _swapchain.Owner.Validation == null ? null : [];
-        bool publishedWaits = false;
         try
         {
             foreach (Direct3D12Semaphore semaphore in waits)
             {
                 semaphore.Wait();
                 _releasePending = true;
-                issuedWaits?.Add(semaphore);
             }
 
-            _swapchain.Owner.Validation?.PresentationWaited(this, issuedWaits!);
-            publishedWaits = true;
             status = _swapchain.Present();
         }
         catch
@@ -99,11 +81,6 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
             // Queue waits already issued still need an actual completion fence.
             if (_releasePending)
             {
-                if (!publishedWaits)
-                {
-                    _swapchain.Owner.Validation?.PresentationWaited(this, issuedWaits!);
-                }
-
                 SignalReleaseCompletion();
             }
 
@@ -112,7 +89,6 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
 
         _lifetime.MarkPresented();
         _releasePending = true;
-        _swapchain.Owner.Validation?.Use(this, _texture);
         SignalReleaseCompletion();
         return status;
     }
@@ -126,15 +102,9 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        if (_swapchain.Owner.Validation != null)
+        if (!IsNativeReleased())
         {
-            if (!IsNativeReleased())
-            {
-                throw new InvalidOperationException("Validation: native presentation synchronization is still in flight.");
-            }
-
-            _swapchain.Owner.Validation.Release(_texture);
-            _swapchain.Owner.Validation.Release(this);
+            throw new InvalidOperationException("Native presentation synchronization is still in flight.");
         }
 
         _texture.DisposeLease();
@@ -188,13 +158,6 @@ internal sealed class Direct3D12SurfaceFrame : IGraphicsSurfaceFrame
             return false;
         }
 
-        if (_acquisitionOperation != null)
-        {
-            _swapchain.Owner.Validation?.CompleteSemaphores(_acquisitionOperation);
-        }
-
-        _swapchain.Owner.Validation?.CompleteSemaphores(this);
-        _swapchain.Owner.Validation?.Complete(this);
         return true;
     }
 }

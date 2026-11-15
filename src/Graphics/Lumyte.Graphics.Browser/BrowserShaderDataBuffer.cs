@@ -3,11 +3,9 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IValidatedShaderDataStorage, IBrowserDependencyStorage
+internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource
     where T : struct, IShaderArguments
 {
-    private readonly DependencyState? _dependencies;
-    private readonly ShaderDataLayout? _diagnosticLayout;
     private bool _disposed;
 
     internal BrowserShaderDataBuffer(BrowserDevice owner, ShaderArtifact artifact, ulong count, MemoryPreference memory)
@@ -18,7 +16,6 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
         }
 
         Layout = ShaderDataLayout.Data<T>(artifact, owner.Caps.ShaderTarget);
-        _diagnosticLayout = owner.Validation == null ? null : ShaderDataLayout.Data(artifact, owner.Caps.ShaderTarget, T.ShaderTypeName);
         if (count == 0 || count > int.MaxValue || checked(count * (ulong)Layout.Size) > owner.Caps.MaxBufferSize)
         {
             throw new ArgumentOutOfRangeException(nameof(count));
@@ -28,10 +25,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
         Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         Owner = owner;
         Count = count;
-        _dependencies = owner.Validation == null ? null : new DependencyState(T.ReferenceCount == 0);
     }
-
-    object IValidatedShaderDataStorage.ValidationStorage => Storage;
 
     public ulong Count { get; }
 
@@ -91,32 +85,7 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
             return;
         }
 
-        HashSet<IShaderReference>? collector = _dependencies == null ? null : new();
-        try
-        {
-            BrowserShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, Count, collector, _diagnosticLayout);
-            if (_dependencies != null)
-            {
-                bool full = elementOffset == 0 && (ulong)source.Length == Count;
-                if (full)
-                {
-                    _dependencies.Revision = BrowserReferenceMetadata.TakeOwnership(collector!.ToArray());
-                }
-                else if (_dependencies.Revision is { } previous)
-                {
-                    _dependencies.Revision = BrowserReferenceMetadata.Merge(previous, BrowserReferenceMetadata.TakeOwnership(collector!.ToArray()));
-                }
-            }
-        }
-        catch
-        {
-            if (_dependencies != null)
-            {
-                _dependencies.Revision = null;
-            }
-
-            throw;
-        }
+        BrowserShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, Count);
     }
 
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
@@ -128,19 +97,8 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
     public bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies)
     {
         ValidateAlive();
-        dependencies = _dependencies == null ? null : _dependencies.Revision ?? throw new InvalidOperationException("Shader buffer dependencies are unknown until a complete rewrite.");
-        return dependencies != null;
-    }
-
-    void IBrowserDependencyStorage.PublishDependencies(IShaderReferenceMetadata dependencies)
-    {
-        ValidateAlive();
-        if (_dependencies == null)
-        {
-            throw new InvalidOperationException("Dependency tracking is disabled.");
-        }
-
-        _dependencies.Revision = dependencies;
+        dependencies = null;
+        return false;
     }
 
     public void ValidateAlive() => ObjectDisposedException.ThrowIf(_disposed, this);
@@ -152,21 +110,8 @@ internal sealed class BrowserShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>,
             return;
         }
 
-        Owner.Validation?.ValidateRelease(Storage);
-        Owner.Validation?.ValidateRelease(this);
-
         Storage.Dispose();
-        Owner.Validation?.Release(this);
-        if (_dependencies != null)
-        {
-            _dependencies.Revision = null;
-        }
 
         _disposed = true;
-    }
-
-    private sealed class DependencyState(bool knownEmpty)
-    {
-        internal IShaderReferenceMetadata? Revision { get; set; } = knownEmpty ? BrowserReferenceMetadata.TakeOwnership(Array.Empty<IShaderReference>()) : null;
     }
 }

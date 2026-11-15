@@ -31,18 +31,10 @@ public sealed class RootConstantCapacityTests
     [Fact]
     public void OversizeFailsBeforeAllocationOrPreparation()
     {
-        bool prepared = false;
-        Action<IReadOnlyCollection<IShaderReference>>? Prepare(IShaderReferenceMetadata metadata)
-        {
-            prepared = true;
-            return null;
-        }
-
         Oversize value = default;
-        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateRoot(null!, value, Span<byte>.Empty, prepare: Prepare));
+        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateRoot(null!, value, Span<byte>.Empty));
         OversizeWire raw = default;
-        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateUnmanaged(null!, raw, "arguments", null, Span<byte>.Empty, prepare: Prepare));
-        Assert.False(prepared);
+        Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.CreateUnmanaged(null!, raw, "arguments", null, Span<byte>.Empty));
         Assert.Throws<NotSupportedException>(() => Direct3D12ShaderTransfer.ValidateRootSize(int.MaxValue));
     }
 
@@ -56,7 +48,7 @@ public sealed class RootConstantCapacityTests
     [InlineData(232)]
     public void StackPayloadHasZeroTailAndNoRetainedStorage(int bytes)
     {
-        using var device = new Direct3D12Device(null!, false);
+        using var device = new Direct3D12Device(null!);
         int words = Direct3D12ShaderTransfer.ValidateRootSize(bytes);
         Span<byte> payload = stackalloc byte[words * 4];
         payload.Clear();
@@ -157,7 +149,8 @@ public sealed class RootConstantCapacityTests
         foreach (string encoder in new[] { "Direct3D12RenderEncoder.cs", "Direct3D12ComputeEncoder.cs" })
         {
             string source = File.ReadAllText(Path.Combine(production, encoder));
-            int capture = source.IndexOf("ShaderBindingDependencies.Collect(", StringComparison.Ordinal);
+            Assert.DoesNotContain("ShaderBindingDependencies.Collect(", source);
+            int capture = source.IndexOf("SnapshotRegistrations()", StringComparison.Ordinal);
             int pipeline = source.IndexOf("NativeMethods.Pipeline(", capture, StringComparison.Ordinal);
             int bindingCommand = source.IndexOf("NativeMethods.Binding(", pipeline, StringComparison.Ordinal);
             Assert.True(capture >= 0 && pipeline > capture && bindingCommand > pipeline);

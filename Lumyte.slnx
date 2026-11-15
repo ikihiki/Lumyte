@@ -103,6 +103,7 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Graphics.Validation/Lumyte.Graphics.Validation.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D.RenderGraph/Lumyte.Resources.Graphics.Drawing2D.RenderGraph.csproj" />
@@ -188,6 +189,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Lumyte.Graphics.Text.Parley.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Direct3D12.Tests/Lumyte.Graphics.Direct3D12.Tests.csproj" />

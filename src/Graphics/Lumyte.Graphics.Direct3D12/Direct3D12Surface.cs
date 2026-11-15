@@ -11,7 +11,6 @@ internal sealed class Direct3D12Surface : IGraphicsSurface
     internal Direct3D12Surface(Direct3D12Device owner, nint window)
     {
         (_owner, _window) = (owner, window);
-        _owner.Validation?.Register(this, _owner);
     }
 
     internal Direct3D12Device Owner => _owner;
@@ -45,7 +44,6 @@ internal sealed class Direct3D12Surface : IGraphicsSurface
             return;
         }
 
-        Owner.Validation?.Release(this);
         _disposed = true;
     }
 

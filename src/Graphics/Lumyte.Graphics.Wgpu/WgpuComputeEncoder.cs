@@ -7,7 +7,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 {
     private WgpuComputePipeline? _pipeline;
 
-    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private WgpuRootStorage? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
@@ -24,7 +23,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         }
 
         selected.ThrowIfDisposed();
-        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -32,7 +30,10 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
-        _argumentValidation = prepare;
+        if (prepare != null)
+        {
+            throw new NotSupportedException("Use ValidationDevice for argument validation.");
+        }
     }
 
     public void SetArguments<T>(in T value)
@@ -44,7 +45,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         _settingArguments = true;
         try
         {
-            WgpuRootStorage root = WgpuShaderTransfer.CreateRoot(owner.Owner, in value, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            WgpuRootStorage root = WgpuShaderTransfer.CreateRoot(owner.Owner, in value);
             SelectRoot(root, program);
         }
         finally
@@ -62,7 +63,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         _settingArguments = true;
         try
         {
-            WgpuRootStorage root = WgpuShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+            WgpuRootStorage root = WgpuShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName);
             SelectRoot(root, program);
         }
         finally
@@ -82,14 +83,12 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         }
 
         program.ValidateAlive();
-        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
         if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
@@ -99,13 +98,11 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         PrepareDispatch();
         WGPU.wgpuComputePassEncoderDispatchWorkgroups(handle, groupCountX, groupCountY, groupCountZ);
-        validationRecording?.Commit();
     }
 
     public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
         {
@@ -114,9 +111,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         WgpuBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
-        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         WGPU.wgpuComputePassEncoderDispatchWorkgroupsIndirect(handle, buffer.Native.Handle, arguments.OffsetInBytes);
-        validationRecording?.Commit();
     }
 
     public void End()
@@ -153,8 +148,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
         _pipeline.ValidateAlive();
     }
-
-    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(_pipeline!.Data, rootParameter);
 
     private void SelectRoot(WgpuRootStorage root, WgpuComputePipeline program)
     {
@@ -222,12 +215,6 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         ShaderBindingData? bindingData = null;
         if (_pipeline.RequiresArguments || selectedTable != null)
         {
-            if (_pipeline.RequiresArguments && owner.Owner.Validation is { } validation)
-            {
-                var dependencies = ShaderBindingDependencies.Collect(_arguments!.Arguments, selectedTable, owner.ReadShaderDependencies);
-                EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, PipelineStage.ComputeShader);
-            }
-
             bindingData = new(registrations, _pipeline.Data, owner.Owner.Caps);
         }
 

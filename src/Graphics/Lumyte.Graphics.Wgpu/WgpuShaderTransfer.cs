@@ -6,7 +6,7 @@ namespace Lumyte.Graphics.Wgpu;
 
 internal static class WgpuShaderTransfer
 {
-    internal static WgpuRootStorage CreateRoot<T>(WgpuDevice owner, in T value, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static WgpuRootStorage CreateRoot<T>(WgpuDevice owner, in T value)
         where T : struct, IShaderArguments
     {
         string root = T.RootParameter;
@@ -17,11 +17,10 @@ internal static class WgpuShaderTransfer
         var storage = new WgpuRootStorage(owner, size);
         try
         {
-            var writer = new WgpuShaderValueWriter(owner, size, storage, default, referenceCount, diagnostic, collect: owner.Validation != null || prepare != null);
+            var writer = new WgpuShaderValueWriter(owner, size, storage, default, referenceCount);
             value.Write(ref writer);
-            IShaderReferenceMetadata? references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            storage.Initialize(ShaderRootArguments.Create(root, name, size, references, prepare), writer.Table);
+            writer.Complete();
+            storage.Initialize(ShaderRootArguments.Create(root, name, size, null), writer.Table);
             return storage;
         }
         catch
@@ -31,7 +30,7 @@ internal static class WgpuShaderTransfer
         }
     }
 
-    internal static WgpuRootStorage CreateUnmanaged<T>(WgpuDevice owner, in T value, string rootParameter, string? shaderTypeName, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static WgpuRootStorage CreateUnmanaged<T>(WgpuDevice owner, in T value, string rootParameter, string? shaderTypeName)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
@@ -40,11 +39,10 @@ internal static class WgpuShaderTransfer
         var storage = new WgpuRootStorage(owner, size);
         try
         {
-            var writer = new WgpuShaderValueWriter(owner, size, storage, default, 0, diagnostic, collect: owner.Validation != null || prepare != null);
+            var writer = new WgpuShaderValueWriter(owner, size, storage, default, 0);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata? references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, references, prepare), writer.Table);
+            writer.Complete();
+            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, null), writer.Table);
             return storage;
         }
         catch
@@ -54,7 +52,7 @@ internal static class WgpuShaderTransfer
         }
     }
 
-    internal static void CopyFrom<T>(WgpuDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count, HashSet<IShaderReference>? collector, ShaderDataLayout? diagnostic)
+    internal static void CopyFrom<T>(WgpuDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count)
         where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
@@ -86,14 +84,12 @@ internal static class WgpuShaderTransfer
             }
 
             Span<byte> upload = buffer.GetMappedUploadSpan(offset, length);
-            using GraphicsValidation.HostWriteLease? lease = owner.Validation?.BeginHostWrite(storage, offset, (ulong)length);
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new WgpuShaderValueWriter(owner, stride, null, upload.Slice(checked(i * stride), stride), referenceCount, diagnostic, collector: collector);
+                var writer = new WgpuShaderValueWriter(owner, stride, null, upload.Slice(checked(i * stride), stride), referenceCount);
                 source[i].Write(ref writer);
                 writer.Complete();
-                diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
             }
         }
     }

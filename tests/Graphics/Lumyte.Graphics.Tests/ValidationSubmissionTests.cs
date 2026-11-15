@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shared;
+using Lumyte.Graphics.Validation;
 using Xunit;
 
 namespace Lumyte.Graphics.Tests;

@@ -6,34 +6,32 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal static class Direct3D12ShaderTransfer
 {
-    internal static (ShaderRootArguments Root, Direct3D12ArgumentTable? Table) CreateRoot<T>(Direct3D12Device owner, in T value, Span<byte> destination, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static (ShaderRootArguments Root, Direct3D12ArgumentTable? Table) CreateRoot<T>(Direct3D12Device owner, in T value, Span<byte> destination)
         where T : struct, IShaderArguments
     {
         string root = T.RootParameter;
         string name = T.ShaderTypeName;
         int size = T.TransferSize;
         ValidateRootSize(size);
-        var writer = new Direct3D12ShaderValueWriter(owner, size, destination, T.ReferenceCount, diagnostic, collect: owner.Validation != null || prepare != null);
+        var writer = new Direct3D12ShaderValueWriter(owner, size, destination, T.ReferenceCount);
         value.Write(ref writer);
-        IShaderReferenceMetadata? references = writer.Complete();
-        diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-        return (ShaderRootArguments.Create(root, name, size, references, prepare), writer.Table);
+        writer.Complete();
+        return (ShaderRootArguments.Create(root, name, size, null), writer.Table);
     }
 
-    internal static ShaderRootArguments CreateUnmanaged<T>(Direct3D12Device owner, in T value, string rootParameter, string? shaderTypeName, Span<byte> destination, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static ShaderRootArguments CreateUnmanaged<T>(Direct3D12Device owner, in T value, string rootParameter, string? shaderTypeName, Span<byte> destination)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
         int size = Unsafe.SizeOf<T>();
         ValidateRootSize(size);
-        var writer = new Direct3D12ShaderValueWriter(owner, size, destination, 0, diagnostic, collect: owner.Validation != null || prepare != null);
+        var writer = new Direct3D12ShaderValueWriter(owner, size, destination, 0);
         writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-        IShaderReferenceMetadata? references = writer.Complete();
-        diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-        return ShaderRootArguments.Create(rootParameter, name, size, references, prepare);
+        writer.Complete();
+        return ShaderRootArguments.Create(rootParameter, name, size, null);
     }
 
-    internal static void CopyFrom<T>(Direct3D12Device owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count, HashSet<IShaderReference>? collector, ShaderDataLayout? diagnostic)
+    internal static void CopyFrom<T>(Direct3D12Device owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count)
         where T : struct, IShaderArguments
     {
         if (elementOffset > count || (ulong)source.Length > count - elementOffset)
@@ -57,13 +55,11 @@ internal static class Direct3D12ShaderTransfer
         }
 
         Span<byte> destination = native.GetMappedUploadSpan(offset, length);
-        using GraphicsValidation.HostWriteLease? lease = owner.Validation?.BeginHostWrite(storage, offset, (ulong)length);
         for (int i = 0; i < source.Length; i++)
         {
-            var writer = new Direct3D12ShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride), referenceCount, diagnostic, collector: collector);
+            var writer = new Direct3D12ShaderValueWriter(owner, stride, destination.Slice(checked(i * stride), stride), referenceCount);
             source[i].Write(ref writer);
             writer.Complete();
-            diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
         }
     }
 

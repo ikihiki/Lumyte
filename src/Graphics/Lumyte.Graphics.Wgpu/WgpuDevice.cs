@@ -15,7 +15,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     private readonly object _requestGate = new();
     private readonly List<Func<bool>> _pendingRequests = [];
-    private bool _hasCreatedResources;
     private bool _disposed;
 
     private WgpuDevice(A.Instance instance, A.Adapter adapter, A.Device device, WgpuDeviceCreation creation)
@@ -74,11 +73,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         remove => _lifetime.DeviceLost -= value;
     }
 
-    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
-    public GraphicsValidation? Validation { get; private set; }
-
     /// <inheritdoc />
-    public bool ValidationEnabled => Validation != null;
+    public bool ValidationEnabled => false;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -176,7 +172,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         try
         {
             var surface = new WgpuSurface(this, native, _adapter);
-            _hasCreatedResources = true;
             return surface;
         }
         catch
@@ -186,25 +181,12 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
     }
 
-    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
-    public void EnableValidation()
-    {
-        if (Validation == null && _hasCreatedResources)
-        {
-            throw new InvalidOperationException("Enable validation before creating device resources.");
-        }
-
-        Validation ??= new GraphicsValidation();
-    }
-
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuGraphicsPipeline(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(program, this);
         return program;
     }
 
@@ -214,8 +196,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new WgpuComputePipeline(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(program, this);
         return program;
     }
 
@@ -224,8 +204,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new WgpuSemaphore(this);
-        _hasCreatedResources = true;
-        Validation?.Register(semaphore, this);
         return semaphore;
     }
 
@@ -235,8 +213,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new WgpuCommandBuffer(this);
-        _hasCreatedResources = true;
-        Validation?.Register(commands, this);
         return commands;
     }
 
@@ -291,12 +267,10 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new WgpuBuffer<T>(this, desc, layout, size);
-        _hasCreatedResources = true;
-        Validation?.Register(buffer, this);
         return buffer;
     }
 
-    /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
+    /// <summary>Creates raw unmanaged shader storage.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="artifact">The compiled shader artifact.</param>
     /// <param name="count">The element count.</param>
@@ -307,10 +281,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(artifact);
-        if (Validation != null)
-        {
-            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
-        }
 
         return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
@@ -323,8 +293,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
-        _hasCreatedResources = true;
-        Validation?.Register(buffer, this);
         return buffer;
     }
 
@@ -334,9 +302,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new WgpuTexture(this, desc);
-        Validation?.SetTextureState(texture, TextureState.Undefined);
-        _hasCreatedResources = true;
-        Validation?.Register(texture, this);
         return texture;
     }
 
@@ -346,8 +311,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new WgpuSampler(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(sampler, this);
         return sampler;
     }
 
@@ -362,8 +325,6 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         }
 
         var table = new WgpuArgumentTable(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(table, this);
         return table;
     }
 
@@ -373,15 +334,12 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new WgpuShader(this, artifact);
-        _hasCreatedResources = true;
-        Validation?.Register(shader, this);
         return shader;
     }
 
     /// <summary>Releases the device, adapter and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        Validation?.Release(this);
         if (_disposed)
         {
             return;

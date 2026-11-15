@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Shaders;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -54,11 +55,9 @@ public sealed class UnifiedTransferInterfaceTests
         (ShaderArtifact uniform, ShaderArtifact buffer) = await CompileAsync(ShaderTarget.SpirV);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = VulkanDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = VulkanDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CheckAsync(device, uniform, buffer);
             await CheckMiddleElementAsync(device, buffer, validation);
@@ -73,11 +72,9 @@ public sealed class UnifiedTransferInterfaceTests
         (ShaderArtifact uniform, ShaderArtifact buffer) = await CompileAsync(ShaderTarget.Wgsl);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = WgpuDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = WgpuDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CheckAsync(device, uniform, buffer);
             await CheckMiddleElementAsync(device, buffer, validation);

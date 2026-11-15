@@ -15,8 +15,6 @@ internal sealed class BrowserSemaphore(BrowserDevice owner) : IGraphicsSemaphore
             return;
         }
 
-        owner.Validation?.Release(this);
-
         _disposed = true;
     }
 }

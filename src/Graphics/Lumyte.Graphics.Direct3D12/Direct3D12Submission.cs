@@ -91,7 +91,7 @@ internal sealed class Direct3D12Submission(Direct3D12Device owner, Direct3D12Com
                 return;
             }
 
-            if (owner.Validation != null && Status == SubmissionStatus.Pending)
+            if (Status == SubmissionStatus.Pending)
             {
                 throw new InvalidOperationException("Validation: wait for actual submission completion before disposal.");
             }
@@ -187,7 +187,6 @@ internal sealed class Direct3D12Submission(Direct3D12Device owner, Direct3D12Com
     private void SetCompleted(bool success)
     {
         _status = success ? SubmissionStatus.Completed : SubmissionStatus.Failed;
-        owner.Validation?.CompleteSemaphores(this);
         GC.KeepAlive(_waits);
         GC.KeepAlive(_signals);
         foreach (Direct3D12CommandBuffer command in commands)

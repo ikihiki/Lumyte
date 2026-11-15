@@ -15,8 +15,6 @@ internal sealed class WgpuSemaphore(WgpuDevice owner) : IGraphicsSemaphore
             return;
         }
 
-        owner.Validation?.Release(this);
-
         _disposed = true;
     }
 }

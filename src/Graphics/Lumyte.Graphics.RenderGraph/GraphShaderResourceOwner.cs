@@ -318,10 +318,12 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
         {
             foreach (IShaderReference reference in references)
             {
+                // ReadWrite is a writable descriptor capability, including write-only registrations.
+                // Actual read/write hazards remain the pass's declared BarrierScope.
                 ArgumentBufferAccess access = reference.BufferAccess switch
                 {
                     ShaderBufferAccess.ReadOnly => ArgumentBufferAccess.Read,
-                    ShaderBufferAccess.ReadWrite => ArgumentBufferAccess.ReadWrite,
+                    ShaderBufferAccess.ReadWrite => ArgumentBufferAccess.Write,
                     _ => throw new ArgumentException("The shader reference has an unsupported binding access."),
                 };
                 CheckAllowed(declarations, reference.Resource, access);

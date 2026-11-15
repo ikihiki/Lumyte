@@ -18,7 +18,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     private readonly GraphicsDeviceLifetime _lifetime;
 
     private readonly VulkanCompletionDispatcher _completions = new();
-    private bool _hasCreatedResources;
     private bool _disposed;
 
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, uint maxPushConstantsSize, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
@@ -42,11 +41,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         remove => _lifetime.DeviceLost -= value;
     }
 
-    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
-    public GraphicsValidation? Validation { get; private set; }
-
     /// <inheritdoc />
-    public bool ValidationEnabled => Validation != null;
+    public bool ValidationEnabled => false;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -171,7 +167,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         try
         {
             var surface = new VulkanSurface(this, native);
-            _hasCreatedResources = true;
             return surface;
         }
         catch
@@ -181,25 +176,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
     }
 
-    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
-    public void EnableValidation()
-    {
-        if (Validation == null && _hasCreatedResources)
-        {
-            throw new InvalidOperationException("Enable validation before creating device resources.");
-        }
-
-        Validation ??= new GraphicsValidation();
-    }
-
     /// <inheritdoc />
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanGraphicsPipeline(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(program, this);
         return program;
     }
 
@@ -209,8 +191,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanComputePipeline(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(program, this);
         return program;
     }
 
@@ -219,8 +199,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var semaphore = new VulkanSemaphore(this);
-        _hasCreatedResources = true;
-        Validation?.Register(semaphore, this);
         return semaphore;
     }
 
@@ -230,8 +208,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(desc);
         var commands = new VulkanCommandBuffer(this);
-        _hasCreatedResources = true;
-        Validation?.Register(commands, this);
         return commands;
     }
 
@@ -286,12 +262,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
 
         var buffer = new VulkanBuffer<T>(this, desc, layout, size);
-        _hasCreatedResources = true;
-        Validation?.Register(buffer, this);
         return buffer;
     }
 
-    /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
+    /// <summary>Creates raw unmanaged shader storage.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="artifact">The compiled shader artifact.</param>
     /// <param name="count">The element count.</param>
@@ -302,10 +276,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(artifact);
-        if (Validation != null)
-        {
-            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
-        }
 
         return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
@@ -318,8 +288,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new VulkanShaderDataBuffer<T>(this, artifact, count, memory);
-        _hasCreatedResources = true;
-        Validation?.Register(buffer, this);
         return buffer;
     }
 
@@ -329,9 +297,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         TextureValidation.Validate(desc, Caps);
         var texture = new VulkanTexture(this, desc);
-        Validation?.SetTextureState(texture, TextureState.Undefined);
-        _hasCreatedResources = true;
-        Validation?.Register(texture, this);
         return texture;
     }
 
@@ -341,8 +306,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         SamplerValidation.Validate(desc, Caps);
         var sampler = new VulkanSampler(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(sampler, this);
         return sampler;
     }
 
@@ -357,8 +320,6 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         }
 
         var table = new VulkanArgumentTable(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(table, this);
         return table;
     }
 
@@ -368,15 +329,12 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
         var shader = new VulkanShader(this, artifact);
-        _hasCreatedResources = true;
-        Validation?.Register(shader, this);
         return shader;
     }
 
     /// <summary>Destroys the logical device and instance; subsequent calls do nothing.</summary>
     public void Dispose()
     {
-        Validation?.Release(this);
         if (_disposed)
         {
             return;

@@ -17,7 +17,6 @@ internal sealed class Direct3D12Sampler(Direct3D12Device owner, SamplerDesc desc
             return;
         }
 
-        Owner.Validation?.Release(this);
         _disposed = true;
     }
 

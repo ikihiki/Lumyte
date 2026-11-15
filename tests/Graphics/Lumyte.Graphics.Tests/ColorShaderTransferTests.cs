@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
@@ -36,11 +37,9 @@ public sealed class ColorShaderTransferTests
     {
         foreach (bool validation in new[] { false, true })
         {
-            using var device = VulkanDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = VulkanDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CopyColorsAsync(device);
         }
@@ -53,11 +52,9 @@ public sealed class ColorShaderTransferTests
     {
         foreach (bool validation in new[] { false, true })
         {
-            using var device = WgpuDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = WgpuDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             await CopyColorsAsync(device);
         }

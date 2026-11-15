@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Samples;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Xunit;
@@ -97,8 +98,8 @@ public sealed class UnmanagedShaderTransferTests
     [GpuFact]
     public async Task VulkanValidatedExternalElementsAsync()
     {
-        using var device = VulkanDevice.Create();
-        device.EnableValidation();
+        using var raw = VulkanDevice.Create();
+        using var device = new ValidationDevice(raw);
         await TransferExternalElementsAsync(device);
     }
 
@@ -107,8 +108,8 @@ public sealed class UnmanagedShaderTransferTests
     [GpuFact]
     public async Task WgpuValidatedExternalElementsAsync()
     {
-        using var device = WgpuDevice.Create();
-        device.EnableValidation();
+        using var raw = WgpuDevice.Create();
+        using var device = new ValidationDevice(raw);
         await TransferExternalElementsAsync(device);
     }
 

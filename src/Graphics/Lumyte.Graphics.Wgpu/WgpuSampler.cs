@@ -52,8 +52,6 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
             return;
         }
 
-        _owner.Validation?.Release(this);
-
         WGPU.wgpuSamplerRelease(_native);
         _disposed = true;
     }

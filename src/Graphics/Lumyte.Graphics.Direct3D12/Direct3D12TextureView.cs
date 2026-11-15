@@ -28,7 +28,6 @@ internal sealed class Direct3D12TextureView(Direct3D12Texture texture, TextureVi
             return;
         }
 
-        Owner.Validation?.Release(this);
         _disposed = true;
     }
 }

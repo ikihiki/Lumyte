@@ -3,6 +3,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.RenderGraph;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
@@ -19,8 +20,8 @@ public sealed partial class Drawing2DTests
     [GpuFact]
     public async Task VulkanArgumentPartitionsAsync()
     {
-        using var device = VulkanDevice.Create();
-        device.EnableValidation();
+        using var raw = VulkanDevice.Create();
+        using var device = new ValidationDevice(raw);
         await CheckNativeArgumentPartitionsAsync(device);
     }
 
@@ -29,8 +30,8 @@ public sealed partial class Drawing2DTests
     [GpuFact]
     public async Task WgpuArgumentPartitionsAsync()
     {
-        using var device = WgpuDevice.Create();
-        device.EnableValidation();
+        using var raw = WgpuDevice.Create();
+        using var device = new ValidationDevice(raw);
         await CheckNativeArgumentPartitionsAsync(device);
     }
 

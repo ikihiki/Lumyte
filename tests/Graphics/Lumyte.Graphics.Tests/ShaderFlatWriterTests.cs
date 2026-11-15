@@ -362,14 +362,15 @@ public sealed class ShaderFlatWriterTests
         foreach (string backend in new[] { "Vulkan", "Wgpu" })
         {
             var assembly = Assembly.Load($"Lumyte.Graphics.{backend}");
-            Type owner = assembly.GetType($"Lumyte.Graphics.{backend}.{backend}ReferenceMetadata", throwOnError: true)!;
-            Assert.False(owner.IsPublic);
-            FieldInfo field = Assert.Single(owner.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public));
-            Assert.Equal(typeof(IShaderReference[]), field.FieldType);
-            Assert.True(field.IsPrivate);
-            Assert.True(field.IsInitOnly);
-            Assert.DoesNotContain(owner.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), item => item.FieldType == typeof(ShaderValue[]));
+            Assert.Null(assembly.GetType($"Lumyte.Graphics.{backend}.{backend}ReferenceMetadata"));
         }
+
+        Type owner = typeof(ShaderDependencyMetadata);
+        FieldInfo field = Assert.Single(owner.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public));
+        Assert.Equal(typeof(IReadOnlyList<IShaderReference>), field.FieldType);
+        Assert.True(field.IsPrivate);
+        Assert.True(field.IsInitOnly);
+        Assert.DoesNotContain(owner.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public), item => item.FieldType == typeof(ShaderValue[]));
     }
 
     private static byte[] Encode(ShaderValue value) => Enumerable.Repeat((byte)Assert.IsType<Reference>(value.Reference).Slot, 16).ToArray();

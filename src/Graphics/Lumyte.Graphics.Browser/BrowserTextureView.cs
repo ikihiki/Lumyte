@@ -29,8 +29,6 @@ internal sealed class BrowserTextureView(BrowserTexture texture, TextureViewInfo
             return;
         }
 
-        Owner.Validation?.Release(this);
-
         native.Dispose();
         _disposed = true;
     }

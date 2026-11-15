@@ -4,6 +4,66 @@ The breaking contract is documented in
 [GRAPHICS-0035](adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md) and the
 [generator README](../src/Graphics/Lumyte.Graphics.Generators/README.md).
 
+## 独立ValidationDevice decorator project（2026-11-15）
+
+b2d61cdb621eaef4a17ac8991ebab360e0dd7196を基準に、明示要求された検証project分離を実装した。
+新src/Graphics/Lumyte.Graphics.ValidationはAbstractions／Sharedだけを参照し、backend assemblyは参照しない。
+GraphicsValidationとIValidatedShaderReferenceをSharedから新namespaceへ移し、通常project／test projectをsolutionへ登録した。
+四raw backendは検証engine／nullable tracker／依存追跡state／EnableValidationを持たず、Validation projectを参照しない。
+raw ValidationEnabledはfalseで、raw SetArgumentValidation(non-null)はdecorator利用を案内して拒否する。
+残るCommand／Pipeline／Texture等の基本checkはnative APIの型・enum・format・範囲・ABI・physical limitを守るもので、
+任意のresource／barrier／寿命診断とは区別する。native queue失敗時のfence・owner保持と実行状態も必須処理として残した。
+
+ValidationDevice(IGraphicDevice backend)はbackendを借用し、DisposeしてもbackendはDisposeしない。
+新規childは全てdecorator経由で作成し、buffer／typed shader buffer／texture／view／sampler／shader／pipeline／table／IGpuRef／
+command／render・compute encoder／queue／submission／semaphore／surface／swapchain／frameを同一domainで扱う。
+surface factoryはIGraphicDeviceにないため、backend側で新規作成した同deviceのsurfaceをWrapSurfaceで明示的に借用する。
+履歴のある任意raw childrenはadoptせず、異なるdomain／未登録raw資源の混入を拒否する。
+per-device canonical registryはchild Dispose時に除去し、released identityはweakに保持する。global registryは作らない。
+raw backendやreflectionへ直接逃げた操作は診断を迂回する利用者責務であり、security sandboxではない。
+
+typed bufferはnative側で`ValidationArguments<T>`を使い、logical Tのname／wire size／ReferenceCount／診断fieldsを転送する。
+producer Writeは一度だけ実行し、value writer adapterがwrapped IGpuRefを適切なnative generic参照へ変換して直接書く。
+ref struct writerは値として受け、成功後に元writerへcopy-backする。Capture／numeric snapshot再構築／managed outerのraw転送はしない。
+layerのadapter配列・依存集合は明示診断の追加costであり、zero-allocation／性能改善は主張しない。
+準備hookはcodec終了後、native Set発行前にlayer内で実行し、失敗なら旧rootを保持する。
+Vulkan／D3D12の即時native定数記録、WebGPU private uniformと全table登録bindingは維持した。
+
+query／coarse依存union／command-local copy overlay／配置診断／host-write lease／Graph照合はlayerが所有する。
+GPU copyはnative記録後、submissionの依存公開はnative queue受理後にcommitし、immutable revision identityを維持する。
+未初期化・失敗した参照bufferはfull rewriteで回復する。GetElement／view／callbackを跨いだcanonical resource identityを使う。
+logical table登録の置換はnative descriptor snapshotを破壊しないため可能とし、古いregistrationを実行・submit時に診断する。
+tableそのもののrecorded／in-flight Disposeは引き続き拒否する。backendの基本bounds／overflow／writer count検査は常時必須。
+
+queue／presentationも独立layerの対象である。preflightはnative前、commitはnative受理後で、元の例外を保持する。
+WaitのcancelはGPU完了ではない。submissionの実terminal状態でだけUseをretireし、frame WaitForReleaseもsubmission完了とは扱わない。
+frame imageは借用で直接Disposeせず、viewの解放、明示的release wait、frame Disposeを別々に行う。
+wrapped deviceのDeviceLost senderはwrapperで、Dispose時にnative event購読を外す。
+
+generic APIからnative wait／execute／signalの部分発行を観測できない例外は、状態をrollbackしたふりをせず、
+queue／operandsを保守的にquarantineし、明示的なbackend device-loss retirementが保証されるまで保持する。
+健全queueのopaque失敗からの回復contractはなく、勝手なwaitや新しいvalidation専用backend hookは追加しない。
+opaque acquire／presentの未知作用も保守的に扱う。既知のacquire成功後にframe wrapper生成が失敗しても、発行済みbinary signalは
+忘れず、raw frame cleanup成功はpending useだけをretireする。signal再利用には明示waitによるconsumeが必要である。
+constructor rollback失敗時のnative receipt／frame leaseも保持し、借用backendを暗黙Disposeしない。
+
+最終検証:
+
+- 全host Release3,355成功・失敗0・120skip。strict project／solution compile成功。
+- 新Validation.Tests Debug／Release各92成功・失敗0・skip0。identity/domain、借用ownership、全resource wrapper、
+  producer一回評価、typed native参照、metadata、queue部分失敗・cancel・retirement、surface/frame/semaphoreを実decoratorで検査。
+- Graphics Debug／Release各283成功・失敗0・99skip、Graph各140成功・失敗0・skip0。
+- Radeon ICDでraw／wrapped Vulkan・WgpuのSet／Copy／Draw／Graph実行・readbackを通し、targeted Debug／Release各70成功・skip0。
+- D3D12管理側39成功・Windows依存7skip。旧raw driver seamのnative順序・元例外・cancel／retirement検査を維持し、decorator側を別検査。
+- Browser Release compile／JS syntax、独立source review、raw assembly依存guardに成功。Windows／Browser runtimeは未検証。
+- reviewで発覚したacquire signal忘却は4ケース、buffer-texture copyの実footprintは20ケースで回帰検査した。
+  GraphのRW descriptorは宣言Write権限で照合しread-only拒否を保ち、native fixtureの潜在WAWは明示barrierで修正して[7,11]を維持した。
+
+ログはartifacts/validation21-final-{fullhost,graphics-debug,hardware-debug,hardware-release,unit-debug,graph-debug,d3d-release,browser}.log。
+NativeAOT publish、native Khronos validation layer、Windows D3D12／Browser実行・physical presentationは未検証。
+性能campaign、過去ADR、CI／workflow変更、凍結benchmark／データ書換え、gzip追加は行わない。
+以下はbackend内で任意検証を切り替えた旧方式の履歴であり、最新contractではない。
+
 ## 全table bindingと検証時だけのbuffer依存query（2026-11-15）
 
 三改善checkpoint c1bdf69a972e5b0f01453d920396c736ab1a64c9とは別に、後続の明示承認に従って依存管理を変更した。

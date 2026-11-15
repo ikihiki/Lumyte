@@ -18,7 +18,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         _surface = surface;
         Configuration = desc;
         Configure(desc);
-        Owner.Validation?.Register(this, surface);
     }
 
     public SwapchainDesc Configuration { get; private set; }
@@ -30,8 +29,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
     public void Reconfigure(SwapchainDesc desc)
     {
         ValidateAlive();
-        Owner.Validation?.Release(this);
-        Owner.Validation?.Register(this, _surface);
         Configure(desc);
     }
 
@@ -39,10 +36,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
-        if (signalSemaphore != null)
-        {
-            Owner.Validation?.PresentationSignalValidate(signalSemaphore);
-        }
 
         VulkanSemaphore? signal = null;
         if (signalSemaphore != null)
@@ -86,11 +79,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         }
 
         frame.SetImage(index, _images[index]);
-        Owner.Validation?.AcquireTexture(frame.AcquisitionOperation, frame.Texture, signalSemaphore);
-        if (signalSemaphore != null)
-        {
-            Owner.Validation?.PresentationSignaled(frame.AcquisitionOperation, signalSemaphore);
-        }
 
         return ValueTask.FromResult(new SurfaceAcquireResult(status, frame));
     }
@@ -102,7 +90,6 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
             return;
         }
 
-        Owner.Validation?.Release(this);
         Owner.Presentation.Swapchain.DestroySwapchain(Owner.NativeDevice, _native, null);
         _disposed = true;
     }

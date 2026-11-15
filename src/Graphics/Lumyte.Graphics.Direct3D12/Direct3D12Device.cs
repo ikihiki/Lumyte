@@ -16,18 +16,13 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
     private readonly nint _native;
     private readonly IDirect3D12QueueDriver? _queueDriver;
-    private bool _hasCreatedResources;
     private Direct3D12Submission? _failedSubmissions;
 
-    internal Direct3D12Device(IDirect3D12QueueDriver driver, bool validation)
+    internal Direct3D12Device(IDirect3D12QueueDriver driver)
     {
         _queueDriver = driver;
         _lifetime = new(this);
         Queue = new Direct3D12Queue(this);
-        if (validation)
-        {
-            EnableValidation();
-        }
     }
 
     private Direct3D12Device(nint native, bool partial)
@@ -46,11 +41,8 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         remove => _lifetime.DeviceLost -= value;
     }
 
-    /// <summary>Gets optional managed diagnostics, null by default in all build configurations.</summary>
-    public GraphicsValidation? Validation { get; private set; }
-
     /// <inheritdoc />
-    public bool ValidationEnabled => Validation != null;
+    public bool ValidationEnabled => false;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -198,20 +190,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         }
 
         var child = new Direct3D12Buffer<T>(this, desc, layout, size);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
-    }
-
-    /// <summary>Enables managed diagnostics before creating children. Keep this device's operations externally serialized.</summary>
-    public void EnableValidation()
-    {
-        if (Validation == null && _hasCreatedResources)
-        {
-            throw new InvalidOperationException("Enable validation before creating device resources.");
-        }
-
-        Validation ??= new GraphicsValidation();
     }
 
     /// <inheritdoc />
@@ -220,8 +199,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         ArgumentNullException.ThrowIfNull(desc);
         RequireReady();
         var child = new Direct3D12CommandBuffer(this);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -285,7 +262,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             throw new InvalidOperationException("Retire partial native submissions before device disposal.");
         }
 
-        Validation?.Release(this);
         if (Status == GraphicsDeviceStatus.Disposed)
         {
             return;
@@ -305,9 +281,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         RequireReady();
         TextureValidation.Validate(desc, Caps);
         var child = new Direct3D12Texture(this, desc);
-        Validation?.SetTextureState(child, TextureState.Undefined);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -317,8 +290,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         RequireReady();
         SamplerValidation.Validate(desc, Caps);
         var child = new Direct3D12Sampler(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -333,8 +304,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         }
 
         var child = new Direct3D12ArgumentTable(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -344,8 +313,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         RequireReady();
         ArgumentNullException.ThrowIfNull(artifact);
         var child = new Direct3D12Shader(this, artifact);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -354,8 +321,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         RequireReady();
         var child = new Direct3D12Semaphore(this);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -380,8 +345,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
         var child = new Direct3D12GraphicsPipeline(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -391,12 +354,10 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         RequireReady();
         ArgumentNullException.ThrowIfNull(desc);
         var child = new Direct3D12ComputePipeline(this, desc);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
-    /// <summary>Creates raw unmanaged shader storage with Debug-only layout diagnostics.</summary>
+    /// <summary>Creates raw unmanaged shader storage.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="artifact">The compiled shader artifact.</param>
     /// <param name="count">The element count.</param>
@@ -407,10 +368,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         where T : unmanaged
     {
         ArgumentNullException.ThrowIfNull(artifact);
-        if (Validation != null)
-        {
-            ShaderDataLayout.ValidateUnmanaged<T>(artifact, Caps.ShaderTarget);
-        }
 
         return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
     }
@@ -423,8 +380,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
 
         ArgumentNullException.ThrowIfNull(artifact);
         var child = new Direct3D12ShaderDataBuffer<T>(this, artifact, count, memory);
-        _hasCreatedResources = true;
-        Validation?.Register(child, this);
         return child;
     }
 
@@ -440,7 +395,6 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         }
 
         var child = new Direct3D12Surface(this, window);
-        _hasCreatedResources = true;
         return child;
     }
 

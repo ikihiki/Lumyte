@@ -7,15 +7,13 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 {
     private readonly IShaderReference[] _registrations;
     private readonly VulkanArgumentTable _table;
-    private readonly ShaderBindingDependencies? _validationDependencies;
     private readonly VulkanDevice _owner;
     private DescriptorPool _pool;
 
-    internal VulkanShaderBinding(VulkanDevice owner, VulkanArgumentTable table, IShaderReference[] registrations, DescriptorSetLayout layout, ShaderBindingDependencies? validationDependencies = null)
+    internal VulkanShaderBinding(VulkanDevice owner, VulkanArgumentTable table, IShaderReference[] registrations, DescriptorSetLayout layout)
     {
         _owner = owner;
         _registrations = registrations;
-        _validationDependencies = validationDependencies;
         _table = table;
         try
         {
@@ -70,7 +68,6 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 
         GC.KeepAlive(_registrations);
         GC.KeepAlive(_table);
-        GC.KeepAlive(_validationDependencies);
     }
 
     internal static DescriptorSetLayout CreateLayout(VulkanDevice owner, uint textures = 1, uint samplers = 1)

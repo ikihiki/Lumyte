@@ -67,7 +67,6 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
     {
         _ = Native;
         var view = new Direct3D12TextureView(this, TextureValidation.Resolve(this, desc));
-        Owner.Validation?.Register(view, this);
         return view;
     }
 
@@ -77,8 +76,6 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
         {
             throw new InvalidOperationException("The frame owns this image lease.");
         }
-
-        Owner.Validation?.Release(this);
 
         DisposeLease();
     }

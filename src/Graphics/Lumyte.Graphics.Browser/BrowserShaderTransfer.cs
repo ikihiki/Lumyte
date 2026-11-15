@@ -7,7 +7,7 @@ namespace Lumyte.Graphics.Browser;
 
 internal static class BrowserShaderTransfer
 {
-    internal static BrowserRootStorage CreateRoot<T>(BrowserDevice owner, in T value, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static BrowserRootStorage CreateRoot<T>(BrowserDevice owner, in T value)
         where T : struct, IShaderArguments
     {
         string root = T.RootParameter;
@@ -18,11 +18,10 @@ internal static class BrowserShaderTransfer
         var storage = new BrowserRootStorage(owner, size);
         try
         {
-            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, referenceCount, diagnostic, collect: owner.Validation != null || prepare != null);
+            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, referenceCount);
             value.Write(ref writer);
-            IShaderReferenceMetadata? references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields(in value), name);
-            storage.Initialize(ShaderRootArguments.Create(root, name, size, references, prepare), writer.Table);
+            writer.Complete();
+            storage.Initialize(ShaderRootArguments.Create(root, name, size, null), writer.Table);
             return storage;
         }
         catch
@@ -32,7 +31,7 @@ internal static class BrowserShaderTransfer
         }
     }
 
-    internal static BrowserRootStorage CreateUnmanaged<T>(BrowserDevice owner, in T value, string rootParameter, string? shaderTypeName, ShaderDataLayout? diagnostic = null, Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare = null)
+    internal static BrowserRootStorage CreateUnmanaged<T>(BrowserDevice owner, in T value, string rootParameter, string? shaderTypeName)
         where T : unmanaged
     {
         string name = shaderTypeName ?? ShaderTransfer.TypeName<T>();
@@ -41,11 +40,10 @@ internal static class BrowserShaderTransfer
         var storage = new BrowserRootStorage(owner, size);
         try
         {
-            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, 0, diagnostic, collect: owner.Validation != null || prepare != null);
+            var writer = new BrowserShaderValueWriter(owner, size, storage, null, 0, 0);
             writer.WriteValue(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)));
-            IShaderReferenceMetadata? references = writer.Complete();
-            diagnostic?.ValidateTransferLayout(size, ShaderTransfer.Fields<T>(), name);
-            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, references, prepare), writer.Table);
+            writer.Complete();
+            storage.Initialize(ShaderRootArguments.Create(rootParameter, name, size, null), writer.Table);
             return storage;
         }
         catch
@@ -55,7 +53,7 @@ internal static class BrowserShaderTransfer
         }
     }
 
-    internal static void CopyFrom<T>(BrowserDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count, HashSet<IShaderReference>? collector, ShaderDataLayout? diagnostic)
+    internal static void CopyFrom<T>(BrowserDevice owner, ReadOnlySpan<T> source, IGraphicsBuffer<byte> storage, ulong elementOffset, ulong count)
         where T : struct, IShaderArguments
     {
         ArgumentNullException.ThrowIfNull(storage);
@@ -89,14 +87,12 @@ internal static class BrowserShaderTransfer
             }
 
             upload = buffer.AcquireMappedUploadRange(offset, length);
-            using GraphicsValidation.HostWriteLease? lease = owner.Validation?.BeginHostWrite(storage, offset, (ulong)length);
 
             for (int i = 0; i < source.Length; i++)
             {
-                var writer = new BrowserShaderValueWriter(owner, stride, null, upload, checked(i * stride), referenceCount, diagnostic, collector: collector);
+                var writer = new BrowserShaderValueWriter(owner, stride, null, upload, checked(i * stride), referenceCount);
                 source[i].Write(ref writer);
                 writer.Complete();
-                diagnostic?.ValidateTransferLayout(stride, ShaderTransfer.Fields(in source[i]), T.ShaderTypeName);
             }
         }
         finally

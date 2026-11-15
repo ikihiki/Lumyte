@@ -4,14 +4,12 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
 {
-    private readonly ShaderBindingDependencies? _dependencies;
     private readonly Direct3D12ArgumentTable _table;
     private readonly IShaderReference[] _registrations;
     private nint _native;
 
-    internal Direct3D12ShaderBinding(Direct3D12Device owner, Direct3D12ArgumentTable table, IShaderReference[] registrations, ShaderBindingDependencies? dependencies)
+    internal Direct3D12ShaderBinding(Direct3D12Device owner, Direct3D12ArgumentTable table, IShaderReference[] registrations)
     {
-        _dependencies = dependencies;
         _table = table;
         _registrations = registrations;
         owner.Check(NativeMethods.BindingCreate(owner.Native, out _native));
@@ -99,7 +97,6 @@ internal sealed unsafe class Direct3D12ShaderBinding : IDisposable
         }
 
         _native = 0;
-        GC.KeepAlive(_dependencies);
         GC.KeepAlive(_table);
         GC.KeepAlive(_registrations);
     }

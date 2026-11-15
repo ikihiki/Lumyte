@@ -8,7 +8,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 {
     private VulkanComputePipeline? _pipeline;
 
-    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
@@ -26,7 +25,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         }
 
         selected.ThrowIfDisposed();
-        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -34,7 +32,10 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
-        _argumentValidation = prepare;
+        if (prepare != null)
+        {
+            throw new NotSupportedException("Use a ValidationDevice for argument validation.");
+        }
     }
 
     public void SetArguments<T>(in T value)
@@ -48,7 +49,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             int size = VulkanPushConstants.ValidateStackSize(owner.Owner, T.TransferSize);
             Span<byte> payload = stackalloc byte[size];
             payload.Clear();
-            (ShaderRootArguments? root, VulkanArgumentTable? tableHint) = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            (ShaderRootArguments? root, VulkanArgumentTable? tableHint) = VulkanShaderTransfer.CreateRoot(owner.Owner, in value, payload);
             SelectRoot(root, payload, pipeline, tableHint);
         }
         finally
@@ -68,7 +69,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
             int size = VulkanPushConstants.ValidateStackSize(owner.Owner, Unsafe.SizeOf<T>());
             Span<byte> payload = stackalloc byte[size];
             payload.Clear();
-            ShaderRootArguments root = VulkanShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+            ShaderRootArguments root = VulkanShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload);
             SelectRoot(root, payload, pipeline, null);
         }
         finally
@@ -88,14 +89,12 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
         }
 
         program.ValidateAlive();
-        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
     public void Dispatch(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         uint limit = owner.Owner.Caps.MaxComputeWorkgroupsPerDimension;
         if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0 || groupCountX > limit || groupCountY > limit || groupCountZ > limit)
@@ -105,13 +104,11 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         PrepareDispatch();
         owner.Owner.Api.CmdDispatch(owner.Native, groupCountX, groupCountY, groupCountZ);
-        validationRecording?.Commit();
     }
 
     public void DispatchIndirect(BufferSlice<DispatchIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (arguments.Count != 1 || arguments.OffsetInBytes % 4 != 0)
         {
@@ -120,9 +117,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         VulkanBuffer<DispatchIndirectArguments> buffer = owner.Buffer(arguments, BufferUsage.Indirect);
         PrepareDispatch();
-        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         owner.Owner.Api.CmdDispatchIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes);
-        validationRecording?.Commit();
     }
 
     public void End()
@@ -150,8 +145,6 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         _pipeline.ValidateAlive();
     }
-
-    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(_pipeline!.Data, rootParameter);
 
     private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanComputePipeline pipeline, VulkanArgumentTable? tableHint)
     {
@@ -203,20 +196,13 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         table?.ThrowIfDisposed();
         IShaderReference[]? registrations = table?.SnapshotRegistrations();
-        ShaderBindingDependencies? validationDependencies = null;
-        if (_pipeline.RequiresArguments && _arguments != null && owner.Owner.Validation is { } validation)
-        {
-            var dependencies = ShaderBindingDependencies.Collect(_arguments, table, owner.ReadShaderDependencies);
-            validationDependencies = dependencies;
-            EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, PipelineStage.ComputeShader);
-        }
 
         _pipeline.ValidateAlive();
 
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(registrations));
         if (registrations != null)
         {
-            var binding = new VulkanShaderBinding(owner.Owner, table!, registrations, _pipeline.ArgumentLayout, validationDependencies);
+            var binding = new VulkanShaderBinding(owner.Owner, table!, registrations, _pipeline.ArgumentLayout);
             owner.KeepBinding(binding);
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Compute, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);

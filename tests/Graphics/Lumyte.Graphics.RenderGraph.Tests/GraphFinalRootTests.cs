@@ -357,6 +357,44 @@ public sealed class GraphFinalRootTests
         Assert.Single(commands.Encoder.Bindings);
     }
 
+    /// <summary>Writable descriptor capability accepts write-only intent, but never read-only or undeclared storage.</summary>
+    /// <param name="writable">Whether the consuming pass declares shader writes.</param>
+    /// <param name="declared">Whether the consuming pass declares the referenced allocation.</param>
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void WritableDescriptorAdmissionRespectsPassIntent(bool writable, bool declared)
+    {
+        using var graph = new RenderGraph(new PublicGraphConsumerDevice { ValidationEnabled = true });
+        using var data = new TestTypedBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite }, []);
+        RenderGraphBuffer<uint> buffer = graph.ImportBuffer(data, default);
+        using var pipeline = new PublicGraphConsumerComputePipeline(Artifact());
+        var commands = new RootCommands();
+        graph.AddPass("descriptor capability", context =>
+        {
+            // Keep the graph's own table identity while exercising descriptor metadata independently of lookup.
+            var own = (IShaderReference)context.GetGpuRef(buffer);
+            var reference = new PublicGraphConsumerRef<ConsumerLink>(own.Table, declared ? data : new object(), own.Slot, 1, access: ShaderBufferAccess.ReadWrite);
+            using RenderGraphComputeEncoder encoder = context.BeginComputePass();
+            encoder.SetPipeline(pipeline);
+            var arguments = new RootInput<OneReference> { Data = reference };
+            if (writable && declared)
+            {
+                encoder.SetArguments(arguments);
+                encoder.Dispatch(1);
+            }
+            else
+            {
+                Assert.Throws<ArgumentException>(() => encoder.SetArguments(arguments));
+            }
+        }).UseBuffer(buffer, new(PipelineStage.ComputeShader, writable ? ResourceAccess.ShaderWrite : ResourceAccess.ShaderRead)).KeepAlive();
+        using CompiledRenderGraph plan = graph.Compile();
+        using RootCommands commandLifetime = commands;
+        plan.Record(commands);
+        Assert.Equal(writable && declared ? 1 : 0, commands.Encoder.Bindings.Count);
+    }
+
     /// <summary>Distinct view registrations of one texture share canonical admission.</summary>
     [Fact]
     public void TransitiveAdmissionAcceptsAnotherViewOfDeclaredTexture()

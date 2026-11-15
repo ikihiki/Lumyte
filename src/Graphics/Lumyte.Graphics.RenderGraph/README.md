@@ -214,7 +214,7 @@ uniform/CBV or oversized-root fallback remain. Shared retains only immutable roo
 Allocate, Seal, Dispose or IDisposable; no replacement public storage type is added.
 Wgpu/Browser retain existing private concrete uniform owners through command
 KeepBinding until GPU release. Vulkan/D3D12 do not KeepBinding root metadata at Set.
-記録済みbindingは全登録とtable identityを保持し、検証ONだけで依存revisionも保持します。
+raw bindingは全登録とtable identityを保持し、検証層だけが依存revisionも保持します。
 Set-time capacity checks reject before
 allocation/publication, preserving the previous selection. Mandatory artifact
 preflight is separate ABI safety, active without validation tracking: Vulkan checks
@@ -280,18 +280,31 @@ else
 }
 ```
 
-検証OFFでは全backendが数値だけのReferenceCount = 0を含めてfalse／nullを返します。これは追跡利用不可であり、既知の空集合ではありません。登録・remapなどの非公開機能状態は残ります。検証ONではbuffer全体の不変な依存unionを返し、ReferenceCount = 0は既知の空集合としてtrueです。参照付きbufferの未初期化・失敗後の状態は無効で、queryはInvalidOperationExceptionとなり、buffer全体の明示再転送で回復します。部分転送だけでは回復しません。
+raw backendのTryGetDependenciesは、数値だけのReferenceCount = 0を含めて常にfalse／nullを返します。これは追跡利用不可であり、既知の空集合ではありません。登録・remapなどの非公開機能状態は残ります。ValidationDeviceのbuffer wrapperはbuffer全体の不変な依存unionを返し、ReferenceCount = 0は既知の空集合としてtrueです。参照付きbufferの未初期化・失敗後の状態は無効で、queryはInvalidOperationExceptionとなり、buffer全体の明示再転送で回復します。部分転送だけでは回復しません。
 
 既知状態への部分更新は旧依存とのunionを保持でき、buffer寿命内で保守的な偽陽性が残ります。全体書き直しは現在のunionを置き換えられますが、記録済みcommandが保持する旧revisionは不変です。要素ごとの配列や毎drawの行走査は不要で、検証ONのShaderBindingDependencies.Buffersが各bufferを一回だけ訪問します。
 
-CPU CopyFromの更新はbackendが所有します。GPU copyは検証ONだけでbackend-privateなbuffer単位のcommand overlayを作り、native copy記録成功後に更新し、queue Submit成功後にだけ公開します。失敗・未送信・破棄したcommandから公開せず、隠れたreadback・待機・数値履歴も持ちません。
+CPU CopyFromの依存更新は検証層が所有します。GPU copyも検証層のbuffer単位の非公開command overlayを使い、native copy記録成功後に更新し、queue Submit成功後にだけ公開します。失敗・未送信・破棄したcommandから公開せず、隠れたreadback・待機・数値履歴も持ちません。
 
 ### 厳密な参照数とmapped batchの契約
 
-IShaderArgumentsのstatic abstract ReferenceCountは重複も数えた物理16-byte slot数です。backend writerは全modeで0 <= N <= wireSize / 16、WriteReferenceの超過とCompleteの不足、位置・容量・型・範囲を検査します。rootの直接参照配列を収集するのは検証ONまたは利用者が明示したprepare hookがある場合だけです。それ以外はscalar countと単一の暗黙table hintだけを保持します。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
+IShaderArgumentsのstatic abstract ReferenceCountは重複も数えた物理16-byte slot数です。backend writerは全modeで0 <= N <= wireSize / 16、WriteReferenceの超過とCompleteの不足、位置・容量・型・範囲を検査します。rootの直接参照配列とprepare hookは検証層だけが保持します。raw backendはscalar countと単一の暗黙table hintだけを保持し、非nullのSetArgumentValidationは未対応として拒否します。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
 
 ShaderRootArgumentsはstorageを持たない不変metadata classです。Referencesはnullableでnullは未収集を表し、Createにprepareを渡す場合は利用可能なmetadataが必須です。rootの単一table hintは自動選択を補助しますが、明示SelectedTableが優先します。異なるtableが混在すればnative Set発行前に拒否します。
 
-native CopyFromはbatch全体のmapped spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書きます。Browserは一つの検査済みUint8Array viewへJS.setでコピーし、finallyでviewだけを解放します。検証ONだけHostWriteLeaseで再入書き込み・Map／Unmap／Disposeを診断します。失敗時は部分byte更新を許し、追跡buffer全体を無効にして元例外を保持します。OFFでは利用者がmappingと寿命・並行操作を保証し、追加lock・待機・pinは設けず、無効pointerを実行する試験もしません。
+native CopyFromはbatch全体のmapped spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書きます。Browserは一つの検査済みUint8Array viewへJS.setでコピーし、finallyでviewだけを解放します。検証層だけがHostWriteLeaseで再入書き込み・Map／Unmap／Disposeを診断します。失敗時は部分byte更新を許し、追跡buffer全体を無効にして元例外を保持します。OFFでは利用者がmappingと寿命・並行操作を保証し、追加lock・待機・pinは設けず、無効pointerを実行する試験もしません。
 
 VulkanとD3D12はbuffer作成時の保存済みaddressへchecked offsetを加え、参照ごとのdriver queryやglobal cacheを作りません。native root即時定数、固定signature／stage、pipeline・End・callback後の再検査は継続します。残るbinding確保やBrowserコピーを含めzero allocation／zero copyは保証しません。c1bdf69以前の固定checkpoint測定はこの全table・任意追跡方式の性能結果ではありません。
+
+## 独立した検証プロジェクト
+
+VulkanDevice、ValidationDevice、IGraphicDeviceをそれぞれのnamespaceから読み込み、次のように選択します。
+
+```csharp
+using var raw = VulkanDevice.Create();
+using var validated = new ValidationDevice(raw);
+IGraphicDevice device = validated;
+// 以降の子資源はすべてdeviceから生成し、validatedより先にDisposeする。
+```
+
+任意診断は[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDeviceで選択します。backendを借用し、すべての子資源をwrapperから作ります。rawはValidationEnabledがfalseで診断engineを持たず、wrapperはtrueです。Graphの参照準備、依存query、寿命・同期・配置診断はこの層が担当します。native backendの必須bounds／memory safety／ABI／ReferenceCount検査は継続します。既存の固定checkpoint測定からこの新しい層の性能は主張しません。

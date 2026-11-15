@@ -1,35 +1,29 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Validation;
 using Xunit;
 
 namespace Lumyte.Graphics.Direct3D12.Tests;
 
-/// <summary>Exercises the actual queue route with managed native-boundary failures and no GPU.</summary>
+/// <summary>Exercises raw queue native-call sequencing and retention with managed driver failures and no GPU. Decorator diagnostic cases belong to Validation.Tests.</summary>
 public sealed class PartialSubmissionTests
 {
     /// <summary>Retains only successfully issued dependencies when a later operation and recovery marker fail.</summary>
-    /// <param name="validation">Whether managed diagnostics are enabled.</param>
     /// <param name="commands">Whether the submission includes a real managed command object.</param>
     /// <param name="failure">The native operation to fail.</param>
     /// <returns>The asynchronous verification.</returns>
     [Theory]
-    [InlineData(true, true, "wait")]
-    [InlineData(false, true, "wait")]
-    [InlineData(true, false, "wait")]
-    [InlineData(false, false, "wait")]
-    [InlineData(true, true, "signal")]
-    [InlineData(false, true, "signal")]
-    [InlineData(true, false, "signal")]
-    [InlineData(false, false, "signal")]
-    [InlineData(true, true, "completion")]
-    [InlineData(false, true, "completion")]
-    [InlineData(true, false, "completion")]
-    [InlineData(false, false, "completion")]
-    public async Task PartialFailureRetainsIssuedOperationsUntilDeviceRemovalAsync(bool validation, bool commands, string failure)
+    [InlineData(true, "wait")]
+    [InlineData(false, "wait")]
+    [InlineData(true, "signal")]
+    [InlineData(false, "signal")]
+    [InlineData(true, "completion")]
+    [InlineData(false, "completion")]
+    public async Task PartialFailureRetainsIssuedOperationsUntilDeviceRemovalAsync(bool commands, string failure)
     {
         var driver = new FakeQueueDriver();
-        using var device = new Direct3D12Device(driver, validation);
+        using var device = new Direct3D12Device(driver);
         Direct3D12Semaphore[] waits = CreateSemaphores(device, 3);
         Direct3D12Semaphore[] signals = CreateSemaphores(device, 3);
         IGraphicsSubmission producer = device.Queue.Submit(new QueueSubmitDesc { SignalSemaphores = waits });
@@ -84,16 +78,10 @@ public sealed class PartialSubmissionTests
         driver.Complete(producerFence);
         await producer.WaitAsync();
         producer.Dispose();
-        if (validation)
-        {
-            Assert.Throws<InvalidOperationException>(() => waits[0].Dispose());
-            if (failure != "wait")
-            {
-                Assert.Throws<InvalidOperationException>(() => signals[0].Dispose());
-            }
 
-            Assert.Throws<InvalidOperationException>(() => device.Validation!.PrepareSubmission(new QueueSubmitDesc()));
-        }
+        // Native retention is independent of the optional validation decorator.
+        Assert.Same(failed, device.FailedSubmission);
+        Assert.DoesNotContain(recoveryFence, driver.Released);
 
         Assert.Throws<InvalidOperationException>(() => device.Dispose());
         using var canceled = new CancellationTokenSource();
@@ -126,20 +114,16 @@ public sealed class PartialSubmissionTests
     }
 
     /// <summary>Abandons a submission that failed before any native operation without consuming binary state.</summary>
-    /// <param name="validation">Whether managed diagnostics are enabled.</param>
     /// <param name="failure">The first operation to fail.</param>
     /// <returns>The asynchronous verification.</returns>
     [Theory]
-    [InlineData(true, "wait")]
-    [InlineData(false, "wait")]
-    [InlineData(true, "signal")]
-    [InlineData(false, "signal")]
-    [InlineData(true, "execute")]
-    [InlineData(false, "execute")]
-    public async Task FirstOperationFailureAbandonsUnissuedSubmissionAsync(bool validation, string failure)
+    [InlineData("wait")]
+    [InlineData("signal")]
+    [InlineData("execute")]
+    public async Task FirstOperationFailureAbandonsUnissuedSubmissionAsync(string failure)
     {
         var driver = new FakeQueueDriver();
-        using var device = new Direct3D12Device(driver, validation);
+        using var device = new Direct3D12Device(driver);
         var semaphore = (Direct3D12Semaphore)device.CreateSemaphore();
         if (failure == "wait")
         {
@@ -174,7 +158,6 @@ public sealed class PartialSubmissionTests
         Assert.Equal(1UL, semaphore.WaitValue);
         Assert.Equal(failure == "wait" ? 2UL : 1UL, semaphore.SignalValue);
         AssertSignalState(device, semaphore, failure == "wait");
-        device.Validation?.PrepareSubmission(new QueueSubmitDesc());
         if (command != null)
         {
             Assert.Equal(CommandBufferState.Executable, command.State);
@@ -185,18 +168,15 @@ public sealed class PartialSubmissionTests
     }
 
     /// <summary>Retires a successful recovery marker only after actual completion, not cancellation of its waiter.</summary>
-    /// <param name="validation">Whether managed diagnostics are enabled.</param>
     /// <param name="commands">Whether a command accompanies the semaphore operations.</param>
     /// <returns>The asynchronous verification.</returns>
     [Theory]
-    [InlineData(true, true)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(false, false)]
-    public async Task RecoveryMarkerWaitCancellationDoesNotRetireNativeUseAsync(bool validation, bool commands)
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RecoveryMarkerWaitCancellationDoesNotRetireNativeUseAsync(bool commands)
     {
         var driver = new FakeQueueDriver();
-        using var device = new Direct3D12Device(driver, validation);
+        using var device = new Direct3D12Device(driver);
         Direct3D12Semaphore[] signals = CreateSemaphores(device, 2);
         Direct3D12CommandBuffer? command = commands ? CreateCommand(device) : null;
         driver.Failure = "signal";
@@ -220,10 +200,8 @@ public sealed class PartialSubmissionTests
         Assert.Same(failed, device.FailedSubmission);
         Assert.Equal(SubmissionStatus.Pending, failed.Status);
         Assert.DoesNotContain(recoveryFence, driver.Released);
-        if (validation)
-        {
-            Assert.Throws<InvalidOperationException>(() => signals[0].Dispose());
-        }
+        Assert.Same(failed, device.FailedSubmission);
+        Assert.DoesNotContain(signals[0].Native, driver.Released);
 
         Task survivor = device.WaitForRetirementAsync().AsTask();
         Assert.False(survivor.IsCompleted);
@@ -246,14 +224,11 @@ public sealed class PartialSubmissionTests
     }
 
     /// <summary>Native removal probes preserve original HRESULTs even after the cached device state is lost.</summary>
-    /// <param name="validation">Whether diagnostics are enabled.</param>
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void LossDoesNotReplaceNativeErrorWithReadinessRejection(bool validation)
+    [Fact]
+    public void LossDoesNotReplaceNativeErrorWithReadinessRejection()
     {
         var driver = new FakeQueueDriver { Removed = unchecked((int)0x887A0005) };
-        using var device = new Direct3D12Device(driver, validation);
+        using var device = new Direct3D12Device(driver);
         const int OriginalFailure = unchecked((int)0x80004005);
         System.Runtime.InteropServices.COMException first = Assert.Throws<System.Runtime.InteropServices.COMException>(() => device.Check(OriginalFailure));
         Assert.Equal(OriginalFailure, first.HResult);
@@ -266,6 +241,31 @@ public sealed class PartialSubmissionTests
         Assert.Throws<ObjectDisposedException>(() => _ = device.QueueNative);
     }
 
+    /// <summary>The decorator borrows the driver-backed raw device and retains logical semaphore use until native completion.</summary>
+    /// <returns>The completion verification.</returns>
+    [Fact]
+    public async Task DecoratorRetainsSemaphoreUntilNativeCompletionAsync()
+    {
+        var driver = new FakeQueueDriver();
+        using var raw = new Direct3D12Device(driver);
+        using var device = new ValidationDevice(raw);
+        Assert.False(((IGraphicDevice)raw).ValidationEnabled);
+        Assert.True(device.ValidationEnabled);
+        using IGraphicsSemaphore semaphore = device.CreateSemaphore();
+        using IGraphicsSubmission submission = device.Queue.Submit(new QueueSubmitDesc { SignalSemaphores = [semaphore] });
+        Assert.Single(driver.Signals);
+        Assert.Single(driver.CompletionSignals);
+        Assert.Throws<InvalidOperationException>(() => semaphore.Dispose());
+        nint fence = driver.Created[^1];
+        driver.Complete(fence);
+        await submission.WaitAsync();
+        submission.Dispose();
+        semaphore.Dispose();
+        device.Dispose();
+        Assert.Equal(GraphicsDeviceStatus.Ready, raw.Status);
+        Assert.Equal(1, driver.Released.Count(value => value == fence));
+    }
+
     private static Direct3D12Semaphore[] CreateSemaphores(Direct3D12Device device, int count)
         => Enumerable.Range(0, count).Select(_ => (Direct3D12Semaphore)device.CreateSemaphore()).ToArray();
 
@@ -273,35 +273,13 @@ public sealed class PartialSubmissionTests
         => new() { Semaphore = semaphore, Stages = PipelineStage.AllCommands };
 
     private static void AssertSignalState(Direct3D12Device device, Direct3D12Semaphore semaphore, bool signaled)
-    {
-        if (device.Validation is not { } validation)
-        {
-            return;
-        }
-
-        if (signaled)
-        {
-            validation.PresentationWaitValidate([semaphore]);
-        }
-        else
-        {
-            Assert.Throws<InvalidOperationException>(() => validation.PresentationWaitValidate([semaphore]));
-        }
-    }
+        => Assert.Equal(signaled, semaphore.WaitValue < semaphore.SignalValue);
 
     private static Direct3D12CommandBuffer CreateCommand(Direct3D12Device device)
     {
         // Deliberately bypass native allocation. Never call Dispose on this numeric-handle command.
         var command = (Direct3D12CommandBuffer)RuntimeHelpers.GetUninitializedObject(typeof(Direct3D12CommandBuffer));
         SetField(command, "_owner", device);
-        if (device.Validation is { } validation)
-        {
-            Type stateType = typeof(Direct3D12CommandBuffer).GetNestedType("CommandDependencyState", BindingFlags.NonPublic)!;
-            object dependencies = Activator.CreateInstance(stateType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, [validation, command], null)!;
-            SetField(command, "_shaderDependencies", dependencies);
-            validation.Register(command, device);
-        }
-
         SetField(command, "<Native>k__BackingField", (nint)10000);
         SetField(command, "<State>k__BackingField", CommandBufferState.Executable);
         return command;
@@ -313,8 +291,7 @@ public sealed class PartialSubmissionTests
     private static void ReleaseCommandTracker(Direct3D12Device device, Direct3D12CommandBuffer command)
     {
         Assert.NotEqual(CommandBufferState.Submitted, command.State);
-        device.Validation?.Discard(command);
-        device.Validation?.Release(command);
+        Assert.False(((IGraphicDevice)device).ValidationEnabled);
     }
 
     private sealed class FakeQueueDriver : IDirect3D12QueueDriver

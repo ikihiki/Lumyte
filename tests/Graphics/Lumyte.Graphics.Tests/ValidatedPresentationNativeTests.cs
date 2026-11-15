@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Silk.NET.Vulkan;
@@ -21,19 +22,18 @@ public sealed class ValidatedPresentationNativeTests
     public async Task VulkanClearAndPresentAsync(bool enabled)
     {
         using var window = new X11Window();
-        using var device = VulkanDevice.Create(new VulkanDeviceDesc
+        using var raw = VulkanDevice.Create(new VulkanDeviceDesc
         {
             EnablePresentation = true,
             InstanceExtensions = ["VK_KHR_xlib_surface"],
         });
-        if (enabled)
-        {
-            device.EnableValidation();
-        }
+        using ValidationDevice? layer = enabled ? new(raw) : null;
+        IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
-        Assert.Equal(enabled, device.Validation != null);
-        using IGraphicsSurface surface = device.CreateSurface(window.CreateVulkanSurface);
-        await ClearAndPresentAsync(device, surface);
+        Assert.Equal(enabled, device.ValidationEnabled);
+        using IGraphicsSurface rawSurface = raw.CreateSurface(window.CreateVulkanSurface);
+        using IGraphicsSurface? wrappedSurface = layer?.WrapSurface(rawSurface);
+        await ClearAndPresentAsync(device, wrappedSurface ?? rawSurface);
     }
 
     /// <summary>Checks the native WebGPU presentation ownership and single-queue ordering chain.</summary>
@@ -45,15 +45,14 @@ public sealed class ValidatedPresentationNativeTests
     public async Task WgpuClearAndPresentAsync(bool enabled)
     {
         using var window = new X11Window();
-        using var device = WgpuDevice.Create();
-        if (enabled)
-        {
-            device.EnableValidation();
-        }
+        using var raw = WgpuDevice.Create();
+        using ValidationDevice? layer = enabled ? new(raw) : null;
+        IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
-        Assert.Equal(enabled, device.Validation != null);
-        using IGraphicsSurface surface = device.CreateSurface(Ahjo.Wgpu.SurfaceSource.XlibWindow(window.Display, (ulong)window.Window));
-        await ClearAndPresentAsync(device, surface);
+        Assert.Equal(enabled, device.ValidationEnabled);
+        using IGraphicsSurface rawSurface = raw.CreateSurface(Ahjo.Wgpu.SurfaceSource.XlibWindow(window.Display, (ulong)window.Window));
+        using IGraphicsSurface? wrappedSurface = layer?.WrapSurface(rawSurface);
+        await ClearAndPresentAsync(device, wrappedSurface ?? rawSurface);
     }
 
     private static async Task ClearAndPresentAsync(IGraphicDevice device, IGraphicsSurface surface)

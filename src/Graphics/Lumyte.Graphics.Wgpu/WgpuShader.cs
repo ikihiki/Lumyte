@@ -32,8 +32,6 @@ internal sealed class WgpuShader(WgpuDevice owner, ShaderArtifact artifact) : IG
             return;
         }
 
-        owner.Validation?.Release(this);
-
         _native.Dispose();
         _disposed = true;
     }

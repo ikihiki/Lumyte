@@ -12,14 +12,11 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private RenderStateSnapshot? _state;
     private IndexFormat? _indexFormat;
     private ulong _indexCount;
-    private object? _indexBuffer;
-    private ulong _indexOffset;
     private bool _viewport;
     private bool _scissor;
     private bool _blend;
     private bool _stencil;
 
-    private Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? _argumentValidation;
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
@@ -39,7 +36,6 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         }
 
         selected.ThrowIfDisposed();
-        owner.Owner.Validation?.Use(owner, selected);
         _table = selected;
     }
 
@@ -47,7 +43,10 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
-        _argumentValidation = prepare;
+        if (prepare != null)
+        {
+            throw new NotSupportedException("Use a ValidationDevice for argument validation.");
+        }
     }
 
     public void SetArguments<T>(in T value)
@@ -61,7 +60,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             int words = Direct3D12ShaderTransfer.ValidateRootSize(T.TransferSize);
             Span<byte> payload = stackalloc byte[words * 4];
             payload.Clear();
-            (ShaderRootArguments? root, Direct3D12ArgumentTable? tableHint) = Direct3D12ShaderTransfer.CreateRoot(owner.Owner, in value, payload, diagnostic: owner.Owner.Validation == null ? null : DiagnosticRoot(T.RootParameter), prepare: _argumentValidation);
+            (ShaderRootArguments? root, Direct3D12ArgumentTable? tableHint) = Direct3D12ShaderTransfer.CreateRoot(owner.Owner, in value, payload);
             SelectRoot(root, payload, pipeline, tableHint);
         }
         finally
@@ -81,7 +80,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             int words = Direct3D12ShaderTransfer.ValidateRootSize(Unsafe.SizeOf<T>());
             Span<byte> payload = stackalloc byte[words * 4];
             payload.Clear();
-            ShaderRootArguments root = Direct3D12ShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload, diagnostic: DiagnosticRoot(rootParameter), prepare: _argumentValidation);
+            ShaderRootArguments root = Direct3D12ShaderTransfer.CreateUnmanaged(owner.Owner, in value, rootParameter, shaderTypeName, payload);
             SelectRoot(root, payload, pipeline, null);
         }
         finally
@@ -101,7 +100,6 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         }
 
         program.ValidateAlive();
-        owner.Owner.Validation?.Use(owner, program);
         _pipeline = program;
     }
 
@@ -169,18 +167,15 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(false);
         NativeMethods.Draw(owner.Native, vertexCount, instanceCount, firstVertex, 0, firstInstance, 0);
-        validationRecording?.Commit();
     }
 
     public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
         {
@@ -189,34 +184,25 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(true);
-        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), checked(_indexOffset + ((ulong)firstIndex * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul))), checked((ulong)indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         NativeMethods.Draw(owner.Native, indexCount, instanceCount, firstIndex, baseVertex, firstInstance, 1);
-        validationRecording?.Commit();
     }
 
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
-        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
         owner.Indirect(buffer.Native, buffer.GpuAddress, arguments.OffsetInBytes, 0);
-        validationRecording?.Commit();
     }
 
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
-        owner.Owner.Validation?.Access(owner, buffer, new(PipelineStage.DrawIndirect, ResourceAccess.IndirectRead), arguments.OffsetInBytes, arguments.SizeInBytes);
-        owner.Owner.Validation?.Access(owner, _indexBuffer!, new(PipelineStage.IndexInput, ResourceAccess.IndexRead), _indexOffset, checked(_indexCount * (_indexFormat == IndexFormat.Uint16 ? 2ul : 4ul)));
         owner.Indirect(buffer.Native, buffer.GpuAddress, arguments.OffsetInBytes, 1);
-        validationRecording?.Commit();
     }
 
     public void End()
@@ -229,18 +215,11 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         where T : unmanaged
     {
         ThrowIfSettingArguments();
-        using GraphicsValidation.RecordingTransaction? validationRecording = owner.Owner.Validation?.BeginRecording(owner);
         owner.ValidatePass(this);
         Direct3D12Buffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
         NativeMethods.Indices(owner.Native, buffer.GpuAddress, indices.OffsetInBytes, checked((uint)indices.SizeInBytes), format == IndexFormat.Uint16 ? 57u : 42u);
-        validationRecording?.Commit();
         _indexFormat = format;
         _indexCount = indices.Count;
-        if (owner.Owner.Validation != null)
-        {
-            _indexBuffer = buffer;
-            _indexOffset = indices.OffsetInBytes;
-        }
     }
 
     private Direct3D12Buffer<T> IndirectBuffer<T>(BufferSlice<T> arguments)
@@ -274,8 +253,6 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         _pipeline.ValidateAlive();
         owner.Owner.RequireReady();
     }
-
-    private ShaderDataLayout? DiagnosticRoot(string rootParameter) => owner.Owner.Validation == null ? null : ShaderDataLayout.Root(ShaderDataLayout.RootTarget(_pipeline!.VertexData, _pipeline.FragmentData, rootParameter), rootParameter);
 
     private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, Direct3D12GraphicsPipeline pipeline, Direct3D12ArgumentTable? tableHint)
     {
@@ -334,13 +311,6 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         table?.ThrowIfDisposed();
         IShaderReference[]? registrations = table?.SnapshotRegistrations();
-        ShaderBindingDependencies? bindingDependencies = null;
-        if (_pipeline.RequiresArguments && _arguments != null && owner.Owner.Validation is { } validation)
-        {
-            var dependencies = ShaderBindingDependencies.Collect(_arguments, table, owner.ReadShaderDependencies);
-            EncoderValidation.ShaderAccesses(validation, owner, dependencies.References, EncoderValidation.RenderStages(_pipeline.VertexData, _pipeline.FragmentData, dependencies.RootParameter));
-            bindingDependencies = dependencies;
-        }
 
         if (indexed)
         {
@@ -352,12 +322,12 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         _pipeline.ValidateAlive();
 
-        nint pipeline = _pipeline.Resolve(_state, _formats, bindingDependencies, _depthFormat, indexed ? _indexFormat : null);
+        nint pipeline = _pipeline.Resolve(_state, _formats, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Check(NativeMethods.Pipeline(owner.Native, pipeline, 0));
         NativeMethods.Topology(owner.Native, (uint)_state.Desc.Topology + 1);
         if (registrations != null)
         {
-            var binding = new Direct3D12ShaderBinding(owner.Owner, table!, registrations, bindingDependencies);
+            var binding = new Direct3D12ShaderBinding(owner.Owner, table!, registrations);
             owner.KeepBinding(binding);
             NativeMethods.Binding(owner.Native, binding.Native, 0);
         }

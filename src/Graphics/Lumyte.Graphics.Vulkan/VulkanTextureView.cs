@@ -29,8 +29,6 @@ internal sealed unsafe class VulkanTextureView(VulkanTexture texture, TextureVie
             return;
         }
 
-        Owner.Validation?.Release(this);
-
         texture.Owner.Api.DestroyImageView(texture.Owner.NativeDevice, native, null);
         _disposed = true;
     }

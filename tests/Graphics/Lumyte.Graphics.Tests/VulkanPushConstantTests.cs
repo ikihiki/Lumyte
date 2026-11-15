@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Shaders;
+using Lumyte.Graphics.Validation;
 using Lumyte.Graphics.Vulkan;
 using Xunit;
 using Xunit.Abstractions;
@@ -75,7 +76,8 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
                 Target = ShaderTarget.SpirV,
             },
             timeout.Token);
-        using var device = VulkanDevice.Create();
+        using var raw = VulkanDevice.Create();
+        using var device = new ValidationDevice(raw);
         using IGraphicsShader shader = device.CreateShader(artifact);
         using IGraphicsComputePipeline pipeline = device.CreateComputePipeline(new() { ComputeShader = shader });
         using IGraphicsComputePipeline other = device.CreateComputePipeline(new() { ComputeShader = shader });
@@ -85,16 +87,16 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
         try
         {
             encoder.SetPipeline(pipeline);
-            uint value = 7;
-            encoder.SetArguments(in value);
-            foreach (Action mutation in new Action[] { encoder.End, () => encoder.SetPipeline(other), () => encoder.SetArguments(in value), () => encoder.Dispatch(1), () => encoder.SetArgumentValidation(null) })
+            var value = new AdmissionPayload { Value0 = 7 };
+            encoder.SetArguments(in value, shaderTypeName: "Payload");
+            foreach (Action mutation in new Action[] { encoder.End, () => encoder.SetPipeline(other), () => encoder.SetArguments(in value, shaderTypeName: "Payload"), () => encoder.Dispatch(1), () => encoder.SetArgumentValidation(null) })
             {
                 encoder.SetArgumentValidation(_ =>
                 {
                     mutation();
                     return null;
                 });
-                Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in value));
+                Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in value, shaderTypeName: "Payload"));
             }
 
             encoder.SetArgumentValidation(_ =>
@@ -102,17 +104,17 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
                 encoder.SetArgumentTable(table);
                 return null;
             });
-            encoder.SetArguments(in value);
+            encoder.SetArguments(in value, shaderTypeName: "Payload");
             encoder.SetArgumentValidation(_ =>
             {
                 pipeline.Dispose();
                 return null;
             });
-            Exception disposed = Record.Exception(() => encoder.SetArguments(in value))!;
+            Exception disposed = Record.Exception(() => encoder.SetArguments(in value, shaderTypeName: "Payload"))!;
             Assert.True(disposed is ObjectDisposedException or InvalidOperationException, $"Unexpected disposal result: {disposed}");
             encoder.SetArgumentValidation(null);
             encoder.SetPipeline(other);
-            encoder.SetArguments(in value);
+            encoder.SetArguments(in value, shaderTypeName: "Payload");
         }
         finally
         {
@@ -188,11 +190,9 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
         ShaderArtifact artifact = await new SlangShaderCompiler().CompileAsync(new() { Source = source, Stage = ShaderStage.Compute, Target = ShaderTarget.SpirV }, timeout.Token);
         foreach (bool validation in new[] { false, true })
         {
-            using var device = VulkanDevice.Create();
-            if (validation)
-            {
-                device.EnableValidation();
-            }
+            using var raw = VulkanDevice.Create();
+            using ValidationDevice? layer = validation ? new(raw) : null;
+            IGraphicDevice device = layer ?? (IGraphicDevice)raw;
 
             if (TSize.Size == 20)
             {
@@ -231,10 +231,18 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
                     Assert.Equal(0, rejected.WriteCount);
                 }
 
-                encoder.SetArgumentValidation(_ => throw new InvalidOperationException("admission rejected"));
-                var replacement = new BoundaryRoot<TSize>(17, target);
-                Assert.Equal("admission rejected", Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in replacement)).Message);
-                encoder.SetArgumentValidation(null);
+                if (validation)
+                {
+                    encoder.SetArgumentValidation(_ => throw new InvalidOperationException("admission rejected"));
+                    var replacement = new BoundaryRoot<TSize>(17, target);
+                    Assert.Equal("admission rejected", Assert.Throws<InvalidOperationException>(() => encoder.SetArguments(in replacement)).Message);
+                    encoder.SetArgumentValidation(null);
+                }
+                else
+                {
+                    Assert.Throws<NotSupportedException>(() => encoder.SetArgumentValidation(_ => null));
+                }
+
                 encoder.Dispatch(1);
             }
             finally
@@ -264,6 +272,12 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
 
             output.WriteLine($"wire={TSize.Size}; validation={validation}; rejected={limit + 4}; previous selection dispatched{(TSize.Size > 4 ? " and read back" : string.Empty)}");
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AdmissionPayload
+    {
+        public uint Value0;
     }
 
     private readonly struct Size4 : ISize
