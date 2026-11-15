@@ -132,40 +132,91 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
 
         var mask = new Vector4[(int)((area + 3) / 4)];
         bool any = false, all = true;
+
+        // On a fixed sample row each directed edge's exact FMA side predicate is
+        // monotone in X. Binary-search its transition using that same predicate,
+        // then accumulate signed intervals. No rounded intersection/division.
+        // Rounded subtraction and FMA are monotone: for either edge direction
+        // the strict signed contribution is a prefix, including rounding plateaus.
+        // Float-origin transformed coordinates keep both FMA intermediates finite.
+        // Keep the original conservative sample-edge admission above unchanged.
+        int sampleWidth = checked(maskWidth * 4);
+        int[] deltas = new int[sampleWidth + 1];
+        bool[] covered = new bool[sampleWidth];
         for (int row = 0; row < maskHeight; row++)
         {
-            for (int column = 0; column < maskWidth; column++)
+            for (int sy = 0; sy < 4; sy++)
             {
-                uint bits = 0;
-                for (int sy = 0; sy < 4; sy++)
+                double sampleY = y + row + ((sy + 0.5) / 4);
+                for (int sampleX = 0; sampleX < sampleWidth; sampleX++)
                 {
-                    for (int sx = 0; sx < 4; sx++)
+                    covered[sampleX] = rectangleBounds.Contains(x + ((sampleX + 0.5) / 4), sampleY);
+                }
+
+                foreach ((Edge[] edges, FillRule2D rule) in paths)
+                {
+                    Array.Clear(deltas);
+                    foreach (Edge edge in edges)
                     {
-                        var sample = new Point(x + column + ((sx + 0.5) / 4), y + row + ((sy + 0.5) / 4));
-                        bool covered = rectangleBounds.Contains(sample.X, sample.Y);
-                        foreach ((Edge[] edges, FillRule2D rule) in paths)
+                        int direction = edge.Start.Y <= sampleY && edge.End.Y > sampleY ? 1
+                            : edge.End.Y <= sampleY && edge.Start.Y > sampleY ? -1 : 0;
+                        if (direction == 0)
                         {
-                            if (!covered || !Contains(edges, rule, sample))
+                            continue;
+                        }
+
+                        int low = 0, high = sampleWidth;
+                        while (low < high)
+                        {
+                            int middle = low + ((high - low) / 2);
+                            double sampleX = x + ((middle + 0.5) / 4);
+                            int contribution = Geometry2D.GetWindingContributionFused(edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y, sampleX, sampleY);
+                            if (contribution != 0)
                             {
-                                covered = false;
-                                break;
+                                low = middle + 1;
+                            }
+                            else
+                            {
+                                high = middle;
                             }
                         }
 
-                        if (covered)
+                        deltas[0] += direction;
+                        deltas[low] -= direction;
+                    }
+
+                    int winding = 0;
+                    for (int sampleX = 0; sampleX < sampleWidth; sampleX++)
+                    {
+                        winding += deltas[sampleX];
+                        covered[sampleX] &= rule == FillRule2D.NonZero ? winding != 0 : (winding & 1) != 0;
+                    }
+                }
+
+                for (int column = 0; column < maskWidth; column++)
+                {
+                    uint bits = 0;
+                    for (int sx = 0; sx < 4; sx++)
+                    {
+                        if (covered[(column * 4) + sx])
                         {
                             bits |= 1u << ((sy * 4) + sx);
                         }
                     }
-                }
 
-                any |= bits != 0;
-                all &= bits == 65535;
-                int index = (row * maskWidth) + column;
-                Vector4 vector = mask[index / 4];
-                vector[index % 4] = bits;
-                mask[index / 4] = vector;
+                    int index = (row * maskWidth) + column;
+                    Vector4 vector = mask[index / 4];
+                    vector[index % 4] = (uint)vector[index % 4] | bits;
+                    mask[index / 4] = vector;
+                }
             }
+        }
+
+        for (int index = 0; index < area; index++)
+        {
+            uint bits = (uint)mask[index / 4][index % 4];
+            any |= bits != 0;
+            all &= bits == 65535;
         }
 
         ScissorRect maskBounds = new(x, y, (uint)maskWidth, (uint)maskHeight);
@@ -197,11 +248,5 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
         {
             throw new NotSupportedException("Clip normalization requires finite transformed coordinates.", exception);
         }
-    }
-
-    private static bool Contains(Edge[] edges, FillRule2D rule, Point p)
-    {
-        int winding = Geometry2D.AccumulateWindingFused<double>(edges, p);
-        return rule == FillRule2D.NonZero ? winding != 0 : (Math.Abs(winding) % 2) != 0;
     }
 }

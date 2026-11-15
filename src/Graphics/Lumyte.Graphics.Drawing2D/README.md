@@ -119,6 +119,8 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 
 `DrawingCanvas2D.Replay(DrawList2D)`で保持した描画commandを現在のtransform/clipの下へ再生できます。元のDrawListを変更せず、Widget等の上位構築やOnRecordの再実行を要求しません。描画commandが参照するtexture/font等の借用資源は通常どおりGPU完了まで保持してください。
 
+clip の CPU 正規化は binary64 の順序付き FMA・半開 Y 遷移・4×4 の各 sample bit を維持します。固定 sample 行で辺の厳密な winding 寄与が消える位置を同じ述語で二分探索し、符号付き区間を合成します。交点の除算や epsilon、平均 alpha への置換は行いません。異なる不変 clip stack も captured transform・fill rule・全 segment が一致すれば同じ準備内で共有し、hash 衝突は全要素比較で検証します。準備をまたぐ mask cache は追加しません。従来の面積・sample-edge 予算を保ち、cache は最大4096 identity・推定 payload 32 MiB（geometry と alias も課金）、構造 hash は最大65536 source segment に制限します。deferred pack 完了または中止時に両 cache を解放します。
+
 ## 内容と配置を保持する
 
 `Canvas2D.End()` が返す不変の `DrawList2D` を、そのまま `DrawingScene2D` に配置します。別の内容型への変換は不要です。同じ記録を複数の配置・scene で共有でき、位置の変更では Canvas 全体の再記録は不要です。`DrawList2D.Count` は記録済み命令数です。従来の `PrepareAsync(DrawList2D, ...)` も引き続き使用できます。
