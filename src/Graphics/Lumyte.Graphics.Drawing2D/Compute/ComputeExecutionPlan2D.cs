@@ -104,11 +104,13 @@ internal sealed class ComputeExecutionPlan2D
             switch (command)
             {
                 case FillPathCommand2D fill:
-                    path = ComputeGeometryPlan2D.Create(fill.Path, fill.State.Transform * pixels, fill.Rule, maxWorkingBytes: remaining);
+                    path = context.CpuShapes?.GetGeometry(fill.Path, fill.State.Transform * pixels, fill.Rule, null, remaining)
+                        ?? ComputeGeometryPlan2D.Create(fill.Path, fill.State.Transform * pixels, fill.Rule, maxWorkingBytes: remaining);
                     lowered = new DrawPaintGraphCommand2D(fill.Paint, fill.State);
                     break;
                 case StrokePathCommand2D stroke:
-                    path = ComputeGeometryPlan2D.Create(stroke.Path, stroke.State.Transform * pixels, stroke: stroke.Style, maxWorkingBytes: remaining);
+                    path = context.CpuShapes?.GetGeometry(stroke.Path, stroke.State.Transform * pixels, FillRule2D.NonZero, stroke.Style, remaining)
+                        ?? ComputeGeometryPlan2D.Create(stroke.Path, stroke.State.Transform * pixels, stroke: stroke.Style, maxWorkingBytes: remaining);
                     lowered = new DrawPaintGraphCommand2D(stroke.Paint, stroke.State);
                     break;
                 case DrawLineCommand2D line:
@@ -247,20 +249,20 @@ internal sealed class ComputeExecutionPlan2D
         ArgumentTableBindingLimits limits = caps.ArgumentTableBindingLimits;
         uint textureBindings = Math.Max((uint)result.Views.Count, limits.MinimumTextureBindings);
         uint samplerBindings = Math.Max(checked((uint)result.Samplers.Count + 1), limits.MinimumSamplerBindings);
-        ulong combined = limits.ReservedBindings + (10UL * limits.BufferBindingWeight) +
+        ulong combined = limits.ReservedBindings + (7UL * limits.BufferBindingWeight) +
             ((ulong)textureBindings * limits.TextureBindingWeight) + ((ulong)samplerBindings * limits.SamplerBindingWeight);
-        if (limits.BufferSlots < 10 || limits.BuffersPerDraw < 10 || textureBindings > limits.TexturesPerDraw ||
+        if (limits.BufferSlots < 7 || limits.BuffersPerDraw < 7 || textureBindings > limits.TexturesPerDraw ||
             textureBindings > limits.TextureSlots || samplerBindings > limits.SamplersPerDraw || samplerBindings > limits.SamplerSlots ||
             combined > limits.CombinedBindings)
         {
             throw new NotSupportedException("Tiled compute descriptor set exceeds device argument-table admission.");
         }
 
-        CheckBinding(inputCount * 16);
+        CheckBinding(checked((inputCount + Math.Max(1, result.Page.Numeric.Count)) * 16));
         CheckBinding(work * 4);
         CheckBinding((colorOffset + pixelsCount) * 16);
         CheckBinding(Math.Max(1, result.Page.Records.Count) * 96L);
-        foreach (long size in new[] { Math.Max(1, result.Page.Numeric.Count) * 16L, result.Page.Paints.Count * 16L, result.Page.Clips.Count * 16L, Math.Max(1, result.Page.Images.Count) * 128L, Math.Max(1, result.Page.Masks.Count) * 80L })
+        foreach (long size in new[] { Math.Max(1, result.Page.Numeric.Count) * 16L, (result.Page.Paints.Count + result.Page.Clips.Count) * 16L, Math.Max(1, result.Page.Images.Count) * 128L, Math.Max(1, result.Page.Masks.Count) * 80L })
         {
             CheckBinding(size);
         }

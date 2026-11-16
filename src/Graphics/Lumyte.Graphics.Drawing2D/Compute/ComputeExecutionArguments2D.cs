@@ -17,7 +17,11 @@ internal partial record struct ComputeExecutionArguments2D : IShaderArguments
 
     public IGpuRef<DrawRecord2D> Records { get; set; } = null!;
 
-    public IGpuRef<DrawPageMetadata2D> PageMetadata { get; set; } = null!;
+    public IGpuRef<DrawDirectoryEntry2D> PaintDirectory { get; set; } = null!;
+
+    public IGpuRef<MaskDescriptor2D> MaskDescriptors { get; set; } = null!;
+
+    public IGpuRef<ImagePaintData2D> ImagePaintData { get; set; } = null!;
 
     public IGpuRef<Vector4> Input { get; set; } = null!;
 
@@ -27,9 +31,9 @@ internal partial record struct ComputeExecutionArguments2D : IShaderArguments
 
     public partial uint Stage { get; set; }
 
-    public partial uint Reserved0 { get; set; }
+    public partial uint ClipOffset { get; set; }
 
-    public partial uint Reserved1 { get; set; }
+    public partial uint NumericOffset { get; set; }
 
     public partial uint Reserved2 { get; set; }
 
@@ -37,13 +41,15 @@ internal partial record struct ComputeExecutionArguments2D : IShaderArguments
     private struct TransferData
     {
         public ShaderReferenceSlot Records;
-        public ShaderReferenceSlot PageMetadata;
+        public ShaderReferenceSlot PaintDirectory;
+        public ShaderReferenceSlot MaskDescriptors;
+        public ShaderReferenceSlot ImagePaintData;
         public ShaderReferenceSlot Input;
         public ShaderReferenceSlot Storage;
         public ShaderReferenceSlot Work;
         public uint Stage;
-        public uint Reserved0;
-        public uint Reserved1;
+        public uint ClipOffset;
+        public uint NumericOffset;
         public uint Reserved2;
     }
 }

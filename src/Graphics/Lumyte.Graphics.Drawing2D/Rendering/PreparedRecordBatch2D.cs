@@ -15,6 +15,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     private readonly HashSet<IGraphicsTextureView> _views = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<IGraphicsSampler> _samplers = new(ReferenceEqualityComparer.Instance);
     private bool _recorded;
+    private bool _completed;
     private bool _disposed;
     private long _bytes;
 
@@ -115,15 +116,17 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         RecordRetained(commands, target, false);
     }
 
+    public void ConfirmCompletion() => _completed = true;
+
     public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(target);
         ObjectDisposedException.ThrowIf(_disposed, this);
         _context.ValidateResources();
-        if (resident && HasShapeMembership)
+        if (resident && HasShapeMembership && !_completed)
         {
-            throw new InvalidOperationException("Writable shape membership cannot be recorded as retained residency.");
+            throw new InvalidOperationException("Shape membership residency requires confirmed completion.");
         }
 
         if (_views.Any(view => ReferenceEquals(view.Texture, target.Texture)))
@@ -144,7 +147,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 page.Copy(commands);
             }
 
-            page.Compute(commands);
+            if (!resident)
+            {
+                page.Compute(commands);
+            }
+
             page.Record(commands, target, 0, (uint)page.RecordCount);
         }
     }
@@ -168,6 +175,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
+        if (context.ComputeShapeMembership)
+        {
+            DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes);
+        }
+
         DrawRecordResources2D? resources = context.RecordResources();
         if (resources is null)
         {
@@ -440,6 +452,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             if (_batch._context.ComputeShapeMembership)
             {
+                // Account every page stream and packing/table overhead before the first
+                // native or upload allocation, including scenes without path records.
+                long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
+                long peak = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + 32768 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
+                if (peak > _batch._context.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Standard page resources exceed MaxWorkingBytes before allocation.");
+                }
+            }
+
+            if (_batch._context.ComputeShapeMembership)
+            {
                 uint offset = 0;
                 for (int i = 0; i < Cpu.Records.Count; i++)
                 {
@@ -464,7 +488,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
                     // Include streams, CPU packing capacity, upload/data pairs and table metadata before GPU allocation.
                     long streamElements = checked((long)Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Math.Max(1, Cpu.Images.Count) + Math.Max(1, Cpu.Masks.Count) + 1);
-                    long prospective = checked(_batch.EstimatedBytes + (long)bytes + 16384 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
+                    long prospective = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + (long)bytes + 16384 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
                     if (bytes > maximum || prospective > _batch._context.MaxWorkingBytes)
                     {
                         throw new NotSupportedException("Shape membership exceeds the working-byte or buffer binding budget.");

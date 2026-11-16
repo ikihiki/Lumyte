@@ -33,6 +33,10 @@ public sealed class RenderPreparationContext2D
 
     internal long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
 
+    internal long OtherWorkingBytes { get; set; }
+
+    internal DrawingCpuShapeCache2D? CpuShapes { get; init; }
+
     internal ClipNormalizationCache2D Clips { get; }
 
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
@@ -53,7 +57,7 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return new(Device, Target, _resources, argumentPlan) { ComputeShapeMembership = ComputeShapeMembership, MaxWorkingBytes = MaxWorkingBytes };
+        return new(Device, Target, _resources, argumentPlan) { ComputeShapeMembership = ComputeShapeMembership, MaxWorkingBytes = MaxWorkingBytes, CpuShapes = CpuShapes, OtherWorkingBytes = OtherWorkingBytes };
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);

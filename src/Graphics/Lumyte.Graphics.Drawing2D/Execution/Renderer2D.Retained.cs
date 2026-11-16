@@ -96,6 +96,8 @@ public sealed partial class Renderer2D
             RetainedDrawingCache2D.FrameLease? frame = null;
             try
             {
+                long captureBytes = _computeShapeMembership ? DrawingSceneCapture2D.ValidateCapture(source, _options.MaxWorkingBytes, cancellationToken) : 0;
+
                 _retained.BindStorageOwner(_resources);
                 frame = _retained.AcquireFrame();
                 List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
@@ -123,6 +125,12 @@ public sealed partial class Renderer2D
                             continue;
                         }
 
+                        context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch), context.ArgumentPlan));
+                        if (_computeShapeMembership && context.OtherWorkingBytes >= _options.MaxWorkingBytes)
+                        {
+                            throw new NotSupportedException("Standard scene capture and live assets exceed MaxWorkingBytes.");
+                        }
+
                         DrawList2D transformed;
                         using (var transform = DrawingProfileScope.Start(3))
                         {
@@ -140,7 +148,7 @@ public sealed partial class Renderer2D
 
                         if (_computeShapeMembership)
                         {
-                            DrawingWorkingBudget2D.Validate(transformed, info, _options.MaxWorkingBytes);
+                            DrawingWorkingBudget2D.Validate(transformed, info, _options.MaxWorkingBytes - context.OtherWorkingBytes);
                         }
 
                         var batches = new List<IPreparedCommandBatch2D>();
@@ -153,6 +161,7 @@ public sealed partial class Renderer2D
                                 {
                                     while (index < transformed.Commands.Count)
                                     {
+                                        context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
                                         if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
                                         {
                                             batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
@@ -199,7 +208,7 @@ public sealed partial class Renderer2D
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                if (_computeShapeMembership && assets.Select(asset => asset.Batch).OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes) > _options.MaxWorkingBytes)
+                if (_computeShapeMembership && checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch))) > _options.MaxWorkingBytes)
                 {
                     throw new NotSupportedException("Standard retained preparation exceeds MaxWorkingBytes.");
                 }

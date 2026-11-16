@@ -8,7 +8,6 @@ namespace Lumyte.Graphics.Drawing2D;
 internal static class SparseStripBuilder2D
 {
     internal const long DefaultMaxWorkingBytes = 256L * 1024 * 1024;
-    private const long FlattenScratchBytes = 32L * 1024 * 1024;
     private const long MaximumSampleEdges = 268435456;
 
     /// <summary>Builds strips without materializing retained recordings into a new public model.</summary>
@@ -17,6 +16,7 @@ internal static class SparseStripBuilder2D
         ArgumentNullException.ThrowIfNull(list);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxWorkingBytes);
         Check(checked(1024L + (list.Count * 512L)), maxWorkingBytes);
+        long inputPeak = DrawingWorkingBudget2D.Validate(list, target, maxWorkingBytes);
         var commands = new DrawingCommand2D[list.Count];
         int index = 0;
         if (list.HasRetainedPages)
@@ -37,7 +37,7 @@ internal static class SparseStripBuilder2D
             }
         }
 
-        return Build(commands, target, maxWorkingBytes, cancellationToken);
+        return Build(commands, target, maxWorkingBytes, cancellationToken, inputPeak);
     }
 
     /// <summary>Builds one command for direct internal consumers.</summary>
@@ -46,10 +46,13 @@ internal static class SparseStripBuilder2D
         ArgumentNullException.ThrowIfNull(command);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxWorkingBytes);
         Check(1024, maxWorkingBytes);
-        return Build([command], target, maxWorkingBytes, cancellationToken);
+        long inputPeak = command is FillPathCommand2D or StrokePathCommand2D or DrawLineCommand2D or DrawMeshCommand2D
+            ? DrawingWorkingBudget2D.Validate(new DrawList2D([command]), target, maxWorkingBytes)
+            : 0;
+        return Build([command], target, maxWorkingBytes, cancellationToken, inputPeak);
     }
 
-    private static SparseStripPlan2D Build(DrawingCommand2D[] commands, DrawingTargetInfo2D target, long limit, CancellationToken token)
+    private static SparseStripPlan2D Build(DrawingCommand2D[] commands, DrawingTargetInfo2D target, long limit, CancellationToken token, long inputPeak)
     {
         ArgumentNullException.ThrowIfNull(target);
         token.ThrowIfCancellationRequested();
@@ -72,7 +75,8 @@ internal static class SparseStripBuilder2D
         long owned = checked(1024L + (commands.Length * 512L));
         Check(owned, limit);
         var shapes = new Shape[commands.Length];
-        long peak = owned, work = 0, geometryCells = 0;
+        long peak = Math.Max(owned, inputPeak), work = 0, geometryCells = 0;
+        Check(peak, limit);
         Matrix3x2 pixels = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
         for (int i = 0; i < commands.Length; i++)
         {
@@ -80,8 +84,8 @@ internal static class SparseStripBuilder2D
             bool path = commands[i] is FillPathCommand2D or StrokePathCommand2D or DrawLineCommand2D;
             if (path || commands[i] is DrawMeshCommand2D)
             {
-                Check(checked(owned + FlattenScratchBytes), limit);
-                peak = Math.Max(peak, checked(owned + FlattenScratchBytes));
+                Check(checked(owned + inputPeak), limit);
+                peak = Math.Max(peak, checked(owned + inputPeak));
             }
 
             Shape shape = MakeShape(commands[i], commands[i].State.Transform * pixels, target);

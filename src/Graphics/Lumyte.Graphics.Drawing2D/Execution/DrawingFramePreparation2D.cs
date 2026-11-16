@@ -57,11 +57,40 @@ internal static class DrawingFramePreparation2D
         RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
         try
         {
-            DrawList2D captured = DrawingSceneCapture2D.Capture(source, cancellationToken, maxWorkingBytes);
-            IReadOnlyList<IPreparedCommandBatch2D> batches = await prepare(captured, info, cancellationToken).ConfigureAwait(false);
-            var key = new RetainedDrawingCache2D.Key([captured], Matrix3x2.Identity, [], info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale);
-            frame.Assets.Add(new(key, new RetainedBatchRun2D(batches, false)));
-            cache.CountCompilation();
+            long captureBytes = DrawingSceneCapture2D.ValidateCapture(source, maxWorkingBytes, cancellationToken);
+            var pages = new List<DrawList2D>();
+            long captureCount = 0;
+            foreach (DrawingSceneEntry2D entry in source.Entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                captureCount = checked(captureCount + entry.Content.Count);
+                if (checked(4096 + (captureCount * 1024)) > maxWorkingBytes)
+                {
+                    throw new NotSupportedException("Retained scene capture exceeds MaxWorkingBytes.");
+                }
+
+                pages.AddRange(entry.Content.RetainedPages.Pages);
+            }
+
+            var key = new RetainedDrawingCache2D.Key(pages.ToArray(), Matrix3x2.Identity, [], info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale);
+            key = key with { SceneEntries = source.Entries.ToArray() };
+            RetainedDrawingCache2D.Asset? cached = cache.Take(key);
+            if (cached is not null)
+            {
+                frame.Assets.Add(cached);
+                if (checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes([cached.Batch])) > maxWorkingBytes)
+                {
+                    throw new NotSupportedException("Cached scene resources and capture exceed MaxWorkingBytes.");
+                }
+            }
+            else
+            {
+                DrawList2D captured = DrawingSceneCapture2D.Capture(source, cancellationToken, maxWorkingBytes);
+                IReadOnlyList<IPreparedCommandBatch2D> batches = await prepare(captured, info with { LoadOp = AttachmentLoadOp.Load }, cancellationToken).ConfigureAwait(false);
+                frame.Assets.Add(new(key, new RetainedBatchRun2D(batches, true)));
+                cache.CountCompilation();
+            }
+
             _ = source.Revision;
             cache.AdmitFrame(frame);
             return new(device, target, frame.Assets, completed => cache.ReleaseFrame(frame, completed), cache: cache);

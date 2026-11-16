@@ -106,6 +106,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                         while (index < list.Commands.Count)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            context.OtherWorkingBytes = DrawingWorkingBudget2D.OwnedBytes(batches, context.ArgumentPlan);
                             IPreparedCommandBatch2D batch = IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
                                 ? await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
                                 : list.Commands[index] switch
@@ -125,7 +126,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                                 };
                             ArgumentNullException.ThrowIfNull(batch);
                             batches.Add(batch);
-                            if (_computeShapeMembership && batches.OfType<IRetainedCommandBatch2D>().Sum(value => value.EstimatedBytes) > _options.MaxWorkingBytes)
+                            if (_computeShapeMembership && DrawingWorkingBudget2D.OwnedBytes(batches) > _options.MaxWorkingBytes)
                             {
                                 throw new NotSupportedException("Standard preparation exceeds the aggregate working-byte budget.");
                             }

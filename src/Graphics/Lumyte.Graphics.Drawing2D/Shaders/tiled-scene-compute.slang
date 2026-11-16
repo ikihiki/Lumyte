@@ -464,11 +464,13 @@ float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,
 
 struct ComputeExecutionArguments2D {
     GpuBufferRef<DrawRecord2D> Records;
-    GpuBufferRef<DrawPageMetadata2D> PageMetadata;
+    GpuBufferRef<DrawDirectoryEntry2D> PaintDirectory;
+    GpuBufferRef<MaskDescriptor2D> MaskDescriptors;
+    GpuBufferRef<ImagePaintData2D> ImagePaintData;
     GpuBufferRef<float4> Input;
     GpuRWBufferRef<float4> Storage;
     GpuRWBufferRef<uint> Work;
-    uint Stage; uint Reserved0; uint Reserved1; uint Reserved2;
+    uint Stage; uint ClipOffset; uint NumericOffset; uint Reserved2;
 };
 ConstantBuffer<ComputeExecutionArguments2D> arguments;
 uint configuration(uint index) { return asuint(arguments.Input.Load(index/4))[index%4]; }
@@ -722,7 +724,27 @@ void shade(uint index) {
     uint t=tile.y*((configuration(2)+15)/16)+tile.x;
     uint start=arguments.Work.Load(configuration(14)+t),count=arguments.Work.Load(configuration(13)+t);
     float4 color=0;
-    DrawPageMetadata2D page=arguments.PageMetadata.Load(0);
+    DrawPageMetadata2D page;
+    page.PaintDirectory=arguments.PaintDirectory; page.ClipDirectory=arguments.PaintDirectory;
+    // Both directories share one aligned binding; offset adjustment stays in element space.
+#ifdef LUMYTE_SPIRV
+    uint64_t clipAddress=(uint64_t(page.ClipDirectory.Offset)<<32)|uint64_t(page.ClipDirectory.Id);
+    clipAddress+=uint64_t(arguments.ClipOffset)*16;
+    page.ClipDirectory.Id=uint(clipAddress); page.ClipDirectory.Offset=uint(clipAddress>>32);
+#else
+    page.ClipDirectory.Offset += arguments.ClipOffset * 16;
+#endif
+    page.ClipDirectory.Count -= arguments.ClipOffset;
+    page.NumericPayload=arguments.Input;
+#ifdef LUMYTE_SPIRV
+    uint64_t numericAddress=(uint64_t(page.NumericPayload.Offset)<<32)|uint64_t(page.NumericPayload.Id);
+    numericAddress+=uint64_t(arguments.NumericOffset)*16;
+    page.NumericPayload.Id=uint(numericAddress); page.NumericPayload.Offset=uint(numericAddress>>32);
+#else
+    page.NumericPayload.Offset+=arguments.NumericOffset*16;
+#endif
+    page.NumericPayload.Count-=arguments.NumericOffset;
+    page.MaskDescriptors=arguments.MaskDescriptors; page.ImagePaintData=arguments.ImagePaintData;
     for(uint i=0;i<count;i++) {
         uint draw=arguments.Work.Load(configuration(15)+start+i);
         float4 value=shadeDraw(draw,page,float2(p));

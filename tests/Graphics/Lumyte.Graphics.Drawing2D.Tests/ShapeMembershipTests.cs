@@ -126,6 +126,59 @@ public sealed class ShapeMembershipTests
         Assert.Equal(0, device.NativeBuffers);
     }
 
+    /// <summary>Previously prepared owners consume admission before lowering or native allocation.</summary>
+    /// <returns>The completed rejection assertions.</returns>
+    [Fact]
+    public async Task ExistingOwnersRejectNextBatchBeforeAllocationAsync()
+    {
+        var device = new ComputeDevice();
+        using var state = new DrawingResourceState2D(device);
+        using var plan = new DrawingArgumentPlan2D(device);
+        var target = new DrawingTargetInfo2D { Description = new() { Width = 32, Height = 32, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment } };
+        var context = new RenderPreparationContext2D(device, target, state, plan)
+        {
+            ComputeShapeMembership = true,
+            MaxWorkingBytes = 65536,
+            OtherWorkingBytes = 65000,
+        };
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.DrawLine(new(2, 2), new(25, 25), new SRgba<float>(1, 0, 0, 1), new StrokeStyle2D { Width = 2 });
+        DrawingCommand2D[] source = canvas.End().Commands.ToArray();
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await PreparedRecordBatch2D.PrepareAsync<DrawingCommand2D>(context, source, default));
+        Assert.Equal(0, device.NativeBuffers);
+    }
+
+    /// <summary>Actual preparation of many ordinary paths uses derived capacities, not 32 MiB per path.</summary>
+    /// <returns>The completed preparation assertions.</returns>
+    [Fact]
+    public async Task ManySmallPathsPrepareWithinDerivedBudgetAsync()
+    {
+        var device = new ComputeDevice();
+        using var state = new DrawingResourceState2D(device);
+        using var plan = new DrawingArgumentPlan2D(device);
+        var target = new DrawingTargetInfo2D { Description = new() { Width = 32, Height = 32, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment } };
+        var context = new RenderPreparationContext2D(device, target, state, plan) { ComputeShapeMembership = true, MaxWorkingBytes = 4 * 1024 * 1024 };
+        var canvas = new Canvas2D();
+        var path = new PathBuilder2D();
+        path.MoveTo(new(2, 2));
+        path.LineTo(new(6, 2));
+        path.LineTo(new(2, 6));
+        path.Close();
+        Path2D triangle = path.Build();
+        canvas.Begin();
+        for (int i = 0; i < 64; i++)
+        {
+            canvas.FillPath(triangle, new SRgba<float>(1, 0, 0, 1));
+        }
+
+        DrawingCommand2D[] source = canvas.End().Commands.ToArray();
+        using var batch = (PreparedRecordBatch2D)await PreparedRecordBatch2D.PrepareAsync<DrawingCommand2D>(context, source, default);
+        Assert.True(batch.HasShapeMembership);
+        Assert.InRange(batch.EstimatedBytes, 1, context.MaxWorkingBytes);
+        Assert.True(device.NativeBuffers > 0);
+    }
+
     private sealed class ComputeDevice : IGraphicDevice
     {
         private readonly ProfilingDevice _inner = new() { Caps = ComputeCaps };

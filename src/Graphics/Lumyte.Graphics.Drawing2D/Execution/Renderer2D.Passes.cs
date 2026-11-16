@@ -20,16 +20,9 @@ public sealed partial class Renderer2D : IDrawingPassRenderer2D
     private async ValueTask<DrawingPassPlan2D> PrepareScenePassesAsync(IDrawingSceneSource2D source, DrawingTargetInfo2D target, DrawingArgumentPlan2D argumentPlan, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
-        var commands = new List<DrawingCommand2D>();
-        foreach (DrawingSceneEntry2D entry in source.Entries)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            DrawList2D transformed = TransformPages(entry.Content.RetainedPages.Pages.ToArray(), entry.Transform, entry.Clips);
-            commands.AddRange(transformed.Commands);
-        }
-
+        DrawList2D captured = DrawingSceneCapture2D.Capture(source, cancellationToken, _options.MaxWorkingBytes);
         _ = source.Revision;
-        DrawingPassPlan2D plan = await PreparePassesAsync(new DrawList2D(commands), target, argumentPlan, cancellationToken).ConfigureAwait(false);
+        DrawingPassPlan2D plan = await PreparePassesAsync(captured, target, argumentPlan, cancellationToken).ConfigureAwait(false);
         try
         {
             _ = source.Revision;
@@ -50,7 +43,7 @@ public sealed partial class Renderer2D : IDrawingPassRenderer2D
         ValidateTarget(target);
         if (_computeShapeMembership)
         {
-            DrawingWorkingBudget2D.Validate(content, target, _options.MaxWorkingBytes);
+            DrawingWorkingBudget2D.Validate(content, target, _options.MaxWorkingBytes - content.CapturedWorkingBytes);
         }
 
         if (!ReferenceEquals(argumentPlan.Device, _device))
@@ -75,9 +68,11 @@ public sealed partial class Renderer2D : IDrawingPassRenderer2D
             };
             int index = 0;
             long workingBytes = 0;
+            var preparedBatches = new List<IPreparedCommandBatch2D>();
             while (index < content.Commands.Count)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                context.OtherWorkingBytes = checked(content.CapturedWorkingBytes + DrawingWorkingBudget2D.OwnedBytes(preparedBatches, argumentPlan));
                 int firstReservation = argumentPlan.Reservations.Count;
                 IPreparedCommandBatch2D batch;
                 if (IsBuiltinRenderer(content.Commands[index]) && context.RecordResources() is not null)
@@ -95,9 +90,10 @@ public sealed partial class Renderer2D : IDrawingPassRenderer2D
                 }
 
                 result.Own(batch);
+                preparedBatches.Add(batch);
                 if (batch is IRetainedCommandBatch2D memory)
                 {
-                    workingBytes = checked(workingBytes + memory.EstimatedBytes);
+                    workingBytes = DrawingWorkingBudget2D.OwnedBytes(preparedBatches);
                     if (_computeShapeMembership && workingBytes > _options.MaxWorkingBytes)
                     {
                         throw new NotSupportedException("Standard graph preparation exceeds MaxWorkingBytes.");

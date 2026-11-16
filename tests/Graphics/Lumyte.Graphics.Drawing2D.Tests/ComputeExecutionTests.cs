@@ -216,8 +216,10 @@ public sealed class ComputeExecutionTests
     public void OfflineArtifactsUseIndependentComputeAndResolveSchemas(ShaderTarget target)
     {
         var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.tiled-scene-compute.lshader");
+        Assert.Equal(7, ComputeExecutionArguments2D.ReferenceCount);
+        Assert.Equal(128, WireSize<ComputeExecutionArguments2D>());
         ComputeExecutionArguments2D compute = default;
-        ShaderDataLayout.Data(artifact, target, nameof(ComputeExecutionArguments2D)).ValidateTransferLayout(96, ShaderTransfer.Fields(in compute), nameof(ComputeExecutionArguments2D));
+        ShaderDataLayout.Data(artifact, target, nameof(ComputeExecutionArguments2D)).ValidateTransferLayout(128, ShaderTransfer.Fields(in compute), nameof(ComputeExecutionArguments2D));
         DrawRecord2D record = default;
         ShaderDataLayout.Data(artifact, target, nameof(DrawRecord2D)).ValidateTransferLayout(96, ShaderTransfer.Fields(in record), nameof(DrawRecord2D));
         DrawPageMetadata2D metadata = default;
@@ -229,6 +231,9 @@ public sealed class ComputeExecutionTests
             ShaderDataLayout.Data(resolveArtifact, target, nameof(ComputeExecutionResolveArguments2D)).ValidateTransferLayout(32, ShaderTransfer.Fields(in resolve), nameof(ComputeExecutionResolveArguments2D));
         }
     }
+
+    private static int WireSize<T>()
+        where T : struct, IShaderArguments => T.TransferSize;
 
     private static uint Bits(float value) => BitConverter.SingleToUInt32Bits(value);
 

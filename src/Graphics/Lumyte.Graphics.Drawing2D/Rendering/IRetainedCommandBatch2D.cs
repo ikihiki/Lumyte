@@ -18,4 +18,9 @@ internal interface IRetainedCommandBatch2D : IPreparedCommandBatch2D
     /// <param name="target">The active drawing target.</param>
     /// <param name="resident">Whether confirmed initialization and uploads may be skipped.</param>
     void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident);
+
+    /// <summary>Publishes completion only from the retained owner after submission and command retirement.</summary>
+    void ConfirmCompletion()
+    {
+    }
 }

@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedSparseStripBatch2D : IPreparedCommandBatch2D
+internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D
 {
     private readonly RenderPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
@@ -42,7 +42,15 @@ internal sealed class PreparedSparseStripBatch2D : IPreparedCommandBatch2D
         _pipeline = context.RecordResources()!.GetPipeline(3);
     }
 
+    public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
+
     internal IReadOnlyList<ShaderResources> Reservations => [_scope];
+
+    public void AccountMemory(Dictionary<object, long> owners)
+    {
+        owners.TryAdd(this, _bytes);
+        owners.TryAdd(_context.ArgumentPlan, _context.ArgumentPlan.EstimatedBytes);
+    }
 
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {
@@ -58,10 +66,12 @@ internal sealed class PreparedSparseStripBatch2D : IPreparedCommandBatch2D
         }
     }
 
-    public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
+    public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target) => RecordRetained(commands, target, false);
+
+    public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_recorded)
+        if (_recorded && !resident)
         {
             throw new InvalidOperationException("A sparse batch records only once.");
         }
@@ -74,7 +84,7 @@ internal sealed class PreparedSparseStripBatch2D : IPreparedCommandBatch2D
         }
 
         _context.ArgumentPlan.InitializeFallback(commands);
-        if (!_copied)
+        if (!_copied && !resident)
         {
             Copy(commands);
         }
@@ -122,7 +132,8 @@ internal sealed class PreparedSparseStripBatch2D : IPreparedCommandBatch2D
 
     internal static ValueTask<PreparedSparseStripBatch2D> PrepareAsync(RenderPreparationContext2D context, DrawList2D content, CancellationToken cancellationToken)
     {
-        SparseStripPlan2D strips = SparseStripBuilder2D.Create(content, context.Target, context.MaxWorkingBytes, cancellationToken);
+        SparseStripPlan2D strips = context.CpuShapes?.GetSparse(content, context.Target, context.MaxWorkingBytes, cancellationToken)
+            ?? SparseStripBuilder2D.Create(content, context.Target, context.MaxWorkingBytes, cancellationToken);
         var batch = new PreparedSparseStripBatch2D(context) { _bytes = strips.WorkingBytes };
         try
         {
@@ -228,19 +239,26 @@ internal sealed class PreparedSparseStripBatch2D : IPreparedCommandBatch2D
         // Compile paint/clip once per input. Shapes are replaced by CPU-authoritative strips.
         var templates = new DrawRecord2D[plan.Commands.Length];
         var clips = new NormalizedClip2D[plan.Commands.Length];
+        var paints = new Dictionary<DrawingCommand2D, (DrawingProgram2D Program, uint Root)>();
         for (int i = 0; i < plan.Commands.Length; i++)
         {
             token.ThrowIfCancellationRequested();
             DrawingCommand2D command = plan.Commands[i];
             DrawingCommand2D paintCommand = PaintOnly(command);
-            var program = new DrawingProgram2D(_scope, _context.Target, _context.Clips, recordLowering: true);
-            uint root = program.Compile(paintCommand);
-            program.ValidateFiniteData();
-            _programs.Add(program);
+            if (!paints.TryGetValue(paintCommand, out (DrawingProgram2D Program, uint Root) compiled))
+            {
+                var program = new DrawingProgram2D(_scope, _context.Target, _context.Clips, recordLowering: true);
+                uint root = program.Compile(paintCommand);
+                program.ValidateFiniteData();
+                compiled = (program, root);
+                paints.Add(paintCommand, compiled);
+                _programs.Add(program);
+            }
+
             NormalizedClip2D clip = _context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
             clips[i] = clip;
             int before = _page.Records.Count;
-            _page.Add(paintCommand, program, root, new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height), clip);
+            _page.Add(paintCommand, compiled.Program, compiled.Root, new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height), clip);
             templates[i] = _page.Records.Count > before ? _page.Records[^1] : default;
         }
 

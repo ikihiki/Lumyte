@@ -10,7 +10,14 @@ public sealed class SparseStripRenderer2D(IGraphicDevice device, DrawingRenderer
 {
     private readonly DrawingRendererOptions2D _options = (options ?? new()).Validate();
     private readonly DrawingResourceState2D _resources = new(device);
-    private readonly RetainedDrawingCache2D _retained = new(retentionOptions ?? new());
+    private readonly RetainedDrawingCache2D _retained = new((retentionOptions ?? new()) with
+    {
+        MaxCachedBytes = (retentionOptions ?? new()).MaxCachedBytes - ((retentionOptions ?? new()).MaxCachedBytes / 4),
+        MaxCachedAssets = (retentionOptions ?? new()).MaxCachedAssets - ((retentionOptions ?? new()).MaxCachedAssets / 2),
+    });
+
+    private readonly DrawingCpuShapeCache2D _cpuShapes = new((retentionOptions ?? new()).MaxCachedBytes / 4, (retentionOptions ?? new()).MaxCachedAssets / 2);
+
     private bool _disposed;
     private int _preparing;
 
@@ -18,7 +25,14 @@ public sealed class SparseStripRenderer2D(IGraphicDevice device, DrawingRenderer
     public IGraphicDevice Device { get; } = device ?? throw new ArgumentNullException(nameof(device));
 
     /// <inheritdoc/>
-    public DrawingRetentionStatistics2D RetentionStatistics => _retained.Statistics;
+    public DrawingRetentionStatistics2D RetentionStatistics
+    {
+        get
+        {
+            DrawingRetentionStatistics2D gpu = _retained.Statistics;
+            return gpu with { CachedAssets = gpu.CachedAssets + _cpuShapes.AssetCount, CachedBytes = checked(gpu.CachedBytes + _cpuShapes.EstimatedBytes) };
+        }
+    }
 
     /// <inheritdoc/>
     public async ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list, RenderTarget2D target, CancellationToken cancellationToken = default)
@@ -45,6 +59,7 @@ public sealed class SparseStripRenderer2D(IGraphicDevice device, DrawingRenderer
     public void Dispose()
     {
         _disposed = true;
+        _cpuShapes.Clear();
         _retained.Dispose();
         _resources.Dispose();
     }
@@ -92,7 +107,7 @@ public sealed class SparseStripRenderer2D(IGraphicDevice device, DrawingRenderer
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(content);
         DrawingFramePreparation2D.Validate(target);
-        DrawingWorkingBudget2D.Validate(content, target, _options.MaxWorkingBytes);
+        DrawingWorkingBudget2D.Validate(content, target, _options.MaxWorkingBytes - content.CapturedWorkingBytes);
         cancellationToken.ThrowIfCancellationRequested();
         if (!ReferenceEquals(argumentPlan.Device, Device))
         {
@@ -106,7 +121,7 @@ public sealed class SparseStripRenderer2D(IGraphicDevice device, DrawingRenderer
 
         try
         {
-            var context = new RenderPreparationContext2D(Device, target, _resources, argumentPlan) { MaxWorkingBytes = _options.MaxWorkingBytes };
+            var context = new RenderPreparationContext2D(Device, target, _resources, argumentPlan) { MaxWorkingBytes = _options.MaxWorkingBytes - content.CapturedWorkingBytes, CpuShapes = _cpuShapes };
             return await PreparedSparseStripBatch2D.PrepareAsync(context, content, cancellationToken).ConfigureAwait(false);
         }
         finally

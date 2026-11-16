@@ -5,7 +5,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Drawing2D;
 
 /// <summary>A scene-wide GPU pipeline; it never dispatches the standard raster batch.</summary>
-internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMemory2D
+internal sealed class ComputeExecution2D : IRetainedCommandBatch2D, IRetainedMemory2D
 {
     private static readonly BarrierScope _computeRead = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
     private static readonly BarrierScope _computeWrite = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite);
@@ -20,13 +20,12 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
     private IGraphicsComputePipeline _compute = null!;
     private IGraphicsPipeline _resolve = null!;
     private RawUpload<Vector4> _input = null!;
-    private RawUpload<Vector4> _numeric = null!;
     private ShaderUpload<DrawRecord2D> _records = null!;
     private ShaderUpload<DrawDirectoryEntry2D> _paints = null!;
-    private ShaderUpload<DrawDirectoryEntry2D> _clips = null!;
+    private IGpuRef<DrawDirectoryEntry2D> _paintRef = null!;
+    private uint _clipOffset;
     private ShaderUpload<MaskDescriptor2D> _masks = null!;
     private ShaderUpload<ImagePaintData2D> _images = null!;
-    private ShaderUpload<DrawPageMetadata2D> _metadata = null!;
     private IGraphicsBuffer<Vector4> _storage = null!;
     private IGraphicsBuffer<uint> _work = null!;
     private IGpuRef<Vector4> _storageRef = null!;
@@ -109,10 +108,12 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
         }
     }
 
-    public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
+    public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target) => RecordRetained(commands, target, false);
+
+    public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_recorded)
+        if (_recorded && !resident)
         {
             throw new InvalidOperationException("A compute scene can be recorded only once.");
         }
@@ -125,10 +126,25 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
         _recorded = true;
         _context.ValidateResources();
         _context.ArgumentPlan.InitializeFallback(commands);
-        Copy(commands);
-        for (uint stage = 0; stage < _stageNames.Length; stage++)
+        if (!resident)
         {
-            Dispatch(commands, stage);
+            Copy(commands);
+            for (uint stage = 0; stage < _stageNames.Length; stage++)
+            {
+                Dispatch(commands, stage);
+            }
+        }
+        else
+        {
+            // Texture contents remain borrowed and may change between completed frames.
+            // Reuse immutable geometry/binning only, never a stale painted image.
+            commands.Barrier(new BufferBarrierDesc<Vector4>
+            {
+                Buffer = _storage.SliceElements(0, _storage.Count),
+                Before = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead),
+                After = _computeWrite,
+            });
+            Dispatch(commands, 10);
         }
 
         Resolve(commands, target);
@@ -207,13 +223,12 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
         _resolve = Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
         ShaderArtifact artifact = shader.Artifact;
         _records = Shader<DrawRecord2D>(Math.Max(1, _cpu.Page.Records.Count), 96, artifact);
-        _paints = Shader<DrawDirectoryEntry2D>(_cpu.Page.Paints.Count, 16, artifact);
-        _clips = Shader<DrawDirectoryEntry2D>(_cpu.Page.Clips.Count, 16, artifact);
+        _paints = Shader<DrawDirectoryEntry2D>(_cpu.Page.Paints.Count + _cpu.Page.Clips.Count, 16, artifact, false);
+        _computeScope.RegisterBuffer(_paints.Data.SliceElements(0, _paints.Data.Count), reference => _paintRef = reference);
+        _clipOffset = (uint)_cpu.Page.Paints.Count;
         _masks = Shader<MaskDescriptor2D>(Math.Max(1, _cpu.Page.Masks.Count), 80, artifact);
         _images = Shader<ImagePaintData2D>(Math.Max(1, _cpu.Page.Images.Count), 128, artifact);
-        _metadata = Shader<DrawPageMetadata2D>(1, 80, artifact);
-        _input = Raw<Vector4>(_cpu.Input.Count);
-        _numeric = Raw<Vector4>(Math.Max(1, _cpu.Page.Numeric.Count));
+        _input = Raw<Vector4>(_cpu.Input.Count + Math.Max(1, _cpu.Page.Numeric.Count));
         if (device.GetBufferLayout<Vector4>().ElementStrideInBytes != 16 || device.GetBufferLayout<uint>().ElementStrideInBytes != 4)
         {
             throw new NotSupportedException("Tiled compute requires canonical float4 and uint storage strides.");
@@ -232,10 +247,10 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
         _computeScope.RegisterSampler(sampler, reference => _sampler = reference);
     }
 
-    private ShaderUpload<T> Shader<T>(int count, ulong stride, ShaderArtifact artifact)
+    private ShaderUpload<T> Shader<T>(int count, ulong stride, ShaderArtifact artifact, bool register = true)
         where T : struct, IShaderArguments
     {
-        var stream = new ShaderUpload<T>(this, count, stride, artifact);
+        var stream = new ShaderUpload<T>(this, count, stride, artifact, register);
         _uploads.Add(stream);
         return stream;
     }
@@ -269,12 +284,11 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
             _cpu.Page.Resolve(null!, _sampler);
             _records.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Records));
             _paints.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Paints));
-            _clips.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Clips));
+            _paints.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Clips), (ulong)_cpu.Page.Paints.Count);
             _masks.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Masks));
             _images.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Images));
-            _metadata.Fill([new(_paints.Reference, _clips.Reference, _numeric.Reference, _masks.Reference, _images.Reference)]);
             _input.Fill(CollectionsMarshal.AsSpan(_cpu.Input));
-            _numeric.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Numeric));
+            _input.Fill(CollectionsMarshal.AsSpan(_cpu.Page.Numeric), (ulong)_cpu.Input.Count);
         }
         finally
         {
@@ -323,11 +337,15 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
         var args = new ComputeExecutionArguments2D
         {
             Records = _records.Reference,
-            PageMetadata = _metadata.Reference,
+            PaintDirectory = _paintRef,
+            MaskDescriptors = _masks.Reference,
+            ImagePaintData = _images.Reference,
             Input = _input.Reference,
             Storage = _storageRef,
             Work = _workRef,
             Stage = stage,
+            ClipOffset = _clipOffset,
+            NumericOffset = (uint)_cpu.Input.Count,
         };
         uint[] c = _cpu.Configuration;
         long invocations = stage switch
@@ -397,7 +415,7 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
         private readonly IGraphicsShaderDataBuffer<T> _upload;
         private readonly IGraphicsShaderDataBuffer<T> _data;
 
-        internal ShaderUpload(ComputeExecution2D owner, int count, ulong stride, ShaderArtifact artifact)
+        internal ShaderUpload(ComputeExecution2D owner, int count, ulong stride, ShaderArtifact artifact, bool register)
         {
             _upload = owner.Own(owner._context.Device.CreateShaderDataBuffer<T>(artifact, (ulong)count, MemoryPreference.Upload));
             _data = owner.Own(owner._context.Device.CreateShaderDataBuffer<T>(artifact, (ulong)count));
@@ -406,8 +424,13 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
                 throw new NotSupportedException("Tiled compute shader data ABI stride mismatch.");
             }
 
-            owner._computeScope.RegisterBuffer(_data.SliceElements(0, _data.Count), reference => Reference = reference);
+            if (register)
+            {
+                owner._computeScope.RegisterBuffer(_data.SliceElements(0, _data.Count), reference => Reference = reference);
+            }
         }
+
+        internal IGraphicsShaderDataBuffer<T> Data => _data;
 
         internal IGpuRef<T> Reference { get; private set; } = null!;
 
@@ -436,7 +459,7 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
 
         public void DeclareRead(IDrawingResourceDeclarations2D resources) => resources.UseShaderDataBuffer(_data, _computeRead);
 
-        internal void Fill(ReadOnlySpan<T> values)
+        internal void Fill(ReadOnlySpan<T> values, ulong offset = 0)
         {
             if (values.IsEmpty)
             {
@@ -444,7 +467,7 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
             }
             else
             {
-                _upload.CopyFrom(values);
+                _upload.CopyFrom(values, offset);
             }
         }
     }
@@ -489,15 +512,16 @@ internal sealed class ComputeExecution2D : IPreparedCommandBatch2D, IRetainedMem
 
         public void DeclareRead(IDrawingResourceDeclarations2D resources) => resources.UseBuffer(_data, _computeRead);
 
-        internal void Fill(ReadOnlySpan<T> values)
+        internal void Fill(ReadOnlySpan<T> values, ulong offset = 0)
         {
             if (values.IsEmpty)
             {
-                _upload.CopyFrom(new T[checked((int)_upload.Count)]);
+                T value = default;
+                _upload.CopyBytesFrom(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in value, 1)), offset * (ulong)Marshal.SizeOf<T>(), (ulong)Marshal.SizeOf<T>());
             }
             else
             {
-                _upload.CopyFrom(values);
+                _upload.CopyBytesFrom(MemoryMarshal.AsBytes(values), offset * (ulong)Marshal.SizeOf<T>(), (ulong)MemoryMarshal.AsBytes(values).Length);
             }
         }
     }
