@@ -397,11 +397,12 @@ public sealed class BenchmarkCatalogTests
     [InlineData("tools/shaders/shape.slang")]
     [InlineData("build/Targets/Shader.targets")]
     [InlineData("native/lumyte_text_parley/src/lib.rs")]
+    [InlineData("native/wgpu_native/finished-command-ownership.patch")]
     [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
     public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
-        foreach (string directory in new[] { "src/Core", "src/Graphics", "src/Maps", "src/UI", "src/Animation", "src/Input/Lumyte.Input.Abstractions", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "src/Maps", "src/UI", "src/Animation", "src/Input/Lumyte.Input.Abstractions", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
         }
@@ -450,6 +451,136 @@ public sealed class BenchmarkCatalogTests
             Assert.EndsWith("Lumyte.Graphics.Benchmark.csproj", gpu[0], StringComparison.Ordinal);
             Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.Graphics", "Graphics", integratedGraphics: false));
             Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.Graphics.Drawing2D", "Graphics", integratedGraphics: true));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>CPU UI selection cannot initialize a Desktop or Browser hardware executable.</summary>
+    [Fact]
+    public void UiEntryPointsSelectDisjointProjects()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "UI catalog " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (string name in new[] { "Lumyte.UI", "Lumyte.UI.Application", "Lumyte.UI.Application.Desktop", "Lumyte.UI.Application.Browser" })
+            {
+                string directory = Path.Combine(root, "benchmarks", "UI", name + ".Benchmark");
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, name + ".Benchmark.csproj"), "<Project />");
+            }
+
+            string[] cpu = BenchmarkCatalog.SelectProjects(root, "*", "UI", integratedUI: false);
+            string[] hardware = BenchmarkCatalog.SelectProjects(root, "*", "UI", integratedUI: true);
+            Assert.Equal(2, cpu.Length);
+            Assert.Equal(2, hardware.Length);
+            Assert.Empty(cpu.Intersect(hardware));
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.UI.Application.Desktop", "UI", integratedUI: false));
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "Lumyte.UI", "UI", integratedUI: true));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>UI no-build reuse binds transitive product, native, font and recording-device inputs.</summary>
+    /// <param name="input">The independently changed source.</param>
+    /// <returns>The completed entry-point verification.</returns>
+    [Theory]
+    [InlineData("benchmarks/UI/Shared/Workload.cs")]
+    [InlineData("benchmarks/Graphics/Shared/CpuGraphics/Device.cs")]
+    [InlineData("src/UI/Widget.cs")]
+    [InlineData("src/Graphics/Renderer.cs")]
+    [InlineData("src/Animation/Animation.cs")]
+    [InlineData("src/Input/Input.cs")]
+    [InlineData("src/Platform/Platform.cs")]
+    [InlineData("src/Platform/Lumyte.Windowing/Window.cs")]
+    [InlineData("src/Diagnostics/Diagnostic.cs")]
+    [InlineData("src/Core/Lumyte.Agent/Agent.cs")]
+    [InlineData("native/lumyte_text_parley/src/lib.rs")]
+    [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
+    public async Task UiTargetRejectsChangedSharedInputsAsync(string input)
+    {
+        using var fixture = new BuildFixture();
+        foreach (string directory in new[] { "src/Core", "src/UI", "src/Graphics", "src/Animation", "src/Input", "src/Platform", "src/Diagnostics", "tools/graphics", "benchmarks/UI/Shared", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        {
+            Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
+        }
+
+        string project = Path.Combine(fixture.Root, "benchmarks", "UI", "Lumyte.UI.Benchmark");
+        Directory.CreateDirectory(project);
+        File.WriteAllText(Path.Combine(project, "Lumyte.UI.Benchmark.csproj"), "<Project />");
+        string source = Path.Combine(fixture.Root, input);
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        File.WriteAllText(source, "original input");
+        string shared = Path.Combine(fixture.Root, "benchmarks", "Core", "Shared");
+        Directory.CreateDirectory(shared);
+        File.WriteAllText(Path.Combine(shared, "BenchmarkEntry.cs"), "shared runner");
+        string output = Path.Combine(project, "bin", "Release", "net10.0");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, "Lumyte.UI.Benchmark.dll"), "fixture output");
+        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkUI", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(first.ExitCode == 0, first.Output + first.Error);
+        int commands = fixture.Records("dotnet").Length;
+        File.WriteAllText(source, "changed input");
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkUI", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, stale.ExitCode);
+        Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
+        Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
+    /// <summary>Custom native backend assets copied at the output root remain fingerprinted.</summary>
+    /// <param name="filename">The platform-specific native payload name.</param>
+    [Theory]
+    [InlineData("liblumyte_wgpu_native.so")]
+    [InlineData("liblumyte_wgpu_native.dylib")]
+    public void RootNativeBackendChangesOutputIdentity(string filename)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "Native output " + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string file = Path.Combine(root, filename);
+            File.WriteAllText(file, "original native");
+            string first = BenchmarkCatalog.OutputHash(root);
+            File.WriteAllText(file, "changed native");
+            Assert.NotEqual(first, BenchmarkCatalog.OutputHash(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>External WASM and browser distributions are part of hardware executable provenance.</summary>
+    [Fact]
+    public void ExternalBrowserPayloadChangesOutputIdentity()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "Browser payload " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string output = Path.Combine(root, "output");
+            string wasm = Path.Combine(root, "wwwroot");
+            string chrome = Path.Combine(root, "chrome");
+            Directory.CreateDirectory(output);
+            Directory.CreateDirectory(wasm);
+            Directory.CreateDirectory(chrome);
+            File.WriteAllText(Path.Combine(output, "Benchmark.dll"), "unchanged entry");
+            string payload = Path.Combine(wasm, "application.wasm");
+            string dependency = Path.Combine(chrome, "libEGL.so");
+            File.WriteAllText(payload, "original wasm");
+            File.WriteAllText(dependency, "original native library");
+            string managed = BenchmarkCatalog.OutputHash(output);
+            string first = BenchmarkCatalog.OutputHash(output, [wasm, chrome]);
+            File.WriteAllText(payload, "changed wasm");
+            string second = BenchmarkCatalog.OutputHash(output, [wasm, chrome]);
+            Assert.NotEqual(first, second);
+            File.WriteAllText(dependency, "changed native library");
+            Assert.NotEqual(second, BenchmarkCatalog.OutputHash(output, [wasm, chrome]));
+            Assert.Equal(managed, BenchmarkCatalog.OutputHash(output));
         }
         finally
         {

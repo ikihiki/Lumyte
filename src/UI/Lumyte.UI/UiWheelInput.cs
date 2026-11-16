@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace Lumyte.UI;
 
-/// <summary>A wheel event routed by position, independently of pointer capture and keyboard focus.</summary>
-/// <param name="Position">Finite surface-local logical coordinates acquired with this event.</param>
-/// <param name="Delta">Finite normalized wheel steps; positive Y is upward.</param>
+/// <summary>A wheel delta in logical pixels, positive toward the content end.</summary>
+/// <param name="Position">The finite surface-local pointer position.</param>
+/// <param name="Delta">The finite per-axis scroll delta.</param>
 public sealed record UiWheelInput(Vector2 Position, Vector2 Delta) : UiInput;

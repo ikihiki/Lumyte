@@ -225,6 +225,8 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
 
         public UiPointerProbe ProbePointer(UiSurface candidate, Vector2 position) => ReferenceEquals(candidate, _surface) ? _manager.ProbePointer(candidate, position) : default;
 
+        public UiAutomationId? ProbeWheel(UiSurface candidate, Vector2 position) => ReferenceEquals(candidate, _surface) ? _manager.ProbeWheel(candidate, position) : null;
+
         public bool CanReceiveKeys(UiSurface candidate) => ReferenceEquals(candidate, _surface) && _manager.CanReceiveKeys(candidate);
 
         public bool Dispatch(UiSurface candidate, UiInput input)
@@ -368,6 +370,8 @@ public sealed class UiPopupAutomationSession : IAsyncDisposable
         public async ValueTask<IUiAutomationInputLease> AcquireInputAsync(CancellationToken cancellationToken = default) => await (await ResolveAsync(cancellationToken)).AcquireInputAsync(cancellationToken);
 
         public UiPointerProbe ProbePointer(UiSurface surface, Vector2 position) => ((IUiAutomationRoutingHost)_resolved!).ProbePointer(surface, position);
+
+        public UiAutomationId? ProbeWheel(UiSurface surface, Vector2 position) => ((IUiAutomationRoutingHost)_resolved!).ProbeWheel(surface, position);
 
         public bool CanReceiveKeys(UiSurface surface) => ((IUiAutomationRoutingHost)_resolved!).CanReceiveKeys(surface);
 

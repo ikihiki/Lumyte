@@ -43,11 +43,11 @@ public sealed class InputRoutingTests : UiElementTestBase
         };
         using UiSurface surface = Surface(Panel()[back, Stack(width: 20, height: 30)[Panel(height: 20), front]]);
         Assert.True(Send(surface, UiPointerPhase.Down, new(80, 80)));
-        Assert.True(surface.Dispatch(new UiWheelInput(new(2, 22), new(0, 1))));
+        Assert.True(surface.Dispatch(new UiWheelInput(new(2, 22), new(0, -40))));
         Assert.Equal(("front", (Vector2?)new Vector2(2, 2)), Assert.Single(seen));
         Assert.True(surface.Dispatch(new UiWheelInput(new(80, 80), new(0, -1))));
         Assert.Equal("back", seen[^1].Owner);
-        Assert.False(surface.Dispatch(new UiWheelInput(new(120, 2), new(0, 1))));
+        Assert.False(surface.Dispatch(new UiWheelInput(new(120, 2), new(0, -40))));
         Assert.Throws<ArgumentOutOfRangeException>(() => surface.Dispatch(new UiWheelInput(new(float.NaN, 0), Vector2.One)));
         surface.Dispatch(new UiFocusLostInput());
     }

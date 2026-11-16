@@ -7,6 +7,7 @@ public sealed partial class UiSurface
 {
     private sealed class RebuildPlan : IDisposable
     {
+        private readonly List<(ScrollController Controller, ScrollViewElement Owner)> _scrollReservations = [];
         private readonly UiElement[] _validators;
         private readonly IReadOnlyDictionary<UiSharedElementKey, UiElement>? _shared;
 
@@ -36,6 +37,12 @@ public sealed partial class UiSurface
                     ElementUpdate update = ReferenceEquals(element, changedRoot) && preparedRoot is not null
                         ? preparedRoot : new(element, element.IsMounted ? element.Widget : null, widget, [], false);
                     Updates.Add(update);
+                    if (element is ScrollViewElement scroll && widget is Compose.Definitions.ScrollView { Controller: { } controller })
+                    {
+                        controller.Reserve(scroll);
+                        _scrollReservations.Add((controller, scroll));
+                    }
+
                     if (!ReferenceEquals(update, preparedRoot))
                     {
                         prepareArguments?.Invoke(update);
@@ -243,6 +250,12 @@ public sealed partial class UiSurface
 
         public void Dispose()
         {
+            foreach ((ScrollController Controller, ScrollViewElement Owner) reservation in _scrollReservations)
+            {
+                reservation.Controller.ReleaseReservation(reservation.Owner);
+            }
+
+            _scrollReservations.Clear();
             foreach (ElementUpdate update in Updates)
             {
                 update.Signals?.Dispose();
@@ -273,8 +286,29 @@ public sealed partial class UiSurface
             }
         }
 
+        internal void FinalizeScrollBindings()
+        {
+            foreach (ElementUpdate update in Updates)
+            {
+                if (update.Element is ScrollViewElement scroll && update.Next is Compose.Definitions.ScrollView widget)
+                {
+                    scroll.FinalizeBinding(widget.Controller);
+                }
+            }
+        }
+
         internal void Prepare()
         {
+            // Reserve before validation and preparation callbacks can reenter.
+            foreach (ElementUpdate update in Updates)
+            {
+                if (update.Element is ScrollViewElement scroll && update.Next is Compose.Definitions.ScrollView { Controller: { } controller })
+                {
+                    controller.Reserve(scroll);
+                    _scrollReservations.Add((controller, scroll));
+                }
+            }
+
             var changedVisuals = new HashSet<UiElement>(Updates.Select(update => update.Element), ReferenceEqualityComparer.Instance);
             changedVisuals.UnionWith(Removed);
             HashSet<UiSharedElementKey> sharedKeys = _shared is null ? [] : _shared.Where(pair => !changedVisuals.Contains(pair.Value)).Select(pair => pair.Key).ToHashSet();

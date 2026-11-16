@@ -19,12 +19,27 @@ public sealed class PopupTests
         UiPopupHandle popup = fixture.Popups.RequestOpen(fixture.Owner, new(fixture.Anchor, new(80, 60), () => new WheelWidget(events) { Width = 60, Height = 40 }));
         fixture.Pump();
         Assert.Equal(UiPopupState.Open, popup.State);
-        Assert.True(fixture.Send(new UiWheelInput(new(5, 25), new(0, 1))));
+        Assert.True(fixture.Send(new UiWheelInput(new(5, 25), new(0, -40))));
         Assert.Equal((Vector2?)new Vector2(5, 5), Assert.Single(events));
-        Assert.True(fixture.Send(new UiWheelInput(new(5, 5), new(0, 1))));
+        Assert.True(fixture.Send(new UiWheelInput(new(5, 5), new(0, -40))));
         Assert.Single(events);
         Assert.Equal(UiPopupState.Open, popup.State);
         Assert.Equal(0, fixture.Clicks);
+    }
+
+    /// <summary>Wheel probing rejects blocked owners without activating ordinary content children.</summary>
+    [Fact]
+    public void WheelProbeRejectsOwnerWhileMenuOwnsScope()
+    {
+        using var f = new Fixture();
+        Assert.NotNull(f.Popups.ProbeWheel(f.Surface, new(5)));
+        UiPopupHandle popup = f.Open();
+        Assert.Null(f.Popups.ProbeWheel(f.Surface, new(5)));
+        Assert.True(f.Popups.TryGetSurface(popup.Id, out UiSurface? menu));
+        Assert.NotNull(f.Popups.ProbeWheel(menu!, new(5)));
+        popup.Close();
+        f.Pump();
+        Assert.NotNull(f.Popups.ProbeWheel(f.Surface, new(5)));
     }
 
     /// <summary>Checks declarative signal opening, portal isolation, controlled dismissal and continuing session identity.</summary>
