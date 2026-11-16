@@ -391,6 +391,8 @@ public sealed class BenchmarkCatalogTests
     [InlineData("src/Graphics/Renderer.cs")]
     [InlineData("src/Maps/MapSession.cs")]
     [InlineData("src/UI/UiDrawingScene2D.cs")]
+    [InlineData("src/Animation/Animation.cs")]
+    [InlineData("src/Input/Lumyte.Input.Abstractions/Input.cs")]
     [InlineData("benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps/DenseMapFixture.cs")]
     [InlineData("tools/shaders/shape.slang")]
     [InlineData("build/Targets/Shader.targets")]
@@ -399,7 +401,7 @@ public sealed class BenchmarkCatalogTests
     public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
-        foreach (string directory in new[] { "src/Core", "src/Graphics", "src/Maps", "src/UI", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "src/Maps", "src/UI", "src/Animation", "src/Input/Lumyte.Input.Abstractions", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
         }
