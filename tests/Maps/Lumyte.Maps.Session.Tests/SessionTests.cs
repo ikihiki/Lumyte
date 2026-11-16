@@ -253,6 +253,85 @@ public sealed class SessionTests
         Assert.True(session.ResidentCpuBytes <= tiles.LoadProfile.MaxReservationBytesPerTile);
     }
 
+    /// <summary>Terminal decoder failures release the reservation, remain diagnostic and never auto-repeat.</summary>
+    /// <returns>The terminal failure checks.</returns>
+    [Fact]
+    public async Task FailedBuildDoesNotPublishOrAutomaticallyRetryAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        stage.Fail();
+        await using var manager = new ResourceManager("failure", new Source(), [stage], memory, new Runtime());
+        await using var map = new MapSession(manager, new Tiles(), Style(), new(), [new(1, 0, 0)]);
+        map.SetViewport(new(100, 100));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (map.Failures.Count == 0)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        for (int index = 0; index < 5; index++)
+        {
+            map.Advance();
+        }
+
+        Assert.IsType<InvalidDataException>(Assert.Single(map.Failures));
+        Assert.Equal(1, stage.Builds);
+        Assert.Equal(0, map.ResidentCpuBytes);
+        Assert.Equal(0, map.PublishedTiles);
+        map.BeginStop();
+        map.BeginStop();
+        Assert.True(map.IsStopped);
+        Assert.Throws<InvalidOperationException>(() => map.SetCamera(new(0, 0, 1)));
+        Assert.Throws<InvalidOperationException>(() => map.SetViewport(default));
+    }
+
+    /// <summary>A completed but uncollected retain is drained after stop without publication or notification.</summary>
+    /// <returns>The completed-slot stop checks.</returns>
+    [Fact]
+    public async Task StopDiscardsUncollectedSuccessAndCallbackFailureIsNotRepeatedAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        stage.Complete();
+        await using var manager = new ResourceManager("stop-complete", new Source(), [stage], memory, new Runtime());
+        await using var map = new MapSession(manager, new Tiles(), Style(), new(), [new(1, 0, 0)]);
+        map.SetViewport(new(100, 100));
+        int notifications = 0;
+        map.Changed += () => notifications++;
+        map.Advance();
+        map.BeginStop();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!map.IsStopped)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        Assert.Equal(0, notifications);
+        Assert.Equal(0, map.PublishedTiles);
+        Assert.Equal(0, map.ResidentCpuBytes);
+        await using var other = new MapSession(manager, new Tiles(), Style(), new(), []);
+        other.Changed += () => throw new InvalidOperationException("callback failure");
+        Assert.Throws<InvalidOperationException>(() => other.SetViewport(new(40, 40)));
+        ulong revision = other.DisplayRevision;
+        other.Advance();
+        Assert.Equal(revision, other.DisplayRevision);
+    }
+
+    /// <summary>Invalid fixed demand is rejected before dispatching any resources.</summary>
+    /// <returns>The manifest range check.</returns>
+    [Fact]
+    public async Task FixedDemandMustRespectManifestZoomRangeAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        await using var manager = new ResourceManager("manifest", new Source(), [stage], memory, new Runtime());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MapSession(manager, new Tiles(), Style(), new(), [new(0, 0, 0)]));
+        Assert.Equal(0, stage.Builds);
+    }
+
     private static MapStyle Style() => new("test", "v1", new(0, 0, 0, 1), []);
 
     private static async Task AdoptAsync(MapSession session)
@@ -303,6 +382,8 @@ public sealed class SessionTests
             var road = new MapTileFeature(2, MapGeometryType.LineString, [new([new(-100, 512), new(1124, 512)], false)], []);
             _completion.TrySetResult(new([new("water", 1024, [polygon]), new("roads", 1024, [road])], "v1", 1024, 2048));
         }
+
+        internal void Fail() => _completion.TrySetException(new InvalidDataException("malformed tile"));
 
         internal void Complete() => _completion.TrySetResult(new(ImmutableArray<MapTileLayer>.Empty, "v1", 128, 256));
     }

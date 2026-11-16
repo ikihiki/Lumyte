@@ -11,7 +11,7 @@ All fixtures are hand-authored, with no network or redistributed OSM data.
 - Lumyte.Maps.UI.Tests: record-only retained reuse, invalidation, replacement, mount/unmount.
 
 Use the shared repository SDK/environment and slang path. Run each project with dotnet test -c Release.
-For hardware readback set LUMYTE_MAPS_GPU_TESTS=1 and an explicitly verified VK_DRIVER_FILES manifest.
+For hardware readback set the existing CI flag LUMYTE_GRAPHICS_GPU_TESTS=1 (LUMYTE_MAPS_GPU_TESTS=1 remains an alias) and an explicitly verified VK_DRIVER_FILES manifest.
 The PNG artifact is a conversion of the raw /tmp/lumyte-map-gpu-rgba.bin readback, not a desktop screenshot.
 
 Strict application NativeAOT and trimmed publish use the existing CI flags:
@@ -22,8 +22,23 @@ Strict application NativeAOT and trimmed publish use the existing CI flags:
 Run each published Lumyte.Maps.Sample headless binary. The bounded smoke waits for actual tile adoption
 before orderly stop. The launcher registration is exercised with --sample maps --backend headless --configuration Release.
 
-Browser execution is not covered by these native projects. The local adapter currently requires local
-FileStream inputs; no browser input source or public browser sample is registered. This is an explicit
-platform limitation, not a passing Browser gate. No HTTP or M3 input/spatial demand is implemented.
-No seam-free claim follows from one handmade pixel fixture. Parent clips, semitransparent edges across
-different extents, DPI matrix parity and real-city fixtures still need broader visual coverage.
+Browser execution is separately covered by Lumyte.Maps.Browser.Sample using bounded immutable in-memory
+inputs. The trimmed browser smoke proves adoption, mounted UI recording, retained reuse and cleanup.
+It does not prove Browser GPU pixels; optional capture remains failing with device-recovery timeout.
+No HTTP or M3 input/spatial demand is implemented.
+The final handmade hardware matrix covers parent clips, overlay, alpha-0.5 ownership edges across
+1024/8192 extents, integer/half-pixel positions and DPI 1/1.5/2. Generic tests additionally cover
+translation/reflection and explicitly reject rotation/shear. No real-city or general no-seams claim
+follows from these finite fixtures.
+
+## Existing CI discovery
+
+Maps test projects are registered in Lumyte.slnx. build/Build.cs Test invokes dotnet test against the
+canonical solution (or host-derived BuildSolution) with -m:1. Build.Ci host filtering retains these
+portable projects. Existing Linux native GPU CI already exports LUMYTE_GRAPHICS_GPU_TESTS=1;
+MapGpuFact honors that standard flag, so no new CI environment switch is required.
+
+The followup hardware fixture explicitly renders both logical DPI 1 and 2, adjacent 1024/8192 extents,
+semitransparent buffered polygons, road casing/interior, UI overlay and an overflowing child clipped by
+its actual UI parent. It compares entire direct and retained hardware readbacks and analytic pixel
+colors independently. Test artifacts remain outside Git. See IMPLEMENTATION-EVIDENCE.md for results.

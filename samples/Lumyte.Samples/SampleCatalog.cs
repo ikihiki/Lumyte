@@ -24,7 +24,7 @@ internal static class SampleCatalog
         new("graphics-window", "描画: Direct3D 12 の三角形と Present", new("d3d12", Project("Graphics.Direct3D12"), ["hardware", "window"], WindowsOnly: true), new("warp", Project("Graphics.Direct3D12"), ["warp", "window"], WindowsOnly: true)),
         new("text", "描画: 多言語シェーピングと文字描画", Browser("webgpu", "Graphics.Text.Parley.Browser")),
         new("ui", "UI: layout・入力・描画", Native("record-only", "UI", "record-only"), Native("vulkan", "UI", "vulkan"), Native("wgpu", "UI", "wgpu"), Browser("browser", "UI.Browser")),
-        new("maps", "地図: 固定ローカルMVTと保持型UI", Native("headless", "Maps", "headless"), Native("desktop", "Maps", "desktop")),
+        new("maps", "地図: 固定ローカルMVTと保持型UI", Native("headless", "Maps", "headless"), Native("desktop", "Maps", "desktop"), Browser("browser", "Maps.Browser")),
         new("ui-popup", "UI: Hosted popup と focus", Native("none", "UI.Popup", "none"), Native("vulkan", "UI.Popup", "vulkan"), Native("wgpu", "UI.Popup", "wgpu")),
         new("ui-text-editing", "UI: Windows IME (font file が必要)", new SampleBackend("windows", Project("UI.TextEditing"), [], WindowsOnly: true)),
         Managed("diagnostics-ui-game", "UI診断: ゲームAgent (GAME_TOKEN が必要)", "Diagnostics.UI.Automation.Game"),

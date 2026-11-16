@@ -53,6 +53,11 @@ public sealed partial class MapSession : IAsyncDisposable
         foreach (MapTileId id in fixedTiles)
         {
             MapTileId normalized = id.Normalize();
+            if (normalized.Zoom < tiles.MinZoom || normalized.Zoom > tiles.MaxZoom)
+            {
+                throw new ArgumentOutOfRangeException(nameof(fixedTiles), "Fixed tile zoom is outside the manifest range.");
+            }
+
             _ = tiles.GetKey(normalized);
             if (_entries.Any(entry => entry.Id == normalized))
             {

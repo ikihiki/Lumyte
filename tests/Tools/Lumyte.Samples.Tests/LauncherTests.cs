@@ -66,6 +66,19 @@ public sealed class LauncherTests
         Assert.Empty(console.Output);
     }
 
+    /// <summary>Verifies the portable bounded memory map consumer uses browser publishing.</summary>
+    [Fact]
+    public void MapsSampleSelectsTheBrowserConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "maps", "--backend", "browser"]), console);
+        Assert.Equal("maps", sample.Id);
+        Assert.Equal("samples/Lumyte.Maps.Browser.Sample", backend.Project);
+        Assert.True(backend.Browser);
+        Assert.Empty(backend.Arguments);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies the launcher contract.</summary>
     [Fact]
     public void MissingBackendPromptsOnlyForCompatibleBackends()

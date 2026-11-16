@@ -28,8 +28,8 @@ a GPU drain. The host drains GPU work before DisposeAsync. Dispose attempts shar
 and keep unfinished reference/lease cleanup fields for a later retry. The borrowed manager remains
 alive until the session and host frames have retired. All owner operations must be serialized.
 
-Record clips to viewport and tile ownership rectangles, preserves buffered paths and polygon winding,
-and paints background then global style passes then normalized tile/input-feature order (equal sort
+Record uses an ordinary antialiased viewport clip and device-center whole-pixel ownership clips for
+internal tile boundaries, preserving buffered paths and polygon winding. It paints background then global style passes then normalized tile/input-feature order (equal sort
 key). It restores canvas state and never loads or submits. Coordinates subtract a double camera origin
 before float conversion. Host DPI is not multiplied again. A separate MaxRecordingCpuBytes preflight
 bounds conservative path/command conversion allocation for one recording; host snapshots and renderer
@@ -44,8 +44,23 @@ mounted identity is rejected before publication; replace the element identity in
 
 Use the repository environment and SDK, then run Release tests under tests/Maps. Opt-in GPU readback:
 
-
 LUMYTE_MAPS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet test tests/Maps/Lumyte.Maps.Session.Tests -c Release
 
 CPU tests are record-only. Native GPU execution, trimmed publishing, NativeAOT publishing and Browser
 execution are distinct gates; consult the implementation evidence rather than inferring one from another.
+
+### Ownership boundaries and fixed-set repetitions
+
+The inner tile ownership predicate uses ClipOwnershipRect; it partitions half-open device-pixel center
+membership after target DPI and accumulated axis-aligned transforms. Each owned pixel keeps the shape's
+antialias samples. This avoids multiplying independent fractional clip coverages for adjacent buffered
+semi-transparent tiles without snapping camera coordinates or path vertices. Translation, axis scaling
+and reflection are supported; rotation or shear, including retained/replay transforms, is explicitly
+rejected during preparation. The outer UI boundary retains ordinary antialiased clipping.
+
+Already-adopted normalized X tiles repeat at visible world offsets, including near both sides of the
+dateline. This does not change fixed acquisition demand or start M3 selection. Visible repetitions are
+preflighted against the same recording budget; each copy is charged. The actual recorder and budget
+preflight share projection visibility and paint/geometry eligibility, so dense offscreen or ineligible
+features do not reject an otherwise small visible map. Extreme repetition demand rejects before paths
+are allocated rather than iterating an unbounded viewport.

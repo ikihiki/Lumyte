@@ -6,7 +6,7 @@ M1 supports uncompressed local MVT 2, not OSM XML/PBF, HTTP, gzip, arbitrary ven
 
 Existing solution inspection supplied for this implementation:
 
-- bertt/mapbox-vector-tile-cs at ecefc028181e0197aca77b2d7ac2ea278f55cbbf, src/VectorTileParser.cs: public entry invokes Serializer.Deserialize<Tile>(stream) before application limits can be checked.
+- bertt/mapbox-vector-tile-cs at ecefc028181e0197aca77b2d7ac2ea278f55cbbf, src/VectorTileParser.cs: public entry invokes `Serializer.Deserialize<Tile>(stream)` before application limits can be checked.
 - NetTopologySuite.IO.VectorTiles develop at 16c930fc14f2ba912111684310d9da25370f759d, MapboxTileReader.Read: whole-tile protobuf deserialization likewise precedes application validation.
 
 Neither inspected public entry accepts an allocator or per-construction allocation limits. Post-deserialization feature counting cannot enforce the ADR's pre-allocation requirement. This is the narrowly authorized gap filled here; it is not a claim that those projects are otherwise unsuitable. No dependency from either is copied or introduced. License/maintenance and Browser/AOT evaluation of those candidates is not complete; this parser's Browser/AOT compatibility is also untested.
@@ -22,3 +22,21 @@ The decoder scans spans without allocating message trees, counts repeated fields
 Accounting is an explicit 64-bit CLR storage model, not a portable allocator hook or a measurement of every runtime allocation. Managed storage uses 64-bit CLR eight-byte alignment: 24-byte array header, 26-byte string base including terminator, aligned object sizes. These are an accounting convention for owned storage, not a process RSS, runtime allocator, OS file handle, asynchronous framework, crypto implementation, Resources metadata/cache or renderer transformation memory bound. Those surrounding scopes require independent manager/host budgets. Browser/AOT and alternate runtime layouts are not verified. Source uses a single exact-sized input array after checking file length and reservation; stage borrows that immutable snapshot buffer, not a second input copy. No pool or growable decoder collection exists.
 
 Strict geometry validation checks command counts/order, minimum vertices, explicit ClosePath, nondegenerate winding, first-ring exterior, signed coordinate accumulation overflow, tags, UTF8, protobuf lengths/wire types and varint overflow. Ordered exterior/hole flags preserve multipolygon groups. It is not a general topology repair engine: self-intersection and geometric hole containment are not checked. Fixtures are hand authored in tests with no third-party OSM data.
+
+## Portable memory input
+
+Use InMemoryMvtRegistration with an explicit dictionary of XYZ IDs and
+`ReadOnlyMemory<byte>`, then InMemoryMvtSource and MvtResourceStage constructed
+with that exact registration. Registration preflights all tile lengths, profile
+input limits, array overhead and the source reservation allowance before taking
+payload copies. Caller mutation must be serialized during construction; later
+mutation of the input buffers/dictionary cannot alter any snapshot or revision.
+Snapshots expose read-only streams without a public backing buffer and share
+registration-owned private bytes. SHA256 revisions propagate through Resources
+into MapTileContent. A stage rejects snapshots from any other registration,
+even when its logical keys match.
+
+This is a finite preloaded source, not streaming or HTTP. All registration bytes
+remain application-owned for its lifetime and require a host preload budget in
+addition to the per-tile build/session reservation. Missing tiles are explicit;
+no fallback to a filesystem, network, or implicit global tile server occurs.
