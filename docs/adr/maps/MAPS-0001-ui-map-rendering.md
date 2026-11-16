@@ -54,7 +54,7 @@ await map.DisposeAsync();
 - `Lumyte.Maps.Http`は明示設定した配信元をResourcesのsourceへ接続する。HTTPや圧縮の制限はここで適用する。ローカル入力では不要である。
 - アプリのcontentはsessionを所有し、既存`IUiApplicationContent`で起動、`Advance`、停止、GPU完了後の解放を接続する。地図専用window loop、内側RenderGraph、GPU submissionを作らない。
 
-基準コードの`src/UI/Lumyte.UI.Application/IUiApplicationContent.cs`に上記の公開hookがある。一方`IUiApplicationParticipant`と`UiApplicationDispatcher`はinternalであり、別assemblyの地図機能の接続先にはしない。汎用UI・Graphics・Resourcesの既存公開宣言は変更せず、地図assemblyの公開境界を追加する。
+基準コードの`src/UI/Lumyte.UI.Application/IUiApplicationContent.cs`に上記の公開hookがある。一方`IUiApplicationParticipant`と`UiApplicationDispatcher`はinternalであり、別assemblyの地図機能の接続先にはしない。汎用UI・Resourcesの既存公開宣言とGraphicsの既存clipの意味は維持する。地図assemblyに加えて、Graphicsへ描画領域の所有を分割する専用clipを追加する。
 
 ### 入力形式と描画規則
 
@@ -84,7 +84,29 @@ Xは世界を繰り返すが、取得IDは`x mod 2^z`へ正規化し、表示位
 
 描画順は、背景→スタイルレイヤー順→同一レイヤー内の明示したsort key→正規化タイルとfeatureの安定順とする。タイル単位で全レイヤーを描き切らない。道路の縁取りと内側も別の描画レイヤーとして処理し、非同期の到着順で重なりを変えない。
 
-境界をまたぐ線と面はタイルのbuffer領域を保持してから描き、可視所有範囲のclipで重複を抑える。線を境界で切って新しい端点を作らない。半透明面、antialias、異なるextentで継ぎ目が出ないことを画素試験で確認し、実入力で確認するまでは無継ぎ目を保証しない。
+境界をまたぐ線と面はタイルのbuffer領域を保持してから描き、可視所有範囲のclipで重複を抑える。線を境界で切って新しい端点を作らない。通常のUI外周は従来のantialias付きclipを使い、隣接タイルの所有境界だけは独立した半透明coverageとして合成しない。
+
+所有境界には`DrawingCanvas2D.ClipOwnershipRect`を使う。準備時のtargetのDPIと原点、記録時および再利用時の変換を適用したdevice座標で、pixel中心が矩形の最小側以上・最大側未満に入るpixelだけを所有する。そのpixelでは形状のantialiasを維持し、所有clip自身はcoverageを減らさない。カメラ、頂点、線幅、通常の外周clipをpixel境界へ丸めない。
+
+基準コードでは同じ目的に通常の`ClipRect`だけを使用できる。変更後のタイル内部の記録例は次のとおりで、`canvas`はBegin済みの借用Canvas、`tileBounds`は論理座標の所有矩形、`bufferedPath`は所有境界の外側も保持した不変Pathである。外周のUI clipとホストの準備・GPU寿命は変えない。
+
+```csharp
+using Lumyte.Graphics.Drawing2D;
+
+// 変更前: 所有境界も通常のantialias付きclipとして別々に合成する。
+canvas.Save();
+canvas.ClipRect(tileBounds);
+canvas.FillPath(bufferedPath, color);
+canvas.Restore();
+
+// 変更後: 所有するpixelを分割し、形状のcoverageだけを合成する。
+canvas.Save();
+canvas.ClipOwnershipRect(tileBounds);
+canvas.FillPath(bufferedPath, color);
+canvas.Restore();
+```
+
+専用clipは平行移動、軸に沿う拡大縮小・反転に対応し、DPIは準備時に一度だけ適用する。回転・せん断を含む変換は、保持型の再利用やReplayで加わる場合も準備時に`NotSupportedException`として明示的に拒否する。通常clipへ暗黙に戻さず、ホストは既存契約どおり失敗frameを破棄する。軸方向の隣接所有矩形、整数・小数DPI、半pixel位置、反転、保持型と直接描画の出力を検証する。実入力で確認するまでは無継ぎ目を保証しない。
 
 `MapView`は既定の自身→子の記録順を維持し、`CacheRetainedDrawing`を有効化する。sessionの表示revision、カメラ、規則、サイズが変わると`InvalidateDrawing`し、`ValidateRetainedDrawing`でも借用依存の変更を照合する。変更のないframeで同じローカル記録を再利用できるが、一つのElement内のタイル差分だけをGPUへ更新する保証は追加しない。
 
@@ -145,6 +167,15 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 基準コードには地図APIがないため、以下は追加宣言の抜粋である。既存汎用APIの改名・削除はない。値の詳細な構築補助やpipeline登録補助は抜粋外だが、下記の公開値型を外部decoder固有型で置換しない。
 
 ```diff
++namespace Lumyte.Graphics.Drawing2D
++{
++    public abstract class DrawingCanvas2D
++    {
++        // device-spaceのpixel中心で半開矩形の所有を分割する。
++        // 形状のcoverageは維持。回転・せん断は準備時に拒否する。
++        public void ClipOwnershipRect(Rect2D rect);
++    }
++}
 +namespace Lumyte.Maps
 +{
 +    public readonly record struct MapCamera(double Longitude, double Latitude, double Zoom);
@@ -240,6 +271,7 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 
 - 既存の完成した地図rendererをそのまま埋め込む: 地図としての完成度を早く得られるが、描画が別rendererへ流れ、Lumyteの線・面・文字の評価にならない。decoderや入力adapterは既存実装を利用し、描画は既存Canvasへ載せる。
 - 画像タイルだけを表示する: 配信・cacheの試験には適するが、主な負荷が画像合成になり、道路や建物のパス描画を評価できない。
+- 通常clipのcoverageを所有境界でも別々に合成する: 汎用APIの追加は不要だが、隣接する半透明面の境界で同じpixelが分割されるとcoverageを二重に減らす。形状を丸めずに、所有clipとUI外周clipを区別する。
 - 生のOSMをアプリ起動時に解釈する: タグと形状の自由度は高いが、広域データの関連解決、単純化、索引構築まで実行時へ持ち込む。入力は事前生成したベクトルタイルへ限定する。
 - Resourcesの連続streamへ全タイルを流す: 固定bufferの仕組みは使えるが、独立IDの優先順位変更とcache共有がcursorの意味に合わない。型付き取得と空間的な需要制御を組み合わせる。
 - UI本体へ地図専用描画・job機能を追加する: 接続は短くなるが、汎用UIの責務と資源寿命が地図へ結合する。独立assemblyと既存content hookを利用する。
