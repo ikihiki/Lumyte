@@ -1,6 +1,6 @@
 # Lumyte.Graphics.Wgpu
 
-[Ahjo.Wgpu](https://www.nuget.org/packages/Ahjo.Wgpu/0.7.0) 0.7.0 を直接使用し、native wgpu のデバイスを生成します。独自の `.Native` プロジェクトは置きません。対象は .NET 10 です。
+[Ahjo.Wgpu](https://www.nuget.org/packages/Ahjo.Wgpu/0.7.0) 0.7.0 の managed binding と、未送信 command の解放不具合を修正した checksum-pinned wgpu-native を使用します。独自の `.Native` .NET プロジェクトは置かず、native source の修正・ビルドは [native/wgpu_native](../../../native/wgpu_native/README.md) で管理します。対象は .NET 10 です。
 
 ## 生成と所有権
 
@@ -13,7 +13,7 @@ IGraphicDevice device = owner;
 Console.WriteLine(device.Caps.MaxBufferSize);
 ```
 
-`WgpuDevice.Create()` は同期 API です。instance、default adapter、default limits の logical device を順に生成します。surface は作りません。adapter の探索範囲と native library の配布・ロードは Ahjo.Wgpu に従います。使用可能なドライバーとパッケージの native runtime asset が必要です。
+`WgpuDevice.Create()` は同期 API です。instance、default adapter、default limits の logical device を順に生成します。surface は作りません。adapter の探索範囲は Ahjo.Wgpu に従います。native library は本プロジェクトがビルド・検証する `lumyte_wgpu_native` を配布し、専用 resolver でロードします。使用可能なドライバーと対象 RID の修正済み native asset が必要で、Ahjo の未修正 runtime asset へはフォールバックしません。
 
 生成に失敗すると取得済みの device、adapter、instance を解放して例外を伝播します。成功後は buffer を先に解放してから所有者が `Dispose()` を呼び、device → adapter → instance の順で解放します。再度の `Dispose()` は何もしません。生成・解放の並行呼び出しはサポートしません。`Caps` は非所有の保存済み情報なので、解放後も読み取れます。
 
@@ -242,3 +242,32 @@ raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参�
 wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
 
 検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。
+
+## Unsubmitted native command ownership correction
+
+Ahjo.Wgpu.Native 0.7.0 bundles an upstream defect: finished command buffers
+that are released without submission remain live in the native registry.
+This backend therefore uses a checksum-pinned, ABI-compatible source build
+with the single ownership-initialization correction described in
+[native/wgpu_native](../../../native/wgpu_native/README.md).
+No hidden submission, GPU wait, forced GC or shortened recording workload is
+used to conceal the defect.
+
+WgpuDevice.Create installs the corrected native resolver automatically.
+Applications that call Ahjo.Wgpu.Native APIs directly **before** creating the
+backend (for example, installing a native log callback) must call
+WgpuDevice.InitializeNativeRuntime first. Native entry points already resolved
+to a different library cannot be rebound safely; initialize once before all
+interop. The corrected runtime has its own basename and never silently falls
+back to the defective upstream asset. Original native package assets are
+excluded locally and transitively while the managed Ahjo assemblies remain.
+
+Host builds reuse the repository's isolated Python and Rust provisioning.
+The native build privately provisions checksum-pinned ClangSharp libclang
+runtimes and probes the pinned headers before Cargo. The platform C linker
+and standard SDK headers come from the existing repository setup; see the
+[native prerequisites](../../../native/wgpu_native/README.md#build-and-prerequisites).
+The validated host is Linux x64 / Radeon 8060S (RADV); other native RIDs retain
+the same upstream source/headers but have not been built or executed here.
+Normal package creation fails until all six corrected native artifacts, their
+provenance and dependency notices have been collected and verified.

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Navigation/Lumyte.UI.Navigation.csproj" />
+    <ProjectReference Include="../../../src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <ProjectReference Include="../../Graphics/Shared/CpuGraphics/Lumyte.Graphics.BenchmarkDevice.csproj" />
+    <Compile Include="../../Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+  </ItemGroup>
+</Project>

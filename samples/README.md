@@ -48,6 +48,10 @@ Browser Graphics は自動検証にも使うため、共通 suite に加えて c
 Audio の共通契約本体は `Lumyte.Audio.Shared`、Graphics は `Lumyte.Graphics.Shared` に一つだけ置き、host に同じ検証を複製しません。
 既存の `Lumyte.Graphics.DeviceCaps.Sample` は Vulkan / wgpu host、`Lumyte.Graphics.Direct3D12.Sample` は D3D12 host という役割です。
 
+## 一回計測のレイアウト
+
+`dotnet run --project samples/Lumyte.Samples -- --sample ui-layout --configuration Release` は、Flexのwith重み・fit、Wrapの整列、Grid.Cellのwith配置をwith修飾と組み合わせたHeadless画面を実行します。通常入力、Automationの本体座標、描画記録を検査し、フォント・テーマ・GPUを要求しません。
+
 ## Browser
 
 ```sh

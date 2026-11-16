@@ -38,6 +38,7 @@ public static partial class Compose
             internal void Validate(UiWidgetValidationContext context)
             {
                 Transitions?.Validate();
+                C4Layout.ValidateParentData(this, context);
                 ValidateDeclaration(context);
             }
 

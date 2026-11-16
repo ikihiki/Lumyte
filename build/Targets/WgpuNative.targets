@@ -1,0 +1,54 @@
+<Project>
+  <Import Project="ParleyBuild.targets" />
+  <PropertyGroup>
+    <_LumyteWgpuRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '../..'))</_LumyteWgpuRoot>
+    <LumyteBuildWgpuNative Condition="'$(LumyteBuildWgpuNative)' == ''">true</LumyteBuildWgpuNative>
+    <LumyteWgpuPythonPathFile Condition="'$(LumyteWgpuPythonPathFile)' == ''">$(_LumyteWgpuRoot)artifacts/wgpu-native/tools/$(MSBuildProjectName)-python-path.txt</LumyteWgpuPythonPathFile>
+    <_LumyteWgpuExplicitRust Condition="'$(LumyteWgpuCargo)' != '' and '$(LumyteWgpuRustc)' != ''">--cargo &quot;$(LumyteWgpuCargo)&quot; --rustc &quot;$(LumyteWgpuRustc)&quot;</_LumyteWgpuExplicitRust>
+    <LumyteWgpuNativeOutput Condition="'$(LumyteWgpuNativeOutput)' == ''">$(_LumyteWgpuRoot)artifacts/wgpu-native</LumyteWgpuNativeOutput>
+    <_LumyteWgpuRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_LumyteWgpuRid>
+    <_LumyteWgpuRid Condition="'$(_LumyteWgpuRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_LumyteWgpuRid>
+    <_LumyteWgpuBinary Condition="$([System.String]::Copy('$(_LumyteWgpuRid)').StartsWith('win-'))">lumyte_wgpu_native.dll</_LumyteWgpuBinary>
+    <_LumyteWgpuBinary Condition="$([System.String]::Copy('$(_LumyteWgpuRid)').StartsWith('osx-'))">liblumyte_wgpu_native.dylib</_LumyteWgpuBinary>
+    <_LumyteWgpuBinary Condition="'$(_LumyteWgpuBinary)' == ''">liblumyte_wgpu_native.so</_LumyteWgpuBinary>
+    <LumyteWgpuNativePath Condition="'$(LumyteWgpuNativePath)' == ''">$(LumyteWgpuNativeOutput)/$(_LumyteWgpuBinary)</LumyteWgpuNativePath>
+    <LumyteWgpuNativeProvenance Condition="'$(LumyteWgpuNativeProvenance)' == ''">$([System.IO.Path]::GetDirectoryName('$(LumyteWgpuNativePath)'))/provenance.json</LumyteWgpuNativeProvenance>
+    <LumyteWgpuPackageRoot Condition="'$(LumyteWgpuPackageRoot)' == ''">$(_LumyteWgpuRoot)artifacts/wgpu-native/package</LumyteWgpuPackageRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(LumyteWgpuNativePath)" Link="$(_LumyteWgpuBinary)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" Visible="false" />
+    <None Include="$(LumyteWgpuNativeOutput)/WGPU-THIRD-PARTY-NOTICES.txt;$(LumyteWgpuNativeOutput)/RUST-STANDARD-LIBRARY-NOTICES.html" Link="licenses/wgpu-native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(_LumyteWgpuRoot)native/wgpu_native/LICENSE.MIT;$(_LumyteWgpuRoot)native/wgpu_native/LICENSE.APACHE;$(_LumyteWgpuRoot)native/wgpu_native/LICENSE.webgpu-headers" Link="licenses/wgpu-native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="licenses/wgpu-native/" />
+  </ItemGroup>
+  <Target Name="PrepareLumyteWgpuPython" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="'$(LumyteWgpuPython)' == '' and '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="$(_LumyteParleyBuildCommand) --target PrepareWasmTools --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteWgpuRoot).&quot; --python-path-file &quot;$(LumyteWgpuPythonPathFile)&quot;" WorkingDirectory="$(_LumyteWgpuRoot)" />
+    <ReadLinesFromFile File="$(LumyteWgpuPythonPathFile)">
+      <Output TaskParameter="Lines" PropertyName="LumyteWgpuPython" />
+    </ReadLinesFromFile>
+  </Target>
+  <Target Name="BuildLumyteWgpuNative" DependsOnTargets="PrepareLumyteWgpuPython" BeforeTargets="BeforeBuild;GetCopyToOutputDirectoryItems" Condition="'$(LumyteBuildWgpuNative)' == 'true' and '$(DesignTimeBuild)' != 'true'" Inputs="$(_LumyteWgpuRoot)build/Build.Wgpu.cs;$(_LumyteWgpuRoot)native/wgpu_native/build.py;$(_LumyteWgpuRoot)native/wgpu_native/clang_runtime.py;$(_LumyteWgpuRoot)native/wgpu_native/clang-runtimes.json;$(_LumyteWgpuRoot)native/wgpu_native/source-info.json;$(_LumyteWgpuRoot)native/wgpu_native/finished-command-ownership.patch;$(_LumyteWgpuRoot)native/wgpu_native/LICENSE.webgpu-headers" Outputs="$(LumyteWgpuNativePath);$(LumyteWgpuNativeProvenance);$(LumyteWgpuNativeOutput)/WGPU-THIRD-PARTY-NOTICES.txt;$(LumyteWgpuNativeOutput)/RUST-STANDARD-LIBRARY-NOTICES.html">
+    <Error Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != '$(NETCoreSdkRuntimeIdentifier)'" Text="wgpu-native source builds target the current SDK host. Supply a corrected target binary via LumyteWgpuNativePath and set LumyteBuildWgpuNative=false for cross-RID builds." />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target WgpuNative --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteWgpuRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteWgpuNativeOutput)')).&quot; --python &quot;$(LumyteWgpuPython)&quot; $(_LumyteWgpuExplicitRust)" WorkingDirectory="$(_LumyteWgpuRoot)" />
+  </Target>
+  <Target Name="ValidateLumyteWgpuNative" BeforeTargets="GetCopyToOutputDirectoryItems" DependsOnTargets="PrepareLumyteWgpuPython;BuildLumyteWgpuNative" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(LumyteWgpuNativePath)')" Text="Missing corrected wgpu-native binary $(LumyteWgpuNativePath). Build the pinned source or provide a tested corrected binary; the defective Ahjo runtime is not a fallback." />
+    <Exec Command="&quot;$(LumyteWgpuPython)&quot; &quot;$(_LumyteWgpuRoot)native/wgpu_native/build.py&quot; --verify --binary &quot;$(LumyteWgpuNativePath)&quot; --provenance &quot;$(LumyteWgpuNativeProvenance)&quot; --rid &quot;$(_LumyteWgpuRid)&quot;" />
+  </Target>
+  <Target Name="StageLumyteWgpuNativePackage" AfterTargets="ValidateLumyteWgpuNative" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Copy SourceFiles="$(LumyteWgpuNativePath);$(LumyteWgpuNativeProvenance);$(LumyteWgpuNativeOutput)/WGPU-THIRD-PARTY-NOTICES.txt;$(LumyteWgpuNativeOutput)/RUST-STANDARD-LIBRARY-NOTICES.html" DestinationFolder="$(LumyteWgpuPackageRoot)/runtimes/$(_LumyteWgpuRid)/native" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="IncludeLumyteWgpuNativePackage" DependsOnTargets="PrepareLumyteWgpuPython" BeforeTargets="_GetPackageFiles;GenerateNuspec">
+    <ItemGroup>
+      <_LumyteWgpuPackageBinary Include="$(LumyteWgpuPackageRoot)/runtimes/linux-x64/native/liblumyte_wgpu_native.so" Rid="linux-x64" />
+      <_LumyteWgpuPackageBinary Include="$(LumyteWgpuPackageRoot)/runtimes/linux-arm64/native/liblumyte_wgpu_native.so" Rid="linux-arm64" />
+      <_LumyteWgpuPackageBinary Include="$(LumyteWgpuPackageRoot)/runtimes/win-x64/native/lumyte_wgpu_native.dll" Rid="win-x64" />
+      <_LumyteWgpuPackageBinary Include="$(LumyteWgpuPackageRoot)/runtimes/win-arm64/native/lumyte_wgpu_native.dll" Rid="win-arm64" />
+      <_LumyteWgpuPackageBinary Include="$(LumyteWgpuPackageRoot)/runtimes/osx-x64/native/liblumyte_wgpu_native.dylib" Rid="osx-x64" />
+      <_LumyteWgpuPackageBinary Include="$(LumyteWgpuPackageRoot)/runtimes/osx-arm64/native/liblumyte_wgpu_native.dylib" Rid="osx-arm64" />
+      <None Include="$(LumyteWgpuPackageRoot)/runtimes/**/*" Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(_LumyteWgpuPackageBinary.Identity)')" Text="Missing corrected wgpu-native package asset %(_LumyteWgpuPackageBinary.Identity). Build and validate all six native RID artifacts before packing; never relabel host artifacts." />
+    <Exec Command="&quot;$(LumyteWgpuPython)&quot; &quot;$(_LumyteWgpuRoot)native/wgpu_native/build.py&quot; --verify --binary &quot;%(_LumyteWgpuPackageBinary.Identity)&quot; --provenance &quot;$([System.IO.Path]::GetDirectoryName('%(_LumyteWgpuPackageBinary.Identity)'))/provenance.json&quot; --rid &quot;%(_LumyteWgpuPackageBinary.Rid)&quot;" />
+    <Error Condition="!Exists('$([System.IO.Path]::GetDirectoryName('%(_LumyteWgpuPackageBinary.Identity)'))/WGPU-THIRD-PARTY-NOTICES.txt') or !Exists('$([System.IO.Path]::GetDirectoryName('%(_LumyteWgpuPackageBinary.Identity)'))/RUST-STANDARD-LIBRARY-NOTICES.html')" Text="Missing wgpu-native runtime dependency license notices for %(_LumyteWgpuPackageBinary.Rid)." />
+  </Target>
+</Project>

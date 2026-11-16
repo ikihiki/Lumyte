@@ -137,7 +137,7 @@ public sealed class MapVisualTests
             }
             else if (step == 2)
             {
-                surface.Dispatch(new UiWheelInput(new(300, 32), new(0, 1.6f)));
+                surface.Dispatch(new UiWheelInput(new(300, 32), new(0, -64)));
             }
             else if (step == 3)
             {

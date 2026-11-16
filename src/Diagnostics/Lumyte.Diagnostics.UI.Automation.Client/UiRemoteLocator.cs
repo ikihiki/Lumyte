@@ -46,6 +46,12 @@ public sealed class UiRemoteLocator
     /// <returns>The completed job.</returns>
     public async Task ClickAsync(UiRemotePoint? position = null, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(QueryVersion, "click", _steps, Position: position), cancellationToken);
 
+    /// <summary>Scrolls signed logical pixels through the exclusive normal wheel path.</summary>
+    /// <param name="delta">The finite signed logical-pixel delta.</param>
+    /// <param name="cancellationToken">Cancels waiting.</param>
+    /// <returns>The completed job.</returns>
+    public async Task ScrollAsync(UiRemotePoint delta, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(5, "scroll", _steps, Position: delta), cancellationToken);
+
     /// <summary>Focuses with ordinary game-side Tab input.</summary>
     /// <param name = "cancellationToken">Cancels the operation.</param>
     /// <returns>The completed job.</returns>

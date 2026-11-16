@@ -21,11 +21,14 @@ public sealed class MapElement : UiElement<MapView>
     protected override bool CacheRetainedDrawing => true;
 
     /// <inheritdoc/>
+    protected override bool PreservePointerGesture => true;
+
+    /// <inheritdoc/>
     protected override UiInputResult OnInput(in UiInputContext context)
     {
         if (context.Input is UiWheelInput wheel && context.PointerPosition is { } position && wheel.Delta.Y != 0)
         {
-            Widget.Session.ZoomAt(position, wheel.Delta.Y * 0.25);
+            Widget.Session.ZoomAt(position, -wheel.Delta.Y / 160.0);
             return UiInputResult.Handled;
         }
 

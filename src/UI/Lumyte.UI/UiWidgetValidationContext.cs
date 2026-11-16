@@ -35,6 +35,18 @@ public sealed class UiWidgetValidationContext
         return _tree.GetChildren(widget, _receiver);
     }
 
+    /// <summary>Gets proposed children in one declaration slot, including runtime replacements.</summary>
+    /// <param name="slot">The proposed owner's non-portal slot; stale or unrelated slots are rejected.</param>
+    /// <returns>The projected slot content.</returns>
+    /// <exception cref="ArgumentNullException">The slot is null.</exception>
+    /// <exception cref="ArgumentException">The slot is stale, portal content, outside the tree, or ambiguous.</exception>
+    public IReadOnlyList<Widget> GetSlotChildren(WidgetChildren slot)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        UsesTree = true;
+        return _tree.GetSlotChildren(slot, _receiver);
+    }
+
     /// <summary>Gets the proposed parent, including new owners of retained nodes.</summary>
     /// <param name="widget">The node to inspect.</param>
     /// <returns>The proposed parent, or null for the root.</returns>
@@ -42,5 +54,11 @@ public sealed class UiWidgetValidationContext
     {
         UsesTree = true;
         return _tree.GetParent(widget, _receiver);
+    }
+
+    internal bool IsOrdinaryChild(Widget widget, bool grid)
+    {
+        UsesTree = true;
+        return _tree.IsOrdinaryChild(widget, _receiver, grid);
     }
 }

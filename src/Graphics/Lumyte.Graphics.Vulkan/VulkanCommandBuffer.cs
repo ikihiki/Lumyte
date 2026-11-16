@@ -4,7 +4,8 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffer
 {
-    private readonly List<IDisposable> _bindings = [];
+    private readonly HashSet<VulkanShaderBinding> _bindings = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<IShaderReference[]> _registrationSnapshots = new(ReferenceEqualityComparer.Instance);
     private readonly VulkanDevice _owner;
     private object? _active;
 
@@ -231,6 +232,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         }
 
         _bindings.Clear();
+        _registrationSnapshots.Clear();
         State = CommandBufferState.Disposed;
     }
 
@@ -254,16 +256,28 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
 
     internal void KeepBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
     {
-        var recorded = new RecordedBinding(binding, registrations);
-        binding.Retain();
-        try
+        // Reserve all potentially growing storage before publishing either owner.
+        bool newBinding = !_bindings.Contains(binding);
+        bool newSnapshot = !_registrationSnapshots.Contains(registrations);
+        if (newBinding)
         {
-            _bindings.Add(recorded);
+            _bindings.EnsureCapacity(checked(_bindings.Count + 1));
         }
-        catch
+
+        if (newSnapshot)
         {
-            binding.Dispose();
-            throw;
+            _registrationSnapshots.EnsureCapacity(checked(_registrationSnapshots.Count + 1));
+        }
+
+        if (newBinding)
+        {
+            _bindings.Add(binding);
+            binding.Retain();
+        }
+
+        if (newSnapshot)
+        {
+            _registrationSnapshots.Add(registrations);
         }
     }
 
@@ -313,24 +327,6 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         if (State != CommandBufferState.Recording || !ReferenceEquals(_active, pass))
         {
             throw new InvalidOperationException("This pass is not active.");
-        }
-    }
-
-    private sealed class RecordedBinding : IDisposable
-    {
-        private readonly VulkanShaderBinding _binding;
-        private readonly IShaderReference[] _registrations;
-
-        internal RecordedBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
-        {
-            _binding = binding;
-            _registrations = registrations;
-        }
-
-        public void Dispose()
-        {
-            _binding.Dispose();
-            GC.KeepAlive(_registrations);
         }
     }
 }

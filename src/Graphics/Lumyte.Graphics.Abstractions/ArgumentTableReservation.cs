@@ -14,6 +14,10 @@ public sealed class ArgumentTableReservation
     private ArgumentTableReservation? _operation;
     private ArgumentTableReservation? _tableGroup;
     private bool _materialized;
+    private bool _retiring;
+    private bool _retired;
+    private ArgumentKey[] _registrationKeys = [];
+    private int _remainingRegistrations;
 
     internal ArgumentTableReservation(ArgumentTablePlan owner, uint colorAttachments)
     {
@@ -33,7 +37,7 @@ public sealed class ArgumentTableReservation
     }
 
     /// <summary>Gets a value indicating whether this reservation was included in the materialized execution list.</summary>
-    public bool IsMaterialized => _materialized && _owner.ReferencesAvailable;
+    public bool IsMaterialized => _materialized && !_retiring && !_retired && _owner.ReferencesAvailable;
 
     /// <summary>Gets the number of color attachments reserved by this draw's physical layout.</summary>
     public uint ColorAttachments { get; private set; }
@@ -238,15 +242,42 @@ public sealed class ArgumentTableReservation
         }
     }
 
-    internal void Select(ArgumentPartition? partition)
+    internal void Select(ArgumentPartition? partition, ArgumentKey[] keys)
     {
         _partition = partition;
+        _registrationKeys = keys;
+        _remainingRegistrations = keys.Length;
+        partition?.RetainRegistrations(keys);
         _references = _requests.Select(request => request.Reference).OfType<IShaderReference>().ToArray();
         _materialized = true;
     }
 
+    internal void RetireBindings()
+    {
+        if (_retired)
+        {
+            return;
+        }
+
+        _retiring = true;
+        while (_remainingRegistrations != 0)
+        {
+            _partition!.ReleaseRegistration(_registrationKeys[_remainingRegistrations - 1]);
+            _remainingRegistrations--;
+        }
+
+        _registrationKeys = [];
+        _references = [];
+        _retired = true;
+    }
+
     internal void ValidateMaterialized()
     {
+        if (_retiring || _retired)
+        {
+            throw new InvalidOperationException("The resource set has been retired.");
+        }
+
         _owner.ValidateReferences();
         _owner.ValidateScope(this);
         if (!_materialized)

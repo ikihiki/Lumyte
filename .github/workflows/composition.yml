@@ -126,7 +126,7 @@ jobs:
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --configuration Release --host-only --no-build --no-restore --skip-parley-package
+          dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --configuration Release --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
 
       - name: Verify diagnostic server and game processes
         shell: bash

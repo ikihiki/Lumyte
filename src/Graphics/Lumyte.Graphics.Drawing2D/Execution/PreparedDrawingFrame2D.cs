@@ -46,7 +46,15 @@ public sealed class PreparedDrawingFrame2D : IDisposable
             }
 
             _commands = commands;
-            _drawing!.RecordCore(commands, profile);
+            if (_cache is null)
+            {
+                _drawing!.RecordCore(commands, profile);
+            }
+            else
+            {
+                _cache.RecordFrame(_drawing!, commands, profile);
+            }
+
             _recordSucceeded = true;
 
             profile?.Success();

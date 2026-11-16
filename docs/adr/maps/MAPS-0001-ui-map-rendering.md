@@ -212,7 +212,7 @@ sessionの変更、`Advance`、`Record`は呼び出し側が直列化する。�
 
 `LayoutOverride`は有限のサイズを確定し、必要なら`SetViewport`で需要だけを更新する。ここでは取得を開始しない。直後の描画は現時点の採用済み集合を使い、新しい要求は次の`Advance`で配送する。同一サイズの通知はrevisionを増やさない。
 
-パンは既存pointer captureを使い、capture喪失・window非活性化で終了する。ホイールは`UiWheelInput(Position, Delta)`として既存のhit-testとbubblingへ配送し、pointer captureやkeyboard focusへ転送しない。Browserでは`UiBrowserApplicationOptions.OwnWheelDefaults`を既定falseの明示設定とし、地図サンプルだけtrueを指定する。表示・接続・入力受付中の対象canvas上でのみ通常wheelとCtrl+wheelのネイティブ既定動作を抑止し、他canvasやページ全体のスクロールを所有しない。位置とdeltaは同一acquisitionで取得し、DPIを入力へ再適用しない。`UiInputContext.PointerPosition`と`IsInside`はホイールにも適用する。wheelズームではポインター下の地理位置を保つ。通常のUI controlsやoverlayに入力優先順位を任せ、OSイベントの別経路を作らない。内部カメラを変更した後の描画・必要集合は同じカメラrevisionを使う。
+パンは既存pointer captureを使い、capture喪失・window非活性化で終了する。ホイールはmainで導入済みの`UiWheelInput(Position, Delta)`を使い、既存のhit-test、ScrollViewの軸別残余処理とbubblingへ配送する。pointer captureやkeyboard focusへ転送しない。Deltaはlogical pixelで正方向がcontent末尾とする。native上向き1 stepはホストで-40 logical pixelへ変換し、地図のzoom増分は`-Delta.Y / 160`として従来の+0.25を保つ。Browserでは`UiBrowserApplicationOptions.OwnWheelDefaults`を既定falseの明示設定とし、地図サンプルだけtrueを指定する。表示・接続・入力受付中の対象canvas上でのみ通常wheelとCtrl+wheelのネイティブ既定動作を抑止し、他canvasやページ全体のスクロールを所有しない。位置とdeltaは同一acquisitionで取得し、DPIを入力へ再適用しない。`UiInputContext.PointerPosition`と`IsInside`はホイールにも適用する。wheelズームではポインター下の地理位置を保つ。通常のUI controlsやoverlayに入力優先順位を任せ、OSイベントの別経路を作らない。内部カメラを変更した後の描画・必要集合は同じカメラrevisionを使う。
 
 ### 所有権、失敗、終了
 
@@ -247,7 +247,8 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +}
 +namespace Lumyte.UI
 +{
-+    // Positionはsurface-local論理pixel、Deltaは正規化step（Y正は上向き）。
++    // Positionはsurface-local論理pixel。Deltaも論理pixelで正方向がcontent末尾。
++    // UiWheelInput自体は統合時mainの既存APIを利用し、Mapsで別型や別単位を追加しない。
 +    public sealed record UiWheelInput(System.Numerics.Vector2 Position,
 +        System.Numerics.Vector2 Delta) : UiInput;
 +    public readonly struct UiInputContext
