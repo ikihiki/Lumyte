@@ -238,6 +238,100 @@ public sealed class SharedArgumentTableTests
         Assert.Equal(0, device.ActiveTables);
     }
 
+    /// <summary>Renderer preparation respects the device hint and explicit table policy.</summary>
+    /// <param name="portable">Whether the individual portable route is selected.</param>
+    /// <param name="hint">The device performance preference.</param>
+    /// <param name="mode">The renderer override.</param>
+    /// <param name="local">Whether tables should be draw-local.</param>
+    /// <returns>The asynchronous test completion.</returns>
+    [Theory]
+    [InlineData(false, false, DrawingArgumentTableMode.Auto, false)]
+    [InlineData(true, true, DrawingArgumentTableMode.Auto, true)]
+    [InlineData(true, false, DrawingArgumentTableMode.Auto, false)]
+    [InlineData(true, true, DrawingArgumentTableMode.Shared, false)]
+    [InlineData(true, false, DrawingArgumentTableMode.DrawLocal, true)]
+    public async Task TwoHundredClippedProgramsUseSelectedTablesAsync(bool portable, bool hint, DrawingArgumentTableMode mode, bool local)
+    {
+        var device = new ProfilingDevice { Caps = new() { ShaderTarget = portable ? ShaderTarget.Wgsl : ShaderTarget.SpirV, PreferDrawLocalArgumentTables = hint, MaxBufferSize = 1UL << 30 } };
+        using var renderer = new Renderer2D(device, LegacyDrawRenderers2D.Create()) { ArgumentTableMode = mode };
+        using var target = new DispatchTexture();
+        using IGraphicsTextureView view = target.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        for (int i = 0; i < 200; i++)
+        {
+            canvas.Save();
+            canvas.ClipRect(new(0, 0, 16, 16));
+            canvas.FillCircle(new(8, 8), 4, new SRgba<float>(1, 0, 0, 1));
+            canvas.Restore();
+        }
+
+        using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
+        Assert.Equal(local ? 200 : 1, device.Tables.Count);
+        Assert.All(device.Tables, desc =>
+        {
+            Assert.Equal(1u, desc.TextureCapacity);
+            Assert.Equal(1u, desc.SamplerCapacity);
+            Assert.Equal(local ? 2u : 400u, desc.BufferCapacity);
+        });
+        Assert.Equal(800, device.NativeBuffers);
+        using var commands = new ProfilingCommands();
+        prepared.Record(commands);
+        DrawingArguments[] draws = commands.Events.OfType<DrawingArguments>().ToArray();
+        Assert.Equal(200, draws.Length);
+        Assert.Equal(local ? 200 : 1, commands.Events.OfType<IArgumentTable>().Distinct().Count());
+        int offset = 0;
+        foreach (DrawingArguments arguments in draws)
+        {
+            IArgumentTable table = ProfilingDevice.Owner(arguments.Instructions);
+            Assert.Same(table, ProfilingDevice.Owner(arguments.Data));
+            foreach (DrawingInstruction instruction in device.Instructions.Skip(offset).Take(checked((int)arguments.Count)))
+            {
+                Assert.Same(table, ProfilingDevice.Owner(instruction.Texture));
+                Assert.Same(table, ProfilingDevice.Owner(instruction.Sampler));
+            }
+
+            offset += checked((int)arguments.Count);
+        }
+
+        Assert.Equal(device.Instructions.Count, offset);
+        Assert.DoesNotContain(typeof(DrawingInstruction).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance), property => property.PropertyType.Name.Contains("ArgumentRegistration", StringComparison.Ordinal));
+        prepared.Dispose();
+        Assert.Equal(0, device.ActiveTables);
+    }
+
+    /// <summary>Retained preparation honors explicit sharing independently of the device hint.</summary>
+    /// <param name="hint">The device preference.</param>
+    /// <param name="mode">The explicit renderer mode.</param>
+    /// <param name="tables">The expected physical table count.</param>
+    /// <returns>The preparation completion.</returns>
+    [Theory]
+    [InlineData(true, DrawingArgumentTableMode.Shared, 1)]
+    [InlineData(false, DrawingArgumentTableMode.DrawLocal, 2)]
+    public async Task RetainedRendererHonorsTableOverrideAsync(bool hint, DrawingArgumentTableMode mode, int tables)
+    {
+        var device = new ProfilingDevice { Caps = new() { ShaderTarget = ShaderTarget.Wgsl, PreferDrawLocalArgumentTables = hint, MaxBufferSize = 1UL << 30 } };
+        using var renderer = new Renderer2D(device, LegacyDrawRenderers2D.Create()) { ArgumentTableMode = mode };
+        using var target = new DispatchTexture();
+        using IGraphicsTextureView view = target.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        for (int i = 0; i < 2; i++)
+        {
+            canvas.Save();
+            canvas.ClipRect(new(0, 0, 16, 16));
+            canvas.FillCircle(new(8, 8), 4, new SRgba<float>(1, 0, 0, 1));
+            canvas.Restore();
+        }
+
+        using var snapshot = new DrawingSnapshot2D(1, [new(default, canvas.End(), System.Numerics.Matrix3x2.Identity, [], 1, 1)]);
+        using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(snapshot, new() { View = view });
+        Assert.Equal(tables, device.Tables.Count);
+        frame.Dispose();
+        renderer.Dispose();
+        Assert.Equal(0, device.ActiveTables);
+    }
+
     /// <summary>All builtin types and the solid rectangle pipeline share one table in painter order.</summary>
     /// <returns>The asynchronous test completion.</returns>
     [Fact]

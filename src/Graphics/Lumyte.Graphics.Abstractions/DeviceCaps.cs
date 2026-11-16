@@ -6,6 +6,9 @@ public sealed record DeviceCaps
     /// <summary>Gets the supported compiled shader target.</summary>
     public ShaderTarget ShaderTarget { get; init; }
 
+    /// <summary>Gets a value indicating whether the backend prefers avoiding cross-draw argument table sharing.</summary>
+    public bool PreferDrawLocalArgumentTables { get; init; }
+
     /// <summary>Gets effective argument helper slot spans and physical binding budgets.</summary>
     public ArgumentTableBindingLimits ArgumentTableBindingLimits { get; init; } = new();
 
