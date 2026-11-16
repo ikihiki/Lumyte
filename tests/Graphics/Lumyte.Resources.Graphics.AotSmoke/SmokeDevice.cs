@@ -48,6 +48,8 @@ internal sealed class SmokeDevice : IGraphicDevice, IGraphicsDeviceOwner
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new SmokePipeline(desc);
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
