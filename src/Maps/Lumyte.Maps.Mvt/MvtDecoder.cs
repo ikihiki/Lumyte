@@ -165,17 +165,20 @@ public static class MvtDecoder
 
         Require(hasType && (layer == "roads" ? type == 2 : type == 3), "Layer geometry does not match schema.");
         MapTileAttribute[] attributes = budget.Array<MapTileAttribute>(tagCount / 2, 16);
+        string[] attributeNames = budget.Array<string>(attributes.Length, 8, false);
         for (int i = 0; i < attributes.Length; i++)
         {
             uint key = tags[i * 2];
             uint value = tags[(i * 2) + 1];
             Require(key < keys.Length && value < values.Length, "Tag index out of range.");
-            for (int j = 0; j < i; j++)
-            {
-                Require(attributes[j].Name != keys[key], "Duplicate feature attribute.");
-            }
-
+            attributeNames[i] = keys[key];
             attributes[i] = new MapTileAttribute(keys[key], values[value]);
+        }
+
+        Array.Sort(attributeNames, StringComparer.Ordinal);
+        for (int i = 1; i < attributeNames.Length; i++)
+        {
+            Require(attributeNames[i - 1] != attributeNames[i], "Duplicate feature attribute.");
         }
 
         ImmutableArray<MapTilePath> paths = Geometry(geometry, (MapGeometryType)type, budget);

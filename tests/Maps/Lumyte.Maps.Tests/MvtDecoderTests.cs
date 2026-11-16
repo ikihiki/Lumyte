@@ -101,6 +101,24 @@ public sealed class MvtDecoderTests
         Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(tile, new("test")));
     }
 
+    /// <summary>Large attribute tables validate duplicate names through bounded scratch sorting, preserving source order.</summary>
+    [Fact]
+    public void LargeAttributeTableAndDuplicateAliases()
+    {
+        const int Count = 2048;
+        uint[] tags = Enumerable.Range(0, Count).SelectMany(index => new[] { (uint)index, 0U }).ToArray();
+        byte[] feature = Join(Scalar(3, 2), Repeated(2, tags, true), Repeated(4, [9, 0, 0, 10, 2, 2], true));
+        byte[][] keys = Enumerable.Range(0, Count).Select(index => Field(3, Encoding.UTF8.GetBytes($"key-{index:D4}"))).ToArray();
+        byte[] layer = Join([Field(1, "roads"u8.ToArray()), Scalar(15, 2), Field(4, Field(1, "value"u8.ToArray())), Field(2, feature), .. keys]);
+        MapTileContent content = MvtDecoder.Decode(Field(3, layer), new("large-attributes"));
+        Assert.Equal(Count, content.Layers[0].Features[0].Attributes.Length);
+        Assert.Equal("key-0000", content.Layers[0].Features[0].Attributes[0].Name);
+        Assert.Equal("key-2047", content.Layers[0].Features[0].Attributes[^1].Name);
+        keys[^1] = keys[0];
+        byte[] duplicate = Join([Field(1, "roads"u8.ToArray()), Scalar(15, 2), Field(4, Field(1, "value"u8.ToArray())), Field(2, feature), .. keys]);
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, duplicate), new("large-attributes")));
+    }
+
     internal static byte[] Tile(string name, uint extent, uint[] geometry, bool packed = true, int featureCount = 1, uint[]? tags = null)
     {
         byte[] feature = Join(Scalar(3, name == "roads" || name == "transportation" ? 2U : 3U), Repeated(2, tags ?? [0, 0], packed), Repeated(4, geometry, packed));
