@@ -480,6 +480,35 @@ public sealed class SpatialSessionTests
         Assert.Equal(4, fixture.Stage.Releases.Count);
     }
 
+    /// <summary>Starting Dispose early is not a substitute for observing accepted retains reach terminal collection.</summary>
+    /// <param name="mode">Fixed, finite, or spatial mode.</param>
+    /// <returns>The early-disposal terminal ownership checks.</returns>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task EarlyDisposeDoesNotClaimStoppedWhileAcceptedRetainIsPendingAsync(int mode)
+    {
+        await using var fixture = new Fixture();
+        MapSessionOptions options = Options() with { SelectVisibleTiles = mode == 1 };
+        await using MapSession map = mode == 2 ? fixture.Create(options)
+            : new(fixture.Manager, fixture.Tiles, new("test", "v1", new(0, 0, 0, 1), []), options, [new(2, 0, 0)]);
+        using var finishOnExit = new StageCompletion(fixture.Stage);
+        map.SetViewport(new(100, 100));
+        map.SetCamera(CameraAt(0.5, 0.5));
+        await PumpAsync(map, () => fixture.Stage.Started.Count == 1);
+        Task disposal = map.DisposeAsync().AsTask();
+        Assert.False(disposal.IsCompleted);
+        Assert.False(map.IsStopped);
+        Assert.Equal(1, map.InFlightTiles);
+        Assert.Equal(256, map.ResidentCpuBytes);
+        fixture.Stage.CompleteAll();
+        await disposal.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(map.IsStopped);
+        Assert.Equal(0, map.ResidentCpuBytes);
+        Assert.Single(fixture.Stage.Releases);
+    }
+
     private static MapSessionOptions Options() => new()
     {
         MaxPendingTiles = 16,
