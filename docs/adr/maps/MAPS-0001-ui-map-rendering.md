@@ -79,6 +79,57 @@ MVTはレイヤー名や属性の意味を統一しない。タイル集合は�
 
 decoderは既存のMVT実装を優先してadapter内で利用する。使用する依存の採否には、ライセンス、管理状況、Browser/AOT、穴付きポリゴン、不正入力と容量制限への対応を要求する。これらを未検証のまま互換性を約束せず、採用したdecoderによって公開地図モデルを変更しない。
 
+固定集合と空間需要で変わるのはsessionの入口であり、Managerを増やさない。以下のresources、tileSet、style、optionsと固定一覧は構築済みとし、描画とGPU drain後の解放処理は省略する。
+
+```csharp
+using Lumyte.Maps;
+
+// 変更前: 渡した一覧だけを固定／有限候補として扱う。
+var finite = new MapSession(resources, tileSet, style, options, fixedTiles);
+// 変更後: 対応zoom内のXYZ需要をcameraとviewportから計算する。
+var spatial = new MapSession(resources, tileSet, style, options);
+```
+
+### 空間需要と共有Managerの回収
+
+4引数のsessionは対応zoom内のXYZから需要を計算し、5引数のsessionは明示した固定／有限候補の動作を保つ。`SetCamera`と`SetViewport`は需要をdirtyにし、次の`Advance`で最新の状態へまとめる。可視、同じ内容の祖先、先読みの順に、中心からの距離と正規化IDで安定選択する。Xの繰返し表示は同じ取得IDを共有する。可視列数×行数を反復前に検査し、候補上限を超えたときは部分集合を無制限に作らず背景へ縮退する。
+
+`MaxResidentTiles`は採用、取得中、未採用完了、退役待ちを含むslotの上限であり、CPU予算は配送前のprofile全額予約と採用後の保持量、未回収の退役量を含む。先読み半径・候補数と祖先深さも制限する。可視集合が常駐容量へ収まらない場合は残りを待機させ、必要な可視タイルを無限に入れ替えない。親は準備済み子の下へ重ねず、欠けた子の所有cellだけを補う。親を保持したまま新しい可視タイルを受付できない場合は、親も退役して背景へ縮退し得る。
+
+未配送の不要要求は取消し、配送済みretainは終端まで所有する。完了時は内容版、profile、現在の需要と、manifestが固定する場合の期待revisionを検査する。同じ内容が再び必要なら旧cameraの要求結果も再利用できる。`SetTileSet`は不変の登録を明示的に切り替え、旧内容を新しい表示へ混在させない。借用Managerのsource／pipelineが新しいkeyを解決できる構成を前提とし、sourceの自動交換や汎用global providerは追加しない。未提供入力の失敗を自動の時間ベース再試行へ変換しない。
+
+CPU cacheは不要な未固定タイルをLRUで退役し、sessionが既存`ResourceManager.TrimAsync`を配送・回収する。Managerのbuild viewは要求tile以外のpublished snapshotもpinするため、同じManagerを使うMapSession間でmaintenance barrierを共有する。退役が必要なら新規Maps admissionを止め、受け付け済みMaps retainの終端回収後にtrimする。各退役batchは自分のtrim完了まで計上を保ち、後から加わった退役を古い完了だけで返金しない。新しいManager、executor、thread、`Task.Run`を作らない。
+
+他sessionのlive pinは返さず、その保持量は他sessionへ全額計上する。Maps以外の外部snapshot／build view、sourceの入力cache、hostの描画snapshot／GPU資源は別予算とする。MapSessionの制限をprocess全体の物理メモリ上限とは呼ばない。すべてのMaps ownerは非表示・停止中も配送済み結果を回収し、Cooperative実行では共有job pumpを継続する。fixed／finiteの最後のownerも非同期解放で未使用generationを回収し、cleanup失敗は再試行可能な状態と計上を残す。
+
+### HTTP入力と展開後revision
+
+HTTPは独立した`Lumyte.Maps.Http`に置き、Mvt側にはtransport非依存の`BoundedMvtRegistration`とsnapshot受入境界だけを追加する。MvtからHttpへの参照は追加しない。同じ登録インスタンス、profile、完全なResourceAddressをstageが照合し、既存のprotobuf-net.Coreによるdecodeを再利用する。snapshotに渡すstorageはadapterが所有する非公開の不変メモリであり、callbackはそのaccountingを返す信頼境界とする。
+
+ローカル入力とHTTP入力で変わるのはsourceとその登録である。以下の登録は生成済みとし、Managerにはsourceとstageを同じ組で渡す。HTTP sourceはManagerの処理とsnapshot使用が完了した後に所有者が解放する。
+
+```csharp
+using Lumyte.Maps.Http;
+using Lumyte.Maps.Mvt;
+
+// 変更前: ローカルファイルから読む。
+var localSource = new LocalMvtSource(localRegistration);
+var localStage = new MvtResourceStage(localRegistration);
+// 変更後: 明示したHTTP配信先から読み、同じdecoderへ渡す。
+await using var httpSource = new HttpMvtSource(httpRegistration);
+var httpStage = new MvtResourceStage(httpRegistration.Mvt);
+```
+
+初期HTTP adapterはNative専用とし、有限のXYZ→URI対応表、同一scheme・host・port・directory scopeを登録する。配信先と不変policy、内容版、非秘密のaccess partition、decode profileをkeyへ含める。認証情報やそのhashをkeyやURLへ含めず、Authorizationは別に渡す。Browser fetchではraw wire byte数、redirect、展開を同じように制御できないため、この厳密policyはBrowserで明示的に拒否する。メモリ入力のBrowser対応と混同しない。
+
+owned native handlerは自動redirect、展開、cookie、proxyと未読response bodyの暗黙drainを無効化する。redirectは有限回数だけscope内で手動処理し、許可しないoriginへ認証を転送しない。既存HttpClientを借用する場合は、同じhandler契約を呼出側が保証することを明示的に受け入れる入口に限定する。その保証をライブラリが検証できたとは扱わない。
+
+受付数を制限し、初期実装ではHTTP処理を直列化する。queue待機、headers、body読取り、再試行と待機を一つの期限へ含める。429と選択した5xxだけを有限再試行し、Retry-Afterのdelta／dateを検証する。期限やpolicy上限を超える待機は短縮して早期再試行せず拒否する。認証・形式・容量エラーは通信再試行へ混ぜない。media typeとcontent codingは大小文字を区別せず扱う。
+
+Content-Lengthだけを信用せず、実読取りでwire上限と展開後上限を独立に検査し、上限+1の検出領域を予約する。cache、旧snapshotのpin、新規受信buffer、作業領域をsource自身の予算へ同時に計上する。metadata数と文字列長、負のcache、受付中の処理も有限とし、sessionの常駐予算だけでsourceの容量を保証しない。初期の展開workspace予約は保守的な32 MiB+8 KiBで、network／TLS／runtimeを含むprocess全体の上限とは呼ばない。
+
+`OpenSnapshotAsync`と`GetRevisionAsync`は同期した同じcache／再検証経路を使う。revisionは受理した展開後byte列のSHA256とし、HTTP validatorとは分ける。304は既存の不変表現、送信したvalidator、最終表現URIが一致するときだけ再利用する。期限切れの変更はResourcesへ新revisionとして観測させる。404だけを期限付き欠損として扱いrevisionをnullにし、401や一時失敗を欠損へ変換しない。cacheの置換・退避後も、使用中snapshotとstreamが旧byte列のpinと計上を保持する。ディスクcacheと公開配信元への依存は追加しない。
+
 ### 座標と表示範囲
 
 `MapCamera`は経度、緯度、連続zoomをdoubleで持ち、回転は0固定とする。非finite値は拒否し、経度は[-180,180)へ正規化、緯度はWebメルカトルの限界である約±85.05112878度へ制限する。zoomはタイル集合の対応範囲へ制限し、境界での入力も決定的に扱う。
@@ -255,13 +306,19 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        public MapTileLoadProfile LoadProfile { get; }
 +        // 正規化済みIDに同じ型付きkeyを返す。範囲外はArgumentOutOfRangeException。
 +        public abstract Lumyte.Resources.ResourceKey<MapTileContent> GetKey(MapTileId id);
++        // manifestが固定する場合だけ期待revisionを返す。既定nullは未知であり欠損ではない。
++        public virtual string? GetExpectedSourceRevision(MapTileId id);
 +    }
 +    public sealed record MapSessionOptions
 +    {
 +        // 既定falseは固定集合。trueは明示した有限候補のみを可視選択する。
 +        public bool SelectVisibleTiles { get; init; }
-+        // 正数。固定／有限候補モードでは配送済み・採用済みを含む候補集合全体の上限。
-+        // 空間需要queueの未実行要求上限とは別の契約。
++        // 空間modeの採用・取得中・未採用完了・退役slotを含む。
++        public int MaxResidentTiles { get; init; } = 64;
++        public int PrefetchRadius { get; init; } = 1;
++        public int MaxPrefetchTiles { get; init; } = 8;
++        public int MaxFallbackDepth { get; init; } = 1;
++        // 正数。固定／有限候補では配送済み・採用済みを含む候補全体。空間modeでは一回の需要候補上限。
 +        public int MaxPendingTiles { get; init; } = 128;
 +        public int MaxInFlightTiles { get; init; } = 4;
 +        public int MaxCompletedTiles { get; init; } = 4;
@@ -278,6 +335,17 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +            MapStyle style, MapSessionOptions options, System.Collections.Generic.IReadOnlyList<MapTileId> fixedTiles);
 +        public MapCamera Camera { get; }
 +        public int SourceZoom { get; }
++        // 新しい登録は不変とし、schema・単一予約容量を検査する。空間modeのみ。
++        public void SetTileSet(MapTileSet tiles);
++        public int PendingTiles { get; }
++        public int RetiringTiles { get; }
++        public int ReadyVisibleTiles { get; }
++        public bool IsDemandOverflow { get; }
++        public bool IsCapacityBlocked { get; }
++        public bool IsMaintenanceInFlight { get; }
++        public System.Exception? MaintenanceFailure { get; }
++        // このsessionのtrimで観測した共有Managerのgeneration解放数。tile専用物理量ではない。
++        public ulong ReleasedGenerationCount { get; }
 +        public System.Collections.Generic.IReadOnlyList<MapTileId> VisibleTiles { get; }
 +        public void Pan(System.Numerics.Vector2 displacement);
 +        public void ZoomAt(System.Numerics.Vector2 position, double zoomDelta);
@@ -308,6 +376,58 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        public required Lumyte.Maps.MapSession Session { get; init; }
 +        // MapElementを生成。基底のWidget/Element分離を維持する。
 +        protected override Lumyte.UI.UiElement CreateElement();
++    }
++}
+```
+
+HTTP入力に関する追加宣言の抜粋は次のとおり。policyの構築補助と各上限の詳細は省略する。
+
+```diff
++namespace Lumyte.Maps.Mvt
++{
++    public sealed class BoundedMvtRegistration
++    {
++        public BoundedMvtRegistration(string dataSetId, string contentVersion,
++            Lumyte.Maps.MapTileLoadProfile profile, System.Collections.Generic.IEnumerable<Lumyte.Maps.MapTileId> tiles);
++        public Lumyte.Maps.MapTileLoadProfile Profile { get; }
++        public Lumyte.Resources.ResourceKey<Lumyte.Maps.MapTileContent> GetKey(Lumyte.Maps.MapTileId tile);
++        // 非公開の不変storageを渡す信頼境界。snapshotとstreamの寿命まで計上を保持する。
++        public Lumyte.Resources.ResourceSourceSnapshot CreateSnapshot(Lumyte.Resources.ResourceId id,
++            System.ReadOnlyMemory<byte> bytes, string revision, System.Action? release = null);
++    }
++    public sealed class MvtResourceStage
++    {
++        public MvtResourceStage(BoundedMvtRegistration registration);
++    }
++}
++namespace Lumyte.Maps.Http
++{
++    public sealed class HttpMvtPolicy
++    {
++        public System.Uri Scope { get; }
++        public string AccessPartition { get; }
++        public int MaxWireBytes { get; }
++        public int MaxExpandedBytes { get; }
++        public int MaxEntries { get; }
++        public long MaxResidentBytes { get; }
++        public System.TimeSpan Deadline { get; }
++    }
++    public sealed class HttpMvtRegistration
++    {
++        public HttpMvtRegistration(string dataSetId, string contentVersion,
++            Lumyte.Maps.MapTileLoadProfile profile, HttpMvtPolicy policy,
++            System.Collections.Generic.IReadOnlyDictionary<Lumyte.Maps.MapTileId, System.Uri> endpoints);
++        public Lumyte.Maps.Mvt.BoundedMvtRegistration Mvt { get; }
++    }
++    public sealed class HttpMvtSource : Lumyte.Resources.IResourceSource, System.IAsyncDisposable
++    {
++        // strict Native handlerを所有する。認証情報をkeyやURLへ含めない。
++        public HttpMvtSource(HttpMvtRegistration registration,
++            System.Net.Http.Headers.AuthenticationHeaderValue? authorization = null, System.TimeProvider? timeProvider = null);
++        // trustHandlerContractを明示。借用handlerの設定を検証できたとは扱わない。
++        public static HttpMvtSource BorrowTrustedClient(HttpMvtRegistration registration,
++            System.Net.Http.HttpClient client, bool trustHandlerContract,
++            System.Net.Http.Headers.AuthenticationHeaderValue? authorization = null, System.TimeProvider? timeProvider = null);
 +    }
 +}
 ```
