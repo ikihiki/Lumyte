@@ -28,7 +28,7 @@ physical device の properties と features を生成時に取得し、有効に
 | MaxBufferSize | VkPhysicalDeviceVulkan13Properties.maxBufferSize |
 | MaxStorageBufferBindingSize | maxStorageBufferRange |
 | MaxTextureDimension2D | maxImageDimension2D |
-| MaxColorAttachments | maxColorAttachments |
+| MaxColorAttachments | min(maxColorAttachments, 8)：backend の実効上限 |
 | MaxSampledTexturesPerStage | maxPerStageDescriptorSampledImages |
 | MaxSamplersPerStage | maxPerStageDescriptorSamplers |
 | MaxUniformBuffersPerStage | maxPerStageDescriptorUniformBuffers |
@@ -107,6 +107,10 @@ Submitは専用VkFenceを確保してQueueSubmitし、Statusはそのfenceを非
 ## Pipeline
 
 graphics programはshaderの組・topology分類・compile optionを保持し、draw時に描画状態とpassの実attachment formatからnative pipelineを解決します。完全なnative PSOを生成するため、program内でvariantをcacheし、等価なkeyの再利用で生成を繰り返しません。keyにviewport／scissor／blend constant／stencil reference、texture instance、clear値は含めません。variantはprogram Disposeまで保持します。
+
+カラー attachment／render state の上限は `Caps.MaxColorAttachments = min(physical maxColorAttachments, 8)` です。9 個以上は公開の `BeginRenderPass`／`SetRenderState` で native 記録前に拒否します。8 未満の device 上限を引き上げることも、上限超過への fallback も行いません。ValidationDevice は同じ Caps を公開し、attachment 数を unwrap 前に検査します。
+
+render state key は固定 15 個の uint lane と事前計算した BCL `HashCode` を持つ unmanaged 値です。bool・enum・mask を範囲検査付きで詰め、bias constant／float bit は全幅で保持します。未使用 target lane はゼロ、比較は lane 単位で行い、struct padding や hash 単独を identity にしません。target／format の順序と個数、depth format の有無、texture／sampler descriptor 数を区別します。無効化された blend／depth／stencil の指定値も区別し、有限 float の signed zero を維持します。完全な descriptor snapshot と native variant の所有期間は変えません。将来 enum や attachment 上限を増やす場合は encoding・guard・テストを一緒に更新してください。
 
 compute programは作成時にnative pipelineを生成します。programのshader参照とnative variantを保持します。program・shader・commandの有効期間と解放順は利用者が管理し、保持カウンターによる解放拒否やSubmit時の生存再走査は行いません。並列呼び出しの保証、lock、atomic counter、Slang sourceの再compileは追加しません。
 
