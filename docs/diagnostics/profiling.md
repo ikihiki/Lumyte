@@ -74,7 +74,7 @@ EventListener による契約テストと、既存の配置・描画・フレー
 
 ## Browser PNGキャプチャの障害診断
 
-UI Application／Navigation／TransitionsのBrowser検証は、既存の`LUMYTE_REQUIRE_SOFTWARE_WEBGPU=1`によるCI実行でキャプチャ診断を有効にします。ローカルでは`LUMYTE_BROWSER_CAPTURE_TRACE=1`を明示できます。通常のアプリ実行では無効です。起動前に標準EventSourceのobserverを接続するため、PNG要求より前から進行しているフレームも追跡できます。
+UI Application／Navigation／Pages／TransitionsのBrowser検証は、既存の`LUMYTE_REQUIRE_SOFTWARE_WEBGPU=1`によるCI実行でキャプチャ診断を有効にします。ローカルでは`LUMYTE_BROWSER_CAPTURE_TRACE=1`を明示できます。通常のアプリ実行では無効です。起動前に標準EventSourceのobserverを接続するため、PNG要求より前から進行しているフレームも追跡できます。
 
 キャプチャ要求IDと既存のrun／frame識別子を関連付け、dispatcher、要求queue、開始待ちの描画、prepare、submission完了、image解放、readback、画素copy／crop、PNG変換の到達段階を記録します。`UI Capture trace:`はmanaged側の構造化イベントで、検証側は`browser-capture-event`としてCIログへ転送します。既存のWebGPU API observerとは別の観測境界なので、時刻の一致だけからGPU内部の原因を断定しません。
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter, captureTracePrefix } from "./browser-capture-trace.mjs";
 
 const row = (id = 7) => captureTracePrefix + JSON.stringify({ eventId: 12, name: "CaptureState", ticks: 12, frequency: 1000, data: { captureId: id, frameId: 9, profileRunId: "run", phase: 3 } });
@@ -120,4 +120,28 @@ test("recognized diagnostic rows do not fall through to unbounded verifier progr
         assert.match(verifier, /const captureObserved = traceCapture && captureTrace.observe/);
         assert.match(verifier, /else if \(captureObserved\)/);
     }
+});
+
+test("every Browser project compiling a diagnostic probe includes its managed observer and EventSource support", async () => {
+    const samples = new URL("../../samples/", import.meta.url);
+    const projects = (await readdir(samples, { withFileTypes: true })).filter(entry => entry.isDirectory() && entry.name.endsWith(".Browser.Sample"));
+    let checked = 0;
+    for (const entry of projects) {
+        const directory = new URL(entry.name + "/", samples);
+        const project = await readFile(new URL(entry.name + ".csproj", directory), "utf8");
+        const probes = [...project.matchAll(/<Compile\b[^>]*\bInclude="([^"]*BrowserProbe\.cs)"/g)].map(match => new URL(match[1], directory));
+        probes.push(new URL("BrowserProbe.cs", directory));
+        let usesDiagnostics = false;
+        for (const probe of probes) {
+            try { usesDiagnostics ||= (await readFile(probe, "utf8")).includes("Lumyte.UI.SampleSupport.UiCaptureDiagnostics"); }
+            catch (error) { if (error.code !== "ENOENT") throw error; }
+        }
+        if (!usesDiagnostics) continue;
+        checked++;
+        const startup = await readFile(new URL("wwwroot/main.js", directory), "utf8");
+        assert.ok(startup.indexOf("EnableCaptureDiagnostics()") >= 0 && startup.indexOf("EnableCaptureDiagnostics()") < startup.indexOf("await runtime.runMain"), entry.name + " must enable requested diagnostics before runMain");
+        assert.match(project, /<Compile\b[^>]*\bInclude="[^"]*UiCaptureDiagnostics\.cs"/, entry.name + " must compile the observer required by its own or linked probe");
+        assert.match(project, /<EventSourceSupport>\s*true\s*<\/EventSourceSupport>/, entry.name + " must retain EventSource support for trimmed diagnostics");
+    }
+    assert.ok(checked >= 4, "Cover Application, Navigation, Pages and Transitions, including source-linked consumers");
 });
