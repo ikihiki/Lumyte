@@ -246,3 +246,28 @@ raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参�
 wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
 
 検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。
+
+## Descriptor Set の共有と寿命
+
+Device 内の allocator が descriptor 数ごとに最大 32 Set の pool page を共有します。
+完全に空になった page は即時破棄し、idle cache は保持しません。
+allocation/free は allocator 内で同期し、pool 枯渇・断片化時は新しい page に移ります。
+ArgumentTable 自体の並行変更をサポートするものではありません。
+
+ArgumentTable は最新の sampled descriptor 世代内で互換 layout shape から immutable Set へ対応付けます。
+固定された登録内容には実際には一つの canonical shape だけが対応し、過去世代の cache は蓄積しません。
+cache は texture/sampler 登録だけを保持し、各 command が完全な per-draw 登録 snapshot を保持します。
+Draw/Dispatch が世代を seal し、その後の最初の texture/sampler 更新・release が一度だけ世代を分岐します。
+次の実行までの複数変更をまとめ、Set は次の Draw/Dispatch で遅延生成します。
+buffer/root の変更だけでは descriptor 世代を変えず、pass・command・frame を越えて再利用します。
+layout key は native handle ではなく、固定の binding 型・stage/partially-bound flags を持つ texture/sampler 数です。
+同じ shape の pipeline 再生成でも native handle の再利用と衝突しません。
+
+各 command は実行時の Set と登録資源 snapshot を保持します。
+古い世代を上書きせず、table の変更・Dispose は cache 所有権だけを外します。
+未送信 command は Dispose、送信済み command は既存の caller-managed GPU 完了後の Dispose によって所有権を返します。
+待機は自動挿入せず、完了前の raw command/resource Dispose を安全化しません。
+明示的に Dispose された sampled 資源は cache hit でも拒否します。
+Device.Dispose は native device より先に全 pool を破棄し、その後の lease 返却は native 呼出しを行いません。
+登録辞書の managed allocation 失敗は世代を変更しませんが、更新成功後の native free 失敗には rollback／再試行を保証しません。
+その場合も古い cache を外し、recorded command の所有権は保ち、残った pool は Device.Dispose で解放します。
