@@ -10,6 +10,21 @@ namespace Lumyte.UI.Windowing.Tests;
 /// <summary>Verifies PopupTests.</summary>
 public sealed class PopupTests
 {
+    /// <summary>Wheel probing rejects blocked owners without activating ordinary content children.</summary>
+    [Fact]
+    public void WheelProbeRejectsOwnerWhileMenuOwnsScope()
+    {
+        using var f = new Fixture();
+        Assert.NotNull(f.Popups.ProbeWheel(f.Surface, new(5)));
+        UiPopupHandle popup = f.Open();
+        Assert.Null(f.Popups.ProbeWheel(f.Surface, new(5)));
+        Assert.True(f.Popups.TryGetSurface(popup.Id, out UiSurface? menu));
+        Assert.NotNull(f.Popups.ProbeWheel(menu!, new(5)));
+        popup.Close();
+        f.Pump();
+        Assert.NotNull(f.Popups.ProbeWheel(f.Surface, new(5)));
+    }
+
     /// <summary>Checks declarative signal opening, portal isolation, controlled dismissal and continuing session identity.</summary>
     /// <param name="presentation">The hosted or native-preferring fallback policy.</param>
     [Theory]

@@ -108,6 +108,7 @@ public sealed partial class UiSurface
 
         UiElement? previous = _focusedElement;
         _focusedElement = target;
+        _revealFocus = target;
         long revision = ++_focusChange;
         KeyValuePair<Key, UiElement>[] captures = _keyCaptures.ToArray();
         _keyCaptures.Clear();

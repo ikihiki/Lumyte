@@ -260,7 +260,7 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
                     request.Install(partition!.Reference(value.Key));
                 }
 
-                scope.Select(partition);
+                scope.Select(partition, requests.Select(request => request.Value.Key).Distinct().ToArray());
             }
 
             Statistics = new()
@@ -349,6 +349,20 @@ public sealed class ArgumentTablePlan(IGraphicDevice device) : IDisposable
                 Release();
                 _returned = true;
             }
+        }
+    }
+
+    internal void Retire(ArgumentTableReservation scope)
+    {
+        lock (_gate)
+        {
+            ValidateScope(scope);
+            if (!_recordingReady && _state != 3)
+            {
+                throw new InvalidOperationException("Retirement requires completed materialization or a failed generation.");
+            }
+
+            scope.RetireBindings();
         }
     }
 

@@ -66,6 +66,32 @@ public sealed class LauncherTests
         Assert.Empty(console.Output);
     }
 
+    /// <summary>Verifies core layout is selectable without font or device arguments.</summary>
+    [Fact]
+    public void LayoutSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-layout"]), console);
+        Assert.Equal("ui-layout", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Layout.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Verifies scroll is selectable through the headless host.</summary>
+    [Fact]
+    public void ScrollSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-scroll"]), console);
+        Assert.Equal("ui-scroll", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Scroll.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies controls is selectable through the headless host.</summary>
     [Fact]
     public void ControlsSampleSelectsTheHeadlessConsumer()

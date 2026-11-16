@@ -10,6 +10,24 @@ namespace Lumyte.Diagnostics.UI.Automation.Tests;
 /// <summary>Checks owner-pumped admission, permissions, lease cleanup, replay protection and bounded retained artifacts.</summary>
 public sealed class RuntimeTests
 {
+    /// <summary>Checks version-five wheel uses the normal exclusive input lease.</summary>
+    [Fact]
+    public void ScrollRunsThroughInputLeaseAndRejectsObservationAuthority()
+    {
+        using var controller = new ScrollController();
+        using var h = new Harness();
+        h.Surface.Rebuild(Lumyte.UI.Compose.ScrollView(controller: controller, testId: "viewport")[Lumyte.UI.Compose.SizedBox(height: 600)]);
+        h.Surface.UpdateLayout();
+        var plan = new UiRemotePlan(5, "scroll", [new("test-id", "viewport")], Position: new(0, 50));
+        Assert.Equal("invalid-plan", h.Start(plan).Code);
+        Guid control = h.Acquire();
+        Guid job = Job(h.Start(plan, control));
+        Assert.Equal(0, controller.Offset);
+        Assert.Equal("Succeeded", h.Complete(job, true)["state"].String);
+        Assert.Equal(50, controller.Offset);
+        Assert.Equal(0, h.Clicks);
+    }
+
     /// <summary>Checks admission never executes input inside the operation, and forgotten sequences never execute again.</summary>
     [Fact]
     public void InputRunsOnlyAfterPumpAndSequenceSurvivesForget()

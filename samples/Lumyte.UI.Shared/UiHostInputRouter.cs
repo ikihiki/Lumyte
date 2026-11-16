@@ -136,6 +136,20 @@ internal sealed class UiHostInputRouter
             return PointerEvent(input, 0, 0, UiPointerPhase.Move, move.Position);
         }
 
+        if (input.Data is MouseWheelData wheel && origin is InputWindowId wheelOrigin
+            && _positions.TryGetValue((input.DeviceId, wheelOrigin), out (Vector2 Position, InputCaptureStamp? Capture, ulong Sequence) wheelPosition))
+        {
+            Target? target = Select(wheelOrigin, wheelPosition.Position);
+            if (target is not null)
+            {
+                (Vector2 local, bool inside) = Local(target, wheelPosition.Position);
+                Vector2 delta = new(
+                    (float)Math.Clamp(-(double)wheel.Delta.X * 40, -float.MaxValue, float.MaxValue),
+                    (float)Math.Clamp(-(double)wheel.Delta.Y * 40, -float.MaxValue, float.MaxValue));
+                return inside && Deliver(target, new UiWheelInput(local, delta));
+            }
+        }
+
         if (input.Data is MouseButtonData mouse)
         {
             HashSet<MouseButton> buttons = _mouseButtons.GetValueOrDefault(input.DeviceId) ?? [];
@@ -282,7 +296,7 @@ internal sealed class UiHostInputRouter
                     {
                         (Vector2 local, bool visible) = Local(owner, position);
                         UiPointerPhase delivered = phase == UiPointerPhase.Up && !visible ? UiPointerPhase.Cancel : phase;
-                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, visible ? local : new(-1, -1)));
+                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, visible ? local : new(-1, -1)) { Device = kind == 1 ? UiPointerDevice.Touch : kind == 2 ? UiPointerDevice.Pen : UiPointerDevice.Mouse });
                     }
                 }
             }
@@ -332,7 +346,7 @@ internal sealed class UiHostInputRouter
         bool consumed;
         try
         {
-            consumed = Deliver(selected, new UiPointerInput(pointer.Id, phase, point));
+            consumed = Deliver(selected, new UiPointerInput(pointer.Id, phase, point) { Device = kind == 1 ? UiPointerDevice.Touch : kind == 2 ? UiPointerDevice.Pen : UiPointerDevice.Mouse });
         }
         catch
         {
