@@ -1,4 +1,5 @@
 #include "lumyte.slang"
+#include "stroke-membership.slang"
 struct DrawRecord2D {
     uint Kind; uint Flags; uint PaintId; uint ClipId;
     float4 DeviceBounds; float4 InverseX; float4 InverseY; float4 Shape0;
@@ -30,10 +31,7 @@ bool contains(DrawRecord2D r,float2 pixel) {
             float2 a=loadNumeric(r.PayloadOffset16+i*3).xy;
             float2 b=loadNumeric(r.PayloadOffset16+i*3+1).xy;
             float2 c=loadNumeric(r.PayloadOffset16+i*3+2).xy;
-            float area=cross2(b-a,c-a);
-            if(abs(area)<1e-20) continue;
-            float u=cross2(b-p,c-p)/area,v=cross2(c-p,a-p)/area,w=1-u-v;
-            if(u>=0 && v>=0 && w>=0) return true;
+            if(strokeTriangleContains(a,b,c,p)) return true;
         }
     }
     return false;

@@ -49,5 +49,8 @@
     <SlangShader Include="Shaders/rectangles-vertex.slang" ResourceName="Lumyte.Drawing2D.rectangles-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/rectangles-fragment.slang" ResourceName="Lumyte.Drawing2D.rectangles-fragment" Stage="fragment" />
   </ItemGroup>
+  <ItemGroup>
+    <SlangShader Update="Shaders/draw-records-fragment.slang;Shaders/shape-membership-compute.slang" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/stroke-membership.slang" />
+  </ItemGroup>
   <Import Project="../../../tools/shaders/Slang.targets" />
 </Project>

@@ -137,7 +137,7 @@
   </UsingTask>
   <!-- Every offline binary contains every ShaderTarget; no target selector is exposed. -->
   <Target Name="CompileSlangShaders"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
+          Inputs="%(SlangShader.FullPath);%(SlangShader.AdditionalInputs);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != ''">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />

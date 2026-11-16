@@ -1,4 +1,5 @@
 #include "lumyte.slang"
+#include "stroke-membership.slang"
 #ifndef LUMYTE_SMALL_PAINT_GRAPH
 #define LUMYTE_SMALL_PAINT_GRAPH 0
 #endif
@@ -227,6 +228,17 @@ float pathCoverage(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
     }
     return n.Mode==0 ? (winding!=0 ? 1 : 0) : ((abs(winding)%2)!=0 ? 1 : 0);
 }
+float strokeCoverage(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
+{
+    for(uint i=0;i<n.Count;i++)
+    {
+        float2 a=numericLoad(data,n.First+i*3).xy;
+        float2 b=numericLoad(data,n.First+i*3+1).xy;
+        float2 c=numericLoad(data,n.First+i*3+2).xy;
+        if(strokeTriangleContains(a,b,c,p)) return 1;
+    }
+    return 0;
+}
 float meshCoverage(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
 {
     float result=0;
@@ -356,7 +368,7 @@ float shapeCoverage(DrawRecord2D r,DrawPageMetadata2D page,MaskDescriptor2D mask
             float2 center=floor(pixel)+0.5;
             p=float2(dot(r.InverseX.xyz,float3(center,1)),dot(r.InverseY.xyz,float3(center,1)));
         }
-        return meshCoverage(n,p,page.NumericPayload);
+        return r.Kind==5 ? strokeCoverage(n,p,page.NumericPayload) : meshCoverage(n,p,page.NumericPayload);
     }
     if(any(p<r.Shape0.xy) || any(p>=r.Shape0.xy+r.Shape0.zw)) return 0;
     float2 texel=mask.Source.xy+(p-r.Shape0.xy)*mask.Source.zw/r.Shape0.zw;
