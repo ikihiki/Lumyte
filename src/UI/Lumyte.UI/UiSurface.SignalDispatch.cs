@@ -40,6 +40,48 @@ public sealed partial class UiSurface
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(input);
+        if (input is UiCheckInput check)
+        {
+            if (!float.IsFinite(check.Position.X) || !float.IsFinite(check.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(check.Target);
+            if (target is null || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || (target.SupportedActions & UiAutomationActions.Check) == 0 || target.AutomationActivePress || target.IsTransitioning
+                || !AcceptsCurrentInput(target)
+                || !IsInside(target, check.Position))
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            UiElement? checkHit = _rootElement.FindInputHit(check.Position, _inputVersion);
+            for (UiElement? node = checkHit; node is not null; node = node.Parent)
+            {
+                if (node.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                UiInputResult probe = node.InvokePointerProbe(check.Position - node.InputOrigin);
+                if (probe != UiInputResult.Unhandled)
+                {
+                    return ReferenceEquals(node, target) && probe == UiInputResult.Handled && DeliverInput(target, check, false) == UiInputResult.Handled;
+                }
+            }
+
+            return false;
+        }
+
         if (input is UiFocusLostInput)
         {
             bool cancelled = CancelAllInput();

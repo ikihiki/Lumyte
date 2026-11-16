@@ -38,7 +38,7 @@ public sealed partial class UiSurface
             }
 
             bool indeterminate = !redacted && element.AutomationIndeterminate;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate));
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey));
             if (redacted)
             {
                 return;

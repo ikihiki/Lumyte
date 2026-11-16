@@ -15,4 +15,10 @@ public enum UiAutomationActions
 
     /// <summary>Committed text editing through a capability host.</summary>
     Edit = 4,
+
+    /// <summary>Desired checked state through ordinary input.</summary>
+    Check = 8,
+
+    /// <summary>Single option selection through ordinary input.</summary>
+    SelectOption = 16,
 }

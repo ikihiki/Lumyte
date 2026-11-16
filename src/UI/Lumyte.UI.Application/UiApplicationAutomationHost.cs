@@ -180,9 +180,9 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
                     _keys.Add(key.Key);
                 }
             }
-            else
+            else if (input is not UiCheckInput)
             {
-                throw new ArgumentException("Only pointer and key transitions are lease-owned.", nameof(input));
+                throw new ArgumentException("Only pointer, key and checked-state input are lease-owned.", nameof(input));
             }
 
             bool consumed;

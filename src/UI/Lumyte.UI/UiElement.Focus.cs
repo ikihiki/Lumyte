@@ -10,6 +10,9 @@ public partial class UiElement
     /// <summary>Gets a value indicating whether this component permits focus for its current declaration.</summary>
     protected virtual bool CanReceiveFocus => Widget.Focusable;
 
+    /// <summary>Gets a value indicating whether an otherwise focusable instance participates in ordinary Tab traversal.</summary>
+    protected virtual bool IsTabStop => true;
+
     internal void CollectFocusCandidates(List<UiElement> candidates, object version)
     {
         if (!ReferenceEquals(InputVersion, version))
@@ -17,7 +20,7 @@ public partial class UiElement
             return;
         }
 
-        if (InputFocusable)
+        if (InputFocusable && IsTabStop)
         {
             candidates.Add(this);
         }

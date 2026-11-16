@@ -66,6 +66,8 @@
         "TestSignals",
         "TestText",
         "TestUiApplication",
+        "TestUiControls",
+        "TestUiControlsAot",
         "TestUiMedia",
         "TestUiNavigation",
         "TestUiPages",
