@@ -247,6 +247,12 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
             DrawingCommand2D paintCommand = PaintOnly(command);
             if (!paints.TryGetValue(paintCommand, out (DrawingProgram2D Program, uint Root) compiled))
             {
+                // Source/page paint aliases do not share this program's host arrays.
+                // Admit each actual owner before compilation, and keep its conservative
+                // capacity in every subsequent page/peak and retained-memory charge.
+                long capacity = DrawingWorkingBudget2D.Validate<DrawingCommand2D>(
+                    new DrawingCommand2D[] { paintCommand }, _context.Target, _context.MaxWorkingBytes - _bytes);
+                _bytes = checked(_bytes + capacity);
                 var program = new DrawingProgram2D(_scope, _context.Target, _context.Clips, recordLowering: true);
                 uint root = program.Compile(paintCommand);
                 program.ValidateFiniteData();
