@@ -84,7 +84,7 @@ introduced. Keep the staged directory together; arguments remain exactly
 --lumyte-helper and are passed without shell evaluation. CEF --type children
 use the real ELF via current_exe(), not the wrapper or another private bus.
 
-Requirements: Linux, Bash, Python3 (Linux subreaper support), dbus-run-session,
+Requirements: Linux, Bash, Python3 (Linux subreaper and pidfd support), dbus-run-session,
 gdbus, coreutils timeout/readlink/stat/mkdir, and the distro frontend and GTK
 backend at /usr/libexec/xdg-desktop-portal{,-gtk}, plus
 /usr/libexec/xdg-permission-store. A working DISPLAY or
@@ -119,7 +119,7 @@ This is not a byte-for-byte replay of the earlier full-session B condition;
 its engine-free readiness/lifecycle evidence does not establish a real-CEF
 latency improvement or rendered-browser success.
 The ELF inherits stdin/stdout unchanged. A non-exec supervisor reaps its own
-process group on EOF-driven helper exit, native abort, startup failure or TERM;
+descendants by rechecked pidfd on EOF-driven helper exit, native abort, startup failure or TERM;
 the managed deadline still owns hung-native termination via
 Kill(entireProcessTree:true). No global portal kill, host environment import,
 user-manager restart, AppArmor/sysctl/setuid edit or sandbox-disable flag.

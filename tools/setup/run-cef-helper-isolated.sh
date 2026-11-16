@@ -64,8 +64,9 @@ printf '[preferred]\ndefault=gtk\n' > "$root/xdg-desktop-portal/gnome-portals.co
 # Only explicitly launched frontend, GTK and permission store use this bus.
 unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID DBUS_SESSION_BUS_WINDOWID DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE
 export LUMYTE_PRIVATE_BUS=1
-# Linux subreaper owns a new process group, preserves stdin/stdout and never
-# execs away cleanup. Only this owned group is signalled, never host services.
+# Linux subreaper retains descendant ownership across helper exit and nested
+# sessions. Only rechecked owned pidfds are signalled, never saved numeric groups.
+export LUMYTE_ISOLATED_OWNER=$$
 python3 -c '
 import ctypes, os, signal, subprocess, sys, time, urllib.parse
 libc = ctypes.CDLL(None, use_errno=True)
@@ -74,6 +75,30 @@ if libc.prctl(36, 1, 0, 0, 0):
 class Stopped(Exception): pass
 def stop(signum, frame): raise Stopped()
 for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP): signal.signal(sig, stop)
+owner = int(os.environ.pop("LUMYTE_ISOLATED_OWNER"))
+if os.getppid() != owner or not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+    sys.exit(78)
+probe = os.pidfd_open(os.getpid())
+signal.pidfd_send_signal(probe, 0)
+os.close(probe)
+stop_path = os.path.join(os.environ["TMPDIR"], "isolated-stop")
+def owned_children():
+    with open("/proc/self/task/" + str(os.getpid()) + "/children") as source:
+        return [int(pid) for pid in source.read().split()]
+def reap_owned():
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if not pid: return
+        except ChildProcessError: return
+def signal_owned(sig):
+    for pid in owned_children():
+        try:
+            fd = os.pidfd_open(pid)
+            try:
+                if pid in owned_children(): signal.pidfd_send_signal(fd, sig)
+            finally: os.close(fd)
+        except ProcessLookupError: pass
 child = None
 code = 78
 socket_path = os.path.join(os.environ["XDG_RUNTIME_DIR"], "bus")
@@ -92,35 +117,39 @@ try:
     with open(os.path.join(os.environ["TMPDIR"], "private-bus.log"), "wb") as log:
         child = subprocess.Popen(["dbus-run-session", "--config-file=" + os.path.join(os.environ["TMPDIR"], "private-bus.conf"), "--", "/bin/bash", sys.argv[1], "--private-session", *sys.argv[2:]], start_new_session=True, pass_fds=(8, 9), stdout=log, stderr=log, preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask))
     signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
-    code = child.wait()
+    while True:
+        if os.path.exists(stop_path) or os.getppid() != owner: raise Stopped()
+        try:
+            code = child.wait(timeout=0.05)
+            break
+        except subprocess.TimeoutExpired: pass
 except Stopped:
     code = 143
 finally:
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP): signal.signal(sig, signal.SIG_IGN)
     if child is not None:
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            try: os.killpg(child.pid, sig)
-            except (ProcessLookupError, PermissionError): pass
-            deadline = time.monotonic() + 0.5
-            while time.monotonic() < deadline:
-                # Reparented daemonized services are ours too, not host processes.
-                children = open("/proc/self/task/" + str(os.getpid()) + "/children").read().split()
-                for pid in children:
-                    try:
-                        if os.stat("/proc/" + pid).st_uid == os.getuid(): os.kill(int(pid), sig)
-                    except (FileNotFoundError, ProcessLookupError, PermissionError): pass
-                try:
-                    pid, _ = os.waitpid(-1, os.WNOHANG)
-                    if pid == 0: time.sleep(0.01)
-                except ChildProcessError: break
-        child.wait()
+        started = time.monotonic()
+        while True:
+            reap_owned()
+            if not owned_children(): break
+            signal_owned(signal.SIGTERM if time.monotonic() - started < 0.5 else signal.SIGKILL)
+            time.sleep(0.01)
         try: os.unlink(socket_path)
         except FileNotFoundError: pass
 sys.exit(code if code >= 0 else 128 - code)
 ' "$self" "$@" <&0 8>&2 9>&1 &
 supervisor=$!
-trap 'kill -TERM "$supervisor" 2>/dev/null || true; wait "$supervisor" 2>/dev/null || true' EXIT
+cleanup_launcher() {
+    trap - EXIT TERM INT HUP
+    if [[ -n ${supervisor:-} ]]; then
+        : > "$root/isolated-stop"
+        wait "$supervisor" 2>/dev/null || true
+    fi
+}
+trap cleanup_launcher EXIT
 trap 'exit 143' TERM INT HUP
 set +e
 wait "$supervisor"
-exit $?
+result=$?
+supervisor=
+exit "$result"

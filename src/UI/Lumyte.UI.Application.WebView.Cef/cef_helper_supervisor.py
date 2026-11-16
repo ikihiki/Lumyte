@@ -63,6 +63,7 @@ def main():
     if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
         raise RuntimeError('pidfd unavailable')
     fd = os.pidfd_open(os.getpid())
+    signal.pidfd_send_signal(fd, 0)
     os.close(fd)
     stopping = False
 
