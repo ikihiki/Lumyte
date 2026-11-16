@@ -13,6 +13,8 @@ internal static class DrawRecordAbi2D
         Check<DrawDirectoryEntry2D>(parameters, 16, [0, 4, 8, 12]);
         switch (mode)
         {
+            case 9:
+            case 10:
             case 8:
                 Check<ShapeMembershipMetadata2D>(parameters, 96, [0, 16, 32, 48, 64, 80]);
                 break;

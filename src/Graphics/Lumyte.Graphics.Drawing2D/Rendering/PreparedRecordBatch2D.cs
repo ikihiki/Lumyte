@@ -518,7 +518,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             if (HasShapeMembership)
             {
-                _mode = 8;
+                // Bound only private evaluator scratch; retain the full membership ABI and compute dispatch.
+                _mode = DrawRecordResources2D.SelectPipelineMode(8, Cpu.PaintClosureBound);
             }
 
             _pipeline = _batch._resources.GetPipeline(_mode);
@@ -527,7 +528,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             {
                 // Membership pages share one typed directory stream so fractional clips
                 // stay within the seven buffer slots of a default WebGPU device.
-                if (_mode == 8 && Cpu.Clips.Count > 1)
+                if (HasShapeMembership && Cpu.Clips.Count > 1)
                 {
                     uint clipOffset = checked((uint)Cpu.Paints.Count);
                     foreach (DrawDirectoryEntry2D paint in Cpu.Paints)
@@ -555,13 +556,13 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     }
                 }
 
-                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count + (_mode == 8 && Cpu.Clips.Count > 1 ? Cpu.Clips.Count : 0), 16);
-                if (Cpu.Clips.Count > 1 && _mode != 8)
+                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count + (HasShapeMembership && Cpu.Clips.Count > 1 ? Cpu.Clips.Count : 0), 16);
+                if (Cpu.Clips.Count > 1 && !HasShapeMembership)
                 {
                     _clips = Create<DrawDirectoryEntry2D>(Cpu.Clips.Count, 16);
                 }
 
-                if (Cpu.Images.Count > 0 || _mode == 8)
+                if (Cpu.Images.Count > 0 || HasShapeMembership)
                 {
                     _images = Create<ImagePaintData2D>(Math.Max(1, Cpu.Images.Count), 128);
                     IGraphicsSampler sampler = _batch._context.ArgumentPlan.Sampler(_batch._context.Resources);
@@ -570,13 +571,15 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     Reservation.RegisterSampler(sampler, reference => _sampler = reference);
                 }
 
-                if (Cpu.Masks.Count > 0 || _mode == 8)
+                if (Cpu.Masks.Count > 0 || HasShapeMembership)
                 {
                     _masks = Create<MaskDescriptor2D>(Math.Max(1, Cpu.Masks.Count), 80);
                 }
 
                 switch (_mode)
                 {
+                    case 9:
+                    case 10:
                     case 8: _membershipMetadata = Create<ShapeMembershipMetadata2D>(1, 96); break;
                     case 0: _basicMetadata = Create<DrawBasicMetadata2D>(1, 48); break;
                     case 1: _maskMetadata = Create<DrawMaskMetadata2D>(1, 64); break;
@@ -637,6 +640,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             {
                 switch (_mode)
                 {
+                    case 9:
+                    case 10:
                     case 8: Draw(render, info, _membershipMetadata!.Reference!, first, count); break;
                     case 0: Draw(render, info, _basicMetadata!.Reference!, first, count); break;
                     case 1: Draw(render, info, _maskMetadata!.Reference!, first, count); break;
@@ -785,11 +790,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)
                 {
-                    copied += _mode == 8 && Cpu.Clips.Count > 1
+                    copied += HasShapeMembership && Cpu.Clips.Count > 1
                         ? _paints.Fill(Cpu.Paints.Concat(Cpu.Clips).ToArray())
                         : _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
                     IGpuRef<DrawDirectoryEntry2D> clips = _paints.Reference!;
-                    if (Cpu.Clips.Count > 1 && _mode != 8)
+                    if (Cpu.Clips.Count > 1 && !HasShapeMembership)
                     {
                         copied += _clips.Fill(CollectionsMarshal.AsSpan(Cpu.Clips));
                         clips = _clips.Reference!;
@@ -807,7 +812,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
                     copied += _mode switch
                     {
-                        8 => _membershipMetadata!.Fill([new() { PaintDirectory = _paints.Reference!, ClipDirectory = clips, NumericPayload = _numericRef!, MaskDescriptors = _masks.Reference!, ImagePaintData = _images.Reference!, ShapeMembership = _shapeMembershipRef! }]),
+                        8 or 9 or 10 => _membershipMetadata!.Fill([new() { PaintDirectory = _paints.Reference!, ClipDirectory = clips, NumericPayload = _numericRef!, MaskDescriptors = _masks.Reference!, ImagePaintData = _images.Reference!, ShapeMembership = _shapeMembershipRef! }]),
                         0 => _basicMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!)]),
                         1 => _maskMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!)]),
                         2 or 6 or 7 => _imageMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _images.Reference!)]),

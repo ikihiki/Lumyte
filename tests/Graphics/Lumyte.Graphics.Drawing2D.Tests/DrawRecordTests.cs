@@ -65,6 +65,12 @@ public sealed class DrawRecordTests
     [InlineData(1, 8, 1)]
     [InlineData(3, 8, 3)]
     [InlineData(4, 8, 4)]
+    [InlineData(8, 1, 9)]
+    [InlineData(8, 8, 9)]
+    [InlineData(8, 9, 10)]
+    [InlineData(8, 16, 10)]
+    [InlineData(8, 17, 8)]
+    [InlineData(8, 256, 8)]
     public void SmallImageEvaluatorHasExactEligibility(int mode, int entries, int expected)
         => Assert.Equal(expected, DrawRecordResources2D.SelectPipelineMode(mode, entries));
 

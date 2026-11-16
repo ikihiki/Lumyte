@@ -46,10 +46,19 @@ public sealed class ShapeMembershipTests
     [InlineData(ShaderTarget.Dxil)]
     public void MembershipRasterAbiIsSeparate(ShaderTarget target)
     {
-        foreach (string stage in new[] { "vertex", "fragment" })
+        foreach (int mode in new[] { 8, 9, 10 })
         {
-            var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records-membership-" + stage + ".lshader");
-            DrawRecordAbi2D.Validate(artifact, target, 8);
+            foreach (string stage in new[] { "vertex", "fragment" })
+            {
+                string variant = stage == "vertex" ? string.Empty : mode switch { 9 => "-small", 10 => "-medium", _ => string.Empty };
+                var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records-membership" + variant + "-" + stage + ".lshader");
+                DrawRecordAbi2D.Validate(artifact, target, mode);
+                if (target == ShaderTarget.Wgsl && stage == "fragment" && mode is 9 or 10)
+                {
+                    string code = System.Text.Encoding.UTF8.GetString(artifact.GetTarget(target).Code);
+                    Assert.DoesNotMatch(@"array<EvaluationNode_\w+,\s*i32\(256\)>", code);
+                }
+            }
         }
     }
 
