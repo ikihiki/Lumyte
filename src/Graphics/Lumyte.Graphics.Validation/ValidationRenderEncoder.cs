@@ -10,6 +10,12 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
     private readonly IRenderEncoder _raw;
     private readonly ValidationEncoderChecks _checks;
     private IGraphicsPipeline? _pipeline;
+    private IMeshPipeline? _meshPipeline;
+    private GraphicsRenderStateDesc? _state;
+    private bool _viewport;
+    private bool _scissor;
+    private bool _blend;
+    private bool _stencil;
     private string _rootParameter = "arguments";
 
     private object? _indexBuffer;
@@ -36,7 +42,67 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
         _owner.Device.Tracker.Use(_owner, pipeline);
         _raw.SetPipeline(native);
         _pipeline = pipeline;
+        _meshPipeline = null;
         _checks.SelectPipeline(pipeline);
+        tx.Commit();
+    }
+
+    public void SetPipeline(IMeshPipeline pipeline)
+    {
+        _checks.Check();
+        IMeshPipeline native = _owner.Device.Unwrap(pipeline);
+        using GraphicsValidation.RecordingTransaction tx = _owner.Device.Tracker.BeginRecording(_owner);
+        _owner.Device.Tracker.Use(_owner, pipeline);
+        foreach ((IGraphicsShader shader, _) in ValidationEncoderChecks.MeshShaders(pipeline.Desc))
+        {
+            _owner.Device.Tracker.Use(_owner, shader);
+        }
+
+        _raw.SetPipeline(native);
+        _meshPipeline = pipeline;
+        _pipeline = null;
+        _checks.SelectPipeline(pipeline);
+        tx.Commit();
+    }
+
+    public void DrawMeshTasks(uint x, uint y = 1, uint z = 1)
+    {
+        _checks.Check();
+        IMeshPipeline pipeline = _meshPipeline ?? throw new InvalidOperationException("Select a Mesh pipeline before Mesh execution.");
+        _owner.Device.Unwrap(pipeline);
+        ShaderWorkgroupLimits limits = pipeline.Desc.TaskShader is null
+            ? _owner.Device.Caps.MeshShaderLimits?.Workgroup ?? throw new NotSupportedException("Mesh shaders are unavailable.")
+            : _owner.Device.Caps.TaskShaderLimits?.Workgroup ?? throw new NotSupportedException("Task shaders are unavailable.");
+        MeshShaderValidation.Dispatch(limits, x, y, z);
+        if (_state is null || !_viewport || !_scissor || !_blend || !_stencil)
+        {
+            throw new InvalidOperationException("Set all required render state before Mesh execution.");
+        }
+
+        string? topology = MeshShaderValidation.Read(ValidationEncoderChecks.Target(_owner.Device, pipeline.Desc.MeshShader)).GetProperty("outputTopology").GetString();
+        PrimitiveTopology expected = topology == "line" ? PrimitiveTopology.LineList : PrimitiveTopology.TriangleList;
+        if (_state.Topology != expected || _state.StripIndexFormat is not null)
+        {
+            throw new InvalidOperationException("Mesh state must use its output list topology without strip restart.");
+        }
+
+        using GraphicsValidation.RecordingTransaction tx = _owner.Device.Tracker.BeginRecording(_owner);
+        PipelineStage stages = PipelineStage.None;
+        bool required = false;
+        foreach ((IGraphicsShader shader, PipelineStage stage) in ValidationEncoderChecks.MeshShaders(pipeline.Desc))
+        {
+            _owner.Device.Unwrap(shader);
+            _owner.Device.Tracker.Use(_owner, shader);
+            ShaderTargetData target = ValidationEncoderChecks.Target(_owner.Device, shader);
+            required |= ShaderDataLayout.HasRoot(target);
+            if (ShaderDataLayout.HasRoot(target, _rootParameter))
+            {
+                stages |= stage;
+            }
+        }
+
+        _checks.Execute(required, stages);
+        _raw.DrawMeshTasks(x, y, z);
         tx.Commit();
     }
 
@@ -98,30 +164,35 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
     {
         _checks.Check();
         _raw.SetRenderState(state);
+        _state = state;
     }
 
     public void SetViewport(Viewport viewport)
     {
         _checks.Check();
         _raw.SetViewport(viewport);
+        _viewport = true;
     }
 
     public void SetScissor(ScissorRect scissor)
     {
         _checks.Check();
         _raw.SetScissor(scissor);
+        _scissor = true;
     }
 
     public void SetBlendConstant(BlendConstant value)
     {
         _checks.Check();
         _raw.SetBlendConstant(value);
+        _blend = true;
     }
 
     public void SetStencilReference(uint reference)
     {
         _checks.Check();
         _raw.SetStencilReference(reference);
+        _stencil = true;
     }
 
     public void SetIndexBuffer(BufferSlice<ushort> indices)
@@ -175,6 +246,7 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
         _checks.Check();
+        RequireGraphicsPipeline();
         BufferSlice<DrawIndirectArguments> native = _owner.Unwrap(arguments);
         using GraphicsValidation.RecordingTransaction tx = _owner.Device.Tracker.BeginRecording(_owner);
         PrepareExecution();
@@ -186,6 +258,7 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
         _checks.Check();
+        RequireGraphicsPipeline();
         BufferSlice<DrawIndexedIndirectArguments> native = _owner.Unwrap(arguments);
         using GraphicsValidation.RecordingTransaction tx = _owner.Device.Tracker.BeginRecording(_owner);
         PrepareExecution();
@@ -195,7 +268,15 @@ internal sealed class ValidationRenderEncoder : IRenderEncoder
         tx.Commit();
     }
 
-    private ShaderDataLayout Diagnostic(string root) => ValidationEncoderChecks.RenderRoot(_owner.Device, _pipeline!, root);
+    private ShaderDataLayout Diagnostic(string root) => _meshPipeline is { } mesh ? ValidationEncoderChecks.MeshRoot(_owner.Device, mesh, root) : ValidationEncoderChecks.RenderRoot(_owner.Device, _pipeline!, root);
+
+    private void RequireGraphicsPipeline()
+    {
+        if (_pipeline == null)
+        {
+            throw new InvalidOperationException("Select a traditional graphics pipeline before execution.");
+        }
+    }
 
     private void PrepareExecution(bool executes = true)
     {

@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0038: 任意機能としての Mesh シェーダーパイプライン
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-16
 - 基準コミット: `97accb2ca833a173b88855822b2cd63b8c973c96`
 - 変更関係: 一部変更
@@ -94,7 +94,11 @@ offline の `SlangShader` 項目にも任意の `Targets` metadata を追加し�
 
 Slang の Task は amplification ステージへ明示的に対応付け、DXIL の適切な shader model と SPIR-V の Mesh 拡張要求を設定する。必要 feature、ワークグループと出力上限の宣言、payload・入出力 ABI を target 別 reflection に保存し、判定に必要な情報が欠けた Mesh/Task 成果物は拒否する。enum の文字列化だけでコンパイラのステージ名を決定しない。
 
-既存の shader binary の version 1 の枠と既存ステージ値を保ち、新しい読み手は従来成果物を読めるようにする。追加の要求情報は reflection の拡張として格納する。古い読み手が新ステージ成果物を拒否することは許容する。成果物の code、reflection、要求機能が矛盾する場合は `ArgumentException`、デバイスの target・機能・上限が不足する場合は `NotSupportedException` とする。
+ステージ間照合には対象の native 署名を使う。SPIR-V の location、補間・プリミティブ属性と、DXIL の semantic 名・index を区別し、構造体の宣言順を代用しない。Fragment の署名も reflection の拡張へ保存する。既存 Fragment 成果物は従来パイプラインで引き続き使用できるが、Mesh との照合に必要な署名が欠ける場合は Mesh パイプラインの生成を `ArgumentException` とし、利用者が明示的に再コンパイルする。
+
+既存の shader binary の version 1 の枠と既存ステージ値を保ち、新しい読み手は従来成果物を読めるようにする。追加の要求情報は reflection の拡張として格納する。古い読み手が新ステージ成果物を拒否することは許容する。
+
+成果物は shader 作者が供給する実行コードであり、署名認証や安全な実行の境界として扱わない。compiler が生成した要求情報と code を整合性情報で結び、native の実行モデル、起動サイズ、取得可能な記憶域・出力宣言とも照合する。この検査は破損・取り違え・不整合の検出であり、改ざん者の認証、完全な独立 reflection、シェーダー内部の全動作の安全性を保証しない。成果物の code、reflection、要求機能が矛盾する場合は `ArgumentException`、デバイスの target・機能・上限が不足する場合は `NotSupportedException` とする。
 
 ### backend と同期・寿命
 

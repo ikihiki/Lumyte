@@ -84,8 +84,8 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
     internal static DescriptorSetLayout CreateLayout(VulkanDevice owner, uint textures = 1, uint samplers = 1)
     {
         DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
-        bindings[0] = new() { Binding = 0, DescriptorCount = Math.Max(1, textures), DescriptorType = DescriptorType.SampledImage, StageFlags = VulkanPushConstants.Stages };
-        bindings[1] = new() { Binding = 1, DescriptorCount = Math.Max(1, samplers), DescriptorType = DescriptorType.Sampler, StageFlags = VulkanPushConstants.Stages };
+        bindings[0] = new() { Binding = 0, DescriptorCount = Math.Max(1, textures), DescriptorType = DescriptorType.SampledImage, StageFlags = owner.GraphicsShaderStages | VulkanPushConstants.ComputeStages };
+        bindings[1] = new() { Binding = 1, DescriptorCount = Math.Max(1, samplers), DescriptorType = DescriptorType.Sampler, StageFlags = owner.GraphicsShaderStages | VulkanPushConstants.ComputeStages };
         DescriptorBindingFlags* flags = stackalloc DescriptorBindingFlags[2] { DescriptorBindingFlags.PartiallyBoundBit, DescriptorBindingFlags.PartiallyBoundBit };
         var extension = new DescriptorSetLayoutBindingFlagsCreateInfo { SType = StructureType.DescriptorSetLayoutBindingFlagsCreateInfo, BindingCount = 2, PBindingFlags = flags };
         var info = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, PNext = &extension, BindingCount = 2, PBindings = bindings };

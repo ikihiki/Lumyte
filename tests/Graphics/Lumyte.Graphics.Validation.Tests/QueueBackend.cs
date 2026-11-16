@@ -55,6 +55,8 @@ internal sealed class QueueBackend : IGraphicDevice, IDisposable
 
     public IGraphicsShader CreateShader(ShaderArtifact artifact) => throw new NotSupportedException();
 
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw new NotSupportedException();
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();

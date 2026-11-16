@@ -36,6 +36,39 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
         return stages;
     }
 
+    internal static IEnumerable<(IGraphicsShader Shader, PipelineStage Stage)> MeshShaders(MeshPipelineDesc desc)
+    {
+        yield return (desc.MeshShader, PipelineStage.MeshShader);
+        if (desc.TaskShader is { } task)
+        {
+            yield return (task, PipelineStage.TaskShader);
+        }
+
+        if (desc.FragmentShader is { } fragment)
+        {
+            yield return (fragment, PipelineStage.FragmentShader);
+        }
+    }
+
+    internal static void ValidateMeshRoots(ValidationDevice device, MeshPipelineDesc desc)
+    {
+        ShaderTargetData[] targets = MeshShaders(desc).Select(pair => Target(device, pair.Shader)).ToArray();
+        for (int i = 0; i < targets.Length; i++)
+        {
+            for (int j = i + 1; j < targets.Length; j++)
+            {
+                ShaderDataLayout.ValidateProgram(targets[i], targets[j]);
+            }
+        }
+    }
+
+    internal static ShaderDataLayout MeshRoot(ValidationDevice device, IMeshPipeline pipeline, string root)
+    {
+        ValidateMeshRoots(device, pipeline.Desc);
+        ShaderTargetData? target = MeshShaders(pipeline.Desc).Select(pair => Target(device, pair.Shader)).FirstOrDefault(target => ShaderDataLayout.HasRoot(target, root));
+        return ShaderDataLayout.Root(target ?? throw new ArgumentException("The program does not declare this root parameter."), root);
+    }
+
     internal static IReadOnlyList<(ulong Offset, ulong End, ResourceAccess Access)> Partition(IEnumerable<(ulong Offset, ulong End, ResourceAccess Access)> ranges)
     {
         var events = new SortedDictionary<ulong, List<(ResourceAccess Access, int Delta)>>();
@@ -256,6 +289,7 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
         }
 
         Check();
+        owner.Device.UnwrapObject(_program!);
         foreach (IShaderReference reference in references)
         {
             ((IValidationReference)reference).ValidateRegistration();

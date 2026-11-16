@@ -14,6 +14,11 @@ internal sealed class BrowserQueue(BrowserDevice owner) : IGraphicsQueue
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
 
+        foreach (SemaphoreWaitDesc wait in desc.WaitSemaphores)
+        {
+            CommandValidation.Scope(new(wait.Stages, ResourceAccess.None));
+        }
+
         IReadOnlyList<IGraphicsCommandBuffer> commandBuffers = desc.CommandBuffers;
         if (commandBuffers.Count == 0 && desc.WaitSemaphores.Count == 0 && desc.SignalSemaphores.Count == 0)
         {

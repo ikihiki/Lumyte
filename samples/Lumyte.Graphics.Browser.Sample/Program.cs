@@ -17,6 +17,21 @@ internal static partial class Program
     {
         Console.WriteLine("Creating browser graphics device.");
         using BrowserDevice device = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
+        if ((device.Caps.Features & (GraphicsFeatures.MeshShader | GraphicsFeatures.TaskShader)) != 0 || device.Caps.MeshShaderLimits != null || device.Caps.TaskShaderLimits != null)
+        {
+            throw new InvalidOperationException("Browser must not advertise Mesh/Task execution.");
+        }
+
+        try
+        {
+            using IMeshPipeline unexpected = device.CreateMeshPipeline(new() { MeshShader = null! });
+            throw new InvalidOperationException("Browser accepted an unsupported Mesh pipeline.");
+        }
+        catch (NotSupportedException)
+        {
+            Console.WriteLine("Browser Mesh/Task rejection checks passed.");
+        }
+
         List<string> reports = [];
         Record(CapsDisplay.Describe(device), reports);
         await GraphicsExercises.RunAsync(device, "suite", report => Record(report, reports));

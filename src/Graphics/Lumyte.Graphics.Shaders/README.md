@@ -12,12 +12,12 @@ ShaderArtifact artifact = await compiler.CompileAsync(new ShaderCompilationDesc
     Source = source,
     EntryPoint = "main",
     Stage = ShaderStage.Compute,
-    Target = device.Caps.ShaderTarget, // 省略／nullなら全対応targetを生成。
+    Target = device.Caps.ShaderTarget, // null: 通常stageは三対象、Mesh/TaskはSPIR-VとDXIL。
 }, cancellationToken);
 using IGraphicsShader shader = device.CreateShader(artifact);
 ```
 
-`SlangShaderCompiler(string compilerPath = "slangc")` は PATH または明示した実行ファイルを使います。source は単一の Slang translation unit とし、include path・define・複数 entry の設定はこの API の対象に含めません。`CompileAsync` は `-entry`、`-stage`、`-target`、`-matrix-layout-row-major` と `-reflection-json` を指定し、指定したtarget、または省略時にはWGSL・SPIR-V・DXILを反射情報とともに単一バイナリへ格納して返します。
+`SlangShaderCompiler(string compilerPath = "slangc")` は PATH または明示した実行ファイルを使います。source は単一の Slang translation unit とし、include path・define・複数 entry の設定はこの API の対象に含めません。`CompileAsync` は `-entry`、`-stage`、`-target`、`-matrix-layout-row-major` と `-reflection-json` を指定し、指定したtargetを反射情報とともに単一バイナリへ格納します。省略時はVertex/Fragment/ComputeがWGSL・SPIR-V・DXIL、Mesh/TaskがSPIR-V・DXILです。Mesh/TaskのWGSL指定は、compiler起動前に`NotSupportedException`となります。TaskはSlangの`amplification`へ明示的に対応付け、SPIR-Vでは`spvMeshShadingEXT`を要求します。
 
 プロセスは shell を介さず起動し、標準出力と標準エラーを並行回収します。Slang の失敗は診断を含む `InvalidOperationException`、起動できない場合は OS の例外、キャンセルは `OperationCanceledException` です。キャンセルした子プロセスの終了を待ち、一時ディレクトリを削除します。CPU／GPU の同期は利用側が管理します。
 
@@ -31,12 +31,12 @@ using IGraphicsShader shader = device.CreateShader(artifact);
 <ItemGroup>
   <SlangShader Include="Shaders/increment.slang"
                ResourceName="MyApp.Shaders.increment"
-               EntryPoint="main" Stage="compute" />
+               EntryPoint="main" Stage="compute" Targets="wgsl;spirv" />
 </ItemGroup>
 <Import Project="../../tools/shaders/Slang.targets" />
 ```
 
-`ResourceName` は source ごとに重複しない値を指定します。entry と stage の既定値は `main` と `compute` です。compiler の変更は `SlangCompilerPath` で指定できます。
+`ResourceName` は source ごとに重複しない値を指定します。entry と stage の既定値は `main` と `compute` です。compiler の変更は `SlangCompilerPath` で指定できます。`Targets`は省略可能で、onlineと同じstage別既定値になります。明示値は`wgsl;spirv;dxil`の部分集合です。空集合・空要素・重複・未知の値とMesh/TaskのWGSLはbuild errorです。
 
 ビルドは `obj/<configuration>/<framework>/Slang/` へ WGSL・SPIR-V・DXIL を生成し、それぞれの反射情報とコンパイル時のmetadataを一つのbinaryへ格納し、DLLに埋め込みます。source、project、targets、compiler のタイムスタンプを入力として増分ビルドし、clean の FileWrites に出力を登録します。各 source は自己完結するものとします。生成 WGSL・SPIR-V・DXIL・JSON はコミットしません。
 
@@ -46,12 +46,18 @@ ShaderArtifact artifact = ShaderArtifact.LoadEmbedded(
 using IGraphicsShader shader = device.CreateShader(artifact);
 ```
 
-offline compilerは全対応targetを必ずコンパイルします。targetを絞る設定はありません。WGSL／SPIR-V／DXIL と各reflectionを一つの`.lshader` binaryへpackし、そのbinaryだけをDLLに埋め込みます。同じresourceから取得したartifactを全backendへ渡せます。backendが必要targetを選び、利用者はtarget・stage・entryを指定しません。
+offline compilerは要求対象の実数と各code/reflectionを一つのversion 1 `.lshader` binaryへpackし、そのbinaryだけをDLLに埋め込みます。ホスト用`tools/shaders/Lumyte.ShaderCompiler`を共通MSBuild graphでビルドし、online compilerと同じsource preparationとreflection completionを使用します。全要求対象が成功するまではbinaryを公開しません。同じresourceから取得したartifactを全backendへ渡せます。backendが必要targetを選び、利用者はtarget・stage・entryを指定しません。
 
-binaryはversion、entry、stage、実際のcompiler version、row-major方針とtarget別code／reflectionを持ちます。workgroup size、bindingや型layoutはSlang reflectionに格納されます。runtimeに別のreflectionファイルやmetadata引数は不要です。online compilerはTarget指定時にそのtargetのみ、省略／null時に全対応targetを同形式へpackし、未収録targetを要求したbackendはNotSupportedExceptionを返します。
+binaryはversion、entry、stage、実際のcompiler version、row-major方針とtarget別code／reflectionを持ちます。workgroup size、bindingや型layoutはSlang reflectionに格納されます。runtimeに別のreflectionファイルやmetadata引数は不要です。online compilerはTarget指定時にそのtargetのみ、省略／null時にstage別既定対象を同形式へpackし、未収録targetを要求したbackendはNotSupportedExceptionを返します。
 
 `ShaderArtifact(ReadOnlySpan<byte>)` はbinaryをコピーして検証し、`GetBinary()` もコピーを返します。`GetTarget`、`PackTarget`、`PackTargets` はbackend／compiler実装用で、通常の利用側はbinaryをそのまま渡します。反射情報からGPU参照を配置するserializerとpipeline／command APIは別の設計範囲です。
 
 DXIL は SM 6.6 を使用し、Slang が呼び出す DXC を必要とします。GPU、Agility SDK、ドライバーはオフライン生成に不要です。全 target のコンパイルに失敗した場合は、その target を黙って除外しません。
 
 Linux x64／ARM64 の DXC は共通セットアップの `SetupDxc` target で準備します。既存環境を更新する場合は `mise run setup-native` を再実行してから環境を有効化してください。
+
+## Mesh/Task reflectionの境界
+
+Slang 2026.19のJSONはMesh出力型とentry属性の一部を省略するため、同じtarget defineとentryから追加生成したcompiler-resolved HLSL宣言を用いて`lumyteMesh` version 1を補完します。アプリsource内の定数を推測するのではなく、特殊化済みのworkgroup size、出力数・topology、payloadの構造ABI、共有メモリとsemantic/type/interpolation/per-primitive出力を格納します。
+
+このlaneは32-bit scalar/vectorのstructと固定長一次元配列を扱います。matrix、16/64-bit型、再帰型、未解決の宣言など、要求量を確定できないMesh/Taskは診断付きで拒否し、ゼロの要求量で成功させません。出力フィールドは明示semanticを持つscalar/vectorに限定します。通常stageのcompiler経路はこの追加HLSL生成を要求しません。SPIR-V/DXIL生成の成功はGPU実行やWindows runtimeの検証を意味しません。

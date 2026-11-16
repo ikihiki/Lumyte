@@ -139,6 +139,14 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(desc);
+        throw new NotSupportedException("Browser does not support Mesh/Task pipelines.");
+    }
+
+    /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -281,6 +289,11 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
+        if (artifact.GetTarget(ShaderTarget.Wgsl).Stage is not (ShaderStage.Vertex or ShaderStage.Fragment or ShaderStage.Compute))
+        {
+            throw new NotSupportedException("Browser requires a supported WGSL shader stage and target.");
+        }
+
         var shader = new BrowserShader(this, artifact);
         return shader;
     }

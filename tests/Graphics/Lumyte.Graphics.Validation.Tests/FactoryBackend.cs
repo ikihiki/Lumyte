@@ -63,6 +63,8 @@ internal sealed class FactoryBackend : IGraphicDevice
 
     public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc) => throw new NotSupportedException();
 
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         GraphicsDesc = desc;

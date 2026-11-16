@@ -54,6 +54,10 @@ internal sealed class PublicGraphConsumerEncoder : IRenderEncoder, IComputeEncod
         RecordSelection(root, ShaderTransfer.Fields<T>());
     }
 
+    public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+    public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+
     public void SetPipeline(IGraphicsPipeline pipeline) => _target = pipeline.Desc.VertexShader.Artifact.GetTarget(ShaderTarget.SpirV);
 
     public void SetPipeline(IGraphicsComputePipeline pipeline) => _target = pipeline.Desc.ComputeShader.Artifact.GetTarget(ShaderTarget.SpirV);

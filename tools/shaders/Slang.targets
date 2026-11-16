@@ -1,6 +1,10 @@
 <Project>
   <PropertyGroup>
     <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
+    <_LumyteShaderToolProject>$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/Lumyte.ShaderCompiler.csproj</_LumyteShaderToolProject>
+    <_LumyteShaderTool>$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.ShaderCompiler.dll</_LumyteShaderTool>
+    <_LumyteShaderDotnet Condition="'$(DotNetHostPath)' != ''">$(DotNetHostPath)</_LumyteShaderDotnet>
+    <_LumyteShaderDotnet Condition="'$(_LumyteShaderDotnet)' == ''">dotnet</_LumyteShaderDotnet>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <SlangShader>
@@ -8,153 +12,46 @@
       <Stage>compute</Stage>
     </SlangShader>
   </ItemDefinitionGroup>
-  <UsingTask TaskName="PackSlangBinary" TaskFactory="RoslynCodeTaskFactory"
+  <UsingTask TaskName="ResolveSlangTargets" TaskFactory="RoslynCodeTaskFactory"
              AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
     <ParameterGroup>
-      <Prefix ParameterType="System.String" Required="true" />
-      <EntryPoint ParameterType="System.String" Required="true" />
-      <Stage ParameterType="System.String" Required="true" />
-      <CompilerVersion ParameterType="System.String" Required="true" />
+      <Shader ParameterType="Microsoft.Build.Framework.ITaskItem" Required="true" />
+      <Targets ParameterType="System.String" Output="true" />
     </ParameterGroup>
     <Task>
-      <Using Namespace="System.IO" />
-      <Using Namespace="System.Text.RegularExpressions" />
-      <Using Namespace="System.Collections.Generic" />
-      <Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
-        uint stage;
-        switch (Stage) {
-          case "vertex": stage = 0; break;
-          case "fragment": stage = 1; break;
-          case "compute": stage = 2; break;
-          default: Log.LogError("Unknown shader stage: " + Stage); return false;
-        }
-        using (var stream = File.Create(Prefix + ".lshader"))
-        using (var writer = new BinaryWriter(stream, Encoding.UTF8)) {
-          writer.Write(0x4448534Cu);
-          writer.Write(1u);
-          writer.Write(stage);
-          writer.Write(EntryPoint);
-          writer.Write(CompilerVersion);
-          writer.Write("row-major");
-          writer.Write(3u);
-          string[] suffixes = { "wgsl", "spv", "dxil" };
-          for (uint target = 0; target < 3; target++) {
-            byte[] code = File.ReadAllBytes(Prefix + "." + suffixes[target]);
-            writer.Write(target);
-            writer.Write(code.Length);
-            writer.Write(code);
-            string reflection = File.ReadAllText(Prefix + "." + suffixes[target] + ".reflection.json");
-            int start = reflection.IndexOf('{');
-            var referenceTargets = new List<string>();
-            string source = File.ReadAllText(Prefix + ".slang");
-            foreach (Match structure in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{([^}]+)\}", RegexOptions.Singleline)) {
-              foreach (Match field in Regex.Matches(structure.Groups[2].Value, @"Gpu(?:RW)?BufferRef\s*<\s*(\w+)\s*>\s+(\w+)\s*;")) {
-                referenceTargets.Add("\"" + structure.Groups[1].Value + "." + field.Groups[2].Value + "\":\"" + field.Groups[1].Value + "\"");
-              }
-            }
-            string rootStorage = target == 1 && reflection.Contains("pushConstantBuffer") ? "VkPushConstants"
-              : target == 2 ? "D3DRoot32BitConstants" : "UniformBuffer";
-            reflection = reflection.Insert(start + 1, "\"lumyteAbi\":1,\"lumyteRootBinding\":8,\"lumyteRootStorage\":\"" + rootStorage + "\",\"lumyteReferenceTargets\":{" + string.Join(",", referenceTargets) + "},");
-            // Locate complete JSON object values without changing any numeric offsets.
-            System.Func<int, int> objectEnd = startIndex => {
-              int depth = 0; bool quoted = false; bool escaped = false;
-              for (int i = startIndex; i < reflection.Length; i++) {
-                char c = reflection[i];
-                if (quoted) {
-                  if (escaped) escaped = false;
-                  else if (c == '\\') escaped = true;
-                  else if (c == '"') quoted = false;
-                } else if (c == '"') quoted = true;
-                else if (c == '{') depth++;
-                else if (c == '}' && --depth == 0) return i + 1;
-              }
-              throw new System.InvalidOperationException("Incomplete Slang reflection object.");
-            };
-            var completedRoots = new HashSet<string>();
-            foreach (Match root in Regex.Matches(source, @"ConstantBuffer<LumyteRootWire<([^>]+)>>\s+__lumyte_wire_(\w+)")) {
-              string name = root.Groups[2].Value;
-              if (!completedRoots.Add(name)) continue;
-              int probe = reflection.IndexOf("\"name\": \"__lumyte_schema_" + root.Groups[1].Value.Trim() + "\"", System.StringComparison.Ordinal);
-              int value = reflection.IndexOf("\"valueType\"", probe, System.StringComparison.Ordinal);
-              int valueStart = reflection.IndexOf('{', value);
-              string logicalType = reflection.Substring(valueStart, objectEnd(valueStart) - valueStart);
-              string wireName = "\"name\": \"__lumyte_wire_" + name + "\"";
-              int wire = reflection.IndexOf(wireName, System.StringComparison.Ordinal);
-              int element = reflection.IndexOf("\"elementType\"", wire, System.StringComparison.Ordinal);
-              int elementStart = reflection.IndexOf('{', element);
-              reflection = reflection.Remove(elementStart, objectEnd(elementStart) - elementStart).Insert(elementStart, logicalType);
-              reflection = reflection.Replace(wireName, "\"name\": \"" + name + "\"");
-            }
-            writer.Write(reflection);
-          }
+        bool specified = Shader.CloneCustomMetadata().Contains("Targets");
+        string stage = Shader.GetMetadata("Stage");
+        Targets = specified ? Shader.GetMetadata("Targets")
+          : stage == "mesh" || stage == "task" ? "spirv;dxil" : "wgsl;spirv;dxil";
+        if (string.IsNullOrWhiteSpace(Targets)) {
+          Log.LogError("SlangShader Targets must not be empty.");
+          return false;
         }
       ]]></Code>
     </Task>
   </UsingTask>
-  <UsingTask TaskName="PrepareSlangSource" TaskFactory="RoslynCodeTaskFactory"
-             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
-    <ParameterGroup>
-      <Input ParameterType="System.String" Required="true" />
-      <Output ParameterType="System.String" Required="true" />
-    </ParameterGroup>
-    <Task>
-      <Using Namespace="System.IO" />
-      <Using Namespace="System.Text.RegularExpressions" />
-      <Using Namespace="System.Text" />
-      <Using Namespace="System" />
-      <Using Namespace="System.Collections.Generic" />
-      <Code Type="Fragment" Language="cs"><![CDATA[
-        string source = File.ReadAllText(Input);
-        if (source.IndexOf("lumyte.slang", StringComparison.Ordinal) < 0)
-        {
-            source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", "\n#ifdef LUMYTE_DXIL\nConstantBuffer<$1> $2 : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<$1> $2;\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<$1> $2;\n#endif\n");
-            File.WriteAllText(Output, source);
-            return true;
-        }
-
-        // A native aggregate has backend-specific vector/struct alignment.
-        // Keep the logical schema for reflection, but read its bytes through
-        // portable uint4 lanes (push constants, root constants, or WGSL uniform). No CPU-side numeric repacking is allowed.
-        source = Regex.Replace(source, @"(?:\[\[vk::binding\([^]]+\)\]\]\s*)?ConstantBuffer\s*<([^>]+)>\s+(\w+)\s*;", match =>
-        {
-            string type = match.Groups[1].Value.Trim();
-            string name = match.Groups[2].Value;
-            return $"\n#ifdef LUMYTE_DXIL\nConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name} : register(b8, space0);\n#elif defined(LUMYTE_SPIRV)\n[[vk::push_constant]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#else\n[[vk::binding(8, 0)]] ConstantBuffer<LumyteRootWire<{type}>> __lumyte_wire_{name};\n#endif\nstatic {type} {name} = __lumyte_wire_{name}.Load();\n";
-        });
-
-        var probes = new StringBuilder();
-        foreach (Match type in Regex.Matches(source, @"\bstruct\s+(\w+)\s*\{"))
-        {
-            string name = type.Groups[1].Value;
-            probes.AppendLine($"StructuredBuffer<Ptr<{name}>> __lumyte_schema_{name};");
-        }
-
-        source = probes.Append(source).ToString();
-        File.WriteAllText(Output, source);
-      ]]></Code>
-    </Task>
-  </UsingTask>
-  <!-- Every offline binary contains every ShaderTarget; no target selector is exposed. -->
-  <Target Name="CompileSlangShaders"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildProjectFullPath);$(SlangCompilerPath)"
+  <ItemGroup Condition="'@(SlangShader)' != ''">
+    <ProjectReference Include="$(_LumyteShaderToolProject)" ReferenceOutputAssembly="false" PrivateAssets="all"
+                      GlobalPropertiesToRemove="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed">
+      <SetConfiguration>Configuration=Release</SetConfiguration>
+    </ProjectReference>
+  </ItemGroup>
+  <!-- Use the shared MSBuild graph, not recursive independent dotnet build processes. -->
+  <Target Name="PrepareLumyteShaderCompiler" Condition="'@(SlangShader)' != ''">
+    <MSBuild Projects="$(_LumyteShaderToolProject)" Targets="Build" Properties="Configuration=Release"
+             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" BuildInParallel="false" />
+  </Target>
+  <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
+          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);$(_LumyteShaderTool);$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.Graphics.Shaders.dll;$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != ''">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
+    <ResolveSlangTargets Shader="@(SlangShader)">
+      <Output TaskParameter="Targets" PropertyName="_ResolvedSlangTargets" />
+    </ResolveSlangTargets>
     <MakeDir Directories="$(IntermediateOutputPath)Slang" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; -version" ConsoleToMSBuild="true">
-      <Output TaskParameter="ConsoleOutput" ItemName="_SlangCompilerVersion" />
-    </Exec>
-    <PrepareSlangSource Input="%(SlangShader.FullPath)" Output="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; %(SlangShader.Defines) -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target wgsl -DLUMYTE_WGSL=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).wgsl&quot;" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; %(SlangShader.Defines) -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target spirv -DLUMYTE_SPIRV=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).spv&quot;" />
-    <Exec Command="&quot;$(SlangCompilerPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).slang&quot; %(SlangShader.Defines) -entry &quot;%(SlangShader.EntryPoint)&quot; -stage &quot;%(SlangShader.Stage)&quot; -target dxil -profile sm_6_6 -DLUMYTE_DXIL=1 -I &quot;$(MSBuildThisFileDirectory)include&quot; -I &quot;%(SlangShader.RootDir)%(SlangShader.Directory).&quot; -matrix-layout-row-major -reflection-json &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).dxil.reflection.json&quot; -o &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).dxil&quot;" />
-    <PackSlangBinary Prefix="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName)"
-                     EntryPoint="%(SlangShader.EntryPoint)" Stage="%(SlangShader.Stage)"
-                     CompilerVersion="@(_SlangCompilerVersion, ' ')" />
-    <ItemGroup>
-      <_SlangCompilerVersion Remove="@(_SlangCompilerVersion)" />
-    </ItemGroup>
+    <Exec Command="&quot;$(_LumyteShaderDotnet)&quot; &quot;$(_LumyteShaderTool)&quot; &quot;%(SlangShader.FullPath)&quot; &quot;$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader&quot; &quot;%(SlangShader.EntryPoint)&quot; &quot;%(SlangShader.Stage)&quot; &quot;$(_ResolvedSlangTargets)&quot; &quot;$(SlangCompilerPath)&quot; %(SlangShader.Defines)" />
   </Target>
   <Target Name="EmbedSlangShaders" BeforeTargets="AssignTargetPaths"
           DependsOnTargets="CompileSlangShaders" Condition="'@(SlangShader)' != ''">

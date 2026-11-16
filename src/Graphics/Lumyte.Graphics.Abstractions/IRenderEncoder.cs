@@ -29,6 +29,16 @@ public interface IRenderEncoder
     /// <param name="pipeline">The same-device program.</param>
     void SetPipeline(IGraphicsPipeline pipeline);
 
+    /// <summary>Selects a live same-device mesh program without changing draw state.</summary>
+    /// <param name="pipeline">The borrowed mesh program.</param>
+    void SetPipeline(IMeshPipeline pipeline);
+
+    /// <summary>Dispatches mesh workgroups, or task workgroups when present; requires a mesh program and complete draw state.</summary>
+    /// <param name="x">Positive X count within enabled stage limits.</param>
+    /// <param name="y">Positive Y count within enabled stage limits.</param>
+    /// <param name="z">Positive Z count; axis and product overflow throw ArgumentOutOfRangeException before native recording.</param>
+    void DrawMeshTasks(uint x, uint y = 1, uint z = 1);
+
     /// <summary>Replaces draw state with a validated immutable snapshot.</summary>
     /// <param name="state">The state to snapshot.</param>
     void SetRenderState(GraphicsRenderStateDesc state);
@@ -49,7 +59,7 @@ public interface IRenderEncoder
     /// <param name="reference">The reference value.</param>
     void SetStencilReference(uint reference);
 
-    /// <summary>Records a direct draw with the explicit pipeline, state and arguments.</summary>
+    /// <summary>Records a direct draw with the explicit pipeline, state and arguments. A selected mesh program throws InvalidOperationException.</summary>
     /// <param name="vertexCount">The vertex count.</param>
     /// <param name="instanceCount">The instance count.</param>
     /// <param name="firstVertex">The first vertex index.</param>
@@ -64,7 +74,7 @@ public interface IRenderEncoder
     /// <param name="indices">The same-device unmapped buffer range with Index usage.</param>
     void SetIndexBuffer(BufferSlice<uint> indices);
 
-    /// <summary>Records an indexed draw using the selected index range.</summary>
+    /// <summary>Records an indexed draw using the selected index range. A selected mesh program throws InvalidOperationException.</summary>
     /// <param name="indexCount">The index count within the selected range.</param>
     /// <param name="instanceCount">The instance count.</param>
     /// <param name="firstIndex">The first index relative to the selected range.</param>
@@ -72,11 +82,11 @@ public interface IRenderEncoder
     /// <param name="firstInstance">The first instance.</param>
     void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0);
 
-    /// <summary>Records one GPU-sourced draw without reading command data on the CPU.</summary>
+    /// <summary>Records one GPU-sourced draw without reading command data on the CPU. A selected mesh program throws InvalidOperationException.</summary>
     /// <param name="arguments">Exactly one unmapped record with Indirect usage; FirstInstance must be zero.</param>
     void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments);
 
-    /// <summary>Records one GPU-sourced indexed draw with the selected index range.</summary>
+    /// <summary>Records one GPU-sourced indexed draw with the selected index range. A selected mesh program throws InvalidOperationException.</summary>
     /// <param name="arguments">Exactly one unmapped record with Indirect usage; FirstInstance must be zero.</param>
     void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments);
 

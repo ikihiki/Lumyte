@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Lumyte.ShaderCompiler" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>

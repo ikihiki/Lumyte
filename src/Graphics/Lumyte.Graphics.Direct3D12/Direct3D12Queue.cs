@@ -32,7 +32,8 @@ internal sealed class Direct3D12Queue(Direct3D12Device owner) : IGraphicsQueue
                 throw new ArgumentException("Semaphore waits require nonempty GPU stages.");
             }
 
-            CommandValidation.Scope(new(w.Stages, ResourceAccess.None));
+            PipelineStage stages = MeshShaderValidation.NormalizeStages(w.Stages, owner.Caps.Features);
+            CommandValidation.Scope(new(stages, ResourceAccess.None));
             return Own(w.Semaphore);
         }).ToArray();
         Direct3D12Semaphore[] signals = desc.SignalSemaphores.Select(Own).ToArray();
