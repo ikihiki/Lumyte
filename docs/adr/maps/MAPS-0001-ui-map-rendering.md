@@ -184,6 +184,13 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +    // Positionはsurface-local論理pixel、Deltaは正規化step（Y正は上向き）。
 +    public sealed record UiWheelInput(System.Numerics.Vector2 Position,
 +        System.Numerics.Vector2 Delta) : UiInput;
++    public readonly struct UiInputContext
++    {
++        // pointerに加えてwheelもreceiver-local座標を返す。非位置入力はnull。
++        public System.Numerics.Vector2? PointerPosition { get; }
++        // pointerに加えてwheelも確定したreceiver領域内かを返す。
++        public bool IsInside { get; }
++    }
 +}
 +namespace Lumyte.Maps
 +{
@@ -235,6 +242,9 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        // resourcesを借用。null、スキーマ不一致、不正容量は生成時に拒否する。
 +        public MapSession(Lumyte.Resources.ResourceManager resources, MapTileSet tiles,
 +            MapStyle style, MapSessionOptions options);
++        // 固定／有限候補モード。候補数はMaxPendingTiles以下。混在zoomは可視選択時のみ許可。
++        public MapSession(Lumyte.Resources.ResourceManager resources, MapTileSet tiles,
++            MapStyle style, MapSessionOptions options, System.Collections.Generic.IReadOnlyList<MapTileId> fixedTiles);
 +        public MapCamera Camera { get; }
 +        public int SourceZoom { get; }
 +        public System.Collections.Generic.IReadOnlyList<MapTileId> VisibleTiles { get; }
