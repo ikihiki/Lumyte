@@ -150,6 +150,7 @@
   <Folder Name="/src/Graphics/">
     <Project Path="src/Graphics/Lumyte.Graphics.Validation/Lumyte.Graphics.Validation.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Svg/Lumyte.Graphics.Svg.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing2D.RenderGraph/Lumyte.Resources.Graphics.Drawing2D.RenderGraph.csproj" />
     <Project Path="src/Graphics/Lumyte.Resources.Graphics.Drawing/Lumyte.Resources.Graphics.Drawing.csproj" />
@@ -253,6 +254,7 @@
     <Project Path="tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Hosting.Tests/Lumyte.Graphics.Hosting.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Graphics.Svg.Tests/Lumyte.Graphics.Svg.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Input/">
