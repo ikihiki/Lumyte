@@ -21,6 +21,8 @@
         "BenchmarkGraphicsIntegration",
         "BenchmarkInput",
         "BenchmarkSignals",
+        "BenchmarkUI",
+        "BenchmarkUIIntegration",
         "CheckFormat",
         "CheckMarkdown",
         "CheckNativeFormat",
@@ -77,7 +79,8 @@
         "TestWindowing",
         "VerifyEnvironment",
         "VerifyNamedColors",
-        "VerifySdk"
+        "VerifySdk",
+        "WgpuNative"
       ]
     },
     "Verbosity": {
@@ -301,6 +304,10 @@
         "Toolchain": {
           "type": "string",
           "description": "Rust toolchain override"
+        },
+        "SkipWgpuPackage": {
+          "type": "boolean",
+          "description": "Exclude Wgpu packaging until corrected native assets from all supported RIDs have been collected."
         }
       }
     },

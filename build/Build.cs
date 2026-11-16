@@ -28,6 +28,9 @@ internal sealed partial class Build : FalloutBuild
     [Parameter("Exclude Parley packaging until native assets from all supported RIDs have been collected.")]
     public bool SkipParleyPackage { get; set; }
 
+    [Parameter("Exclude Wgpu packaging until corrected native assets from all supported RIDs have been collected.")]
+    public bool SkipWgpuPackage { get; set; }
+
     [Parameter("Build and package only projects supported by the current host OS.")]
     public bool HostOnly { get; set; }
 

@@ -120,6 +120,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     public void Dispose()
     {
         _disposed = true;
+        _context.ArgumentPlan.RetirePreparedResources(_pages.SelectMany(page => page.Scopes));
         foreach (Page page in _pages)
         {
             page.Unmap();
