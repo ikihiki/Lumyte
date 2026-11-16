@@ -211,6 +211,13 @@ try {
         const audit = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true });
         verifySoftwareWebGpu(audit.result.value);
     }
+    if (browserGpuTraceEnabled()) {
+        const events = progress.filter(value => value.startsWith("Browser GPU trace: ")).map(value => JSON.parse(value.slice("Browser GPU trace: ".length)));
+        assert.ok(events.some(value => value.method === "dispatchWorkgroups" && value.status === "returned"), "PathProbe must actually dispatch shape membership");
+        assert.ok(events.some(value => value.method === "onSubmittedWorkDone" && value.status === "fulfilled"), "Submitted GPU work must complete");
+        assert.ok(!events.some(value => value.method === "uncapturederror" || value.method === "shader.compilation" && value.status === "error" || value.method === "device.lost" && value.status !== "destroyed"), "GPU trace must contain no validation, compilation or unexpected loss errors");
+        if (process.env.LUMYTE_BROWSER_SUCCESS_REPORT) await writeFile(process.env.LUMYTE_BROWSER_SUCCESS_REPORT, JSON.stringify({ errors, progress }, null, 2));
+    }
     console.log("UI Application Browser WebGPU smoke passed: presentation, animation midpoint/final GPU pixels, freeze/resume, automation GPU PNG, normal input, orderly stop and borrowed canvas.");
 } catch (error) {
     let state;

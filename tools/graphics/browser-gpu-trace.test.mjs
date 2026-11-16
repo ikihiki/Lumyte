@@ -188,3 +188,8 @@ test("shader diagnostics return original module and report compilation without s
     assert.ok(f.logs.some(e => e.method === "shader.source" && e.code === descriptor.code));
     assert.ok(f.logs.some(e => e.method === "shader.compilation" && e.message === "bad shader" && e.line === 7));
 });
+
+test("Application trace gate requires real membership dispatch and queue completion, not IsPresented alone", async () => {
+    const source = await readFile(new URL("../../samples/Lumyte.UI.Application.Browser.Sample/verify-browser.mjs", import.meta.url), "utf8");
+    for (const required of ['value.method === "dispatchWorkgroups" && value.status === "returned"', 'value.method === "onSubmittedWorkDone" && value.status === "fulfilled"', 'value.method === "device.lost" && value.status !== "destroyed"', "LUMYTE_BROWSER_SUCCESS_REPORT"]) assert.ok(source.includes(required), required);
+});
