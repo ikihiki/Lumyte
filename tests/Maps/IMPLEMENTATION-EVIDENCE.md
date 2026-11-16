@@ -6,6 +6,10 @@ and are superseded only where the later source and tests explicitly establish th
 Owned checkout: /home/hideaki/.cache/lumyte-maps-implementation.
 M1 branch feat/maps-m1-local-mvt, commit 7b6e89879b7f8dddee19d9b03c40f870ae4b42c7.
 M2 branch feat/maps-m2-fixed-ui starts from that exact commit.
+The parent subsequently integrated the adopted ownership-clip ADR and cherry-picked the isolated parser
+fix onto M1; final M1 is 0192d777a08db86a477a9cdc6a438eed7551a4d4. Its independent rebuilt Release
+suite passes 17/17 (zero skips), /tmp/maps-parent-m1-final.log. M2 includes that exact downstack head.
+Historical failures and interim counts below are retained as provenance; final results supersede them.
 
 ## Environment
 
@@ -38,7 +42,7 @@ Raw actual hardware RGBA readback: /tmp/lumyte-map-gpu-rgba.bin; PNG conversion
 /tmp/lumyte-map-gpu.png (64 x 64), SHA256 ffbc90d4efc5b50d4f9d71e5a923d5af627b81b1b201b00fc442da86d7bb669b.
 These artifacts are outside Git; no generated binary was added.
 
-## Incomplete milestone acceptance
+## Historical handoff gaps (superseded by final verification below)
 
 The implemented native vertical slices are usable, but the complete requested M2 acceptance is not
 claimed: Browser execution and the broader DPI/parent-clip/overlay/edge GPU matrix remain incomplete.
@@ -76,10 +80,10 @@ by its actual UI parent. Full direct/retained readbacks match; 11 tests passed /
 The standard existing LUMYTE_GRAPHICS_GPU_TESTS=1 enables these tests, with the prior map flag as an alias.
 Canonical slnx discovery through build Test includes Maps projects without CI gate edits.
 
-**New failing hardware acceptance:** at a half-logical-pixel ownership boundary x=191.5, adjacent tile
+**Historical failing hardware acceptance (fixed below):** at a half-logical-pixel ownership boundary x=191.5, adjacent tile
 clip coverages compose independently. Expected flat blue sRGB188 is actual177 at the shared edge.
 Direct/retained parity still holds, so it does not detect this renderer-level compositing error.
-The analytic oracle is retained unchanged in MapVisualTests; the full latest suite is failing (1 failed,
+The analytic oracle is retained unchanged in MapVisualTests; the suite at that pre-fix snapshot was failing (1 failed,
 10 passed, zero skipped), /tmp/maps-fractional-edge-gpu.log. No tolerance widening, boundary snapping,
 or test removal was applied. Raw /tmp/lumyte-map-dpi-1-0.17578125.rgba. A public Canvas sample-coherent
 ownership clipping/compositing facility is not present; modifying generic Graphics production is outside
