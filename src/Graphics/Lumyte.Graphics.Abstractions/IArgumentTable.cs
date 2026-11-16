@@ -31,8 +31,9 @@ public interface IArgumentTable : IDisposable
     /// <typeparam name="T">The unmanaged buffer element type.</typeparam>
     /// <param name="slot">The caller-managed logical registration slot.</param>
     /// <param name="range">The shader range from this device.</param>
+    /// <param name="access">The chosen storage access supported by buffer usage capabilities.</param>
     /// <returns>The opaque registration reference.</returns>
-    IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
+    IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
         where T : unmanaged;
 
     /// <summary>Releases an idle texture slot; the caller must stop using its old references.</summary>
@@ -47,11 +48,11 @@ public interface IArgumentTable : IDisposable
     /// <param name="slot">The caller-managed logical registration slot.</param>
     void ReleaseBuffer(uint slot);
 
-    /// <summary>Registers a CPU-set shader data range without transferring values.</summary>
+    /// <summary>Registers a read-only CPU-set shader data range without transferring values.</summary>
     /// <typeparam name="T">The logical shader data element type.</typeparam>
     /// <param name="slot">The logical buffer slot.</param>
     /// <param name="range">The nonempty range from this device.</param>
     /// <returns>The opaque range reference.</returns>
     IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : struct, IShaderData;
+        where T : struct, IShaderArguments;
 }

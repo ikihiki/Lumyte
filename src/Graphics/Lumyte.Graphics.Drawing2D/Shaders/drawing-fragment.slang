@@ -277,6 +277,23 @@ float4 evaluate<let capacity : int>(float2 pixel)
             }
         }
         else if(n.Kind==15) value=values[n.First]*distanceFieldCoverage(n,p);
+        else if(n.Kind==16)
+        {
+            float2 sampleIndex=floor(pixel*4);
+            value=all(sampleIndex>=n.A.xy) && all(sampleIndex<n.A.zw) ? values[n.First] : float4(0);
+        }
+        else if(n.Kind==17)
+        {
+            int2 point=int2(floor(pixel))-int2(n.A.xy);
+            if(all(point>=0) && all(point<int2(n.A.zw)))
+            {
+                uint index=uint(point.y)*uint(n.A.z)+uint(point.x);
+                float4 packed=arguments.Data.Load(min(n.Count+index/4,arguments.Data.Count-1));
+                uint bits=uint(packed[index%4]);
+                uint2 sub=uint2(floor(frac(pixel)*4));
+                value=((bits>>(sub.y*4+sub.x))&1)!=0 ? values[n.First] : float4(0);
+            }
+        }
         values[i]=value;
     }
     return values[arguments.Root];

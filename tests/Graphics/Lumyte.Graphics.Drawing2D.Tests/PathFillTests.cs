@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 using Xunit;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -17,12 +18,12 @@ public sealed class PathFillTests
         builder.LineTo(new Vector2(0, 10));
         Path2D path = builder.Build();
         var canvas = new Canvas2D();
-        Assert.Throws<InvalidOperationException>(() => canvas.FillPath(path, default(Color2D)));
+        Assert.Throws<InvalidOperationException>(() => canvas.FillPath(path, default(SRgba<float>)));
         canvas.Begin();
         canvas.Translate(new Vector2(3, 4));
-        Assert.Throws<ArgumentNullException>(() => canvas.FillPath(null!, default(Color2D)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillPath(path, default(Color2D), (FillRule2D)42));
-        canvas.FillPath(path, new Color2D(1, 1, 1, 1), FillRule2D.EvenOdd);
+        Assert.Throws<ArgumentNullException>(() => canvas.FillPath(null!, default(SRgba<float>)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => canvas.FillPath(path, default(SRgba<float>), (FillRule2D)42));
+        canvas.FillPath(path, new SRgba<float>(1, 1, 1, 1), FillRule2D.EvenOdd);
         canvas.Translate(Vector2.One);
         builder.Close();
 
@@ -51,14 +52,14 @@ public sealed class PathFillTests
         canvas.Begin();
         canvas.ClipRect(new Rect2D(0, 0, 40, 40));
         canvas.Translate(new Vector2(10, 20));
-        canvas.FillPath(builder.Build(), new Color2D(1, 0, 0, 0.5f), FillRule2D.EvenOdd);
+        canvas.FillPath(builder.Build(), new SRgba<float>(1, 0, 0, 0.5f), FillRule2D.EvenOdd);
         DrawingCommand2D command = Assert.Single(canvas.End().Commands);
         var target = new DrawingTargetInfo2D
         {
             Description = new TextureDesc { Width = 200, Height = 200, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment },
             PixelScale = 2,
         };
-        var program = new DrawingProgram2D(null!, null!, target);
+        var program = new DrawingProgram2D(new ArgumentTablePlan(new ProfilingDevice()).CreateShaderResources(), target);
         uint root = program.Compile(command);
         program.ValidateFiniteData();
 
@@ -72,7 +73,10 @@ public sealed class PathFillTests
         Assert.Equal(new Vector4(0, 0.5f, -20, 0), outline.T1);
         Assert.Equal(new Vector4(0.5f, 0, 0, 0.5f), program.Instructions[1].A);
         Assert.Equal(11u, program.Instructions[(int)root].Kind);
-        Assert.Equal(2, program.Instructions.Count(instruction => instruction.Kind == 4));
+        Assert.Single(program.Instructions, instruction => instruction.Kind == 4);
+        Assert.Equal(NormalizedClipKind2D.Scissor, program.Clip!.Kind);
+        Assert.Equal(new ScissorRect(0, 0, 80, 80), program.Clip.Bounds);
+        Assert.DoesNotContain(program.Instructions, instruction => instruction.Kind is 16 or 17);
 
         ScissorRect scissor = DrawingBounds2D.GetScissor(command, null, target, null, false, false);
         Assert.Equal(new ScissorRect(21, 43, 42, 38), scissor);

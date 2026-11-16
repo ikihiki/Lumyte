@@ -83,7 +83,10 @@ try {
         } else if (message.method === "Runtime.consoleAPICalled") {
             const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
             if (message.params.type === "error") { errors.push(text); }
-            else { progress.push(text); }
+            else {
+                progress.push(text);
+                if (process.env.LUMYTE_BROWSER_PROGRESS === "1") { console.log(text); }
+            }
         }
     });
     function command(method, params = {}) {

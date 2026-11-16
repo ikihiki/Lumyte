@@ -4,6 +4,12 @@ namespace Lumyte.Animation;
 /// <typeparam name="T">The value type.</typeparam>
 public interface IAnimationInterpolator<T>
 {
+    /// <summary>Validates an input before an animation source stores it; the default accepts any value.</summary>
+    /// <param name="value">The endpoint or keyframe value.</param>
+    void Validate(T value)
+    {
+    }
+
     /// <summary>Interpolates two values using the supplied progress.</summary>
     /// <param name="from">The from.</param>
     /// <param name="to">The to.</param>

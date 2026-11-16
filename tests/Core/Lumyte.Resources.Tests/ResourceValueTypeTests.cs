@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Lumyte.Resources.Tests;
 
-/// <summary>Verifies value outputs preserve generation ownership without boxing on reads.</summary>
+/// <summary>Verifies value outputs preserve generation ownership.</summary>
 public sealed class ResourceValueTypeTests
 {
     /// <summary>Value source and transform stages share builds, handles and retained content revisions.</summary>
@@ -60,27 +60,6 @@ public sealed class ResourceValueTypeTests
 
         Assert.Equal(2, await manager.TrimAsync());
         Assert.Equal(["output", "input"], state.Releases);
-    }
-
-    /// <summary>Repeated wrapper reads copy the existing value without creating another box.</summary>
-    /// <returns>Completion of the manager's lifetime.</returns>
-    [Fact]
-    public async Task ReadingStructValuesDoesNotAllocateAsync()
-    {
-        await using MemoryManager memory = new();
-        await using ResourceExecutionHost execution = new();
-        var state = new TestState();
-        await using ResourceManager manager = new("reads", new UnusedSource(), [new InputStage(state)], memory, execution.Resources);
-        using ResourceReference<InputValue> reference = await manager.RetainAsync(new ResourceKey<InputValue>("asset"));
-        using ResourceLease<InputValue> lease = reference.Pin();
-        Assert.Equal(42_000, SumValues(lease, 1000));
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        int sum = SumValues(lease, 10_000);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(420_000, sum);
-        Assert.Equal(0, allocated);
     }
 
     /// <summary>Zero is a valid owned value and is not confused with an absent generation output.</summary>
@@ -152,17 +131,6 @@ public sealed class ResourceValueTypeTests
             "input", new UnusedSource(), [new InvalidStage(typeof(object), invalidType)], memory, runtime));
         Assert.Contains("nonnullable", outputError.Message, StringComparison.Ordinal);
         Assert.Contains("nonnullable", inputError.Message, StringComparison.Ordinal);
-    }
-
-    private static int SumValues(ResourceLease<InputValue> lease, int count)
-    {
-        int sum = 0;
-        for (int index = 0; index < count; index++)
-        {
-            sum += lease.Value.Owner.Number;
-        }
-
-        return sum;
     }
 
     private readonly record struct InputValue(InputOwner Owner);

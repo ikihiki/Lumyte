@@ -1,5 +1,15 @@
 #include "lumyte.slang"
 
+// A member and a parameter deliberately shadow the global root identifier.
+// Shader preparation must let the compiler resolve scopes, not rewrite tokens.
+struct BindingIdentifierProbe { uint arguments; };
+uint BindingIdentity(uint arguments)
+{
+    BindingIdentifierProbe value;
+    value.arguments = arguments;
+    return value.arguments;
+}
+
 struct BindingVector { float3 Value; };
 struct BindingPackedVector { uint Id; float3 Color; };
 struct BindingNestedVector { BindingVector Child; uint Tail; };
@@ -23,7 +33,7 @@ void main()
         BindingVector vectorValue = arguments.Vectors.Load(i);
         BindingPackedVector packed = arguments.Packed.Load(i);
         BindingNestedVector nested = arguments.Nested.Load(i);
-        arguments.Output.Store(i * 3, uint(vectorValue.Value.x));
+        arguments.Output.Store(i * 3, BindingIdentity(uint(vectorValue.Value.x)));
         arguments.Output.Store(i * 3 + 1, uint(vectorValue.Value.y));
         arguments.Output.Store(i * 3 + 2, uint(vectorValue.Value.z));
         arguments.Output.Store(6 + i * 4, packed.Id);

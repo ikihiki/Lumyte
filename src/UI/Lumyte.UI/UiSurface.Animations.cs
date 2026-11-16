@@ -65,142 +65,153 @@ public sealed partial class UiSurface
     /// <summary>Evaluates one animation phase; layout, recording and getters never advance time.</summary>
     public void AdvanceAnimations()
     {
-        ThrowIfDisposed();
-        if (_animationFailure is { } failed)
-        {
-            ExceptionDispatchInfo.Capture(failed).Throw();
-        }
-
-        if (_notifyingFrameFreeze || _advancingAnimations || _dispatchDepth != 0 || _layoutPass is not null || _recordDepth != 0 || _applyingRebuild)
-        {
-            throw new InvalidOperationException("Advance animations once at the owner's update boundary.");
-        }
-
-        if (!_animationUpdatesEnabled)
-        {
-            return;
-        }
-
-        _advancingAnimations = true;
+        using UiProfiling.Scope? profile = UiProfiling.Begin(7);
         try
         {
-            UpdateTree();
-            TimePoint? capturedTime = HasVisibleFrameAnimation() || _presenceEntries.Count != 0 ? _animationClock.Now : null;
-            if (_frameAnimations.Count != 0)
+            ThrowIfDisposed();
+            if (_animationFailure is { } failed)
             {
-                AdvanceFrameAnimations(capturedTime);
+                ExceptionDispatchInfo.Capture(failed).Throw();
             }
 
-            if (_isDisposed || !_animationUpdatesEnabled || _animationFailure is not null)
+            if (_notifyingFrameFreeze || _advancingAnimations || _dispatchDepth != 0 || _layoutPass is not null || _recordDepth != 0 || _applyingRebuild)
             {
-                if (_animationFailure is { } frameFailure)
-                {
-                    ExceptionDispatchInfo.Capture(frameFailure).Throw();
-                }
+                throw new InvalidOperationException("Advance animations once at the owner's update boundary.");
+            }
 
+            if (!_animationUpdatesEnabled)
+            {
+                profile?.Skip();
                 return;
             }
 
-            if (_presenceEntries.Count != 0)
-            {
-                AdvanceVisuals(capturedTime!.Value);
-            }
-
-            if (_isDisposed || _animationProducers.Count == 0)
-            {
-                return;
-            }
-
-            if (!HasAnimationWork())
-            {
-                return;
-            }
-
-            HashSet<UiAnimationProducer> visible = _visibleAnimationProducers;
-            visible.Clear();
-            foreach (KeyValuePair<UiElement, AnimationLease> entry in _animatedElements)
-            {
-                AnimationLease lease = entry.Value;
-                for (int index = 0; index < lease.Projections.Count; index++)
-                {
-                    UiAnimationProducer producer = lease.Projections[index].Producer;
-                    if ((producer.IsRunning || producer.HasPending) && !visible.Contains(producer) && IsAnimationVisible(entry.Key))
-                    {
-                        visible.Add(producer);
-                    }
-                }
-            }
-
-            bool needsEvaluation = false;
-            foreach (UiAnimationProducer producer in _animationProducers)
-            {
-                if (!visible.Contains(producer))
-                {
-                    producer.Freeze();
-                }
-                else
-                {
-                    needsEvaluation |= producer.IsRunning || producer.HasPending;
-                }
-            }
-
-            if (!needsEvaluation)
-            {
-                return;
-            }
-
-            TimePoint now = capturedTime ?? _animationClock.Now;
-            UiAnimationProducer[] snapshot = _animationProducers.ToArray();
-            var callbacks = new List<(UiAnimationProducer Producer, ulong Generation, Action Callback)>();
-            _publishingAnimations = true;
+            _advancingAnimations = true;
             try
             {
-                foreach (UiAnimationProducer producer in snapshot)
+                UpdateTree();
+                TimePoint? capturedTime = HasVisibleFrameAnimation() || _presenceEntries.Count != 0 ? _animationClock.Now : null;
+                if (_frameAnimations.Count != 0)
                 {
-                    producer.Stage(now, visible.Contains(producer));
+                    AdvanceFrameAnimations(capturedTime);
                 }
 
-                PublishAnimationValues(snapshot, visible);
-
-                foreach (UiAnimationProducer producer in snapshot)
+                if (_isDisposed || !_animationUpdatesEnabled || _animationFailure is not null)
                 {
-                    foreach (Action callback in producer.TakeNotifications())
+                    if (_animationFailure is { } frameFailure)
                     {
-                        callbacks.Add((producer, producer.Generation, callback));
+                        ExceptionDispatchInfo.Capture(frameFailure).Throw();
+                    }
+
+                    return;
+                }
+
+                if (_presenceEntries.Count != 0)
+                {
+                    AdvanceVisuals(capturedTime!.Value);
+                }
+
+                if (_isDisposed || _animationProducers.Count == 0)
+                {
+                    return;
+                }
+
+                if (!HasAnimationWork())
+                {
+                    return;
+                }
+
+                HashSet<UiAnimationProducer> visible = _visibleAnimationProducers;
+                visible.Clear();
+                foreach (KeyValuePair<UiElement, AnimationLease> entry in _animatedElements)
+                {
+                    AnimationLease lease = entry.Value;
+                    for (int index = 0; index < lease.Projections.Count; index++)
+                    {
+                        UiAnimationProducer producer = lease.Projections[index].Producer;
+                        if ((producer.IsRunning || producer.HasPending) && !visible.Contains(producer) && IsAnimationVisible(entry.Key))
+                        {
+                            visible.Add(producer);
+                        }
                     }
                 }
+
+                bool needsEvaluation = false;
+                foreach (UiAnimationProducer producer in _animationProducers)
+                {
+                    if (!visible.Contains(producer))
+                    {
+                        producer.Freeze();
+                    }
+                    else
+                    {
+                        needsEvaluation |= producer.IsRunning || producer.HasPending;
+                    }
+                }
+
+                if (!needsEvaluation)
+                {
+                    return;
+                }
+
+                TimePoint now = capturedTime ?? _animationClock.Now;
+                UiAnimationProducer[] snapshot = _animationProducers.ToArray();
+                var callbacks = new List<(UiAnimationProducer Producer, ulong Generation, Action Callback)>();
+                _publishingAnimations = true;
+                try
+                {
+                    foreach (UiAnimationProducer producer in snapshot)
+                    {
+                        UiProfiling.Add(7, 701);
+                        producer.Stage(now, visible.Contains(producer));
+                    }
+
+                    PublishAnimationValues(snapshot, visible);
+
+                    foreach (UiAnimationProducer producer in snapshot)
+                    {
+                        foreach (Action callback in producer.TakeNotifications())
+                        {
+                            callbacks.Add((producer, producer.Generation, callback));
+                        }
+                    }
+                }
+                finally
+                {
+                    _publishingAnimations = false;
+                }
+
+                UpdateTree();
+                foreach ((UiAnimationProducer producer, ulong generation, Action callback) in callbacks)
+                {
+                    if (_isDisposed || !_animationUpdatesEnabled)
+                    {
+                        break;
+                    }
+
+                    if (producer.IsConnected && _animationProducers.Contains(producer) && producer.Generation == generation)
+                    {
+                        callback();
+                        if (!_isDisposed)
+                        {
+                            UpdateTree();
+                        }
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                LatchAnimationFailure(error);
+                throw;
             }
             finally
             {
-                _publishingAnimations = false;
-            }
-
-            UpdateTree();
-            foreach ((UiAnimationProducer producer, ulong generation, Action callback) in callbacks)
-            {
-                if (_isDisposed || !_animationUpdatesEnabled)
-                {
-                    break;
-                }
-
-                if (producer.IsConnected && _animationProducers.Contains(producer) && producer.Generation == generation)
-                {
-                    callback();
-                    if (!_isDisposed)
-                    {
-                        UpdateTree();
-                    }
-                }
+                _advancingAnimations = false;
             }
         }
         catch (Exception error)
         {
-            LatchAnimationFailure(error);
+            profile?.Fail(error);
             throw;
-        }
-        finally
-        {
-            _advancingAnimations = false;
         }
     }
 

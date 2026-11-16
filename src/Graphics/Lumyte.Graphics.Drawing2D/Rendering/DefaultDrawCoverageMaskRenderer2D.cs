@@ -13,5 +13,5 @@ public sealed class DefaultDrawCoverageMaskRenderer2D : IDrawCoverageMaskRendere
         RenderPreparationContext2D context,
         ReadOnlyMemory<DrawCoverageMaskCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRecordBatch2D.PrepareAsync(context, commands, cancellationToken);
 }

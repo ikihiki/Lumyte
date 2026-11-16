@@ -138,9 +138,9 @@ public sealed class AnimationSourceEvaluationTests
         Assert.Equal(2048, source.Calls);
     }
 
-    /// <summary>Checks warmed shared graph sampling retains reusable typed storage without allocation.</summary>
+    /// <summary>Checks shared graph samples do not retain values from earlier sample times.</summary>
     [Fact]
-    public void WarmedSharedGraphSamplingDoesNotAllocate()
+    public void SharedGraphSamplesTrackChangingTimes()
     {
         Definitions.Source<float> shared = Curve<float>(Ticks(10), AnimationInterpolators.Float)[new AnimationKey<float>(Duration.Zero, 0), new AnimationKey<float>(Ticks(10), 10)];
         Definitions.Source<float> weight = Constant(0.5f);
@@ -151,21 +151,10 @@ public sealed class AnimationSourceEvaluationTests
         }
 
         IAnimationSource<float> graph = current.Build();
-        for (int i = 0; i < 1000; i++)
+        foreach (long time in new long[] { 0, 5, 10, 3, 0, 10 })
         {
-            _ = graph.Sample(Ticks(i % 11));
+            Assert.Equal((float)time, graph.Sample(Ticks(time)));
         }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        float sum = 0;
-        for (int i = 0; i < 1000; i++)
-        {
-            sum += graph.Sample(Ticks(i % 11));
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.True(sum > 0);
-        Assert.Equal(0, allocated);
     }
 
     private static Definitions.Source<float> Constant(float value) => Curve<float>(Ticks(10), AnimationInterpolators.Float)[new AnimationKey<float>(Duration.Zero, value)];

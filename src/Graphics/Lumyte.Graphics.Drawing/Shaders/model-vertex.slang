@@ -56,7 +56,11 @@ struct ModelDrawArguments
     GpuTextureRef EmissiveTexture;
     GpuSamplerRef EmissiveSampler;
 };
-ConstantBuffer<ModelDrawArguments> arguments;
+struct ModelDrawRoot
+{
+    GpuBufferRef<ModelDrawArguments> Draw;
+};
+ConstantBuffer<ModelDrawRoot> arguments;
 
 struct ModelOutput
 {
@@ -71,14 +75,15 @@ struct ModelOutput
 [shader("vertex")]
 ModelOutput main(uint vertexId : SV_VertexID)
 {
-    ModelVertex vertex = arguments.Vertices.Load(vertexId);
+    ModelDrawArguments draw = arguments.Draw.Load(0);
+    ModelVertex vertex = draw.Vertices.Load(vertexId);
     ModelOutput output;
-    float4 world = mul(float4(vertex.Position, 1), arguments.World);
-    output.Position = mul(world, arguments.ViewProjection);
+    float4 world = mul(float4(vertex.Position, 1), draw.World);
+    output.Position = mul(world, draw.ViewProjection);
     output.WorldPosition = world.xyz;
-    output.Normal = mul(float4(vertex.Normal, 0), arguments.NormalTransform).xyz;
-    float3 tangent = mul(float4(vertex.Tangent.xyz, 0), arguments.World).xyz;
-    float orientation = determinant(float3x3(arguments.World[0].xyz, arguments.World[1].xyz, arguments.World[2].xyz)) < 0 ? -1 : 1;
+    output.Normal = mul(float4(vertex.Normal, 0), draw.NormalTransform).xyz;
+    float3 tangent = mul(float4(vertex.Tangent.xyz, 0), draw.World).xyz;
+    float orientation = determinant(float3x3(draw.World[0].xyz, draw.World[1].xyz, draw.World[2].xyz)) < 0 ? -1 : 1;
     output.Tangent = float4(tangent, vertex.Tangent.w * orientation);
     output.TexCoord = vertex.TexCoord;
     output.Color = vertex.Color;

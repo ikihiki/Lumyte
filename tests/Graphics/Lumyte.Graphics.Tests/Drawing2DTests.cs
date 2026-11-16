@@ -7,6 +7,7 @@ using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Resources;
 using Xunit;
 using Graph = Lumyte.Graphics.RenderGraph.RenderGraph;
@@ -16,9 +17,10 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks the complete 2D pipeline against independently specified GPU pixel results.</summary>
 public sealed partial class Drawing2DTests
 {
-    private static readonly Color2D _white = new(1, 1, 1, 1);
-    private static readonly Color2D _red = new(1, 0, 0, 1);
-    private static readonly Color2D _blue = new(0, 0, 1, 1);
+    private static readonly AsyncLocal<bool> _fixedRecordEffects = new();
+    private static readonly SRgba<float> _white = new(1, 1, 1, 1);
+    private static readonly SRgba<float> _red = new(1, 0, 0, 1);
+    private static readonly SRgba<float> _blue = new(0, 0, 1, 1);
     private static readonly BarrierScope _copyRead = new(PipelineStage.Copy, ResourceAccess.CopyRead);
     private static readonly BarrierScope _copyWrite = new(PipelineStage.Copy, ResourceAccess.CopyWrite);
     private static readonly BarrierScope _sampleRead = new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
@@ -95,6 +97,18 @@ public sealed partial class Drawing2DTests
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
         await CheckComposedEffectsAsync(device);
+        _fixedRecordEffects.Value = true;
+        try
+        {
+            await CheckLayersAsync(device);
+            await CheckEffectsAsync(device);
+            await CheckBackdropAsync(device);
+            await CheckComposedEffectsAsync(device);
+        }
+        finally
+        {
+            _fixedRecordEffects.Value = false;
+        }
     }
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
@@ -107,6 +121,18 @@ public sealed partial class Drawing2DTests
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
         await CheckComposedEffectsAsync(device);
+        _fixedRecordEffects.Value = true;
+        try
+        {
+            await CheckLayersAsync(device);
+            await CheckEffectsAsync(device);
+            await CheckBackdropAsync(device);
+            await CheckComposedEffectsAsync(device);
+        }
+        finally
+        {
+            _fixedRecordEffects.Value = false;
+        }
     }
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
@@ -131,8 +157,8 @@ public sealed partial class Drawing2DTests
     {
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(1, 0, 2, 2), new Color2D(0.5f, 0.5f, 0.5f, 1));
-        canvas.FillCircle(Vector2.Zero, 1, new Color2D(0, 0, 0, 0));
+        canvas.FillRect(new(1, 0, 2, 2), new SRgba<float>(0.5f, 0.5f, 0.5f, 1));
+        canvas.FillCircle(Vector2.Zero, 1, new SRgba<float>(0, 0, 0, 0));
         DrawList2D list = canvas.End();
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
@@ -285,7 +311,7 @@ public sealed partial class Drawing2DTests
         {
             canvas.FillRect(new(0, 0, 8, 1), PaintGraph2D.LinearGradient(Vector2.Zero, new(8, 0), transparentBlueToRed));
             canvas.FillRect(new(0, 1, 8, 1), PaintGraph2D.LinearGradient(Vector2.Zero, new(4, 0), new(4, 4), blackToWhite, ExtendMode2D.Pad));
-            canvas.FillRect(new(0, 2, 8, 1), new Color2D(0.5f, 0.5f, 0.5f, 1));
+            canvas.FillRect(new(0, 2, 8, 1), new SRgba<float>(0.5f, 0.5f, 0.5f, 1));
             canvas.FillRect(new(0, 3, 8, 1), PaintGraph2D.LinearGradient(Vector2.Zero, new(4, 0), blackToWhite, ExtendMode2D.Reflect));
         });
         AssertPixel(pixels, 8, 3, 0, new(0.4375f, 0, 0, 0.4375f));
@@ -551,7 +577,7 @@ public sealed partial class Drawing2DTests
     {
         Vector4[] translucent = await RenderAsync(device, 4, 2, canvas =>
         {
-            canvas.FillRect(new(0, 0, 4, 2), new Color2D(1, 0, 0, 0.5f));
+            canvas.FillRect(new(0, 0, 4, 2), new SRgba<float>(1, 0, 0, 0.5f));
             canvas.DrawBackdropEffect(new() { OutputBounds = new(1.5f, 0, 2.5f, 2), Effects = graph => graph.AppendOpacity(graph.Source, 0.5f) });
             canvas.FillRect(new(3, 0, 1, 2), _blue);
         });
@@ -596,8 +622,9 @@ public sealed partial class Drawing2DTests
         AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
     }
 
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false)
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null)
     {
+        useDefaultResources |= _fixedRecordEffects.Value;
         using ExternalDrawingResources? resources = useDefaultResources ? null : new(device);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
@@ -618,7 +645,11 @@ public sealed partial class Drawing2DTests
             Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled | TextureUsage.CopySource,
         };
         RenderGraphTexture target = graph.CreateTexture(description, "canvas");
-        using var renderer = new RenderGraphRenderer2D(DrawingCommandRenderers2D.CreateDefault(), list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources?.Resources, resourceOwner: resources);
+        var defaults = DrawingCommandRenderers2D.CreateDefault();
+        DrawingCommandRenderers2D strategies = individualPaths
+            ? new(defaults.FillRect, defaults.FillRoundedRect, defaults.FillCircle, defaults.DrawLine, new IndividualPathRenderer(), defaults.StrokePath, defaults.DrawImage, defaults.DrawCoverageMask, defaults.DrawDistanceField, defaults.DrawMesh, defaults.DrawPaintGraph)
+            : defaults;
+        using var renderer = new RenderGraphRenderer2D(strategies, list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources?.Resources, resourceOwner: resources);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);
@@ -638,7 +669,7 @@ public sealed partial class Drawing2DTests
         {
             plan = graph.Compile();
             commands = device.CreateCommandBuffer(new());
-            plan.Record(commands);
+            plan.Record(observe?.Invoke(commands) ?? commands);
             commands.Finish();
             submission = device.Queue.Submit([commands]);
             await submission.WaitAsync();

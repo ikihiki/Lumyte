@@ -78,6 +78,10 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `TestUiMedia` | Media・Parley adapterの単体検査と実フォントを渡すHeadless sample（先にsolutionをCompile） |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
 | `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
+| `BenchmarkCore` / `BenchmarkAnimation` / `BenchmarkInput` | 対象別のカタログ列挙・method選択・BenchmarkDotNet測定 |
+| `BenchmarkCoreEvaluate` | [Coreのカテゴリ評価](../benchmarks/Core/README.md)。DI・連携を除外し、分割直列測定と予定／実測ケースの集計を実施 |
+| `ComponentScreeningPlan` / `ComponentScreeningRun` | PRの固定SHAから測定対象を選び、同一ハーネスで直列比較・解析・証拠保存。Pythonスクリプトは使用しない |
+| `ComponentScreeningNotify` | default branchの信頼済みrunnerで結果リンクをPRへ通知。測定workflowとは権限を分離 |
 | `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
 | `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
 | `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
@@ -213,3 +217,15 @@ Rustupのbootstrapは[RustBootstrap.json](RustBootstrap.json)の公式URLとSHA-
 初回の復元・tool取得にはネットワーク接続が必要です。
 
 設計は[ADR-0004](../docs/adr/0004-build-orchestration.md)、文字描画は[GRAPHICS-0024](../docs/adr/graphics/GRAPHICS-0024-text-rendering.md)を参照してください。
+
+## 名前付き色の保守
+
+Mathの通常compile後に、登録済みoffline toolでchecked-in sourceを生成・検証します。
+BeforeBuildでMath依存toolを起動する循環はありません。他の検証gateは変更しません。
+
+```sh
+dotnet run --project build -c Release -- --target GenerateNamedColors --project src/Core/Lumyte.Mathematics
+dotnet run --project build -c Release -- --target VerifyNamedColors --project src/Core/Lumyte.Mathematics
+```
+
+値の規則と明示的なreference更新は[保守tool](../tools/colors/Lumyte.NamedColors.Generator/README.md)を参照してください。

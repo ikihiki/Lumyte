@@ -16,3 +16,11 @@ LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" \
 
 通常CanvasとレイヤーCanvasの型・assembly依存を分離し、RenderGraph非依存の直接記録、
 親graphへのAppend2D、Effectsコールバックの遅延呼び出しと失敗時解放を検証します。
+
+## Deterministic unit-test contracts
+
+Scissor and geometry tests assert exact bounds, ordered flattened points, stroke triangles,
+exception behavior and resource budgets without JIT warmup or GC allocation measurements.
+Profiling tests assert event/counter contracts and disabled-scope behavior; their nonparallel
+collection remains necessary for process-wide EventSource enablement. Allocation and timing
+measurements belong in the benchmark projects, not unit-test pass/fail criteria.

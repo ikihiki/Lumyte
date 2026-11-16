@@ -45,6 +45,8 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
+        IReadOnlyList<IGraphicsSemaphore> validationWaits = waitSemaphores ?? [];
+
         var waits = new Silk.NET.Vulkan.Semaphore[waitSemaphores?.Count ?? 0];
         for (int i = 0; i < waits.Length; i++)
         {
@@ -57,6 +59,7 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         }
 
         SurfaceStatus status = _swapchain.Present(_index, waits, PresentFence);
+
         _presented = true;
         _deviceLost = status == SurfaceStatus.DeviceLost;
         Lifetime.MarkPresented();
@@ -72,12 +75,25 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
-        _texture!.DisposeLease();
-        if (!_presented && !_deviceLost && Owner.Status == GraphicsDeviceStatus.Ready)
+        if (!IsNativeReleased())
         {
-            _swapchain.ReleaseImage(_index);
+            throw new InvalidOperationException("Native presentation synchronization is still in flight.");
         }
 
+        if (!_presented && !_deviceLost && Owner.Status == GraphicsDeviceStatus.Ready)
+        {
+            try
+            {
+                _swapchain.ReleaseImage(_index);
+            }
+            catch
+            {
+                // Preserve the ownership chain and borrowed lease for a retry.
+                throw;
+            }
+        }
+
+        _texture!.DisposeLease();
         ReleaseUnacquired();
         Lifetime.MarkDisposed();
     }
@@ -106,6 +122,7 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
     {
         if (_deviceLost || Owner.Status == GraphicsDeviceStatus.Lost)
         {
+            CompleteNativeUses();
             return true;
         }
 
@@ -114,6 +131,7 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         {
             Owner.ReportLoss("Vulkan surface fence failed: device lost.");
             _deviceLost = true;
+            CompleteNativeUses();
             return true;
         }
 
@@ -123,8 +141,10 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         }
 
         Owner.CheckResult(acquired, "GetFenceStatus");
+
         if (!_presented)
         {
+            CompleteNativeUses();
             return true;
         }
 
@@ -133,6 +153,7 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         {
             Owner.ReportLoss("Vulkan surface fence failed: device lost.");
             _deviceLost = true;
+            CompleteNativeUses();
             return true;
         }
 
@@ -142,6 +163,11 @@ internal sealed unsafe class VulkanSurfaceFrame : IGraphicsSurfaceFrame
         }
 
         Owner.CheckResult(presented, "GetFenceStatus");
+        CompleteNativeUses();
         return true;
+    }
+
+    private void CompleteNativeUses()
+    {
     }
 }

@@ -45,7 +45,20 @@ public sealed class GraphicsDeviceLifetime(object owner)
     /// <summary>Records and publishes the first native device-loss observation.</summary>
     /// <param name="reason">The backend-specific loss reason.</param>
     /// <param name="message">The backend-specific diagnostic message.</param>
-    public void ReportLoss(string reason, string message)
+    public void ReportLoss(string reason, string message) => ReportLoss(reason, message, false);
+
+    /// <summary>Marks the device as disposed.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _status = GraphicsDeviceStatus.Disposed;
+        }
+    }
+
+    internal void ReportLossDeferred(string reason, string message) => ReportLoss(reason, message, true);
+
+    private void ReportLoss(string reason, string message, bool deferNotification)
     {
         var loss = new GraphicsDeviceLoss(reason, message);
         lock (_gate)
@@ -60,7 +73,20 @@ public sealed class GraphicsDeviceLifetime(object owner)
             _lost.TrySetResult(loss);
         }
 
-        foreach (Delegate handler in DeviceLost?.GetInvocationList() ?? [])
+        Delegate[] handlers = DeviceLost?.GetInvocationList() ?? [];
+        if (deferNotification)
+        {
+            ThreadPool.QueueUserWorkItem(_ => NotifyLoss(loss, handlers));
+        }
+        else
+        {
+            NotifyLoss(loss, handlers);
+        }
+    }
+
+    private void NotifyLoss(GraphicsDeviceLoss loss, Delegate[] handlers)
+    {
+        foreach (Delegate handler in handlers)
         {
             try
             {
@@ -70,15 +96,6 @@ public sealed class GraphicsDeviceLifetime(object owner)
             {
                 Trace.TraceError("Device loss subscriber failed: {0}", error);
             }
-        }
-    }
-
-    /// <summary>Marks the device as disposed.</summary>
-    public void Dispose()
-    {
-        lock (_gate)
-        {
-            _status = GraphicsDeviceStatus.Disposed;
         }
     }
 }

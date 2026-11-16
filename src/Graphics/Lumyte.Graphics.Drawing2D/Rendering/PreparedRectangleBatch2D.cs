@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Geometry;
 
 namespace Lumyte.Graphics.Drawing2D;
 
@@ -70,57 +71,72 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
     internal static async ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken)
     {
-        context.ValidateResources();
-        cancellationToken.ThrowIfCancellationRequested();
-        if (context.RectangleResources() is not { } resources)
-        {
-            return await PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken).ConfigureAwait(false);
-        }
-
-        var result = new PreparedRectangleBatch2D(context);
+        using var profile = DrawingProfileScope.Start(5);
+        long runs = 0;
         try
         {
-            int start = 0;
-            while (start < commands.Length)
+            context.ValidateResources();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (context.RectangleResources() is not { } resources)
             {
-                bool fast = Eligible(commands.Span[start], context.Target);
-                int end = start + 1;
-                while (end < commands.Length && end - start < MaximumRectangles && Eligible(commands.Span[end], context.Target) == fast)
-                {
-                    end++;
-                }
-
-                ReadOnlyMemory<FillRectCommand2D> run = commands.Slice(start, end - start);
-                result._batches.Add((IRetainedCommandBatch2D)(fast
-                    ? await SolidBatch.PrepareAsync(context, resources, run, cancellationToken).ConfigureAwait(false)
-                    : await PreparedGpuBatch2D.PrepareAsync(context, run, cancellationToken).ConfigureAwait(false)));
-                start = end;
+                IPreparedCommandBatch2D fallback = await PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken).ConfigureAwait(false);
+                profile?.Success();
+                return fallback;
             }
 
-            return result;
+            var result = new PreparedRectangleBatch2D(context);
+            try
+            {
+                int start = 0;
+                while (start < commands.Length)
+                {
+                    if (context.Clips.Get(commands.Span[start].State.Clip, Matrix3x2.Identity, commands.Span[start].State.Clip.Elements).Kind == NormalizedClipKind2D.Empty)
+                    {
+                        start++;
+                        continue;
+                    }
+
+                    bool fast = Eligible(commands.Span[start], context.Target);
+                    int end = start + 1;
+                    while (end < commands.Length && end - start < MaximumRectangles && Eligible(commands.Span[end], context.Target) == fast
+                        && context.Clips.Get(commands.Span[end].State.Clip, Matrix3x2.Identity, commands.Span[end].State.Clip.Elements).Kind != NormalizedClipKind2D.Empty)
+                    {
+                        end++;
+                    }
+
+                    ReadOnlyMemory<FillRectCommand2D> run = commands.Slice(start, end - start);
+                    result._batches.Add((IRetainedCommandBatch2D)(fast
+                        ? await SolidBatch.PrepareAsync(context, resources, run, cancellationToken).ConfigureAwait(false)
+                        : await PreparedGpuBatch2D.PrepareAsync(context, run, cancellationToken).ConfigureAwait(false)));
+                    runs++;
+                    start = end;
+                }
+
+                profile?.Success();
+                return result;
+            }
+            catch (Exception error)
+            {
+                context.CleanupAfterFailure(result, error);
+                throw;
+            }
         }
-        catch
+        catch (Exception error)
         {
-            result.Dispose();
+            profile?.Failure(error);
             throw;
+        }
+        finally
+        {
+            profile?.Counter(9, runs);
         }
     }
 
     private static bool Eligible(FillRectCommand2D command, DrawingTargetInfo2D target)
     {
-        if (command.Paint.Root is not SolidPaintNode2D || command.State.Clip.Elements.Count > 8 || !Inverse(command.State.Transform, target, out _))
+        if (command.Paint.Root is not SolidPaintNode2D || !Inverse(command.State.Transform, target, out _))
         {
             return false;
-        }
-
-        IReadOnlyList<ClipElement2D> clips = command.State.Clip.Elements;
-        for (int i = 0; i < clips.Count; i++)
-        {
-            ClipElement2D clip = clips[i];
-            if (!Rectangle(clip.Path, out _) || !Inverse(clip.Transform, target, out _))
-            {
-                return false;
-            }
         }
 
         return true;
@@ -162,8 +178,11 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
         private readonly RenderPreparationContext2D _context;
         private readonly SolidRectangleResources2D _resources;
         private readonly IDisposable _retained;
+        private readonly IDisposable _tableLease;
         private SolidRectangleResources2D.Entry? _entry;
         private SolidRectangleArguments2D _arguments;
+        private IGpuRef<Vector4>? _dataRef;
+        private ShaderResources? _reservation;
         private int _vectors;
         private int _instances;
         private bool _recorded;
@@ -173,9 +192,10 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
         {
             (_context, _resources) = (context, resources);
             _retained = context.RetainResources();
+            _tableLease = context.ArgumentPlan.Retain();
         }
 
-        public long EstimatedBytes => checked(4096 + (long)(_entry?.Bytes ?? 0));
+        public long EstimatedBytes => checked(4096 + (long)(_entry?.Bytes ?? 0) + _context.ArgumentPlan.EstimatedBytes);
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources)
         {
@@ -214,70 +234,136 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
             if (_entry is { } entry)
             {
+                if (entry.Upload.IsMapped)
+                {
+                    entry.Upload.Unmap();
+                }
+
                 _resources.Return(entry);
                 _entry = null;
             }
 
+            _tableLease.Dispose();
             _retained.Dispose();
             _disposed = true;
         }
 
-        internal static async ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, SolidRectangleResources2D resources, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken)
+        internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, SolidRectangleResources2D resources, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken)
         {
             var batch = new SolidBatch(context, resources);
-            Vector4[]? values = null;
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 int capacity = commands.Length * 6;
                 ClipStack2D? previous = null;
                 foreach (FillRectCommand2D command in commands.Span)
                 {
                     if (!ReferenceEquals(previous, command.State.Clip))
                     {
-                        capacity += command.State.Clip.Elements.Count * 3;
+                        NormalizedClip2D clip = context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
+                        if (clip.Kind is NormalizedClipKind2D.Analytic or NormalizedClipKind2D.SampleMask)
+                        {
+                            capacity = checked(capacity + 2 + clip.Mask.Length);
+                        }
+
                         previous = command.State.Clip;
                     }
                 }
 
-                values = ArrayPool<Vector4>.Shared.Rent(capacity);
-                batch._instances = commands.Length;
-                batch._vectors = Fill(context.Target, commands.Span, values);
-                batch._entry = resources.Rent(batch._vectors);
-                await batch._entry.Upload.MapAsync(cancellationToken).ConfigureAwait(false);
-                try
+                if (capacity > 2097152)
                 {
-                    batch._entry.Upload.SliceElements(0, (ulong)batch._vectors).CopyFrom(values.AsSpan(0, batch._vectors));
-                }
-                finally
-                {
-                    batch._entry.Upload.Unmap();
+                    throw new NotSupportedException("Normalized rectangle payload exceeds the 32 MiB batch budget.");
                 }
 
-                cancellationToken.ThrowIfCancellationRequested();
-                batch._arguments = new(batch._entry.Table.WriteBuffer(0, batch._entry.Data.SliceElements(0, (ulong)batch._vectors)), new(context.Target.Description.Width, context.Target.Description.Height));
-                return batch;
+                batch._instances = commands.Length;
+                batch._vectors = capacity;
+                batch._entry = resources.Rent(capacity);
+                ShaderResources reservation = context.ArgumentPlan.Reserve();
+                batch._reservation = reservation;
+                reservation.RegisterBuffer(batch._entry.Data.SliceElements(0, (ulong)capacity), reference => batch._dataRef = reference);
+                context.ArgumentPlan.MarkPreparedBuffer(reservation, batch._entry.Data.SliceElements(0, (ulong)capacity), new(PipelineStage.Copy | PipelineStage.VertexShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
+                context.ArgumentPlan.DeferUpload(
+                    reservation,
+                    async token =>
+                    {
+                        await batch._entry.Upload.MapAsync(token).ConfigureAwait(false);
+                        UploadMapped();
+                    },
+                    token => batch._entry.Upload.MapAsync(token),
+                    UploadMapped);
+                return ValueTask.FromResult<IPreparedCommandBatch2D>(batch);
+
+                void UploadMapped()
+                {
+                    using var profile = DrawingProfileScope.Start(9);
+                    Vector4[]? values = null;
+                    long copied = 0;
+                    try
+                    {
+                        if (!reservation.IsReady || batch._dataRef is null)
+                        {
+                            throw new InvalidOperationException("Materialize the resource set before packing rectangle arguments.");
+                        }
+
+                        values = ArrayPool<Vector4>.Shared.Rent(capacity);
+                        int count = Fill(context, commands.Span, values);
+                        if (count != capacity)
+                        {
+                            throw new InvalidOperationException("Rectangle preflight and payload sizes differ.");
+                        }
+
+                        if (!batch._entry.Upload.IsMapped)
+                        {
+                            throw new InvalidOperationException("Prepare the rectangle staging map before materialization.");
+                        }
+
+                        try
+                        {
+                            batch._entry.Upload.SliceElements(0, (ulong)count).CopyFrom(values.AsSpan(0, count));
+                            copied = (long)count * 16;
+                        }
+                        finally
+                        {
+                            batch._entry.Upload.Unmap();
+                        }
+
+                        batch._arguments = new(batch._dataRef, new(context.Target.Description.Width, context.Target.Description.Height));
+                        profile?.Success();
+                    }
+                    catch (Exception error)
+                    {
+                        batch._entry.Discard = true;
+                        profile?.Failure(error);
+                        throw;
+                    }
+                    finally
+                    {
+                        if (values is not null)
+                        {
+                            ArrayPool<Vector4>.Shared.Return(values);
+                        }
+
+                        profile?.Counter(7, capacity);
+                        profile?.Counter(8, copied);
+                        profile?.Counter(10, commands.Length);
+                    }
+                }
             }
-            catch
+            catch (Exception error)
             {
                 if (batch._entry is { } entry)
                 {
                     entry.Discard = true;
                 }
 
-                batch.Dispose();
+                context.CleanupAfterFailure(batch, error);
                 throw;
-            }
-            finally
-            {
-                if (values is not null)
-                {
-                    ArrayPool<Vector4>.Shared.Return(values);
-                }
             }
         }
 
-        private static int Fill(DrawingTargetInfo2D target, ReadOnlySpan<FillRectCommand2D> commands, Span<Vector4> values)
+        private static int Fill(RenderPreparationContext2D context, ReadOnlySpan<FillRectCommand2D> commands, Span<Vector4> values)
         {
+            DrawingTargetInfo2D target = context.Target;
             int cursor = commands.Length * 6;
             ClipStack2D? previous = null;
             int clips = cursor;
@@ -292,34 +378,32 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 Intersect(ref minimum, ref maximum, command.Rect, command.State.Transform * pixels);
                 Write(values, offset + 1, command.Rect, command.State.Transform * pixels);
                 values[offset + 4] = DrawingProgram2D.Linear(((SolidPaintNode2D)command.Paint.Root).Color);
+                NormalizedClip2D normalized = context.Clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
                 if (!ReferenceEquals(previous, command.State.Clip))
                 {
                     clips = cursor;
-                    for (int j = 0; j < command.State.Clip.Elements.Count; j++)
+                    if (normalized.Kind is NormalizedClipKind2D.Analytic or NormalizedClipKind2D.SampleMask)
                     {
-                        ClipElement2D clip = command.State.Clip.Elements[j];
-                        _ = Rectangle(clip.Path, out Rect2D rect);
-                        Write(values, cursor, rect, clip.Transform * pixels);
-                        cursor += 3;
+                        values[cursor] = normalized.Kind == NormalizedClipKind2D.Analytic ? normalized.Samples
+                            : new(normalized.Bounds.X, normalized.Bounds.Y, normalized.Bounds.Width, normalized.Bounds.Height);
+                        values[cursor + 1] = new(cursor + 2, 0, 0, 0);
+                        cursor += 2;
+                        normalized.Mask.CopyTo(values[cursor..]);
+                        cursor += normalized.Mask.Length;
                     }
 
                     previous = command.State.Clip;
                 }
 
-                for (int j = 0; j < command.State.Clip.Elements.Count; j++)
-                {
-                    ClipElement2D clip = command.State.Clip.Elements[j];
-                    _ = Rectangle(clip.Path, out Rect2D rect);
-                    Intersect(ref minimum, ref maximum, rect, clip.Transform * pixels);
-                    aligned &= clip.Transform.M12 == 0 && clip.Transform.M21 == 0;
-                }
+                minimum = Vector2.Max(minimum, new(normalized.Bounds.X, normalized.Bounds.Y));
+                maximum = Vector2.Min(maximum, new(normalized.Bounds.X + normalized.Bounds.Width, normalized.Bounds.Y + normalized.Bounds.Height));
 
                 float x = Math.Clamp(MathF.Floor(minimum.X), 0, target.Description.Width);
                 float y = Math.Clamp(MathF.Floor(minimum.Y), 0, target.Description.Height);
                 float right = Math.Clamp(MathF.Ceiling(maximum.X), x, target.Description.Width);
                 float bottom = Math.Clamp(MathF.Ceiling(maximum.Y), y, target.Description.Height);
                 values[offset] = new(x, y, right - x, bottom - y);
-                values[offset + 5] = new(clips, command.State.Clip.Elements.Count, aligned ? 1 : 0, 0);
+                values[offset + 5] = new(clips, (int)normalized.Kind, aligned ? 1 : 0, 0);
             }
 
             return cursor;
@@ -335,12 +419,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
         private static void Intersect(ref Vector2 minimum, ref Vector2 maximum, Rect2D rect, Matrix3x2 transform)
         {
-            var a = Vector2.Transform(new(rect.X, rect.Y), transform);
-            var b = Vector2.Transform(new(rect.X + rect.Width, rect.Y), transform);
-            var c = Vector2.Transform(new(rect.X, rect.Y + rect.Height), transform);
-            var d = Vector2.Transform(new(rect.X + rect.Width, rect.Y + rect.Height), transform);
-            var low = Vector2.Min(Vector2.Min(a, b), Vector2.Min(c, d));
-            var high = Vector2.Max(Vector2.Max(a, b), Vector2.Max(c, d));
+            Geometry2D.GetTransformedBoundsBcl(new(rect.X, rect.Y), new(rect.X + rect.Width, rect.Y + rect.Height), transform, out Vector2 low, out Vector2 high);
             if (!float.IsFinite(low.X) || !float.IsFinite(low.Y) || !float.IsFinite(high.X) || !float.IsFinite(high.Y))
             {
                 throw new NotSupportedException("Transformed drawing bounds exceed the finite coordinate range.");
@@ -352,6 +431,11 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
 
         private void RecordCore(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
         {
+            if (_reservation?.IsReady != true)
+            {
+                throw new InvalidOperationException("Materialize the resource set before recording.");
+            }
+
             SolidRectangleResources2D.Entry entry = _entry!;
             if (!resident)
             {
@@ -370,7 +454,6 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
             try
             {
                 render.SetPipeline(_resources.Pipeline);
-                render.SetArgumentTable(entry.Table);
                 render.SetRenderState(new()
                 {
                     Rasterization = new() { Cull = CullMode.None },
@@ -380,8 +463,7 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 render.SetScissor(new(0, 0, _context.Target.Description.Width, _context.Target.Description.Height));
                 render.SetBlendConstant(new(0, 0, 0, 0));
                 render.SetStencilReference(0);
-                render.SetArguments(in _arguments);
-                render.Draw(6, (uint)_instances);
+                _reservation!.Draw(render, in _arguments, 6, (uint)_instances);
             }
             finally
             {

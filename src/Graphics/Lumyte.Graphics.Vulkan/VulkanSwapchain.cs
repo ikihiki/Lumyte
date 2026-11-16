@@ -36,6 +36,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
     {
         ValidateAlive();
         cancellationToken.ThrowIfCancellationRequested();
+
         VulkanSemaphore? signal = null;
         if (signalSemaphore != null)
         {
@@ -78,6 +79,7 @@ internal sealed unsafe class VulkanSwapchain : IGraphicsSwapchain
         }
 
         frame.SetImage(index, _images[index]);
+
         return ValueTask.FromResult(new SurfaceAcquireResult(status, frame));
     }
 

@@ -15,4 +15,4 @@ Signalsの公開APIの契約と回帰を、host・GPU・BenchmarkDotNetへの依
 dotnet test tests/Core/Lumyte.Signals.Tests -c Release
 ```
 
-コマンドはリポジトリルートで実行します。準備と全体の分類は[テスト一覧](../../README.md)を参照してください。測定ケース自体の検証は`../Lumyte.Signals.Benchmarks.Tests`、性能の比較は[ベンチマーク](../../../benchmarks/Lumyte.Signals.Benchmarks/README.md)が担当します。
+コマンドはリポジトリルートで実行します。準備と全体の分類は[テスト一覧](../../README.md)を参照してください。測定ケース自体の検証は`../Lumyte.Signals.Benchmarks.Tests`、性能の比較は[ベンチマーク](../../../benchmarks/Core/Lumyte.Signals.Benchmark/README.md)が担当します。

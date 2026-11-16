@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI;
 using Lumyte.UI.Media;
 using Xunit;
@@ -172,7 +173,7 @@ public sealed class UiMediaRecordingTests
         UiElement root = surface.RootElement;
         var canvas = new Canvas2D();
         canvas.Begin();
-        canvas.FillRect(new(0, 0, 1, 1), new Color2D(1, 0, 0, 1));
+        canvas.FillRect(new(0, 0, 1, 1), new SRgba<float>(1, 0, 0, 1));
         surface.Record(canvas);
         DrawList2D recording = canvas.End();
         bool fail = true;

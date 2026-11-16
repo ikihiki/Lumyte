@@ -13,19 +13,34 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
+        "BenchmarkAnimation",
+        "BenchmarkAudio",
+        "BenchmarkCore",
+        "BenchmarkCoreEvaluate",
+        "BenchmarkGraphics",
+        "BenchmarkGraphicsIntegration",
+        "BenchmarkInput",
         "BenchmarkSignals",
         "CheckFormat",
         "CheckMarkdown",
         "CheckNativeFormat",
         "Ci",
+        "CiBrowser",
+        "CiDistribution",
+        "CiNative",
+        "CiQuality",
         "Clean",
         "Compile",
+        "ComponentScreeningNotify",
+        "ComponentScreeningPlan",
+        "ComponentScreeningRun",
         "ConfigureLavapipe",
         "DiagnosticGallery",
         "DiagnosticPreviews",
         "Direct3D12Native",
         "FormatMarkdown",
         "FormatNative",
+        "GenerateNamedColors",
         "NativeSmoke",
         "Pack",
         "ParleyNative",
@@ -50,10 +65,14 @@
         "TestRust",
         "TestSignals",
         "TestText",
+        "TestUiApplication",
         "TestUiMedia",
+        "TestUiNavigation",
+        "TestUiPages",
         "TestWasm",
         "TestWindowing",
         "VerifyEnvironment",
+        "VerifyNamedColors",
         "VerifySdk"
       ]
     },
@@ -143,6 +162,30 @@
           "type": "string",
           "description": "Restored Microsoft.Direct3D.D3D12 package directory containing the selected Agility SDK"
         },
+        "BenchmarkCategory": {
+          "type": "string",
+          "description": "Optional BenchmarkDotNet category filter across selected projects"
+        },
+        "BenchmarkFilter": {
+          "type": "string",
+          "description": "BenchmarkDotNet method filter for selected projects"
+        },
+        "BenchmarkList": {
+          "type": "boolean",
+          "description": "Enumerate compiled Benchmark cases without running timings"
+        },
+        "BenchmarkMode": {
+          "type": "string",
+          "description": "Benchmark execution mode: screen, compare, or diagnose. Required unless listing"
+        },
+        "BenchmarkProject": {
+          "type": "string",
+          "description": "Target project glob, for example Lumyte.Mathematics or Lumyte.*.Benchmark"
+        },
+        "BenchmarkTimeoutSeconds": {
+          "type": "number",
+          "description": "Deadline seconds, up to 900: shared for BenchmarkCore; per build/catalog/Type.Method partition for BenchmarkCoreEvaluate"
+        },
         "Cache": {
           "type": "string",
           "description": "Emscripten cache from the .NET wasm-tools workload"
@@ -166,6 +209,10 @@
         "GalleryRepository": {
           "type": "string",
           "description": "Repository whose successful diagnostic gallery artifacts are collected"
+        },
+        "HostOnly": {
+          "type": "boolean",
+          "description": "Build and package only projects supported by the current host OS"
         },
         "NoBuild": {
           "type": "boolean",
@@ -210,6 +257,34 @@
         "Rustup": {
           "type": "string",
           "description": "Rustup executable override for explicit setup targets"
+        },
+        "ScreeningAll": {
+          "type": "boolean",
+          "description": "Select all twelve representative cases, including A/A"
+        },
+        "ScreeningBase": {
+          "type": "string",
+          "description": "Exact base revision for advisory screening"
+        },
+        "ScreeningBaseDirectory": {
+          "type": "string",
+          "description": "Optional read-only base checkout; HEAD must match the plan"
+        },
+        "ScreeningHead": {
+          "type": "string",
+          "description": "Exact head revision for advisory screening"
+        },
+        "ScreeningHeadDirectory": {
+          "type": "string",
+          "description": "Optional read-only head checkout; HEAD must match the plan"
+        },
+        "ScreeningPlan": {
+          "type": "string",
+          "description": "Frozen screening plan JSON path"
+        },
+        "ScreeningTimeoutSeconds": {
+          "type": "number",
+          "description": "Total screening deadline in seconds, capped at 900"
         },
         "SkipParleyPackage": {
           "type": "boolean",

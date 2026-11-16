@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <ProjectReference Include="../../../src/Input/Lumyte.Input.Diagnostics/Lumyte.Input.Diagnostics.csproj" />
+    <Compile Include="../../Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+  </ItemGroup>
+</Project>

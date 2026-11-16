@@ -1,5 +1,5 @@
 using Lumyte.Composition;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI.Media;
 
@@ -21,7 +21,7 @@ public static partial class Compose
 
             /// <summary>Gets or sets the explicit indicator color.</summary>
             [ComposeParameter]
-            public Color2D Color { get; set; } = new(0.2f, 0.4f, 0.8f, 1);
+            public SRgba<float> Color { get; set => field = MediaGeometry.UnitColor(value, nameof(Color)); } = new(0.2f, 0.4f, 0.8f, 1);
 
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new BusyIndicatorElement(this);

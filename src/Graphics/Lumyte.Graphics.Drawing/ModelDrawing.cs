@@ -9,12 +9,12 @@ public static class ModelDrawing
     /// <summary>Gets the default metallic-roughness factors.</summary>
     public static ModelMaterial DefaultMaterial => new(Vector4.One, Vector3.Zero, 1, 1, 1, 1, 0.5f, 0, 0);
 
-    /// <summary>Builds model root values with identity transforms, default lighting and explicit neutral texture fallbacks.</summary>
+    /// <summary>Builds model buffer values with identity transforms, default lighting and explicit neutral texture fallbacks.</summary>
     /// <param name="vertices">The registered model vertex range.</param>
     /// <param name="material">The surface factors.</param>
     /// <param name="white">The white texture and sampler used for missing color, scalar and emissive slots.</param>
     /// <param name="neutralNormal">The linear (0.5, 0.5, 1) texture and sampler used for missing normals.</param>
-    /// <returns>Root values to customize with camera, transforms, light and fog before drawing.</returns>
+    /// <returns>Data to customize, explicitly copy into a shader data buffer and reference through ModelDrawRoot before drawing.</returns>
     public static ModelDrawArguments CreateArguments(
         IGpuRef<ModelVertex> vertices,
         ModelMaterial material,

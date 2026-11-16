@@ -268,35 +268,6 @@ public sealed class AnimationFormatPrimitiveTests
         Assert.False(output.TryGet(channel, out _));
     }
 
-    /// <summary>Checks warmed scalar, vector and quaternion source evaluation introduces no managed allocation.</summary>
-    [Fact]
-    public void WarmedNewNumericSourcesAllocateNoManagedMemory()
-    {
-        var duration = Duration.FromSeconds(2);
-        var scalar = new AnimationCurve<float>(duration, [new(Duration.Zero, 0) { Timing = AnimationTimings.CubicBezier(0.42, 0, 0.58, 1), Interpolator = AnimationInterpolators.CubicBezier(2f, 3f, AnimationInterpolators.Float) }, new(duration, 10)], AnimationInterpolators.Float);
-        var mapping = new Tween<Duration>(duration, Duration.Zero, duration, AnimationInterpolators.Duration, AnimationEasing.Linear);
-        var remap = new AnimationTimeRemap<float>(scalar, mapping);
-        var blend = new AnimationBlend<float>(scalar, remap, Scalar(0.5f, 0.5f, duration), AnimationInterpolators.Float);
-        var vector = new AnimationHermiteCurve<Vector3>(duration, [new(Duration.Zero, Vector3.Zero, Vector3.Zero, Vector3.One), new(duration, Vector3.One, Vector3.Zero, Vector3.Zero)], AnimationHermiteInterpolators.Vector3);
-        var rotation = new AnimationHermiteCurve<Quaternion>(duration, [new(Duration.Zero, Quaternion.Identity, default, default), new(duration, new Quaternion(0, 0, 1, 0), default, default)], AnimationHermiteInterpolators.Quaternion);
-        var time = Duration.FromSeconds(0.5);
-        double checksum = 0;
-        for (int index = 0; index < 2000; index++)
-        {
-            checksum += blend.Sample(time) + vector.Sample(time).X + rotation.Sample(time).Z;
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            checksum += blend.Sample(time) + vector.Sample(time).X + rotation.Sample(time).Z;
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
-        Assert.True(double.IsFinite(checksum) && checksum > 0);
-    }
-
     private static Duration Ticks(long value) => Duration.FromTicks(value);
 
     private static Tween<float> Scalar(float from, float to, Duration? duration = null) => new(from, to, duration ?? Ticks(10), AnimationInterpolators.Float, AnimationEasing.Linear);

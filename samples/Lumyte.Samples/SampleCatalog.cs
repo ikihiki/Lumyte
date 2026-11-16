@@ -7,6 +7,7 @@ internal static class SampleCatalog
     internal static IReadOnlyList<SampleDefinition> All { get; } =
     [
         Managed("signals", "基礎: 値の購読と寿命", "Signals"),
+        Managed("mathematics", "基礎: 数値型を選べる2D・3D幾何", "Mathematics"),
         Managed("composition", "基礎: 宣言からオブジェクトを構築", "Composition"),
         Managed("state-machines", "基礎: ガードと型付き遷移", "StateMachines"),
         Managed("animation", "基礎: 時計と Timeline", "Animation"),
@@ -31,6 +32,7 @@ internal static class SampleCatalog
         new("ui-navigation", "UI: ページ遷移と寿命", Native("headless", "UI.Navigation"), Browser("browser", "UI.Navigation.Browser")),
         new("ui-pages", "UI: DIとMapPage", Native("headless", "UI.Pages"), Browser("browser", "UI.Pages.Browser")),
         new("ui-transitions", "UI: presence とページ間animation", Native("headless", "UI.Transitions"), Browser("browser", "UI.Transitions.Browser")),
+        new("ui-media", "UI: 借用mediaと進捗 (font file が必要)", Native("headless", "UI.Media")),
         Managed("ui-functions", "UI: 関数コンポーネントとUseSignal", "UI.Functions"),
         new("pipeline-benchmark", "測定: Vulkan pipeline cache 比較", Native("vulkan", "Graphics.DeviceCaps", "vulkan", "pipeline-benchmark")),
     ];

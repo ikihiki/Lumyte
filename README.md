@@ -14,6 +14,7 @@ dotnet run --project build -c Release -- --target Test
 
 - [サンプル一覧と共通ランチャー](samples/README.md)
 - [テストの分類と実行手順](tests/README.md)／[ベンチマーク一覧](benchmarks/README.md)
+  - GraphicsのCPU計測: `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen`（GPUを含む統合計測とは別profile）。
 - [開発環境のセットアップ](docs/development-environment.md)
 - [共通ビルド手順](build/README.md)／[ビルド工程の設計](docs/adr/0004-build-orchestration.md)
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
@@ -56,6 +57,7 @@ dotnet run --project build -c Release -- --target Test
 - [利用者が管理するリソース寿命と実行時検証](docs/adr/graphics/GRAPHICS-0014-caller-managed-resource-validation.md)
 - [PSOのシェーダープログラムと描画状態の分離](docs/adr/graphics/GRAPHICS-0008-pipeline-programs-and-render-state.md)
 - [Argument Tableのシェーダー引数への接続](docs/adr/graphics/GRAPHICS-0009-shader-argument-binding.md)
+- [C#の配置を正とするシェーダー一括転送](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md)
 - [CommandBufferと明示的なGPU実行](docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md)
 - [シェーダーの設計](docs/adr/graphics/GRAPHICS-0006-shader-compilation-and-modules.md)／[Slang コンパイラー](src/Graphics/Lumyte.Graphics.Shaders/README.md)
 - [Argument Tableと型付きGPU参照](docs/adr/graphics/GRAPHICS-0005-argument-tables-and-gpu-references.md)
@@ -63,7 +65,7 @@ dotnet run --project build -c Release -- --target Test
 - [テクスチャとViewの設計](docs/adr/graphics/GRAPHICS-0003-textures-and-views.md)
 - [型付きbufferの設計](docs/adr/graphics/GRAPHICS-0002-typed-buffers.md)
 - [グラフィックデバイスの設計](docs/adr/graphics/GRAPHICS-0001-graphics-device.md)
-- [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)
+- [Graphics.Abstractions](src/Graphics/Lumyte.Graphics.Abstractions/README.md)／[任意のValidationDevice](src/Graphics/Lumyte.Graphics.Validation/README.md)
 - [RenderGraph の利用方法](src/Graphics/Lumyte.Graphics.RenderGraph/README.md)／[設計](docs/adr/graphics/GRAPHICS-0015-render-graph.md)／[診断連携](src/Diagnostics/Lumyte.Diagnostics.RenderGraph/README.md)
 - [2D描画の利用方法](src/Graphics/Lumyte.Graphics.Drawing2D/README.md)／[Resourcesからの生成](src/Graphics/Lumyte.Resources.Graphics.Drawing2D/README.md)／[RenderGraph連携](src/Graphics/Lumyte.Resources.Graphics.Drawing2D.RenderGraph/README.md)
 - [Wgpu](src/Graphics/Lumyte.Graphics.Wgpu/README.md)／[Browser](src/Graphics/Lumyte.Graphics.Browser/README.md)／[Vulkan](src/Graphics/Lumyte.Graphics.Vulkan/README.md)
@@ -92,3 +94,178 @@ CI は Linux／Windows の x64／aarch64 で、mise セットアップ後に同�
 診断サーバーの[同梱Web UI](src/Diagnostics/Lumyte.Diagnostics.Server/README.md#web-ui)はサーバーのURLから利用できる。[配信・認証・更新の設計](docs/adr/diagnostics/DIAGNOSTICS-0002-server-hosted-ui.md)を参照する。
 
 診断画面の見た目は [GitHub Pagesの画面プレビュー](https://ikihiki.github.io/Lumyte/) でmain・PRごとに確認できます。
+
+## struct限定の転送
+
+Every native/root, shader-data buffer, slice, factory, Graph and resource declaration
+consuming IShaderArguments requires `where T : struct, IShaderArguments`; managed
+references are allowed, so this is not an unmanaged constraint. Generated providers
+are mutable partial structs/record structs with private unmanaged wire and typed
+IGpuRef members. Classes, record classes and ref structs are rejected with LUMG001
+even with handwritten codecs. A manual class can implement the C# interface, but
+consumer generics reject it with CS0453 even without the generator.
+Generated readonly Write copies only the wire before getters; generic in calls
+and non-readonly getters may defensively copy the outer struct. No zero-outer-copy
+or allocation-free guarantee follows. Generated partial properties preserve the exact
+readonly modifiers of their declarations; a plain get does not gain readonly.
+Argument Capture retains DiagnosticType and a cached static generic DiagnosticFields
+callback, never the input struct, boxing or an instance closure. Capture and Copy
+do not invoke it; the first explicit GetDiagnosticFields accesses the lazy
+`ArgumentDiagnosticCache<T>` through direct T.TransferFields static dispatch.
+`Fields<T>(in T)` uses the same AOT-safe path. Type-only unknown-T inspection and raw
+unmanaged reflected offsets require dynamic code and are unavailable on AOT.
+Handwritten unmanaged arguments with default empty TransferFields keep the JIT
+reflected-field fallback; managed outer structs without static metadata return
+empty diagnostics, never numeric transfer of their managed layout.
+
+Callers choose whole-element upload ranges, with no dirty tracking, field ranges,
+automatic coalescing or hidden value cache. Edit array elements by ref or write back
+a local copy; then explicitly CopyFrom and CopyBuffer the chosen range. Keep upload
+sources unchanged and alive until consumed by GPU work. default(T)/array elements
+skip constructors and leave reference members null until filled by the caller;
+null IGpuRef in a default root is rejected during encoding. DrawingInstruction
+new() preserves resource indices of -1 and initializes references with default!;
+this nullable-analysis suppression does not create valid GPU references.
+Browser build success is not AOT publication or runtime AOT execution evidence;
+AOT publication and execution have not been tested.
+
+## シェーダーデータ転送
+
+Ordinary unmanaged C# structs need no IShaderArguments, partial declaration,
+generator or registration. `CreateShaderDataBuffer<T>` returns raw `IGraphicsBuffer<T>`
+storage; CopyFrom preserves C# bytes, padding and stride. Use BufferBarrierDesc,
+CopyBuffer and argument-table WriteBuffer explicitly. SetArguments(in value) also
+accepts unmanaged root structs. Reference-containing values use mutable partial structs/record structs implementing
+IShaderArguments with private unmanaged wire storage. Shader layout must
+match C#; diagnostics require an explicit ValidationDevice wrapper in both Debug and Release. See the [transfer contract](docs/adr/graphics/GRAPHICS-0035-csharp-authoritative-shader-transfer.md).
+
+Native Vulkan roots now use vkCmdPushConstants; Direct3D12 uses graphics/compute
+root 32-bit constants, not per-Set GPU uniform/CBV allocation or an oversized-root
+fallback. Query VulkanDevice.MaxPushConstantsSize; D3D12 exposes
+RootConstantDwordCapacity=58 and RootConstantByteCapacity=232. Set writes a cleared, bounded ceil(wireSize/4)-word stack span and records
+native constants before returning. Complete, optional diagnostics, reference preparation,
+metadata creation all precede emission. The driver command buffer
+owns the numeric copy, not the temporary stack. Draw/Dispatch never re-emit it;
+selected roots retain immutable metadata, with references only when collected, not numeric
+CPU heap arrays or ArrayPool rentals. Metadata and execute-time bindings still allocate.
+raw bindingは機能上必要な登録とtable identityを保持し、検証層だけが追加の依存revisionを保持します。 No root
+metadata KeepBinding or IDisposable is required at Set. Wgpu/Browser keep their
+existing private concrete IDisposable RootStorage, which owns its uniform and
+once-initialized Arguments; bindings Seal it directly and commands KeepBinding
+the owner until GPU release.
+
+Artifact-capacity preflight is mandatory ABI safety, independent of the optional validation layer:
+Vulkan checks against the owning device before shader-module creation; all D3D12
+pipeline/partial paths check before native pipeline creation. Both inspect every app
+ConstantBuffer by its actual root name using logical ShaderDataLayout.Root.Size,
+excluding lumyteDrawInfo and __lumyte_schema_ entries. A logical 232-byte D3D12 root
+with a padded 240-byte declaration is valid: it loads 58 DWORDs, not 60.
+Vulkan’s observed 256-byte limit is device-specific, not a universal capacity.
+Wgpu/Browser retain backend-private uniform-buffer emulation without new immediate
+APIs or dependency upgrades. Shared/Graph lifetimes and metadata remain transport-neutral;
+target-specific shader emission is inherently target-aware, not runtime feature dispatch.
+The archived writer measurements describe checkpoint 3582af8a, not this newer
+constant-root implementation; see the [pinned report](docs/performance/backend-native-writers.md).
+
+Vulkan fixes push ranges per bind point: offset zero and physical capacity, with
+Compute for every compute variant and Vertex|Fragment for every graphics/partial
+variant. Each Set emits exactly its range’s stage mask, preserving separate native
+compute/graphics push state. Descriptor visibility may independently include all
+three stages; descriptor-count layouts may vary, not the bind-point root contract.
+A backend host guard rejects roots above 64 KiB
+without fallback even on pathological physical limits (256 bytes is device-specific).
+D3D12 initializes one thread-safe cached fixed root signature per device before Set:
+58 app + 1 + 1 tables + 2 draw + 2 SRV = 64 DWORDs. Separate graphics/compute
+root pointer tracking conditionally binds the same signature for PSO/SetProgram
+changes without resetting constants. Validation/preparation failure emits no
+native constants and preserves the old selection; issued void driver commands
+and device failures are not rollbackable. Ref-struct writers require C# 13+ and
+the pinned .NET 10 SDK; `Write<TWriter>` adds only allows ref struct to its constraint.
+
+Vulkan/D3D12 render and compute encoders guard codec/preparation with
+_settingArguments: reentrant Set, pipeline changes, End and Draw/Dispatch are
+rejected. SetArgumentTable remains allowed for Graph preparation’s autobind.
+After callbacks, the captured pipeline’s ValidateAlive, owner.ValidatePass and
+pipeline-identity check all precede native emission, rejecting
+raw command-buffer or pipeline disposal before native use. Host failure preserves
+the old root selection, but cannot undo caller-requested resource disposal, table
+autobinding, or already-issued driver commands.
+
+Vulkan correctness review includes source-level range/stage-mask checks against
+VUID-vkCmdPushConstants-offset-01796 and actual hardware tests. The optional
+VK_LAYER_KHRONOS_validation layer is absent here; hardware success is not a native
+validation-layer result. RootRecordNative belongs to Set, not mutable PSO state;
+Const_Metadata stays reference-only, with No_Frame_Source retention.
+
+## 選択table全体のbindingと任意の依存検証
+
+bindingは選択したArgumentTableの書き込み済み登録すべてから構築します。capacityの未登録holeはentryではありません。Vulkanは全texture／sampler登録をdescriptorへ投影し、buffer参照は保存済みGPU addressへoffsetを加えてinline符号化します。Direct3D12は全texture／sampler／ReadOnly SRV／ReadWrite UAV登録を投影し、各上限128／16／64／64を適用します。Wgpu／Browserは全登録から有限のbinding poolとremapを構築し、WGSLの個数はcapacityではなく実際の書き込み済み登録を基にします。native binding数・storage範囲・remap容量へ収まらなければ明確に拒否し、巨大な無効binding、追加feature・package・pool・cacheで回避しません。rootなしのshaderも明示選択tableの全登録をbindし、Wgpuは未使用のroot uniform binding 8を省略します。
+
+全登録をbinding可能にすることは、全登録をGPU使用済みとして記録することではありません。backend-privateな登録・remapは検証OFFでも必要な機能状態ですが、同期の所有権や使用hazardを追加しません。resource寿命とCPU／GPU同期は利用者が管理します。
+
+Graphのbarrier・依存順・cullingは、必要なresourceの正確で完全なpass宣言だけを使い、従来どおりallocation全体を保守的に同期します。検証OFFでは宣言の真実性・完全性が利用者の事前条件です。root走査、依存query、準備hook、許可集合、admission callbackの確保を行いません。table共有だけでは使用宣言になりません。
+
+検証ONの場合だけ、Graphはrootとbuffer全体の推移的依存を、buffer allocationまたはtextureの元imageを正規化したresource object identityと宣言read／write権限の合併で照合します。native handle値の衝突判定、要素・byte範囲・view・callback取得元による許可判定は行いません。同じbufferの別宣言範囲から保存した参照も許可されますが、未宣言の別resourceとread-only宣言に対するReadWrite参照は拒否します。
+
+GetGpuRefの具体化はこの粗い許可判定とは別です。要求offset／countと一致する登録を選び、単一要素なら既存登録からGetElementで導出できます。未登録の複数要素範囲に、より広いCountの参照を返しません。新しいslice APIや自動dirty trackingは追加しません。
+
+## buffer全体の読み取り専用依存query
+
+共通境界はIShaderDataSource.TryGetDependenciesだけです。ReadReferences(index)、SetTransferredReferences、SharedのShaderDataTransferStateおよびShaderBindingDependencies.Elementsは削除し、共通の書き込みAPIは設けません。
+
+```csharp
+using System.Diagnostics.CodeAnalysis;
+using Lumyte.Graphics.Abstractions;
+
+// IShaderDataSourceの宣言抜粋。手書きbackendも実装する。
+public interface IShaderDataSource
+{
+    bool TryGetDependencies([NotNullWhen(true)] out IShaderReferenceMetadata? dependencies);
+}
+```
+
+既存の有効なsourceに対する呼び出し例です。
+
+```csharp
+// falseを既知の空集合として扱わない。
+if (source.TryGetDependencies(out IShaderReferenceMetadata? dependencies))
+{
+    foreach (IShaderReference reference in dependencies.References)
+    {
+        // 追跡済みのbuffer全体の依存を読み取る。
+    }
+}
+else
+{
+    // 追跡利用不可。呼び出し側が宣言と同期を保証する。
+}
+```
+
+raw backendのTryGetDependenciesは、数値だけのReferenceCount = 0を含めて常にfalse／nullを返します。これは追跡利用不可であり、既知の空集合ではありません。登録・remapなどの非公開機能状態は残ります。ValidationDeviceのbuffer wrapperはbuffer全体の不変な依存unionを返し、ReferenceCount = 0は既知の空集合としてtrueです。参照付きbufferの未初期化・失敗後の状態は無効で、queryはInvalidOperationExceptionとなり、buffer全体の明示再転送で回復します。部分転送だけでは回復しません。
+
+既知状態への部分更新は旧依存とのunionを保持でき、buffer寿命内で保守的な偽陽性が残ります。全体書き直しは現在のunionを置き換えられますが、記録済みcommandが保持する旧revisionは不変です。要素ごとの配列や毎drawの行走査は不要で、検証ONのShaderBindingDependencies.Buffersが各bufferを一回だけ訪問します。
+
+CPU CopyFromの依存更新は検証層が所有します。GPU copyも検証層のbuffer単位の非公開command overlayを使い、native copy記録成功後に更新し、queue Submit成功後にだけ公開します。失敗・未送信・破棄したcommandから公開せず、隠れたreadback・待機・数値履歴も持ちません。
+
+### 厳密な参照数とmapped batchの契約
+
+IShaderArgumentsのstatic abstract ReferenceCountは必須の宣言APIであり、重複も数えた物理16-byte slot数を返します。生成型の正確な静的プロパティも維持します。ただし宣言値の妥当性と実際のWriteReference回数との一致は検証層だけが診断します。四つのraw backendのSetと型付きCopyFromはReferenceCountを読み取らず、expected countや実行参照数も保持しません。誤った宣言値でも実際のwire bytesが合法ならraw転送は成功し得るため、一致は利用者の事前条件です。rawで必須なのは実際のbyte容量・完全サイズ一致・完了状態、参照ABIの型・範囲とchecked演算です。符号化する論理要素数Countは宣言ReferenceCountとは別であり、uint変換のoverflowとaddress／offset演算の検査は全modeで維持します。宣言値は機能上の配列indexには使いません。rootの直接参照配列とprepare hookは検証層だけが保持し、rawは単一の暗黙table hintを維持します。非nullのSetArgumentValidationはrawでは未対応です。数値だけの追跡rootは共有empty metadataであり、未収集のnullとは区別します。
+
+ShaderRootArgumentsはstorageを持たない不変metadata classです。Referencesはnullableでnullは未収集を表し、Createにprepareを渡す場合は利用可能なmetadataが必須です。rootの単一table hintは自動選択を補助しますが、明示SelectedTableが優先します。異なるtableが混在すればnative Set発行前に拒否します。
+
+native CopyFromはbatch全体のmapped spanを一度だけ範囲・mapping方向・overflow検査し、row sliceへ直接書きます。Browserは一つの検査済みUint8Array viewへJS.setでコピーし、finallyでviewだけを解放します。検証層だけがHostWriteLeaseで再入書き込み・Map／Unmap／Disposeを診断します。失敗時は部分byte更新を許し、追跡buffer全体を無効にして元例外を保持します。OFFでは利用者がmappingと寿命・並行操作を保証し、追加lock・待機・pinは設けず、無効pointerを実行する試験もしません。
+
+VulkanとD3D12はbuffer作成時の保存済みaddressへchecked offsetを加え、参照ごとのdriver queryやglobal cacheを作りません。native root即時定数、固定signature／stage、pipeline・End・callback後の再検査は継続します。残るbinding確保やBrowserコピーを含めzero allocation／zero copyは保証しません。c1bdf69以前の固定checkpoint測定はこの全table・任意追跡方式の性能結果ではありません。
+
+## 独立した検証プロジェクト
+
+VulkanDevice、ValidationDevice、IGraphicDeviceをそれぞれのnamespaceから読み込み、次のように選択します。
+
+```csharp
+using var raw = VulkanDevice.Create();
+using var validated = new ValidationDevice(raw);
+IGraphicDevice device = validated;
+// 以降の子資源はすべてdeviceから生成し、validatedより先にDisposeする。
+```
+
+任意診断は[Lumyte.Graphics.Validation](src/Graphics/Lumyte.Graphics.Validation/README.md)のValidationDeviceで選択します。backendを借用し、すべての子資源をwrapperから作ります。rawはValidationEnabledがfalseで診断engineを持たず、wrapperはtrueです。Graphの参照準備、依存query、寿命・同期・配置診断はこの層が担当します。native backendの必須bounds／memory safety／ABI／実際のwire容量・完了検査は継続します。既存の固定checkpoint測定からこの新しい層の性能は主張しません。

@@ -1,3 +1,11 @@
+// Adapter metadata is optional and may be privacy-filtered. Unknown stays shared.
+export function prefersDrawLocalArgumentTables(adapter) {
+    try {
+        const info = adapter?.info;
+        return typeof info?.architecture === "string" && info.architecture.toLowerCase() === "swiftshader";
+    } catch { return false; }
+}
+
 export async function createDevice() {
     const gpu = globalThis.navigator?.gpu;
     if (!gpu) {
@@ -12,7 +20,21 @@ export async function createDevice() {
         const limits = device.limits;
         const caps = Object.freeze({
             shaderTarget: 0, // WGSL.
+            preferDrawLocalArgumentTables: prefersDrawLocalArgumentTables(adapter),
             features: 3, // WebGPU core: indirect draw and anisotropic filtering.
+            argumentTableBindingLimits: {
+                textureSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
+                samplerSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
+                bufferSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
+                texturesPerDraw: limits.maxSampledTexturesPerShaderStage,
+                samplersPerDraw: limits.maxSamplersPerShaderStage,
+                buffersPerDraw: Math.max(0, limits.maxStorageBuffersPerShaderStage - 1),
+                combinedBindings: limits.maxUniformBuffersPerShaderStage > 0 ? limits.maxBindingsPerBindGroup : 0,
+                reservedBindings: 2,
+                maximumBufferRangeBytes: Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize),
+                bufferRangeAlignment: limits.minStorageBufferOffsetAlignment,
+                bufferRangeSizeAlignment: 4,
+            },
             maxBufferSize: limits.maxBufferSize,
             maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
             maxTextureDimension2D: limits.maxTextureDimension2D,
@@ -93,6 +115,19 @@ export function unmapBuffer(handle) {
 
 export function copyBufferFrom(handle, source, offset) {
     source.copyTo(new Uint8Array(handle.mapped, offset, source.byteLength));
+}
+
+export function acquireMappedUploadRange(handle, offset, length) {
+    if (handle.disposed || !handle.mapped) throw new Error("Upload storage is not mapped.");
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length <= 0 || offset > handle.mapped.byteLength || length > handle.mapped.byteLength - offset) throw new RangeError("Upload range is outside the mapping.");
+    return new Uint8Array(handle.mapped, offset, length);
+}
+
+export function copyMappedUploadRange(view, source, relativeOffset) {
+    if (!Number.isInteger(relativeOffset) || relativeOffset < 0 || relativeOffset > view.byteLength || source.byteLength > view.byteLength - relativeOffset) throw new RangeError("Upload write is outside the acquired range.");
+    // MemoryView cannot be borrowed as a JS typed array. Its synchronous slice copies
+    // across the bridge; neither the MemoryView nor its managed span is retained.
+    view.set(source.slice(), relativeOffset);
 }
 
 export function copyBufferTo(handle, destination, offset) {
@@ -275,9 +310,10 @@ export function draw(pass, vertices, instances, firstVertex, firstInstance) { pa
 export function dispatch(pass, x, y, z) { pass.dispatchWorkgroups(x, y, z); }
 
 function shaderLayout(device, key, compute = false) {
-    const [textures, samplers, buffers, writable] = key.split(":").map(Number);
+    const [textures, samplers, buffers, writable, hasRoot = 1] = key.split(":").map(Number);
+    if ((hasRoot && device.limits.maxUniformBuffersPerShaderStage < 1) || textures > device.limits.maxSampledTexturesPerShaderStage || samplers > device.limits.maxSamplersPerShaderStage || buffers + writable + (textures + samplers + buffers + writable > 0 ? 1 : 0) > device.limits.maxStorageBuffersPerShaderStage) throw new Error("Argument table exceeds actual device binding limits.");
     const visibility = compute ? GPUShaderStage.COMPUTE : GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
-    const entries = [{ binding: 8, visibility, buffer: { type: "uniform" } }];
+    const entries = hasRoot ? [{ binding: 8, visibility, buffer: { type: "uniform" } }] : [];
     if (textures + samplers + buffers + writable > 0) entries.push({ binding: 9, visibility, buffer: { type: "read-only-storage" } });
     const extra = [10, 10 + Math.max(0, textures - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1), 10 + Math.max(0, textures - 1) + Math.max(0, samplers - 1) + Math.max(0, buffers - 1)];
     [textures, samplers, buffers, writable].forEach((count, kind) => {
@@ -290,7 +326,7 @@ function shaderLayout(device, key, compute = false) {
             entries.push(entry);
         }
     });
-    if (entries.length > device.limits.maxBindingsPerBindGroup) throw new Error("Shader arguments exceed maxBindingsPerBindGroup.");
+    if (entries.length > device.limits.maxBindingsPerBindGroup || entries.some(entry => entry.binding >= device.limits.maxBindingsPerBindGroup)) throw new Error("Shader arguments exceed maxBindingsPerBindGroup.");
     return device.createBindGroupLayout({ entries });
 }
 function shaderBacking(device, view, usage) {
@@ -300,16 +336,43 @@ function shaderBacking(device, view, usage) {
     buffer.unmap();
     return buffer;
 }
-export function createShaderBinding(handle, key, compute, root, map) {
-    if (root.length > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize) throw new Error("Internal shader bindings exceed device size limits.");
-    const uniform = shaderBacking(handle.device, root, GPUBufferUsage.UNIFORM);
-    const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [uniform], entries: [{ binding: 8, resource: { buffer: uniform, size: root.length } }] };
-    if (map.length > 0) {
-        const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
-        binding.buffers.push(remap);
-        binding.entries.push({ binding: 9, resource: { buffer: remap, size: map.length } });
+export function createRootBacking(handle, size) {
+    if (size <= 0 || size % 16 !== 0 || size > handle.device.limits.maxBufferSize || size > handle.device.limits.maxUniformBufferBindingSize) throw new Error("Root arguments exceed device size limits.");
+    const buffer = handle.device.createBuffer({ size, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true });
+    try {
+        const mapped = buffer.getMappedRange();
+        new Uint8Array(mapped).fill(0);
+        return { buffer, size, mapped, disposed: false };
+    } catch (error) {
+        buffer.destroy();
+        throw error;
     }
-    return binding;
+}
+export function writeRootBacking(root, view, offset) {
+    if (root.disposed || !root.mapped) throw new Error("Root arguments are not writable.");
+    // MemoryView.slice creates a JS copy, not a retained C# numeric snapshot.
+    const bytes = view.slice();
+    if (!Number.isInteger(offset) || offset < 0 || offset > root.size || bytes.length > root.size - offset) throw new Error("Root write is outside the allocation.");
+    new Uint8Array(root.mapped, offset, bytes.length).set(bytes);
+}
+export function createShaderBinding(handle, key, compute, rootBacking, map) {
+    if (rootBacking && (rootBacking.disposed || rootBacking.mapped)) throw new Error("Root arguments must have sealed native backing before binding.");
+    const rootSize = rootBacking?.size ?? 0;
+    if (rootSize > handle.device.limits.maxUniformBufferBindingSize || map.length > handle.device.limits.maxStorageBufferBindingSize || map.length > handle.device.limits.maxBufferSize) throw new Error("Internal shader bindings exceed device size limits.");
+    const binding = { layout: shaderLayout(handle.device, key, compute), buffers: [], entries: [] };
+    try {
+        // Command-owned roots are borrowed, never destroyed with this binding.
+        if (rootBacking) binding.entries.push({ binding: 8, resource: { buffer: rootBacking.buffer, size: rootSize } });
+        if (map.length > 0) {
+            const remap = shaderBacking(handle.device, map, GPUBufferUsage.STORAGE);
+            binding.buffers.push(remap);
+            binding.entries.push({ binding: 9, resource: { buffer: remap, size: map.length } });
+        }
+        return binding;
+    } catch (error) {
+        destroyShaderBinding(binding);
+        throw error;
+    }
 }
 export function addShaderResource(binding, slot, kind, resource, offset, size) {
     binding.entries.push({ binding: slot, resource: kind < 2 ? resource : { buffer: resource.buffer, offset, size } });

@@ -65,6 +65,7 @@ ProgressBar.Valueはfiniteの0〜1だけを受け、範囲外をArgumentOutOfRan
 既定要求寸法は120×4、色はForeground/Backgroundから明示でき、callbackや値編集はありません。
 通常のUiArgumentにより`Signal<double>`も同じvalue引数へ渡せます。
 
+ProgressBarのForeground/BackgroundとBusyIndicatorのColorは共通の`SRgba<float>`を使い、受入時に全成分の[0,1]を検証します。
 BusyIndicatorは既定要求寸法24×24、Colorを明示できます。標準hostの借用AnimationClockとowner loopだけで動きます。
 埋込みhostではlayout前にUiSurface.AdvanceAnimationsを一回呼びます。独立timer/threadは作りません。
 visible/mountedの期間だけ進み、hidden/unmounted/surface休止ではframe要求を止め、再開時catch-upしません。

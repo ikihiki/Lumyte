@@ -9,6 +9,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
     private readonly GraphicsDeviceLifetime _lifetime;
+
     private bool _disposed;
 
     private BrowserDevice(JSObject handle, DeviceCaps caps)
@@ -25,6 +26,9 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         add => _lifetime.DeviceLost += value;
         remove => _lifetime.DeviceLost -= value;
     }
+
+    /// <inheritdoc />
+    public bool ValidationEnabled => false;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -77,7 +81,8 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(context);
-        return new BrowserSurface(this, context);
+        var surface = new BrowserSurface(this, context);
+        return surface;
     }
 
     /// <summary>Connects distinct externally supplied canvas contexts to this shared device.</summary>
@@ -213,11 +218,27 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
         return buffer;
     }
 
+    /// <summary>Creates raw unmanaged shader storage.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The compiled shader artifact.</param>
+    /// <param name="count">The element count.</param>
+    /// <param name="memory">The memory preference.</param>
+    /// <param name="usage">The GPU usages; upload staging uses CopySource.</param>
+    /// <returns>The typed raw buffer, without conversion or dependency metadata.</returns>
+    public IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+
+        return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
+    }
+
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new BrowserShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;

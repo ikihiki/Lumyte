@@ -20,6 +20,8 @@ public sealed class RenderGraphBuffer<T> : RenderGraphResource
         _desc = desc with { };
     }
 
+    internal ulong Count => Allocation is IGraphicsBuffer<T> buffer ? buffer.Count : _desc!.Count;
+
     internal override string Kind => "Buffer";
 
     private BufferUsage Usage => Allocation is IGraphicsBuffer<T> buffer ? buffer.Usage : _desc!.Usage;

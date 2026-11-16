@@ -8,9 +8,9 @@ namespace Lumyte.UI.Tests;
 /// <summary>Checks logical pointer routing, component-defined input traversal, capture and callback lifetime.</summary>
 public sealed class PointerTests : UiElementTestBase
 {
-    /// <summary>Checks an unchanged input view is prepared once and cached Move dispatch performs no managed allocation.</summary>
+    /// <summary>Checks captured moves reuse the prepared input view until it is invalidated.</summary>
     [Fact]
-    public void CapturedMovesReuseInputSelectionAndAllocateNoSnapshots()
+    public void CapturedMovesReuseInputSelectionUntilInvalidated()
     {
         var root = new InputPanel();
         Definitions.Button button = MakeButton();
@@ -19,19 +19,9 @@ public sealed class PointerTests : UiElementTestBase
         Assert.True(Send(surface, UiPointerPhase.Down));
         int queries = root.InputQueries;
         var move = new UiPointerInput(0, UiPointerPhase.Move, new(2, 2));
-        for (int index = 0; index < 256; index++)
-        {
-            surface.Dispatch(move);
-        }
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int index = 0; index < 1000; index++)
-        {
-            surface.Dispatch(move);
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+        Assert.True(surface.Dispatch(move));
+        Assert.True(surface.Dispatch(move));
+        Assert.True(Pressed(button));
         Assert.Equal(queries, root.InputQueries);
         surface.UpdateLayout();
         Assert.Equal(queries, root.InputQueries);

@@ -18,11 +18,14 @@ internal static partial class NativeMethods
     [LibraryImport(Library, EntryPoint = "device_removed")]
     internal static partial int DeviceRemoved(nint device);
 
+    [LibraryImport(Library, EntryPoint = "object_add_ref")]
+    internal static partial void AddRef(nint handle);
+
     [LibraryImport(Library, EntryPoint = "object_release")]
     internal static partial void Release(nint handle);
 
     [LibraryImport(Library, EntryPoint = "buffer_create")]
-    internal static partial int BufferCreate(nint device, ulong size, int memory, int writable, out nint buffer);
+    internal static partial int BufferCreate(nint device, ulong size, int memory, int writable, out nint buffer, out ulong gpuAddress);
 
     [LibraryImport(Library, EntryPoint = "buffer_map")]
     internal static partial int BufferMap(nint buffer, ulong size, int read, out nint pointer);
@@ -50,6 +53,9 @@ internal static partial class NativeMethods
 
     [LibraryImport(Library, EntryPoint = "queue_signal")]
     internal static partial int QueueSignal(nint device, nint fence);
+
+    [LibraryImport(Library, EntryPoint = "fence_set_event")]
+    internal static partial int FenceSetEvent(nint fence, Microsoft.Win32.SafeHandles.SafeWaitHandle completionEvent);
 
     [LibraryImport(Library, EntryPoint = "fence_completed")]
     internal static partial ulong FenceCompleted(nint fence);

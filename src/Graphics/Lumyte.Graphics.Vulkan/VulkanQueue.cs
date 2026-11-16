@@ -108,7 +108,8 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
             command.MarkSubmitted();
         }
 
-        return new VulkanSubmission(owner, commands, fence);
+        var submission = new VulkanSubmission(owner, commands, fence);
+        return submission;
     }
 
     private static PipelineStageFlags NativeStages(PipelineStage stages)

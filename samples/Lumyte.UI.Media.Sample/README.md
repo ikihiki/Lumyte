@@ -9,6 +9,9 @@ dotnet run --project build -c Release -- --target Compile --project samples/Lumy
 dotnet run --project samples/Lumyte.UI.Media.Sample -c Release --no-build -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
 ```
 
+共通launcherの`--list`にも`ui-media`（`headless`）として登録しています。
+`--sample ui-media -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf`で同じ明示フォントを渡せます。
+
 solutionをCompileした場合は共通runnerから検査と実行をまとめられます。
 
 ```sh

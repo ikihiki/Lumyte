@@ -5,16 +5,20 @@ namespace Lumyte.Graphics.Drawing2D;
 internal sealed class DrawingResourceState2D : IDisposable
 {
     private readonly object _gate = new();
+    private readonly List<IDisposable> _failedCleanup = [];
     private readonly IGraphicDevice? _device;
     private readonly Action? _validate;
+    private readonly long _numericPoolBudget;
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
     private SolidRectangleResources2D? _rectangles;
+    private DrawRecordResources2D? _records;
     private int _users = 1;
     private bool _returned;
     private bool _closing;
+    private bool _retryingCleanup;
 
-    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null)
+    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null, long numericPoolBudget = 8 * 1024 * 1024)
     {
         if (resources is not null && !ReferenceEquals(device, resources.Device))
         {
@@ -27,6 +31,7 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
 
         (_device, _resources, _owner, _validate) = (device, resources, owner, validate);
+        _numericPoolBudget = numericPoolBudget;
     }
 
     internal DrawingResources2D Resources
@@ -42,6 +47,17 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
+    internal long IdleRecordBytes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _records?.NumericPool.IdleBytes ?? 0;
+            }
+        }
+    }
+
     public void Dispose()
     {
         lock (_gate)
@@ -51,6 +67,7 @@ internal sealed class DrawingResourceState2D : IDisposable
                 return;
             }
 
+            RetryCleanup();
             Release();
             _returned = true;
         }
@@ -87,12 +104,80 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
+    internal DrawRecordResources2D? Records()
+    {
+        lock (_gate)
+        {
+            EnsureResources();
+            Validate();
+            GraphicsPipelineDesc pipeline = _resources!.Pipeline.Desc;
+            if (!ReferenceEquals(pipeline.VertexShader.Artifact, DrawingShaders2D.Vertex)
+                || !ReferenceEquals(pipeline.FragmentShader?.Artifact, DrawingShaders2D.Fragment)
+                || pipeline.TopologyClass != PrimitiveTopologyClass.Triangle || pipeline.AlphaToCoverageEnable)
+            {
+                return null;
+            }
+
+            return _records ??= new(_resources.Device, _numericPoolBudget);
+        }
+    }
+
+    internal void TrimIdleRecordStorage(long maximum)
+    {
+        lock (_gate)
+        {
+            _records?.NumericPool.Trim(maximum);
+        }
+    }
+
     internal void Validate()
     {
         lock (_gate)
         {
+            RetryCleanup();
             ObjectDisposedException.ThrowIf(_users == 0 || _closing, this);
             _validate?.Invoke();
+        }
+    }
+
+    internal IDisposable CleanupOwner(IDisposable resource) => new CleanupUse(this, resource);
+
+    internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure)
+    {
+        try
+        {
+            resource.Dispose();
+        }
+        catch (Exception cleanupFailure)
+        {
+            lock (_gate)
+            {
+                _failedCleanup.Add(resource);
+            }
+
+            throw new AggregateException("Preparation and cleanup failed; the renderer resource owner retains pending retries.", preparationFailure, cleanupFailure);
+        }
+    }
+
+    private void RetryCleanup()
+    {
+        if (_retryingCleanup)
+        {
+            return;
+        }
+
+        _retryingCleanup = true;
+        try
+        {
+            while (_failedCleanup.Count != 0)
+            {
+                _failedCleanup[^1].Dispose();
+                _failedCleanup.RemoveAt(_failedCleanup.Count - 1);
+            }
+        }
+        finally
+        {
+            _retryingCleanup = false;
         }
     }
 
@@ -138,6 +223,8 @@ internal sealed class DrawingResourceState2D : IDisposable
         if (_users == 1)
         {
             _closing = true;
+            _records?.Dispose();
+            _records = null;
             _rectangles?.Dispose();
             _rectangles = null;
             _owner?.Dispose();
@@ -145,6 +232,35 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
 
         _users--;
+    }
+
+    private sealed class CleanupUse(DrawingResourceState2D state, IDisposable resource) : IDisposable
+    {
+        private bool _returned;
+
+        public void Dispose()
+        {
+            if (_returned)
+            {
+                return;
+            }
+
+            try
+            {
+                resource.Dispose();
+                _returned = true;
+            }
+            catch
+            {
+                lock (state._gate)
+                {
+                    state._failedCleanup.Add(resource);
+                    _returned = true;
+                }
+
+                throw;
+            }
+        }
     }
 
     private sealed class Use(DrawingResourceState2D state) : IDisposable

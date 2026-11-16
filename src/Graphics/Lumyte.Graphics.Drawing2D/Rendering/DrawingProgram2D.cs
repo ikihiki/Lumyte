@@ -1,38 +1,139 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
 internal sealed class DrawingProgram2D
 {
     internal const int MaximumInstructions = 256;
-    private readonly IArgumentTable _table;
-    private readonly IGpuRef<IGraphicsSampler> _nearest;
+    private readonly ShaderResources _plan;
+    private readonly bool _recordLowering;
+    private readonly List<IGpuRef<IGraphicsTextureView>?> _textures = [];
+    private readonly List<IGpuRef<IGraphicsSampler>?> _samplers = [];
+    private readonly List<IGraphicsTextureView> _textureInputs = [];
+    private readonly List<IGraphicsSampler> _samplerInputs = [];
     private readonly Matrix3x2 _pixelTransform;
+    private readonly ClipNormalizationCache2D _clips;
     private readonly Dictionary<PaintNode2D, Dictionary<Matrix3x2, uint>> _paintCache = new(ReferenceEqualityComparer.Instance);
-    private uint _textureSlot;
 
-    internal DrawingProgram2D(IArgumentTable table, IGpuRef<IGraphicsSampler> nearest, DrawingTargetInfo2D target)
+    private int _outerMaskAdmissionCells;
+
+    internal DrawingProgram2D(ShaderResources plan, DrawingTargetInfo2D target, ClipNormalizationCache2D? clips = null, bool recordLowering = false)
     {
-        _table = table;
-        _nearest = nearest;
+        _plan = plan ?? throw new ArgumentNullException(nameof(plan));
+        _recordLowering = recordLowering;
+        _clips = clips ?? new(target);
         _pixelTransform = Matrix3x2.CreateScale(target.PixelScale) * Matrix3x2.CreateTranslation(-target.PixelOrigin);
     }
 
     internal List<DrawingInstruction> Instructions { get; } = [];
 
+    internal NormalizedClip2D? Clip { get; private set; }
+
     internal List<Vector4> Data { get; } = [];
+
+    internal int AdmissionDataCount => checked(Data.Count + _outerMaskAdmissionCells);
+
+    internal HashSet<IGraphicsTextureView> Views { get; } = new(ReferenceEqualityComparer.Instance);
+
+    internal HashSet<IGraphicsSampler> Samplers { get; } = new(ReferenceEqualityComparer.Instance);
 
     internal HashSet<IGraphicsTexture> Textures { get; } = new(ReferenceEqualityComparer.Instance);
 
-    internal static Vector4 Linear(Color2D color)
+    internal static Vector4 Linear(SRgba<float> color)
     {
-        static float Decode(float c) => c <= 0.04045f ? c / 12.92f : MathF.Pow((c + 0.055f) / 1.055f, 2.4f);
-        return new(Decode(color.R) * color.A, Decode(color.G) * color.A, Decode(color.B) * color.A, color.A);
+        LRgba<float> linear = color.ToLinear<float>().PremultiplyLinear<float>();
+        return new(linear.R, linear.G, linear.B, linear.A);
+    }
+
+    internal static bool TryRectangle(Path2D path, out Rect2D rectangle)
+    {
+        IReadOnlyList<PathSegment2D> segments = path.Segments;
+        rectangle = default;
+        if (segments.Count != 5 || segments[0].Verb != PathVerb2D.Move
+            || segments[1].Verb != PathVerb2D.Line || segments[2].Verb != PathVerb2D.Line
+            || segments[3].Verb != PathVerb2D.Line || segments[4].Verb != PathVerb2D.Close)
+        {
+            return false;
+        }
+
+        Vector2 a = segments[0].P0;
+        Vector2 b = segments[1].P0;
+        Vector2 c = segments[2].P0;
+        Vector2 d = segments[3].P0;
+        if (a.Y != b.Y || b.X != c.X || c.Y != d.Y || d.X != a.X
+            || b.X <= a.X || c.Y <= a.Y)
+        {
+            return false;
+        }
+
+        float width = b.X - a.X;
+        float height = c.Y - a.Y;
+
+        // Reconstructed extents must preserve the original edge coordinates.
+        if (!float.IsFinite(width) || !float.IsFinite(height)
+            || a.X + width != b.X || a.Y + height != c.Y)
+        {
+            return false;
+        }
+
+        rectangle = new(a.X, a.Y, width, height);
+        return true;
+    }
+
+    internal bool TryPaintIdentity(uint instruction, out PaintNode2D? node, out Matrix3x2 transform)
+    {
+        foreach ((PaintNode2D paint, Dictionary<Matrix3x2, uint> transforms) in _paintCache)
+        {
+            foreach ((Matrix3x2 captured, uint index) in transforms)
+            {
+                if (index == instruction)
+                {
+                    node = paint;
+                    transform = captured;
+                    return true;
+                }
+            }
+        }
+
+        node = null;
+        transform = default;
+        return false;
+    }
+
+    internal (IGraphicsTextureView? View, IGraphicsSampler? Sampler) InputIdentity(DrawingInstruction instruction)
+        => (instruction.TextureIndex >= 0 ? _textureInputs[instruction.TextureIndex] : null, instruction.SamplerIndex >= 0 ? _samplerInputs[instruction.SamplerIndex] : null);
+
+    internal void ResolveReferences(IGpuRef<IGraphicsTextureView> fallback, IGpuRef<IGraphicsSampler> nearest)
+    {
+        if (!_plan.IsReady)
+        {
+            throw new InvalidOperationException("Materialize the resource set before resolving instructions.");
+        }
+
+        for (int i = 0; i < Instructions.Count; i++)
+        {
+            DrawingInstruction instruction = Instructions[i];
+            Instructions[i] = instruction with
+            {
+                Texture = instruction.TextureIndex >= 0 ? _textures[instruction.TextureIndex] ?? throw new InvalidOperationException("Texture reference is unresolved.") : instruction.Texture ?? fallback,
+                Sampler = instruction.SamplerIndex >= 0 ? _samplers[instruction.SamplerIndex] ?? throw new InvalidOperationException("Sampler reference is unresolved.") : instruction.Sampler ?? nearest,
+                TextureIndex = -1,
+                SamplerIndex = -1,
+            };
+        }
     }
 
     internal uint Compile(DrawingCommand2D command)
     {
+        NormalizedClip2D clip = _clips.Get(command.State.Clip, Matrix3x2.Identity, command.State.Clip.Elements);
+        Clip = clip.Mask.Length == 0 ? clip : clip with { Mask = [] };
+        if (Clip.Kind == NormalizedClipKind2D.Empty)
+        {
+            return Solid(default);
+        }
+
         Matrix3x2 transform = command.State.Transform * _pixelTransform;
         if (!Invertible(transform))
         {
@@ -115,10 +216,16 @@ internal sealed class DrawingProgram2D
         }
 
         uint result = Multiply(shape, paint);
-        return ApplyClip(result, command.State);
+
+        return ApplyNormalizedClip(result, clip, scissorInstalled: true);
     }
 
-    internal uint CompileClip(DrawingState2D state) => ApplyClip(Solid(Vector4.One), state);
+    internal uint CompileClip(DrawingState2D state)
+    {
+        NormalizedClip2D clip = _clips.Get(state.Clip, Matrix3x2.Identity, state.Clip.Elements);
+        Clip = clip.Mask.Length == 0 ? clip : clip with { Mask = [] };
+        return ApplyNormalizedClip(Solid(Vector4.One), clip, scissorInstalled: true);
+    }
 
     internal void ValidateFiniteData()
     {
@@ -176,14 +283,45 @@ internal sealed class DrawingProgram2D
 
     private static bool Invertible(Matrix3x2 transform) => Matrix3x2.Invert(transform, out Matrix3x2 inverse) && float.IsFinite(inverse.M11) && float.IsFinite(inverse.M12) && float.IsFinite(inverse.M21) && float.IsFinite(inverse.M22) && float.IsFinite(inverse.M31) && float.IsFinite(inverse.M32);
 
-    private uint ApplyClip(uint result, DrawingState2D state)
+    private uint ApplyNormalizedClip(uint result, NormalizedClip2D clip, bool scissorInstalled)
     {
-        foreach (ClipElement2D clip in state.Clip.Elements)
+        if (clip.Kind == NormalizedClipKind2D.Empty)
         {
-            result = Multiply(result, Path(clip.Path, clip.Rule, clip.Transform * _pixelTransform));
+            return Solid(default);
         }
 
-        return result;
+        if (clip.Kind == NormalizedClipKind2D.None || (scissorInstalled && clip.Kind == NormalizedClipKind2D.Scissor))
+        {
+            return result;
+        }
+
+        if (clip.Kind == NormalizedClipKind2D.SampleMask)
+        {
+            uint first = (uint)Data.Count;
+            if (Data.Count + clip.Mask.Length > 262144)
+            {
+                throw new NotSupportedException("Normalized clip and geometry exceed the 262144 vector payload budget.");
+            }
+
+            if (_recordLowering && scissorInstalled)
+            {
+                // The compact page stores this outer mask once in its independent
+                // clip stream. Keep its old per-draw admission charge, not another
+                // transient copy that the compact lowering will never consume.
+                _outerMaskAdmissionCells = clip.Mask.Length;
+            }
+            else
+            {
+                Data.AddRange(clip.Mask);
+            }
+
+            return Add(Node(17, Matrix3x2.Identity) with { First = result, Count = first, A = new(clip.Bounds.X, clip.Bounds.Y, clip.Bounds.Width, clip.Bounds.Height) });
+        }
+
+        Vector4 samples = clip.Kind == NormalizedClipKind2D.Scissor
+            ? new(clip.Bounds.X * 4, clip.Bounds.Y * 4, (clip.Bounds.X + clip.Bounds.Width) * 4, (clip.Bounds.Y + clip.Bounds.Height) * 4)
+            : clip.Samples;
+        return Add(Node(16, Matrix3x2.Identity) with { First = result, A = samples });
     }
 
     private uint Paint(PaintNode2D paint, Matrix3x2 transform, int depth = 0)
@@ -232,6 +370,11 @@ internal sealed class DrawingProgram2D
             case DistanceFieldPaintNode2D node:
                 ImagePattern2D field = node.Pattern;
                 uint child = Paint(node.Child, transform, depth + 1);
+                if (!Invertible(field.PatternToLocal * transform))
+                {
+                    return Solid(default);
+                }
+
                 return Add(ImageInstruction(field.View, field.Source, field.Alpha, field.TileX, field.TileY, field.Filter, field.PatternToLocal * transform) with
                 {
                     Kind = 15,
@@ -241,7 +384,37 @@ internal sealed class DrawingProgram2D
             case OpacityPaintNode2D node:
                 return Add(Node(10, Matrix3x2.Identity) with { First = Paint(node.Child, transform, depth + 1), A = new(node.Opacity) });
             case ClipPaintNode2D node:
-                return Multiply(Path(node.Path, node.Rule, transform), Paint(node.Child, transform, depth + 1));
+                List<ClipElement2D> elements = [];
+                PaintNode2D childPaint = node;
+                Matrix3x2 captured = transform;
+                int clipDepth = depth;
+                while (childPaint is ClipPaintNode2D or TransformPaintNode2D)
+                {
+                    if (++clipDepth > 64)
+                    {
+                        throw new NotSupportedException("Paint graph exceeds the 64 level evaluation budget.");
+                    }
+
+                    if (childPaint is ClipPaintNode2D nested)
+                    {
+                        elements.Add(new(nested.Path, captured, nested.Rule));
+                        childPaint = nested.Child;
+                    }
+                    else if (childPaint is TransformPaintNode2D transformed)
+                    {
+                        captured = transformed.Transform * captured;
+                        if (!Invertible(captured))
+                        {
+                            return Solid(default);
+                        }
+
+                        childPaint = transformed.Child;
+                    }
+                }
+
+                NormalizedClip2D normalized = _clips.Get(node, transform, elements, pixelSpace: true);
+                return normalized.Kind == NormalizedClipKind2D.Empty ? Solid(default)
+                    : ApplyNormalizedClip(Paint(childPaint, captured, clipDepth), normalized, scissorInstalled: false);
             case TransformPaintNode2D node:
                 return Paint(node.Child, node.Transform * transform, depth + 1);
             case LayersPaintNode2D node:
@@ -259,8 +432,15 @@ internal sealed class DrawingProgram2D
         }
     }
 
-    private uint Path(Path2D path, FillRule2D rule, Matrix3x2 transform)
+    private uint Path(Path2D path, FillRule2D rule, Matrix3x2 transform, bool rectangularClip = false)
     {
+        // Nested UI rectangle clips need neither flattened edges nor geometry uploads.
+        if (rectangularClip && TryRectangle(path, out Rect2D rectangle))
+        {
+            // Rect would overwrite the transparent kind-0 fallback with rectangle coordinates.
+            return Invertible(transform) ? Rect(rectangle, transform) : Solid(default);
+        }
+
         uint first = (uint)Data.Count;
         foreach (PathFlattening2D.Contour contour in PathFlattening2D.Flatten(path, transform))
         {
@@ -306,7 +486,7 @@ internal sealed class DrawingProgram2D
     }
 
     private uint Image(IGraphicsTextureView view, Rect2D source, AlphaRepresentation2D alpha, ImageTileMode2D tileX, ImageTileMode2D tileY, ImageFilter2D filter, Matrix3x2 transform)
-        => Add(ImageInstruction(view, source, alpha, tileX, tileY, filter, transform));
+        => Invertible(transform) ? Add(ImageInstruction(view, source, alpha, tileX, tileY, filter, transform)) : Solid(default);
 
     private DrawingInstruction ImageInstruction(IGraphicsTextureView view, Rect2D source, AlphaRepresentation2D alpha, ImageTileMode2D tileX, ImageTileMode2D tileY, ImageFilter2D filter, Matrix3x2 transform)
     {
@@ -316,8 +496,9 @@ internal sealed class DrawingProgram2D
             A = Vector(source),
             B = new(width, height, (float)tileX, (float)tileY),
             C = new((float)filter, (float)alpha, 0, 0),
-            Texture = Register(view),
-            Sampler = _nearest,
+            Texture = null!,
+            Sampler = null!,
+            TextureIndex = Request(view),
         };
     }
 
@@ -334,32 +515,45 @@ internal sealed class DrawingProgram2D
         }
 
         (uint width, uint height) = view.Texture.GetMipSize(view.Info.BaseMipLevel);
-        uint samplerSlot = _textureSlot + 1;
         return Add(Node(kind, transform) with
         {
             A = Vector(destination),
             B = Vector(source),
             C = new(width, height, range, 0),
             Mode = mode,
-            Texture = Register(view),
-            Sampler = _table.WriteSampler(samplerSlot, sampler),
+            Texture = null!,
+            Sampler = null!,
+            TextureIndex = Request(view),
+            SamplerIndex = Request(sampler),
         });
     }
 
-    private IGpuRef<IGraphicsTextureView> Register(IGraphicsTextureView view)
+    private int Request(IGraphicsTextureView view)
     {
-        if (_textureSlot >= MaximumInstructions)
-        {
-            throw new NotSupportedException("Paint graph exceeds its texture binding budget.");
-        }
-
         Textures.Add(view.Texture);
-        return _table.WriteTexture(_textureSlot++, view);
+        Views.Add(view);
+        int index = _textures.Count;
+        _textures.Add(null);
+        _textureInputs.Add(view);
+        List<IGpuRef<IGraphicsTextureView>?> references = _textures;
+        _plan.RegisterTexture(view, reference => references[index] = reference);
+        return index;
+    }
+
+    private int Request(IGraphicsSampler sampler)
+    {
+        Samplers.Add(sampler);
+        int index = _samplers.Count;
+        _samplers.Add(null);
+        _samplerInputs.Add(sampler);
+        List<IGpuRef<IGraphicsSampler>?> references = _samplers;
+        _plan.RegisterSampler(sampler, reference => references[index] = reference);
+        return index;
     }
 
     private uint Add(DrawingInstruction instruction)
     {
-        if (Instructions.Count >= MaximumInstructions || Data.Count > 262144)
+        if (Instructions.Count >= MaximumInstructions || AdmissionDataCount > 262144)
         {
             throw new NotSupportedException("Drawing exceeds the 256 instruction or 262144 geometry element budget.");
         }

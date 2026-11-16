@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
+using Lumyte.Mathematics.Colors;
 using Lumyte.UI;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -10,9 +11,9 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Checks UI recording against immutable Drawing2D command snapshots across the library boundary.</summary>
 public sealed class UiRecordingTests
 {
-    private static readonly Color2D _red = new(1, 0, 0, 0.5f);
-    private static readonly Color2D _green = new(0, 1, 0, 0.5f);
-    private static readonly Color2D _blue = new(0, 0, 1, 0.5f);
+    private static readonly SRgba<float> _red = new(1, 0, 0, 0.5f);
+    private static readonly SRgba<float> _green = new(0, 1, 0, 0.5f);
+    private static readonly SRgba<float> _blue = new(0, 0, 1, 0.5f);
 
     /// <summary>Checks a component can interleave itself and arbitrary groups independently of registration order.</summary>
     [Fact]
@@ -225,7 +226,7 @@ public sealed class UiRecordingTests
     [Fact]
     public void RebuiltVisualDeclarationsProduceIndependentCommandSnapshots()
     {
-        static CallbackPanel Build(Color2D color, bool clip)
+        static CallbackPanel Build(SRgba<float> color, bool clip)
         {
             var root = new CallbackPanel(_ => { }) { ClipToBounds = clip };
             root.Children.Initialize(Rectangle(fill: color, width: 12, height: 8));
@@ -401,7 +402,7 @@ public sealed class UiRecordingTests
         Assert.Equal(_blue, Color(Assert.IsType<FillRectCommand2D>(Assert.Single(second.Commands))));
     }
 
-    private static Color2D Color(FillRectCommand2D command) => Assert.IsType<SolidPaintNode2D>(command.Paint.Root).Color;
+    private static SRgba<float> Color(FillRectCommand2D command) => Assert.IsType<SolidPaintNode2D>(command.Paint.Root).Color;
 
     private static DrawList2D Record(UiSurface surface)
     {

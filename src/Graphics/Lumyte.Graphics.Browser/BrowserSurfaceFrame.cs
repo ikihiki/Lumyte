@@ -11,6 +11,7 @@ internal sealed class BrowserSurfaceFrame : IGraphicsSurfaceFrame
     internal BrowserSurfaceFrame(BrowserSwapchain swapchain, JSObject native)
     {
         _swapchain = swapchain;
+        Lifetime = new(IsNativeReleased);
         SwapchainDesc desc = swapchain.Configuration;
         _texture = new(swapchain.Owner, new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage }, native, Lifetime);
     }
@@ -19,14 +20,24 @@ internal sealed class BrowserSurfaceFrame : IGraphicsSurfaceFrame
 
     public IGraphicsTexture Texture => _texture;
 
-    internal SurfaceFrameLifetime Lifetime { get; } = new(() => true);
+    internal SurfaceFrameLifetime Lifetime { get; }
 
     internal BrowserDevice Owner => _swapchain.Owner;
 
     public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null)
     {
         Lifetime.ValidatePresent();
+        IReadOnlyList<IGraphicsSemaphore> validationWaits = waitSemaphores ?? [];
+        foreach (IGraphicsSemaphore value in validationWaits)
+        {
+            if (value is not BrowserSemaphore semaphore || !ReferenceEquals(semaphore.Owner, Owner))
+            {
+                throw new ArgumentException("Presentation semaphore belongs to another device.", nameof(waitSemaphores));
+            }
+        }
+
         SurfaceStatus status = _swapchain.Present();
+
         Lifetime.MarkPresented();
         return status;
     }
@@ -40,7 +51,18 @@ internal sealed class BrowserSurfaceFrame : IGraphicsSurfaceFrame
             return;
         }
 
+        if (!IsNativeReleased())
+        {
+            throw new InvalidOperationException("Native presentation synchronization is still in flight.");
+        }
+
         _texture.DisposeLease();
         Lifetime.MarkDisposed();
     }
+
+    private bool IsNativeReleased() =>
+
+        // WebGPU waits are logical ordering on the single queue. No native
+        // presentation synchronization object is retained by this route.
+        true;
 }

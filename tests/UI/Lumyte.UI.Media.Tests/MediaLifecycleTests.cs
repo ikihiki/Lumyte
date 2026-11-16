@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Core.Time;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using Lumyte.Signals;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -11,6 +12,18 @@ namespace Lumyte.UI.Media.Tests;
 /// <summary>Verifies public media factories, semantics and explicit owner-time lifetime.</summary>
 public sealed class MediaLifecycleTests
 {
+    /// <summary>Preserves unit-sRGB acceptance after adopting common color storage.</summary>
+    /// <param name="component">The finite out-of-unit component.</param>
+    [Theory]
+    [InlineData(-0.01f)]
+    [InlineData(1.01f)]
+    public void MediaRejectsOutOfUnitColors(float component)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProgressBar(foreground: new SRgba<float>(component, 0, 0, 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ProgressBar(background: new SRgba<float>(0, component, 0, 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BusyIndicator(color: new SRgba<float>(0, 0, 0, component)));
+    }
+
     /// <summary>Checks normalized value range rejection before publication.</summary>
     /// <param name="value">The invalid value.</param>
     [Theory]

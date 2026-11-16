@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Core.Time;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 using BusyWidget = Lumyte.UI.Media.Compose.Definitions.BusyIndicator;
 
 namespace Lumyte.UI.Media;
@@ -84,8 +85,8 @@ public class BusyIndicatorElement : UiElement<BusyWidget>
         {
             double angle = (Phase * Math.Tau) + (index * Math.Tau / 8);
             Vector2 position = center + (new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * (side / 3));
-            Color2D color = Widget.Color;
-            canvas.FillRect(new(position.X - (dot / 2), position.Y - (dot / 2), dot, dot), new Color2D(color.R, color.G, color.B, color.A * ((index + 1) / 8f)));
+            SRgba<float> color = Widget.Color;
+            canvas.FillRect(new(position.X - (dot / 2), position.Y - (dot / 2), dot, dot), new SRgba<float>(color.R, color.G, color.B, color.A * ((index + 1) / 8f)));
         }
     }
 }

@@ -128,7 +128,7 @@ WGSLだけを含むonline artifactも、このbackendの型schemaとhelper ABI�
 
 ## 構造体引数とWGSL binding生成
 
-SetArgumentsは生成codecでroot値をsnapshotします。利用者がprogramに対応する型を渡し、backendは確定したschemaに従ってpackします。shader dataは明示copyで伝播したCPU metadataを使って選択要素からIGpuRefを収集します。循環は要素の訪問済み集合で止めます。command内のpartial copyはmetadata overlayを更新し、submit成功後に後続commandへ公開します。
+SetArgumentsは生成transfer実装でC# wire bytes全体をcommand所有の最終uniformへ直接書き、参照identityだけを保持します。元の値はSet時点で固定し、別のSetは新しい世代へ書きます。数値はpaddingも含めて無変換でコピーし、参照だけをC#で定義した16-byte slotへ解決します。layout照合はDebug／Releaseとも明示的なvalidation有効時だけ行い、無効時は不一致でもrepackしません。shader dataは明示copyで伝播したreference-only metadataを使って選択要素からIGpuRefを収集します。循環は要素の訪問済み集合で止めます。command内のpartial copyはmetadata overlayを更新し、submit成功後に後続commandへ公開します。
 
 artifactのWGSLを直接編集し、texture・sampler・read-only buffer・writable bufferを独立して重複排除した数だけ宣言します。texture samplingとbuffer wordアクセスのABI-owned helperを生成し、論理slotを種類別の物理bindingへ変換するremapを渡します。root uniformとremap storageも含めて有効limitsを検証し、超過時は描画を分割せずNotSupportedExceptionにします。種類別resource数はprogram内のpipeline variant keyに含めます。
 
@@ -138,7 +138,7 @@ root値とdraw用remapだけをmappedAtCreationで初期化してunmapします�
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
-shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。WGSLのraw buffer load／storeと`sizeof(T)`が使うnatural layoutに合わせ、`float3`だけの構造体はstride 12、`uint`と`float3`を持つ構造体はoffset 0／4・stride 16でpackします。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+shader dataのstrideと配置はC# unmanaged structのTransferSizeと実際のfield offsetが正本です。pointee reflectionはDebug照合と参照access kindにのみ使用し、数値を再配置しません。root uniformはuint4 wire lanesをshader側でinterpretし、allocation/binding capacityだけを16-byteへ切り上げます。C# wire sizeとoffsetは変更しません。
 
 共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
 
@@ -198,3 +198,47 @@ FrameはGPU submissionを追跡しません。`WaitForReleaseAsync`はこのback
 WgpuDevice.ProcessEventsをEngineのevent loopで定期的に呼んでNative loss callbackを配送します。Status／Lossはcached値です。Ahjo.Wgpu 0.7.0の非公開Device constructorへのアクセスはWgpuDeviceCreationだけに隔離しています。依存更新時はNative生成・lossテストを実行してください。Engineがloss後にWaitForRetirementAsyncでmap／queue callbackの完了を確認してから子資源をDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。Native status slotはcallback完了前に解放しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 非ポーリング完了待機の制約（Ahjo.Wgpu 0.7.0）
+
+現在の WgpuSubmission.WaitAsync、buffer map、WaitForRetirementAsync は
+ProcessEvents と 1 ms の再確認を使用します。通知ベースへの変更は未実装です。
+タイマーを別 thread に移すだけの変更や、キャンセル時に native callback storage を
+解放する変更は行いません。caller のキャンセルは GPU の停止を意味しません。
+
+依存の実装を確認する場合は、NuGet の repository commit
+[eda3ed8](https://github.com/pekkah/wgpu-sharp/tree/eda3ed8ca9359b6c9a3fbc2074dcbdceaff179b1)
+と、その Directory.Build.props が指定する wgpu-native
+[v29.0.0.0](https://github.com/gfx-rs/wgpu-native/tree/v29.0.0.0) を使用します。
+
+- Ahjo の Queue.BeginOnSubmittedWorkDone／Buffer.BeginMap は
+  AllowProcessEvents の callback が native status slot を更新する polled request です。
+  Task、event、callback の差し替え、future handle の公開はありません。
+- raw binding の wgpuInstanceWaitAny は存在しますが、対応する native release の
+  src/unimplemented.rs は unimplemented!() です。queue／map request は
+  src/lib.rs で NULL_FUTURE を返します。呼び出して capability probe することも
+  process abort の危険があるため行いません。
+- AllowSpontaneous の指定だけでは GPU の進行通知になりません。この native release の
+  queue／map 実装は callback mode を参照せず、wgpu-core の進行処理から callback を呼びます。
+- wgpuDevicePoll(device, true, submissionIndex) は本当の blocking primitive ですが、
+  同 release の実装は device_poll のエラーを handle_error_fatal に渡します。
+  wgpu-core 29.0.1 の Device::maintain は fence wait／fence-value query の device-loss
+  エラーを WaitIdleError として返し、native 側は Rust panic を C ABI の外へ返せず abort
+  します。managed worker の try/catch、caller cancellation、事前の Status 確認では
+  待機開始後の loss race を回避できません。
+
+従ってこの依存版では、device loss を安全に扱う非ポーリング待機への置換は保留です。
+上流で実装済み future wait／通知 API、または device-loss error を process abort せず
+返す blocking wait が必要です。依存の fork や未対応 API の呼び出しは追加していません。
+更新時には concurrent waits、caller cancellation 後の callback retirement、device loss、
+submission／device disposal と callback storage の寿命を一緒に再検証してください。
+
+## 任意のmanaged検証
+
+このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
+
+raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIと実際のwire容量・完了状態、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
+
+wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
+
+検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。

@@ -21,13 +21,15 @@ internal sealed class TestDevice : IGraphicDevice
 
     public GraphicsDeviceLoss? Loss => null;
 
-    public DeviceCaps Caps => throw new NotSupportedException();
+    public DeviceCaps Caps => new() { ShaderTarget = ShaderTarget.SpirV, MaxColorAttachments = 8 };
 
     public IGraphicsQueue Queue => throw new NotSupportedException();
 
     internal List<string> Lifetime { get; } = [];
 
     internal int FailureOnAllocation { get; init; }
+
+    internal Exception? AllocationException { get; init; }
 
     internal int Textures { get; private set; }
 
@@ -72,9 +74,9 @@ internal sealed class TestDevice : IGraphicDevice
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IGraphicsSampler CreateSampler(SamplerDesc desc) => throw new NotSupportedException();
+    public IGraphicsSampler CreateSampler(SamplerDesc desc) => new PublicGraphConsumerSampler(desc);
 
-    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => throw new NotSupportedException();
+    public IArgumentTable CreateArgumentTable(ArgumentTableDesc desc) => new PublicGraphConsumerTable(desc);
 
     public IGraphicsShader CreateShader(ShaderArtifact artifact) => throw new NotSupportedException();
 
@@ -83,10 +85,15 @@ internal sealed class TestDevice : IGraphicDevice
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData => throw new NotSupportedException();
+        where T : struct, IShaderArguments => throw new NotSupportedException();
 
     private void Allocate()
     {
+        if (AllocationException is { } failure)
+        {
+            throw failure;
+        }
+
         if (++_allocations == FailureOnAllocation)
         {
             throw new InvalidOperationException("Simulated allocation failure.");

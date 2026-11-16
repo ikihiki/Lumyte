@@ -10,7 +10,15 @@ internal sealed class Direct3D12Sampler(Direct3D12Device owner, SamplerDesc desc
 
     internal Direct3D12Device Owner => owner;
 
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+    }
 
     internal void ValidateAlive()
     {

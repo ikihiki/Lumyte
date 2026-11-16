@@ -171,7 +171,11 @@ public sealed class ModelMesh : IDisposable
         where TIndex : unmanaged
     {
         ArgumentNullException.ThrowIfNull(device);
-        ModelVertex.ValidateShaderLayout(artifact, device.Caps.ShaderTarget);
+        if (device.ValidationEnabled)
+        {
+            ModelVertex.ValidateShaderLayout(artifact, device.Caps.ShaderTarget);
+        }
+
         int vertexCount = vertexBytes.IsEmpty ? vertexData.Length : ModelVertex.AsVertices(vertexBytes.Span).Length;
         if (vertexCount == 0 || indexData.IsEmpty || indexData.Length % 3 != 0)
         {
@@ -182,8 +186,8 @@ public sealed class ModelMesh : IDisposable
         retainCleanup?.Invoke(cleanup);
         try
         {
-            IGraphicsBuffer<ModelVertex> vertices = cleanup.Add(device.CreateBuffer<ModelVertex>(new() { Count = (ulong)vertexCount, Usage = BufferUsage.CopyDestination | BufferUsage.ShaderRead }));
-            IGraphicsBuffer<ModelVertex> vertexUpload = cleanup.Add(device.CreateBuffer<ModelVertex>(new() { Count = (ulong)vertexCount, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }));
+            IGraphicsBuffer<ModelVertex> vertices = cleanup.Add(device.CreateShaderDataBuffer<ModelVertex>(artifact, (ulong)vertexCount));
+            IGraphicsBuffer<ModelVertex> vertexUpload = cleanup.Add(device.CreateShaderDataBuffer<ModelVertex>(artifact, (ulong)vertexCount, MemoryPreference.Upload));
 
             // Pad the transfer allocation to four bytes for odd ushort counts; draw only the logical count.
             ulong indexCount = (ulong)indexData.Length;

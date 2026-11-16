@@ -1,5 +1,8 @@
 # 公開保持APIのレビュー計測データ
 
+> 2026-11-15: 旧Graphics計測harnessは現行treeから撤去しました。以下の手順は[撤去前の履歴](https://github.com/ikihiki/Lumyte/tree/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks)用です。
+> 現行のCPU計測入口は `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen` です。GPUを含む統合計測は別profileとして整備します。
+
 測定sourceは `916b6de`、CPU比較元は `1c4470d10d83ced90c78b06ff2ec0e7b53be38aa`。同じ公開API probe sourceを使い、before CPU→after CPU/GPU→after逆順→before CPU逆順の4独立processを保存しています。warmup10/sample20、計CPU480 frame・GPU800 frame・画素比較120です。
 
 `manifest.json` のmeasureは採用したrawと環境、verificationは729単体test・既存GPU59比較・AOT・hardware guard等です。全23gzipの展開hash/length、6TRXの成功数、測定開始時から不変の245 C# source hashを検証しています。software negative controlは意図した非ゼロ終了で、性能集計へ含めません。

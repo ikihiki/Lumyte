@@ -13,5 +13,5 @@ public sealed class DefaultDrawMeshRenderer2D : IDrawMeshRenderer2D
         RenderPreparationContext2D context,
         ReadOnlyMemory<DrawMeshCommand2D> commands,
         CancellationToken cancellationToken)
-        => PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
+        => PreparedRecordBatch2D.PrepareAsync(context, commands, cancellationToken);
 }

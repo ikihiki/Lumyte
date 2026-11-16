@@ -27,35 +27,70 @@ public sealed partial class UiSurface
     public void UpdateLayout()
     {
         UpdateTree();
-        if (_isDisposed)
-        {
-            return;
-        }
-
-        if (!_rootElement.IsLayoutDirty)
-        {
-            UpdateInput();
-            CompleteVirtualPresentation();
-            return;
-        }
-
-        var pass = new UiLayoutPass();
-        _layoutPass = pass;
+        UiProfiling.Scope? profile = UiProfiling.Begin(2);
         try
         {
-            pass.Compute(_rootElement, UiBoxConstraints.Tight(_viewport));
-            InvalidateInput();
-            UpdateInput();
-            CompleteVirtualPresentation();
+            if (_isDisposed)
+            {
+                profile?.Skip();
+                return;
+            }
+
+            if (!_rootElement.IsLayoutDirty)
+            {
+                profile?.Skip();
+                profile?.Dispose();
+                profile = null;
+                UpdateInput();
+                CompleteVirtualPresentation();
+                return;
+            }
+
+            var pass = new UiLayoutPass();
+            _layoutPass = pass;
+            try
+            {
+                try
+                {
+                    pass.Compute(_rootElement, UiBoxConstraints.Tight(_viewport));
+                }
+                catch (Exception error)
+                {
+                    _rootElement.MarkLayoutDirty();
+                    profile?.Fail(error);
+                    throw;
+                }
+                finally
+                {
+                    profile?.Dispose();
+                    profile = null;
+                }
+
+                try
+                {
+                    InvalidateInput();
+                    UpdateInput();
+                    CompleteVirtualPresentation();
+                }
+                catch
+                {
+                    _rootElement.MarkLayoutDirty();
+                    throw;
+                }
+            }
+            finally
+            {
+                _layoutPass = null;
+            }
         }
-        catch
+        catch (Exception error)
         {
-            _rootElement.MarkLayoutDirty();
+            profile?.Fail(error);
             throw;
         }
         finally
         {
-            _layoutPass = null;
+            profile?.Dispose();
         }
     }
 }

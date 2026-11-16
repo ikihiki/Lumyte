@@ -2,14 +2,15 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Pure 2D drawing commands and direct GPU rendering without a render graph dependency.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
-    <InternalsVisibleTo Include="Lumyte.Graphics.Incremental.Benchmarks" />
     <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application" />
@@ -18,6 +19,20 @@
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-vertex" Stage="vertex" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-fragment" Stage="fragment" />
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-basic-vertex" Stage="vertex" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-basic-fragment" Stage="fragment" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-mask-vertex" Stage="vertex" Defines="-DLUMYTE_RECORD_MASKS=1 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-mask-fragment" Stage="fragment" Defines="-DLUMYTE_RECORD_MASKS=1 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-vertex" Stage="vertex" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-fragment" Stage="fragment" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-small-vertex" Stage="vertex" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-small-fragment" Stage="fragment" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1 -DLUMYTE_SMALL_PAINT_GRAPH=1" />
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-medium-vertex" Stage="vertex" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-medium-fragment" Stage="fragment" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1 -DLUMYTE_MEDIUM_PAINT_GRAPH=1" />
+    <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-solid-vertex" Stage="vertex" Defines="-DLUMYTE_SIMPLE_RECORDS=1 -DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-solid-fragment" Stage="fragment" Defines="-DLUMYTE_SIMPLE_RECORDS=1 -DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />
     <SlangShader Include="Shaders/drawing-vertex.slang" ResourceName="Lumyte.Drawing2D.drawing-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/drawing-fragment.slang" ResourceName="Lumyte.Drawing2D.drawing-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/rectangles-vertex.slang" ResourceName="Lumyte.Drawing2D.rectangles-vertex" Stage="vertex" />

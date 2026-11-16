@@ -246,7 +246,21 @@ public sealed partial class UiApplication : IAsyncDisposable
                 Turn();
                 if (!Completion.IsCompleted)
                 {
-                    Driver.WaitForWork(_dispatcher, FrameWait());
+                    TimeSpan timeout = FrameWait();
+                    using UiApplicationProfiling.Scope? waitProfile = UiApplicationProfiling.Begin(2);
+                    try
+                    {
+                        Driver.WaitForWork(_dispatcher, timeout);
+                    }
+                    catch (Exception error)
+                    {
+                        waitProfile?.Failed(error);
+                        throw;
+                    }
+                    finally
+                    {
+                        waitProfile?.Counter(18, timeout.Ticks);
+                    }
                 }
             }
         }
@@ -265,7 +279,16 @@ public sealed partial class UiApplication : IAsyncDisposable
             Turn();
             try
             {
-                await Driver.NextTurnAsync(_options.FrameInterval);
+                using UiApplicationProfiling.Scope? waitProfile = UiApplicationProfiling.Begin(3);
+                try
+                {
+                    await Driver.NextTurnAsync(_options.FrameInterval);
+                }
+                catch (Exception error)
+                {
+                    waitProfile?.Failed(error);
+                    throw;
+                }
             }
             catch (Exception error)
             {
@@ -284,100 +307,109 @@ public sealed partial class UiApplication : IAsyncDisposable
 
     private void Turn()
     {
-        SynchronizationContext? previous = SynchronizationContext.Current;
-        SynchronizationContext.SetSynchronizationContext(_dispatcher);
-        IsTurning = true;
+        using UiApplicationProfiling.Scope? profile = UiApplicationProfiling.Begin(1);
         try
         {
-            CompleteFrames();
-            if (!_driverReleased && !_pumpFailed)
+            SynchronizationContext? previous = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(_dispatcher);
+            IsTurning = true;
+            try
             {
-                try
+                CompleteFrames();
+                if (!_driverReleased && !_pumpFailed)
                 {
-                    Driver.Pump();
-                }
-                catch (Exception error)
-                {
-                    _pumpFailed = true;
-                    RecordFailure(error);
-                    RequestStop();
-                }
-            }
-
-            _windows?.Advance();
-            _popups?.Advance();
-            DiscoverPopupText();
-            Driver.DispatchPendingInput();
-            PumpExecution();
-            _dispatcher.Pump();
-            CompleteFrames();
-            bool animationFrame = BeginAnimationFrame();
-            foreach (Entry entry in _entries.Values.ToArray())
-            {
-                if (entry.Content is { IsStopped: false } content)
-                {
-                    content.Advance();
+                    try
+                    {
+                        Driver.Pump();
+                    }
+                    catch (Exception error)
+                    {
+                        _pumpFailed = true;
+                        RecordFailure(error);
+                        RequestStop();
+                    }
                 }
 
-                entry.Context.Chrome?.Advance();
-                entry.Slot?.Advance(animationFrame);
-            }
-
-            AdvancePopupAnimations(animationFrame);
-            AdvanceText();
-            foreach (IUiApplicationParticipant participant in _participants)
-            {
-                participant.Advance();
-            }
-
-            ObserveStartup();
-            if (Volatile.Read(ref _stopRequested) != 0)
-            {
-                if (_stopping is null || (State == UiApplicationState.StopFailed && _retryRequested))
+                _windows?.Advance();
+                _popups?.Advance();
+                DiscoverPopupText();
+                Driver.DispatchPendingInput();
+                PumpExecution();
+                _dispatcher.Pump();
+                CompleteFrames();
+                bool animationFrame = BeginAnimationFrame();
+                foreach (Entry entry in _entries.Values.ToArray())
                 {
-                    _retryRequested = false;
+                    if (entry.Content is { IsStopped: false } content)
+                    {
+                        content.Advance();
+                    }
+
+                    entry.Context.Chrome?.Advance();
+                    entry.Slot?.Advance(animationFrame);
+                }
+
+                AdvancePopupAnimations(animationFrame);
+                AdvanceText();
+                foreach (IUiApplicationParticipant participant in _participants)
+                {
+                    participant.Advance();
+                }
+
+                ObserveStartup();
+                if (Volatile.Read(ref _stopRequested) != 0)
+                {
+                    if (_stopping is null || (State == UiApplicationState.StopFailed && _retryRequested))
+                    {
+                        _retryRequested = false;
+                        SetState(UiApplicationState.Stopping);
+                        _stopping = _dispatcher.TrackAsync(StopCoreAsync);
+                    }
+                }
+                else if (State == UiApplicationState.Running && _reconciling is null && Interlocked.Exchange(ref _rebuildRequested, 0) != 0)
+                {
+                    _reconciling = _dispatcher.TrackAsync(() => ReconcileAsync(false));
+                }
+
+                ObserveReconciliation();
+                AdvanceRendering();
+                if (_stopping?.IsCompleted == true && State == UiApplicationState.Stopping)
+                {
+                    if (_stopping.Exception is { } stopFailure)
+                    {
+                        _failure = stopFailure.InnerException ?? stopFailure;
+                        SetState(UiApplicationState.StopFailed);
+                        _attempt.TrySetException(_failure);
+                    }
+                    else
+                    {
+                        Finish();
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                RecordFailure(error);
+                RequestStop();
+                if (_stopping is null)
+                {
                     SetState(UiApplicationState.Stopping);
                     _stopping = _dispatcher.TrackAsync(StopCoreAsync);
                 }
             }
-            else if (State == UiApplicationState.Running && _reconciling is null && Interlocked.Exchange(ref _rebuildRequested, 0) != 0)
+            finally
             {
-                _reconciling = _dispatcher.TrackAsync(() => ReconcileAsync(false));
-            }
-
-            ObserveReconciliation();
-            AdvanceRendering();
-            if (_stopping?.IsCompleted == true && State == UiApplicationState.Stopping)
-            {
-                if (_stopping.Exception is { } stopFailure)
-                {
-                    _failure = stopFailure.InnerException ?? stopFailure;
-                    SetState(UiApplicationState.StopFailed);
-                    _attempt.TrySetException(_failure);
-                }
-                else
-                {
-                    Finish();
-                }
+                SynchronizationContext.SetSynchronizationContext(previous);
+                IsTurning = false;
+                TaskCompletionSource turn = _turn;
+                _turn = NewCompletion();
+                turn.TrySetResult();
             }
         }
-        catch (Exception error)
+        catch (Exception profileError)
         {
-            RecordFailure(error);
-            RequestStop();
-            if (_stopping is null)
-            {
-                SetState(UiApplicationState.Stopping);
-                _stopping = _dispatcher.TrackAsync(StopCoreAsync);
-            }
-        }
-        finally
-        {
-            SynchronizationContext.SetSynchronizationContext(previous);
-            IsTurning = false;
-            TaskCompletionSource turn = _turn;
-            _turn = NewCompletion();
-            turn.TrySetResult();
+            profile?.Failed(profileError);
+            throw;
         }
     }
 

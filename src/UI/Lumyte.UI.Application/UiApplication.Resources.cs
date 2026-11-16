@@ -27,11 +27,25 @@ public sealed partial class UiApplication
 
     internal async Task<bool> DrawFrameAsync(UiDriverWindow target, Lumyte.Graphics.Drawing2D.DrawingSnapshot2D scene)
     {
-        using (scene)
+        using UiApplicationProfiling.Scope? profile = UiApplicationProfiling.Begin(6);
+        try
         {
-            bool presented = false;
-            await _dispatcher.TrackAsync(async () => presented = await Driver.DrawAsync(target, scene));
-            return presented;
+            using (scene)
+            {
+                bool presented = false;
+                await _dispatcher.TrackAsync(async () => presented = await Driver.DrawAsync(target, scene));
+                if (profile is not null)
+                {
+                    profile.Outcome = presented ? 0 : 3;
+                }
+
+                return presented;
+            }
+        }
+        catch (Exception profileError)
+        {
+            profile?.Failed(profileError);
+            throw;
         }
     }
 

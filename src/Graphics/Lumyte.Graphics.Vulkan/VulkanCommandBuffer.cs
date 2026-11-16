@@ -4,7 +4,6 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffer
 {
-    private readonly ShaderDataTransferState _shaderData = new();
     private readonly List<IDisposable> _bindings = [];
     private readonly VulkanDevice _owner;
     private object? _active;
@@ -12,6 +11,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
     internal VulkanCommandBuffer(VulkanDevice owner)
     {
         _owner = owner;
+
         Initialize();
     }
 
@@ -19,22 +19,22 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
 
     internal VulkanDevice Owner => _owner;
 
-    internal ShaderDataTransferState ShaderDataTransfers => _shaderData;
-
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireRecording();
-        if (source.Buffer is not VulkanShaderDataBuffer<T> src || destination.Buffer is not VulkanShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count)
+        if (source.Buffer is not VulkanShaderDataBuffer<T> src || destination.Buffer is not VulkanShaderDataBuffer<T> dst || !ReferenceEquals(src.Owner, _owner) || !ReferenceEquals(dst.Owner, _owner) || source.Count != destination.Count || dst.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Shader data copy requires equal ranges from this device.");
         }
 
-        _shaderData.Record(src, source.Offset, dst, destination.Offset, source.Count, () => CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes))));
+        src.ValidateAlive();
+        dst.ValidateAlive();
+        CopyBuffer(src.Storage.SliceElements(checked(source.Offset * src.ShaderElementStrideInBytes), checked(source.Count * src.ShaderElementStrideInBytes)), dst.Storage.SliceElements(checked(destination.Offset * dst.ShaderElementStrideInBytes), checked(destination.Count * dst.ShaderElementStrideInBytes)));
     }
 
     public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);
@@ -234,8 +234,6 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         State = CommandBufferState.Disposed;
     }
 
-    internal ShaderValueSnapshot ReadShaderData(IShaderDataSource source, ulong index) => _shaderData.Read(source, index);
-
     internal void ValidateSubmit()
     {
         if (State != CommandBufferState.Executable)
@@ -244,11 +242,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         }
     }
 
-    internal void MarkSubmitted()
-    {
-        _shaderData.Publish();
-        State = CommandBufferState.Submitted;
-    }
+    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
 
     internal void Complete(bool success)
     {
@@ -258,7 +252,20 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         }
     }
 
-    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
+    internal void KeepBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
+    {
+        var recorded = new RecordedBinding(binding, registrations);
+        binding.Retain();
+        try
+        {
+            _bindings.Add(recorded);
+        }
+        catch
+        {
+            binding.Dispose();
+            throw;
+        }
+    }
 
     internal void ValidatePass(object pass) => ValidateEnd(pass);
 
@@ -306,6 +313,24 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         if (State != CommandBufferState.Recording || !ReferenceEquals(_active, pass))
         {
             throw new InvalidOperationException("This pass is not active.");
+        }
+    }
+
+    private sealed class RecordedBinding : IDisposable
+    {
+        private readonly VulkanShaderBinding _binding;
+        private readonly IShaderReference[] _registrations;
+
+        internal RecordedBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
+        {
+            _binding = binding;
+            _registrations = registrations;
+        }
+
+        public void Dispose()
+        {
+            _binding.Dispose();
+            GC.KeepAlive(_registrations);
         }
     }
 }

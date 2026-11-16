@@ -4,16 +4,21 @@
 図形、パス、画像、外部文字の描画形式、塗りとclipをCPUに記録し、Graphics command bufferへ直接描画します。
 レイヤーと画像エフェクトは別パッケージのDrawing2D.RenderGraphに分離しています。
 
-Color2Dは生成時と各成分のinit（withを含む）で、RGBAがfiniteかつ0〜1であることを検査します。不正値はArgumentOutOfRangeExceptionです。defaultは透明色として有効で、従来の名前付き引数・分解・値比較も使えます。UI側で同じ色検証を繰り返す必要はありません。
+色の公開APIは `Lumyte.Mathematics.Colors.SRgba<float>` を使います。SRgbaは有限なencoded raw値を保存し、負値・HDR・範囲外alphaも許します。描画のcanvas、paint、stop、solid node、target clearは受入時にRGBA全成分を0〜1として検証し、不正値を状態へ保存する前にArgumentOutOfRangeExceptionで拒否します。stopのoffsetは有限値で、重複と範囲外を許し、factoryが非減少順を検証します。defaultは透明黒、透明な非黒のRGBも保持します。パレットの `SRgba8` は `SRgba<float>` 引数へ暗黙に byte /255f で正規化され、gamma変換・premultiplyはしません。一般の `SRgba<T>` はraw値のままです。rawコードのcastは `SRgba8.Red.ToCodes().ConvertChecked<float>()`、明示した結果型への正規化は `ToNormalized<double>()` を使います。
+
+名前付き色はC# 14のstatic extension propertyです。encoded描画には `SRgba<float>.Red`、linear値には `LRgba<float>.Red`、byteコードには `SRgba8.Red` を選びます。getterはofflineで焼き込んだreadonly値のcopyだけで、lookup時の変換はありません。CLR初期化とcopyはliteral constではありません。`CssColors.All/TryGet` は149件のreference catalogとして残ります。
 
 ```csharp
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(20, 20, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.FillRect(new Rect2D(20, 20, 100, 50), SRgba<float>.Red);
 DrawList2D list = canvas.End();
+PaintGraph2D paint = PaintGraph2D.Solid(SRgba<float>.CornflowerBlue);
+SRgba<float> color = SRgba<float>.Red; // 既にtarget型の正規化encoded値。
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, new RenderTarget2D
@@ -114,6 +119,8 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 
 `DrawingCanvas2D.Replay(DrawList2D)`で保持した描画commandを現在のtransform/clipの下へ再生できます。元のDrawListを変更せず、Widget等の上位構築やOnRecordの再実行を要求しません。描画commandが参照するtexture/font等の借用資源は通常どおりGPU完了まで保持してください。
 
+clip の CPU 正規化は binary64 の順序付き FMA・半開 Y 遷移・4×4 の各 sample bit を維持します。固定 sample 行で辺の厳密な winding 寄与が消える位置を同じ述語で二分探索し、符号付き区間を合成します。交点の除算や epsilon、平均 alpha への置換は行いません。異なる不変 clip stack も captured transform・fill rule・全 segment が一致すれば同じ準備内で共有し、hash 衝突は全要素比較で検証します。準備をまたぐ mask cache は追加しません。従来の面積・sample-edge 予算を保ち、cache は最大4096 identity・推定 payload 32 MiB（geometry と alias も課金）、構造 hash は最大65536 source segment に制限します。deferred pack 完了または中止時に両 cache を解放します。
+
 ## 内容と配置を保持する
 
 `Canvas2D.End()` が返す不変の `DrawList2D` を、そのまま `DrawingScene2D` に配置します。別の内容型への変換は不要です。同じ記録を複数の配置・scene で共有でき、位置の変更では Canvas 全体の再記録は不要です。`DrawList2D.Count` は記録済み命令数です。従来の `PrepareAsync(DrawList2D, ...)` も引き続き使用できます。
@@ -123,7 +130,7 @@ AddGraphics2Dで登録し、AcquireRenderer2DAsync→CreateRendererで生成し�
 ```csharp
 var canvas = new Canvas2D();
 canvas.Begin();
-canvas.FillRect(new Rect2D(0, 0, 100, 50), new Color2D(1, 0, 0, 1));
+canvas.FillRect(new Rect2D(0, 0, 100, 50), new SRgba<float>(1, 0, 0, 1));
 DrawList2D content = canvas.End();
 
 using var scene = new DrawingScene2D();

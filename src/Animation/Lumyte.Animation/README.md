@@ -67,3 +67,5 @@ var timeline = Timeline()[SourceTrack<float>(channel,
 汎用のベジェ・Hermite・Quaternion・イージング計算は依存パッケージ[Lumyte.Mathematics](../../Core/Lumyte.Mathematics/README.md)が提供します。AnimationはDurationやキーを扱うアダプターです。
 
 同じSource定義を共有する場合、Build内で構築結果を再利用します。共有グラフのSampleでは同じ子・同じ局所時刻の値を一回の評価内で再利用し、時間写像による異なる時刻の呼び出しを区別します。作業領域は評価間でクリアし、並行・再入評価には別の領域を使います。
+
+`IAnimationInterpolator<T>.Validate` は endpoint/keyframe を保存する前に呼ばれる任意の入力契約です。default実装はno-opで、既存の独自interpolatorへ実装を要求しません。Tweenは両端、Curveは全keyと実行するsegment overrideの両端を検証します。UIの色interpolatorはこのhookでunit色を要求しますが、汎用AnimationにRgbaのunit制約を埋め込まず、raw/HDR値を扱う独自interpolatorも利用できます。

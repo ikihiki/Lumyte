@@ -25,6 +25,17 @@ dotnet run --project build -c Release -- --target TestWasm
 Chromiumの別の実行ファイルは`CHROME`環境変数で指定できます。
 `LUMYTE_SCREENSHOT`にPNGの保存先を指定すると、検証成功時の画面も保存します。
 
+## CIの進捗診断
+
+`LUMYTE_BROWSER_PROGRESS=1`を指定すると、atlas準備、描画準備、GPU submit / 完了、
+readback mapの進捗を検証runnerへ逐次表示します。アプリの期限は180秒のままです。
+
+WGSLでは、共有argument tableの全登録が各drawの実bindingになります。
+独立したdrawのbufferまで共有すると、有限bindingへのシェーダ分岐が膨らみ、
+SwiftShaderでGPU完了が期限に達するため、直接Drawing2Dの準備ではdrawごとにtableを分離します。
+同じdraw内の重複登録は引き続き共有し、SPIR-V / DXILのtable共有方針は変更しません。
+GPUの画素検証、合成演算、counter判定、期限や既知のtimeout許可は緩和しません。
+
 ## Rust / .NETの接続
 
 Browser用のRust static libraryは、アプリと同じ.NET wasm-toolsのEmscriptenを使います。
@@ -68,3 +79,14 @@ SDK / workload setは10.0.401、WASM runtimeは10.0.12です。
 BrowserのGPU実行確認はLinux x64です。
 
 公開APIと制約は[Parleyパッケージ](../../src/Graphics/Lumyte.Graphics.Text.Parley/README.md)を参照してください。
+
+## 引数テーブルの選択
+
+Browserは実際に選択したadapterの`info.architecture`が`swiftshader`の場合のみ、
+描画単位の引数テーブルを推奨します。情報が欠落・非公開の場合や実GPUでは従来の共有を維持します。
+`Renderer2D.ArgumentTableMode`で`Auto`（既定）、`Shared`、`DrawLocal`を明示でき、
+明示指定はデバイスの推奨より優先します。同じ指定は`DrawingArgumentPlan2D`にもあります。
+この指定は直接描画とretained描画の準備が対象で、RenderGraph所有のmaterializationは変更しません。
+
+SwiftShaderの検出は性能方針であり、GPUの機能保証や安全性の判定ではありません。
+`isFallbackAdapter`だけではSwiftShaderと判断しません。

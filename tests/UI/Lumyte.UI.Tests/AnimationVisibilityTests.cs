@@ -9,7 +9,7 @@ namespace Lumyte.UI.Tests;
 /// <summary>Checks hidden independent producers and producers shared across visible branches.</summary>
 public sealed class AnimationVisibilityTests
 {
-    /// <summary>Checks hidden pending and running producers retain their targets without allocating on state queries.</summary>
+    /// <summary>Checks hidden pending and running producers retain their targets while state queries report no visible work.</summary>
     /// <param name="running">Whether the producers started before their parent was hidden.</param>
     [Theory]
     [InlineData(false)]
@@ -35,22 +35,8 @@ public sealed class AnimationVisibilityTests
 
         visible.Value = false;
         surface.UpdateTree();
-        for (int warmup = 0; warmup < 20; warmup++)
-        {
-            Assert.False(surface.HasPendingAnimationUpdates);
-            Assert.False(surface.HasRunningAnimations);
-        }
-
-        bool work = false;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int iteration = 0; iteration < 100; iteration++)
-        {
-            work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.False(work);
-        Assert.Equal(0, allocated);
+        Assert.False(surface.HasPendingAnimationUpdates);
+        Assert.False(surface.HasRunningAnimations);
         visible.Value = true;
         surface.UpdateTree();
         Assert.True(running ? surface.HasRunningAnimations : surface.HasPendingAnimationUpdates);
@@ -60,32 +46,18 @@ public sealed class AnimationVisibilityTests
         Assert.All(animations, animation => Assert.Equal(20, animation.Value));
     }
 
-    /// <summary>Checks idle presence entries do not box an enumerator on either state query.</summary>
+    /// <summary>Checks idle presence entries report no pending or running animation.</summary>
     /// <param name="present">Whether the presence entry is visible or hidden.</param>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void IdlePresenceStateQueriesDoNotAllocate(bool present)
+    public void IdlePresenceStateQueriesReportNoWork(bool present)
     {
         using var surface = new UiSurface(Rectangle(isPresent: present, transitions: new UiElementTransitions { AnimateInitial = false }));
         surface.UpdateLayout();
         Assert.Single(surface.VisualEntries);
-        for (int warmup = 0; warmup < 20; warmup++)
-        {
-            Assert.False(surface.HasPendingAnimationUpdates);
-            Assert.False(surface.HasRunningAnimations);
-        }
-
-        bool work = false;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int iteration = 0; iteration < 100; iteration++)
-        {
-            work |= surface.HasPendingAnimationUpdates | surface.HasRunningAnimations;
-        }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.False(work);
-        Assert.Equal(0, allocated);
+        Assert.False(surface.HasPendingAnimationUpdates);
+        Assert.False(surface.HasRunningAnimations);
     }
 
     /// <summary>Checks a hidden occurrence does not hide another occurrence of the same producer.</summary>

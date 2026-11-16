@@ -1,5 +1,6 @@
 using System.Reflection;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Validation;
 using Xunit;
 
 namespace Lumyte.Graphics.Direct3D12.Tests;
@@ -66,7 +67,8 @@ public sealed class TransferTests
             return;
         }
 
-        using var device = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
+        using var raw = Direct3D12Device.Create(new() { UseWarp = true, EnableDebugLayer = true });
+        using var device = new ValidationDevice(raw);
         using IGraphicsBuffer<byte> upload = Create(device, MemoryPreference.Upload);
         using IGraphicsBuffer<byte> gpu = Create(device, MemoryPreference.Automatic);
         using IGraphicsBuffer<byte> readback = Create(device, MemoryPreference.Readback);
@@ -85,7 +87,7 @@ public sealed class TransferTests
         Assert.Throws<ArgumentException>(() => command.CopyBuffer(readback.SliceElements(0, 3), gpu.SliceElements(0, 3)));
         command.Barrier(new BufferBarrierDesc<byte> { Buffer = gpu.SliceElements(1, 2), Before = new(PipelineStage.None, ResourceAccess.None), After = new(PipelineStage.Copy, ResourceAccess.CopyWrite) });
         command.Finish();
-        Assert.Throws<ArgumentException>(() => device.Queue.Submit([command, command]));
+        Assert.Throws<InvalidOperationException>(() => device.Queue.Submit([command, command]));
         Assert.Equal(CommandBufferState.Executable, command.State);
         using IGraphicsSubmission submission = device.Queue.Submit([command]);
         await Assert.ThrowsAsync<OperationCanceledException>(async () => await submission.WaitAsync(new(true)));

@@ -124,7 +124,7 @@ texture の layout、access、subresource は利用側が指定します。Undef
 binary signal の消費を native fence の値に対応付けます。未 signal の wait、二重 signal、同一提出の重複 semaphore は拒否します。
 
 Map は GPU を待ちません。Readback は明示的な submission 完了後に読んでください。
-WaitAsync は fence を非 blocking に照会し、1 ms 間隔で非同期に待機します。キャンセルは待機のみを取り消します。
+WaitAsync は最初の未完了待機でID3D12Fence.SetEventOnCompletionを登録し、Windows eventのThreadPool登録待機から共有Taskを完了します。1 msタイマーやcallerごとのblocking workerは使用しません。キャンセルはそのcallerの待機のみを取り消し、native登録と他のcallerの待機を維持します。native登録は別のCOM参照とevent handleをsignalまで保持するため、全callerのキャンセルやsubmission.Disposeでもhandleを早期解放しません。Statusは従来どおり非blocking照会です。
 Dispose は GPU 待機・依存 resource の生存走査を行いません。利用者が GPU 使用完了と並行操作の同期を保証し、
 submission／command／pipeline／resource を device より先に解放してください。
 提出後の signal 失敗では command を Faulted にし、再提出を禁止します。
@@ -175,3 +175,20 @@ GPU を使わないテストは DXIL container、helper の binding、natural／
 stage 間の schema 不整合を確認します。GPU テストは Vulkan と同じ Buffer／Texture／Sampler／ArgumentTable／Shader／Command／Pipeline／ShaderBinding／AdvancedCommand／Semaphore／RenderGraph exercise を使用します。
 一般版 SDK 620 の window サンプルは実 GPU で三角形表示と連続 Present を確認済みです。両 channel のビルドと CPU テスト、およびこの表示確認と、
 Stable の WARP（debug layer 有効）では共通 suite 全体も成功しました。Preview partial program は未実行です。
+
+## シェーダー転送の検証
+
+shader-dataのCopyFromはmapped uploadのSpanへ直接書き込み、参照を最終16-byte領域へ符号化します。
+この経路はStable 620のWARP・native debug layerで、1／64／1024要素の一括転送、offset付き部分更新、
+DXIL shaderの読み取りを確認しています。rawとValidationDeviceの両方を含むDebug／Releaseの結果は
+[転送の検証記録](../../../docs/shader-transfer-validation.md#windows-direct3d-12-の追加検証2026-11-15)を参照してください。
+
+## 任意のmanaged検証
+
+このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
+
+raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIと実際のwire容量・完了状態、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
+
+wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
+
+検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。

@@ -1,5 +1,5 @@
 using Lumyte.Core.Time;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI.Application;
 
@@ -16,7 +16,7 @@ public sealed record UiApplicationOptions
     public UiMotionOptions Motion { get; init; } = new();
 
     /// <summary>Gets the opaque background cleared once per presentation.</summary>
-    public Color2D Background { get; init; } = new(1, 1, 1, 1);
+    public SRgba<float> Background { get; init => field = UiColorPolicy.Unit(value, nameof(Background)); } = new(1, 1, 1, 1);
 
     /// <summary>Gets candidate presentation policy; system UI is the default.</summary>
     public Lumyte.UI.Windowing.TextInput.UiImeCandidateOptions ImeCandidates { get; init; } = new();

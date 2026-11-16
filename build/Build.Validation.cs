@@ -48,7 +48,7 @@ internal sealed partial class Build
     private Target TestBrowserContracts => definition => definition
         .Executes(async () =>
         {
-            await NodeAsync("--test", "tools/graphics/browser-gpu.test.mjs", "tools/graphics/browser-known-timeout.test.mjs").ConfigureAwait(false);
+            await NodeAsync("--test", "tools/graphics/browser-gpu.test.mjs", "tools/graphics/browser-gpu-trace.test.mjs", "tools/graphics/browser-known-timeout.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
             await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
@@ -102,7 +102,7 @@ internal sealed partial class Build
         .DependsOn(TestSignals)
         .Executes(async () =>
         {
-            await DotNetAsync("run", "--project", "benchmarks/Lumyte.Signals.Benchmarks", "-c", Configuration, "--no-build", "--no-restore",
+            await DotNetAsync("run", "--project", "benchmarks/Core/Lumyte.Signals.Benchmark", "-c", Configuration, "--no-build", "--no-restore",
                 "--", "--filter", "*", "--artifacts", Path.Combine(ArtifactRoot, "signals-benchmarks")).ConfigureAwait(false);
         });
 

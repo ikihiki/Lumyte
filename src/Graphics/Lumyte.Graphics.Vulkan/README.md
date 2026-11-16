@@ -100,9 +100,9 @@ Vulkan 1.3のdynamic renderingとsynchronization2を必要機能として実装�
 
 barrierはMemoryBarrier2／BufferMemoryBarrier2／ImageMemoryBarrier2をCmdPipelineBarrier2へ渡します。stage・access、image layout、選択subresourceを明示的に変換し、queue familyは同一queueなのでIgnoredです。CopyBuffer・CopyImage・CopyBufferToImage・CopyImageToBufferを使用します。非圧縮colorのtexel sizeは4 byteで、GetTextureCopyLayoutはoffset alignmentとrow alignmentに4を返します。Capsのrow alignment 1に加え、formatのtexel block制約を反映した値です。nativeのBufferRowLengthは指定row byte数を4で割った値、BufferImageHeightはRowsPerImageです。
 
-Submitは専用VkFenceを確保してQueueSubmitし、Status／WaitAsyncはそのfenceを非blockingに確認します。GPU全体のidle待機、CPUデータのreadback、resourceの自動解放を挿入しません。提出失敗時のout-of-memoryは未提出として扱い、device lossはFaultedにして再提出を拒否します。fenceとcommand poolはGPU使用終了後に明示的にDisposeします。
+Submitは専用VkFenceを確保してQueueSubmitし、Statusはそのfenceを非blockingに確認します。WaitAsyncはデバイスごとに一つの専用workerがvkWaitForFences（無期限待機）で得た結果を共有し、1 msタイマーやThreadPool workerのblockingを使用しません。workerは最初のSubmitで起動し、待機の呼出順ではなくSubmit順にfenceを待ちます。callerのキャンセルはそのcallerだけを取り消し、native待機・他のcaller・fenceの寿命は維持します。commandの完了状態は従来どおりStatus／WaitAsyncで明示的に確認します。GPU全体のidle待機、CPUデータのreadback、resourceの自動解放を挿入しません。提出失敗時のout-of-memoryは未提出として扱い、device lossはFaultedにして再提出を拒否します。fenceとcommand poolはGPU使用終了後に明示的にDisposeします。
 
-共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。command、submissionとdeviceの解放順は利用者が管理します。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。内部lock・アトミックカウンターや暗黙の完了待機はありません。
+共通API、one-shot状態遷移、pass順序、明示的なupload／readbackの手順は [GRAPHICS-0007](../../../docs/adr/graphics/GRAPHICS-0007-command-buffers-and-submission.md) を参照してください。command、submissionとdeviceの解放順は利用者が管理します。記録したresourceの解放、map／unmapとGPUアクセスの同期は利用者の責任です。submissionのnative完了通知とfence解放には内部lockを使用しますが、resourceの並列操作を自動同期したり、GPU完了を暗黙に待機したりはしません。
 
 ## Pipeline
 
@@ -154,9 +154,9 @@ textureとsamplerは種類別の論理slotをnative descriptor array indexとし
 
 Slang側は`#include "lumyte.slang"`と、`GpuBufferRef<T>`／`GpuRWBufferRef<T>`／GpuTextureRef／GpuSamplerRefを使います。Load／StoreとLumyteSampleGradが対応helperです。最初のsampling helperはfilterableな2D float textureと非comparison samplerを扱い、利用者はschemaの用途に合う参照を渡します。source generatorの導入は[Generators](../Lumyte.Graphics.Generators/README.md)を参照してください。compile時の型schema・buffer参照先型・helper ABI versionはopaque artifactに格納します。
 
-shader dataの配置は、offline／onlineとも`StructuredBuffer<Ptr<T>>`のpointee reflectionから取得します。これによりGPU addressの`T*`が使うnatural layoutとCPUのpackを一致させます。たとえば`uint`と`float3`を持つ構造体はoffset 0／4・stride 16、`float3`だけの構造体はstride 12です。root uniformの配置は、そのconstant bufferのreflectionから別に取得します。
+shader dataのstrideと配置はC# unmanaged structのTransferSizeと実際のfield offsetが正本です。pointee reflectionはDebug照合と参照access kindにのみ使用し、数値を再配置しません。physical addressからのshader load/storeはscalar wordsを使い、float3のalignment補正を必要としません。root uniformはuint4 wire lanesをinterpretし、allocation/binding capacityだけを16-byteへ切り上げます。C# wire sizeとoffsetは変更しません。
 
-共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルや InternalsVisibleTo は使用しません。
+共有の型配置・参照追跡処理は [Lumyte.Graphics.Shared](../Lumyte.Graphics.Shared/README.md) ライブラリを参照します。バックエンド実装用の契約は Graphics.Abstractions にあり、ソースのリンクコンパイルは使用しません。native完了workerからのloss通知を安全に配送するための内部bridgeと回帰テストに限りInternalsVisibleToを使用します。
 
 ## Depth／Stencil、Indexed／Indirect実行
 
@@ -231,6 +231,43 @@ Swapchain、image acquire／present fence、借用画像の寿命、Outdatedとr
 
 ## デバイスロスト
 
+submissionのnative待機中はfenceを保持し、Statusが先に完了を観測してDisposeされてもnative待機のreturn後に解放します。Device.Disposeは未完了fenceがあれば拒否し、完了済みfenceのhost側待機retirementとworker終了を確認してからnative deviceを解放します。GPU仕事を暗黙に完了まで待つ経路は追加しません。native待機からのDeviceLost通知は状態を即座に記録し、subscriberの実行をThreadPoolへ配送してworker自身へのjoinを防ぎます。
+
 VK_ERROR_DEVICE_LOSTをdevice・子資源・submission・presentationから共通状態へ接続します。Pending submissionはFailed、commandはFaultedとなり、WaitAsyncはGraphicsDeviceLostExceptionを返します。loss後のWaitForRetirementAsyncは明示的にvkDeviceWaitIdleを呼び、Success／ErrorDeviceLostを破棄安全性の確認として扱います。Engineがその後に子資源とdeviceを明示的にDisposeします。backendの子資源操作とDisposeはdevice状態を検証しません。
 
 Status／Lossは診断と上位の制御に使い、backend APIの操作可否を検証しません。loss後はEngineがGPU jobとmappedアクセスを停止してください。新deviceへの生成物の読み替えは行いません。Native並列アクセスの同期は利用側の責任です。
+
+## 任意のmanaged検証
+
+このraw backendはValidationEnabledがfalseで、診断engine、nullable tracker、検証切替APIを持ちません。[Lumyte.Graphics.Validation](../Lumyte.Graphics.Validation/README.md)のValidationDevice(IGraphicDevice backend)で包み、すべての子資源をwrapperから生成してください。Debug／Releaseで同じ明示的な選択です。native backendはValidationプロジェクトを参照しません。Direct3D12のnative debug layerは独立した設定です。
+
+raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参照ABIと実際のwire容量・完了状態、root／program状態、artifact容量、およびnative失敗時の所有権に必要な検査を残します。選択table全体の有限descriptor／registration／remap生成も機能上必要であり、binding可能とGPU使用済みは同義ではありません。寿命・同期は利用者が管理します。
+
+wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
+
+検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。
+
+## Descriptor Set の共有と寿命
+
+Device 内の allocator が descriptor 数ごとに最大 32 Set の pool page を共有します。
+完全に空になった page は即時破棄し、idle cache は保持しません。
+allocation/free は allocator 内で同期し、pool 枯渇・断片化時は新しい page に移ります。
+ArgumentTable 自体の並行変更をサポートするものではありません。
+
+ArgumentTable は最新の sampled descriptor 世代内で互換 layout shape から immutable Set へ対応付けます。
+固定された登録内容には実際には一つの canonical shape だけが対応し、過去世代の cache は蓄積しません。
+cache は texture/sampler 登録だけを保持し、各 command が完全な per-draw 登録 snapshot を保持します。
+Draw/Dispatch が世代を seal し、その後の最初の texture/sampler 更新・release が一度だけ世代を分岐します。
+次の実行までの複数変更をまとめ、Set は次の Draw/Dispatch で遅延生成します。
+buffer/root の変更だけでは descriptor 世代を変えず、pass・command・frame を越えて再利用します。
+layout key は native handle ではなく、固定の binding 型・stage/partially-bound flags を持つ texture/sampler 数です。
+同じ shape の pipeline 再生成でも native handle の再利用と衝突しません。
+
+各 command は実行時の Set と登録資源 snapshot を保持します。
+古い世代を上書きせず、table の変更・Dispose は cache 所有権だけを外します。
+未送信 command は Dispose、送信済み command は既存の caller-managed GPU 完了後の Dispose によって所有権を返します。
+待機は自動挿入せず、完了前の raw command/resource Dispose を安全化しません。
+明示的に Dispose された sampled 資源は cache hit でも拒否します。
+Device.Dispose は native device より先に全 pool を破棄し、その後の lease 返却は native 呼出しを行いません。
+登録辞書の managed allocation 失敗は世代を変更しませんが、更新成功後の native free 失敗には rollback／再試行を保証しません。
+その場合も古い cache を外し、recorded command の所有権は保ち、残った pool は Device.Dispose で解放します。

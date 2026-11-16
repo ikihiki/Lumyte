@@ -141,13 +141,13 @@ BusyIndicatorは既存surfaceの借用単調時計とowner phaseに登録する�
 +            {
 +                public ProgressBar();
 +                [ComposeParameter] public double Value { get; set; }
-+                [ComposeParameter] public Color2D Foreground { get; set; }
-+                [ComposeParameter] public Color2D Background { get; set; }
++                [ComposeParameter] public SRgba<float> Foreground { get; set; }
++                [ComposeParameter] public SRgba<float> Background { get; set; }
 +            }
 +            [Composable] public partial class BusyIndicator : Widget
 +            {
 +                public BusyIndicator();
-+                [ComposeParameter] public Color2D Color { get; set; }
++                [ComposeParameter] public SRgba<float> Color { get; set; }
 +            }
 +        }
 +    }

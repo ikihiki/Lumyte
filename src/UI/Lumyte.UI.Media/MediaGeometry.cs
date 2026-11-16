@@ -1,10 +1,22 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI.Media;
 
 internal static class MediaGeometry
 {
+    internal static SRgba<float> UnitColor(SRgba<float> value, string name)
+    {
+        if (value.R < 0 || value.R > 1 || value.G < 0 || value.G > 1
+            || value.B < 0 || value.B > 1 || value.A < 0 || value.A > 1)
+        {
+            throw new ArgumentOutOfRangeException(name);
+        }
+
+        return value;
+    }
+
     internal static void Positive(float value, string name)
     {
         if (!float.IsFinite(value) || value <= 0)

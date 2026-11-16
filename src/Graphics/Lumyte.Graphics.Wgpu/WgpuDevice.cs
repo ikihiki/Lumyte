@@ -12,6 +12,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     private readonly A.Device _device;
     private readonly WgpuDeviceCreation _creation;
     private readonly GraphicsDeviceLifetime _lifetime;
+
     private readonly object _requestGate = new();
     private readonly List<Func<bool>> _pendingRequests = [];
     private bool _disposed;
@@ -28,6 +29,20 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         Caps = new()
         {
             ShaderTarget = ShaderTarget.Wgsl,
+            ArgumentTableBindingLimits = new()
+            {
+                TextureSlots = checked((uint)(Math.Min((ulong)int.MaxValue, Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)) / 16)),
+                SamplerSlots = checked((uint)(Math.Min((ulong)int.MaxValue, Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)) / 16)),
+                BufferSlots = checked((uint)(Math.Min((ulong)int.MaxValue, Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize)) / 16)),
+                TexturesPerDraw = limits.maxSampledTexturesPerShaderStage,
+                SamplersPerDraw = limits.maxSamplersPerShaderStage,
+                BuffersPerDraw = limits.maxStorageBuffersPerShaderStage > 0 ? limits.maxStorageBuffersPerShaderStage - 1 : 0,
+                CombinedBindings = limits.maxUniformBuffersPerShaderStage > 0 ? limits.maxBindingsPerBindGroup : 0,
+                ReservedBindings = 2,
+                MaximumBufferRangeBytes = Math.Min(limits.maxStorageBufferBindingSize, limits.maxBufferSize),
+                BufferRangeAlignment = limits.minStorageBufferOffsetAlignment,
+                BufferRangeSizeAlignment = 4,
+            },
             Features = GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering,
             MaxBufferSize = limits.maxBufferSize,
             MaxStorageBufferBindingSize = limits.maxStorageBufferBindingSize,
@@ -57,6 +72,9 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         add => _lifetime.DeviceLost += value;
         remove => _lifetime.DeviceLost -= value;
     }
+
+    /// <inheritdoc />
+    public bool ValidationEnabled => false;
 
     /// <inheritdoc />
     public GraphicsDeviceStatus Status => _lifetime.Status;
@@ -153,7 +171,8 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         A.Surface native = _instance.CreateSurface(source);
         try
         {
-            return new WgpuSurface(this, native, _adapter);
+            var surface = new WgpuSurface(this, native, _adapter);
+            return surface;
         }
         catch
         {
@@ -251,11 +270,27 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
         return buffer;
     }
 
+    /// <summary>Creates raw unmanaged shader storage.</summary>
+    /// <typeparam name="T">The unmanaged element type.</typeparam>
+    /// <param name="artifact">The compiled shader artifact.</param>
+    /// <param name="count">The element count.</param>
+    /// <param name="memory">The memory preference.</param>
+    /// <param name="usage">The GPU usages; upload staging uses CopySource.</param>
+    /// <returns>The typed raw buffer, without conversion or dependency metadata.</returns>
+    public IGraphicsBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic, BufferUsage usage = BufferUsage.ShaderRead | BufferUsage.CopyDestination)
+        where T : unmanaged
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+
+        return CreateBuffer<T>(new() { Count = count, Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : usage });
+    }
+
     /// <inheritdoc />
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         ArgumentNullException.ThrowIfNull(artifact);
         var buffer = new WgpuShaderDataBuffer<T>(this, artifact, count, memory);
         return buffer;

@@ -424,6 +424,8 @@ public sealed partial class UiApplication
 
         internal Task<bool>? Drawing { get; set; }
 
+        internal UiApplicationProfiling.Key DrawingProfileKey { get; set; }
+
         internal Exception? Error { get; set; }
 
         internal bool InputAttached { get; set; }

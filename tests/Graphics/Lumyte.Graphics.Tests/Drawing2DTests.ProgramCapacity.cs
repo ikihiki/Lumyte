@@ -3,6 +3,7 @@ using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Tests;
 
@@ -35,7 +36,7 @@ public sealed partial class Drawing2DTests
         // A one-past-end physical load must not depend on a warm driver shader cache.
         foreach ((int layers, int opacity) in new[] { (126, 1), (126, 0), (2, 1), (3, 0), (6, 1), (6, 2) })
         {
-            var paint = PaintGraph2D.Layers(Enumerable.Range(0, layers).Select(_ => PaintGraph2D.Solid(new Color2D(1, 0, 0, 1))).ToArray());
+            var paint = PaintGraph2D.Layers(Enumerable.Range(0, layers).Select(_ => PaintGraph2D.Solid(new SRgba<float>(1, 0, 0, 1))).ToArray());
             for (int i = 0; i < opacity; i++)
             {
                 paint = PaintGraph2D.Opacity(1, paint);
@@ -44,6 +45,9 @@ public sealed partial class Drawing2DTests
             Vector4[] pixels = await RenderAsync(device, 2, 1, canvas => canvas.FillRect(new(0, 0, 1, 1), paint));
             AssertPixel(pixels, 2, 0, 0, new(1, 0, 0, 1));
             AssertPixel(pixels, 2, 1, 0, Vector4.Zero);
+            Vector4[] records = await RenderAsync(device, 2, 1, canvas => canvas.FillRect(new(0, 0, 1, 1), paint), useDefaultResources: true);
+            AssertPixel(records, 2, 0, 0, new(1, 0, 0, 1));
+            AssertPixel(records, 2, 1, 0, Vector4.Zero);
         }
     }
 }

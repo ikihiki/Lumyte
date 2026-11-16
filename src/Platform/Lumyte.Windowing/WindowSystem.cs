@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Lumyte.Mathematics.Geometry;
 using Lumyte.Platform.Abstractions;
 using Lumyte.Windowing.Abstractions;
 
@@ -481,14 +482,13 @@ public sealed class WindowSystem : IDisposable
         }
     }
 
-    private static bool Contains(WindowRect rect, Vector2 point) => rect.Width > 0 && rect.Height > 0
-        && point.X >= rect.X && point.Y >= rect.Y && point.X < rect.X + rect.Width && point.Y < rect.Y + rect.Height;
+    private static bool Contains(WindowRect rect, Vector2 point)
+        => Geometry2D.ContainsHalfOpenBounds(rect.X, rect.Y, rect.Width, rect.Height, point.X, point.Y);
 
     private static WindowRect Intersect(WindowRect a, WindowRect b)
     {
-        float x = Math.Max(a.X, b.X);
-        float y = Math.Max(a.Y, b.Y);
-        return new WindowRect(x, y, Math.Max(0, Math.Min(a.X + a.Width, b.X + b.Width) - x), Math.Max(0, Math.Min(a.Y + a.Height, b.Y + b.Height) - y));
+        (float X, float Y, float Width, float Height) bounds = Geometry2D.IntersectBoundsClamped((a.X, a.Y, a.Width, a.Height), (b.X, b.Y, b.Width, b.Height));
+        return new WindowRect(bounds.X, bounds.Y, bounds.Width, bounds.Height);
     }
 
     private Node GetNode(WindowNodeId id)

@@ -26,42 +26,52 @@ public sealed partial class UiSurface
     /// <summary>Adopts prepared configuration changes without computing layout.</summary>
     public void UpdateTree()
     {
-        ThrowIfDisposed();
-        ThrowSignalFailure();
-        if (_applyingRebuild)
+        using UiProfiling.Scope? profile = UiProfiling.Begin(1);
+        try
         {
-            return;
-        }
+            ThrowIfDisposed();
+            ThrowSignalFailure();
+            if (_applyingRebuild)
+            {
+                profile?.Skip();
+                return;
+            }
 
-        if (_pendingRebuild is { } candidate)
+            if (_pendingRebuild is { } candidate)
+            {
+                _applyingRebuild = true;
+                try
+                {
+                    using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
+                    PrepareAnimationUpdates(plan);
+                    plan.Prepare();
+                    PrepareSignalUpdates(plan);
+                    if (_isDisposed)
+                    {
+                        return;
+                    }
+
+                    if (ReferenceEquals(_pendingRebuild, candidate))
+                    {
+                        _pendingRebuild = null;
+                    }
+
+                    Publish(plan);
+                }
+                finally
+                {
+                    _applyingRebuild = false;
+                }
+            }
+
+            ProcessSignals(true);
+            ReconcileVisuals();
+        }
+        catch (Exception error)
         {
-            _applyingRebuild = true;
-            try
-            {
-                using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
-                PrepareAnimationUpdates(plan);
-                plan.Prepare();
-                PrepareSignalUpdates(plan);
-                if (_isDisposed)
-                {
-                    return;
-                }
-
-                if (ReferenceEquals(_pendingRebuild, candidate))
-                {
-                    _pendingRebuild = null;
-                }
-
-                Publish(plan);
-            }
-            finally
-            {
-                _applyingRebuild = false;
-            }
+            profile?.Fail(error);
+            throw;
         }
-
-        ProcessSignals(true);
-        ReconcileVisuals();
     }
 
     internal void RebuildSubtree(UiElement previous, Widget next)
@@ -98,6 +108,8 @@ public sealed partial class UiSurface
 
     private void Publish(RebuildPlan plan)
     {
+        UiProfiling.Add(1, 101, plan.Updates.Count);
+        UiProfiling.Add(1, 102, plan.Removed.Length);
         foreach (ElementUpdate update in plan.Updates)
         {
             if (update.Previous?.SharedElementKey is { } previous)

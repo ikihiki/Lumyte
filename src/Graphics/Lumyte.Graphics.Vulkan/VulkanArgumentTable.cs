@@ -7,6 +7,9 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     private readonly Dictionary<uint, ArgumentRegistration> _textures = new();
     private readonly Dictionary<uint, ArgumentRegistration> _samplers = new();
     private readonly Dictionary<uint, ArgumentRegistration> _buffers = new();
+    private readonly Dictionary<(uint Textures, uint Samplers), VulkanShaderBinding> _sets = [];
+    private bool _sealed;
+    private long _descriptorGeneration;
     private bool _disposed;
 
     public uint TextureCapacity { get; } = desc.TextureCapacity;
@@ -14,6 +17,10 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     public uint SamplerCapacity { get; } = desc.SamplerCapacity;
 
     public uint BufferCapacity { get; } = desc.BufferCapacity;
+
+    internal long DescriptorGeneration => _descriptorGeneration;
+
+    internal int CachedSetCount => _sets.Count;
 
     public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view)
     {
@@ -39,7 +46,7 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         return Write<IGraphicsSampler>(_samplers, SamplerCapacity, slot, resource, 1, 0, 0, 0);
     }
 
-    public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range)
+    public IGpuRef<T> WriteBuffer<T>(uint slot, BufferSlice<T> range, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
         where T : unmanaged
     {
         ThrowIfDisposed();
@@ -48,12 +55,23 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
             throw new ArgumentException("A shader buffer range from the same device is required.", nameof(range));
         }
 
+        if (access is not ShaderBufferAccess.ReadOnly and not ShaderBufferAccess.ReadWrite)
+        {
+            throw new ArgumentOutOfRangeException(nameof(access));
+        }
+
+        BufferUsage required = access == ShaderBufferAccess.ReadWrite ? BufferUsage.ShaderWrite : BufferUsage.ShaderRead;
+        if ((resource.Usage & required) != required)
+        {
+            throw new ArgumentException("The buffer usage does not support the selected registration access.", nameof(access));
+        }
+
         resource.ValidateByteRange(range.OffsetInBytes, range.SizeInBytes);
-        return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes);
+        return Write<T>(_buffers, BufferCapacity, slot, resource, range.Count, range.Buffer.Layout.ElementStrideInBytes, range.OffsetInBytes, range.SizeInBytes, access);
     }
 
     public IGpuRef<T> WriteBuffer<T>(uint slot, ShaderDataSlice<T> range)
-        where T : struct, IShaderData
+        where T : struct, IShaderArguments
     {
         ThrowIfDisposed();
         if (range.Buffer is not VulkanShaderDataBuffer<T> resource || !ReferenceEquals(resource.Owner, owner) || resource.Memory != MemoryPreference.Automatic)
@@ -79,22 +97,87 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
             return;
         }
 
+        DropSets();
         _textures.Clear();
         _samplers.Clear();
         _buffers.Clear();
         _disposed = true;
     }
 
+    internal IShaderReference[] SnapshotRegistrations()
+    {
+        ThrowIfDisposed();
+        return _textures.Values.Concat(_samplers.Values).Concat(_buffers.Values).Cast<IShaderReference>().ToArray();
+    }
+
     internal bool BelongsTo(VulkanDevice device) => ReferenceEquals(owner, device);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size)
+    internal VulkanShaderBinding AcquireBinding(IShaderReference[] registrations, Silk.NET.Vulkan.DescriptorSetLayout layout)
+    {
+        ThrowIfDisposed();
+        VulkanShaderBinding.ValidateResources(registrations);
+        uint textures = registrations.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        uint samplers = registrations.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+
+        // Every layout is manufactured by CreateLayout with exactly this canonical shape,
+        // stage flags and binding flags. Native handle identity is deliberately irrelevant.
+        (uint, uint) key = (textures, samplers);
+        if (!_sets.TryGetValue(key, out VulkanShaderBinding? binding))
+        {
+            binding = new(owner, this, registrations, layout);
+            try
+            {
+                _sets.Add(key, binding);
+            }
+            catch
+            {
+                binding.Dispose();
+                throw;
+            }
+        }
+
+        _sealed = true;
+        return binding;
+    }
+
+    private void MutateDescriptors()
+    {
+        if (_sealed)
+        {
+            _descriptorGeneration++;
+            _sealed = false;
+            DropSets();
+        }
+    }
+
+    private void DropSets()
+    {
+        try
+        {
+            foreach (VulkanShaderBinding binding in _sets.Values)
+            {
+                binding.Dispose();
+            }
+        }
+        finally
+        {
+            _sets.Clear();
+        }
+    }
+
+    private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
     {
         ValidateSlot(capacity, slot);
-        var entry = new ArgumentRegistration(this, slot, resource, offset, size);
+        var entry = new ArgumentRegistration(this, slot, resource, offset, size, count, access);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         slots[slot] = entry;
+        if (!ReferenceEquals(slots, _buffers))
+        {
+            MutateDescriptors();
+        }
+
         return reference;
     }
 
@@ -102,7 +185,10 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     {
         ThrowIfDisposed();
         ValidateSlot(capacity, slot);
-        slots.Remove(slot);
+        if (slots.Remove(slot) && !ReferenceEquals(slots, _buffers))
+        {
+            MutateDescriptors();
+        }
     }
 
     private void ValidateSlot(uint capacity, uint slot)

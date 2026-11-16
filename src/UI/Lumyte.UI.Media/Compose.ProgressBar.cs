@@ -1,5 +1,5 @@
 using Lumyte.Composition;
-using Lumyte.Graphics.Drawing2D;
+using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI.Media;
 
@@ -25,11 +25,11 @@ public static partial class Compose
 
             /// <summary>Gets or sets the explicit foreground color.</summary>
             [ComposeParameter]
-            public Color2D Foreground { get; set; } = new(0.2f, 0.4f, 0.8f, 1);
+            public SRgba<float> Foreground { get; set => field = MediaGeometry.UnitColor(value, nameof(Foreground)); } = new(0.2f, 0.4f, 0.8f, 1);
 
             /// <summary>Gets or sets the explicit track color.</summary>
             [ComposeParameter]
-            public Color2D Background { get; set; } = new(0.2f, 0.2f, 0.2f, 1);
+            public SRgba<float> Background { get; set => field = MediaGeometry.UnitColor(value, nameof(Background)); } = new(0.2f, 0.2f, 0.2f, 1);
 
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new ProgressBarElement(this);

@@ -11,15 +11,28 @@ public sealed partial class UiSurface
     /// <returns>Whether a widget consumed the input or a captured series was delivered.</returns>
     public bool Dispatch(UiInput input)
     {
-        _dispatchDepth++;
+        using UiProfiling.Scope? profile = UiProfiling.Begin(4);
         try
         {
-            return DispatchCore(input);
+            bool consumed;
+            _dispatchDepth++;
+            try
+            {
+                consumed = DispatchCore(input);
+            }
+            finally
+            {
+                _dispatchDepth--;
+                ProcessSignals(false);
+            }
+
+            profile?.Consumed(consumed);
+            return consumed;
         }
-        finally
+        catch (Exception error)
         {
-            _dispatchDepth--;
-            ProcessSignals(false);
+            profile?.Fail(error);
+            throw;
         }
     }
 
