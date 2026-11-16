@@ -5,7 +5,7 @@ namespace Lumyte.Platform.Browser;
 internal static partial class BrowserInterop
 {
     [JSImport("attach", "Lumyte.Platform.Browser")]
-    internal static partial JSObject Attach(JSObject canvas, string title, double width, double height, bool preserveFocus);
+    internal static partial JSObject Attach(JSObject canvas, string title, double width, double height, bool preserveFocus, bool ownWheelDefaults);
 
     [JSImport("context", "Lumyte.Platform.Browser")]
     internal static partial JSObject Context(JSObject handle);

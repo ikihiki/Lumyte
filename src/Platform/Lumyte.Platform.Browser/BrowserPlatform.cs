@@ -17,6 +17,7 @@ public sealed class BrowserPlatform : IPlatform
 {
     private readonly HashSet<BrowserClipboard> _clipboards = [];
     private readonly JSObject _canvas;
+    private readonly bool _ownWheelDefaults;
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private readonly Queue<Action> _operations = new();
     private readonly Queue<Action> _notifications = new();
@@ -30,9 +31,10 @@ public sealed class BrowserPlatform : IPlatform
     private bool _disposed;
     private bool _textInputRegistered;
 
-    private BrowserPlatform(JSObject canvas)
+    private BrowserPlatform(JSObject canvas, bool ownWheelDefaults)
     {
         _canvas = canvas;
+        _ownWheelDefaults = ownWheelDefaults;
     }
 
     /// <inheritdoc/>
@@ -48,8 +50,9 @@ public sealed class BrowserPlatform : IPlatform
     /// <summary>Imports the JavaScript module and borrows an application-provided HTML canvas.</summary>
     /// <param name="canvas">An HTMLCanvasElement supporting WebGPU.</param>
     /// <param name="modulePath">The URL of the packaged JavaScript module.</param>
+    /// <param name="ownWheelDefaults">Opt in to suppress native scrolling and Ctrl+wheel zoom only on the visible canvas while input is enabled.</param>
     /// <returns>A caller-owned platform. The canvas proxy remains owned by the caller.</returns>
-    public static async Task<BrowserPlatform> CreateAsync(JSObject canvas, string modulePath = "./lumyte-windowing.js")
+    public static async Task<BrowserPlatform> CreateAsync(JSObject canvas, string modulePath = "./lumyte-windowing.js", bool ownWheelDefaults = false)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentException.ThrowIfNullOrWhiteSpace(modulePath);
@@ -57,7 +60,7 @@ public sealed class BrowserPlatform : IPlatform
         string baseUrl = location.GetPropertyAsString("href") ?? throw new InvalidOperationException("The browser location has no URL.");
         var resolved = new Uri(new Uri(baseUrl), modulePath);
         using JSObject module = await JSHost.ImportAsync("Lumyte.Platform.Browser", resolved.AbsoluteUri);
-        return new BrowserPlatform(canvas);
+        return new BrowserPlatform(canvas, ownWheelDefaults);
     }
 
     /// <inheritdoc/>
@@ -71,7 +74,7 @@ public sealed class BrowserPlatform : IPlatform
         }
 
         BrowserWindow.Validate(descriptor);
-        _window = new BrowserWindow(this, new WindowId(Id, checked(++_nextWindow)), _canvas, descriptor);
+        _window = new BrowserWindow(this, new WindowId(Id, checked(++_nextWindow)), _canvas, descriptor, _ownWheelDefaults);
         return _window;
     }
 

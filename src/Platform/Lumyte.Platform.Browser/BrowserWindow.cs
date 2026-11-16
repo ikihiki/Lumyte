@@ -18,11 +18,11 @@ public sealed class BrowserWindow : IWindow
     private bool _detached;
     private bool _disposed;
 
-    internal BrowserWindow(BrowserPlatform platform, WindowId id, JSObject canvas, WindowDescriptor descriptor)
+    internal BrowserWindow(BrowserPlatform platform, WindowId id, JSObject canvas, WindowDescriptor descriptor, bool ownWheelDefaults)
     {
         _platform = platform;
         Id = id;
-        _handle = BrowserInterop.Attach(canvas, descriptor.Title, descriptor.ClientSize.X, descriptor.ClientSize.Y, descriptor.Activation == WindowActivation.PreserveFocus);
+        _handle = BrowserInterop.Attach(canvas, descriptor.Title, descriptor.ClientSize.X, descriptor.ClientSize.Y, descriptor.Activation == WindowActivation.PreserveFocus, ownWheelDefaults);
         try
         {
             _context = BrowserInterop.Context(_handle);

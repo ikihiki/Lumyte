@@ -92,7 +92,7 @@ try {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
-                reject(new Error(`CDP timeout: ${method}`));
+                reject(new Error(`CDP timeout: ${method} ${JSON.stringify(params)}`));
             }, method === "Page.navigate" ? 60000 : method === "Runtime.evaluate" ? 45000 : 10000);
             pending.set(id, {
                 resolve: value => { clearTimeout(timeout); resolve(value); },
@@ -159,10 +159,18 @@ try {
     while (Date.now() < deadline && !await evaluate("globalThis.lumyteMapsProbe.HasPresentedInputAsync()")) await delay(25);
     assert.equal(await evaluate("globalThis.lumyteMapsProbe.HasPresentedInputAsync()"), true,
         "Physical UI input requires committed presentation geometry; state=" + await evaluate("globalThis.lumyteMapsProbe.GetState()"));
+    // A scrollable embedding must retain its page position while Maps owns wheel defaults.
+    await evaluate("(() => { document.body.style.minHeight = '2400px'; document.body.style.paddingTop = '100px'; window.scrollTo(0, 300); })()");
+    await delay(100);
+    const embeddingState = () => evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { scrollY: window.scrollY, x: r.left, y: r.top, width: r.width, height: r.height, scale: window.visualViewport.scale }; })()");
+    const embeddingBefore = await embeddingState();
+    assert.equal(embeddingBefore.scrollY, 300, "fixture must actually be scrollable");
     const bounds = await evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()");
     const start = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    assert.equal(await evaluate(`document.elementFromPoint(${start.x}, ${start.y})?.id`), "lumyte", "embedding input point must hit Maps canvas");
     const readCamera = async () => (await evaluate("globalThis.lumyteMapsProbe.GetCamera()")).split(",").map(Number);
     await evaluate("(() => { globalThis.__mapInputEvents = []; for (const type of ['pointerdown','pointermove','pointerup','pointercancel','wheel']) window.addEventListener(type, e => globalThis.__mapInputEvents.push({ type, x:e.clientX, y:e.clientY, buttons:e.buttons, target:e.target.id, focused:document.hasFocus(), active:document.activeElement?.id }), true); })()");
+    await evaluate("(() => { globalThis.__mapWheelDefaults = []; window.addEventListener('wheel', e => globalThis.__mapWheelDefaults.push({ ctrl: e.ctrlKey, prevented: e.defaultPrevented }), { passive: false }); })()");
     const initialCamera = await readCamera();
     await command("Input.dispatchMouseEvent", { type: "mouseMoved", ...start });
     await command("Input.dispatchMouseEvent", { type: "mousePressed", ...start, button: "left", buttons: 1, clickCount: 1 });
@@ -179,8 +187,12 @@ try {
     }
     const panned = await cameraUntil(camera => Math.abs(camera[0] - initialCamera[0] + 28.125) < 1e-8);
     const wheelPoint = { x: start.x + 80, y: start.y - 40 };
+    await command("Input.dispatchMouseEvent", { type: "mouseMoved", ...wheelPoint });
     await command("Input.dispatchMouseEvent", { type: "mouseWheel", ...wheelPoint, deltaX: 0, deltaY: -120 });
     const zoomed = await cameraUntil(camera => camera[2] === 0.25);
+    await delay(200); // Allow native compositor scroll, if not prevented, to become observable.
+    assert.deepEqual(await embeddingState(), embeddingBefore, "owned wheel must not scroll the page or move/scale the canvas");
+    assert.deepEqual(await evaluate("globalThis.__mapWheelDefaults"), [{ ctrl: false, prevented: true }], "actual wheel event must own its native default");
     const project = camera => [(camera[0] + 180) / 360, (1 - Math.asinh(Math.tan(camera[1] * Math.PI / 180)) / Math.PI) / 2];
     const before = project(panned);
     const after = project(zoomed);
@@ -188,13 +200,30 @@ try {
     assert.ok(Math.abs(before[0] + 80 / 512 - after[0] - 80 / world) < 1e-10, "Wheel longitude anchor");
     assert.ok(Math.abs(before[1] - 40 / 512 - after[1] + 40 / world) < 1e-10, "Wheel latitude anchor");
     console.log("Actual CDP/DOM pan and wheel through Browser acquisition, UI host, MapView passed: " + zoomed);
-    await command("Input.dispatchMouseEvent", { type: "mouseWheel", ...wheelPoint, deltaX: 0, deltaY: -480 });
+    await command("Input.dispatchMouseEvent", { type: "mouseWheel", ...wheelPoint, deltaX: 0, deltaY: -480, modifiers: 2 });
     await cameraUntil(camera => camera[2] === 1.25);
+    await delay(200);
+    assert.deepEqual(await embeddingState(), embeddingBefore, "owned Ctrl+wheel must not zoom the browser or move the canvas");
+    assert.deepEqual(await evaluate("globalThis.__mapWheelDefaults"), [{ ctrl: false, prevented: true }, { ctrl: true, prevented: true }]);
+    console.log("Scrollable embedding: wheel and Ctrl+wheel update camera with stable scrollY, canvas bounds and viewport scale.");
     const adoptionDeadline = Date.now() + 10000;
     while (Date.now() < adoptionDeadline && await evaluate("globalThis.lumyteMapsProbe.GetPublishedTiles()") < 5) await delay(25);
     assert.equal(await evaluate("globalThis.lumyteMapsProbe.GetPublishedTiles()"), 5, "Integer source zoom must adopt the four local z1 tiles, not reuse z0 as fallback");
     assert.ok(await evaluate("globalThis.lumyteMapsProbe.RecordUiAsync()") >= 5);
     console.log("Browser source zoom 0 -> 1: four newly demanded local tiles adopted and recorded.");
+    const cameraBeforePageWheel = await readCamera();
+    const outside = { x: start.x, y: bounds.y + bounds.height + 40 };
+    assert.notEqual(await evaluate(`document.elementFromPoint(${outside.x}, ${outside.y})?.id`), "lumyte");
+    await command("Input.dispatchMouseEvent", { type: "mouseMoved", ...outside });
+    await command("Input.dispatchMouseEvent", { type: "mouseWheel", ...outside, deltaX: 0, deltaY: 120, modifiers: 0 });
+    const pageScrollDeadline = Date.now() + 10000;
+    while (Date.now() < pageScrollDeadline && (await embeddingState()).scrollY === embeddingBefore.scrollY) await delay(25);
+    assert.ok((await embeddingState()).scrollY > embeddingBefore.scrollY, "unowned wheel outside canvas must retain native page scrolling");
+    assert.deepEqual(await readCamera(), cameraBeforePageWheel, "outside wheel must not change Maps camera");
+    // Native compositor scrolling need not expose a separate DOM wheel observation for every
+    // CDP wheel transaction. The contract here is actual page scroll with an unchanged camera;
+    // deterministic bridge tests separately assert defaultPrevented for unowned events.
+    console.log("Unowned wheel outside Maps canvas retains native page scroll without changing camera.");
     await evaluate("globalThis.lumyteMapsProbe.RequestStop()");
     while (Date.now() < deadline && !await evaluate("globalThis.lumyteMapsFinished")) {
         assert.deepEqual(errors, [], "Browser cleanup failed");
