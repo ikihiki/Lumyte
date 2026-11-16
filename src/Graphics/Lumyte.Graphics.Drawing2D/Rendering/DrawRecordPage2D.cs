@@ -166,7 +166,7 @@ internal sealed class DrawRecordPage2D
         return checked((offset + multiple - 1) / multiple * multiple);
     }
 
-    internal bool FitsAddition(DrawingProgram2D? program, uint root, NormalizedClip2D clip, SRgba<float> color, ulong maximum, out uint buffers, out bool needsSampler)
+    internal bool FitsAddition(DrawingProgram2D? program, uint root, NormalizedClip2D clip, SRgba<float> color, ulong maximum, out uint buffers, out bool needsSampler, bool combineDirectories = false)
     {
         int outerCells = AdditionalClipCells(clip);
         ulong numeric = checked((ulong)Numeric.Count + (ulong)outerCells);
@@ -219,7 +219,9 @@ internal sealed class DrawRecordPage2D
         return Fits();
 
         bool Fits() => maximum >= 96 && checked(((ulong)Records.Count + 1) * 96) <= maximum
-            && paints <= maximum / 16 && clips <= maximum / 16 && Math.Max(1ul, numeric) <= maximum / 16
+            && paints <= maximum / 16 && clips <= maximum / 16
+            && (!combineDirectories || clips <= 1 || paints <= (maximum / 16) - clips)
+            && Math.Max(1ul, numeric) <= maximum / 16
             && images <= maximum / 128 && masks <= maximum / 80;
 
         ulong AdditionalCopy(List<Vector4> source, uint first, uint count)

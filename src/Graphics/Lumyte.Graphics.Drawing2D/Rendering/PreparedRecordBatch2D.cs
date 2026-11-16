@@ -408,7 +408,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             DeviceCaps caps = _batch._context.Device.Caps;
             ulong maximum = caps.MaxStorageBufferBindingSize == 0 ? caps.MaxBufferSize : Math.Min(caps.MaxBufferSize, caps.MaxStorageBufferBindingSize);
             maximum = Math.Min(Math.Min(maximum, limits.MaximumBufferRangeBytes), int.MaxValue);
-            if (!Cpu.FitsAddition(program, root, clip, color, maximum, out uint buffers, out bool needsSampler))
+            bool membership = _batch._context.ComputeShapeMembership &&
+                (Cpu.Records.Any(record => record.Kind is 4 or 5) || (program is not null && program.Instructions.Any(instruction => instruction.Kind is 4 or 5)));
+            if (!Cpu.FitsAddition(program, root, clip, color, maximum, out uint buffers, out bool needsSampler, combineDirectories: membership))
             {
                 return false;
             }
@@ -425,19 +427,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
 
             // A compute-enabled general page uses the full metadata ABI, two descriptor streams and one RO membership binding.
-            if (_batch._context.ComputeShapeMembership &&
-                (Cpu.Records.Any(record => record.Kind is 4 or 5) || (program is not null && program.Instructions.Any(instruction => instruction.Kind is 4 or 5))))
+            if (membership)
             {
                 buffers = Math.Max(buffers, 7u);
-
-                // The combined directory is one binding, not two individually
-                // bounded buffers. Include conservative incoming entry counts.
-                ulong directoryEntries = checked((ulong)Cpu.Paints.Count + (ulong)Cpu.Clips.Count
-                    + (ulong)(program?.Instructions.Count ?? 1) + 1);
-                if (directoryEntries > maximum / 16)
-                {
-                    return false;
-                }
             }
 
             uint textureBindings = Math.Max(views, limits.MinimumTextureBindings);
