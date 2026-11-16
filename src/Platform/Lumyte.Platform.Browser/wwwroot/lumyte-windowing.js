@@ -136,7 +136,10 @@ export function attach(canvas, title, width, height, preserveFocus) {
     handle.connectionObserver.observe(document, { childList: true, subtree: true });
     listen("wheel", event => {
         const divisor = event.deltaMode === 0 ? 120 : event.deltaMode === 1 ? 3 : 1;
-        record({ type: 3, x: event.deltaX / divisor, y: -event.deltaY / divisor });
+        const rect = canvas.getBoundingClientRect();
+        const capture = ++handle.captureSequence;
+        record({ type: 1, x: (event.clientX - rect.left) * canvas.clientWidth / rect.width, y: (event.clientY - rect.top) * canvas.clientHeight / rect.height, capture },
+            { type: 3, x: event.deltaX / divisor, y: -event.deltaY / divisor, capture });
     });
     handle.setLogicalFocus = focused => {
         if (handle.logicalFocus !== focused) {

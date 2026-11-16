@@ -10,6 +10,23 @@ namespace Lumyte.UI.Windowing.Tests;
 /// <summary>Verifies PopupTests.</summary>
 public sealed class PopupTests
 {
+    /// <summary>Wheel coordinates reach the hit popup; a menu shields the background without dismissing.</summary>
+    [Fact]
+    public void WheelUsesPopupCoordinatesAndMenuPrecedence()
+    {
+        using var fixture = new Fixture();
+        var events = new List<Vector2?>();
+        UiPopupHandle popup = fixture.Popups.RequestOpen(fixture.Owner, new(fixture.Anchor, new(80, 60), () => new WheelWidget(events) { Width = 60, Height = 40 }));
+        fixture.Pump();
+        Assert.Equal(UiPopupState.Open, popup.State);
+        Assert.True(fixture.Send(new UiWheelInput(new(5, 25), new(0, 1))));
+        Assert.Equal((Vector2?)new Vector2(5, 5), Assert.Single(events));
+        Assert.True(fixture.Send(new UiWheelInput(new(5, 5), new(0, 1))));
+        Assert.Single(events);
+        Assert.Equal(UiPopupState.Open, popup.State);
+        Assert.Equal(0, fixture.Clicks);
+    }
+
     /// <summary>Checks declarative signal opening, portal isolation, controlled dismissal and continuing session identity.</summary>
     /// <param name="presentation">The hosted or native-preferring fallback policy.</param>
     [Theory]
@@ -420,6 +437,27 @@ public sealed class PopupTests
         Assert.Equal(UiPopupState.Closing, observed);
         Assert.Equal(UiPopupState.Closed, popup.State);
         cancellation.Dispose();
+    }
+
+    private sealed class WheelWidget(List<Vector2?> events) : Definitions.Panel
+    {
+        internal List<Vector2?> Events { get; } = events;
+
+        protected override UiElement CreateElement() => new WheelElement(this);
+    }
+
+    private sealed class WheelElement(WheelWidget widget) : PanelElement(widget)
+    {
+        protected override UiInputResult OnInput(in UiInputContext context)
+        {
+            if (context.Input is not UiWheelInput)
+            {
+                return UiInputResult.Unhandled;
+            }
+
+            widget.Events.Add(context.PointerPosition);
+            return UiInputResult.Handled;
+        }
     }
 
     private sealed class Participant : IAsyncDisposable

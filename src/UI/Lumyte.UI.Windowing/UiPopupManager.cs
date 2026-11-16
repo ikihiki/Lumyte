@@ -382,6 +382,16 @@ public sealed partial class UiPopupManager : IDisposable
             };
         }
 
+        if (input is UiWheelInput wheel)
+        {
+            if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, wheel.Position, out Vector2 at))
+            {
+                throw new InvalidOperationException("coordinate-unavailable");
+            }
+
+            input = wheel with { Position = at };
+        }
+
         if (input is UiCheckInput check)
         {
             if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, check.Position, out Vector2 at))
@@ -980,6 +990,27 @@ public sealed partial class UiPopupManager : IDisposable
         }
 
         Popup? menu = Deepest(rootState!.KeyboardScopeId);
+        if (input is UiWheelInput wheel)
+        {
+            UiWindowHit? hit = _windows.HitTest(originRoot, wheel.Position);
+            Popup? hitPopup = hit is { } h ? _popups.Values.FirstOrDefault(p => p.Window == h.Window
+                && !p.Closing && p.Mode == UiPopupInputMode.Menu && p.Handle.State == UiPopupState.Open) : null;
+            if (menu is not null && (menu.Handle.State != UiPopupState.Open || hitPopup is null))
+            {
+                return true;
+            }
+
+            if (hit is not { } destination)
+            {
+                return menu is not null;
+            }
+
+            UiSurface? target = destination.InputMode == UiWindowInputMode.Candidate
+                ? _candidateSurfaces.GetValueOrDefault(destination.Window) : Surface(destination.Window);
+            return (target?.Dispatch(wheel with { Position = destination.LocalPosition }) ?? false)
+                || destination.InputMode == UiWindowInputMode.Candidate || menu is not null;
+        }
+
         if (input is UiPointerInput point)
         {
             UiWindowHit? hit = _windows.HitTest(originRoot, point.Position);

@@ -11,5 +11,8 @@
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/Lumyte.Graphics.Drawing2D.RenderGraph.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <Compile Include="../../Graphics/Lumyte.Graphics.Tests/GpuFactAttribute.cs" Link="Fixtures/GpuFactAttribute.cs" />
+    <Compile Include="../../Platform/Lumyte.Platform.Tests/TestPlatform.cs" Link="Fixtures/TestPlatform.cs" />
+    <Compile Include="../../Platform/Lumyte.Platform.Tests/TestWindow.cs" Link="Fixtures/TestWindow.cs" />
+    <Compile Include="../Lumyte.UI.IntegrationTests/OrderedFixture.cs" Link="Fixtures/OrderedFixture.cs" />
   </ItemGroup>
 </Project>

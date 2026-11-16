@@ -171,6 +171,25 @@ internal sealed class UiHostInputRouter
             return PointerEvent(input, 0, 0, UiPointerPhase.Move, move.Position);
         }
 
+        if (input.Data is MouseWheelData wheel)
+        {
+            if (origin is not InputWindowId wheelOrigin || input.Capture is null
+                || !_positions.TryGetValue((input.DeviceId, wheelOrigin), out (Vector2 Position, InputCaptureStamp? Capture, ulong Sequence) position)
+                || position.Capture != input.Capture || input.Sequence - position.Sequence != 1)
+            {
+                return false;
+            }
+
+            Target? selected = Select(wheelOrigin, position.Position);
+            if (selected is null || !Live(selected))
+            {
+                return false;
+            }
+
+            (Vector2 local, bool inside) = Local(selected, position.Position);
+            return inside && Deliver(selected, new UiWheelInput(local, wheel.Delta));
+        }
+
         if (input.Data is MouseButtonData mouse)
         {
             HashSet<MouseButton> buttons = _mouseButtons.GetValueOrDefault(input.DeviceId) ?? [];
@@ -317,7 +336,7 @@ internal sealed class UiHostInputRouter
                     {
                         (Vector2 local, bool visible) = Local(owner, position);
                         UiPointerPhase delivered = phase == UiPointerPhase.Up && !visible ? UiPointerPhase.Cancel : phase;
-                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, visible ? local : new(-1, -1)));
+                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, phase == UiPointerPhase.Move || visible ? local : new(-1, -1)));
                     }
                 }
             }

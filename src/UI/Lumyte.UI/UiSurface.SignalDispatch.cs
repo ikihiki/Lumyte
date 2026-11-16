@@ -99,6 +99,19 @@ public sealed partial class UiSurface
             return DispatchKey(key);
         }
 
+        if (input is UiWheelInput wheel)
+        {
+            if (!float.IsFinite(wheel.Position.X) || !float.IsFinite(wheel.Position.Y)
+                || !float.IsFinite(wheel.Delta.X) || !float.IsFinite(wheel.Delta.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? wheelHit = UiInputGeometry.Contains(Vector2.Zero, _viewport, wheel.Position)
+                ? _rootElement.FindInputHit(wheel.Position, _inputVersion) : null;
+            return wheelHit is not null && RouteInput(wheelHit, wheel);
+        }
+
         if (input is not UiPointerInput pointer)
         {
             return RouteInput(_focusedElement ?? _rootElement, input);

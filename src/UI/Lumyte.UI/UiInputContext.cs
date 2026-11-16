@@ -33,10 +33,20 @@ public readonly struct UiInputContext
     public bool IsFocused => _surface.IsFocused(Receiver);
 
     /// <summary>Gets a value indicating whether a pointer is inside the receiver's prepared input region.</summary>
-    public bool IsInside => Input is UiPointerInput pointer && _surface.IsInside(Receiver, pointer.Position);
+    public bool IsInside => Input switch
+    {
+        UiPointerInput pointer => _surface.IsInside(Receiver, pointer.Position),
+        UiWheelInput wheel => _surface.IsInside(Receiver, wheel.Position),
+        _ => false,
+    };
 
-    /// <summary>Gets the pointer position in receiver-local coordinates, or null for non-pointer input.</summary>
-    public Vector2? PointerPosition => Input is UiPointerInput pointer ? pointer.Position - Receiver.InputOrigin : null;
+    /// <summary>Gets the pointer or wheel position in receiver-local coordinates, or null for non-positional input.</summary>
+    public Vector2? PointerPosition => Input switch
+    {
+        UiPointerInput pointer => pointer.Position - Receiver.InputOrigin,
+        UiWheelInput wheel => wheel.Position - Receiver.InputOrigin,
+        _ => null,
+    };
 
     /// <summary>Attempts capture for this receiver during pointer Down or Move; returns false for an existing different owner or ineligible receiver.</summary>
     /// <returns>Whether this receiver owns the capture.</returns>
