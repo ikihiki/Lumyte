@@ -32,6 +32,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         QueueFamily = queueFamily;
         api.GetDeviceQueue(device, queueFamily, 0, out _nativeQueue);
         Queue = new VulkanQueue(this);
+        Descriptors = new(this);
     }
 
     /// <inheritdoc />
@@ -58,6 +59,8 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     /// <summary>Gets the physical device push-constant byte limit.</summary>
     public uint MaxPushConstantsSize { get; }
+
+    internal VulkanDescriptorAllocator Descriptors { get; }
 
     internal bool CacheGraphicsPipelines { get; }
 
@@ -342,6 +345,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
         _completions.Dispose();
         _presentation?.Dispose();
+        Descriptors.Dispose();
         _api.DestroyDevice(_device, null);
         _api.DestroyInstance(_instance, null);
         _api.Dispose();
