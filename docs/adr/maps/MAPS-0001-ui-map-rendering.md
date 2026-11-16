@@ -79,6 +79,34 @@ MVTはレイヤー名や属性の意味を統一しない。タイル集合は�
 
 decoderは既存のMVT実装を優先してadapter内で利用する。使用する依存の採否には、ライセンス、管理状況、Browser/AOT、穴付きポリゴン、不正入力と容量制限への対応を要求する。これらを未検証のまま互換性を約束せず、採用したdecoderによって公開地図モデルを変更しない。
 
+### HTTP入力と展開後revision
+
+HTTPは独立した`Lumyte.Maps.Http`に置き、Mvt側にはtransport非依存の`BoundedMvtRegistration`とsnapshot受入境界だけを追加する。MvtからHttpへの参照は追加しない。同じ登録インスタンス、profile、完全なResourceAddressをstageが照合し、既存のprotobuf-net.Coreによるdecodeを再利用する。snapshotに渡すstorageはadapterが所有する非公開の不変メモリであり、callbackはそのaccountingを返す信頼境界とする。
+
+ローカル入力とHTTP入力で変わるのはsourceとその登録である。以下の登録は生成済みとし、Managerにはsourceとstageを同じ組で渡す。HTTP sourceはManagerの処理とsnapshot使用が完了した後に所有者が解放する。
+
+```csharp
+using Lumyte.Maps.Http;
+using Lumyte.Maps.Mvt;
+
+// 変更前: ローカルファイルから読む。
+var localSource = new LocalMvtSource(localRegistration);
+var localStage = new MvtResourceStage(localRegistration);
+// 変更後: 明示したHTTP配信先から読み、同じdecoderへ渡す。
+await using var httpSource = new HttpMvtSource(httpRegistration);
+var httpStage = new MvtResourceStage(httpRegistration.Mvt);
+```
+
+初期HTTP adapterはNative専用とし、有限のXYZ→URI対応表、同一scheme・host・port・directory scopeを登録する。配信先と不変policy、内容版、非秘密のaccess partition、decode profileをkeyへ含める。認証情報やそのhashをkeyやURLへ含めず、Authorizationは別に渡す。Browser fetchではraw wire byte数、redirect、展開を同じように制御できないため、この厳密policyはBrowserで明示的に拒否する。メモリ入力のBrowser対応と混同しない。
+
+owned native handlerは自動redirect、展開、cookie、proxyと未読response bodyの暗黙drainを無効化する。redirectは有限回数だけscope内で手動処理し、許可しないoriginへ認証を転送しない。既存HttpClientを借用する場合は、同じhandler契約を呼出側が保証することを明示的に受け入れる入口に限定する。その保証をライブラリが検証できたとは扱わない。
+
+受付数を制限し、初期実装ではHTTP処理を直列化する。queue待機、headers、body読取り、再試行と待機を一つの期限へ含める。429と選択した5xxだけを有限再試行し、Retry-Afterのdelta／dateを検証する。期限やpolicy上限を超える待機は短縮して早期再試行せず拒否する。認証・形式・容量エラーは通信再試行へ混ぜない。media typeとcontent codingは大小文字を区別せず扱う。
+
+Content-Lengthだけを信用せず、実読取りでwire上限と展開後上限を独立に検査し、上限+1の検出領域を予約する。cache、旧snapshotのpin、新規受信buffer、作業領域をsource自身の予算へ同時に計上する。metadata数と文字列長、負のcache、受付中の処理も有限とし、sessionの常駐予算だけでsourceの容量を保証しない。初期の展開workspace予約は保守的な32 MiB+8 KiBで、network／TLS／runtimeを含むprocess全体の上限とは呼ばない。
+
+`OpenSnapshotAsync`と`GetRevisionAsync`は同期した同じcache／再検証経路を使う。revisionは受理した展開後byte列のSHA256とし、HTTP validatorとは分ける。304は既存の不変表現、送信したvalidator、最終表現URIが一致するときだけ再利用する。期限切れの変更はResourcesへ新revisionとして観測させる。404だけを期限付き欠損として扱いrevisionをnullにし、401や一時失敗を欠損へ変換しない。cacheの置換・退避後も、使用中snapshotとstreamが旧byte列のpinと計上を保持する。ディスクcacheと公開配信元への依存は追加しない。
+
 ### 座標と表示範囲
 
 `MapCamera`は経度、緯度、連続zoomをdoubleで持ち、回転は0固定とする。非finite値は拒否し、経度は[-180,180)へ正規化、緯度はWebメルカトルの限界である約±85.05112878度へ制限する。zoomはタイル集合の対応範囲へ制限し、境界での入力も決定的に扱う。
