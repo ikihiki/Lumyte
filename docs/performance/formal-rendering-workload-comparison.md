@@ -110,6 +110,6 @@ nativeの小さな差をDrawList storage変更へ直接帰属させない。例�
 - Count200だけの比較。TextBoxは単一行で、IME/入力/Undo/本物のdocking/3D preview/OS idle省電力は対象外。
 - 最初の環境採取は任意cpu.maxファイルがなく計測前に停止した。失敗metadataを保存して修正した後に正式block全体を開始。性能の良い観測だけを選んだ再実行ではない。
 
-[全集計](data/formal-workloads-20261102/summary.json)、[比較CSV](data/formal-workloads-20261102/comparison.csv)、[raw gzip/SHA-256 manifest](data/formal-workloads-20261102/manifest.json)。[再現runner](../../tools/benchmarks/drawing2d-incremental/run-formal-workloads.sh)と[分析script](../../tools/benchmarks/drawing2d-incremental/analyze-formal-workloads.py)を保存。
+[全集計](data/formal-workloads-20261102/summary.json)、[比較CSV](data/formal-workloads-20261102/comparison.csv)、[raw gzip/SHA-256 manifest](data/formal-workloads-20261102/manifest.json)。[再現runner](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/drawing2d-incremental/run-formal-workloads.sh)と[分析script](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/drawing2d-incremental/analyze-formal-workloads.py)を保存。
 
 製品API・既存PRの変更やpushは行っていない。

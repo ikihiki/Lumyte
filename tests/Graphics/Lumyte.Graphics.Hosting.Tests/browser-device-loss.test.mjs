@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../../../src/Graphics/Lumyte.Graphics.Browser/wwwroot/lumyte-graphics.js', import.meta.url), 'utf8');
 const graphics = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
-function fakeDevice() {
+function fakeDevice(info) {
     let lose;
     let rejectLoss;
     const pendingWork = [];
@@ -21,7 +21,7 @@ function fakeDevice() {
     };
     Object.defineProperty(globalThis, 'navigator', {
         configurable: true,
-        value: { gpu: { requestAdapter: async () => ({ requestDevice: async () => device }) } },
+        value: { gpu: { requestAdapter: async () => ({ info, requestDevice: async () => device }) } },
     });
     return {
         lose,
@@ -126,4 +126,23 @@ test('failed loss observation terminates pending queue waits', async () => {
     assert.equal(handle.pendingSubmissions.size, 0);
     assert.equal(graphics.getSubmissionStatus(submission), 2);
     assert.match(graphics.getSubmissionError(submission), /Loss observation failed/);
+});
+
+test('SwiftShader hint requires positive architecture identity, not fallback status', () => {
+    assert.equal(graphics.prefersDrawLocalArgumentTables({info:{vendor:'google',architecture:'swiftshader',isFallbackAdapter:true}}), true);
+    assert.equal(graphics.prefersDrawLocalArgumentTables({info:{architecture:'SWIFTSHADER'}}), true);
+    for (const adapter of [undefined, {}, {info:{}}, {info:{architecture:'rdna3'}}, {info:{isFallbackAdapter:true}}, {info:{architecture:'not-swiftshader'}}]) {
+        assert.equal(graphics.prefersDrawLocalArgumentTables(adapter), false);
+    }
+    assert.equal(graphics.prefersDrawLocalArgumentTables({get info(){throw new Error('redacted');}}), false);
+});
+
+test('created device caps serialize the actual selected adapter preference', async () => {
+    for (const [info, expected] of [[{architecture:'swiftshader'},true], [{architecture:'rdna3'},false], [undefined,false]]) {
+        fakeDevice(info);
+        const handle = await graphics.createDevice();
+        assert.equal(JSON.parse(graphics.getCapsJson(handle)).preferDrawLocalArgumentTables, expected);
+        graphics.destroyDevice(handle);
+        await graphics.waitDeviceLost(handle);
+    }
 });

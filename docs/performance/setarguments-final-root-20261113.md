@@ -66,6 +66,6 @@ Windows native D3D12、Browser実WebGPU、AOT、presentation、他backendの性�
 
 ## 保存と再現
 
-- [Harness](../../tools/benchmarks/setarguments-final-root/README.md)、[summary.json](data/setarguments-final-root-20261113/summary.json)、[summary.csv](data/setarguments-final-root-20261113/summary.csv)。
+- [Harness](https://github.com/ikihiki/Lumyte/blob/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks/setarguments-final-root/README.md)、[summary.json](data/setarguments-final-root-20261113/summary.json)、[summary.csv](data/setarguments-final-root-20261113/summary.csv)。
 - [manifest.json](data/setarguments-final-root-20261113/manifest.json)は全raw JSON／log／環境／正当性／source patchとhash／candidate sourceをgzipで保存し、展開byte数とSHA-256を検証する。生成BDN wrapperは既定cleanupで残していない。
 - baseabba2719と保存したcandidate sourceへ同じharnessを置き、両者の--verify成功後にrun-comparison.shでABBA、analyze.mjsで集計する。通常の再実行も同じ既存LUMYTE_ENV_ROOT／SDK activationを使用する。

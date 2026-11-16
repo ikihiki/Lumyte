@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
+    <ProjectReference Include="../Shared/CpuGraphics/Lumyte.Graphics.BenchmarkDevice.csproj" />
+    <Compile Include="../../Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+    <EmbeddedResource Include="../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf" LogicalName="Lumyte.Benchmarks.Fonts.DejaVuSans.ttf" />
+    <EmbeddedResource Include="../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/LumyteSampleJapanese.ttf" LogicalName="Lumyte.Benchmarks.Fonts.Japanese.ttf" />
+    <EmbeddedResource Include="../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/NotoSansKhmer-Regular.ttf" LogicalName="Lumyte.Benchmarks.Fonts.Khmer.ttf" />
+    <None Include="../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/LICENSE.txt;../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/NotoSansJP-OFL.txt;../../../tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/NotoSansKhmer-LICENSE.txt" Link="FontLicenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

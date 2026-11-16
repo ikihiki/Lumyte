@@ -67,8 +67,12 @@ internal static partial class Program
         using BrowserDevice device = await BrowserDevice.CreateAsync("./lumyte-graphics.js");
         Console.WriteLine("Browser WebGPU device created.");
         using DistanceFieldText2D msdf = await DistanceFieldText2D.CreateAsync(device, distance, mode: DistanceFieldMode2D.Msdf);
+        Console.WriteLine("MSDF atlas prepared.");
         using DistanceFieldText2D mtsdf = await DistanceFieldText2D.CreateAsync(device, distance, mode: DistanceFieldMode2D.Mtsdf);
+        Console.WriteLine("MTSDF atlas prepared.");
         DrawList2D drawing = BuildDrawing(engine, options, japanese, khmer, counter, colorLayout, translucent, gradient, msdf, mtsdf);
+
+        Console.WriteLine("Text and backend paint drawing built.");
 
         // A layout owns managed geometry and paint snapshots, independent of Rust font memory.
         engine.Dispose();
@@ -198,7 +202,9 @@ internal static partial class Program
         uint pitch = (((Width * 4) + alignment - 1) / alignment) * alignment;
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * Height, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
         using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        Console.WriteLine("Preparing GPU drawing.");
         using PreparedDraw2D prepared = await renderer.PrepareAsync(drawing, new RenderTarget2D { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new SRgba<float>(1, 1, 1, 1) });
+        Console.WriteLine("GPU drawing prepared.");
         using (IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new()))
         {
             var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
@@ -212,10 +218,14 @@ internal static partial class Program
             commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
             commands.Finish();
             using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+            Console.WriteLine("GPU drawing submitted.");
             await submission.WaitAsync();
+            Console.WriteLine("GPU drawing completed.");
         }
 
+        Console.WriteLine("Mapping GPU readback.");
         await readback.MapAsync();
+        Console.WriteLine("GPU readback mapped.");
         byte[] padded = new byte[checked((int)readback.Count)];
         readback.CopyTo(padded);
         readback.Unmap();
