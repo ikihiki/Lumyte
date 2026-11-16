@@ -36,11 +36,16 @@ public sealed partial class MapSession
 
                         for (int copy = 0; copy < copies; copy++)
                         {
-                            double left = placement.Left + (copy * placement.World);
+                            (double cameraX, double cameraY) = Camera.Project();
+                            double count = 1 << entry.Id.Zoom;
+                            double tileX = entry.Id.X + ((placement.First + copy) * count);
+                            double left = (((tileX / count) - cameraX) * placement.World) + (_viewport.X / 2.0);
+                            double right = ((((tileX + 1) / count) - cameraX) * placement.World) + (_viewport.X / 2.0);
+                            double bottom = ((((entry.Id.Y + 1) / count) - cameraY) * placement.World) + (_viewport.Y / 2.0);
                             canvas.Save();
                             try
                             {
-                                canvas.ClipOwnershipRect(new((float)left, (float)placement.Top, (float)placement.Size, (float)placement.Size));
+                                canvas.ClipOwnershipRect(new Vector2((float)left, (float)placement.Top), new Vector2((float)right, (float)bottom));
                                 foreach (MapTileLayer layer in entry.Lease!.Value.Layers)
                                 {
                                     if (layer.Name != paint.SourceLayer)
@@ -151,7 +156,7 @@ public sealed partial class MapSession
         }
 
         copies = (int)total;
-        placement = new(left + (first * world), top, size, world);
+        placement = new(left + (first * world), top, size, world, first);
         return true;
     }
 
@@ -203,5 +208,5 @@ public sealed partial class MapSession
         }
     }
 
-    private readonly record struct Placement(double Left, double Top, double Size, double World);
+    private readonly record struct Placement(double Left, double Top, double Size, double World, double First);
 }
