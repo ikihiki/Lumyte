@@ -25,7 +25,7 @@ path seed=0（乱数なし）。frame f: 基準cameraへ戻す→Pan((f%16)-8,(f
 SDK 10.0.403 / Slang 2026.19共有source環境をsourceして実行。
 
 ~~~sh
-export LUMYTE_ENV_ROOT=/home/hideaki/.openclaw/workspace/Lumyte/artifacts/dev-env
+export LUMYTE_ENV_ROOT="${LUMYTE_ENV_ROOT:-$PWD/artifacts/dev-env}"
 source tools/setup/environment.sh
 export PATH="$LUMYTE_ENV_ROOT/mise/data/installs/http-dotnet/10.0.403:$LUMYTE_ENV_ROOT/mise/data/installs/http-slang/2026.19/bin:$PATH"
 dotnet build benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark -c Release
@@ -36,7 +36,7 @@ dotnet test tests/Graphics/Lumyte.Graphics.Benchmark.Tests -c Release --filter "
 dotnet test tests/Tools/Lumyte.Build.Tests -c Release --filter FullyQualifiedName~BenchmarkCatalogTests
 ~~~
 
-catalogはdevice-free。GPU correctnessは既存opt-in LUMYTE_GRAPHICS_INTEGRATION_GPU=1とHardwareVulkanが検証する絶対hardware manifestを使用。VK_DRIVER_FILESを指定したvulkaninfo --summaryでdeviceを事前確認。GPU test skipをGPU証拠と見なさない。
+catalogはdevice-free。GPU correctnessは既存opt-in LUMYTE_GRAPHICS_INTEGRATION_GPU=1とHardwareVulkanが検証する絶対hardware manifestを使用。VK_DRIVER_FILESを指定したvulkaninfo --summaryでdeviceを事前確認。GPU test skipをGPU証拠と見なさない。現在のHardwareVulkan helperはRadeon 8060Sを明示検証するため、この経路を一般のGPUへの対応確認とは扱わない。
 
 将来の計測だけ共有runner --mode screen / compare / diagnose を使用。raw出力はgitignored artifacts/以下のみ。測定中build/testを並列実行しない。今回full timing campaignや新timer engineはない。
 
