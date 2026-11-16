@@ -22,12 +22,15 @@ public sealed class MapSampleContent : IUiApplicationContent, IUiApplicationGrap
             new("roads", new(0.2f, 0.2f, 0.2f, 1), new StrokeStyle2D { Width = 12 }),
             new("roads", new(1, 0.9f, 0.6f, 1), new StrokeStyle2D { Width = 7 }),
         ]);
-        _map = new(resources, new FixtureTileSet(registration), style, new MapSessionOptions(), [new(0, 0, 0)]);
+        _map = new(resources, new FixtureTileSet(registration), style, new MapSessionOptions { SelectVisibleTiles = true }, [new(0, 0, 0), new(1, 0, 0), new(1, 0, 1), new(1, 1, 0), new(1, 1, 1), new(2, 1, 1)]);
         _map.SetCamera(new(0, 0, 0));
     }
 
+    /// <summary>Gets the current interaction camera for the bounded smoke oracle.</summary>
+    public MapCamera Camera => _map.Camera;
+
     /// <summary>Gets a value indicating whether the local tile was adopted for the bounded smoke oracle.</summary>
-    public bool HasLoadedTile => _map.PublishedTiles == 1;
+    public bool HasLoadedTile => _map.PublishedTiles > 0;
 
     /// <inheritdoc/>
     public bool IsStopped => _map.IsStopped;
@@ -52,7 +55,7 @@ public sealed class MapSampleContent : IUiApplicationContent, IUiApplicationGrap
     public ValueTask RebuildGraphicsAsync(UiApplicationWindowContext context) => ValueTask.CompletedTask;
 
     private sealed class FixtureTileSet(LocalMvtRegistration registration) : MapTileSet(
-        "handmade", "v1", MvtDecoder.SchemaId, 0, 0, "Hand-authored Lumyte fixture; no OSM data", registration.Profile)
+        "handmade", "v1", MvtDecoder.SchemaId, 0, 2, "Hand-authored Lumyte fixture; no OSM data", registration.Profile)
     {
         public override ResourceKey<MapTileContent> GetKey(MapTileId id) => registration.GetKey(id);
     }

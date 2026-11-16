@@ -1,9 +1,13 @@
 namespace Lumyte.Maps;
 
-/// <summary>Bounded fixed-set session admission settings.</summary>
+/// <summary>Bounded local finite-set session admission settings.</summary>
 public sealed record MapSessionOptions
 {
-    /// <summary>Gets the maximum undispatched fixed tiles.</summary>
+    /// <summary>Gets a value indicating whether the supplied finite tile universe is selected by viewport and integer source zoom.</summary>
+    /// <remarks>False preserves fixed-set admission. True loads visible known tiles only and retains adopted tiles until disposal; no LRU, prefetch or HTTP.</remarks>
+    public bool SelectVisibleTiles { get; init; }
+
+    /// <summary>Gets the maximum supplied finite tile count.</summary>
     public int MaxPendingTiles { get; init; } = 128;
 
     /// <summary>Gets the maximum terminally-owned retain operations.</summary>

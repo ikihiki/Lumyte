@@ -21,7 +21,7 @@ try
 {
     string file = Path.Combine(directory, "fixture.mvt");
     await File.WriteAllBytesAsync(file, LocalFixture.CreateTile());
-    var registration = new LocalMvtRegistration("handmade", "v1", new MapTileLoadProfile("sample"), new Dictionary<MapTileId, string> { [new(0, 0, 0)] = file });
+    var registration = new LocalMvtRegistration("handmade", "v1", new MapTileLoadProfile("sample"), new Dictionary<MapTileId, string> { [new(0, 0, 0)] = file, [new(1, 0, 0)] = file, [new(1, 0, 1)] = file, [new(1, 1, 0)] = file, [new(1, 1, 1)] = file, [new(2, 1, 1)] = file });
     UiApplicationBuilder builder = UiApplication.CreateBuilder();
     if (desktop)
     {

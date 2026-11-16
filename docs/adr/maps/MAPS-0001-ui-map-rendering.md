@@ -146,7 +146,7 @@ sessionの変更、`Advance`、`Record`は呼び出し側が直列化する。�
 
 `LayoutOverride`は有限のサイズを確定し、必要なら`SetViewport`で需要だけを更新する。ここでは取得を開始しない。直後の描画は現時点の採用済み集合を使い、新しい要求は次の`Advance`で配送する。同一サイズの通知はrevisionを増やさない。
 
-パンは既存pointer captureを使い、capture喪失・window非活性化で終了する。wheelズームではポインター下の地理位置を保つ。通常のUI controlsやoverlayに入力優先順位を任せ、OSイベントの別経路を作らない。内部カメラを変更した後の描画・必要集合は同じカメラrevisionを使う。
+パンは既存pointer captureを使い、capture喪失・window非活性化で終了する。ホイールは`UiWheelInput(Position, Delta)`として既存のhit-testとbubblingへ配送し、pointer captureやkeyboard focusへ転送しない。位置とdeltaは同一acquisitionで取得し、DPIを入力へ再適用しない。`UiInputContext.PointerPosition`と`IsInside`はホイールにも適用する。wheelズームではポインター下の地理位置を保つ。通常のUI controlsやoverlayに入力優先順位を任せ、OSイベントの別経路を作らない。内部カメラを変更した後の描画・必要集合は同じカメラrevisionを使う。
 
 ### 所有権、失敗、終了
 
@@ -178,6 +178,12 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        // 座標系・変換制約・失敗条件は矩形overloadと同じ。
 +        public void ClipOwnershipRect(System.Numerics.Vector2 minimum, System.Numerics.Vector2 maximum);
 +    }
++}
++namespace Lumyte.UI
++{
++    // Positionはsurface-local論理pixel、Deltaは正規化step（Y正は上向き）。
++    public sealed record UiWheelInput(System.Numerics.Vector2 Position,
++        System.Numerics.Vector2 Delta) : UiInput;
 +}
 +namespace Lumyte.Maps
 +{
@@ -215,6 +221,8 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +    }
 +    public sealed record MapSessionOptions
 +    {
++        // 既定falseは固定集合。trueは明示した有限候補のみを可視選択する。
++        public bool SelectVisibleTiles { get; init; }
 +        // 正数。MaxPendingTilesは実行中を除く。新規要求は容量不足時に待機する。
 +        public int MaxPendingTiles { get; init; } = 128;
 +        public int MaxInFlightTiles { get; init; } = 4;
@@ -228,6 +236,10 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        public MapSession(Lumyte.Resources.ResourceManager resources, MapTileSet tiles,
 +            MapStyle style, MapSessionOptions options);
 +        public MapCamera Camera { get; }
++        public int SourceZoom { get; }
++        public System.Collections.Generic.IReadOnlyList<MapTileId> VisibleTiles { get; }
++        public void Pan(System.Numerics.Vector2 displacement);
++        public void ZoomAt(System.Numerics.Vector2 position, double zoomDelta);
 +        public ulong DisplayRevision { get; }
 +        // BeginStop/Advanceと同じownerから読む。GPU drain済みの意味ではない。
 +        public bool IsStopped { get; }
@@ -258,6 +270,8 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +    }
 +}
 ```
+
+`SelectVisibleTiles`を使う有限候補モードは、候補一覧を`MaxPendingTiles`以下へ制限し、採用済みデータを停止まで保持する段階的な接続である。未知のIDは背景にし、未配送の不可視候補は配送しない。配送済みretainは終端まで所有して予算内で採用する。常駐容量不足では後続需要を待機させる。この段階を空間優先queueやLRUの実装と同一視しない。
 
 `MapSessionOptions`の既定値は測定目標ではなく、無制限な受付を避ける初期設定である。実行器の受付容量とManagerのmemory設定を検証し、単一タイルの予約が常駐予算を超える構成は生成時に拒否する。解放済みsessionの操作は`ObjectDisposedException`とし、未設定のviewportは0として扱う。
 

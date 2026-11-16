@@ -12,7 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 [assembly: SupportedOSPlatform("browser")]
 
-var registration = new InMemoryMvtRegistration("handmade", "v1", new MapTileLoadProfile("browser-sample"), new Dictionary<MapTileId, ReadOnlyMemory<byte>> { [new(0, 0, 0)] = LocalFixture.CreateTile() });
+byte[] fixture = LocalFixture.CreateTile();
+var registration = new InMemoryMvtRegistration("handmade", "v1", new MapTileLoadProfile("browser-sample"), new Dictionary<MapTileId, ReadOnlyMemory<byte>> { [new(0, 0, 0)] = fixture, [new(1, 0, 0)] = fixture, [new(1, 0, 1)] = fixture, [new(1, 1, 0)] = fixture, [new(1, 1, 1)] = fixture, [new(2, 1, 1)] = fixture });
 UiApplicationBuilder builder = UiApplication.CreateBuilder(args).UseBrowser();
 builder.Services.AddMemoryManagement();
 builder.Services.AddSingleton(registration);

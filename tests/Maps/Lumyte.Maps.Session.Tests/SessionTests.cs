@@ -13,6 +13,37 @@ namespace Lumyte.Maps.Session.Tests;
 /// <summary>Deterministic retain, reservation and generation ownership checks.</summary>
 public sealed class SessionTests
 {
+    /// <summary>Moving away never refunds a dispatched retain; invisible pending known tiles remain undispatched.</summary>
+    /// <returns>The finite-set terminal ownership checks.</returns>
+    [Fact]
+    public async Task VisibleDemandChangesKeepRetainReservationUntilTerminalAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        await using var manager = new ResourceManager("visible-drain", new Source(), [stage], memory, new Runtime());
+        var tiles = new Tiles();
+        await using var map = new MapSession(manager, tiles, Style(), new() { SelectVisibleTiles = true, MaxCompletedTiles = 1 }, [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetViewport(new(100, 100));
+        map.SetCamera(new(-90, 66.51326044311186, 1));
+        map.Advance();
+        Assert.Equal(1, map.InFlightTiles);
+        long reservation = map.ResidentCpuBytes;
+        map.SetCamera(new(90, 66.51326044311186, 1));
+        map.Advance();
+        Assert.Equal(1, map.InFlightTiles);
+        Assert.Equal(reservation, map.ResidentCpuBytes);
+        map.SetViewport(default);
+        map.Advance();
+        Assert.Equal(reservation, map.ResidentCpuBytes);
+        map.BeginStop();
+        Assert.False(map.IsStopped);
+        stage.Complete();
+        await map.DisposeAsync();
+        Assert.True(map.IsStopped);
+        Assert.Equal(0, map.ResidentCpuBytes);
+        Assert.Equal(1, stage.Builds);
+    }
+
     /// <summary>Cancellation never abandons accepted retains or releases their reservations early.</summary>
     /// <returns>The lifetime checks.</returns>
     [Fact]

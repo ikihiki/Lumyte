@@ -20,6 +20,16 @@ public static partial class BrowserProbe
     [JSExport]
     public static bool HasLoadedTile() => Content?.HasLoadedTile == true;
 
+    /// <summary>Reads actual terminally adopted tiles after viewport demand changes.</summary>
+    /// <returns>The published tile count.</returns>
+    [JSExport]
+    public static int GetPublishedTiles() => Content?.PublishedTiles ?? 0;
+
+    /// <summary>Reads the camera after real DOM input has passed through the application host.</summary>
+    /// <returns>Longitude, latitude and zoom using invariant culture.</returns>
+    [JSExport]
+    public static string GetCamera() => FormattableString.Invariant($"{Content!.Camera.Longitude},{Content.Camera.Latitude},{Content.Camera.Zoom}");
+
     /// <summary>Gets current lifecycle diagnostics.</summary>
     /// <returns>Application state and failure.</returns>
     [JSExport]

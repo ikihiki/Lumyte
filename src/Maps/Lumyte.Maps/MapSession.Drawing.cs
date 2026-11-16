@@ -126,7 +126,7 @@ public sealed partial class MapSession
     {
         placement = default;
         copies = 0;
-        if (entry.Lease is null)
+        if (entry.Lease is null || (_options.SelectVisibleTiles && entry.Id.Zoom != SourceZoom))
         {
             return false;
         }

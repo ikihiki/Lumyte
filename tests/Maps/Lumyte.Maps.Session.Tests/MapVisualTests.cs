@@ -105,6 +105,59 @@ public sealed class MapVisualTests
         }
     }
 
+    /// <summary>A deterministic public camera path preserves alpha ownership and direct/retained output.</summary>
+    /// <returns>The hardware movement oracle.</returns>
+    [MapGpuFact]
+    public async Task DeterministicPanZoomPathMatchesRetainedAnalyticWaterAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await using var memory = new MemoryManager();
+        await using var manager = new ResourceManager("movement", new Source(), [new Stage()], memory, new Runtime());
+        var style = new MapStyle("visual", "v1", new(0, 0, 0, 1), [new("water", new(0, 0, 1, 0.5f))]);
+        await using var map = new MapSession(manager, new Tiles(), style, new() { SelectVisibleTiles = true }, [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetCamera(new(0, 66.51326044311186, 1));
+        using var surface = new UiSurface(new MapView { Session = map });
+        surface.SetViewport(new(512, 128));
+        surface.UpdateLayout();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (map.PublishedTiles != 2)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        using UiDrawingScene2D scene = surface.CreateDrawingScene();
+        foreach (int step in Enumerable.Range(0, 4))
+        {
+            if (step == 1)
+            {
+                surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(100, 50)));
+                surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Move, new(100.5f, 50)));
+                surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(100.5f, 50)));
+            }
+            else if (step == 2)
+            {
+                surface.Dispatch(new UiWheelInput(new(300, 32), new(0, 1.6f)));
+            }
+            else if (step == 3)
+            {
+                map.Pan(new(-20, 3));
+            }
+
+            var canvas = new Canvas2D();
+            canvas.Begin();
+            surface.Record(canvas);
+            byte[] direct = await RenderAsync(device, canvas.End(), null, 1);
+            scene.Update();
+            using DrawingSceneReadLease2D borrow = scene.Borrow();
+            Assert.Equal(direct, await RenderAsync(device, null, borrow, 1));
+            for (int x = 16; x < 496; x++)
+            {
+                Pixel(direct, 1, x, 32, 0, 0, 188);
+            }
+        }
+    }
+
     private static void Pixel(byte[] pixels, float dpi, int x, int y, byte red, byte green, byte blue)
     {
         int offset = (((int)(y * dpi) * (int)(512 * dpi)) + (int)(x * dpi)) * 4;

@@ -156,6 +156,41 @@ try {
         await writeFile(process.env.LUMYTE_MAPS_SCREENSHOT ?? resolve(tmpdir(), "lumyte-maps-browser.png"), captured);
         console.log("Adopted tile and captured map GPU PNG: " + width + "x" + height + "; colors=" + colors.size);
     }
+    const bounds = await evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()");
+    const start = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    const readCamera = async () => (await evaluate("globalThis.lumyteMapsProbe.GetCamera()")).split(",").map(Number);
+    const initialCamera = await readCamera();
+    await command("Input.dispatchMouseEvent", { type: "mouseMoved", ...start });
+    await command("Input.dispatchMouseEvent", { type: "mousePressed", ...start, button: "left", buttons: 1, clickCount: 1 });
+    await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: start.x + 40, y: start.y + 20, buttons: 1 });
+    await command("Input.dispatchMouseEvent", { type: "mouseReleased", x: start.x + 40, y: start.y + 20, button: "left", buttons: 0, clickCount: 1 });
+    async function cameraUntil(predicate) {
+        const limit = Date.now() + 10000;
+        while (Date.now() < limit) {
+            const camera = await readCamera();
+            if (predicate(camera)) return camera;
+            await delay(25);
+        }
+        assert.fail("Actual input did not update camera: " + await readCamera());
+    }
+    const panned = await cameraUntil(camera => Math.abs(camera[0] - initialCamera[0] + 28.125) < 1e-8);
+    const wheelPoint = { x: start.x + 80, y: start.y - 40 };
+    await command("Input.dispatchMouseEvent", { type: "mouseWheel", ...wheelPoint, deltaX: 0, deltaY: -120 });
+    const zoomed = await cameraUntil(camera => camera[2] === 0.25);
+    const project = camera => [(camera[0] + 180) / 360, (1 - Math.asinh(Math.tan(camera[1] * Math.PI / 180)) / Math.PI) / 2];
+    const before = project(panned);
+    const after = project(zoomed);
+    const world = 512 * 2 ** zoomed[2];
+    assert.ok(Math.abs(before[0] + 80 / 512 - after[0] - 80 / world) < 1e-10, "Wheel longitude anchor");
+    assert.ok(Math.abs(before[1] - 40 / 512 - after[1] + 40 / world) < 1e-10, "Wheel latitude anchor");
+    console.log("Actual CDP/DOM pan and wheel through Browser acquisition, UI host, MapView passed: " + zoomed);
+    await command("Input.dispatchMouseEvent", { type: "mouseWheel", ...wheelPoint, deltaX: 0, deltaY: -480 });
+    await cameraUntil(camera => camera[2] === 1.25);
+    const adoptionDeadline = Date.now() + 10000;
+    while (Date.now() < adoptionDeadline && await evaluate("globalThis.lumyteMapsProbe.GetPublishedTiles()") < 5) await delay(25);
+    assert.equal(await evaluate("globalThis.lumyteMapsProbe.GetPublishedTiles()"), 5, "Integer source zoom must adopt the four local z1 tiles, not reuse z0 as fallback");
+    assert.ok(await evaluate("globalThis.lumyteMapsProbe.RecordUiAsync()") >= 5);
+    console.log("Browser source zoom 0 -> 1: four newly demanded local tiles adopted and recorded.");
     await evaluate("globalThis.lumyteMapsProbe.RequestStop()");
     while (Date.now() < deadline && !await evaluate("globalThis.lumyteMapsFinished")) {
         assert.deepEqual(errors, [], "Browser cleanup failed");
