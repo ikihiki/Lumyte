@@ -22,12 +22,12 @@ public sealed class DrawRecordTests
     [InlineData(ShaderTarget.Dxil)]
     public void EveryBackendMatchesCanonicalWire(ShaderTarget target)
     {
-        foreach (int mode in new[] { 0, 1, 2, 3, 4, 6, 7 })
+        foreach (int mode in new[] { 0, 1, 2, 3, 4, 6, 7, 11, 12 })
         {
-            string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
+            string variant = mode switch { 11 => "-basic-small", 12 => "-basic-medium", 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
             foreach (string stage in new[] { "vertex", "fragment" })
             {
-                var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-" + stage + ".lshader");
+                var artifact = ShaderArtifact.LoadEmbedded(typeof(Renderer2D).Assembly, "Lumyte.Drawing2D.draw-records" + (stage == "vertex" && mode is 11 or 12 ? "-basic" : variant) + "-" + stage + ".lshader");
                 DrawRecordAbi2D.Validate(artifact, target, mode);
                 var layout = ShaderDataLayout.Data(artifact, target, "DrawRecord2D");
                 DrawRecord2D recordProbe = default;
@@ -61,7 +61,12 @@ public sealed class DrawRecordTests
     [InlineData(2, 9, 7)]
     [InlineData(2, 16, 7)]
     [InlineData(2, 17, 2)]
-    [InlineData(0, 8, 0)]
+    [InlineData(0, 1, 11)]
+    [InlineData(0, 8, 11)]
+    [InlineData(0, 9, 12)]
+    [InlineData(0, 16, 12)]
+    [InlineData(0, 17, 0)]
+    [InlineData(0, 256, 0)]
     [InlineData(1, 8, 1)]
     [InlineData(3, 8, 3)]
     [InlineData(4, 8, 4)]

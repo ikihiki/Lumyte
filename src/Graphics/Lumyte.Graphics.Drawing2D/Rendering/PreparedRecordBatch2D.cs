@@ -514,7 +514,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _mode = Cpu.IsSimple ? 4 : (Cpu.Masks.Count > 0 ? 1 : 0) | (Cpu.Images.Count > 0 ? 2 : 0);
 
             // This changes only private evaluator capacity, never storage, draw ranges or accepted work.
-            _mode = DrawRecordResources2D.SelectPipelineMode(_mode, _mode == 2 ? Cpu.PaintClosureBound : Cpu.Paints.Count);
+            _mode = DrawRecordResources2D.SelectPipelineMode(_mode, Cpu.PaintClosureBound);
 
             if (HasShapeMembership)
             {
@@ -581,6 +581,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     case 9:
                     case 10:
                     case 8: _membershipMetadata = Create<ShapeMembershipMetadata2D>(1, 96); break;
+                    case 11:
+                    case 12:
                     case 0: _basicMetadata = Create<DrawBasicMetadata2D>(1, 48); break;
                     case 1: _maskMetadata = Create<DrawMaskMetadata2D>(1, 64); break;
                     case 2:
@@ -643,6 +645,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     case 9:
                     case 10:
                     case 8: Draw(render, info, _membershipMetadata!.Reference!, first, count); break;
+                    case 11:
+                    case 12:
                     case 0: Draw(render, info, _basicMetadata!.Reference!, first, count); break;
                     case 1: Draw(render, info, _maskMetadata!.Reference!, first, count); break;
                     case 2:
@@ -813,7 +817,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     copied += _mode switch
                     {
                         8 or 9 or 10 => _membershipMetadata!.Fill([new() { PaintDirectory = _paints.Reference!, ClipDirectory = clips, NumericPayload = _numericRef!, MaskDescriptors = _masks.Reference!, ImagePaintData = _images.Reference!, ShapeMembership = _shapeMembershipRef! }]),
-                        0 => _basicMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!)]),
+                        0 or 11 or 12 => _basicMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!)]),
                         1 => _maskMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!)]),
                         2 or 6 or 7 => _imageMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _images.Reference!)]),
                         _ => _metadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!, _images.Reference!)]),

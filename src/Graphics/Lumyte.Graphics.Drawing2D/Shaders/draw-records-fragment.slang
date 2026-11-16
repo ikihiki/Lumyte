@@ -423,6 +423,25 @@ float4 leafValue(EvaluationNode n,float2 pixel,GpuBufferRef<float4> numeric)
     float2 p=float2(dot(n.T0.xyz,float3(pixel,1)),dot(n.T1.xyz,float3(pixel,1)));
     return n.Kind==9 ? imagePattern(n,p) : gradient(n,p,numeric);
 }
+EvaluationNode decodePaintNode(DrawPageMetadata2D page,uint ids[256],uint count,uint i,float2 origin)
+{
+    DrawDirectoryEntry2D entry=page.PaintDirectory.Load(min(ids[min(i,255)],page.PaintDirectory.Count-1));
+    EvaluationNode n=(EvaluationNode)0;
+    if(entry.Kind<=5 || entry.Kind==9)
+    {
+        n=paintLeaf(page,entry);
+        if(entry.Kind==9) n.First=findId(ids,count,n.First);
+    }
+    else
+    {
+        float4 cell=page.NumericPayload.Load(min(entry.PayloadOffset16,page.NumericPayload.Count-1)); uint4 data=asuint(cell);
+        n.First=findId(ids,count,data.x);
+        if(entry.Kind==6) { n.Kind=10; n.A=float4(cell.y,0,0,0); }
+        else if(entry.Kind==7) { n.Kind=12; n.Count=findId(ids,count,data.y); n.Mode=data.z; }
+        else if(entry.Kind==8) { n.Kind=18; n.Mode=clipBits(page,data.y,origin); }
+    }
+    return n;
+}
 float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,MaskDescriptor2D mask,uint outer,float2 origin,uint ids[256],uint count)
 {
     // These are register/private-memory evaluator views, not a GPU stream.
@@ -431,21 +450,7 @@ float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,
     for(uint i=1;i<count;i++)
     {
         uint at=min(i,uint(capacity-1));
-        DrawDirectoryEntry2D entry=page.PaintDirectory.Load(min(ids[min(i,255)],page.PaintDirectory.Count-1));
-        EvaluationNode n=(EvaluationNode)0;
-        if(entry.Kind<=5 || entry.Kind==9)
-        {
-            n=paintLeaf(page,entry);
-            if(entry.Kind==9) n.First=findId(ids,count,n.First);
-        }
-        else
-        {
-            float4 cell=page.NumericPayload.Load(min(entry.PayloadOffset16,page.NumericPayload.Count-1)); uint4 data=asuint(cell);
-            n.First=findId(ids,count,data.x);
-            if(entry.Kind==6) { n.Kind=10; n.A=float4(cell.y,0,0,0); }
-            else if(entry.Kind==7) { n.Kind=12; n.Count=findId(ids,count,data.y); n.Mode=data.z; }
-            else if(entry.Kind==8) { n.Kind=18; n.Mode=clipBits(page,data.y,origin); }
-        }
+        EvaluationNode n=decodePaintNode(page,ids,count,i,origin);
         nodes[at]=n;
     }
     float4 result=0;
@@ -470,6 +475,36 @@ float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,
             values[at]=value;
         }
         result+=shapeCoverage(record,page,mask,pixel)*values[min(count-1,uint(capacity-1))];
+    }
+    return result/16;
+}
+// Large closures retain every value but decode one immutable node at a time.
+// Avoid the large EvaluationNode[256] private aggregate without reducing the
+// admitted logical graph or changing correlated sample order or float math.
+float4 shadeGraphStreaming(DrawRecord2D record,DrawPageMetadata2D page,MaskDescriptor2D mask,uint outer,float2 origin,uint ids[256],uint count)
+{
+    float4 result=0;
+    for(uint sample=0;sample<16;sample++)
+    {
+        if(((outer>>sample)&1)==0) continue;
+        float2 pixel=origin+(float2(sample%4,sample/4)+0.5)/4;
+        float4 values[256]; values[0]=0;
+        for(uint i=1;i<count;i++)
+        {
+            EvaluationNode n=decodePaintNode(page,ids,count,i,origin);
+            float4 value=0;
+            if(n.Kind==10) value=values[min(n.First,255)]*n.A.x;
+            else if(n.Kind==12) value=composite(values[min(n.First,255)],values[min(n.Count,255)],n.Mode);
+            else if(n.Kind==18) value=((n.Mode>>sample)&1)!=0 ? values[min(n.First,255)] : float4(0);
+            else if(n.Kind==15)
+            {
+                float2 p=float2(dot(n.T0.xyz,float3(pixel,1)),dot(n.T1.xyz,float3(pixel,1)));
+                value=values[min(n.First,255)]*distanceFieldCoverage(n,p);
+            }
+            else value=leafValue(n,pixel,page.NumericPayload);
+            values[min(i,255)]=value;
+        }
+        result+=shapeCoverage(record,page,mask,pixel)*values[min(count-1,255)];
     }
     return result/16;
 }
@@ -531,7 +566,7 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
 #else
     return count<=8 ? shadeGraph<8>(record,page,mask,outer,origin,ids,count)
         : count<=16 ? shadeGraph<16>(record,page,mask,outer,origin,ids,count)
-        : shadeGraph<256>(record,page,mask,outer,origin,ids,count);
+        : shadeGraphStreaming(record,page,mask,outer,origin,ids,count);
 #endif
 }
 

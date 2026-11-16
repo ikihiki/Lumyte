@@ -18,6 +18,8 @@ internal static class DrawRecordAbi2D
             case 8:
                 Check<ShapeMembershipMetadata2D>(parameters, 96, [0, 16, 32, 48, 64, 80]);
                 break;
+            case 11:
+            case 12:
             case 0:
             case 4:
                 Check<DrawBasicMetadata2D>(parameters, 48, [0, 16, 32]);

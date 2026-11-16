@@ -22,6 +22,7 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
 
     internal static int SelectPipelineMode(int mode, int paintClosureBound) => mode switch
     {
+        0 => paintClosureBound <= 8 ? 11 : paintClosureBound <= 16 ? 12 : 0,
         2 => paintClosureBound <= 8 ? 6 : paintClosureBound <= 16 ? 7 : 2,
         8 => paintClosureBound <= 8 ? 9 : paintClosureBound <= 16 ? 10 : 8,
         _ => mode,
@@ -34,8 +35,8 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
             return existing;
         }
 
-        string variant = mode switch { 10 => "-membership-medium", 9 => "-membership-small", 8 => "-membership", 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
-        IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + (mode is 9 or 10 ? "-membership" : variant) + "-vertex.lshader")));
+        string variant = mode switch { 12 => "-basic-medium", 11 => "-basic-small", 10 => "-membership-medium", 9 => "-membership-small", 8 => "-membership", 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
+        IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + (mode is 9 or 10 ? "-membership" : mode is 11 or 12 ? "-basic" : variant) + "-vertex.lshader")));
         IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-fragment.lshader")));
         DrawRecordAbi2D.Validate(vertex.Artifact, device.Caps.ShaderTarget, mode);
         DrawRecordAbi2D.Validate(fragment.Artifact, device.Caps.ShaderTarget, mode);
