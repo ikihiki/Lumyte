@@ -2,8 +2,10 @@
 
 This opt-in experiment proves a released cef-rs cdylib and a .NET
 LibraryImport/UnmanagedCallersOnly boundary, including trimmed NativeAOT.
-It deliberately leaves the existing CefGlue adapter unchanged: the available
-Linux host aborts in sandbox initialization, before browser creation or OSR.
+This lib.rs selection ABI remains separate from the optional process helper in
+main.rs; see HELPER.md for that helper. The UI process does not load this library.
+The available Linux host aborts in sandbox initialization before browser creation
+or OSR.
 Compiled OSR/async-close code is **not** runtime acceptance evidence.
 
 The exact release, upstream commit, binary identity and archive digests are
@@ -16,7 +18,7 @@ From repository root (use repository-private RustToolchain setup if necessary):
 
 ```sh
 export CARGO_TARGET_DIR="$PWD/artifacts/cef-bridge/target"
-cargo +1.99.1 build --locked --manifest-path src/UI/Lumyte.UI.WebView.Cef.Native/Cargo.toml
+cargo +1.99.1 build --lib --locked --manifest-path src/UI/Lumyte.UI.WebView.Cef.Native/Cargo.toml
 export LD_LIBRARY_PATH="$CARGO_TARGET_DIR/debug${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cargo +1.99.1 test --locked --manifest-path src/UI/Lumyte.UI.WebView.Cef.Native/Cargo.toml
 cargo +1.99.1 clippy --locked --manifest-path src/UI/Lumyte.UI.WebView.Cef.Native/Cargo.toml --all-targets -- -D warnings
@@ -47,7 +49,8 @@ policy: do not serve untrusted content or expose this as a general browser.
 
 The bridge has no product session handles, navigation queue, geometry generation
 protocol, permission policy, profile integration, resize/popup/input or GPU path.
-It is not connected to UseCefWebViews and does not remove CefGlue.Common.
+This selection ABI is not connected to UseCefWebViews. That integration now uses
+the separate process helper, and the superseded CefGlue adapter has been removed.
 Windows is explicitly rejected: official sandbox bootstrap plus CLR-hosting
 client integration, Windows compile/bundle and Windows execution are unverified.
 The host has no desktop; a compositor cannot fix its independent sandbox failure.

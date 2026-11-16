@@ -290,6 +290,8 @@ internal sealed partial class Build
 
     private async Task RunSamplesAsync()
     {
+        // Engine-free IPC fixture only. Native CEF helper remains explicit opt-in.
+        await RunManagedSampleAsync("samples/Lumyte.UI.WebView.Helper.Sample", ["--selfcheck"]).ConfigureAwait(false);
         const string Audio = "tests/Audio/Lumyte.Resources.Audio.IntegrationTests";
         foreach (string? scenario in new[] { "--reload", null, "--recover", "--recover-stop" })
         {

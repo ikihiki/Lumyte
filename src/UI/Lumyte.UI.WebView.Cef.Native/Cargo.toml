@@ -8,6 +8,10 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "lumyte-cef-helper"
+path = "src/main.rs"
+
 [dependencies]
 cef = { version = "=156.6.0", default-features = false, features = ["sandbox", "resources"] }
 

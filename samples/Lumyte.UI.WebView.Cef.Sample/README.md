@@ -1,16 +1,16 @@
-# Experimental CEF desktop sample
+# Native UI with an optional browser fallback
 
-This is an opt-in, unfinished integration sample, not a production browser. It uses CefGlue.Common 120.6099.215 and an old Chromium runtime. It is excluded from the ordinary solution and packaging; build it explicitly only when evaluating CEF.
+The default sample shows native UI and does not start a browser. The old in-process CefGlue120 adapter is removed. The optional backend is a separately built Rust/CEF156 process.
 
 ```sh
-dotnet build samples/Lumyte.UI.WebView.Cef.Sample -c Release
-dotnet run --project samples/Lumyte.UI.WebView.Cef.Sample -c Release --no-build -- --enable-experimental-cef https://example.com/
+dotnet run --project samples/Lumyte.UI.WebView.Cef.Sample -c Release
+bash tools/setup/build-cef-helper.sh
+export LUMYTE_CEF_HELPER="$PWD/artifacts/cef-helper/target/debug/lumyte-cef-helper"
+dotnet run --project samples/Lumyte.UI.WebView.Cef.Sample -c Release -- --enable-experimental-cef
 ```
 
-The sample launcher also exposes ui-webview with the cef-experimental backend. Without explicit opt-in, the main process exits with code 2 before starting CEF. CEF subprocess arguments are handled before normal application startup.
+Use an absolute helper path. If it is missing, crashes, hangs or cannot initialize sandbox, the session faults locally and the sample returns to a native button. Build, registration and normal UI startup do not initialize CEF. The backend has one read-only initial document, finite startup/navigation deadlines and explicit cancellation; later navigation, input, IME and popup capabilities are false.
 
-Sandbox remains enabled. Initialization may terminate the process if the environment cannot provide a usable sandbox. Do not disable security policy or install privileged helpers automatically. The current Linux verification host fails sandbox initialization before OSR begins; a display server does not resolve that independent restriction. Windows startup is explicitly rejected because the native pre-CLR sandbox bootstrap is not implemented.
+The explicit build script stages an optional lumyte-cef-helper-isolated launcher beside the helper. Select that path instead only when the Linux session/portal workaround is needed; its dependencies and display must exist. It starts only an owned private bus/portal and does not modify the host user manager or desktop services. Missing setup remains a browser-local failure. See the native HELPER.md for the exact launcher contract.
 
-The adapter compiles real OSR, navigation/history, basic pointer/key/focus, GPU upload and ordered shutdown code. Real browser/GPU display remains unverified. IME, desktop native text acquisition, wheel/right-button input, interactive permission approval and GPU sharing are incomplete. Image reuse may wait for GC and resize callbacks lack a reliable native generation token. CEF NativeAOT and redistributable sandbox packaging are unverified.
-
-Use samples/Lumyte.UI.WebView.Sample for the engine-free selfcheck. Its successful run does not verify this native browser path.
+Sandbox remains enabled. This host has not passed real sandboxed HTTP/paint/resize/close acceptance. The previous sandbox-OFF temporary diagnostic only qualified its isolated bus/portal environment, not this production helper or GPU composition. The native helper is explicitly built, excluded from ordinary solution packaging and not a supported arbitrary-site browser.

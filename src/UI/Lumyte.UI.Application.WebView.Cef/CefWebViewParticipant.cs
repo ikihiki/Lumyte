@@ -1,8 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
-using Lumyte.Input.Abstractions;
 using Lumyte.UI.WebView;
-using Lumyte.UI.WebView.Cef;
 using Lumyte.UI.Windowing;
 
 namespace Lumyte.UI.Application.WebView.Cef;
@@ -12,18 +10,16 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
     private readonly Dictionary<Guid, WindowSessions> _windows = new();
     private readonly WebViewPixelBudget _cpu = new(options.CpuPixelBudgetBytes);
     private readonly WebViewPixelBudget _gpu = new(options.GpuImageBudgetBytes);
-    private CefEngineRuntime? _runtime;
     private bool _stopping;
     private int _wakePending;
 
     public bool IsStopped => _stopping && _windows.Values.All(window => window.Retired);
 
-    public TimeSpan? NextWorkDelay => _runtime?.NextWorkDelay;
+    public TimeSpan? NextWorkDelay => null;
 
     public ValueTask StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _runtime = new([], options.ProfileDirectory, Wake);
         return ValueTask.CompletedTask;
     }
 
@@ -57,7 +53,6 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
     public void Advance()
     {
         Interlocked.Exchange(ref _wakePending, 0);
-        _runtime?.Pump();
         foreach (WindowSessions window in _windows.Values.ToArray())
         {
             foreach (Entry entry in window.Entries.Values.ToArray())
@@ -69,11 +64,8 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
 
                 entry.RefreshViewport(window.Closing);
                 entry.AdvanceUpload(window.Closing);
-                if (entry.Engine.TryTakeSnapshot(out CefEngineSnapshot state))
+                if (entry.Engine.TryTakeSnapshot(out HelperSnapshot state))
                 {
-                    entry.ReturnFocus(state);
-                    entry.Session.PopupVisible = state.PopupVisible;
-                    entry.Session.PopupBounds = new(state.PopupX, state.PopupY, state.PopupWidth, state.PopupHeight);
                     entry.Session.NotifyPixelsChanged();
 
                     // Native close is phase one; only phase two publishes Closed.
@@ -99,8 +91,6 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             throw new InvalidOperationException("cef-resources-not-retired");
         }
 
-        _runtime?.Dispose();
-        _runtime = null;
         return ValueTask.CompletedTask;
     }
 
@@ -114,6 +104,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
                 entry.Session.Image = null;
                 entry.Session.PopupImage = null;
                 entry.Session.Host = null;
+                entry.Session.CancelHost = null;
                 entry.Engine.Dispose();
                 entry.Session.Update(UiWebViewState.Closed);
             }
@@ -153,10 +144,12 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             throw new InvalidOperationException("cef-session-budget-exceeded");
         }
 
-        CefEngineSession engine = _runtime!.CreateSession(uri, _cpu, Wake);
+        CefHelperSession engine = new(uri, _cpu, Wake, options);
         var session = new UiWebViewSession(uri, context.CheckOwner, engine.Send);
         var entry = new Entry(context, session, engine, _cpu, _gpu);
+        session.NavigationCommandsAvailable = false;
         session.Host = entry;
+        session.CancelHost = engine.Close;
         window.Entries.Add(key, entry);
         return session;
     }
@@ -186,7 +179,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         internal bool Retired { get; set; }
     }
 
-    private sealed class Entry(UiApplicationWindowContext window, UiWebViewSession session, CefEngineSession engine, WebViewPixelBudget cpu, WebViewPixelBudget gpu) : IWebViewHost
+    private sealed class Entry(UiApplicationWindowContext window, UiWebViewSession session, CefHelperSession engine, WebViewPixelBudget cpu, WebViewPixelBudget gpu) : IWebViewHost
     {
         private readonly WebViewTextureUploader _uploader = new(cpu, gpu);
         private readonly WebViewTextureUploader _popupUploader = new(cpu, gpu);
@@ -197,14 +190,13 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         private long _popupUploadGeneration;
 
         private float _scale = 1;
-        private bool _pointerDown;
-        private long _focusRequest;
         private Vector2 _size;
         private bool _visible;
+        private bool _uploadFaulted;
 
         internal UiWebViewSession Session { get; } = session;
 
-        internal CefEngineSession Engine { get; } = engine;
+        internal CefHelperSession Engine { get; } = engine;
 
         public void ValidateSurface(UiSurface surface)
         {
@@ -233,53 +225,18 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
                 _size = logicalSize;
                 _visible = visible;
                 _scale = scale;
-                Engine.SetViewport(new(checked((int)Math.Ceiling(logicalSize.X)), checked((int)Math.Ceiling(logicalSize.Y)), scale, visible, checked(++_generation)));
+                Engine.SetViewport(checked((int)Math.Ceiling(logicalSize.X)), checked((int)Math.Ceiling(logicalSize.Y)), scale, visible, checked(++_generation));
             }
         }
 
-        public void Focus(bool focused) => Engine.SetFocus(focused, checked(++_focusRequest));
-
-        public void Detach()
+        // The software helper is explicitly read-only; no silently successful input forwarding.
+        public void Focus(bool focused)
         {
-            Focus(false);
-            Viewport(_size, false);
         }
 
-        public void Input(UiInput input, Vector2? localPosition)
-        {
-            if (input is UiPointerInput pointer && localPosition is { } point)
-            {
-                CefEnginePointerKind kind = pointer.Phase switch
-                {
-                    UiPointerPhase.Down => CefEnginePointerKind.Down,
-                    UiPointerPhase.Up => CefEnginePointerKind.Up,
-                    UiPointerPhase.Cancel => CefEnginePointerKind.Cancel,
-                    _ => CefEnginePointerKind.Move,
-                };
-                _pointerDown = pointer.Phase == UiPointerPhase.Down || (_pointerDown && pointer.Phase is not (UiPointerPhase.Up or UiPointerPhase.Cancel));
-                Engine.Pointer(new(kind, checked((int)point.X), checked((int)point.Y), _pointerDown ? CefEngineModifiers.LeftButton : CefEngineModifiers.None));
-            }
-            else if (input is UiCommittedTextInput text)
-            {
-                Engine.Text(text.Text);
-            }
-            else if (input is UiKeyInput key)
-            {
-                int code = WindowsKey(key.Key);
-                if (code != 0)
-                {
-                    CefEngineModifiers modifiers = (key.Modifiers.HasFlag(UiModifiers.Shift) ? CefEngineModifiers.Shift : 0)
-                        | (key.Modifiers.HasFlag(UiModifiers.Control) ? CefEngineModifiers.Control : 0)
-                        | (key.Modifiers.HasFlag(UiModifiers.Alt) ? CefEngineModifiers.Alt : 0)
-                        | (key.IsRepeat ? CefEngineModifiers.Repeat : 0);
-                    Engine.Key(new(!key.IsDown, code, 0, modifiers));
-                }
-            }
-            else if (input is UiFocusLostInput or UiKeyCancelInput)
-            {
-                Focus(false);
-            }
-        }
+        public void Detach() => Viewport(_size, false);
+
+        public void Input(UiInput input, Vector2? localPosition) => Session.ReportUnsupportedInput();
 
         internal void RefreshViewport(bool closing)
         {
@@ -289,21 +246,13 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             }
         }
 
-        internal void ReturnFocus(CefEngineSnapshot state)
-        {
-            if (state.TakeFocusForward is { } forward && state.Generation == _generation && state.FocusRequest == _focusRequest)
-            {
-                Session.ReturnFocus(forward);
-            }
-        }
-
         internal void AdvanceUpload(bool closing)
         {
             if (_upload is { IsCompleted: true } completed)
             {
                 _upload = null;
-                Image2D? image = completed.GetAwaiter().GetResult();
-                if (image is not null && !closing && _uploadGeneration == _generation)
+                Image2D? image = CompleteUpload(completed);
+                if (image is not null && !closing && !_uploadFaulted && _uploadGeneration == _generation)
                 {
                     Session.Image = image;
                     Session.NotifyPixelsChanged();
@@ -313,12 +262,17 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             if (_popupUpload is { IsCompleted: true } completedPopup)
             {
                 _popupUpload = null;
-                Image2D? popup = completedPopup.GetAwaiter().GetResult();
-                if (popup is not null && !closing && _popupUploadGeneration == _generation)
+                Image2D? popup = CompleteUpload(completedPopup);
+                if (popup is not null && !closing && !_uploadFaulted && _popupUploadGeneration == _generation)
                 {
                     Session.PopupImage = popup;
                     Session.NotifyPixelsChanged();
                 }
+            }
+
+            if (_uploadFaulted)
+            {
+                return;
             }
 
             if (!closing && _visible && Session.PopupVisible && _popupUpload is null)
@@ -339,40 +293,62 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             if (_upload is { } upload)
             {
                 _upload = null;
-                await upload;
+                try
+                {
+                    await upload;
+                }
+                catch (Exception)
+                {
+                    FailUpload();
+                }
             }
 
             if (_popupUpload is { } popupUpload)
             {
                 _popupUpload = null;
-                await popupUpload;
+                try
+                {
+                    await popupUpload;
+                }
+                catch (Exception)
+                {
+                    FailUpload();
+                }
             }
 
             await _uploader.RetireAsync();
             await _popupUploader.RetireAsync();
         }
 
-        private static int WindowsKey(Key key) => key switch
+        private Image2D? CompleteUpload(Task<Image2D?> completed)
         {
-            >= Key.A and <= Key.Z => 0x41 + (int)key - (int)Key.A,
-            >= Key.Digit0 and <= Key.Digit9 => 0x30 + (int)key - (int)Key.Digit0,
-            >= Key.F1 and <= Key.F24 => 0x70 + (int)key - (int)Key.F1,
-            Key.Tab => 9,
-            Key.Enter => 13,
-            Key.Escape => 27,
-            Key.Space => 32,
-            Key.Backspace => 8,
-            Key.Delete => 46,
-            Key.Insert => 45,
-            Key.Home => 36,
-            Key.End => 35,
-            Key.PageUp => 33,
-            Key.PageDown => 34,
-            Key.ArrowLeft => 37,
-            Key.ArrowUp => 38,
-            Key.ArrowRight => 39,
-            Key.ArrowDown => 40,
-            _ => 0,
-        };
+            try
+            {
+                return completed.GetAwaiter().GetResult();
+            }
+            catch (Exception)
+            {
+                FailUpload();
+                return null;
+            }
+        }
+
+        private void FailUpload()
+        {
+            if (_uploadFaulted)
+            {
+                return;
+            }
+
+            _uploadFaulted = true;
+            Engine.Close();
+            Session.Image = null;
+            Session.PopupImage = null;
+            Session.PopupVisible = false;
+            Session.NotifyPixelsChanged();
+            Session.Update(UiWebViewState.Faulted, failureCode: "cef-upload-failed");
+
+            // Do not dispose uncertain GPU work here; normal retirement still owns its leases.
+        }
     }
 }

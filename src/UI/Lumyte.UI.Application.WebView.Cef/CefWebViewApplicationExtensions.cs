@@ -3,10 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application.WebView.Cef;
 
-/// <summary>Registers the explicit experimental sandboxed browser integration.</summary>
+/// <summary>Registers the explicit optional process-isolated, read-only browser fallback.</summary>
 public static class CefWebViewApplicationExtensions
 {
-    /// <summary>Registers one CEF runtime; native startup occurs only when the application starts.</summary>
+    /// <summary>Registers one CEF runtime; the optional helper starts asynchronously on explicit session use.</summary>
     /// <param name="builder">The mutable builder.</param>
     /// <param name="options">The explicit runtime budgets.</param>
     /// <returns>The builder.</returns>
@@ -15,14 +15,9 @@ public static class CefWebViewApplicationExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
         builder.CheckMutable();
-        if (options.MaximumSessions <= 0 || options.CpuPixelBudgetBytes <= 0 || options.GpuImageBudgetBytes <= 0)
+        if (options.MaximumSessions != 1 || options.StartupTimeout <= TimeSpan.Zero || options.StartupTimeout > TimeSpan.FromMinutes(2) || options.NavigationTimeout <= TimeSpan.Zero || options.NavigationTimeout > TimeSpan.FromMinutes(2) || options.CpuPixelBudgetBytes <= 0 || options.GpuImageBudgetBytes <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(options));
-        }
-
-        if (options.RequireIme)
-        {
-            throw new NotSupportedException("cef-ime-unavailable");
         }
 
         if (builder.Services.Any(service => service.ServiceType == typeof(CefWebViewParticipant)))

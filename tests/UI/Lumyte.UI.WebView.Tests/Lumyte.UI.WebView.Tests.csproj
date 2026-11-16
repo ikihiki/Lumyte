@@ -5,8 +5,9 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.WebView/Lumyte.UI.WebView.csproj" />
-    <ProjectReference Include="../../../src/UI/Lumyte.UI.WebView.Cef/Lumyte.UI.WebView.Cef.csproj" />
-    <Compile Include="../../../src/UI/Lumyte.UI.Application.WebView.Cef/WebViewTextureUploader.cs" Link="WebViewTextureUploader.cs" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Headless/Lumyte.UI.Application.Headless.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.WebView.Cef/Lumyte.UI.Application.WebView.Cef.csproj" />
+    <ProjectReference Include="../../../samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj" ReferenceOutputAssembly="false" />
     <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/DispatchTexture.cs" Link="DispatchTexture.cs" />
     <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/DispatchTextureView.cs" Link="DispatchTextureView.cs" />
     <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/DispatchSampler.cs" Link="DispatchSampler.cs" />

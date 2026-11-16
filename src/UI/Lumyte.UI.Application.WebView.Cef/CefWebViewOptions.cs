@@ -3,14 +3,23 @@ namespace Lumyte.UI.Application.WebView.Cef;
 /// <summary>Explicit experimental CEF runtime configuration; not a production recommendation.</summary>
 public sealed record CefWebViewOptions
 {
-    /// <summary>Gets the exclusively owned persistent profile, or null for memory-only storage.</summary>
+    /// <summary>Gets the absolute optional helper path. Null leaves the browser unavailable.</summary>
+    public string? HelperExecutablePath { get; init; }
+
+    /// <summary>Gets the finite native startup deadline.</summary>
+    public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Gets the finite main-document deadline.</summary>
+    public TimeSpan NavigationTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>Gets the requested persistent profile. Non-null is unsupported and faults only the browser.</summary>
     public string? ProfileDirectory { get; init; }
 
-    /// <summary>Gets a value indicating whether unavailable native IME must reject startup.</summary>
+    /// <summary>Gets a value indicating whether unavailable native IME must fault the browser session.</summary>
     public bool RequireIme { get; init; }
 
-    /// <summary>Gets the maximum number of window-owned sessions.</summary>
-    public int MaximumSessions { get; init; } = 4;
+    /// <summary>Gets the maximum number of window-owned sessions. Only one is currently supported.</summary>
+    public int MaximumSessions { get; init; } = 1;
 
     /// <summary>Gets the application CPU pixel and upload payload budget.</summary>
     public long CpuPixelBudgetBytes { get; init; } = 268435456;

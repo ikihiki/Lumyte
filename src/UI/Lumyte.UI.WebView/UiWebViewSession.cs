@@ -48,6 +48,20 @@ public sealed class UiWebViewSession
     /// <summary>Gets a value indicating whether a verified native IME path is available.</summary>
     public bool ImeAvailable => false;
 
+    /// <summary>Gets a value indicating whether browser input is connected. The optional helper is read-only.</summary>
+    public bool InputAvailable { get; internal set; }
+
+    /// <summary>Gets a value indicating whether separate browser popup surfaces are connected.</summary>
+    public bool PopupAvailable { get; internal set; }
+
+    /// <summary>Gets a value indicating whether explicit post-creation navigation commands are connected.</summary>
+    public bool NavigationCommandsAvailable { get; internal set; } = true;
+
+    /// <summary>Gets the last unsupported capability request.</summary>
+    public string? UnsupportedCapability { get; private set; }
+
+    internal Action? CancelHost { get; set; }
+
     internal IWebViewHost? Host { get; set; }
 
     internal Uri InitialUri { get; }
@@ -90,6 +104,14 @@ public sealed class UiWebViewSession
     /// <returns>Command acceptance.</returns>
     public ValueTask StopLoadingAsync(CancellationToken cancellationToken = default) => Command(WebViewCommandKind.Stop, null, cancellationToken);
 
+    /// <summary>Cancels the optional browser process without stopping the UI application.</summary>
+    public void Cancel()
+    {
+        _checkOwner();
+        CancelHost?.Invoke();
+        Update(UiWebViewState.Faulted, failureCode: "browser-cancelled");
+    }
+
     internal static void ValidateUri(Uri uri)
     {
         ArgumentNullException.ThrowIfNull(uri);
@@ -97,6 +119,12 @@ public sealed class UiWebViewSession
         {
             throw new ArgumentException("An absolute HTTP(S) address is required.", nameof(uri));
         }
+    }
+
+    internal void ReportUnsupportedInput()
+    {
+        UnsupportedCapability = "cef-input-unavailable";
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     internal void ValidateAttachment(object attachment)
@@ -193,6 +221,11 @@ public sealed class UiWebViewSession
         if (State == UiWebViewState.Faulted)
         {
             throw new InvalidOperationException(FailureCode ?? "browser-faulted");
+        }
+
+        if (!NavigationCommandsAvailable)
+        {
+            throw new NotSupportedException("cef-navigation-commands-unavailable");
         }
 
         var command = new WebViewCommand(kind, uri, checked(++_sequence));
