@@ -175,3 +175,16 @@ test("compute dispatch, destroy, loss and uncaptured errors are observation-only
     assert.ok(f.logs.some(e => e.method === "device.lost" && e.message === "done"));
     assert.ok(f.logs.some(e => e.method === "uncapturederror" && e.message === "validation"));
 });
+
+test("shader diagnostics return original module and report compilation without suppressing errors", async () => {
+    const f = fixture();
+    const module = { getCompilationInfo: async () => ({ messages: [{ type: "error", message: "bad shader", lineNum: 7 }] }) };
+    const descriptor = { code: "diagnostic shader" };
+    f.device.createShaderModule = value => { assert.equal(value, descriptor); return module; };
+    installBrowserGpuTrace(f.page);
+    await connect(f);
+    assert.equal(f.device.createShaderModule(descriptor), module);
+    await Promise.resolve();
+    assert.ok(f.logs.some(e => e.method === "shader.source" && e.code === descriptor.code));
+    assert.ok(f.logs.some(e => e.method === "shader.compilation" && e.message === "bad shader" && e.line === 7));
+});

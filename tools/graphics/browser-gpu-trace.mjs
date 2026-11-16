@@ -45,11 +45,11 @@ export function installBrowserGpuTrace(target = globalThis) {
                 const finish = status => emit({ id, method: name, status, elapsedMs: now() - start, atMs: now() });
                 if (asyncResult) {
                     safely(() => result.then(value => {
-                        safely(() => observe?.(value));
+                        safely(() => observe?.(value, args));
                         finish("fulfilled");
                     }, () => { finish("rejected"); }));
                 } else {
-                    safely(() => observe?.(result));
+                    safely(() => observe?.(result, args));
                     finish("returned");
                 }
                 return result;
@@ -64,6 +64,17 @@ export function installBrowserGpuTrace(target = globalThis) {
     function device(value) {
         if (!value || seen.has(value)) return;
         seen.add(value);
+        let shaderBytes = 0;
+        wrap(value, "createShaderModule", false, (module, args) => {
+            const code = args[0]?.code;
+            if (typeof code === "string" && shaderBytes + code.length <= 1048576) {
+                shaderBytes += code.length;
+                emit({ method: "shader.source", status: "observed", code });
+            }
+            safely(() => module.getCompilationInfo?.().then(info => {
+                for (const message of info.messages) emit({ method: "shader.compilation", status: message.type, message: message.message, line: message.lineNum });
+            }, error => emit({ method: "shader.compilation", status: "rejected", message: String(error) })));
+        });
         wrap(value, "createComputePipeline");
         wrap(value, "createComputePipelineAsync", true);
         wrap(value, "destroy");
