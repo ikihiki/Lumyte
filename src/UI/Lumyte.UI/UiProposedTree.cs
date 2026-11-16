@@ -42,6 +42,26 @@ internal sealed class UiProposedTree
         return _parents!.TryGetValue(Resolve(widget, receiver), out UiElement? parent) ? Configuration(parent) : null;
     }
 
+    internal IReadOnlyList<Widget> GetSlotChildren(WidgetChildren slot, UiElement? receiver)
+    {
+        EnsureIndex();
+        if (!_elements!.ContainsKey(slot.Owner))
+        {
+            throw new ArgumentException("The slot owner is outside the proposed tree.", nameof(slot));
+        }
+
+        UiElement owner = Resolve(slot.Owner, receiver);
+        if (slot.IsPortal || slot.SlotIndex >= Configuration(owner).ChildCollections.Count
+            || !ReferenceEquals(Configuration(owner).ChildCollections[slot.SlotIndex], slot))
+        {
+            throw new ArgumentException("The slot must be non-portal content of the proposed owner.", nameof(slot));
+        }
+
+        IReadOnlyList<UiElement> children = _updates.TryGetValue(owner, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update)
+            ? update.Slots[slot.SlotIndex] : owner.Slots[slot.SlotIndex];
+        return Array.AsReadOnly(children.Select(Configuration).ToArray());
+    }
+
     private UiElement Resolve(Widget widget, UiElement? receiver)
     {
         for (UiElement? current = receiver; current is not null; current = _parents!.GetValueOrDefault(current))

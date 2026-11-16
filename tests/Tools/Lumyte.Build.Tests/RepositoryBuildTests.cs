@@ -7,6 +7,22 @@ namespace Lumyte.Build.Tests;
 /// <summary>Checks the repository targets through real Fallout execution and controlled dotnet processes.</summary>
 public sealed class RepositoryBuildTests
 {
+    /// <summary>The layout gate invokes the built core suite and the font-free public sample.</summary>
+    /// <returns>The asynchronous process assertion.</returns>
+    [Fact]
+    public async Task LayoutGateUsesCoreTestsAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiLayout", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Tests", Arguments(records[0]));
+        Assert.Contains("samples/Lumyte.UI.Layout.Sample", Arguments(records[1]));
+        Assert.Contains("--no-build", Arguments(records[1]));
+        Assert.Contains("--no-restore", Arguments(records[0]));
+    }
+
     /// <summary>Compilation restores once, preserves path boundaries and uses the requested application configuration.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]
