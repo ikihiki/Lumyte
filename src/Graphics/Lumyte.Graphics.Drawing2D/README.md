@@ -171,8 +171,8 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 
 この直接描画経路は既存 direct renderer と同様に、RenderGraph の layer/effect 命令を受け付けません。対応しない命令は明示的に失敗し、別 shader へ黙って置き換えません。
 
-## Pixel ownership partitions
+## pixelの所有範囲の分割
 
-`DrawingCanvas2D.ClipOwnershipRect(rect)` captures a rectangle independently of ordinary antialiased `ClipRect` UI boundaries. Preparation applies the target pixel scale and origin, then includes whole pixels whose centers lie in the transformed device-space half-open `[minimum, maximum)` bounds. Each included pixel keeps every shape/paint AA sample; adjacent translucent buffered drawings therefore do not multiply partial clip coverage at fractional seams. This changes only ownership, not camera coordinates or geometry.
+`DrawingCanvas2D.ClipOwnershipRect(rect)`は、通常のアンチエイリアス付き`ClipRect`によるUI境界とは別の矩形を記録します。準備時にtargetのpixel scaleと原点を適用し、変換後のdevice座標における半開領域`[minimum, maximum)`内に中心があるpixelを丸ごと含めます。含まれたpixelは形状・paintのすべてのアンチエイリアス用サンプルを維持するため、隣接する半透明の余白付き描画で、端数位置の継ぎ目に部分clip coverageが重ねて乗算されません。変えるのは所有範囲だけで、カメラ座標や形状は変更しません。
 
-Translation, axis-aligned scale and reflection are supported. Rotation/shear introduced at recording, replay or retained-scene transformation is explicitly rejected during preparation; it never falls back to antialiased clipping. Singular transforms remain empty. Replay and retained page rebasing preserve ownership metadata, and structural clip caches distinguish ownership from AA geometry. Keep an ordinary outer `ClipRect` for antialiased UI bounds.
+平行移動、軸平行の拡縮、反転に対応します。記録、Replay、保持型sceneの変換で加わる回転・せん断は準備時に明示的に拒否し、アンチエイリアス付きclipへ暗黙に切り替えません。特異変換は空領域になります。Replayと保持型ページの再配置でも所有情報を維持し、構造的なclip cacheは所有範囲とアンチエイリアス形状を区別します。外側のUI境界には通常の`ClipRect`を使用してください。

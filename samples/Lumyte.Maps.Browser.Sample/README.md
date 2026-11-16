@@ -1,25 +1,14 @@
-# Bounded MVT browser adoption sample
+# 容量制限付きMVTのBrowser採用サンプル
 
-Hand-authored fixture bytes are linked from the native sample; no OSM download,
-local filesystem tile access, HTTP tile source or M3 streaming behavior is used.
-The browser host serves its application assets over localhost, not map tiles.
+Nativeサンプルから手作り試験データをリンクして使用します。OSMのダウンロード、ローカルファイルからのタイル取得、HTTPタイルsource、M3のストリーミングは使いません。Browserホストはアプリ資産をlocalhost経由で配信しますが、地図タイルの配信ではありません。
 
-The content owns MapSession through public IUiApplicationContent hooks, while
-Resources owns the decoded CPU generation. A private InMemoryMvtRegistration
-copies each tile after validating input/reservation limits and pins its SHA256
-revision. The source shares private immutable storage across read-only snapshots.
-The registration's preloaded tile storage is application-owned and is additional
-to each session's decoder/resident budget; the profile is not a process-wide cap.
+contentは公開`IUiApplicationContent`のhookで`MapSession`を所有し、Resourcesがデコード済みCPU世代を所有します。専用の`InMemoryMvtRegistration`は入力・予約制限を検査してから各タイルをコピーし、SHA256 revisionを固定します。sourceは非公開の不変領域を読取り専用snapshot間で共有します。登録が先行読込みしたタイル領域はアプリ所有であり、sessionごとのdecoder／常駐予算とは別に必要です。profileはprocess全体の上限ではありません。
 
-From the repository root with the existing .NET 10 SDK, wasm-tools, slangc and
-Chromium available (no installation by this sample):
+既存の.NET 10 SDK、wasm-tools、slangc、Chromiumが利用可能な環境で、リポジトリのルートから実行します。サンプルによるツールのインストールは行いません。
 
-    dotnet publish samples/Lumyte.Maps.Browser.Sample -c Release -p:PublishTrimmed=true
-    node samples/Lumyte.Maps.Browser.Sample/verify-browser.mjs
+```sh
+dotnet publish samples/Lumyte.Maps.Browser.Sample -c Release -p:PublishTrimmed=true
+node samples/Lumyte.Maps.Browser.Sample/verify-browser.mjs
+```
 
-The default smoke requires actual tile adoption, records the mounted MapView
-through UiSurface.Record and UiDrawingScene2D, checks retained reuse, then stops
-and drains the owning application. Set LUMYTE_MAPS_GPU_CAPTURE=1 to additionally
-require the host GPU PNG and map pixel colors. Set CHROME to an existing browser
-executable when chromium is not on PATH. This is one fixed fixture smoke,
-not general MVT/Browser/AOT compatibility, performance or seamlessness evidence.
+既定の動作確認は実際のタイル採用を要求し、mount済み`MapView`を`UiSurface.Record`と`UiDrawingScene2D`で記録して保持型描画の再利用を検査した後、所有アプリを停止して処理完了を待ちます。ホストGPUのPNGと地図の画素色も必須にする場合は`LUMYTE_MAPS_GPU_CAPTURE=1`を指定します。chromiumがPATHにない場合は`CHROME`に既存のBrowser実行ファイルを指定してください。これは一つの固定試験データでの動作確認であり、一般のMVT／Browser／AOT互換性、性能、無継ぎ目の証拠ではありません。
