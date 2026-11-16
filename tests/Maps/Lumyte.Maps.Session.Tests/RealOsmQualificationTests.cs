@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Vulkan;
+using Lumyte.Graphics.Wgpu;
 using Lumyte.Maps.Mvt;
 using Lumyte.Memory;
 using Lumyte.Resources;
@@ -16,6 +17,21 @@ public sealed class RealOsmQualificationTests
     /// <returns>The hardware verification.</returns>
     [RealMvtFact]
     public async Task CachedFullShinjukuAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await CheckCachedFullShinjukuAsync(device, "vulkan");
+    }
+
+    /// <summary>Checks the identical cached fixture through native wgpu.</summary>
+    /// <returns>The completed full-tile readbacks.</returns>
+    [RealMvtFact]
+    public async Task WgpuCachedFullShinjukuAsync()
+    {
+        using var device = WgpuDevice.Create();
+        await CheckCachedFullShinjukuAsync(device, "wgpu");
+    }
+
+    private static async Task CheckCachedFullShinjukuAsync(IGraphicDevice device, string backend)
     {
         string? fixture = Environment.GetEnvironmentVariable("LUMYTE_REAL_MVT");
         Assert.NotNull(fixture);
@@ -44,8 +60,8 @@ public sealed class RealOsmQualificationTests
             await Task.Delay(1, deadline.Token);
         }
 
-        using var device = VulkanDevice.Create();
         string output = Environment.GetEnvironmentVariable("LUMYTE_REAL_OUTPUT") ?? Path.GetTempPath();
+        output = Path.Combine(output, backend);
         Directory.CreateDirectory(output);
         Assert.Equal(1518, MvtDecoder.Decode(bytes, profile, "cached-shinjuku").Layers.Sum(layer => layer.Features.Length));
         foreach (int capacity in new[] { 1, 3 })
@@ -64,15 +80,28 @@ public sealed class RealOsmQualificationTests
                 using var scene = new DrawingScene2D();
                 scene.Insert(scene.Root, 0, drawing);
                 using DrawingSceneReadLease2D borrow = scene.Borrow();
-                foreach ((string Name, IRenderer2D Renderer) variant in new[] { ("Legacy", legacy), ("Standard", standard) })
+                foreach (float dpi in new[] { scenario.Dpi, 1f, 1.5f, 2f }.Distinct())
                 {
-                    byte[] direct = await RenderAsync(device, drawing, variant.Renderer, scenario.Dpi, scenario.Width, null);
-                    byte[] retained = await RenderAsync(device, drawing, variant.Renderer, scenario.Dpi, scenario.Width, borrow);
-                    Assert.Equal(direct, retained);
-                    byte[] reused = await RenderAsync(device, drawing, variant.Renderer, scenario.Dpi, scenario.Width, borrow);
-                    Assert.Equal(direct, reused);
-                    Assert.True(variant.Renderer.RetentionStatistics.ReusedRuns > 0);
-                    File.WriteAllBytes(Path.Combine(output, $"{capacity}-{scenario.Name}-{variant.Name}.rgba"), direct);
+                    byte[]? legacyPixels = null;
+                    foreach ((string Name, IRenderer2D Renderer) variant in new[] { ("Legacy", legacy), ("Standard", standard) })
+                    {
+                        byte[] direct = await RenderAsync(device, drawing, variant.Renderer, dpi, scenario.Width, null);
+                        if (legacyPixels is null)
+                        {
+                            legacyPixels = direct;
+                        }
+                        else
+                        {
+                            Assert.Equal(legacyPixels, direct);
+                        }
+
+                        byte[] retained = await RenderAsync(device, drawing, variant.Renderer, dpi, scenario.Width, borrow);
+                        Assert.Equal(direct, retained);
+                        byte[] reused = await RenderAsync(device, drawing, variant.Renderer, dpi, scenario.Width, borrow);
+                        Assert.Equal(direct, reused);
+                        Assert.True(variant.Renderer.RetentionStatistics.ReusedRuns > 0);
+                        File.WriteAllBytes(Path.Combine(output, $"{capacity}-{scenario.Name}-dpi{dpi}-{variant.Name}.rgba"), direct);
+                    }
                 }
             }
         }

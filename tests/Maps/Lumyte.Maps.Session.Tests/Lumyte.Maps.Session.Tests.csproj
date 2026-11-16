@@ -12,6 +12,7 @@
     <ProjectReference Include="../../../src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Memory/Lumyte.Memory.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
     <ProjectReference Include="../../../src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <ProjectReference Include="../../../src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
   </ItemGroup>
