@@ -11,7 +11,10 @@ internal sealed class RetainedDrawingCache2D : IDisposable
     private readonly List<FrameLease> _active = [];
     private readonly List<IDisposable> _retiring = [];
     private readonly object _gate = new();
+    private readonly RetainedOwnerLedger2D _ledger = new();
     private Dictionary<object, long>? _memoryOwners = new(ReferenceEqualityComparer.Instance);
+    private int _idleVariableAssets;
+    private int _activeVariableAssets;
     private DrawingResourceState2D? _storageOwner;
     private int _frames;
     private bool _disposed;
@@ -42,6 +45,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             _disposed = true;
             while (_idle.Count != 0)
             {
+                Detach(_idle[^1]);
                 _retiring.Add(_idle[^1].Batch);
                 _idle.RemoveAt(_idle.Count - 1);
             }
@@ -103,6 +107,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
             while (_idle.Count > 0 && OwnedBytes(includeActive: true) > _options.MaxCachedBytes)
             {
+                Detach(_idle[0]);
                 _retiring.Add(_idle[0].Batch);
                 _idle.RemoveAt(0);
             }
@@ -120,6 +125,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                 if (_idle[i].Key.Matches(key))
                 {
                     Asset asset = _idle[i];
+                    Detach(asset);
                     _idle.RemoveAt(i);
                     _reused++;
                     return asset;
@@ -156,10 +162,12 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                     asset.Resident |= completed;
                     if (!_disposed && asset.Resident && asset.Batch is IRetainedCommandBatch2D && asset.Batch is not RetainedBatchRun2D { Reusable: false })
                     {
+                        ReturnToIdle(asset);
                         _idle.Add(asset);
                     }
                     else
                     {
+                        Detach(asset);
                         _retiring.Add(asset.Batch);
                     }
                 }
@@ -169,6 +177,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                 _active.Remove(frame);
                 while (_idle.Count > 0 && (_idle.Count > _options.MaxCachedAssets || OwnedBytes(includeActive: true) > _options.MaxCachedBytes))
                 {
+                    Detach(_idle[0]);
                     _retiring.Add(_idle[0].Batch);
                     _idle.RemoveAt(0);
                 }
@@ -213,7 +222,106 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     private long IdleBytes() => OwnedBytes(includeActive: false);
 
+    private void Attach(Asset asset, bool idle)
+    {
+        if (asset.AccountedIdle is not null)
+        {
+            return;
+        }
+
+        if (asset.Owners is not null || asset.Batch is IRetainedMemory2D { HasStableOwners: true })
+        {
+            if (asset.Owners is null)
+            {
+                var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
+                try
+                {
+                    ((IRetainedMemory2D)asset.Batch).AccountMemory(owners);
+                    foreach (DrawList2D page in asset.Key.Pages)
+                    {
+                        owners.TryAdd(page, checked(256L + ((long)page.Commands.Count * 256)));
+                    }
+
+                    asset.Owners = owners.ToArray();
+                }
+                finally
+                {
+                    owners.Clear();
+                }
+            }
+
+            _ledger.Attach(asset.Owners, idle);
+        }
+        else if (idle)
+        {
+            _idleVariableAssets++;
+        }
+        else
+        {
+            _activeVariableAssets++;
+        }
+
+        asset.AccountedIdle = idle;
+    }
+
+    private void ReturnToIdle(Asset asset)
+    {
+        if (asset.AccountedIdle != false)
+        {
+            throw new InvalidOperationException("Only active assets can return to idle.");
+        }
+
+        if (asset.Owners is not null)
+        {
+            _ledger.ReturnToIdle(asset.Owners);
+        }
+        else
+        {
+            _activeVariableAssets--;
+            _idleVariableAssets++;
+        }
+
+        asset.AccountedIdle = true;
+    }
+
+    private void Detach(Asset asset)
+    {
+        if (asset.AccountedIdle is not { } idle)
+        {
+            return;
+        }
+
+        if (asset.Owners is not null)
+        {
+            _ledger.Detach(asset.Owners, idle);
+        }
+        else if (idle)
+        {
+            _idleVariableAssets--;
+        }
+        else
+        {
+            _activeVariableAssets--;
+        }
+
+        asset.AccountedIdle = null;
+    }
+
     private long OwnedBytes(bool includeActive, bool includePool = true)
+    {
+        bool variable = _idleVariableAssets != 0 || (includeActive && _activeVariableAssets != 0);
+
+        if (variable)
+        {
+            return ScanOwnedBytes(includeActive, includePool);
+        }
+
+        long bytes = _ledger.Bytes(includeActive);
+        long pool = includePool ? _storageOwner?.IdleRecordBytes ?? 0 : 0;
+        return pool > long.MaxValue - bytes ? long.MaxValue : bytes + pool;
+    }
+
+    private long ScanOwnedBytes(bool includeActive, bool includePool)
     {
         // Reuse traversal storage, never estimates: plans and pooled capacity can change.
         Dictionary<object, long> owners = _memoryOwners ?? new(ReferenceEqualityComparer.Instance);
@@ -272,13 +380,67 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
-    internal sealed class FrameLease(RetainedDrawingCache2D owner)
+    internal sealed class FrameLease
     {
-        internal RetainedDrawingCache2D Owner { get; } = owner;
+        internal FrameLease(RetainedDrawingCache2D owner)
+        {
+            Owner = owner;
+            Assets = new(this);
+        }
 
-        internal List<Asset> Assets { get; } = [];
+        internal RetainedDrawingCache2D Owner { get; }
+
+        internal AssetList Assets { get; }
 
         internal bool Released { get; set; }
+    }
+
+    internal sealed class AssetList(FrameLease frame) : System.Collections.ObjectModel.Collection<Asset>
+    {
+        public new List<Asset>.Enumerator GetEnumerator() => ((List<Asset>)Items).GetEnumerator();
+
+        protected override void InsertItem(int index, Asset item)
+        {
+            lock (frame.Owner._gate)
+            {
+                if (frame.Released)
+                {
+                    throw new InvalidOperationException("Cannot add assets to a released frame.");
+                }
+
+                if (item.AccountedIdle is not null)
+                {
+                    throw new InvalidOperationException("The asset already belongs to a cache scope.");
+                }
+
+                if ((uint)index > (uint)Count)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+
+                frame.Owner.Attach(item, idle: false);
+                try
+                {
+                    if (frame.Released)
+                    {
+                        throw new InvalidOperationException("Accounting released this frame reentrantly.");
+                    }
+
+                    base.InsertItem(index, item);
+                }
+                catch
+                {
+                    frame.Owner.Detach(item);
+                    throw;
+                }
+            }
+        }
+
+        protected override void RemoveItem(int index) => throw new NotSupportedException();
+
+        protected override void SetItem(int index, Asset item) => throw new NotSupportedException();
+
+        protected override void ClearItems() => throw new NotSupportedException();
     }
 
     internal sealed class Asset(Key key, IPreparedCommandBatch2D batch) : IPreparedCommandBatch2D
@@ -288,6 +450,10 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         internal IPreparedCommandBatch2D Batch { get; } = batch;
 
         internal bool Resident { get; set; }
+
+        internal KeyValuePair<object, long>[]? Owners { get; set; }
+
+        internal bool? AccountedIdle { get; set; }
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources) => Batch.DeclareResources(resources);
 
