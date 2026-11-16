@@ -62,6 +62,26 @@ internal sealed class UiProposedTree
         return Array.AsReadOnly(children.Select(Configuration).ToArray());
     }
 
+    internal bool IsOrdinaryChild(Widget widget, UiElement? receiver, bool grid)
+    {
+        EnsureIndex();
+        UiElement child = Resolve(widget, receiver);
+        if (!_parents!.TryGetValue(child, out UiElement? parent))
+        {
+            return false;
+        }
+
+        Widget configuration = Configuration(parent);
+        WidgetChildren? ordinary = grid ? (configuration as Compose.Definitions.Grid)?.Children : (configuration as Compose.Definitions.Flex)?.Children;
+        if (ordinary is null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<UiElement> children = _updates.TryGetValue(parent, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Slots[ordinary.SlotIndex] : parent.Slots[ordinary.SlotIndex];
+        return children.Contains(child);
+    }
+
     private UiElement Resolve(Widget widget, UiElement? receiver)
     {
         for (UiElement? current = receiver; current is not null; current = _parents!.GetValueOrDefault(current))

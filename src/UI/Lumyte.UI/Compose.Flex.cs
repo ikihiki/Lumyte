@@ -20,6 +20,14 @@ public static partial class Compose
             {
             }
 
+            /// <summary>Gets or sets MainAxisAlignment; initially Start.</summary>
+            [ComposeParameter]
+            public UiMainAxisAlignment MainAxisAlignment { get; set; }
+
+            /// <summary>Gets or sets CrossAxisAlignment; initially Start.</summary>
+            [ComposeParameter]
+            public UiCrossAxisAlignment CrossAxisAlignment { get; set; }
+
             /// <summary>Gets or sets the main axis, initially vertical; undefined values are rejected on adoption.</summary>
             [ComposeParameter]
             public UiOrientation Orientation

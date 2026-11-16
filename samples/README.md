@@ -50,7 +50,7 @@ Audio の共通契約本体は `Lumyte.Audio.Shared`、Graphics は `Lumyte.Grap
 
 ## 一回計測のレイアウト
 
-`dotnet run --project samples/Lumyte.Samples -- --sample ui-layout --configuration Release` は、Flex・Expanded・Wrap・Grid・GridCellをwith修飾と組み合わせたHeadless画面を実行します。通常入力、Automationの本体座標、描画記録を検査し、フォント・テーマ・GPUを要求しません。
+`dotnet run --project samples/Lumyte.Samples -- --sample ui-layout --configuration Release` は、Flexのwith重み・fit、Wrapの整列、Grid.Cellのwith配置をwith修飾と組み合わせたHeadless画面を実行します。通常入力、Automationの本体座標、描画記録を検査し、フォント・テーマ・GPUを要求しません。
 
 ## Browser
 

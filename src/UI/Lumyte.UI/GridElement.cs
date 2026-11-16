@@ -15,7 +15,7 @@ internal sealed class GridElement(Grid widget) : UiElement<Grid>(widget)
         double[] columnStarts = Starts(columns, Widget.ColumnSpacing);
         foreach (UiElement child in GetChildren(Widget.Children))
         {
-            var cell = (GridCell)child.Widget;
+            UiParentData cell = child.Widget.ParentData[0];
             double x = columnStarts[cell.Column];
             double y = rowStarts[cell.Row];
             double width = Length(columns, Widget.ColumnSpacing, cell.Column, cell.ColumnSpan);

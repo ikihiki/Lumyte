@@ -22,7 +22,7 @@ public sealed class C4LayoutTests
         var one = new Probe(new(5), () => order.Add(1));
         var two = new Probe(new(5), () => order.Add(2));
         Definitions.Flex root = Flex(orientation: vertical ? UiOrientation.Vertical : UiOrientation.Horizontal, spacing: 10)[
-            Expanded(width: 1, height: 1)[one], first, Expanded(weight: 2)[two]];
+            Placed(one, Flex.Expanded()), first, Placed(two, Flex.Expanded(weight: 2))];
         using var surface = new UiSurface(root);
         surface.SetViewport(new(400));
         surface.UpdateLayout();
@@ -30,7 +30,7 @@ public sealed class C4LayoutTests
         Assert.Equal(100, vertical ? one.Element.Size.Y : one.Element.Size.X);
         Assert.Equal(200, vertical ? two.Element.Size.Y : two.Element.Size.X);
         Assert.Equal(110, vertical ? first.Element.Bounds.Y : first.Element.Bounds.X);
-        Assert.Equal(200, vertical ? two.Element.Parent!.Bounds.Y : two.Element.Parent!.Bounds.X);
+        Assert.Equal(200, vertical ? two.Element.Bounds.Y : two.Element.Bounds.X);
         Assert.All(new[] { first, one, two }, item => Assert.Equal(1, item.Calls));
         surface.UpdateLayout();
         Assert.All(new[] { first, one, two }, item => Assert.Equal(1, item.Calls));
@@ -40,11 +40,11 @@ public sealed class C4LayoutTests
     [Fact]
     public void FlexOverflowAndLargeWeightsAreStable()
     {
-        using var overflow = new UiSurface(Flex()[SizedBox(height: 80), SizedBox(height: 80), Expanded()]);
+        using var overflow = new UiSurface(Flex()[SizedBox(height: 80), SizedBox(height: 80), SizedBox(with: [Flex.Expanded()])]);
         overflow.SetViewport(new(100));
         overflow.UpdateLayout();
         Assert.Equal(new Rect2D(0, 160, 0, 0), overflow.RootElement.Children[2].Bounds);
-        using var large = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[Expanded(weight: float.MaxValue), Expanded(weight: float.MaxValue)]);
+        using var large = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[SizedBox(with: [Flex.Expanded(weight: float.MaxValue)]), SizedBox(with: [Flex.Expanded(weight: float.MaxValue)])]);
         large.SetViewport(new(100));
         large.UpdateLayout();
         Assert.All(large.RootElement.Children, item => Assert.Equal(50, item.Size.X));
@@ -90,11 +90,11 @@ public sealed class C4LayoutTests
     public void GridResolvesBeforeMeasuring(float width, float spanWidth)
     {
         var probe = new Probe(new(5));
-        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(80), new(1, true), new(3, true) }, columnSpacing: 10)[GridCell(), GridCell(column: 1, columnSpan: 2)[probe]]);
+        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(80), new(1, true), new(3, true) }, columnSpacing: 10)[SizedBox(with: [Grid.Cell()]), Placed(probe, Grid.Cell(column: 1, columnSpan: 2))]);
         surface.SetViewport(new(width, 100));
         surface.UpdateLayout();
         Assert.Equal(new Vector2(spanWidth, 100), probe.Element.Size);
-        Assert.Equal(90, probe.Element.Parent!.Bounds.X);
+        Assert.Equal(90, probe.Element.Bounds.X);
         Assert.Equal(1, probe.Calls);
         Assert.True(probe.Constraints.IsTight);
         Assert.Equal(width, surface.RootElement.Size.X);
@@ -104,7 +104,7 @@ public sealed class C4LayoutTests
     [Fact]
     public void GridRatiosRoundIndependently()
     {
-        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(float.MaxValue, true), new(float.MaxValue, true), new(float.MaxValue, true) })[GridCell(), GridCell(column: 1), GridCell(column: 2)]);
+        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(float.MaxValue, true), new(float.MaxValue, true), new(float.MaxValue, true) })[SizedBox(with: [Grid.Cell()]), SizedBox(with: [Grid.Cell(column: 1)]), SizedBox(with: [Grid.Cell(column: 2)])]);
         surface.SetViewport(new(1));
         surface.UpdateLayout();
         Assert.All(surface.RootElement.Children, cell => Assert.Equal(1f / 3, cell.Size.X));
@@ -114,11 +114,11 @@ public sealed class C4LayoutTests
     [Fact]
     public void UnboundedAxesHaveExplicitPolicies()
     {
-        using var expanded = new UiSurface(Stack()[Flex()[Expanded(isVisible: false)]]);
+        using var expanded = new UiSurface(Stack()[Flex()[SizedBox(isVisible: false, with: [Flex.Expanded()])]]);
         Assert.Throws<InvalidOperationException>(expanded.UpdateLayout);
         using var ratio = new UiSurface(Stack()[Grid()]);
         Assert.Throws<InvalidOperationException>(ratio.UpdateLayout);
-        using var fixedGrid = new UiSurface(Stack()[Grid(rows: new UiGridTrack[] { new(20), new(30) }, rowSpacing: 5)[GridCell(), GridCell(row: 1)]]);
+        using var fixedGrid = new UiSurface(Stack()[Grid(rows: new UiGridTrack[] { new(20), new(30) }, rowSpacing: 5)[SizedBox(with: [Grid.Cell()]), SizedBox(with: [Grid.Cell(row: 1)])]]);
         fixedGrid.SetViewport(new(100));
         fixedGrid.UpdateLayout();
         Assert.Equal(55, fixedGrid.RootElement.Children[0].Size.Y);
@@ -132,17 +132,17 @@ public sealed class C4LayoutTests
     [Fact]
     public void InvalidTopologyPreservesPublishedTree()
     {
-        using var surface = new UiSurface(Grid()[GridCell()]);
+        using var surface = new UiSurface(Grid()[SizedBox(with: [Grid.Cell()])]);
         UiElement old = surface.RootElement;
         Assert.Throws<InvalidOperationException>(() =>
         {
-            surface.Rebuild(Grid()[GridCell(), GridCell(isVisible: false)]);
+            surface.Rebuild(Grid()[SizedBox(with: [Grid.Cell()]), SizedBox(isVisible: false, with: [Grid.Cell()])]);
             surface.UpdateTree();
         });
         Assert.Same(old, surface.RootElement);
         Assert.Throws<InvalidOperationException>(() =>
         {
-            surface.Rebuild(Grid()[GridCell(column: int.MaxValue, columnSpan: int.MaxValue)]);
+            surface.Rebuild(Grid()[SizedBox(with: [Grid.Cell(column: int.MaxValue, columnSpan: int.MaxValue)])]);
             surface.UpdateTree();
         });
         Assert.Same(old, surface.RootElement);
@@ -153,12 +153,12 @@ public sealed class C4LayoutTests
         });
         Assert.Throws<InvalidOperationException>(() =>
         {
-            surface.Rebuild(Panel()[Expanded()]);
+            surface.Rebuild(Panel()[SizedBox(with: [Flex.Expanded()])]);
             surface.UpdateTree();
         });
         Assert.Throws<InvalidOperationException>(() =>
         {
-            surface.Rebuild(Panel()[GridCell()]);
+            surface.Rebuild(Panel()[SizedBox(with: [Grid.Cell()])]);
             surface.UpdateTree();
         });
         Assert.Same(old, surface.RootElement);
@@ -169,7 +169,7 @@ public sealed class C4LayoutTests
     public void TracksAreSnapshotsAndDeclarationsAreReusable()
     {
         UiGridTrack[] tracks = [new(20), new(1, true)];
-        Definitions.Grid declaration = Grid(columns: tracks)[GridCell(), GridCell(column: 1)];
+        Definitions.Grid declaration = Grid(columns: tracks)[SizedBox(with: [Grid.Cell()]), SizedBox(with: [Grid.Cell(column: 1)])];
         tracks[0] = new(99);
         using var first = new UiSurface(declaration);
         using var second = new UiSurface(declaration);
@@ -188,7 +188,7 @@ public sealed class C4LayoutTests
     public void SignalWeightUpdatesReallocateRetainedElements()
     {
         var weight = Signal.Create(1f);
-        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[Expanded(weight: weight), Expanded()]);
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[SizedBox(with: [Flex.Expanded(weight)]), SizedBox(with: [Flex.Expanded()])]);
         surface.SetViewport(new(120));
         surface.UpdateLayout();
         UiElement old = surface.RootElement.Children[0];
@@ -198,7 +198,7 @@ public sealed class C4LayoutTests
         Assert.Equal(90, old.Size.X);
         weight.Value = 0;
         Assert.ThrowsAny<Exception>(surface.UpdateTree);
-        Assert.Equal(3, Assert.IsType<Definitions.Expanded>(old.Widget).Weight);
+        Assert.Equal(3, old.Widget.ParentData[0].Weight);
         Assert.Equal(90, old.Size.X);
     }
 
@@ -209,11 +209,11 @@ public sealed class C4LayoutTests
         using var grid = new UiSurface(Grid(rows: Array.Empty<UiGridTrack>(), columns: Array.Empty<UiGridTrack>()));
         grid.UpdateLayout();
         Assert.Equal(Vector2.Zero, grid.RootElement.Size);
-        using var flex = new UiSurface(Flex()[Expanded()]);
+        using var flex = new UiSurface(Flex()[SizedBox(with: [Flex.Expanded()])]);
         flex.UpdateLayout();
         Assert.Equal(Vector2.Zero, flex.RootElement.Children[0].Size);
-        Assert.Throws<ArgumentException>(() => Expanded()[SizedBox(), SizedBox()]);
-        Assert.Throws<ArgumentException>(() => GridCell()[SizedBox(), SizedBox()]);
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(Flex()[SizedBox(with: [Flex.Expanded(), Flex.Flexible()])]));
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(Grid()[SizedBox(with: [Grid.Cell(), Grid.Cell()])]));
     }
 
     /// <summary>Checks invalid numeric values cannot become declarations.</summary>
@@ -225,7 +225,7 @@ public sealed class C4LayoutTests
     [InlineData(float.NegativeInfinity)]
     public void InvalidNumbersAreRejected(float value)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => Expanded(weight: value));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SizedBox(with: [Flex.Expanded(weight: value)]));
         Assert.Throws<ArgumentOutOfRangeException>(() => Flex(spacing: value));
         Assert.Throws<ArgumentOutOfRangeException>(() => Wrap(runSpacing: value));
         Assert.Throws<ArgumentOutOfRangeException>(() => Grid(columnSpacing: value));
@@ -239,13 +239,13 @@ public sealed class C4LayoutTests
     {
         int clicks = 0;
         Definitions.Grid grid = Grid(columns: new UiGridTrack[] { new(60), new(1, true) })[
-            GridCell()[Button(testId: "action", width: 20, height: 10, with: [Align.Center()], onClick: () => clicks++)],
-            GridCell(column: 1)[Wrap()[SizedBox(width: 5, height: 5)]]];
-        Definitions.Flex declaration = Flex(orientation: UiOrientation.Horizontal, with: [Padding.All(8)])[SizedBox(width: 20), Expanded()[grid]];
+            Button(testId: "action", width: 20, height: 10, with: [Grid.Cell(), Align.Center()], onClick: () => clicks++),
+            Wrap(with: [Grid.Cell(column: 1)])[SizedBox(width: 5, height: 5)]];
+        Definitions.Flex declaration = Flex(orientation: UiOrientation.Horizontal, with: [Padding.All(8)])[SizedBox(width: 20), Placed(grid, Flex.Expanded())];
         using var surface = new UiSurface(declaration);
         surface.SetViewport(new(200, 100));
         surface.UpdateLayout();
-        UiElement button = surface.RootElement.Children[1].Children[0].Children[0].Children[0];
+        UiElement button = surface.RootElement.Children[1].Children[0];
         UiAutomationNode before = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "action");
         Assert.Equal(new Rect2D(48, 45, 20, 10), before.ContentBounds);
         Assert.Equal(before.ContentBounds, before.ActionableBounds);
@@ -268,7 +268,7 @@ public sealed class C4LayoutTests
     {
         int clicks = 0;
         using var surface = new UiSurface(Panel()[Grid(width: 50, clipToBounds: clip, columns: new UiGridTrack[] { new(80) })[
-            GridCell()[Button(testId: "overflow", onClick: () => clicks++)]]]);
+            Button(testId: "overflow", onClick: () => clicks++, with: [Grid.Cell()])]]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(70, 20)));
@@ -284,7 +284,7 @@ public sealed class C4LayoutTests
     public void SignalTrackChangesValidateBeforePublication()
     {
         var tracks = Signal.Create<IReadOnlyList<UiGridTrack>>(new UiGridTrack[] { new(20), new(1, true) });
-        using var surface = new UiSurface(Grid(columns: tracks)[GridCell(column: 1)]);
+        using var surface = new UiSurface(Grid(columns: tracks)[SizedBox(with: [Grid.Cell(column: 1)])]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         UiElement root = surface.RootElement;
@@ -304,20 +304,20 @@ public sealed class C4LayoutTests
     [Fact]
     public void PartialUpdatesValidateProjectedSlotsBeforePublishing()
     {
-        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(40), new(60) })[GridCell(), GridCell(column: 1)]);
+        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(40), new(60) })[SizedBox(with: [Grid.Cell()]), SizedBox(with: [Grid.Cell(column: 1)])]);
         UiElement old = surface.RootElement.Children[1];
-        Assert.Throws<InvalidOperationException>(() => surface.RebuildSubtree(old, GridCell()));
+        Assert.Throws<InvalidOperationException>(() => surface.RebuildSubtree(old, SizedBox(with: [Grid.Cell()])));
         Assert.Same(old, surface.RootElement.Children[1]);
         Assert.Throws<InvalidOperationException>(() => surface.RebuildSubtree(old, SizedBox()));
         Assert.Same(old, surface.RootElement.Children[1]);
-        surface.RebuildSubtree(old, GridCell(column: 1, width: 1));
+        surface.RebuildSubtree(old, SizedBox(width: 1, with: [Grid.Cell(column: 1)]));
         Assert.Same(old, surface.RootElement.Children[1]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         Assert.Equal(60, old.Size.X);
-        using var flex = new UiSurface(Flex()[Expanded()]);
+        using var flex = new UiSurface(Flex()[SizedBox(with: [Flex.Expanded()])]);
         UiElement expanded = flex.RootElement.Children[0];
-        flex.RebuildSubtree(expanded, Expanded(weight: 2));
+        flex.RebuildSubtree(expanded, SizedBox(with: [Flex.Expanded(weight: 2)]));
         Assert.Same(expanded, flex.RootElement.Children[0]);
         Assert.Throws<InvalidOperationException>(() => flex.RebuildSubtree(flex.RootElement, Panel()[expanded.Widget]));
         Assert.Same(expanded, flex.RootElement.Children[0]);
@@ -328,10 +328,10 @@ public sealed class C4LayoutTests
     public void MatchingParentInWrongSlotIsRejected()
     {
         var flex = new ExtraFlex();
-        flex.Extra.Initialize(Expanded());
+        flex.Extra.Initialize(SizedBox(with: [Flex.Expanded()]));
         Assert.Throws<InvalidOperationException>(() => new UiSurface(flex));
         var grid = new ExtraGrid();
-        grid.Extra.Initialize(GridCell());
+        grid.Extra.Initialize(SizedBox(with: [Grid.Cell()]));
         Assert.Throws<InvalidOperationException>(() => new UiSurface(grid));
     }
 
@@ -339,12 +339,12 @@ public sealed class C4LayoutTests
     [Fact]
     public void GridTightParentWinsAndAlignPositionsTheInnerBody()
     {
-        using var surface = new UiSurface(Grid()[GridCell(width: 1)[SizedBox(width: 20, height: 10, with: [Align.Center()])]]);
+        using var surface = new UiSurface(Grid()[SizedBox(width: 20, height: 10, with: [Grid.Cell(), Align.Center()])]);
         surface.SetViewport(new(100, 80));
         surface.UpdateLayout();
         UiElement cell = surface.RootElement.Children[0];
         Assert.Equal(new Vector2(100, 80), cell.Size);
-        Assert.Equal(new Rect2D(40, 35, 20, 10), cell.Children[0].ContentBounds);
+        Assert.Equal(new Rect2D(40, 35, 20, 10), cell.ContentBounds);
     }
 
     /// <summary>Checks finite-float representability failures do not publish infinity.</summary>
@@ -359,10 +359,10 @@ public sealed class C4LayoutTests
         flex.SetViewport(new(100));
         Assert.Throws<InvalidOperationException>(flex.UpdateLayout);
         Assert.True(float.IsFinite(flex.RootElement.Children[1].Bounds.X));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Expanded(weight: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SizedBox(with: [Flex.Expanded(weight: 0)]));
         Assert.Throws<ArgumentOutOfRangeException>(() => new UiGridTrack(0, true));
-        Assert.Throws<ArgumentOutOfRangeException>(() => GridCell(row: -1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => GridCell(rowSpan: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SizedBox(with: [Grid.Cell(row: -1)]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SizedBox(with: [Grid.Cell(rowSpan: 0)]));
         Assert.Throws<ArgumentOutOfRangeException>(() => new UiSurface(Wrap(orientation: (UiOrientation)42)));
     }
 
@@ -372,18 +372,18 @@ public sealed class C4LayoutTests
     {
         var hidden = new Probe(new(20));
         hidden.IsVisible = false;
-        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 7)[hidden, Expanded(), Expanded()]);
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 7)[hidden, SizedBox(with: [Flex.Expanded()]), SizedBox(with: [Flex.Expanded()])]);
         surface.SetViewport(new(107, 50));
         surface.UpdateLayout();
         Assert.Equal(0, hidden.Calls);
         Assert.Equal(default, hidden.Element.Bounds);
         Assert.Equal(50, surface.RootElement.Children[1].Size.X);
         Assert.Equal(57, surface.RootElement.Children[2].Bounds.X);
-        using var grid = new UiSurface(Grid(columns: new UiGridTrack[] { default })[GridCell()[SizedBox(width: 99)]]);
+        using var grid = new UiSurface(Grid(columns: new UiGridTrack[] { default })[SizedBox(width: 99, with: [Grid.Cell()])]);
         grid.SetViewport(new(100));
         grid.UpdateLayout();
         Assert.Equal(0, grid.RootElement.Children[0].Size.X);
-        Assert.Equal(0, grid.RootElement.Children[0].Children[0].Size.X);
+        Assert.Empty(grid.RootElement.Children[0].Children);
     }
 
     /// <summary>Checks width-dependent children receive final bounds before computing their height.</summary>
@@ -404,8 +404,8 @@ public sealed class C4LayoutTests
     [Fact]
     public void SharedCellsAndExpandedDeclarationsResolveTheirOwnParent()
     {
-        Definitions.GridCell cell = GridCell();
-        Definitions.Expanded expanded = Expanded();
+        Definitions.SizedBox cell = SizedBox(with: [Grid.Cell()]);
+        Definitions.SizedBox expanded = SizedBox(with: [Flex.Expanded()]);
         using var surface = new UiSurface(Stack()[Grid(height: 20)[cell], Grid(height: 30)[cell], Flex(height: 40)[expanded], Flex(height: 50)[expanded]]);
         surface.SetViewport(new(100, 200));
         surface.UpdateLayout();
@@ -422,7 +422,7 @@ public sealed class C4LayoutTests
     {
         var weight = Signal.Create(1f);
         var probe = new Probe(new(5));
-        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[Expanded(weight: weight)[probe], Expanded()]);
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[SizedBox(with: [Flex.Expanded(weight)])[probe], SizedBox(with: [Flex.Expanded()])]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         Assert.Equal(1, probe.Calls);
@@ -448,7 +448,7 @@ public sealed class C4LayoutTests
     public void GridRowSpansAndAdjacencyResolveNumerically()
     {
         using var surface = new UiSurface(Grid(rows: new UiGridTrack[] { new(20), new(1, true), new(3, true) }, rowSpacing: 5, columns: new UiGridTrack[] { new(40), new(60) })[
-            GridCell(rowSpan: 3), GridCell(row: 1, column: 1, rowSpan: 2)]);
+            SizedBox(with: [Grid.Cell(rowSpan: 3)]), SizedBox(with: [Grid.Cell(row: 1, column: 1, rowSpan: 2)])]);
         surface.SetViewport(new(100, 110));
         surface.UpdateLayout();
         Assert.Equal(new Rect2D(0, 0, 40, 110), surface.RootElement.Children[0].Bounds);
@@ -459,7 +459,7 @@ public sealed class C4LayoutTests
     [Fact]
     public void PresenceHiddenExpandedDoesNotConsumeAllocation()
     {
-        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 10)[Expanded(isPresent: false), Expanded()]);
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 10)[SizedBox(isPresent: false, with: [Flex.Expanded()]), SizedBox(with: [Flex.Expanded()])]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         Assert.Equal(0, surface.RootElement.Children[1].Bounds.X);
@@ -481,7 +481,7 @@ public sealed class C4LayoutTests
     public void PresenceSignalReallocatesFlex()
     {
         var present = Signal.Create(true);
-        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 10)[Expanded(isPresent: present), Expanded()]);
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 10)[SizedBox(isPresent: present, with: [Flex.Expanded()]), SizedBox(with: [Flex.Expanded()])]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         UiElement sibling = surface.RootElement.Children[1];
@@ -500,7 +500,7 @@ public sealed class C4LayoutTests
         var present = Signal.Create(true);
         var clock = new ManualClock();
         using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 10)[
-            Expanded(isPresent: present, transitions: new UiElementTransitions { AnimateInitial = false, Exit = FadeOut(Duration.FromSeconds(1)) }), Expanded()]);
+            SizedBox(isPresent: present, transitions: new UiElementTransitions { AnimateInitial = false, Exit = FadeOut(Duration.FromSeconds(1)) }, with: [Flex.Expanded()]), SizedBox(with: [Flex.Expanded()])]);
         surface.VisualHost = new PresenceHost();
         surface.SetAnimationClock(clock);
         surface.SetViewport(new(100));
@@ -519,6 +519,213 @@ public sealed class C4LayoutTests
         Assert.Equal(UiPresenceState.Hidden, surface.RootElement.Children[0].PresenceState);
         Assert.Equal(100, surface.RootElement.Children[1].Size.X);
         Assert.Equal(0, surface.RootElement.Children[1].Bounds.X);
+    }
+
+    /// <summary>Checks loose shares are not redistributed and alignment uses actual sizes.</summary>
+    /// <param name="alignment">The main alignment.</param>
+    /// <param name="first">The first offset.</param>
+    /// <param name="second">The second offset.</param>
+    [Theory]
+    [InlineData(UiMainAxisAlignment.Start, 0, 30)]
+    [InlineData(UiMainAxisAlignment.Center, 12.5f, 42.5f)]
+    [InlineData(UiMainAxisAlignment.End, 25, 55)]
+    [InlineData(UiMainAxisAlignment.SpaceBetween, 0, 55)]
+    [InlineData(UiMainAxisAlignment.SpaceAround, 6.25f, 48.75f)]
+    [InlineData(UiMainAxisAlignment.SpaceEvenly, 8.333333f, 46.666668f)]
+    public void FlexLooseUsesActualSizes(UiMainAxisAlignment alignment, float first, float second)
+    {
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, spacing: 10, mainAxisAlignment: alignment, crossAxisAlignment: UiCrossAxisAlignment.Center)[
+            Button(width: 20, height: 10, with: [Flex.Flexible()]), Button(height: 20, with: [Flex.Expanded()])]);
+        surface.SetViewport(new(100, 80));
+        surface.UpdateLayout();
+        Assert.Equal(20, surface.RootElement.Children[0].Size.X);
+        Assert.Equal(45, surface.RootElement.Children[1].Size.X);
+        Assert.Equal(first, surface.RootElement.Children[0].Bounds.X, 4);
+        Assert.Equal(second, surface.RootElement.Children[1].Bounds.X, 4);
+        Assert.Equal(35, surface.RootElement.Children[0].Bounds.Y);
+        Assert.Equal(30, surface.RootElement.Children[1].Bounds.Y);
+    }
+
+    /// <summary>Checks finite stretch is passed before one layout and unbounded stretch falls back to loose.</summary>
+    [Fact]
+    public void FlexStretchUsesKnownParentMaximum()
+    {
+        var child = new Probe(new(20, 10));
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal, crossAxisAlignment: UiCrossAxisAlignment.Stretch)[child]);
+        surface.SetViewport(new(100, 80));
+        surface.UpdateLayout();
+        Assert.Equal(new UiBoxConstraints(0, float.PositiveInfinity, 80, 80), child.Constraints);
+        Assert.Equal(1, child.Calls);
+        var unbounded = new Probe(new(20, 10));
+        using var loose = new UiSurface(Stack()[Flex(orientation: UiOrientation.Horizontal, crossAxisAlignment: UiCrossAxisAlignment.Stretch)[unbounded]]);
+        loose.SetViewport(new(100));
+        loose.UpdateLayout();
+        Assert.Equal(0, unbounded.Constraints.MinHeight);
+        Assert.Equal(float.PositiveInfinity, unbounded.Constraints.MaxHeight);
+        Assert.Equal(1, unbounded.Calls);
+    }
+
+    /// <summary>Checks run distribution and child cross alignment without remeasurement.</summary>
+    [Fact]
+    public void WrapAlignsStoredRuns()
+    {
+        var first = new Probe(new(40, 10));
+        var second = new Probe(new(40, 20));
+        var third = new Probe(new(60, 10));
+        using var surface = new UiSurface(Wrap(spacing: 4, runSpacing: 6, mainAxisAlignment: UiMainAxisAlignment.End, runAlignment: UiMainAxisAlignment.SpaceBetween, crossAxisAlignment: UiCrossAxisAlignment.End)[first, second, third]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        Assert.Equal(new Rect2D(16, 10, 40, 10), first.Element.Bounds);
+        Assert.Equal(new Rect2D(60, 0, 40, 20), second.Element.Bounds);
+        Assert.Equal(new Rect2D(40, 90, 60, 10), third.Element.Bounds);
+        Assert.All(new[] { first, second, third }, item => Assert.Equal(1, item.Calls));
+    }
+
+    /// <summary>Checks placement ignores modifier order while ordinary modifiers retain their order.</summary>
+    [Fact]
+    public void PlacementIsNotAnOrderedBoxLayer()
+    {
+        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(50), new(50) })[
+            Button(width: 10, height: 10, with: [Grid.Cell(), Align.Center(), Padding.All(2)]),
+            Button(width: 10, height: 10, with: [Align.Center(), Grid.Cell(column: 1), Padding.All(2)])]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        Assert.Equal(2, surface.RootElement.Children.Count);
+        Assert.All(surface.RootElement.Children, child => Assert.Empty(child.Children));
+        Assert.Equal(surface.RootElement.Children[0].ContentBounds, surface.RootElement.Children[1].ContentBounds);
+        Assert.Throws<InvalidOperationException>(() => surface.RebuildSubtree(surface.RootElement.Children[0], Button(with: [Grid.Cell(), Flex.Expanded()])));
+    }
+
+    /// <summary>Checks live with placement changes validate ranges and collisions before publishing, preserving focus.</summary>
+    [Fact]
+    public void ReactiveCellPlacementRetainsOldTreeOnCollision()
+    {
+        var column = Signal.Create(1);
+        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(40), new(60), new(20) })[
+            Button(with: [Grid.Cell()]), Button(testId: "moving", with: [Grid.Cell(column: column)])]);
+        surface.SetViewport(new(120, 80));
+        surface.UpdateLayout();
+        UiElement child = surface.RootElement.Children[1];
+        Assert.True(surface.TryFocus(child));
+        column.Value = 2;
+        surface.UpdateLayout();
+        Assert.Same(child, surface.RootElement.Children[1]);
+        Assert.Equal(100, child.Bounds.X);
+        column.Value = 0;
+        Assert.ThrowsAny<Exception>(surface.UpdateTree);
+        Assert.Same(child, surface.RootElement.Children[1]);
+        Assert.Equal(100, child.Bounds.X);
+        Assert.Same(child, surface.FocusedElement);
+    }
+
+    /// <summary>Checks shared instances cannot disguise a wrong-slot use of parent metadata.</summary>
+    [Fact]
+    public void SharedMetadataWrongSlotCannotBorrowOrdinaryMembership()
+    {
+        Definitions.SizedBox child = SizedBox(with: [Flex.Expanded()]);
+        var flex = new ExtraFlex();
+        flex.Children.Initialize(child);
+        Assert.Throws<ArgumentException>(() => flex.Extra.Initialize(child));
+        var wrongFlex = new ExtraFlex();
+        wrongFlex.Extra.Initialize(child);
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(wrongFlex));
+        Definitions.SizedBox cell = SizedBox(with: [Grid.Cell()]);
+        var grid = new ExtraGrid();
+        grid.Children.Initialize(cell);
+        Assert.Throws<ArgumentException>(() => grid.Extra.Initialize(cell));
+        var wrongGrid = new ExtraGrid();
+        wrongGrid.Extra.Initialize(cell);
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(wrongGrid));
+    }
+
+    /// <summary>Checks direct Button with fit Signals retains identity and restores tight allocation.</summary>
+    [Fact]
+    public void ReactiveFitChangesInvalidateParentLayout()
+    {
+        var fit = Signal.Create(UiFlexFit.Loose);
+        using var surface = new UiSurface(Flex(orientation: UiOrientation.Horizontal)[Button(width: 10, with: [Flex.Flexible(fit: fit)]), Button(with: [Flex.Expanded()])]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        UiElement child = surface.RootElement.Children[0];
+        Assert.Equal(10, child.Size.X);
+        fit.Value = UiFlexFit.Tight;
+        surface.UpdateLayout();
+        Assert.Same(child, surface.RootElement.Children[0]);
+        Assert.Equal(50, child.Size.X);
+        Assert.Equal(50, surface.RootElement.Children[1].Bounds.X);
+        fit.Value = (UiFlexFit)42;
+        Assert.ThrowsAny<Exception>(surface.UpdateTree);
+        Assert.Equal(50, child.Size.X);
+    }
+
+    /// <summary>Checks six run distributions in both orientations with each child measured once.</summary>
+    /// <param name="alignment">The run distribution.</param>
+    /// <param name="first">The first run cross position.</param>
+    /// <param name="second">The second run cross position.</param>
+    [Theory]
+    [InlineData(UiMainAxisAlignment.Start, 0, 26)]
+    [InlineData(UiMainAxisAlignment.Center, 22, 48)]
+    [InlineData(UiMainAxisAlignment.End, 44, 70)]
+    [InlineData(UiMainAxisAlignment.SpaceBetween, 0, 70)]
+    [InlineData(UiMainAxisAlignment.SpaceAround, 11, 59)]
+    [InlineData(UiMainAxisAlignment.SpaceEvenly, 14.666667f, 55.333333f)]
+    public void WrapRunDistributionIsNumerical(UiMainAxisAlignment alignment, float first, float second)
+    {
+        foreach (bool vertical in new[] { false, true })
+        {
+            using var surface = new UiSurface(Wrap(orientation: vertical ? UiOrientation.Vertical : UiOrientation.Horizontal, runSpacing: 6, runAlignment: alignment)[
+                SizedBox(width: vertical ? 20 : 60, height: vertical ? 60 : 20), SizedBox(width: vertical ? 30 : 60, height: vertical ? 60 : 30)]);
+            surface.SetViewport(new(100));
+            surface.UpdateLayout();
+            Assert.Equal(first, vertical ? surface.RootElement.Children[0].Bounds.X : surface.RootElement.Children[0].Bounds.Y, 4);
+            Assert.Equal(second, vertical ? surface.RootElement.Children[1].Bounds.X : surface.RootElement.Children[1].Bounds.Y, 4);
+        }
+    }
+
+    /// <summary>Checks Signal spans revalidate unchanged parents before changing child geometry.</summary>
+    [Fact]
+    public void SignalSpanRejectsCollisionAndOutOfRange()
+    {
+        var span = Signal.Create(1);
+        using var surface = new UiSurface(Grid(columns: new UiGridTrack[] { new(20), new(30), new(50) })[
+            Button(with: [Grid.Cell(columnSpan: span)]), Button(with: [Grid.Cell(column: 2)])]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        UiElement child = surface.RootElement.Children[0];
+        span.Value = 2;
+        surface.UpdateLayout();
+        Assert.Equal(50, child.Size.X);
+        span.Value = 3;
+        Assert.ThrowsAny<Exception>(surface.UpdateTree);
+        Assert.Equal(50, child.Size.X);
+        Assert.Equal(2, child.Widget.ParentData[0].ColumnSpan);
+    }
+
+    /// <summary>Checks portal content has an independent root and cannot inherit a layout parent.</summary>
+    [Fact]
+    public void PortalPlacementCannotBorrowHostParent()
+    {
+        var host = new PortalHost();
+        host.Portal.Initialize(Button(with: [Grid.Cell()]));
+        using var surface = new UiSurface(host);
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(host.Portal[0]));
+    }
+
+    private static T Placed<T>(T widget, Action<Definitions.Widget> operation)
+        where T : Definitions.Widget
+    {
+        operation(widget);
+        return widget;
+    }
+
+    private sealed class PortalHost : Definitions.Panel
+    {
+        internal PortalHost()
+        {
+            Portal = CreatePortalChildren();
+        }
+
+        internal WidgetChildren Portal { get; }
     }
 
     private sealed class PresenceHost : IUiVisualHost

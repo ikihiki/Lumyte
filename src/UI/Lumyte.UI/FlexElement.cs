@@ -5,7 +5,7 @@ namespace Lumyte.UI;
 
 internal sealed class FlexElement(Flex widget) : UiElement<Flex>(widget)
 {
-    protected override UiInvalidation CompareConfiguration(Flex previous, Flex next) => previous.Orientation == next.Orientation && previous.Spacing == next.Spacing ? UiInvalidation.None : UiInvalidation.Layout;
+    protected override UiInvalidation CompareConfiguration(Flex previous, Flex next) => previous.Orientation == next.Orientation && previous.Spacing == next.Spacing && previous.MainAxisAlignment == next.MainAxisAlignment && previous.CrossAxisAlignment == next.CrossAxisAlignment ? UiInvalidation.None : UiInvalidation.Layout;
 
     protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
     {
@@ -17,11 +17,11 @@ internal sealed class FlexElement(Flex widget) : UiElement<Flex>(widget)
         int visible = 0;
         foreach (UiElement child in children)
         {
-            if (child.Widget is Expanded expanded)
+            if (child.Widget.ParentData is [{ Kind: UiParentDataKind.Flex } expanded])
             {
                 if (!float.IsFinite(maximum))
                 {
-                    throw new InvalidOperationException("Expanded requires a bounded Flex main axis.");
+                    throw new InvalidOperationException("Weighted children require a bounded Flex main axis.");
                 }
 
                 if (child.LayoutVisible)
@@ -37,12 +37,12 @@ internal sealed class FlexElement(Flex widget) : UiElement<Flex>(widget)
         double cross = 0;
         foreach (UiElement child in children)
         {
-            if (child.Widget is Expanded && child.LayoutVisible)
+            if (child.Widget.ParentData is [{ Kind: UiParentDataKind.Flex }] && child.LayoutVisible)
             {
                 continue;
             }
 
-            Vector2 size = LayoutChild(child, C4Layout.Constraints(0, float.PositiveInfinity, crossMaximum, vertical));
+            Vector2 size = LayoutChild(child, ChildConstraints(0, float.PositiveInfinity, crossMaximum, vertical));
             if (child.LayoutVisible)
             {
                 occupied += C4Layout.Main(size, vertical);
@@ -54,16 +54,17 @@ internal sealed class FlexElement(Flex widget) : UiElement<Flex>(widget)
         double allocated = 0;
         foreach (UiElement child in children)
         {
-            if (child.Widget is Expanded expanded && child.LayoutVisible)
+            if (child.Widget.ParentData is [{ Kind: UiParentDataKind.Flex } expanded] && child.LayoutVisible)
             {
                 float share = UiLayoutMath.FiniteFloat(remaining * (expanded.Weight / weight));
-                Vector2 size = LayoutChild(child, C4Layout.Constraints(share, share, crossMaximum, vertical));
+                Vector2 size = LayoutChild(child, ChildConstraints(expanded.Fit == UiFlexFit.Tight ? share : 0, share, crossMaximum, vertical));
                 allocated += C4Layout.Main(size, vertical);
                 cross = Math.Max(cross, C4Layout.Cross(size, vertical));
             }
         }
 
-        double offset = 0;
+        Vector2 result = vertical ? UiLayoutMath.FillBounded(constraints, cross, occupied + allocated) : UiLayoutMath.FillBounded(constraints, occupied + allocated, cross);
+        (double offset, double extraGap) = C4Layout.Distribution(Widget.MainAxisAlignment, C4Layout.Main(result, vertical) - occupied - allocated, visible);
         bool hasPrevious = false;
         foreach (UiElement child in children)
         {
@@ -73,12 +74,18 @@ internal sealed class FlexElement(Flex widget) : UiElement<Flex>(widget)
                 continue;
             }
 
-            offset += hasPrevious ? Widget.Spacing : 0;
-            SetChildOffset(child, C4Layout.Vector(offset, 0, vertical));
+            offset += hasPrevious ? Widget.Spacing + extraGap : 0;
+            SetChildOffset(child, C4Layout.Vector(offset, C4Layout.CrossOffset(Widget.CrossAxisAlignment, C4Layout.Cross(result, vertical) - C4Layout.Cross(child.Size, vertical)), vertical));
             offset += C4Layout.Main(child.Size, vertical);
             hasPrevious = true;
         }
 
-        return vertical ? UiLayoutMath.FillBounded(constraints, cross, occupied + allocated) : UiLayoutMath.FillBounded(constraints, occupied + allocated, cross);
+        return result;
+    }
+
+    private UiBoxConstraints ChildConstraints(float minimum, float maximum, float cross, bool vertical)
+    {
+        bool stretch = Widget.CrossAxisAlignment == UiCrossAxisAlignment.Stretch && float.IsFinite(cross);
+        return vertical ? new(stretch ? cross : 0, cross, minimum, maximum) : new(minimum, maximum, stretch ? cross : 0, cross);
     }
 }
