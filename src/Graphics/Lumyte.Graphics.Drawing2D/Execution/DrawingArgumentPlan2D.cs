@@ -336,6 +336,21 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         _preparedResources.Remove(resources);
     }
 
+    internal void RetirePreparedResources(IEnumerable<ShaderResources> resources)
+    {
+        if (!_closed)
+        {
+            return;
+        }
+
+        foreach (ShaderResources resource in resources.Distinct())
+        {
+            resource.Retire();
+            _preparedResources.Remove(resource);
+            _scopes.Remove(resource);
+        }
+    }
+
     internal void RegisterPreparationCache(ClipNormalizationCache2D cache) => _preparationCaches.Add(cache);
 
     // Cache arrays are borrowed only while compiling/packing. Prepared payloads own their copies.

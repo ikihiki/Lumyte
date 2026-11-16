@@ -46,6 +46,62 @@ public sealed class FinalRootGenerationTests
         }
     }
 
+    /// <summary>Vulkan skips repeated binds without losing distinct roots or A/B/A ownership.</summary>
+    /// <returns>The completed compute readback oracle.</returns>
+    [GpuFact]
+    public async Task VulkanRecordingReusePreservesOrderedRootsAsync()
+    {
+        ShaderArtifact artifact = await CompileAsync(ShaderTarget.SpirV);
+        using var device = VulkanDevice.Create();
+        using IGraphicsShader shader = device.CreateShader(artifact);
+        using IGraphicsComputePipeline first = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsComputePipeline second = device.CreateComputePipeline(new() { ComputeShader = shader });
+        using IGraphicsBuffer<uint> input = device.CreateBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead, Memory = MemoryPreference.Upload });
+        using IGraphicsBuffer<uint> output = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.ShaderWrite | BufferUsage.CopySource });
+        using IGraphicsBuffer<uint> readback = device.CreateBuffer<uint>(new() { Count = 4, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        using IArgumentTable tableA = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+        using IArgumentTable tableB = device.CreateArgumentTable(new() { BufferCapacity = 2 });
+        IGpuRef<uint>[] inputs = [tableA.WriteBuffer(0, input.SliceElements(0, 1)), tableB.WriteBuffer(0, input.SliceElements(0, 1))];
+        IGpuRef<uint>[] outputs = [tableA.WriteBuffer(1, output.SliceElements(0, 4), ShaderBufferAccess.ReadWrite), tableB.WriteBuffer(1, output.SliceElements(0, 4), ShaderBufferAccess.ReadWrite)];
+        await input.MapAsync();
+        input.CopyFrom(new uint[] { 100 });
+        input.Unmap();
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = input.SliceElements(0, 1), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead) });
+        IComputeEncoder compute = commands.BeginComputePass(new());
+        try
+        {
+            for (int row = 0; row < 4; row++)
+            {
+                int selected = row == 2 ? 1 : 0;
+                compute.SetPipeline(selected == 0 ? first : second);
+                compute.SetArgumentTable(selected == 0 ? tableA : tableB);
+                var root = new Arguments { Number = (uint)(7 + (row * 2)), Input = inputs[selected], Output = outputs[selected].GetElement((ulong)row) };
+                compute.SetArguments(in root);
+                compute.Dispatch(1);
+            }
+
+            Assert.Equal(3, compute.GetType().GetField("_pipelineBindCount", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(compute));
+            Assert.Equal(3, compute.GetType().GetField("_descriptorBindCount", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(compute));
+        }
+        finally
+        {
+            compute.End();
+        }
+
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, 4), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyBuffer(output.SliceElements(0, 4), readback.SliceElements(0, 4));
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = readback.SliceElements(0, 4), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Finish();
+        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        await submission.WaitAsync();
+        await readback.MapAsync();
+        uint[] values = new uint[4];
+        readback.CopyTo(values);
+        readback.Unmap();
+        Assert.Equal(new uint[] { 107, 109, 111, 113 }, values);
+    }
+
     /// <summary>Wgpu preserves independent roots, rejected selections, and explicit snapshots.</summary>
     /// <returns>The completed native readback checks in both validation modes.</returns>
     [GpuFact]

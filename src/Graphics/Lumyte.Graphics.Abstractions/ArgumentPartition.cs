@@ -3,6 +3,7 @@ namespace Lumyte.Graphics.Abstractions;
 internal sealed class ArgumentPartition(ArgumentTableBindingLimits limits) : IDisposable
 {
     private readonly Dictionary<ArgumentKey, Entry> _entries = [];
+    private readonly Dictionary<ArgumentKey, Registration> _registrations = [];
     private readonly int[] _counts = new int[3];
 
     internal IArgumentTable? Table { get; private set; }
@@ -19,6 +20,7 @@ internal sealed class ArgumentPartition(ArgumentTableBindingLimits limits) : IDi
     {
         Table?.Dispose();
         Table = null;
+        _registrations.Clear();
     }
 
     internal bool Fits(IEnumerable<ResolvedArgument> values, uint colorAttachments)
@@ -109,16 +111,56 @@ internal sealed class ArgumentPartition(ArgumentTableBindingLimits limits) : IDi
     internal void Create(IGraphicDevice device, CancellationToken cancellationToken)
     {
         Table = device.CreateArgumentTable(new() { TextureCapacity = checked((uint)TextureCount), SamplerCapacity = checked((uint)SamplerCount), BufferCapacity = checked((uint)BufferCount) });
-        foreach (Entry entry in _entries.Values)
+        foreach ((ArgumentKey key, Entry entry) in _entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
             entry.Reference = entry.Value.Write(Table, checked((uint)entry.Slot));
+            _registrations.Add(key, new(checked((uint)entry.Slot)));
         }
     }
 
     internal object Reference(ArgumentKey key) => _entries[key].Reference!;
 
     internal void ClearPlanning() => _entries.Clear();
+
+    internal void RetainRegistrations(IEnumerable<ArgumentKey> keys)
+    {
+        foreach (ArgumentKey key in keys)
+        {
+            _registrations[key].Users++;
+        }
+    }
+
+    internal void ReleaseRegistration(ArgumentKey key)
+    {
+        if (Table is null || !_registrations.TryGetValue(key, out Registration? registration))
+        {
+            return;
+        }
+
+        if (registration.Users > 1)
+        {
+            registration.Users--;
+            return;
+        }
+
+        // Publish the decrement only after native release succeeds, so cleanup can retry.
+        switch (key.Namespace)
+        {
+            case 0: Table.ReleaseTexture(registration.Slot); break;
+            case 1: Table.ReleaseSampler(registration.Slot); break;
+            default: Table.ReleaseBuffer(registration.Slot); break;
+        }
+
+        _registrations.Remove(key);
+    }
+
+    private sealed class Registration(uint slot)
+    {
+        internal uint Slot { get; } = slot;
+
+        internal int Users { get; set; }
+    }
 
     private sealed class Entry(ResolvedArgument value, int slot)
     {

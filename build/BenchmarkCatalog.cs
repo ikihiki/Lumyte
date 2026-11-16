@@ -10,10 +10,10 @@ internal static class BenchmarkCatalog
     internal static string NormalizeMode(string mode) => mode is "screen" or "compare" or "diagnose"
         ? mode : throw new ArgumentException("Explicit benchmark mode must be screen, compare, or diagnose. Use --benchmark-list to enumerate without timing.", nameof(mode));
 
-    internal static string[] SelectProjects(string repository, string pattern, string area = "Core", bool? integratedGraphics = null)
+    internal static string[] SelectProjects(string repository, string pattern, string area = "Core", bool? integratedGraphics = null, bool? integratedUI = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-        if (area is not ("Core" or "Animation" or "Input" or "Audio" or "Graphics"))
+        if (area is not ("Core" or "Animation" or "Input" or "Audio" or "Graphics" or "UI"))
         {
             throw new ArgumentException("Unsupported benchmark area.", nameof(area));
         }
@@ -29,6 +29,8 @@ internal static class BenchmarkCatalog
             .Where(File.Exists)
             .Where(project => area != "Graphics" || integratedGraphics is null
                 || (Path.GetFileNameWithoutExtension(project) == "Lumyte.Graphics.Benchmark") == integratedGraphics.Value)
+            .Where(project => area != "UI" || integratedUI is null
+                || (Path.GetFileNameWithoutExtension(project) is "Lumyte.UI.Application.Desktop.Benchmark" or "Lumyte.UI.Application.Browser.Benchmark") == integratedUI.Value)
             .Where(project => FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileNameWithoutExtension(project), ignoreCase: false)
                 || FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileNameWithoutExtension(project).AsSpan()[..^".Benchmark".Length], ignoreCase: false))
             .Order(StringComparer.Ordinal).ToArray();
@@ -117,11 +119,13 @@ internal static class BenchmarkCatalog
         }
     }
 
-    internal static string OutputHash(string directory)
+    internal static string OutputHash(string directory, IReadOnlyCollection<string>? externalPaths = null)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         IEnumerable<string> files = Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly)
-            .Where(file => file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            .Where(file => file.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
+                || file.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase)
+                || file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
                 || file.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase)
                 || file.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase));
         string runtimes = Path.Combine(directory, "runtimes");
@@ -134,6 +138,20 @@ internal static class BenchmarkCatalog
         {
             hash.AppendData(Encoding.UTF8.GetBytes(Path.GetRelativePath(directory, file).Replace('\\', '/') + "\0"));
             hash.AppendData(SHA256.HashData(File.ReadAllBytes(file)));
+        }
+
+        if (externalPaths is not null)
+        {
+            foreach (string path in externalPaths.Order(StringComparer.Ordinal))
+            {
+                hash.AppendData(Encoding.UTF8.GetBytes("external:" + path + "\0"));
+                string[] payload = File.Exists(path) ? [path] : Directory.Exists(path) ? Directory.GetFiles(path, "*", SearchOption.AllDirectories) : [];
+                foreach (string file in payload.Order(StringComparer.Ordinal))
+                {
+                    hash.AppendData(Encoding.UTF8.GetBytes(Path.GetRelativePath(path, file) + "\0"));
+                    hash.AppendData(SHA256.HashData(File.ReadAllBytes(file)));
+                }
+            }
         }
 
         return Convert.ToHexStringLower(hash.GetHashAndReset());

@@ -206,6 +206,19 @@ public sealed class RepositoryBuildTests
         Assert.False(Directory.Exists(fixture.Log));
     }
 
+    /// <summary>Explicit Wgpu package deferral leaves the missing-RID release gate intact.</summary>
+    /// <returns>The asynchronous package-selection assertion.</returns>
+    [Fact]
+    public async Task SkipWgpuPackageDoesNotInvokePackAsync()
+    {
+        using var fixture = new BuildFixture();
+        string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Wgpu.csproj");
+        File.WriteAllText(project, File.ReadAllText(fixture.Project));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-wgpu-package");
+        AssertSuccess(result);
+        Assert.False(Directory.Exists(fixture.Log));
+    }
+
     /// <summary>A failure in the packaging traversal fails the build runner.</summary>
     /// <returns>The asynchronous failure assertion.</returns>
     [Fact]
