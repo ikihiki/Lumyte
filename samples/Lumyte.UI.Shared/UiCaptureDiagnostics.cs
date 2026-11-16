@@ -8,11 +8,13 @@ namespace Lumyte.UI.SampleSupport;
 /// <summary>Explicitly enabled, bounded sample-only capture observations.</summary>
 internal sealed class UiCaptureDiagnostics : EventListener
 {
+    private const int TerminalArchiveBytes = 16384;
     private static UiCaptureDiagnostics? _instance;
     private readonly object _gate = new();
     private readonly Queue<string> _events = new();
     private readonly Dictionary<long, string> _requests = new();
     private readonly HashSet<long> _terminal = [];
+    private readonly Dictionary<long, string[]> _terminalFrames = new();
     private readonly Dictionary<(Guid Run, long Frame), Dictionary<long, string>> _open = new();
     private readonly Dictionary<(Guid Run, long Frame), string> _last = new();
     private readonly Dictionary<long, HashSet<(Guid Run, long Frame)>> _relations = new();
@@ -78,6 +80,16 @@ internal sealed class UiCaptureDiagnostics : EventListener
                         writer.WriteString("profileRunId", run);
                         writer.WriteNumber("frameId", frame);
                         writer.WriteEndObject();
+                    }
+                }
+
+                writer.WriteEndArray();
+                writer.WriteStartArray("terminalFrames");
+                foreach (string[] frames in _terminalFrames.Values)
+                {
+                    foreach (string frame in frames)
+                    {
+                        writer.WriteRawValue(frame);
                     }
                 }
 
@@ -167,6 +179,42 @@ internal sealed class UiCaptureDiagnostics : EventListener
         return Encoding.UTF8.GetString(output.ToArray());
     }
 
+    private string TerminalFrame(long request, (Guid Run, long Frame) frame)
+    {
+        using var output = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(output))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("requestId", request);
+            writer.WriteString("profileRunId", frame.Run);
+            writer.WriteNumber("frameId", frame.Frame);
+            writer.WriteString("observation", "atTerminal");
+            writer.WriteStartArray("openStages");
+            if (_open.TryGetValue(frame, out Dictionary<long, string>? stages))
+            {
+                foreach (string stage in stages.Values)
+                {
+                    writer.WriteRawValue(stage);
+                }
+            }
+
+            writer.WriteEndArray();
+            writer.WritePropertyName("lastStage");
+            if (_last.TryGetValue(frame, out string? last))
+            {
+                writer.WriteRawValue(last);
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(output.ToArray());
+    }
+
     private void Observe(EventWrittenEventArgs item)
     {
         if (item.EventId is not (1 or 2 or 5 or 7 or 12) || item.Payload is null)
@@ -197,17 +245,13 @@ internal sealed class UiCaptureDiagnostics : EventListener
             long evicted = _requests.Keys.First();
             _requests.Remove(evicted);
             _terminal.Remove(evicted);
+            _terminalFrames.Remove(evicted);
             _dropped++;
         }
 
         if (!_terminal.Contains(request) || terminal)
         {
             _requests[request] = record;
-        }
-
-        if (terminal)
-        {
-            _terminal.Add(request);
         }
 
         if (!_relations.TryGetValue(request, out HashSet<(Guid Run, long Frame)>? frames))
@@ -239,6 +283,25 @@ internal sealed class UiCaptureDiagnostics : EventListener
             foreach (string stage in stages.Values)
             {
                 Add(stage, false);
+            }
+        }
+
+        if (terminal && _terminal.Add(request))
+        {
+            string[] archive = frames.Select(frame => TerminalFrame(request, frame)).ToArray();
+            while (_terminalFrames.Count != 0 && _terminalFrames.Values.Sum(items => items.Sum(value => value.Length)) + archive.Sum(value => value.Length) > TerminalArchiveBytes)
+            {
+                _terminalFrames.Remove(_terminalFrames.Keys.First());
+                _dropped++;
+            }
+
+            if (archive.Sum(value => value.Length) <= TerminalArchiveBytes)
+            {
+                _terminalFrames[request] = archive;
+            }
+            else
+            {
+                _dropped++;
             }
         }
 

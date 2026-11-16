@@ -87,3 +87,15 @@ frames, eight spans each). The console stream has a 2048-record budget; terminal
 request records bypass that budget and remain in requests independently of the
 ring. dropped counts bounded-state/ring evictions and suppressed stream records,
 not EventPipe loss. Empty/zero identities remain honestly unassociated.
+
+Terminal host events may honestly contain frame zero. Before releasing live
+request relations, the sample observer saves bounded `terminalFrames` records:
+`{requestId,profileRunId,frameId,observation:"atTerminal",openStages,lastStage}`.
+These contain scalar event JSON copied at the terminal callback, not resources.
+`openStages` inside an archived record means open **at terminal observation**;
+it is not a claim that the stage is still open when the snapshot is fetched.
+The top-level `relations` and `openStages` remain live state. Terminal relations
+are unpinned immediately, so completed requests cannot block tracking newer
+frames. The archive shares the 16-request eviction lifetime and has a separate
+16 KiB character budget; archive eviction increments `dropped`. The last terminal
+request event remains available independently of archive/ring eviction.

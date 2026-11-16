@@ -103,6 +103,58 @@ public sealed class ProfilingTests
         Assert.Contains(terminal.RootElement.GetProperty("requests").EnumerateArray(), item => item.GetProperty("data").GetProperty("phase").GetInt32() == 9);
     }
 
+    /// <summary>Checks zero-key host terminals retain historical joins after live state and ring rollover.</summary>
+    /// <param name="phase">The actual host terminal phase.</param>
+    [Theory]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void ZeroKeyTerminalRetainsAtTerminalFrameSnapshot(int phase)
+    {
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics();
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 991);
+        UiApplicationProfiling.Scope? wait = UiApplicationProfiling.Begin(14, key);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key, Guid.NewGuid(), owned: 1, busy: 1);
+        UiApplicationProfiling.Capture(request, phase, reason: 1);
+        wait?.Dispose();
+        for (int i = 0; i < 80; i++)
+        {
+            using UiApplicationProfiling.Scope? unrelated = UiApplicationProfiling.Begin(15, new(Guid.NewGuid(), 1000 + i));
+            UiApplicationProfiling.Capture(request, 6);
+        }
+
+        using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        System.Text.Json.JsonElement archived = Assert.Single(snapshot.RootElement.GetProperty("terminalFrames").EnumerateArray());
+        Assert.Equal(request, archived.GetProperty("requestId").GetInt64());
+        Assert.Equal(key.Run, archived.GetProperty("profileRunId").GetGuid());
+        Assert.Equal(key.Frame, archived.GetProperty("frameId").GetInt64());
+        Assert.Equal("atTerminal", archived.GetProperty("observation").GetString());
+        Assert.Contains(archived.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("stage").GetInt32() == 14);
+        System.Text.Json.JsonElement terminal = Assert.Single(snapshot.RootElement.GetProperty("requests").EnumerateArray());
+        Assert.Equal(phase, terminal.GetProperty("data").GetProperty("phase").GetInt32());
+        Assert.Equal(0, terminal.GetProperty("data").GetProperty("frameId").GetInt64());
+        Assert.Empty(snapshot.RootElement.GetProperty("relations").EnumerateArray());
+        Assert.DoesNotContain(snapshot.RootElement.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("frameId").GetInt64() == key.Frame);
+        Assert.True(observer.Snapshot().Length < 65536);
+
+        var nextKey = new UiApplicationProfiling.Key(Guid.NewGuid(), 2000);
+        using UiApplicationProfiling.Scope? nextWait = UiApplicationProfiling.Begin(14, nextKey);
+        long nextRequest = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(nextRequest, 3, nextKey);
+        using var next = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.Contains(next.RootElement.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("frameId").GetInt64() == 2000);
+        for (int i = 0; i < 20; i++)
+        {
+            long newer = UiApplicationProfiling.StartCapture();
+            UiApplicationProfiling.Capture(newer, 3, nextKey);
+            UiApplicationProfiling.Capture(newer, 8);
+        }
+
+        using var evicted = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.DoesNotContain(evicted.RootElement.GetProperty("terminalFrames").EnumerateArray(), item => item.GetProperty("requestId").GetInt64() == request);
+        Assert.True(observer.Snapshot().Length < 65536);
+    }
+
     /// <summary>Checks the real host preserves supplied cancellation through a held driver request.</summary>
     /// <returns>The verification.</returns>
     [Fact]
