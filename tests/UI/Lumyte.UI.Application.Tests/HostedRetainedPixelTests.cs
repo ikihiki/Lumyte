@@ -11,21 +11,24 @@ using static Lumyte.UI.Compose;
 namespace Lumyte.UI.Application.Tests;
 
 /// <summary>Checks retained hosted placements against independently recorded direct GPU pixels.</summary>
-public sealed class HostedRetainedPixelTests
+public sealed partial class HostedRetainedPixelTests
 {
     /// <summary>Checks staged preparation and visual-image updates use retained GPU owners.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
     [GpuFact]
     public async Task WgpuCandidateAndVisualLayersUseRetainedFramesAsync()
     {
-        using var device = WgpuDevice.Create();
+        using var native = WgpuDevice.Create();
+        var device = new ObservedDevice(native);
         using var presenter = new UiHostPresenter(device, default);
-        using var surface = new UiSurface(Rectangle(fill: new SRgba<float>(1, 0, 0, 1)));
+        using var surface = new UiSurface(new PathPanel());
         surface.SetViewport(new(16, 16));
         using UiDrawingScene2D retained = surface.CreateDrawingScene();
         retained.Update();
         using DrawingSnapshot2D candidate = retained.Scene.CaptureSnapshot();
         await presenter.PrepareCandidateAsync(candidate, 16, 16);
+        Assert.Equal(0, device.Dispatches);
+        Assert.NotEmpty(device.Tables);
         var canvas = new Canvas2D();
         canvas.Begin();
         surface.Record(canvas);
@@ -34,9 +37,23 @@ public sealed class HostedRetainedPixelTests
         using UiVisualSnapshot? image = await presenter.CaptureVisualAsync(fragment, 16, 16, reservation);
         Assert.NotNull(image);
         Assert.False(reservation.Released);
+        Assert.True(device.Dispatches > 0);
+        int captures = device.Dispatches;
+
+        // Identical completed content reuses published membership without another dispatch.
         await presenter.UpdateVisualAsync(image, fragment, []);
+        Assert.Equal(captures, device.Dispatches);
+        var changed = new Canvas2D();
+        changed.Begin();
+        changed.Translate(new(1, 0));
+        surface.Record(changed);
+        await presenter.UpdateVisualAsync(image, changed.End(), []);
+        Assert.True(device.Dispatches > captures);
         await presenter.DrainVisualsAsync();
+        using IDisposable retainedImage = image.Retain();
         image.Dispose();
+        Assert.False(reservation.Released);
+        retainedImage.Dispose();
         Assert.True(reservation.Released);
     }
 
@@ -46,7 +63,7 @@ public sealed class HostedRetainedPixelTests
     public async Task WgpuHostedRetainedMatchesDirectPixelsAsync()
     {
         using var device = WgpuDevice.Create();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        using IRenderer2D renderer = Renderer2D.CreateDefault(device);
         using var directRenderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
         using var surface = new UiSurface(Panel()[Rectangle(width: 14, height: 12, fill: new SRgba<float>(1, 0, 0, 1)), Rectangle(width: 9, height: 18, fill: new SRgba<float>(0, 0, 1, 0.5f))]);
         using var overlay = new UiSurface(Rectangle(fill: new SRgba<float>(0, 1, 0, 0.5f)));
@@ -97,7 +114,7 @@ public sealed class HostedRetainedPixelTests
 
         Assert.True(renderer.RetentionStatistics.ReusedRuns > 0);
 
-        async Task<byte[]> RenderAsync(DrawingSnapshot2D? scene, DrawList2D? direct, Renderer2D draw)
+        async Task<byte[]> RenderAsync(DrawingSnapshot2D? scene, DrawList2D? direct, IRenderer2D draw)
         {
             using IGraphicsTexture target = device.CreateTexture(new() { Width = 64, Height = 48, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
             using IGraphicsTextureView targetView = target.CreateView();
@@ -133,6 +150,75 @@ public sealed class HostedRetainedPixelTests
             readback.CopyTo(bytes);
             readback.Unmap();
             return bytes;
+        }
+    }
+
+    /// <summary>Ordinary host drawing records Standard compute work before actual native submission.</summary>
+    /// <returns>The real-device host route check.</returns>
+    [GpuFact]
+    public async Task WgpuOrdinaryPresenterSelectsStandardAsync()
+    {
+        using var native = WgpuDevice.Create();
+        var device = new ObservedDevice(native);
+        using var presenter = new UiHostPresenter(device, default, 1);
+        using var surface = new UiSurface(new PathPanel());
+        surface.SetViewport(new(16, 16));
+        using UiDrawingScene2D retained = surface.CreateDrawingScene();
+        retained.Update();
+        using DrawingSnapshot2D snapshot = retained.Scene.CaptureSnapshot();
+        using var swapchain = new RecordingSwapchain(device);
+        Assert.Equal(SurfaceStatus.Success, await presenter.DrawAsync(swapchain, snapshot, Guid.NewGuid()));
+        Assert.True(device.Dispatches > 0);
+    }
+
+    private sealed class RecordingSwapchain : IGraphicsSwapchain
+    {
+        private readonly IGraphicsTexture _texture;
+
+        internal RecordingSwapchain(IGraphicDevice device)
+        {
+            _texture = device.CreateTexture(new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment });
+        }
+
+        public SwapchainDesc Configuration { get; } = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment };
+
+        public void Reconfigure(SwapchainDesc desc) => throw new NotSupportedException();
+
+        public ValueTask<SurfaceAcquireResult> AcquireNextFrameAsync(IGraphicsSemaphore? signalSemaphore = null, CancellationToken cancellationToken = default) => ValueTask.FromResult(new SurfaceAcquireResult(SurfaceStatus.Success, new RecordingImage(_texture)));
+
+        public void Dispose() => _texture.Dispose();
+    }
+
+    private sealed class RecordingImage(IGraphicsTexture texture) : IGraphicsSurfaceFrame
+    {
+        public SurfaceFrameStatus Status => SurfaceFrameStatus.Acquired;
+
+        public IGraphicsTexture Texture => texture;
+
+        public SurfaceStatus Present(IReadOnlyList<IGraphicsSemaphore>? waitSemaphores = null) => SurfaceStatus.Success;
+
+        public ValueTask WaitForReleaseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class PathPanel : Definitions.Panel
+    {
+        protected override UiElement CreateElement() => new PathElement(this);
+    }
+
+    private sealed class PathElement(PathPanel widget) : PanelElement(widget)
+    {
+        protected override void OnRecord(DrawingCanvas2D canvas)
+        {
+            var path = new PathBuilder2D();
+            path.MoveTo(new(2, 2));
+            path.LineTo(new(14, 2));
+            path.LineTo(new(8, 14));
+            path.Close();
+            canvas.FillPath(path.Build(), new SRgba<float>(1, 0, 0, 1));
         }
     }
 
