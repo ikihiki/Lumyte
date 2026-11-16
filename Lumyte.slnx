@@ -1,4 +1,11 @@
 <Solution>
+  <Folder Name="/src/Maps/">
+    <Project Path="src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
+    <Project Path="src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
+  </Folder>
+  <Folder Name="/tests/Maps/">
+    <Project Path="tests/Maps/Lumyte.Maps.Tests/Lumyte.Maps.Tests.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/Graphics/">
     <Project Path="benchmarks/Graphics/Lumyte.Graphics.Validation.Benchmark/Lumyte.Graphics.Validation.Benchmark.csproj" />
     <Project Path="benchmarks/Graphics/Lumyte.Resources.Graphics.Benchmark/Lumyte.Resources.Graphics.Benchmark.csproj" />

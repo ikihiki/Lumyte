@@ -1,0 +1,27 @@
+# 容量制限付きのローカルMVT入力
+
+M1は非圧縮のローカルMVT 2に対応します。OSM XML/PBF、HTTP、gzip、任意の配信元スキーマ、点、ラベル、スタイル適用は対象外です。スキーマ`lumyte.roads-buildings-water.v1`ではroads（LineString）、buildings（Polygon）、water（Polygon）だけを受け付け、未知のレイヤー名や形状型の不一致は拒否します。属性はprotobufのスカラー型を保持し、意味の暗黙変換は行いません。レイヤーの省略を許可します。extentを省略した場合だけMVTの既定値を使い、指定された正のuint32値はそのまま保持します。
+
+## 既存ライブラリとアプリ側の責務
+
+protobufのwire読み取りにはApache-2.0ライセンスのNuGetパッケージ`protobuf-net.Core 3.4.40`を使用します。`ProtoBuf.ProtoReader.State.Create(ReadOnlyMemory<byte>, model: null)`、field header、primitive、`SkipField`、subitem、`ReadBytes(Span<byte>, out int)`だけを使い、手書きのvarint・長さ・fixed・skip処理やタイル全体のSerializer／動的モデルは持ちません。符号付きprotobuf値の変換もライブラリに委譲し、MVT形状commandのZigZag差分と累積座標はアプリ側で処理します。
+
+bertt/mapbox-vector-tile-csの`ecefc028181e0197aca77b2d7ac2ea278f55cbbf`（`src/VectorTileParser.cs`）とNetTopologySuite.IO.VectorTilesの`16c930fc14f2ba912111684310d9da25370f759d`（`MapboxTileReader.Read`）で調査した公開入口は、アプリの容量検査前にタイル全体をデシリアライズします。このためwireは既存ライブラリに任せつつ、確保前の数え上げ・容量検査・厳密UTF-8・必須field・wire型・スキーマ・形状検証は本decoderが担当します。汎用ライブラリ全体が不適切という判断ではありません。
+
+`StartSubItem`は宣言長を直ちに入力境界と照合せず、primitiveやheader読み取りもsubitem境界を越える場合があります。メッセージは走査後に必ず`EndSubItem`で終端を検証し、検証済み範囲のmemory viewだけを次段へ渡します。packed値も`EndSubItem`で検証します。アプリの構造はtile→layer→feature/valueの浅い固定階層に限定し、未知fieldは再帰せずskipし、groupは未知fieldでも拒否します。uint32はuint64読み取り後の範囲検査で切捨てを防ぎます。形式エラーは公開APIで`InvalidDataException`に統一します。
+
+公開入力は`ReadOnlySpan<byte>`から`ReadOnlyMemory<byte>`に変更しました。`byte[]`用の明示overloadもあり曖昧さはありません。既存の所有メモリ／配列を渡し、呼出中は変更しないでください。Spanだけを持つ呼出元は所有メモリの取得方法を変更する必要があります。decoder内部で入力全体を`ToArray`しません。
+
+Coreのreader APIに対する独立したNativeAOT probeの成功だけでは、decoder全体のBrowser／NativeAOT互換性の証明にはなりません。使用する入力形式とconsumerでNativeAOTとBrowserを別々に検証してください。異なるruntimeのメモリ配置を保証するものでもありません。
+
+## 登録方法
+
+不変のデータ集合・内容版、制限profile、明示的なタイルとファイルの対応表から`LocalMvtRegistration`を一つ生成します。同じインスタンスを`LocalMvtSource`と`MvtResourceStage`へ渡し、通常の`ResourceManager`へsourceとstageを登録します。`GetKey`はXYZを正規化し、profile全体のSHA256を`ResourceId`とdecoder／スキーマのvariantの両方へ含めます。stageはvariantの不一致を拒否します。入力は`ResourceBuildContext.OpenSourceAsync`を通して開き、snapshotのSHA256 revisionを`MapTileContent.SourceRevision`へ引き継ぎます。
+
+## メモリ計上の範囲
+
+decoderはメッセージ木を確保せず借用memoryを走査し、反復フィールド数を数えてから必要な長さの配列を確保します。配列、文字列、ボックス化した値、モデルオブジェクトは確保前に計上を検査し、UTF-8の検証と文字数確認も文字列生成より先に行います。所有する固定長配列を、コピーやpoolを使わず不変配列へ変換します。形状command・タグ配列、レイヤーのキー／値表、文字列、スカラーのボックス化も計上します。作業領域の計上は構築中に返却せず、GC回収に依存しない保守的な累積確保量として制限します。`RetainedBytes`は作業用配列を除外しますが、未使用の辞書文字列・値は保守的に含めます。`PeakBuildBytes`はdecoderの累積計上に入力byte数を加えた値です。固定の256byte枠をdecoder管理情報とローカルsnapshot／streamラッパーへ割り当て、保持するrevision文字列は別途計上します。文字列用scratchは最初の使用前に長さ`min(input.Length, MaxAttributeBytes)`の配列を一度だけ確保し、配列ヘッダーと境界揃えを含む実長を作業領域へ計上して再利用します。単一文字列がscratchを超える場合はライブラリがコピー前に拒否し、全文字列のUTF-8 byte数は別途累積検査します。readerのCreate／再作成ごとに1024byteの保守的な作業予約を事前に累積計上します。これはライブラリ実装のpoolから借りるreader等の管理領域への固定予約であり、実測allocation量や全runtimeでの厳密な内部サイズ保証ではありません。
+
+管理メモリの計上は、64bit CLRの8byte境界、配列ヘッダー24byte、終端を含む文字列基部26byte、境界に揃えたオブジェクトサイズを基準にします。これは所有領域の計上規約であり、process RSS、ランタイムのアロケーター、OSファイルハンドル、非同期基盤、暗号処理、Resourcesの管理情報・cache、rendererの変換領域を含む上限ではありません。周辺領域にはManagerとホストの独立した予算が必要です。Browser/AOTと異なるランタイム配置は未検証です。sourceはファイル長と予約容量を検査してから入力配列を一つだけ確保し、stageはその不変snapshotを借用するため、二つ目の入力コピーを作りません。アプリ側にArrayPoolや可変長コレクションはありません。依存ライブラリのreader poolと初期化・静的cacheのruntime領域はアプリが直接所有・制御する配列ではなく、上記予約とホスト予算の対象です。ゼロallocationを主張するものではありません。
+
+形状検証ではcommandの数と順序、最小頂点数、明示的なClosePath、退化しない輪郭方向、先頭の外周、符号付き座標の累積overflow、タグ、UTF-8、protobufの長さ・wire型、varint overflowを検査します。外周・内周の順序とフラグで複数面のまとまりを保持します。汎用的な位相修復は行わず、自己交差や穴の幾何学的な包含関係は検査しません。試験データは手作りで、第三者のOSMデータを含みません。
