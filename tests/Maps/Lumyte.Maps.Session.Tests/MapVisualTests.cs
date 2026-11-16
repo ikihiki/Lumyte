@@ -76,6 +76,35 @@ public sealed class MapVisualTests
         }
     }
 
+    /// <summary>A fractional source-tile scale must not double-own the pixel centered on a shared edge.</summary>
+    /// <returns>The independent analytic seam oracle.</returns>
+    [MapGpuFact]
+    public async Task FractionalZoomSharedEdgeOwnsEachPixelOnceAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await using var memory = new MemoryManager();
+        await using var manager = new ResourceManager("fractional-seam", new Source(), [new Stage()], memory, new Runtime());
+        var style = new MapStyle("visual", "v1", new(0, 0, 0, 1), [new("water", new(0, 0, 1, 0.5f))]);
+        await using var map = new MapSession(manager, new Tiles(), style, new(), [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetViewport(new(512, 128));
+        map.SetCamera(new(-0.13321727635345296, 66.51326044311186, 1.4));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (map.PublishedTiles != 2)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        map.Record(canvas);
+        byte[] pixels = await RenderAsync(device, canvas.End(), null, 1);
+        for (int x = 254; x <= 258; x++)
+        {
+            Pixel(pixels, 1, x, 32, 0, 0, 188);
+        }
+    }
+
     private static void Pixel(byte[] pixels, float dpi, int x, int y, byte red, byte green, byte blue)
     {
         int offset = (((int)(y * dpi) * (int)(512 * dpi)) + (int)(x * dpi)) * 4;
@@ -148,7 +177,7 @@ public sealed class MapVisualTests
         protected override void OnRecord(DrawingCanvas2D canvas) => canvas.FillRect(new(0, 112, 512, 8), new SRgba<float>(1, 1, 0, 1));
     }
 
-    private sealed class Tiles() : MapTileSet("visual", "v1", "visual", 1, 1, "handmade", new("visual"))
+    private sealed class Tiles() : MapTileSet("visual", "v1", "visual", 1, 2, "handmade", new("visual"))
     {
         public override ResourceKey<MapTileContent> GetKey(MapTileId id) => new($"visual/{id.X}");
     }
