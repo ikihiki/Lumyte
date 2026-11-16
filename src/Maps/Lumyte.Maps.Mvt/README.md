@@ -1,24 +1,24 @@
-# Bounded local MVT input
+# 容量制限付きのローカルMVT入力
 
-M1 supports uncompressed local MVT 2, not OSM XML/PBF, HTTP, gzip, arbitrary vendor schemas, points, labels or styling. Schema `lumyte.roads-buildings-water.v1` permits only roads (LineString), buildings (Polygon) and water (Polygon). Unknown layer names and mismatched geometry types fail. Attributes retain their explicit protobuf scalar types; no implicit semantic conversion occurs. Layers may be absent. Extent defaults to the MVT default only when omitted; each supplied positive uint32 extent is preserved.
+M1は非圧縮のローカルMVT 2に対応します。OSM XML/PBF、HTTP、gzip、任意の配信元スキーマ、点、ラベル、スタイル適用は対象外です。スキーマ`lumyte.roads-buildings-water.v1`ではroads（LineString）、buildings（Polygon）、water（Polygon）だけを受け付け、未知のレイヤー名や形状型の不一致は拒否します。属性はprotobufのスカラー型を保持し、意味の暗黙変換は行いません。レイヤーの省略を許可します。extentを省略した場合だけMVTの既定値を使い、指定された正のuint32値はそのまま保持します。
 
-## Why a small parser
+## 小さなパーサーを実装した理由
 
-Existing solution inspection supplied for this implementation:
+既存実装について、次の公開入口を調査しました。
 
-- bertt/mapbox-vector-tile-cs at ecefc028181e0197aca77b2d7ac2ea278f55cbbf, src/VectorTileParser.cs: public entry invokes `Serializer.Deserialize<Tile>(stream)` before application limits can be checked.
-- NetTopologySuite.IO.VectorTiles develop at 16c930fc14f2ba912111684310d9da25370f759d, MapboxTileReader.Read: whole-tile protobuf deserialization likewise precedes application validation.
+- bertt/mapbox-vector-tile-csの`ecefc028181e0197aca77b2d7ac2ea278f55cbbf`、`src/VectorTileParser.cs`：アプリ側の制限を検査する前に`Serializer.Deserialize<Tile>(stream)`を呼び出します。
+- NetTopologySuite.IO.VectorTilesのdevelop、`16c930fc14f2ba912111684310d9da25370f759d`、`MapboxTileReader.Read`：同様に、アプリ側の検査より先にタイル全体をprotobufからデシリアライズします。
 
-Neither inspected public entry accepts an allocator or per-construction allocation limits. Post-deserialization feature counting cannot enforce the ADR's pre-allocation requirement. This is the narrowly authorized gap filled here; it is not a claim that those projects are otherwise unsuitable. No dependency from either is copied or introduced. License/maintenance and Browser/AOT evaluation of those candidates is not complete; this parser's Browser/AOT compatibility is also untested.
+調査した公開入口には、アロケーターや構築単位の確保量制限を渡せません。デシリアライズ後のfeature数検査では、ADRが要求する確保前の制限を満たせないため、この不足に限定したパーサーを実装しました。両プロジェクトが他の用途にも不適切だという判断ではなく、依存コードのコピーや導入も行っていません。候補のライセンス・保守状況とBrowser/AOTの評価は未完了です。このパーサー自体のBrowser/AOT互換性も、この段階では未検証です。
 
-## Registration
+## 登録方法
 
-Construct one LocalMvtRegistration with immutable dataset/content identity, profile and explicit tile/file mapping. Pass that same instance to LocalMvtSource and MvtResourceStage; register the source and stage with an ordinary ResourceManager. GetKey normalizes XYZ and embeds the complete profile SHA256 in both ResourceId and the decoder/schema variant. A stage rejects a mismatched variant. The stage opens through ResourceBuildContext.OpenSourceAsync and carries the snapshot SHA256 revision into MapTileContent.SourceRevision.
+不変のデータ集合・内容版、制限profile、明示的なタイルとファイルの対応表から`LocalMvtRegistration`を一つ生成します。同じインスタンスを`LocalMvtSource`と`MvtResourceStage`へ渡し、通常の`ResourceManager`へsourceとstageを登録します。`GetKey`はXYZを正規化し、profile全体のSHA256を`ResourceId`とdecoder／スキーマのvariantの両方へ含めます。stageはvariantの不一致を拒否します。入力は`ResourceBuildContext.OpenSourceAsync`を通して開き、snapshotのSHA256 revisionを`MapTileContent.SourceRevision`へ引き継ぎます。
 
-## Accounting scope
+## メモリ計上の範囲
 
-The decoder scans spans without allocating message trees, counts repeated fields before allocating exact-sized arrays, and checks all charges before allocating arrays, strings, boxes and model objects. UTF8 validation/count precedes string creation. Exact-sized owned arrays become immutable arrays without copying or pools. Geometry command and tag arrays, layer key/value tables, strings and scalar boxes are charged; scratch charges are never refunded during a build, conservatively bounding cumulative allocations rather than relying on GC collection. RetainedBytes excludes scratch arrays but conservatively includes unused dictionary strings/values. PeakBuildBytes adds input bytes to cumulative decoder charges. A 256-byte fixed build allowance covers decoder bookkeeping and local snapshot/stream wrappers; the revision string is retained and charged separately.
+decoderはメッセージ木を確保せずSpanを走査し、反復フィールド数を数えてから必要な長さの配列を確保します。配列、文字列、ボックス化した値、モデルオブジェクトは確保前に計上を検査し、UTF-8の検証と文字数確認も文字列生成より先に行います。所有する固定長配列を、コピーやpoolを使わず不変配列へ変換します。形状command・タグ配列、レイヤーのキー／値表、文字列、スカラーのボックス化も計上します。作業領域の計上は構築中に返却せず、GC回収に依存しない保守的な累積確保量として制限します。`RetainedBytes`は作業用配列を除外しますが、未使用の辞書文字列・値は保守的に含めます。`PeakBuildBytes`はdecoderの累積計上に入力byte数を加えた値です。固定の256byte枠をdecoder管理情報とローカルsnapshot／streamラッパーへ割り当て、保持するrevision文字列は別途計上します。
 
-Managed storage uses 64-bit CLR eight-byte alignment: 24-byte array header, 26-byte string base including terminator, aligned object sizes. These are an accounting convention for owned storage, not a process RSS, runtime allocator, OS file handle, asynchronous framework, crypto implementation, Resources metadata/cache or renderer transformation memory bound. Those surrounding scopes require independent manager/host budgets. Browser/AOT and alternate runtime layouts are not verified. Source uses a single exact-sized input array after checking file length and reservation; stage borrows that immutable snapshot buffer, not a second input copy. No pool or growable decoder collection exists.
+管理メモリの計上は、64bit CLRの8byte境界、配列ヘッダー24byte、終端を含む文字列基部26byte、境界に揃えたオブジェクトサイズを基準にします。これは所有領域の計上規約であり、process RSS、ランタイムのアロケーター、OSファイルハンドル、非同期基盤、暗号処理、Resourcesの管理情報・cache、rendererの変換領域を含む上限ではありません。周辺領域にはManagerとホストの独立した予算が必要です。Browser/AOTと異なるランタイム配置は未検証です。sourceはファイル長と予約容量を検査してから入力配列を一つだけ確保し、stageはその不変snapshotを借用するため、二つ目の入力コピーを作りません。decoder内にpoolや可変長コレクションはありません。
 
-Strict geometry validation checks command counts/order, minimum vertices, explicit ClosePath, nondegenerate winding, first-ring exterior, signed coordinate accumulation overflow, tags, UTF8, protobuf lengths/wire types and varint overflow. Ordered exterior/hole flags preserve multipolygon groups. It is not a general topology repair engine: self-intersection and geometric hole containment are not checked. Fixtures are hand authored in tests with no third-party OSM data.
+形状検証ではcommandの数と順序、最小頂点数、明示的なClosePath、退化しない輪郭方向、先頭の外周、符号付き座標の累積overflow、タグ、UTF-8、protobufの長さ・wire型、varint overflowを検査します。外周・内周の順序とフラグで複数面のまとまりを保持します。汎用的な位相修復は行わず、自己交差や穴の幾何学的な包含関係は検査しません。試験データは手作りで、第三者のOSMデータを含みません。

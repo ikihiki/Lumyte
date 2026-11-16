@@ -1,9 +1,5 @@
 # Lumyte.Maps
 
-CPU-only XYZ identifiers, double-precision Web Mercator coordinates and immutable MVT geometry.
-World width is 512 logical pixels at zoom zero. X wraps; Y does not. Each layer retains its own extent,
-source ordering, typed attributes, buffered coordinates and polygon ring winding.
+CPU上で扱うXYZ識別子、倍精度のWebメルカトル座標、不変のMVT形状モデルを提供します。zoom 0での世界幅は512論理pixelです。Xは世界を繰り返し、Yは繰り返しません。各レイヤーは固有のextent、入力順、型付き属性、タイル外の余白を含む座標、ポリゴン輪郭の向きを保持します。
 
-Local MVT source/pipeline usage is documented in ../Lumyte.Maps.Mvt/README.md.
-This package does not interpret OSM XML or .osm.pbf, select arbitrary online sources, or promise
-external style compatibility. The supported application schema is explicit.
+ローカルMVTのsourceとpipelineの使い方は[入力パッケージのREADME](../Lumyte.Maps.Mvt/README.md)を参照してください。OSM XMLや`.osm.pbf`の解釈、任意のオンライン配信元の選択、外部スタイルとの互換性は提供しません。対応するアプリケーションスキーマを明示して使用します。
