@@ -11,3 +11,7 @@ UiRemoteSchema.ParsePlan／SerializePlanは未知・重複・不適切な型の�
 snapshotのUInt64 IDとSequenceはdecimal string、GuidはD形式、矩形はfiniteなJSON numberです。親IDとsurface identityを使い、UIの参照やdelegateをシリアライズしません。PNGとtraceは別のbyte artifactとして取得します。
 
 [設計](../../../docs/adr/ui/UI-0010-diagnostics-ui-automation.md)
+
+Schema v4 は `check` / `uncheck` / `select-option` と `optionKey`、選択部品のroleを追加します。v1–v3 は新しい操作・field・roleを受理しません。snapshotの nullable checked/selected、group IDのUInt64 decimal string、option/selected key は detached DTOへコピーします。
+
+schemaVersion 1–3 の snapshot 応答は従来の18 node fieldだけを返します。C3のroleは none へ投影し、check/select-option capabilityを公開しません。schemaVersion 4 は null（混在・非該当）を含め選択の5 fieldを保持します。

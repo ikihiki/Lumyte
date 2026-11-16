@@ -39,8 +39,38 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  node.IsFocused,
  node.IsPressed,
  node.HasActivePress,
- new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray(),
- node.IsTransitioning);
+ new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, UiAutomationActions.Check, UiAutomationActions.SelectOption, }.Where(action => (node.Actions & action) != 0).Select(action => action == UiAutomationActions.SelectOption ? "select-option" : action.ToString().ToLowerInvariant()).ToArray(),
+ node.IsTransitioning,
+ node.Value,
+ node.IsIndeterminate,
+ node.IsChecked,
+ node.IsSelected,
+ node.SelectionGroup?.Value.ToString(CultureInfo.InvariantCulture),
+ node.OptionKey,
+ node.SelectedKey);
+
+    private static LegacyRemoteSnapshot LegacySnapshot(UiRemoteSnapshot snapshot) => new(
+        snapshot.SurfaceId,
+        snapshot.Sequence,
+        snapshot.Nodes.Select(node => new LegacyRemoteNode(
+            node.Id,
+            node.ParentId,
+            node.TestId,
+            node.Name,
+            node.Role is "togglebutton" or "checkbox" or "switch" or "radiobutton" or "radiogroup" ? "none" : node.Role,
+            node.Bounds,
+            node.ClippedBounds,
+            node.IsVisible,
+            node.IsEnabled,
+            node.HitTestVisible,
+            node.IsFocusable,
+            node.IsFocused,
+            node.IsPressed,
+            node.HasActivePress,
+            node.Actions.Where(action => action is not ("check" or "select-option")).ToArray(),
+            node.IsTransitioning,
+            node.Value,
+            node.IsIndeterminate)).ToArray());
 
     private static UiLocator Locate(UiAutomationPage page, UiRemoteLocatorStep[] steps)
     {
@@ -53,7 +83,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             }
             else
             {
-                UiRole role = step.Role switch { "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, _ => UiRole.Group };
+                UiRole role = step.Role switch { "togglebutton" => UiRole.ToggleButton, "checkbox" => UiRole.CheckBox, "switch" => UiRole.Switch, "radiogroup" => UiRole.RadioGroup, "radiobutton" => UiRole.RadioButton, "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
                 locator = locator is null ? page.GetByRole(role, step.Name, step.IncludeHidden) : locator.GetByRole(role, step.Name, step.IncludeHidden);
             }
         }
@@ -104,6 +134,15 @@ public sealed partial class UiAutomationDiagnosticsRuntime
 
                     await locator!.PressAsync(Enum.Parse<Key>(plan.Key!, ignoreCase: false), modifiers, cancellationToken: token);
                     break;
+                case "check":
+                    await locator!.CheckAsync(cancellationToken: token);
+                    break;
+                case "uncheck":
+                    await locator!.UncheckAsync(cancellationToken: token);
+                    break;
+                case "select-option":
+                    await locator!.SelectOptionAsync(plan.OptionKey!, cancellationToken: token);
+                    break;
                 case "fill":
                     await locator!.FillAsync(plan.Text!, cancellationToken: token);
                     break;
@@ -137,7 +176,10 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                     await AssertAsync(page, locator!, plan, token);
                     break;
                 case "snapshot":
-                    result = SerializeBounded(Snapshot(await page.SnapshotAsync(token)), UiAutomationJsonContext.Default.UiRemoteSnapshot);
+                    UiRemoteSnapshot snapshot = Snapshot(await page.SnapshotAsync(token));
+                    result = plan.SchemaVersion < 4
+                        ? SerializeBounded(LegacySnapshot(snapshot), LegacySnapshotJsonContext.Default.LegacyRemoteSnapshot)
+                        : SerializeBounded(snapshot, UiAutomationJsonContext.Default.UiRemoteSnapshot);
                     break;
                 case "screenshot":
                     result = await page.ScreenshotAsync(token);

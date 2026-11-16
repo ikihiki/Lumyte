@@ -25,6 +25,10 @@ public sealed class NativeModelWorkload : IDisposable
     private readonly IGpuRef<ModelVertex> _vertices;
     private readonly IGraphicsShaderDataBuffer<ModelDrawArguments> _drawUpload;
     private readonly ModelDrawArguments[] _arguments = new ModelDrawArguments[32];
+    private readonly IGraphicsTexture[] _extraTargets;
+    private readonly IGraphicsTextureView[] _extraViews;
+    private readonly IGraphicsTexture _depth;
+    private readonly IGraphicsTextureView _depthView;
     private int _frame;
 
     /// <summary>Initializes a new instance of the <see cref="NativeModelWorkload"/> class.</summary>
@@ -37,6 +41,10 @@ public sealed class NativeModelWorkload : IDisposable
         _pipeline = Device.CreateGraphicsPipeline(new() { VertexShader = _vertex, FragmentShader = _fragment });
         _target = Device.CreateTexture(new() { Width = 64, Height = 64, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         _targetView = _target.CreateView();
+        _extraTargets = Enumerable.Range(0, 7).Select(_ => Device.CreateTexture(new() { Width = 64, Height = 64, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource })).ToArray();
+        _extraViews = _extraTargets.Select(t => t.CreateView()).ToArray();
+        _depth = Device.CreateTexture(new() { Width = 64, Height = 64, Format = TextureFormat.Depth32Float, Usage = TextureUsage.RenderAttachment });
+        _depthView = _depth.CreateView();
         _sample = Device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
         _sampleView = _sample.CreateView();
         using (IGraphicsBuffer<byte> upload = Device.CreateBuffer<byte>(new() { Count = 4, Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload }))
@@ -80,9 +88,23 @@ public sealed class NativeModelWorkload : IDisposable
     /// <param name="instances">The number of shared-mesh draw records.</param>
     /// <param name="complete">Whether untimed verification submits and waits.</param>
     /// <param name="scenario">Numeric, Static, Mutation or CrossPass recording.</param>
+    /// <param name="targetCount">Color attachments from one to eight; zero is state-only.</param>
     /// <returns>The consumed value or operation observation.</returns>
-    public ulong RecordInstances(int instances, bool complete = false, string scenario = "Numeric")
+    public ulong RecordInstances(int instances, bool complete = false, string scenario = "Numeric", int targetCount = 1)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(instances, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(instances, 32);
+        ValidateTargets(targetCount);
+        if (targetCount == 0)
+        {
+            throw new NotSupportedException("Zero color targets are covered by state/key checks, not the model recording oracle.");
+        }
+
+        if (scenario == "CrossPass" && targetCount != 1)
+        {
+            throw new NotSupportedException("CrossPass currently supports one color attachment.");
+        }
+
         int frame = scenario == "Static" ? 0 : ++_frame;
         using IGraphicsCommandBuffer commands = Device.CreateCommandBuffer(new());
         for (int index = 0; index < instances; index++)
@@ -105,7 +127,12 @@ public sealed class NativeModelWorkload : IDisposable
         commands.CopyBuffer(source, destination);
         commands.Barrier(new ShaderDataBufferBarrierDesc<ModelDrawArguments> { Buffer = destination, Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
         commands.Barrier(new TextureBarrierDesc { Texture = _target, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite) });
-        IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = _targetView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
+        for (int i = 1; i < targetCount; i++)
+        {
+            commands.Barrier(new TextureBarrierDesc { Texture = _extraTargets[i - 1], Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite) });
+        }
+
+        IRenderEncoder render = commands.BeginRenderPass(Pass(targetCount));
         try
         {
             render.SetPipeline(_pipeline);
@@ -135,7 +162,7 @@ public sealed class NativeModelWorkload : IDisposable
                     render.SetArgumentTable(_table);
                 }
 
-                render.SetRenderState(ModelDrawing.CreateRenderState(_arguments[index].Material, doubleSided: index % 2 == 0) with { DepthStencil = new() });
+                render.SetRenderState(State(ModelDrawing.CreateRenderState(_arguments[index].Material, doubleSided: index % 2 == 0) with { DepthStencil = new() }, targetCount));
                 var root = new ModelDrawRoot(_table.WriteBuffer(1, _draw.SliceElements((ulong)index, 1)));
                 render.SetArguments(in root);
                 _mesh.Draw(render);
@@ -157,38 +184,31 @@ public sealed class NativeModelWorkload : IDisposable
     }
 
     /// <summary>Submits a real model then checks an analytic center red pixel outside timing.</summary>
-    public void Verify()
+    /// <param name="targetCount">Color attachments from one to eight. Output zero is red; other outputs retain their transparent clear.</param>
+    public void Verify(int targetCount = 1)
     {
-        RecordInstances(32, complete: true);
-        using IGraphicsBuffer<byte> readback = Device.CreateBuffer<byte>(new() { Count = 64 * 256, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
-        using IGraphicsCommandBuffer commands = Device.CreateCommandBuffer(new());
-        commands.Barrier(new TextureBarrierDesc { Texture = _target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
-        commands.CopyTextureToBuffer(new() { Texture = _target, Width = 64, Height = 64 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = 256, RowsPerImage = 64 });
-        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
-        commands.Finish();
-        using IGraphicsSubmission submission = Device.Queue.Submit([commands]);
-        submission.WaitAsync().GetAwaiter().GetResult();
-        readback.MapAsync().GetAwaiter().GetResult();
-        byte[] bytes = new byte[64 * 256];
-        readback.CopyTo(bytes);
-        readback.Unmap();
-        int center = (32 * 256) + (32 * 4);
-        if (bytes[center] != 255 || bytes[center + 1] != 0 || bytes[center + 2] != 0 || bytes[center + 3] != 255)
+        ValidateTargets(targetCount);
+        RecordInstances(32, complete: true, targetCount: targetCount);
+        CheckPixel(_target, true);
+        for (int i = 1; i < targetCount; i++)
         {
-            throw new InvalidOperationException("Native model center pixel must be opaque red.");
+            CheckPixel(_extraTargets[i - 1], false);
         }
     }
 
     /// <summary>Measures real backend state validation/snapshot preparation without drawing or submission.</summary>
     /// <param name="count">State count.</param>
+    /// <param name="targetCount">Color attachments; zero selects a depth-only pass.</param>
     /// <returns>State operations performed.</returns>
-    public int States(int count)
+    public int States(int count, int targetCount = 1)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        ValidateTargets(targetCount);
         using IGraphicsCommandBuffer commands = Device.CreateCommandBuffer(new());
-        IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = _targetView, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
+        IRenderEncoder render = commands.BeginRenderPass(Pass(targetCount));
         for (int i = 0; i < count; i++)
         {
-            render.SetRenderState(ModelDrawing.CreateRenderState(ModelDrawing.DefaultMaterial with { AlphaMode = (uint)(i % 3) }, i % 2 == 0));
+            render.SetRenderState(State(ModelDrawing.CreateRenderState(ModelDrawing.DefaultMaterial with { AlphaMode = (uint)(i % 3) }, i % 2 == 0), targetCount));
         }
 
         render.End();
@@ -199,6 +219,18 @@ public sealed class NativeModelWorkload : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
+        _depthView.Dispose();
+        _depth.Dispose();
+        foreach (IGraphicsTextureView view in _extraViews)
+        {
+            view.Dispose();
+        }
+
+        foreach (IGraphicsTexture texture in _extraTargets)
+        {
+            texture.Dispose();
+        }
+
         _table.Dispose();
         _draw.Dispose();
         _drawUpload.Dispose();
@@ -221,6 +253,42 @@ public sealed class NativeModelWorkload : IDisposable
         new(new(0.5f, -0.5f, 0), Vector3.UnitZ, new(1, 0, 0, 1), new(1, 1), Vector4.One),
         new(new(0, 0.5f, 0), Vector3.UnitZ, new(1, 0, 0, 1), new(0.5f, 0), Vector4.One),
     ];
+
+    private static void ValidateTargets(int targets)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(targets);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(targets, 8);
+    }
+
+    private static GraphicsRenderStateDesc State(GraphicsRenderStateDesc state, int targets) => targets == 1 ? state : state with { ColorTargets = Enumerable.Range(0, targets).Select(i => i == 0 ? state.ColorTargets[0] : state.ColorTargets[0] with { WriteMask = ColorWriteMask.None }).ToArray() };
+
+    private void CheckPixel(IGraphicsTexture target, bool red)
+    {
+        using IGraphicsBuffer<byte> readback = Device.CreateBuffer<byte>(new() { Count = 64 * 256, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        using IGraphicsCommandBuffer commands = Device.CreateCommandBuffer(new());
+        commands.Barrier(new TextureBarrierDesc { Texture = target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
+        commands.CopyTextureToBuffer(new() { Texture = target, Width = 64, Height = 64 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = 256, RowsPerImage = 64 });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Finish();
+        using IGraphicsSubmission submission = Device.Queue.Submit([commands]);
+        submission.WaitAsync().GetAwaiter().GetResult();
+        readback.MapAsync().GetAwaiter().GetResult();
+        byte[] bytes = new byte[64 * 256];
+        readback.CopyTo(bytes);
+        readback.Unmap();
+        int center = (32 * 256) + (32 * 4);
+        byte channel = red ? (byte)255 : (byte)0;
+        if (bytes[center] != channel || bytes[center + 1] != 0 || bytes[center + 2] != 0 || bytes[center + 3] != channel)
+        {
+            throw new InvalidOperationException("Native model output zero must be red; write-masked outputs must retain transparent clear.");
+        }
+    }
+
+    private RenderPassDesc Pass(int targets) => new()
+    {
+        ColorAttachments = Enumerable.Range(0, targets).Select(i => new RenderColorAttachmentDesc { View = i == 0 ? _targetView : _extraViews[i - 1], LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }).ToArray(),
+        DepthStencilAttachment = targets == 0 ? new() { View = _depthView, DepthLoadOp = AttachmentLoadOp.Clear, DepthStoreOp = AttachmentStoreOp.Store } : null,
+    };
 
     private ModelMesh CreateMesh(bool packed)
     {

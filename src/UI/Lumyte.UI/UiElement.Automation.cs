@@ -14,15 +14,52 @@ public partial class UiElement
 
     internal UiAutomationActions SupportedActions => AutomationActions;
 
+    internal double? SemanticAutomationValue => AutomationValue;
+
+    internal bool AutomationIndeterminate => IsAutomationIndeterminate;
+
     internal bool AutomationPressed => IsAutomationPressed;
 
     internal bool AutomationActivePress => HasAutomationActivePress;
+
+    internal bool? SemanticAutomationChecked => AutomationChecked;
+
+    internal bool? SemanticAutomationSelected => AutomationSelected;
+
+    internal UiAutomationId? SemanticAutomationSelectionGroup => AutomationSelectionGroup;
+
+    internal string? SemanticAutomationOptionKey => AutomationOptionKey;
+
+    internal string? SemanticAutomationSelectedKey => AutomationSelectedKey;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual bool? AutomationChecked => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual bool? AutomationSelected => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual UiAutomationId? AutomationSelectionGroup => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual string? AutomationOptionKey => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual string? AutomationSelectedKey => null;
 
     /// <summary>Gets the metadata and subtree exposure policy.</summary>
     protected virtual UiAutomationExposure AutomationExposure => UiAutomationExposure.Default;
 
     /// <summary>Gets actual component capabilities, independently of role.</summary>
     protected virtual UiAutomationActions AutomationActions => Widget.Focusable ? UiAutomationActions.Focus : UiAutomationActions.None;
+
+    /// <summary>Gets the optional semantic value; when present it must be finite and between zero and one inclusive.</summary>
+    /// <remarks>Must be side-effect free. Invalid values cause snapshot capture to throw InvalidOperationException; redacted subtrees do not read this hook.</remarks>
+    protected virtual double? AutomationValue => null;
+
+    /// <summary>Gets a value indicating whether the component represents indeterminate progress.</summary>
+    /// <remarks>Must be side-effect free. Redacted subtrees expose false without reading this hook.</remarks>
+    protected virtual bool IsAutomationIndeterminate => false;
 
     /// <summary>Gets a value indicating whether there is component-specific pressed presentation.</summary>
     protected virtual bool IsAutomationPressed => false;

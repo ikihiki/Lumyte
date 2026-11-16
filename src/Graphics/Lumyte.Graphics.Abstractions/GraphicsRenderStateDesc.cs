@@ -15,7 +15,7 @@ public sealed record GraphicsRenderStateDesc
     /// <summary>Gets the depth and stencil settings.</summary>
     public DepthStencilStateDesc DepthStencil { get; init; } = new();
 
-    /// <summary>Gets one color state per pass attachment.</summary>
+    /// <summary>Gets one color state per pass attachment; the count must not exceed the device MaxColorAttachments capability.</summary>
     public IReadOnlyList<ColorBlendStateDesc> ColorTargets { get; init; } = [];
 
     /// <summary>Gets the exact coverage mask including zero.</summary>
