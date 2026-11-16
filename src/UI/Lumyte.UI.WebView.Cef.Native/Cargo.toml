@@ -1,0 +1,16 @@
+[package]
+name = "lumyte_ui_webview_cef"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cef = { version = "=156.6.0", default-features = false, features = ["sandbox", "resources"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
