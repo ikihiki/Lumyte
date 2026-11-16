@@ -428,7 +428,16 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             if (_batch._context.ComputeShapeMembership &&
                 (Cpu.Records.Any(record => record.Kind is 4 or 5) || (program is not null && program.Instructions.Any(instruction => instruction.Kind is 4 or 5))))
             {
-                buffers = Math.Max(buffers, 7u + (Cpu.Clips.Count > 1 || clip.Kind is NormalizedClipKind2D.Analytic or NormalizedClipKind2D.SampleMask ? 1u : 0u));
+                buffers = Math.Max(buffers, 7u);
+
+                // The combined directory is one binding, not two individually
+                // bounded buffers. Include conservative incoming entry counts.
+                ulong directoryEntries = checked((ulong)Cpu.Paints.Count + (ulong)Cpu.Clips.Count
+                    + (ulong)(program?.Instructions.Count ?? 1) + 1);
+                if (directoryEntries > maximum / 16)
+                {
+                    return false;
+                }
             }
 
             uint textureBindings = Math.Max(views, limits.MinimumTextureBindings);
@@ -524,8 +533,38 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _records = Create<DrawRecord2D>(Cpu.Records.Count, 96);
             if (_mode != 4)
             {
-                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count, 16);
-                if (Cpu.Clips.Count > 1)
+                // Membership pages share one typed directory stream so fractional clips
+                // stay within the seven buffer slots of a default WebGPU device.
+                if (_mode == 8 && Cpu.Clips.Count > 1)
+                {
+                    uint clipOffset = checked((uint)Cpu.Paints.Count);
+                    foreach (DrawDirectoryEntry2D paint in Cpu.Paints)
+                    {
+                        if (paint.Kind == 8)
+                        {
+                            int index = checked((int)paint.PayloadOffset16);
+                            Vector4 payload = Cpu.Numeric[index];
+                            uint clipId = BitConverter.SingleToUInt32Bits(payload.Y);
+                            if (clipId != 0)
+                            {
+                                payload.Y = BitConverter.UInt32BitsToSingle(checked(clipId + clipOffset));
+                                Cpu.Numeric[index] = payload;
+                            }
+                        }
+                    }
+
+                    for (int i = 0; i < Cpu.Records.Count; i++)
+                    {
+                        DrawRecord2D record = Cpu.Records[i];
+                        if (record.ClipId != 0)
+                        {
+                            Cpu.Records[i] = record with { ClipId = checked(record.ClipId + clipOffset) };
+                        }
+                    }
+                }
+
+                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count + (_mode == 8 && Cpu.Clips.Count > 1 ? Cpu.Clips.Count : 0), 16);
+                if (Cpu.Clips.Count > 1 && _mode != 8)
                 {
                     _clips = Create<DrawDirectoryEntry2D>(Cpu.Clips.Count, 16);
                 }
@@ -754,9 +793,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)
                 {
-                    copied += _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
+                    copied += _mode == 8 && Cpu.Clips.Count > 1
+                        ? _paints.Fill(Cpu.Paints.Concat(Cpu.Clips).ToArray())
+                        : _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
                     IGpuRef<DrawDirectoryEntry2D> clips = _paints.Reference!;
-                    if (Cpu.Clips.Count > 1)
+                    if (Cpu.Clips.Count > 1 && _mode != 8)
                     {
                         copied += _clips.Fill(CollectionsMarshal.AsSpan(Cpu.Clips));
                         clips = _clips.Reference!;

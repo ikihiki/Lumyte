@@ -179,9 +179,37 @@ public sealed class ShapeMembershipTests
         Assert.True(device.NativeBuffers > 0);
     }
 
-    private sealed class ComputeDevice : IGraphicDevice
+    /// <summary>Fractional clips and nested paint clips fit a default WebGPU storage budget.</summary>
+    /// <returns>The completed preparation and binding checks.</returns>
+    [Fact]
+    public async Task FractionalClippedPathFitsSevenBufferSlotsAsync()
     {
-        private readonly ProfilingDevice _inner = new() { Caps = ComputeCaps };
+        var device = new ComputeDevice(ComputeCaps with { ArgumentTableBindingLimits = new() { BuffersPerDraw = 7 } });
+        using var state = new DrawingResourceState2D(device);
+        using var plan = new DrawingArgumentPlan2D(device);
+        var target = new DrawingTargetInfo2D { Description = new() { Width = 8, Height = 8, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment } };
+        var context = new RenderPreparationContext2D(device, target, state, plan) { ComputeShapeMembership = true };
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.ClipRect(new(0.5f, 0, 7, 8));
+        var path = new PathBuilder2D();
+        path.MoveTo(new(0, 2));
+        path.LineTo(new(8, 2));
+        canvas.StrokePath(path.Build(), new SRgba<float>(1, 0, 0, 1), new() { Width = 2 });
+        DrawingCommand2D[] source = canvas.End().Commands.ToArray();
+        using var batch = (PreparedRecordBatch2D)await PreparedRecordBatch2D.PrepareAsync<DrawingCommand2D>(context, source, default);
+        Assert.True(batch.HasShapeMembership);
+        await plan.SealAsync();
+        using var texture = new DispatchTexture { Width = 8, Height = 8 };
+        using IGraphicsTextureView view = texture.CreateView();
+        using var commands = new ProfilingCommands();
+        batch.Record(commands, view);
+        Assert.Single(commands.Events.OfType<ShapeMembershipArguments2D>());
+    }
+
+    private sealed class ComputeDevice(DeviceCaps? caps = null) : IGraphicDevice
+    {
+        private readonly ProfilingDevice _inner = new() { Caps = caps ?? ComputeCaps };
 
         public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost
         {
