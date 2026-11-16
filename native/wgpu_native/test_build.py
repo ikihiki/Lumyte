@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import os
+import sys
 
 import build
 
@@ -46,6 +49,21 @@ class ProvenanceTests(unittest.TestCase):
         self.save()
         with self.assertRaisesRegex(RuntimeError, "patchedSourceSha256"):
             build.verify(self.binary, self.provenance, "linux-x64")
+
+
+class ToolEncodingTests(unittest.TestCase):
+    def test_utf8_metadata_ignores_windows_default_code_page(self):
+        expected = {"packages": [{"name": "ā_日本語", "manifest_path": "C:/利用者/ā/Cargo.toml"}]}
+        payload = json.dumps(expected, ensure_ascii=False).encode("utf-8")
+        command = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(" + repr(payload) + ")"]
+        with patch.object(build.subprocess, "_text_encoding", return_value="cp1252"):
+            actual = json.loads(build.tool_output(command, os.environ.copy()))
+        self.assertEqual(expected, actual)
+
+    def test_invalid_utf8_is_rejected_not_replaced(self):
+        command = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(bytes([255]))"]
+        with self.assertRaises(UnicodeDecodeError):
+            build.tool_output(command, os.environ.copy())
 
 
 if __name__ == "__main__":

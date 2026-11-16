@@ -44,7 +44,7 @@ def host_rid():
 
 
 def verify(binary, provenance, rid):
-    proof = json.loads(provenance.read_text())
+    proof = json.loads(provenance.read_text(encoding="utf-8"))
     required = {"upstreamCommit": COMMIT, "archiveSha256": ARCHIVE_SHA,
                 "originalSourceSha256": ORIGINAL_SHA, "patchedSourceSha256": PATCHED_SHA,
                 "hostRid": rid}
@@ -54,6 +54,11 @@ def verify(binary, provenance, rid):
     if hashlib.sha256(binary.read_bytes()).hexdigest() != proof.get("binarySha256"):
         raise RuntimeError("Native artifact binary SHA-256 mismatch")
     print("Verified corrected native artifact: " + str(binary) + " (" + rid + ")")
+
+
+def tool_output(arguments, environment):
+    """Read Rust tooling output, whose protocol is UTF-8 on every platform."""
+    return subprocess.check_output(arguments, env=environment, encoding="utf-8", errors="strict")
 
 
 def main():
@@ -71,7 +76,7 @@ def main():
     if args.output is None:
         parser.error("--output is required for source builds")
     metadata_path = Path(__file__).with_name("source-info.json")
-    source_info = json.loads(metadata_path.read_text())
+    source_info = json.loads(metadata_path.read_text(encoding="utf-8"))
     if source_info["archiveSha256"] != ARCHIVE_SHA or source_info["headerSha256"] != HEADER_SHA:
         raise RuntimeError("Pinned source metadata disagrees with build script")
     output = args.output.resolve()
@@ -101,8 +106,8 @@ def main():
     environment = os.environ.copy()
     environment["RUSTUP_TOOLCHAIN"] = "1.99.1"
     environment["RUSTUP_AUTO_INSTALL"] = "0"
-    cargo_version = subprocess.check_output([args.cargo, "--version"], env=environment, text=True).strip()
-    rust_version = subprocess.check_output([environment.get("RUSTC", "rustc"), "--version"], env=environment, text=True).strip()
+    cargo_version = tool_output([args.cargo, "--version"], environment).strip()
+    rust_version = tool_output([environment.get("RUSTC", "rustc"), "--version"], environment).strip()
     if not cargo_version.startswith("cargo 1.99.1 ") or not rust_version.startswith("rustc 1.99.1 "):
         raise RuntimeError("Use the existing pinned Rust/Cargo 1.99.1 toolchain; this build never installs SDKs")
     clang_runtime.prepare(output, host_rid(), source, environment)
@@ -115,14 +120,14 @@ def main():
     else:
         original, renamed = "libwgpu_native.so", "liblumyte_wgpu_native.so"
     shutil.copy2(output / "target/release" / original, output / renamed)
-    metadata = json.loads(subprocess.check_output(
+    metadata = json.loads(tool_output(
         [args.cargo, "metadata", "--locked", "--format-version", "1", "--manifest-path", str(source / "Cargo.toml")],
-        env=environment, text=True))
+        environment))
     header_license = Path(__file__).with_name("LICENSE.webgpu-headers").read_bytes()
     if hashlib.sha256(header_license).hexdigest() != "17420d366df90c474bd70ad474694956cdb7fc64be70387a49a45458c4152d22":
         raise RuntimeError("Pinned WebGPU header license SHA-256 mismatch")
     notices = ["wgpu-native and locked Rust dependency license notices\n",
-               "WebGPU-native headers " + HEADER_COMMIT + "\n" + header_license.decode()]
+               "WebGPU-native headers " + HEADER_COMMIT + "\n" + header_license.decode("utf-8")]
     for package in sorted(metadata["packages"], key=lambda package: (package["name"], package["version"])):
         directory = Path(package["manifest_path"]).parent
         notices.append("\n## " + package["name"] + " " + package["version"] + " (" + str(package.get("license")) + ")\n")
@@ -134,13 +139,13 @@ def main():
         for path in sorted(files):
             notices.append("\n### " + path.name + "\n" + path.read_text(encoding="utf-8", errors="replace"))
     (output / "WGPU-THIRD-PARTY-NOTICES.txt").write_text("\n".join(notices), encoding="utf-8")
-    sysroot = Path(subprocess.check_output([environment.get("RUSTC", "rustc"), "--print", "sysroot"], env=environment, text=True).strip())
+    sysroot = Path(tool_output([environment.get("RUSTC", "rustc"), "--print", "sysroot"], environment).strip())
     shutil.copy2(sysroot / "share/doc/rust/COPYRIGHT-library.html", output / "RUST-STANDARD-LIBRARY-NOTICES.html")
     proof = {"upstreamCommit": COMMIT, "archiveSha256": ARCHIVE_SHA,
              "originalSourceSha256": ORIGINAL_SHA, "patchedSourceSha256": PATCHED_SHA,
              "binarySha256": hashlib.sha256((output / renamed).read_bytes()).hexdigest(),
              "cargo": cargo_version, "rustc": rust_version, "hostRid": host_rid()}
-    (output / "provenance.json").write_text(json.dumps(proof, indent=2) + "\n")
+    (output / "provenance.json").write_text(json.dumps(proof, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
