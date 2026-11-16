@@ -14,7 +14,7 @@ public sealed class SchemaTests
     [InlineData("{}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"actorId\":\"admin\"}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"kind\":\"click\",\"locator\":[]}")]
-    [InlineData("{\"schemaVersion\":4,\"kind\":\"snapshot\",\"locator\":[]}")]
+    [InlineData("{\"schemaVersion\":5,\"kind\":\"snapshot\",\"locator\":[]}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"position\":{\"x\":0,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"position\":{\"x\":-1,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"press\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"key\":\"enter\"}")]
@@ -73,5 +73,53 @@ public sealed class SchemaTests
         Assert.Equal("text-input-disabled", h.Start(new(3, "fill", [new("test-id", Value: "editor")], Text: "private"), control).Code);
         Assert.Equal("text-inspection-disabled", h.Start(new(3, "expect-value", [new("test-id", Value: "editor")], Text: "private")).Code);
         Assert.Equal("text-inspection-disabled", h.Start(new(3, "ime-candidates", [])).Code);
+    }
+
+    /// <summary>Checks v4 desired-state operations retain strict version and field boundaries.</summary>
+    [Fact]
+    public void SelectionPlansAreClosedVersionFourActions()
+    {
+        foreach (string kind in new[] { "check", "uncheck", "select-option" })
+        {
+            var plan = new UiRemotePlan(4, kind, [new("test-id", Value: "choice")], OptionKey: kind == "select-option" ? "日本語" : null);
+            Assert.True(UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(plan))));
+            foreach (int version in new[] { 1, 2, 3 })
+            {
+                Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { SchemaVersion = version }));
+            }
+
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { Position = new(0, 0) }));
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { Text = "secret" }));
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { Key = "Enter" }));
+        }
+
+        foreach (string role in new[] { "togglebutton", "checkbox", "switch", "radiogroup", "radiobutton" })
+        {
+            var query = new UiRemotePlan(4, "count", [new("role", Role: role)]);
+            Assert.False(UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(query))));
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(query with { SchemaVersion = 3 }));
+        }
+
+        var select = new UiRemotePlan(4, "select-option", [new("test-id", Value: "group")]);
+        foreach (string? key in new[] { null, string.Empty, " ", new string('a', 257) })
+        {
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(select with { OptionKey = key }));
+        }
+
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(select with { Kind = "check", OptionKey = "a" }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":3,\"kind\":\"snapshot\",\"locator\":[],\"optionKey\":null}"));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":4,\"kind\":\"select-option\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"group\"}],\"optionKey\":\"a\",\"optionKey\":\"b\"}"));
+    }
+
+    /// <summary>Checks desired-state actions cannot be submitted through observation authority.</summary>
+    [Fact]
+    public void SelectionCannotEscalateObservation()
+    {
+        using var h = new Harness();
+        foreach (string kind in new[] { "check", "uncheck", "select-option" })
+        {
+            var plan = new UiRemotePlan(4, kind, [new("test-id", Value: "save")], OptionKey: kind == "select-option" ? "a" : null);
+            Assert.NotEqual("success", h.Start(plan).Status);
+        }
     }
 }

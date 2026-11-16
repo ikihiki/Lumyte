@@ -7,9 +7,9 @@ namespace Lumyte.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanGraphicsPipeline
 {
-    private readonly Dictionary<string, Pipeline> _variants = [];
+    private readonly Dictionary<PipelineVariantKey, Pipeline> _variants = [];
     private readonly List<Pipeline> _uncachedPipelines = [];
-    private readonly Dictionary<string, (PipelineLayout Pipeline, DescriptorSetLayout Group)> _argumentLayouts = [];
+    private readonly Dictionary<DescriptorLayoutKey, (PipelineLayout Pipeline, DescriptorSetLayout Group)> _argumentLayouts = [];
     private PipelineLayout _layout;
     private DescriptorSetLayout _argumentLayout;
 
@@ -25,7 +25,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
             throw new NotSupportedException("Alpha-to-coverage requires multisampled attachments; this pass has one sample.");
         }
 
-        string argumentKey = SelectLayout(dependencies);
+        DescriptorLayoutKey argumentKey = SelectLayout(dependencies);
         if (!_owner.CacheGraphicsPipelines)
         {
             Pipeline fresh = CreateNative(state.Desc, formats, depthFormat);
@@ -33,7 +33,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
             return fresh;
         }
 
-        string key = state.Key + ":" + depthFormat + ":" + string.Join(',', formats) + ":" + argumentKey;
+        var key = PipelineVariantKey.Create(state.Key, formats, depthFormat, argumentKey);
         if (_variants.TryGetValue(key, out Pipeline cached))
         {
             return cached;
@@ -109,7 +109,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         WriteMask = state.StencilWriteMask,
     };
 
-    private string SelectLayout(IReadOnlyCollection<Lumyte.Graphics.Abstractions.IShaderReference>? dependencies)
+    private DescriptorLayoutKey SelectLayout(IReadOnlyCollection<Lumyte.Graphics.Abstractions.IShaderReference>? dependencies)
     {
         uint textures = dependencies == null ? 1 : dependencies.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
         uint samplers = dependencies == null ? 1 : dependencies.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
@@ -118,7 +118,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
             throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
         }
 
-        string key = $"{Math.Max(1, textures)}:{Math.Max(1, samplers)}";
+        var key = new DescriptorLayoutKey(Math.Max(1, textures), Math.Max(1, samplers));
         if (_argumentLayouts.TryGetValue(key, out (PipelineLayout Pipeline, DescriptorSetLayout Group) existing))
         {
             (_layout, _argumentLayout) = existing;

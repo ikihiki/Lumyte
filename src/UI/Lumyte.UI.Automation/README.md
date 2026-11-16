@@ -28,3 +28,5 @@ hostのleaseはDispatchで送信前に入力を追跡し、DisposeAsyncで自分
 UIの通常入力へsnapshotを導入せず、コピーは自動操作からの明示要求時だけ行います。ScreenshotAsyncは新しい実描画frameのGPU完了・readbackを待つhostだけが実装し、CPU snapshotから作った図を返してはいけません。OS入力・DOM入力、アクセシビリティ、Diagnosticsの接続は別の境界です。
 
 [設計](../../../docs/adr/ui/UI-0009-ui-automation.md)／[Native・headlessサンプル](../../../samples/Lumyte.UI.Sample/README.md)／[Browserサンプル](../../../samples/Lumyte.UI.Browser.Sample/README.md)
+
+`CheckAsync` / `UncheckAsync` は Check capability を要求し、既に目的値なら入力しません。変更時は通常のactionability/probeと入力leaseの下で `UiCheckInput` を一度配送し、三状態でも目的値を直接確定します。`SelectOptionAsync(key)` は group の SelectOption capability と option の Click capability を確認し、通常の Move/Down/Up を一系列だけ配送します。callback後の自動再送は行いません。
