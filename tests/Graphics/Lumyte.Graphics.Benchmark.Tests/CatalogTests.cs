@@ -37,4 +37,19 @@ public sealed class CatalogTests
             Assert.StartsWith(name, benchmark.GetProperty("Type").GetString()!, StringComparison.Ordinal);
         }
     }
+
+    /// <summary>Both map families are discoverable without constructing a device or fixture.</summary>
+    /// <param name="assemblyName">Existing executable assembly.</param>
+    /// <param name="family">Expected benchmark family.</param>
+    /// <param name="methods">Expanded parameter case count.</param>
+    [Theory]
+    [InlineData("Lumyte.Graphics.Drawing2D.Benchmark", "MapCpuBenchmarks", 5)]
+    [InlineData("Lumyte.Graphics.Benchmark", "MapFramesBenchmarks", 8)]
+    public void MapsCatalogIsDeviceFree(string assemblyName, string family, int methods)
+    {
+        using var catalog = JsonDocument.Parse(BenchmarkEntry.CreateCatalog(Assembly.Load(assemblyName)));
+        JsonElement[] cases = catalog.RootElement.GetProperty("Cases").EnumerateArray()
+            .Where(item => item.GetProperty("Type").GetString()!.EndsWith(family, StringComparison.Ordinal)).ToArray();
+        Assert.Equal(methods, cases.Length);
+    }
 }

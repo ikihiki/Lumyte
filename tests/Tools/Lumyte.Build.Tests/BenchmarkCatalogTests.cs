@@ -52,6 +52,30 @@ public sealed class BenchmarkCatalogTests
         }
     }
 
+    /// <summary>Map workloads remain in supported Graphics executable families, not an unsupported Maps area.</summary>
+    [Fact]
+    public void GraphicsMapFamiliesSelectCpuAndIntegratedExecutablesSeparately()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "maps catalog " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (string name in new[] { "Lumyte.Graphics.Benchmark", "Lumyte.Graphics.Drawing2D.Benchmark" })
+            {
+                string directory = Path.Combine(root, "benchmarks", "Graphics", name);
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, name + ".csproj"), "<Project />");
+            }
+
+            Assert.EndsWith("Lumyte.Graphics.Drawing2D.Benchmark.csproj", Assert.Single(BenchmarkCatalog.SelectProjects(root, "*", "Graphics", false)), StringComparison.Ordinal);
+            Assert.EndsWith("Lumyte.Graphics.Benchmark.csproj", Assert.Single(BenchmarkCatalog.SelectProjects(root, "*", "Graphics", true)), StringComparison.Ordinal);
+            Assert.Throws<ArgumentException>(() => BenchmarkCatalog.SelectProjects(root, "*", "Maps"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     /// <summary>Known modes are explicit rather than implicit fallback settings.</summary>
     /// <param name="mode">The requested mode.</param>
     [Theory]
@@ -365,6 +389,9 @@ public sealed class BenchmarkCatalogTests
     [Theory]
     [InlineData("benchmarks/Graphics/Shared/CpuGraphics/Device.cs")]
     [InlineData("src/Graphics/Renderer.cs")]
+    [InlineData("src/Maps/MapSession.cs")]
+    [InlineData("src/UI/UiDrawingScene2D.cs")]
+    [InlineData("benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps/DenseMapFixture.cs")]
     [InlineData("tools/shaders/shape.slang")]
     [InlineData("build/Targets/Shader.targets")]
     [InlineData("native/lumyte_text_parley/src/lib.rs")]
@@ -372,7 +399,7 @@ public sealed class BenchmarkCatalogTests
     public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
-        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "src/Maps", "src/UI", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
         }
