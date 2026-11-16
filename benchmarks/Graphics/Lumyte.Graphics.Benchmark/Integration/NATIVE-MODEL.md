@@ -7,7 +7,11 @@ Global setup submits a real fixture and checks an opaque red center pixel outsid
 
 Counts 1 and 32 are independent cases. Numeric changes transforms; Static supplies equal numeric values
 but still performs explicit uploads; Mutation writes texture/sampler three times before each draw;
-CrossPass ends and restarts the render pass between draws. Each invocation creates a new command while
+CrossPass ends and restarts the render pass between draws.
+All four original cases explicitly register the selected buffer range per draw, including Static.
+Unchanged keeps a full draw-buffer registration and prebuilt element references unchanged after
+untimed setup, while advancing numeric values and emitting every root update. It therefore isolates
+unchanged registrations, not a no-op frame or unchanged render state. Each invocation creates a new command while
 retaining the table and resources, exercising cross-command/frame descriptor reuse. No case claims FPS.
 
 Use the repository runner and a verified hardware ICD:
@@ -49,3 +53,15 @@ processes without rebuilding. Preserve all actual iterations and outliers, per-p
 median/p95/dispersion, GC operation denominators, and full preparation exports under artifacts.
 Standalone GC bytes per operation are raw measurements, not exporter-corrected MemoryDiagnoser
 integers. Report p95 as an iteration-estimate percentile, not individual-frame latency.
+
+## Recording reuse comparison
+
+Run the unchanged main suite before copying the final workload and benchmark class into the base tree.
+Use the identical source-linked entry point in both variants. For a bounded independent comparison,
+`--mode compare --launchCount 1 --warmupCount 6 --iterationCount 15 --iterationTime 250 --keepFiles`
+retains the generated child executable. Freeze the entire child output directory, hash every file,
+and execute its generated benchmark IDs in A1/B1/B2/A2 order without rebuilding. The preparation
+launches are not comparison samples. Keep every actual iteration and GC operation denominator;
+report process median, iteration-estimate p95, dispersion and managed bytes/op, including regressions.
+This is CPU recording including unsent command disposal, not GPU time, throughput or FPS.
+The combined A/B variant does not establish isolated causal shares for individual optimizations.

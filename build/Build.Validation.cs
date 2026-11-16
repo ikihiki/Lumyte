@@ -73,6 +73,37 @@ internal sealed partial class Build
             await RunManagedSampleAsync("samples/Lumyte.UI.Media.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         });
 
+    private Target TestUiLayout => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Layout.Sample").ConfigureAwait(false);
+        });
+
+    private Target TestUiLayoutAot => definition => definition
+        .Executes(async () =>
+        {
+            string layout = await PublishAotSampleAsync("samples/Lumyte.UI.Layout.Sample", "ui-layout-aot", "Lumyte.UI.Layout.Sample", strict: true).ConfigureAwait(false);
+            await ToolAsync(layout).ConfigureAwait(false);
+        });
+
+    private Target TestUiScroll => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Controls.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Scroll.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
+    private Target TestUiScrollAot => definition => definition
+        .Executes(async () =>
+        {
+            string scroll = await PublishAotSampleAsync("samples/Lumyte.UI.Scroll.Sample", "ui-scroll-aot", "Lumyte.UI.Scroll.Sample", strict: true).ConfigureAwait(false);
+            await ToolAsync(scroll, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
     private Target TestUiControls => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
@@ -288,7 +319,7 @@ internal sealed partial class Build
             "samples/Lumyte.Signals.Sample",
             "samples/Lumyte.Composition.Sample", "samples/Lumyte.Resources.Sample", "samples/Lumyte.Diagnostics.Sample",
             "samples/Lumyte.Animation.Sample", "samples/Lumyte.StateMachines.Sample", "samples/Lumyte.Animation.StateMachine.Sample",
-            "samples/Lumyte.UI.Functions.Sample",
+            "samples/Lumyte.UI.Functions.Sample", "samples/Lumyte.UI.Layout.Sample",
         })
         {
             await RunManagedSampleAsync(project).ConfigureAwait(false);
@@ -336,6 +367,8 @@ internal sealed partial class Build
         await ToolAsync(graphics, "--host").ConfigureAwait(false);
         string ui = await PublishAotSampleAsync("samples/Lumyte.UI.Application.Headless.Sample", "ui-application-aot", "Lumyte.UI.Application.Headless.Sample", strict: true).ConfigureAwait(false);
         string navigation = await PublishAotSampleAsync("samples/Lumyte.UI.Navigation.Sample", "ui-navigation-aot", "Lumyte.UI.Navigation.Sample", strict: true).ConfigureAwait(false);
+        string layout = await PublishAotSampleAsync("samples/Lumyte.UI.Layout.Sample", "ui-layout-aot", "Lumyte.UI.Layout.Sample", strict: true).ConfigureAwait(false);
+        await ToolAsync(layout).ConfigureAwait(false);
         string functions = await PublishAotSampleAsync("samples/Lumyte.UI.Functions.Sample", "ui-functions-aot", "Lumyte.UI.Functions.Sample", strict: true).ConfigureAwait(false);
         await ToolAsync(functions).ConfigureAwait(false);
         string media = await PublishAotSampleAsync("samples/Lumyte.UI.Media.Sample", "ui-media-aot", "Lumyte.UI.Media.Sample", strict: true).ConfigureAwait(false);

@@ -211,3 +211,11 @@ Exceptions during advancement follow the existing surface animation fault policy
 Read-only semantic extensions can override `AutomationValue` (null or finite
 0–1) and `IsAutomationIndeterminate` (default false). These getters must be pure;
 redacted boundaries do not evaluate them. Roles alone never add capabilities.
+
+## ScrollView
+
+ScrollViewは0〜1個の内容を有限viewportへ配置する。両軸の有限maxを要求し、内容にはscroll軸だけunboundedを渡す。
+借用ScrollControllerは同時に一つのviewportへ接続し、接続threadでScrollToする。宣言setterは状態を変更しない。
+UiWheelInputのdeltaは論理pixelで正方向が内容末尾。入れ子は軸別残余を祖先へ渡す。
+UiPointerInput.DeviceがTouchの場合だけslop後にpanし、通常mouseとTextBoxの選択は維持する。
+UiSurface.BringIntoViewは対象ローカル矩形を祖先viewportまで移動する。慣性・仮想化は含まない。

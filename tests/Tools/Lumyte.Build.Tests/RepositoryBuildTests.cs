@@ -7,6 +7,54 @@ namespace Lumyte.Build.Tests;
 /// <summary>Checks the repository targets through real Fallout execution and controlled dotnet processes.</summary>
 public sealed class RepositoryBuildTests
 {
+    /// <summary>The layout gate invokes the built core suite and the font-free public sample.</summary>
+    /// <returns>The asynchronous process assertion.</returns>
+    [Fact]
+    public async Task LayoutGateUsesCoreTestsAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiLayout", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Tests", Arguments(records[0]));
+        Assert.Contains("samples/Lumyte.UI.Layout.Sample", Arguments(records[1]));
+        Assert.Contains("--no-build", Arguments(records[1]));
+        Assert.Contains("--no-restore", Arguments(records[0]));
+    }
+
+    /// <summary>The scroll gate invokes both suites and the public sample.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task ScrollGateUsesCoreControlsAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScroll", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Tests", Arguments(records[0]));
+        Assert.Contains("tests/UI/Lumyte.UI.Controls.Tests", Arguments(records[1]));
+        Assert.Contains("samples/Lumyte.UI.Scroll.Sample", Arguments(records[2]));
+    }
+
+    /// <summary>The scroll native gate publishes with both strict warning switches.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task ScrollAotGateUsesStrictPublishAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScrollAot", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        JsonElement publish = Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("samples/Lumyte.UI.Scroll.Sample", Arguments(publish));
+        Assert.Contains("-p:PublishAot=true", Arguments(publish));
+        Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
+    }
+
     /// <summary>Compilation restores once, preserves path boundaries and uses the requested application configuration.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]
@@ -154,6 +202,19 @@ public sealed class RepositoryBuildTests
         string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Text.Parley.csproj");
         File.WriteAllText(project, File.ReadAllText(fixture.Project));
         BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
+        AssertSuccess(result);
+        Assert.False(Directory.Exists(fixture.Log));
+    }
+
+    /// <summary>Explicit Wgpu package deferral leaves the missing-RID release gate intact.</summary>
+    /// <returns>The asynchronous package-selection assertion.</returns>
+    [Fact]
+    public async Task SkipWgpuPackageDoesNotInvokePackAsync()
+    {
+        using var fixture = new BuildFixture();
+        string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Wgpu.csproj");
+        File.WriteAllText(project, File.ReadAllText(fixture.Project));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-wgpu-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
     }

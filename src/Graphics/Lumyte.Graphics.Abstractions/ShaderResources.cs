@@ -100,6 +100,12 @@ public class ShaderResources
         return _reservation.Owner.Retain();
     }
 
+    /// <summary>Retires this set and releases registrations no longer referenced by a live sibling set.</summary>
+    /// <remarks>Call serially only after every consuming submission has completed and its commands are disposed.
+    /// This permanently rejects further recording through this set, preserves sibling table identities and slots,
+    /// and never disposes the borrowed resources. Failed native releases remain retryable; aliases retire together.</remarks>
+    public void Retire() => _reservation.Owner.Retire(_reservation);
+
     /// <summary>Discards only this unpublished resource set without changing sibling sets.</summary>
     public void Cancel()
     {

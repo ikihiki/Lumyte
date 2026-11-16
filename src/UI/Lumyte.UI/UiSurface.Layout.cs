@@ -43,6 +43,7 @@ public sealed partial class UiSurface
                 profile = null;
                 UpdateInput();
                 CompleteVirtualPresentation();
+                RevealPendingFocus();
                 return;
             }
 
@@ -82,6 +83,8 @@ public sealed partial class UiSurface
             {
                 _layoutPass = null;
             }
+
+            RevealPendingFocus();
         }
         catch (Exception error)
         {

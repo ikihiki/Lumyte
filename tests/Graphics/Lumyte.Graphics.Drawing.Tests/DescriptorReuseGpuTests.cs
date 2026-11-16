@@ -21,6 +21,7 @@ public sealed class DescriptorReuseGpuTests
         try
         {
             scene.Draw(render, 0, scene.Table, scene.Pipeline);
+            scene.Repeat(render);
             scene.Draw(render, 1, scene.Table, scene.Pipeline);
             scene.Table.WriteTexture(0, scene.Views[1]);
             scene.Draw(render, 2, scene.Table, scene.Pipeline);
@@ -30,6 +31,8 @@ public sealed class DescriptorReuseGpuTests
             scene.Table.WriteTexture(0, scene.Views[3]);
             scene.Draw(render, 4, scene.Table, scene.Pipeline);
             scene.Draw(render, 5, scene.TableB, scene.Pipeline);
+            scene.Draw(render, 6, scene.TableB, scene.PipelineB);
+            scene.Draw(render, 6, scene.Table, scene.Pipeline);
             scene.Draw(render, 6, scene.TableB, scene.PipelineB);
         }
         finally
@@ -47,17 +50,19 @@ public sealed class DescriptorReuseGpuTests
             render.End();
         }
 
-        ICollection bindings = Bindings(commands);
+        IEnumerable bindings = Bindings(commands);
         scene.CompleteAndVerify(commands);
-        Assert.Equal(8, bindings.Count);
+        Assert.Equal(5, bindings.Cast<object>().Count());
         Assert.Equal(5, Counter(scene, "AllocatedSets"));
-        object[] records = bindings.Cast<object>().ToArray();
-        IShaderReference[] original = Registrations(records[0]);
-        IShaderReference[] next = Registrations(records[1]);
+        IShaderReference[][] records = Snapshots(commands);
+        Assert.Equal(10, records.Length);
+        IShaderReference[] original = records.Single(a => a.Any(r => ReferenceEquals(r.Resource, scene.DrawData) && r.OffsetInBytes == 0) && a.Any(r => ReferenceEquals(r.Resource, scene.Views[0])));
+        IShaderReference[] next = records.Single(a => a.Any(r => ReferenceEquals(r.Resource, scene.DrawData) && r.OffsetInBytes == scene.DrawData.ShaderElementStrideInBytes));
         Assert.Contains(original, r => ReferenceEquals(r.Resource, scene.DrawData) && r.OffsetInBytes == 0);
         Assert.Contains(next, r => ReferenceEquals(r.Resource, scene.DrawData) && r.OffsetInBytes == scene.DrawData.ShaderElementStrideInBytes);
         commands.Dispose();
         Assert.Empty(bindings);
+        Assert.Empty(Snapshots(commands));
         Assert.Equal(2, Counter(scene, "LiveSets"));
         scene.Table.Dispose();
         scene.TableB.Dispose();
@@ -86,24 +91,123 @@ public sealed class DescriptorReuseGpuTests
         }
 
         commands.Finish();
-        ICollection bindings = Bindings(commands);
-        Assert.Equal(32, bindings.Count);
+        IEnumerable bindings = Bindings(commands);
+        Assert.Single(bindings.Cast<object>());
         object cached = ((IDictionary)scene.Table.GetType().GetField("_sets", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(scene.Table)!).Values.Cast<object>().Single();
         IShaderReference[] cachedResources = Registrations(cached);
         Assert.Equal(2, cachedResources.Length);
         Assert.All(cachedResources, r => Assert.True(r.Resource is IGraphicsTextureView or IGraphicsSampler));
         scene.Table.ReleaseBuffer(1);
         Assert.DoesNotContain(cachedResources, r => ReferenceEquals(r.Resource, scene.DrawData));
-        IShaderReference[][] snapshots = bindings.Cast<object>().Select(Registrations).ToArray();
+        IShaderReference[][] snapshots = Snapshots(commands);
+        Assert.Equal(32, snapshots.Length);
+        Assert.Equal(32, TableCount(scene.Table, "SnapshotBuildCount"));
+        Assert.Equal(1, TableCount(scene.Table, "LayoutScanCount"));
         Assert.Equal(1, Counter(scene, "AllocatedSets"));
         ulong[] offsets = snapshots.Select(a => Assert.Single(a, r => ReferenceEquals(r.Resource, scene.DrawData)).OffsetInBytes).ToArray();
         Assert.Equal(32, offsets.Distinct().Count());
-        Assert.Equal(34 * scene.DrawData.ShaderElementStrideInBytes, offsets[^1]);
+        Assert.Contains(34 * scene.DrawData.ShaderElementStrideInBytes, offsets);
         scene.Table.Dispose();
         Assert.Equal(1, Counter(scene, "LiveSets"));
         commands.Dispose();
         Assert.Empty(bindings);
         Assert.Equal(0, Counter(scene, "LiveSets"));
+    }
+
+    /// <summary>Unchanged draws reuse all three identities; A/B/A retains each Set once.</summary>
+    [DrawingGpuFact]
+    public void RepeatedDrawsAndTableSwitchesTrackActualBinds()
+    {
+        using var scene = new Scene();
+        using IGraphicsCommandBuffer commands = scene.Device.CreateCommandBuffer(new());
+        scene.BeginTarget(commands);
+        IRenderEncoder render = scene.BeginPass(commands, clear: true);
+        try
+        {
+            scene.Draw(render, 0, scene.Table, scene.Pipeline);
+            for (int i = 0; i < 32; i++)
+            {
+                scene.Repeat(render);
+            }
+
+            Assert.Equal(1, NativeBindCount(render, "_pipelineBindCount"));
+            Assert.Equal(1, NativeBindCount(render, "_descriptorBindCount"));
+            Assert.Single(Snapshots(commands));
+            Assert.Equal(1, TableCount(scene.Table, "SnapshotBuildCount"));
+            Assert.Equal(1, TableCount(scene.Table, "LayoutScanCount"));
+            GraphicsRenderStateDesc state = ModelDrawing.CreateRenderState(ModelDrawing.DefaultMaterial, doubleSided: true) with { DepthStencil = new() };
+            render.SetRenderState(state with { Rasterization = state.Rasterization with { FrontFace = FrontFace.Clockwise } });
+            scene.Repeat(render);
+            Assert.Equal(2, NativeBindCount(render, "_pipelineBindCount"));
+            Assert.Equal(1, NativeBindCount(render, "_descriptorBindCount"));
+            render.SetRenderState(state);
+            scene.Draw(render, 5, scene.TableB, scene.Pipeline);
+            scene.Draw(render, 1, scene.Table, scene.Pipeline);
+            Assert.Equal(3, NativeBindCount(render, "_pipelineBindCount"));
+            Assert.Equal(3, NativeBindCount(render, "_descriptorBindCount"));
+            Assert.Equal(2, Bindings(commands).Cast<object>().Count());
+            Assert.Equal(3, Snapshots(commands).Length);
+            scene.Draw(render, 2, scene.Table, scene.PipelineB);
+            Assert.Equal(4, NativeBindCount(render, "_pipelineBindCount"));
+            Assert.Equal(4, NativeBindCount(render, "_descriptorBindCount"));
+        }
+        finally
+        {
+            render.End();
+        }
+
+        render = scene.BeginPass(commands, clear: false);
+        scene.Draw(render, 0, scene.Table, scene.Pipeline);
+        Assert.Equal(1, NativeBindCount(render, "_pipelineBindCount"));
+        Assert.Equal(1, NativeBindCount(render, "_descriptorBindCount"));
+        render.End();
+        commands.Finish();
+    }
+
+    /// <summary>Distinct inline roots survive skipped binds and sparse descriptor layout changes.</summary>
+    [DrawingGpuFact]
+    public void StableRootsAndLayoutShapeChangesPreservePixels()
+    {
+        using var scene = new Scene();
+        using IArgumentTable table = scene.CreateWideTable();
+        IGpuRef<ModelDrawArguments> rows = table.WriteBuffer(1, scene.DrawData.SliceElements(0, 40));
+        using IGraphicsCommandBuffer commands = scene.Device.CreateCommandBuffer(new());
+        scene.BeginTarget(commands);
+        IRenderEncoder render = scene.BeginPass(commands, clear: true);
+        try
+        {
+            for (int row = 0; row < 8; row++)
+            {
+                if (row == 1)
+                {
+                    table.WriteTexture(3, scene.Views[0]);
+                }
+                else if (row == 2)
+                {
+                    table.ReleaseTexture(3);
+                }
+
+                render.SetPipeline(scene.Pipeline);
+                render.SetArgumentTable(table);
+                render.SetViewport(new(row * 8, 0, 8, 16, 0, 1));
+                render.SetScissor(new((uint)row * 8, 0, 8, 16));
+                var root = new ModelDrawRoot(rows.GetElement((ulong)row));
+                render.SetArguments(in root);
+                scene.Repeat(render);
+            }
+
+            Assert.Equal(3, NativeBindCount(render, "_pipelineBindCount"));
+            Assert.Equal(3, NativeBindCount(render, "_descriptorBindCount"));
+            Assert.Equal(3, TableCount(table, "SnapshotBuildCount"));
+            Assert.Equal(3, TableCount(table, "LayoutScanCount"));
+            Assert.Equal(3, Snapshots(commands).Length);
+        }
+        finally
+        {
+            render.End();
+        }
+
+        scene.CompleteAndVerify(commands, [0, 1, -1, -1, -1, 0, 1, 2]);
     }
 
     /// <summary>Rejects explicitly disposed resources on reuse, without executing invalid recorded commands.</summary>
@@ -130,7 +234,15 @@ public sealed class DescriptorReuseGpuTests
                 default: scene.Table.Dispose(); break;
             }
 
+            int snapshots = Snapshots(commands).Length;
+            int sets = Bindings(commands).Cast<object>().Count();
+            int pipelines = NativeBindCount(render, "_pipelineBindCount");
+            int descriptors = NativeBindCount(render, "_descriptorBindCount");
             Assert.Throws<ObjectDisposedException>(() => scene.Repeat(render));
+            Assert.Equal(pipelines, NativeBindCount(render, "_pipelineBindCount"));
+            Assert.Equal(descriptors, NativeBindCount(render, "_descriptorBindCount"));
+            Assert.Equal(snapshots, Snapshots(commands).Length);
+            Assert.Equal(sets, Bindings(commands).Cast<object>().Count());
         }
         finally
         {
@@ -252,7 +364,13 @@ public sealed class DescriptorReuseGpuTests
         Assert.Equal(0, Counter(scene, "PoolCount"));
     }
 
-    private static ICollection Bindings(IGraphicsCommandBuffer commands) => (ICollection)commands.GetType().GetField("_bindings", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(commands)!;
+    private static int TableCount(IArgumentTable table, string property) => (int)table.GetType().GetProperty(property, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(table)!;
+
+    private static int NativeBindCount(IRenderEncoder encoder, string field) => (int)encoder.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(encoder)!;
+
+    private static IEnumerable Bindings(IGraphicsCommandBuffer commands) => (IEnumerable)commands.GetType().GetField("_bindings", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(commands)!;
+
+    private static IShaderReference[][] Snapshots(IGraphicsCommandBuffer commands) => ((IEnumerable)commands.GetType().GetField("_registrationSnapshots", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(commands)!).Cast<IShaderReference[]>().ToArray();
 
     private static IShaderReference[] Registrations(object record) => (IShaderReference[])record.GetType().GetField("_registrations", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(record)!;
 
@@ -381,7 +499,16 @@ public sealed class DescriptorReuseGpuTests
 
         public void Repeat(IRenderEncoder render) => _mesh.Draw(render);
 
-        public void CompleteAndVerify(IGraphicsCommandBuffer commands)
+        public IArgumentTable CreateWideTable()
+        {
+            IArgumentTable table = Device.CreateArgumentTable(new() { TextureCapacity = 4, SamplerCapacity = 1, BufferCapacity = 2 });
+            table.WriteTexture(0, Views[0]);
+            table.WriteSampler(0, Sampler);
+            table.WriteBuffer(0, _mesh.Vertices.SliceElements(0, 4));
+            return table;
+        }
+
+        public void CompleteAndVerify(IGraphicsCommandBuffer commands, int[]? expectedChannels = null)
         {
             commands.Barrier(new TextureBarrierDesc { Texture = _target, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = new(PipelineStage.ColorOutput, ResourceAccess.ColorWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyTextureToBuffer(new() { Texture = _target, Width = 64, Height = 16 }, new() { Buffer = _readback.SliceElements(0, _readback.Count), BytesPerRow = 256, RowsPerImage = 16 });
@@ -393,7 +520,7 @@ public sealed class DescriptorReuseGpuTests
             byte[] pixels = new byte[4096];
             _readback.CopyTo(pixels);
             _readback.Unmap();
-            int[] channel = [0, 1, 0, 0, 2, 0, 1, 2];
+            int[] channel = expectedChannels ?? [0, 1, 0, 0, 2, 0, 1, 2];
             for (int y = 0; y < 16; y++)
             {
                 for (int x = 0; x < 64; x++)
@@ -401,7 +528,7 @@ public sealed class DescriptorReuseGpuTests
                     int offset = ((y * 64) + x) * 4;
                     for (int c = 0; c < 3; c++)
                     {
-                        Assert.Equal(c == channel[x / 8] ? 255 : 0, pixels[offset + c]);
+                        Assert.Equal(channel[x / 8] == -1 || c == channel[x / 8] ? 255 : 0, pixels[offset + c]);
                     }
 
                     Assert.Equal(255, pixels[offset + 3]);
