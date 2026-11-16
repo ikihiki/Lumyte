@@ -66,7 +66,7 @@ public sealed class VulkanStateKeyTests
     private static object Snapshot(GraphicsRenderStateDesc state)
     {
         Type validation = typeof(VulkanDevice).Assembly.GetType("Lumyte.Graphics.Vulkan.PipelineValidation", true)!;
-        return validation.GetMethod("State", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [state, new DeviceCaps { Features = GraphicsFeatures.DepthBiasClamp }])!;
+        return validation.GetMethod("State", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [state, new DeviceCaps { MaxColorAttachments = 8, Features = GraphicsFeatures.DepthBiasClamp }])!;
     }
 
     private static IEnumerable<object> Variants(object source)
