@@ -4,6 +4,7 @@ try {
     const runtime = await dotnet.create();
     const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
     globalThis.lumyteApplicationProbe = exports.Lumyte.UI.Application.Browser.Sample.BrowserProbe;
+    if (globalThis.__lumyteCaptureDiagnosticsRequested === true) globalThis.lumyteApplicationProbe.EnableCaptureDiagnostics();
     await runtime.runMain();
     globalThis.lumyteApplicationFinished = true;
 } catch (error) {

@@ -71,3 +71,15 @@ EventListener による契約テストと、既存の配置・描画・フレー
 .NET 10 NativeAOT は既定で EventSource を無効にします。イベント機能を有効にするには、対象実行ファイルの publish に `-p:EventSourceSupport=true` を明示します。製品全体の既定値は変更しません。
 
 既存の `tests/Graphics/Lumyte.Resources.Graphics.AotSmoke` だけはこの機能を有効にし、厳格な NativeAOT publish と通常／`--host` 実行で、GraphRelation のpayload型、非空の区間開始・終了の対応、EventSource エラー不在を検証します。既存の資源寿命検証も維持しています。このin-process検証を、すべてのNativeAOT環境でのEventPipe接続やBrowser上の実取得の保証とは扱いません。
+
+## Browser PNGキャプチャの障害診断
+
+UI Application／Navigation／TransitionsのBrowser検証は、既存の`LUMYTE_REQUIRE_SOFTWARE_WEBGPU=1`によるCI実行でキャプチャ診断を有効にします。ローカルでは`LUMYTE_BROWSER_CAPTURE_TRACE=1`を明示できます。通常のアプリ実行では無効です。起動前に標準EventSourceのobserverを接続するため、PNG要求より前から進行しているフレームも追跡できます。
+
+キャプチャ要求IDと既存のrun／frame識別子を関連付け、dispatcher、要求queue、開始待ちの描画、prepare、submission完了、image解放、readback、画素copy／crop、PNG変換の到達段階を記録します。`UI Capture trace:`はmanaged側の構造化イベントで、検証側は`browser-capture-event`としてCIログへ転送します。既存のWebGPU API observerとは別の観測境界なので、時刻の一致だけからGPU内部の原因を断定しません。
+
+失敗時はBrowserを閉じる前に、直近イベントと有界な状態snapshotを`browser-capture-failure`へ出力します。snapshot照会だけに最大2秒の独立したCDP期限を設け、managedのキャプチャ期限や既存のCDP期限を延長しません。Browser自体が応答しなければsnapshot取得不能を記録し、すでに受け取った最終イベントを残します。診断の取得失敗で元の例外を置き換えません。既知timeoutの限定許容条件、画素assertion、終了コードも変更しません。
+
+snapshotの`terminalFrames`は、取消し／エラーを含む要求終了を観測した時点の関連frameとstageを有界に保持します。`observation:"atTerminal"`の内側の`openStages`は終了時点の記録で、取得時にも待機中という意味ではありません。現在の状態はtop-levelの`openStages`と区別します。
+
+イベント／履歴には上限と欠落・打切り表示があります。正常完了したrequestが再度別frameへ関連付けられた場合も、そのIDから重複処理を調べられます。この診断の追加自体はキャプチャの取消し・重複除去・再試行を行いません。UI文字列、入力内容、画素やPNG bytesはログへ含めません。経過時間はCPU側の観測値であり、GPU timestampや性能比較結果ではありません。

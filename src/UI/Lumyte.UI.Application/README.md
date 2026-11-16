@@ -49,53 +49,20 @@ Presence／ページ遷移などの特殊合成は既存の描画をopaqueな内
 
 非同期処理へ渡すのは内容を共有する不変の配置snapshotで、UI／sceneのborrowはGPU準備前に解放済みです。GPU完了と提示image解放の確認後にcommand memory、保持frame、submissionの順で退役します。送信成否が不明な場合はdevice世代の退役確認まで保持し、device再生成時はCPU記録も作り直します。Headlessを含む全内部driverは保持snapshotだけを受け取り、旧フレーム全体のDrawList生成・キャッシュ・direct送信分岐はありません。
 
-## Capture diagnostics (opt-in)
+## キャプチャ診断（明示的な有効化）
 
-Provider `Lumyte-UI-Application-Profiling` keyword `0x10` adds event 12,
-`CaptureState(requestId, profileRunId, frameId, sourceId, phase, reason,
-processingCount, owned, drawingBusy)`. The usual `0xF` filter is unchanged.
-IDs are diagnostic only and do not dequeue, retry, deduplicate or cancel work.
+既存provider `Lumyte-UI-Application-Profiling` のkeyword `0x10`に、event 12の`CaptureState(requestId, profileRunId, frameId, sourceId, phase, reason, processingCount, owned, drawingBusy)`を追加します。従来の`0xF` filterの意味は変更しません。IDは診断専用で、dequeue・再試行・重複除去・取消しには使いません。
 
-- Phase 1: host request before dispatcher enqueue; 2: dispatcher entered.
-- Phase 3: driver queued, with current drawing key and busy state. Owned windows
-  read the application's entry task/key, not the external window task field.
-- Phase 4: matched frame, before the submission queue wait; processingCount
-  increments on every binding, including repeated binding of the same request.
-- Phase 5/6: crop+PNG processing begin/end; 7: processing rejected/failed; 8: host success; 9: cancellation;
-  10: host error. Terminal host events with unknown frame retain empty/zero keys;
-  join through requestId, never temporal proximity.
-- Reason 0: unspecified; 1: supplied host cancellation token signalled (possibly
-  an upstream linked automation token; not evidence of caller versus deadline);
-  2: application stop; 3: other/unknown; 4: result already completed;
-  5: target not visible; 6: readback unsupported. No exception text is emitted.
+- phase 1：dispatcherへ渡す前のhost要求。2：dispatcherへ到達。
+- phase 3：driverのqueueへ到達。現在の描画keyとbusy状態を含みます。owned Windowは外部Window用fieldではなく、application Entryの描画task／keyを読みます。
+- phase 4：送信queue待ち前に、処理対象frameと関連付けます。同じ要求が再処理された場合も`processingCount`が増えます。
+- phase 5／6：crop＋PNG処理の開始／終了。7：処理拒否／失敗。8：host成功。9：取消し。10：hostエラー。終了時にframeが不明なら空／zero keyを維持し、時刻の近さではなく`requestId`で結合します。
+- reason 0：未指定。1：hostへ渡されたtokenの取消し（上流automationのlinked tokenの場合もあり、caller／deadlineの区別を意味しません）。2：application停止。3：その他／不明。4：結果が既に完了。5：対象が非表示。6：readback非対応。例外本文は出力しません。
 
-Stages 14 (submission wait), 15 (image release), 29 (readback) are unchanged.
-New nested stages: 30 map await, 31 CPU copy/unmap/repack, 32 crop, 33 PNG encode.
-These are CPU elapsed scopes, not GPU timestamps. Stage keyword 0x2 plus control
-0x1 provides the existing frame/run/span joins; Capture alone creates frame keys
-but does not emit every stage.
+既存stage 14（submission待ち）、15（image解放）、29（readback）は変更しません。新たな内側stageは30（map待ち）、31（CPU copy／unmap／repack）、32（crop）、33（PNG encode）です。CPU側の経過scopeであり、GPU timestampではありません。stage keyword `0x2`とcontrol `0x1`が既存のframe／run／spanを結合します。Captureだけでもframe keyは生成しますが、全stageを出力するわけではありません。
 
-The browser samples link a shared EventListener only on explicit
-EnableCaptureDiagnostics(). It subscribes before runMain, tracks bounded open
-stages even before a request, and streams lifecycle plus stages related by the
-queued/matched frame keys. A queued request includes already-open stage records.
-The exact console prefix is `UI Capture trace: ` followed by
-`{eventId,name,ticks,frequency,data:{payloadName:scalar}}`. Guid values are strings.
-GetCaptureDiagnostics() returns JSON with enabled, dropped, streamed, events
-(last 64), requests (last state for up to 16 IDs), relations (pending request/frame pairs), lastStages (four frames), and openStages (up to four
-frames, eight spans each). The console stream has a 2048-record budget; terminal
-request records bypass that budget and remain in requests independently of the
-ring. dropped counts bounded-state/ring evictions and suppressed stream records,
-not EventPipe loss. Empty/zero identities remain honestly unassociated.
+Browserサンプルの共有EventListenerは`EnableCaptureDiagnostics()`の明示呼出しでだけ接続します。`runMain`より前に有効化し、要求以前から開いているstageも有界に追跡します。queue／matched frame keyで関連付けたstageと要求の状態をstreamへ出し、queue到達時には既に開いているstageを再掲します。console prefixは`UI Capture trace:`と末尾の半角spaceで、その後ろは`{eventId,name,ticks,frequency,data:{payloadName:scalar}}`です。Guidは文字列として出力します。
 
-Terminal host events may honestly contain frame zero. Before releasing live
-request relations, the sample observer saves bounded `terminalFrames` records:
-`{requestId,profileRunId,frameId,observation:"atTerminal",openStages,lastStage}`.
-These contain scalar event JSON copied at the terminal callback, not resources.
-`openStages` inside an archived record means open **at terminal observation**;
-it is not a claim that the stage is still open when the snapshot is fetched.
-The top-level `relations` and `openStages` remain live state. Terminal relations
-are unpinned immediately, so completed requests cannot block tracking newer
-frames. The archive shares the 16-request eviction lifetime and has a separate
-16 KiB character budget; archive eviction increments `dropped`. The last terminal
-request event remains available independently of archive/ring eviction.
+`GetCaptureDiagnostics()`はJSONを返します。`enabled`、`dropped`、`streamed`、`events`（直近64件）、`requests`（最大16 IDの最終状態）、`relations`（処理中の要求とframeの組）、`lastStages`（4 frame）、`openStages`（最大4 frame・各8 span）を含みます。console streamは2048件が上限ですが、要求の終了記録はこの上限を超えて出力し、ringとは別に`requests`へ保持します。`dropped`は有界状態／ringの退避やstream抑制の件数であり、EventPipeのlossではありません。空／zero IDは未関連のまま扱います。
+
+hostの終了記録にframe zeroが入る場合でも、liveな関連を解放する前に`terminalFrames`へ`{requestId,profileRunId,frameId,observation:"atTerminal",openStages,lastStage}`を保存します。資源参照ではなく、終了を観測した時点のscalar event JSONです。内側の`openStages`は終了時点で開いていたstageであり、snapshot取得時にも開いているという意味ではありません。top-levelの`relations`と`openStages`はlive状態です。終了時にはpinを解除するので、古い要求が新frameの追跡を妨げません。archiveは16要求の退避寿命と16,384文字の別予算で制限し、退避を`dropped`へ数えます。最後の要求終了記録はarchive／ringの退避とは別に保持します。
