@@ -394,7 +394,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
 
     private static VulkanDevice CreateCore(VulkanDeviceDesc desc)
     {
-        var api = Vk.GetApi();
+        Vk api = VulkanNativeLibrary.CreateApi();
         Instance instance = default;
         Device device = default;
         bool presenting = desc.EnablePresentation;

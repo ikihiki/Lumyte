@@ -205,7 +205,7 @@ public sealed class RenderGraphPass
         ArgumentNullException.ThrowIfNull(buffer);
         Range(offset, count, buffer.Count);
         ArgumentBufferAccess? access = ShaderAccess(scope);
-        GraphShaderBinding binding = new(buffer, offset, count, true, access, access is not null ? lookup => lookup.ReadBuffer(buffer, offset, count) : null);
+        GraphShaderBinding binding = new(buffer, offset, count, T.ReferenceCount != 0, access, access is not null ? lookup => lookup.ReadBuffer(buffer, offset, count) : null);
         AddUse(buffer, TextureState.Undefined, scope, discard, binding, repeated);
         return this;
     }

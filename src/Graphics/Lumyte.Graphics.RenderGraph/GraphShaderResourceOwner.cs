@@ -110,10 +110,12 @@ internal sealed class GraphShaderResourceOwner : IRenderGraphPreparation
 
             // Shader-data copies and cached references retain table identities. Connect all uses of the same allocation,
             // including copy-only passes, without executing callbacks or inspecting their closures.
+            // Reference-free shader data has no embedded table slots: sharing its bytes
+            // must not fuse independent compute/raster descriptor shapes.
             var ranges = new List<(RenderGraphPass Pass, GraphShaderBinding Binding)>();
             foreach (RenderGraphPass pass in context.LivePasses)
             {
-                GraphShaderBinding[] data = _uses[pass].SelectMany(use => use.Bindings ?? []).Where(binding => binding.ShaderData).ToArray();
+                GraphShaderBinding[] data = _uses[pass].SelectMany(use => use.Bindings ?? []).Where(binding => binding.ContainsReferences).ToArray();
                 foreach (GraphShaderBinding binding in data)
                 {
                     foreach ((RenderGraphPass previous, GraphShaderBinding other) in ranges)

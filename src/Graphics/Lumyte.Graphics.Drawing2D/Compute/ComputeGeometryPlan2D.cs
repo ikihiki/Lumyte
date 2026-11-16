@@ -230,7 +230,7 @@ internal sealed class ComputeGeometryPlan2D
                             segment.P0,
                             segment.P1,
                             segment.P1,
-                            Subdivisions(a, segment.P0, segment.P1, segment.P1, false, transform),
+                            Subdivisions(a, segment.P0, segment.P1, segment.P1, false, transform, stroke),
                             false);
                         position = segment.P1;
                         break;
@@ -241,7 +241,7 @@ internal sealed class ComputeGeometryPlan2D
                             segment.P0,
                             segment.P1,
                             segment.P2,
-                            Subdivisions(a, segment.P0, segment.P1, segment.P2, true, transform),
+                            Subdivisions(a, segment.P0, segment.P1, segment.P2, true, transform, stroke),
                             false);
                         position = segment.P2;
                         break;
@@ -290,8 +290,13 @@ internal sealed class ComputeGeometryPlan2D
         }
     }
 
-    private static int Subdivisions(Vector2 a, Vector2 b, Vector2 c, Vector2 d, bool cubic, Matrix3x2 transform)
+    private static int Subdivisions(Vector2 a, Vector2 b, Vector2 c, Vector2 d, bool cubic, Matrix3x2 transform, StrokeStyle2D? stroke)
     {
+        if (stroke is not null)
+        {
+            return ComputeStrokeSubdivision2D.Count(a, b, c, d, cubic, transform, stroke.Width);
+        }
+
         // Transform second differences directly: translation cancellation cannot destroy curvature.
         double x = (double)a.X - (2.0 * b.X) + c.X;
         double y = (double)a.Y - (2.0 * b.Y) + c.Y;
