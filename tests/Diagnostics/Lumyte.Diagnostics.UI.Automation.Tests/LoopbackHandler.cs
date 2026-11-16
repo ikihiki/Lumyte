@@ -114,7 +114,7 @@ internal sealed class LoopbackHandler : HttpMessageHandler
                             operations[0] = operations[0] with { RequiredPermission = DiagnosticPermission.Edit };
                         }
 
-                        SessionSnapshot[] sessions = [new(h.Session, Guid.NewGuid(), [new(new("ui.automation", "UI automation", 1), operations)], 0, 0, 0)];
+                        SessionSnapshot[] sessions = [new(h.Session, Guid.NewGuid(), [new(new("ui.automation", "UI automation", 4), operations)], 0, 0, 0)];
                         request.Completion.SetResult(Json(JsonSerializer.SerializeToUtf8Bytes(sessions, DiagnosticJson.Context.SessionSnapshotArray)));
                     }
                 }

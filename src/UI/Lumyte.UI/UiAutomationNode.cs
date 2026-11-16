@@ -5,7 +5,7 @@ namespace Lumyte.UI;
 /// <summary>An immutable, detached copy of one element's semantics and logical geometry.</summary>
 public sealed class UiAutomationNode
 {
-    internal UiAutomationNode(UiAutomationId id, UiAutomationId? parentId, string? testId, string? name, UiRole role, Rect2D bounds, Rect2D clippedBounds, bool visible, bool enabled, bool hitTestVisible, bool focusable, bool focused, bool pressed, bool activePress, UiAutomationActions actions, bool transitioning = false, Rect2D contentBounds = default, Rect2D actionableBounds = default, double? value = null, bool isIndeterminate = false)
+    internal UiAutomationNode(UiAutomationId id, UiAutomationId? parentId, string? testId, string? name, UiRole role, Rect2D bounds, Rect2D clippedBounds, bool visible, bool enabled, bool hitTestVisible, bool focusable, bool focused, bool pressed, bool activePress, UiAutomationActions actions, bool transitioning = false, Rect2D contentBounds = default, Rect2D actionableBounds = default, double? value = null, bool isIndeterminate = false, bool? isChecked = null, bool? isSelected = null, UiAutomationId? selectionGroup = null, string? optionKey = null, string? selectedKey = null)
     {
         Id = id;
         ParentId = parentId;
@@ -27,6 +27,11 @@ public sealed class UiAutomationNode
         IsTransitioning = transitioning;
         Value = value;
         IsIndeterminate = isIndeterminate;
+        IsChecked = isChecked;
+        IsSelected = isSelected;
+        SelectionGroup = selectionGroup;
+        OptionKey = optionKey;
+        SelectedKey = selectedKey;
     }
 
     /// <summary>Gets the connection identity.</summary>
@@ -85,6 +90,21 @@ public sealed class UiAutomationNode
 
     /// <summary>Gets a value indicating whether the component represents indeterminate progress.</summary>
     public bool IsIndeterminate { get; }
+
+    /// <summary>Gets detached component selection metadata.</summary>
+    public bool? IsChecked { get; }
+
+    /// <summary>Gets detached component selection metadata.</summary>
+    public bool? IsSelected { get; }
+
+    /// <summary>Gets detached component selection metadata.</summary>
+    public UiAutomationId? SelectionGroup { get; }
+
+    /// <summary>Gets detached component selection metadata.</summary>
+    public string? OptionKey { get; }
+
+    /// <summary>Gets detached component selection metadata.</summary>
+    public string? SelectedKey { get; }
 
     /// <summary>Gets component capabilities independent of role.</summary>
     public UiAutomationActions Actions { get; }

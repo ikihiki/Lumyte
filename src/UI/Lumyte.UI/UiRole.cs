@@ -32,4 +32,19 @@ public enum UiRole
 
     /// <summary>An indeterminate busy indicator.</summary>
     BusyIndicator,
+
+    /// <summary>A checked command button.</summary>
+    ToggleButton,
+
+    /// <summary>A nullable check box.</summary>
+    CheckBox,
+
+    /// <summary>An on/off switch.</summary>
+    Switch,
+
+    /// <summary>A single selection group.</summary>
+    RadioGroup,
+
+    /// <summary>A single selectable option.</summary>
+    RadioButton,
 }

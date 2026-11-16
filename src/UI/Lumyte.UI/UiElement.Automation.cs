@@ -22,6 +22,31 @@ public partial class UiElement
 
     internal bool AutomationActivePress => HasAutomationActivePress;
 
+    internal bool? SemanticAutomationChecked => AutomationChecked;
+
+    internal bool? SemanticAutomationSelected => AutomationSelected;
+
+    internal UiAutomationId? SemanticAutomationSelectionGroup => AutomationSelectionGroup;
+
+    internal string? SemanticAutomationOptionKey => AutomationOptionKey;
+
+    internal string? SemanticAutomationSelectedKey => AutomationSelectedKey;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual bool? AutomationChecked => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual bool? AutomationSelected => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual UiAutomationId? AutomationSelectionGroup => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual string? AutomationOptionKey => null;
+
+    /// <summary>Gets the detached component selection metadata.</summary>
+    protected virtual string? AutomationSelectedKey => null;
+
     /// <summary>Gets the metadata and subtree exposure policy.</summary>
     protected virtual UiAutomationExposure AutomationExposure => UiAutomationExposure.Default;
 
