@@ -316,7 +316,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
         _pipeline.ValidateAlive();
 
-        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, registrations, _depthFormat, indexed ? _indexFormat : null);
+        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, table?.LayoutKey, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
         if (registrations != null)
         {

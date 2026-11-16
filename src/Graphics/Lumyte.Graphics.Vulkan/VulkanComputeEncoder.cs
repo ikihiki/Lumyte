@@ -199,7 +199,7 @@ internal sealed unsafe class VulkanComputeEncoder(VulkanCommandBuffer owner) : I
 
         _pipeline.ValidateAlive();
 
-        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(registrations));
+        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Compute, _pipeline.Resolve(table?.LayoutKey));
         if (registrations != null)
         {
             VulkanShaderBinding binding = table!.AcquireBinding(registrations, _pipeline.ArgumentLayout);
