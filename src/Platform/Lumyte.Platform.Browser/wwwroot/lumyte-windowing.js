@@ -1,6 +1,6 @@
 const owners = new WeakMap();
 
-export function attach(canvas, title, width, height, preserveFocus) {
+export function attach(canvas, title, width, height, preserveFocus, ownWheelDefaults = false) {
     if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected) {
         throw new Error("Provide a connected HTMLCanvasElement.");
     }
@@ -35,8 +35,8 @@ export function attach(canvas, title, width, height, preserveFocus) {
         if (!handle.detached) handle.events.push(...snapshot(handle));
     };
     handle.listeners = [];
-    const listen = (name, callback) => {
-        canvas.addEventListener(name, callback);
+    const listen = (name, callback, options) => {
+        canvas.addEventListener(name, callback, options);
         handle.listeners.push([name, callback]);
     };
     handle.windowListeners = [];
@@ -135,12 +135,15 @@ export function attach(canvas, title, width, height, preserveFocus) {
     handle.connectionObserver = new MutationObserver(visibility);
     handle.connectionObserver.observe(document, { childList: true, subtree: true });
     listen("wheel", event => {
+        if (!handle.inputEnabled || handle.detached || !canvas.isConnected || document.hidden) return;
+        // Explicit canvas ownership includes Ctrl+wheel browser zoom, never page-wide defaults.
+        if (ownWheelDefaults && handle.visible && !handle.inputFault) event.preventDefault();
         const divisor = event.deltaMode === 0 ? 120 : event.deltaMode === 1 ? 3 : 1;
         const rect = canvas.getBoundingClientRect();
         const capture = ++handle.captureSequence;
         record({ type: 1, x: (event.clientX - rect.left) * canvas.clientWidth / rect.width, y: (event.clientY - rect.top) * canvas.clientHeight / rect.height, capture },
             { type: 3, x: event.deltaX / divisor, y: -event.deltaY / divisor, capture });
-    });
+    }, { passive: false });
     handle.setLogicalFocus = focused => {
         if (handle.logicalFocus !== focused) {
             handle.logicalFocus = focused;

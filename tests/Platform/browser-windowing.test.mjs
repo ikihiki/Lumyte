@@ -22,7 +22,9 @@ class Canvas {
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     setAttribute(name, value) { this.attributes.set(name, value); }
     removeAttribute(name) { this.attributes.delete(name); }
-    addEventListener(name, callback) {
+    addEventListener(name, callback, options) {
+        this.listenerOptions ??= new Map();
+        this.listenerOptions.set(name, options);
         const callbacks = this.listeners.get(name) ?? new Set();
         callbacks.add(callback);
         this.listeners.set(name, callbacks);
@@ -83,12 +85,15 @@ test("nonactivating displays preserve focus and DOM input is drained once in rec
     assert.equal(document.activeElement, originalFocus);
     canvas.dispatch("keydown", { code: "KeyA", repeat: false });
     canvas.dispatch("pointermove", { pointerType: "mouse", pointerId: 1, buttons: 0, clientX: 30, clientY: 25 });
-    canvas.dispatch("wheel", { deltaX: 60, deltaY: 120, deltaMode: 0 });
+    canvas.dispatch("wheel", { clientX: 35, clientY: 30, deltaX: 60, deltaY: 120, deltaMode: 0 });
     const events = JSON.parse(api.drainInput(handle));
-    assert.deepEqual(events.map(e => e.type), [0, 1, 3]);
+    assert.deepEqual(events.map(e => e.type), [0, 1, 1, 3]);
     assert.equal(events[0].code, "KeyA");
     assert.equal(events[1].x, 20);
-    assert.equal(events[2].y, -1);
+    assert.equal(events[2].x, 25);
+    assert.equal(events[2].y, 10);
+    assert.equal(events[2].capture, events[3].capture);
+    assert.equal(events[3].y, -1);
     assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
     canvas.isConnected = false;
     assert.equal(api.snapshot(handle)[7], 0);
@@ -194,4 +199,47 @@ test("DOM acquisition overflow is bounded and reported without normalizing lost 
     api.setInputEnabled(handle, false);
     assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
     api.detach(handle);
+});
+
+
+test("wheel defaults are opt-in, canvas-scoped and released with input ownership", () => {
+    for (const ownWheelDefaults of [true, false]) {
+        const canvas = new Canvas();
+        const handle = api.attach(canvas, "wheel ownership", 100, 50, true, ownWheelDefaults);
+        api.show(handle, true);
+        const wheel = (ctrlKey = false) => {
+            let prevented = false;
+            canvas.dispatch("wheel", { clientX: 30, clientY: 35, deltaX: 0, deltaY: -120, deltaMode: 0, ctrlKey,
+                preventDefault() { prevented = true; } });
+            return prevented;
+        };
+        for (const ctrl of [false, true]) {
+            assert.equal(wheel(ctrl), ownWheelDefaults, "only opted-in canvas owns defaults");
+            assert.deepEqual(JSON.parse(api.drainInput(handle)).map(e => e.type), [1, 3]);
+        }
+        assert.equal(window.listeners.get("wheel")?.size ?? 0, 0, "no blanket window wheel handler");
+        assert.deepEqual(canvas.listenerOptions.get("wheel"), { passive: false });
+        api.setInputEnabled(handle, false);
+        assert.equal(wheel(true), false);
+        assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
+        api.setInputEnabled(handle, true);
+        api.drainInput(handle);
+        assert.equal(wheel(), ownWheelDefaults);
+        api.drainInput(handle);
+        api.show(handle, false);
+        assert.equal(wheel(true), false, "hidden canvas does not own defaults");
+        api.drainInput(handle);
+        api.show(handle, true);
+        canvas.isConnected = false;
+        assert.equal(wheel(true), false);
+        assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
+        canvas.isConnected = true;
+        document.hidden = true;
+        assert.equal(wheel(true), false, "hidden page does not own defaults");
+        assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
+        document.hidden = false;
+        api.detach(handle);
+        assert.equal(wheel(true), false);
+        assert.deepEqual(JSON.parse(api.drainInput(handle)), []);
+    }
 });
