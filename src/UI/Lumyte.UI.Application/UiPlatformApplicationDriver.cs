@@ -618,6 +618,17 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         return recorded;
     }
 
+    internal override async ValueTask<T> WithGraphicsAsync<T>(Func<IGraphicDevice, ValueTask<T>> action)
+    {
+        using UiFrameSubmissionQueue.Flight flight = await _framesInFlight.EnterAsync();
+        if (_device is null || _lease?.IsUsable != true || _faulted)
+        {
+            throw new UiApplicationException("graphics-unavailable");
+        }
+
+        return await action(_device);
+    }
+
     protected abstract ValueTask<(IPlatform Platform, ITextInputService? Text)> CreatePlatformAsync(bool textInput, CancellationToken cancellationToken);
 
     protected virtual ValueTask<ITextInputService?> CreateTextServiceAsync(IPlatform platform, CancellationToken cancellationToken) => ValueTask.FromResult<ITextInputService?>(null);

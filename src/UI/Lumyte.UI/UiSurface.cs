@@ -21,7 +21,7 @@ public sealed partial class UiSurface : IDisposable
         try
         {
             PrepareAnimationUpdates(plan);
-            plan.Prepare();
+            plan.Prepare(this);
             PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {

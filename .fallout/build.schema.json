@@ -75,6 +75,7 @@
         "TestUiMedia",
         "TestUiNavigation",
         "TestUiPages",
+        "TestUiWebView",
         "TestWasm",
         "TestWindowing",
         "VerifyEnvironment",

@@ -73,6 +73,14 @@ internal sealed partial class Build
             await RunManagedSampleAsync("samples/Lumyte.UI.Media.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         });
 
+    private Target TestUiWebView => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.WebView.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.WebView.Sample", "--selfcheck").ConfigureAwait(false);
+        });
+
     private Target TestUiLayout => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
@@ -308,6 +316,8 @@ internal sealed partial class Build
         {
             await RunManagedSampleAsync(project).ConfigureAwait(false);
         }
+
+        await RunManagedSampleAsync("samples/Lumyte.UI.WebView.Sample", "--selfcheck").ConfigureAwait(false);
 
         Directory.CreateDirectory(ArtifactRoot);
         string settings = Path.Combine(ArtifactRoot, "sample-input-" + Guid.NewGuid().ToString("N") + ".json");

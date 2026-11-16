@@ -6,6 +6,9 @@ internal interface IUiApplicationParticipant
     /// <summary>Gets a value indicating whether accepted integration work has drained.</summary>
     bool IsStopped { get; }
 
+    /// <summary>Gets an optional deadline for owner work.</summary>
+    TimeSpan? NextWorkDelay => null;
+
     /// <summary>Starts explicitly configured integration services.</summary>
     /// <param name="cancellationToken">Startup cancellation.</param>
     /// <returns>Startup completion.</returns>
@@ -23,6 +26,11 @@ internal interface IUiApplicationParticipant
     /// <param name="context">The retiring window.</param>
     /// <returns>Whether teardown may continue.</returns>
     bool IsWindowStopped(UiApplicationWindowContext context);
+
+    /// <summary>Retires integration GPU resources after frame drain and surface detach, before native destruction.</summary>
+    /// <param name="context">The retiring window.</param>
+    /// <returns>Completion of resource retirement.</returns>
+    ValueTask RetireWindowResourcesAsync(UiApplicationWindowContext context) => ValueTask.CompletedTask;
 
     /// <summary>Advances integration work.</summary>
     void Advance();

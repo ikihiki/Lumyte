@@ -70,6 +70,9 @@ public sealed class DrawingScene2D : IDisposable
             }
 
             bool added = target.Content is null;
+            IDisposable resources = ImageResourceRegistry2D.Retain([content]);
+            target.Resources?.Dispose();
+            target.Resources = resources;
             target.Content = content;
             target.ContentRevision = ++_revision;
             if (added)
@@ -190,6 +193,8 @@ public sealed class DrawingScene2D : IDisposable
                     pending.Push(child);
                 }
 
+                current.Resources?.Dispose();
+                current.Resources = null;
                 int slot = current.Id.Slot;
                 _nodes[slot] = null;
                 if (_generations[slot] != ulong.MaxValue)
@@ -235,6 +240,10 @@ public sealed class DrawingScene2D : IDisposable
         lock (_gate)
         {
             _disposed = true;
+            foreach (Node? node in _nodes)
+            {
+                node?.Resources?.Dispose();
+            }
         }
     }
 
@@ -470,6 +479,8 @@ public sealed class DrawingScene2D : IDisposable
         internal Node? Parent { get; set; } = parent;
 
         internal DrawList2D? Content { get; set; } = content;
+
+        internal IDisposable? Resources { get; set; } = content is null ? null : ImageResourceRegistry2D.Retain([content]);
 
         internal List<Node> Children { get; } = [];
 

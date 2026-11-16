@@ -61,7 +61,7 @@ public sealed partial class UiApplicationViewSlot
             {
                 slot._application.Owner.CheckOwner();
                 slot._application.ValidateEditors(root);
-                _candidate = new(slot._application, slot._window, root) { Suspended = true };
+                _candidate = new(slot._application, slot._window, root, slot.Context) { Suspended = true };
                 _candidate.Visuals.SuspendPublication();
                 _candidate.Host.Pause();
                 _candidate.Surface.SetSignalUpdatesEnabled(false);

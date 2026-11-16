@@ -8,11 +8,15 @@ public sealed class UiElementUpdateContext
     private readonly Widget _next;
     private readonly IReadOnlyList<UiElement>[] _slots;
 
-    internal UiElementUpdateContext(Widget next, IReadOnlyList<UiElement>[] slots)
+    internal UiElementUpdateContext(UiSurface surface, Widget next, IReadOnlyList<UiElement>[] slots)
     {
+        Surface = surface;
         _next = next;
         _slots = slots;
     }
+
+    /// <summary>Gets the intended owning surface before publication, including first mount.</summary>
+    public UiSurface Surface { get; }
 
     internal bool InputCancellationRequested { get; private set; }
 

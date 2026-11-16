@@ -44,7 +44,7 @@ public sealed partial class UiSurface
                 {
                     using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
                     PrepareAnimationUpdates(plan);
-                    plan.Prepare();
+                    plan.Prepare(this);
                     PrepareSignalUpdates(plan);
                     if (_isDisposed)
                     {
@@ -93,7 +93,7 @@ public sealed partial class UiSurface
         {
             using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate);
             PrepareAnimationUpdates(plan);
-            plan.Prepare();
+            plan.Prepare(this);
             PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {

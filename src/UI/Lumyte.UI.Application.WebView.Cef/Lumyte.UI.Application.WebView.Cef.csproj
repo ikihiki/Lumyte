@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><IsPackable>false</IsPackable><IsAotCompatible>false</IsAotCompatible></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.UI.Application.Desktop/Lumyte.UI.Application.Desktop.csproj" />
+    <ProjectReference Include="../Lumyte.UI.WebView.Cef/Lumyte.UI.WebView.Cef.csproj" />
+  </ItemGroup>
+</Project>

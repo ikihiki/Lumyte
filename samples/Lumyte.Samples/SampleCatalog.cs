@@ -35,6 +35,7 @@ internal static class SampleCatalog
         new("ui-media", "UI: 借用mediaと進捗 (font file が必要)", Native("headless", "UI.Media")),
         new("ui-controls", "UI: 選択と切替の設定画面 (font file が必要)", Native("headless", "UI.Controls")),
         new("ui-layout", "UI: 一回計測のFlex・Wrap・Grid", Native("headless", "UI.Layout")),
+        new("ui-webview", "UI: engine-free selfcheck; experimental CEF requires explicit opt-in", Native("managed", "UI.WebView", "--selfcheck"), Native("cef-experimental", "UI.WebView.Cef", "--enable-experimental-cef")),
         Managed("ui-functions", "UI: 関数コンポーネントとUseSignal", "UI.Functions"),
         new("pipeline-benchmark", "測定: Vulkan pipeline cache 比較", Native("vulkan", "Graphics.DeviceCaps", "vulkan", "pipeline-benchmark")),
     ];

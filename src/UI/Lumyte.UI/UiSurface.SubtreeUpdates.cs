@@ -99,7 +99,7 @@ public sealed partial class UiSurface
             try
             {
                 PrepareAnimationUpdates(plan);
-                plan.Prepare();
+                plan.Prepare(this);
                 PrepareSignalUpdates(plan);
                 if (!_isDisposed)
                 {

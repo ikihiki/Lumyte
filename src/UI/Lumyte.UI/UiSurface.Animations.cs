@@ -108,6 +108,9 @@ public sealed partial class UiSurface
                 if (_presenceEntries.Count != 0)
                 {
                     AdvanceVisuals(capturedTime!.Value);
+
+                    // Presence completion can hide a subtree after its frame callback ran.
+                    FreezeHiddenFrameAnimations();
                 }
 
                 if (_isDisposed || _animationProducers.Count == 0)

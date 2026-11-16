@@ -273,7 +273,7 @@ public sealed partial class UiSurface
             }
         }
 
-        internal void Prepare()
+        internal void Prepare(UiSurface surface)
         {
             var changedVisuals = new HashSet<UiElement>(Updates.Select(update => update.Element), ReferenceEqualityComparer.Instance);
             changedVisuals.UnionWith(Removed);
@@ -324,7 +324,7 @@ public sealed partial class UiSurface
             foreach (ElementUpdate update in Updates)
             {
                 update.Invalidation = update.Element.ConfigurationChanges(update.Next) | (update.ChildrenChanged ? UiInvalidation.Layout : UiInvalidation.None);
-                var context = new UiElementUpdateContext(update.Next, update.Slots);
+                var context = new UiElementUpdateContext(surface, update.Next, update.Slots);
                 update.Commit = update.Content?.Commit + update.Element.Prepare(update.Next, context);
                 update.CancelInput = context.InputCancellationRequested;
             }

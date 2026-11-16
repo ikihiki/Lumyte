@@ -247,6 +247,14 @@ public sealed partial class UiApplication : IAsyncDisposable
                 if (!Completion.IsCompleted)
                 {
                     TimeSpan timeout = FrameWait();
+                    foreach (IUiApplicationParticipant participant in _participants)
+                    {
+                        if (participant.NextWorkDelay is { } delay && delay < timeout)
+                        {
+                            timeout = delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
+                        }
+                    }
+
                     using UiApplicationProfiling.Scope? waitProfile = UiApplicationProfiling.Begin(2);
                     try
                     {

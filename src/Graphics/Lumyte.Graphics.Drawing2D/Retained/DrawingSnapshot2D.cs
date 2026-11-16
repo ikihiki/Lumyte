@@ -6,12 +6,14 @@ public sealed class DrawingSnapshot2D : IDisposable, IDrawingSceneSource2D
 {
     private readonly ulong _revision;
     private readonly IReadOnlyList<DrawingSceneEntry2D> _entries;
+    private readonly IDisposable _resources;
     private bool _disposed;
 
     internal DrawingSnapshot2D(ulong revision, DrawingSceneEntry2D[] entries)
     {
         _revision = revision;
         _entries = Array.AsReadOnly(entries);
+        _resources = ImageResourceRegistry2D.Retain(entries.Select(entry => entry.Content));
     }
 
     /// <summary>Gets the frozen scene revision.</summary>
@@ -35,5 +37,15 @@ public sealed class DrawingSnapshot2D : IDisposable, IDrawingSceneSource2D
     }
 
     /// <summary>Ends consumption of this snapshot; does not release caller-owned GPU resources.</summary>
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        _disposed = true;
+        _resources.Dispose();
+    }
+
+    internal IDisposable RetainResources()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return ImageResourceRegistry2D.Retain(_entries.Select(entry => entry.Content));
+    }
 }
