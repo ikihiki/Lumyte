@@ -6,7 +6,7 @@ M1 supports uncompressed local MVT 2, not OSM XML/PBF, HTTP, gzip, arbitrary ven
 
 Existing solution inspection supplied for this implementation:
 
-- bertt/mapbox-vector-tile-cs at ecefc028181e0197aca77b2d7ac2ea278f55cbbf, src/VectorTileParser.cs: public entry invokes Serializer.Deserialize<Tile>(stream) before application limits can be checked.
+- bertt/mapbox-vector-tile-cs at ecefc028181e0197aca77b2d7ac2ea278f55cbbf, src/VectorTileParser.cs: public entry invokes `Serializer.Deserialize<Tile>(stream)` before application limits can be checked.
 - NetTopologySuite.IO.VectorTiles develop at 16c930fc14f2ba912111684310d9da25370f759d, MapboxTileReader.Read: whole-tile protobuf deserialization likewise precedes application validation.
 
 Neither inspected public entry accepts an allocator or per-construction allocation limits. Post-deserialization feature counting cannot enforce the ADR's pre-allocation requirement. This is the narrowly authorized gap filled here; it is not a claim that those projects are otherwise unsuitable. No dependency from either is copied or introduced. License/maintenance and Browser/AOT evaluation of those candidates is not complete; this parser's Browser/AOT compatibility is also untested.
