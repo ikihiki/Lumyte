@@ -1,9 +1,12 @@
 <Solution>
   <Folder Name="/src/Maps/">
+    <Project Path="src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <Project Path="src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
   </Folder>
   <Folder Name="/tests/Maps/">
+    <Project Path="tests/Maps/Lumyte.Maps.Session.Tests/Lumyte.Maps.Session.Tests.csproj" />
+    <Project Path="tests/Maps/Lumyte.Maps.UI.Tests/Lumyte.Maps.UI.Tests.csproj" />
     <Project Path="tests/Maps/Lumyte.Maps.Tests/Lumyte.Maps.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/Graphics/">
@@ -52,6 +55,7 @@
     <Project Path="benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Maps.Sample/Lumyte.Maps.Sample.csproj" />
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />
     <Project Path="samples/Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />

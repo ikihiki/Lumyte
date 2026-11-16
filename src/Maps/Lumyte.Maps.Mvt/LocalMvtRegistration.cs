@@ -19,6 +19,8 @@ public sealed class LocalMvtRegistration
         ArgumentException.ThrowIfNullOrWhiteSpace(contentVersion);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(files);
+        DataSetId = dataSetId;
+        ContentVersion = contentVersion;
         Profile = profile;
         Prefix = $"mvt/{Uri.EscapeDataString(dataSetId)}/{Uri.EscapeDataString(contentVersion)}/{profile.Fingerprint}";
         Variant = $"mvt2-bounded-v1/{MvtDecoder.SchemaId}/{profile.Fingerprint}";
@@ -30,6 +32,12 @@ public sealed class LocalMvtRegistration
 
         _files = copied;
     }
+
+    /// <summary>Gets the immutable dataset identity.</summary>
+    public string DataSetId { get; }
+
+    /// <summary>Gets the immutable content version.</summary>
+    public string ContentVersion { get; }
 
     /// <summary>Gets the immutable profile.</summary>
     public MapTileLoadProfile Profile { get; }

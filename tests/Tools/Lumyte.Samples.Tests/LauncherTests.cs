@@ -53,6 +53,19 @@ public sealed class LauncherTests
         Assert.Empty(console.Output);
     }
 
+    /// <summary>Verifies the fixed local map consumer is registered in the real launcher.</summary>
+    [Fact]
+    public void MapsSampleSelectsTheHeadlessPublicConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "maps", "--backend", "headless"]), console);
+        Assert.Equal("maps", sample.Id);
+        Assert.Equal("samples/Lumyte.Maps.Sample", backend.Project);
+        Assert.Equal(["headless"], backend.Arguments);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies the launcher contract.</summary>
     [Fact]
     public void MissingBackendPromptsOnlyForCompatibleBackends()

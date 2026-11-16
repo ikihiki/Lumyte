@@ -35,6 +35,8 @@ public sealed class LocalMvtResourceTests
             var other = new LocalMvtRegistration("fixture", "1", new("bounded", maxVertices: 200), new Dictionary<MapTileId, string> { [id] = file });
             var same = new LocalMvtRegistration("fixture", "1", new("bounded"), new Dictionary<MapTileId, string> { [id] = file });
             Assert.Equal(registration.GetKey(id), same.GetKey(id));
+            await using ResourceManager mismatched = new("mismatch", source, [new MvtResourceStage(same)], memory, new InlineRuntime());
+            await Assert.ThrowsAsync<InvalidOperationException>(async () => await mismatched.RetainAsync(same.GetKey(id)));
             Assert.NotEqual(registration.GetKey(id), other.GetKey(id));
             Assert.NotEqual(registration.GetKey(id).Address.Variant, other.GetKey(id).Address.Variant);
             Assert.Equal(registration.GetKey(id), registration.GetKey(new(0, -1, 0)));
