@@ -21,7 +21,7 @@ public sealed class UiRemoteLocator
 
     internal UiRemotePage Page { get; }
 
-    private int QueryVersion => _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
+    private int QueryVersion => _steps.Any(step => step.Role is "listbox" or "listitem" or "combobox") ? 7 : _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
 
     /// <summary>Sets a finite scalar through the server's normal numeric input lease.</summary>
     /// <param name="value">The desired finite value.</param>
@@ -103,7 +103,7 @@ public sealed class UiRemoteLocator
     /// <param name="optionKey">The desired nonempty key.</param>
     /// <param name="cancellationToken">Cancels waiting.</param>
     /// <returns>The completed job.</returns>
-    public async Task SelectOptionAsync(string optionKey, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(4, "select-option", _steps, OptionKey: optionKey), cancellationToken);
+    public async Task SelectOptionAsync(string optionKey, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(4, QueryVersion), "select-option", _steps, OptionKey: optionKey), cancellationToken);
 
     internal Task<byte[]> AssertAsync(string predicate, int? count, CancellationToken token) => Page.ExecuteAsync(new(QueryVersion, "expect", _steps, Predicate: predicate, Count: count), token);
 }

@@ -8,6 +8,7 @@ public sealed partial class UiSurface
 {
     private readonly Dictionary<long, PanCandidate> _panCandidates = [];
     private UiElement? _revealFocus;
+    private UiElement? _restoreItemFocus;
 
     /// <summary>Reveals a finite element-local rectangle through all scroll ancestors.</summary>
     /// <param name="element">The mounted target.</param>
@@ -81,8 +82,17 @@ public sealed partial class UiSurface
         return changed;
     }
 
+    internal void QueueItemFocus(UiElement target) => _restoreItemFocus = target;
+
     private void RevealPendingFocus()
     {
+        UiElement? restore = _restoreItemFocus;
+        _restoreItemFocus = null;
+        if (restore is not null && !_isDisposed && ReferenceEquals(restore.Surface, this))
+        {
+            TryFocus(restore);
+        }
+
         UiElement? target = _revealFocus;
         _revealFocus = null;
         if (target is not null && !_isDisposed && ReferenceEquals(target.Surface, this)

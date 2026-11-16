@@ -66,6 +66,7 @@
     <Project Path="samples/Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Controls.Sample/Lumyte.UI.Controls.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Collections.Sample/Lumyte.UI.Collections.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Functions.Sample/Lumyte.UI.Functions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Sample/Lumyte.UI.Transitions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Browser.Sample/Lumyte.UI.Transitions.Browser.Sample.csproj" />
@@ -188,6 +189,8 @@
   <Folder Name="/src/UI/">
     <Project Path="src/UI/Lumyte.UI.Media/Lumyte.UI.Media.csproj" />
     <Project Path="src/UI/Lumyte.UI.Controls/Lumyte.UI.Controls.csproj" />
+    <Project Path="src/UI/Lumyte.UI.Collections/Lumyte.UI.Collections.csproj" />
+    <Project Path="src/UI/Lumyte.UI.Controls.Windowing/Lumyte.UI.Controls.Windowing.csproj" />
     <Project Path="src/UI/Lumyte.UI.Media.Parley/Lumyte.UI.Media.Parley.csproj" />
     <Project Path="src/UI/Lumyte.UI.Navigation/Lumyte.UI.Navigation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Application.Navigation/Lumyte.UI.Application.Navigation.csproj" />
@@ -293,6 +296,7 @@
     <Project Path="tests/UI/Lumyte.UI.Automation.Tests/Lumyte.UI.Automation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Controls.Tests/Lumyte.UI.Controls.Tests.csproj" />
+    <Project Path="tests/UI/Lumyte.UI.Collections.Tests/Lumyte.UI.Collections.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj" />
   </Folder>

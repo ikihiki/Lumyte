@@ -1,0 +1,5 @@
+# Lumyte.UI.Controls.Windowing
+
+CollectionsとUI.Windowingを参照する任意adapter。CollectionPopupHostは既存UiPopupManagerとUiPopupOwnerを借用し、ポップアップの表示方針、入力範囲、focus復帰、終了待ちを既存管理器へ委譲する。
+
+applicationのroot構築時はPopupOwnerがまだ準備中なので、`new CollectionPopupHost(context.Popups, () => context.PopupOwner)`で所有者を遅延取得する。独立したmanagerを使う場合は既に登録済みのUiPopupOwnerを直接渡せる。adapterはmanagerやownerをDisposeしない。

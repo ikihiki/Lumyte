@@ -245,4 +245,6 @@ dotnet run --project build -c Release -- --target WgpuNative --output artifacts/
 
 ソースpin・必要なnative compiler/libclang・override・全RIDのpack条件は[native手順](../native/wgpu_native/README.md)を参照してください。未収集の他RIDをhostのbinaryで代用しません。修正前のUI測定データは旧baseの記録として保持し、修正後の結果と混ぜません。
 
+C7の検証にはTestUiCollections（項目所有権・選択・Popupと明示fontのHeadless画面）とTestUiCollectionsAot（strict NativeAOTとnative実行）を使う。
+
 C6の検証にはTestUiNumeric（Controls・TextEditing・Automationと実editorのHeadless画面）およびTestUiNumericAot（strict NativeAOTとnative実行）を使う。sampleには明示的なfont fileを渡す。

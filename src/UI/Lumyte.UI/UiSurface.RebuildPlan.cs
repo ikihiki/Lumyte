@@ -8,6 +8,7 @@ public sealed partial class UiSurface
     private sealed class RebuildPlan : IDisposable
     {
         private readonly List<(ScrollController Controller, ScrollViewElement Owner)> _scrollReservations = [];
+        private readonly Dictionary<UiElement, UiElement> _replacements = new(ReferenceEqualityComparer.Instance);
         private readonly UiElement[] _validators;
         private readonly IReadOnlyDictionary<UiSharedElementKey, UiElement>? _shared;
 
@@ -16,6 +17,11 @@ public sealed partial class UiSurface
             var retained = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             var unchanged = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             UiElement changedRoot = Match(previous, next, retained);
+            if (previous is not null && !ReferenceEquals(previous, changedRoot))
+            {
+                _replacements.Add(previous, changedRoot);
+            }
+
             Root = changedRoot;
             _validators = validators?.ToArray() ?? [];
             _shared = shared;
@@ -91,6 +97,11 @@ public sealed partial class UiSurface
                             UiElement? old = child.Key is { } key ? keyed?.GetValueOrDefault(key)
                                 : index < before.Count && before[index].Widget.Key is null ? before[index] : null;
                             UiElement current = Match(old, child, retained);
+                            if (old is not null && !ReferenceEquals(old, current))
+                            {
+                                _replacements.TryAdd(old, current);
+                            }
+
                             if (changed is null && !ReferenceEquals(before[index], current))
                             {
                                 changed = new UiElement[declared.Count];
@@ -187,6 +198,11 @@ public sealed partial class UiSurface
             var replacements = new Dictionary<UiElement, UiElement>(ReferenceEqualityComparer.Instance);
             foreach (RebuildPlan plan in plans)
             {
+                foreach ((UiElement before, UiElement after) in plan._replacements)
+                {
+                    _replacements[before] = after;
+                }
+
                 if (!ReferenceEquals(plan.Root, root))
                 {
                     Root = plan.Root;
@@ -244,7 +260,11 @@ public sealed partial class UiSurface
 
         internal UiElement Root { get; }
 
+        internal bool HasCollectionItemOwnership { get; private set; }
+
         internal List<ElementUpdate> Updates { get; } = [];
+
+        internal Dictionary<UiElement, IReadOnlyList<UiElement>> CollectionItemRootUpdates { get; } = new(ReferenceEqualityComparer.Instance);
 
         internal UiElement[] Removed { get; }
 
@@ -336,6 +356,7 @@ public sealed partial class UiSurface
             }
 
             var projection = new UiProposedTree(Root, Updates.Select(update => (update.Element, update.Next, update.Slots)));
+            PrepareCollectionOwnership(projection);
             foreach (ElementUpdate update in Updates)
             {
                 var context = new UiWidgetValidationContext(projection, update.Element);
@@ -373,6 +394,90 @@ public sealed partial class UiSurface
             }
 
             return next.CreateInstance();
+        }
+
+        private void PrepareCollectionOwnership(UiProposedTree projection)
+        {
+            if (!Root.HasCollectionItemOwnership && !Updates.Any(update => update.Content?.CollectionItemRoots is not null))
+            {
+                return;
+            }
+
+            // Inspect prepared content and unchanged siblings together, including local signal batches.
+            var elements = new Dictionary<Widget, UiElement>(ReferenceEqualityComparer.Instance);
+            var occurrences = new Dictionary<Widget, int>(ReferenceEqualityComparer.Instance);
+            var nodes = new List<UiElement>();
+            var pending = new System.Collections.Generic.Stack<UiElement>();
+            pending.Push(Root);
+            while (pending.TryPop(out UiElement? element))
+            {
+                nodes.Add(element);
+                Widget widget = projection.Configuration(element);
+                elements.TryAdd(widget, element);
+                occurrences[widget] = occurrences.GetValueOrDefault(widget) + 1;
+                foreach (UiElement child in projection.Children(element))
+                {
+                    pending.Push(child);
+                }
+            }
+
+            var changed = new Dictionary<UiElement, ElementUpdate>(ReferenceEqualityComparer.Instance);
+            foreach (ElementUpdate update in Updates)
+            {
+                changed.Add(update.Element, update);
+            }
+
+            var entries = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
+            foreach (UiElement element in nodes)
+            {
+                IReadOnlyList<UiElement> roots = element.CollectionItemRoots;
+                if (changed.TryGetValue(element, out ElementUpdate? update) && update.Content is { } content)
+                {
+                    // Resolve immutable declaration boundaries to this proposal's actual identities.
+                    roots = content.CollectionItemRoots is { } declarations
+                        ? Array.AsReadOnly(declarations.Select(root => elements[root]).ToArray())
+                        : Array.Empty<UiElement>();
+                    CollectionItemRootUpdates[element] = roots;
+                }
+                else if (roots.Any(_replacements.ContainsKey))
+                {
+                    // A custom recreation can replace the item entry element itself.
+                    roots = Array.AsReadOnly(roots.Select(root => _replacements.GetValueOrDefault(root, root)).ToArray());
+                    CollectionItemRootUpdates[element] = roots;
+                }
+
+                entries.UnionWith(roots);
+            }
+
+            HasCollectionItemOwnership = entries.Count != 0;
+            if (entries.Count == 0)
+            {
+                return;
+            }
+
+            var scoped = new System.Collections.Generic.Stack<(UiElement Element, bool InItem)>();
+            scoped.Push((Root, false));
+            while (scoped.TryPop(out (UiElement Element, bool InItem) item))
+            {
+                UiElement element = item.Element;
+                bool inItem = item.InItem || entries.Contains(element);
+                if (inItem)
+                {
+                    Widget widget = projection.Configuration(element);
+
+                    // An unchanged declaration is legal only on the very same mounted element.
+                    int ownMount = element.IsMounted && ReferenceEquals(element.Widget, widget) ? 1 : 0;
+                    if (occurrences[widget] != 1 || widget.MountedInstanceCount != ownMount)
+                    {
+                        throw new InvalidOperationException("Realized item descendants must be disjoint and cannot be mounted elsewhere.");
+                    }
+                }
+
+                foreach (UiElement child in projection.Children(element))
+                {
+                    scoped.Push((child, inItem));
+                }
+            }
         }
     }
 
