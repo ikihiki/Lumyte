@@ -14,7 +14,7 @@ public sealed class SchemaTests
     [InlineData("{}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"actorId\":\"admin\"}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"kind\":\"click\",\"locator\":[]}")]
-    [InlineData("{\"schemaVersion\":5,\"kind\":\"snapshot\",\"locator\":[]}")]
+    [InlineData("{\"schemaVersion\":7,\"kind\":\"snapshot\",\"locator\":[]}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"position\":{\"x\":0,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"position\":{\"x\":-1,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"press\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"key\":\"enter\"}")]
@@ -22,6 +22,27 @@ public sealed class SchemaTests
     [InlineData("{\"schemaVersion\":1,\"kind\":\"expect\",\"locator\":[{\"kind\":\"role\",\"role\":\"button\"}],\"predicate\":\"visible\",\"count\":0}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\",\"value\":\"other\"}]}")]
     public void RejectsInvalidPlans(string json) => Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan(json));
+
+    /// <summary>Checks wheel input is versioned, finite and requires input authority.</summary>
+    [Fact]
+    public void ScrollPlansRequireVersionFiveAndFiniteDelta()
+    {
+        var plan = new UiRemotePlan(5, "scroll", [new("test-id", "viewport")], Position: new(-20, 40));
+        UiRemotePlan parsed = UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(plan));
+        Assert.True(UiRemoteSchema.IsAction(parsed));
+        Assert.Equal(plan.Position, parsed.Position);
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { SchemaVersion = 4 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { Position = null }));
+    }
+
+    /// <summary>Raw JSON rejects nonfinite doubles and finite doubles outside the float delta range.</summary>
+    /// <param name="number">The raw JSON numeric token.</param>
+    [Theory]
+    [InlineData("1e999")]
+    [InlineData("-1e999")]
+    [InlineData("3.5e38")]
+    [InlineData("-3.5e38")]
+    public void RawScrollDeltaMustFitFiniteFloat(string number) => Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":5,\"kind\":\"scroll\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"viewport\"}],\"position\":{\"x\":" + number + ",\"y\":0}}"));
 
     /// <summary>Checks canonical modifier normalization, explicit nullable fields and copied arrays.</summary>
     [Fact]
@@ -122,4 +143,40 @@ public sealed class SchemaTests
             Assert.NotEqual("success", h.Start(plan).Status);
         }
     }
+
+    /// <summary>Finite scalar/range commands require version 6 and cannot carry unrelated fields.</summary>
+    [Fact]
+    public void NumericPlansAreFiniteClosedVersionSixCommands()
+    {
+        var scalar = new UiRemotePlan(6, "set-value", [new("test-id", Value: "scalar")], NumericValue: double.MaxValue);
+        Assert.True(UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(scalar))));
+        UiRemotePlan range = scalar with { Kind = "set-range", NumericValue = -double.MaxValue, NumericUpper = double.MaxValue };
+        Assert.True(UiRemoteSchema.IsAction(UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(range))));
+        foreach (int version in new[] { 1, 2, 3, 4, 5 })
+        {
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(range with { SchemaVersion = version }));
+            Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(new(version, "count", [new("role", Role: "slider")])));
+            Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":" + version + ",\"kind\":\"snapshot\",\"locator\":[],\"numericValue\":null}"));
+        }
+
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(scalar with { NumericValue = null }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(scalar with { NumericUpper = 2 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(range with { NumericValue = 2, NumericUpper = 1 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(range with { Text = "private" }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(range with { Position = new(0, 0) }));
+        Assert.Throws<ArgumentException>(() => UiRemoteSchema.SerializePlan(scalar with { NumericValue = double.NaN }));
+        Assert.Throws<ArgumentException>(() => UiRemoteSchema.SerializePlan(scalar with { NumericValue = double.PositiveInfinity }));
+        using var h = new Harness();
+        Assert.NotEqual("success", h.Start(scalar).Status);
+    }
+
+    /// <summary>Raw numeric overflow, strings, unknown and duplicate fields are rejected before input.</summary>
+    /// <param name="token">The raw JSON token.</param>
+    [Theory]
+    [InlineData("1e999")]
+    [InlineData("-1e999")]
+    [InlineData("\"NaN\"")]
+    [InlineData("\"Infinity\"")]
+    [InlineData("null")]
+    public void RawNumericCommandsRejectNonfiniteTokens(string token) => Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":6,\"kind\":\"set-value\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"scalar\"}],\"numericValue\":" + token + "}"));
 }

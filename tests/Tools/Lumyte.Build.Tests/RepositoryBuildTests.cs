@@ -23,6 +23,71 @@ public sealed class RepositoryBuildTests
         Assert.Contains("--no-restore", Arguments(records[0]));
     }
 
+    /// <summary>The scroll gate invokes both suites and the public sample.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task ScrollGateUsesCoreControlsAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScroll", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Tests", Arguments(records[0]));
+        Assert.Contains("tests/UI/Lumyte.UI.Controls.Tests", Arguments(records[1]));
+        Assert.Contains("samples/Lumyte.UI.Scroll.Sample", Arguments(records[2]));
+    }
+
+    /// <summary>The scroll native gate publishes with both strict warning switches.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task ScrollAotGateUsesStrictPublishAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScrollAot", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        JsonElement publish = Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("samples/Lumyte.UI.Scroll.Sample", Arguments(publish));
+        Assert.Contains("-p:PublishAot=true", Arguments(publish));
+        Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
+    }
+
+    /// <summary>The numeric gate runs actual control, editor and automation suites plus the public sample.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task NumericGateUsesActualEditorAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiNumeric", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "test", "test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Controls.Tests", Arguments(records[0]));
+        Assert.Contains("tests/UI/Lumyte.UI.TextEditing.Tests", Arguments(records[1]));
+        Assert.Contains("tests/UI/Lumyte.UI.Automation.Tests", Arguments(records[2]));
+        Assert.Contains("samples/Lumyte.UI.Numeric.Sample", Arguments(records[3]));
+    }
+
+    /// <summary>The numeric native gate enforces both trimming and compiler warnings.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task NumericAotGateUsesStrictPublishAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiNumericAot", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        JsonElement publish = Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("samples/Lumyte.UI.Numeric.Sample", Arguments(publish));
+        Assert.Contains("-p:PublishAot=true", Arguments(publish));
+        Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
+    }
+
     /// <summary>Compilation restores once, preserves path boundaries and uses the requested application configuration.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]

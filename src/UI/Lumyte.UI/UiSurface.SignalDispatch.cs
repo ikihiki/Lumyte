@@ -82,8 +82,52 @@ public sealed partial class UiSurface
             return false;
         }
 
+        if (input is UiSetNumericInput numeric)
+        {
+            if (!double.IsFinite(numeric.Value) || (numeric.Upper is { } upper && (!double.IsFinite(upper) || numeric.Value > upper))
+                || !float.IsFinite(numeric.Position.X) || !float.IsFinite(numeric.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(numeric.Target);
+            if (target is null || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || (target.SupportedActions & (numeric.Upper.HasValue ? UiAutomationActions.SetRange : UiAutomationActions.SetValue)) == 0 || target.AutomationActivePress || target.IsTransitioning
+                || !AcceptsCurrentInput(target)
+                || !IsInside(target, numeric.Position))
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            UiElement? checkHit = _rootElement.FindInputHit(numeric.Position, _inputVersion);
+            for (UiElement? node = checkHit; node is not null; node = node.Parent)
+            {
+                if (node.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                UiInputResult probe = node.InvokePointerProbe(numeric.Position - node.InputOrigin);
+                if (probe != UiInputResult.Unhandled)
+                {
+                    return ReferenceEquals(node, target) && probe == UiInputResult.Handled && DeliverInput(target, numeric, false) == UiInputResult.Handled;
+                }
+            }
+
+            return false;
+        }
+
         if (input is UiFocusLostInput)
         {
+            _panCandidates.Clear();
             bool cancelled = CancelAllInput();
             return (!_isDisposed && RouteInput(_rootElement, input)) || cancelled;
         }
@@ -105,15 +149,82 @@ public sealed partial class UiSurface
             return DispatchKey(key);
         }
 
+        if (input is UiWheelInput wheel)
+        {
+            if (!float.IsFinite(wheel.Position.X) || !float.IsFinite(wheel.Position.Y)
+                || !float.IsFinite(wheel.Delta.X) || !float.IsFinite(wheel.Delta.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? wheelHit = HitTest(wheel.Position);
+            Vector2 residual = wheel.Delta;
+            bool consumed = false;
+            for (UiElement? node = wheelHit; node is not null; node = node.Parent)
+            {
+                if (node is ScrollViewElement scroll && AcceptsCurrentInput(scroll))
+                {
+                    bool vertical = scroll.Widget.Orientation == UiOrientation.Vertical;
+                    float delta = vertical ? residual.Y : residual.X;
+                    float remainder = scroll.ApplyDelta(delta);
+                    if (_isDisposed || !ReferenceEquals(scroll.Surface, this))
+                    {
+                        return true;
+                    }
+
+                    consumed |= remainder != delta;
+                    residual = vertical ? new(residual.X, remainder) : new(remainder, residual.Y);
+                }
+                else if (DeliverInput(node, wheel with { Delta = residual }, false) != UiInputResult.Unhandled)
+                {
+                    return true;
+                }
+
+                if (_isDisposed || !ReferenceEquals(node.Surface, this))
+                {
+                    return consumed;
+                }
+            }
+
+            return consumed;
+        }
+
         if (input is not UiPointerInput pointer)
         {
             return RouteInput(_focusedElement ?? _rootElement, input);
         }
 
         ArgumentOutOfRangeException.ThrowIfNegative(pointer.PointerId);
+        if (!Enum.IsDefined(pointer.Device))
+        {
+            throw new ArgumentOutOfRangeException(nameof(input));
+        }
+
         if (!float.IsFinite(pointer.Position.X) || !float.IsFinite(pointer.Position.Y))
         {
             throw new ArgumentOutOfRangeException(nameof(input));
+        }
+
+        try
+        {
+            if (RoutePan(pointer, out bool panConsumed))
+            {
+                return panConsumed;
+            }
+        }
+        catch (Exception failure)
+        {
+            _panCandidates.Remove(pointer.PointerId);
+            try
+            {
+                CancelPointer(pointer.PointerId);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException(failure, cleanupFailure);
+            }
+
+            throw;
         }
 
         if (pointer.Phase == UiPointerPhase.Cancel)
@@ -161,6 +272,7 @@ public sealed partial class UiSurface
         long focusChange = _focusChange;
         long focusRequest = _focusRequest;
         bool handled = hit is not null && RouteInput(hit, pointer);
+        handled |= pointer.Phase == UiPointerPhase.Down && _panCandidates.ContainsKey(pointer.PointerId);
         if (!_isDisposed && pointer.Phase == UiPointerPhase.Down && _focusChange == focusChange && _focusRequest == focusRequest
             && (!handled || _pointerCaptures.ContainsKey(pointer.PointerId)))
         {

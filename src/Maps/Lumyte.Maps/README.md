@@ -1,0 +1,33 @@
+# Lumyte.Maps
+
+CPU上で扱うXYZ識別子、倍精度のWebメルカトル座標、不変のMVT形状モデルを提供します。zoom 0での世界幅は512論理pixelです。Xは世界を繰り返し、Yは繰り返しません。各レイヤーは固有のextent、入力順、型付き属性、タイル外の余白を含む座標、ポリゴン輪郭の向きを保持します。
+
+ローカルMVTのsourceとpipelineの使い方は[入力パッケージのREADME](../Lumyte.Maps.Mvt/README.md)を参照してください。OSM XMLや`.osm.pbf`の解釈、任意のオンライン配信元の選択、外部スタイルとの互換性は提供しません。対応するアプリケーションスキーマを明示して使用します。
+
+## 固定タイル集合を表示するUI session（M2）
+
+`MapSession`は`ResourceManager`を借用し、明示的に指定した正規化済みの固定タイル集合を所有します。カメラ変更時の新規タイル選択、pointer入力、HTTP、親タイルへの代替表示、先読みは行いません。親子タイルの半透明描画が重ならないよう、M2では異なるzoomを含む固定集合を明示的に拒否します。構築時に一覧の上限を検査してからコピーします。`SetViewport`は論理的な需要だけを変更し、幅・高さがともに正のとき`Advance`が取得を配送します。配送時は完了枠とprofileの予約量全体を確保し、取消しない`RetainAsync`の終端結果を回収するまで保持します。採用時にはResourcesの正確な内容世代をPinし、revisionとbyte計上を検査してreferenceとleaseを保持します。cache hitでも未cache取得と同じ保持サイズを全額計上します。
+
+常駐予算に収まらない固定集合の残りは待機状態になります。表示中の固定タイルを退避したり、全タイル読込み済みと誤って報告したりしません。失敗は診断情報として保持し、実行器のqueue満杯は通信再試行ではなく待機へ戻します。
+
+`BeginStop`は配送と公開を停止し、`Advance`は終端結果の回収を続けます。`IsStopped`はGPU使用の完了を意味しません。ホストはGPU使用を完了させてから`DisposeAsync`を呼びます。並行する解放呼出しは進行中の試行を共有し、未完了のreference／lease解放状態は再試行用に保持します。借用Managerはsessionとホストframeの退役まで生存させてください。所有者による操作はすべて直列化します。
+
+`Record`は通常のアンチエイリアス付きviewport clipと、内部タイル境界のdevice pixel centerに基づく全pixel所有clipを使い、余白付きパスと輪郭方向を維持します。背景、全タイル共通のスタイルpass、正規化タイルと入力featureの順（同一sort key）で描きます。Canvas状態を復元し、読込みやGPU送信は行いません。座標はdoubleのカメラ原点を引いてからfloatへ変換し、ホストのDPIを二重適用しません。`MaxRecordingCpuBytes`は一回の記録でのパス・命令変換領域を保守的に事前検査します。ホストsnapshotと準備済みGPU資源には別予算が必要であり、process全体のメモリ上限や実測の高速化を示すものではありません。手作り試験だけで、任意の都市データとの互換性や無継ぎ目を保証しません。
+
+`MapView`はsessionを一つ借用してmountし、変更通知の購読・解除と既存UIのローカル記録再利用を行います。unmountしてもsessionを解放しません。同じmount済みElementで借用sessionを交換する操作は公開前に拒否するため、交換時はElementの識別子を変えてください。
+
+### 検証方法
+
+リポジトリの環境とSDKで、`tests/Maps`内のRelease試験を実行します。実GPUでの読戻しは明示的に有効化します。
+
+```sh
+LUMYTE_MAPS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet test tests/Maps/Lumyte.Maps.Session.Tests -c Release
+```
+
+CPU試験は記録までを対象とします。NativeのGPU実行、trim付きpublish、NativeAOT publish、Browser実行は別々の検証です。一つの成功から他の成功を推測せず、[検証手順](../../../tests/Maps/README.md)と実装の検証記録を確認してください。
+
+### タイルの所有境界と固定集合の繰返し表示
+
+内部の所有境界には`ClipOwnershipRect`を使います。targetのDPIと累積した軸平行変換を適用した後、device pixel centerが半開領域に含まれるかで所有を分割し、所有pixelでは形状のアンチエイリアス用サンプルを維持します。カメラ座標やパス頂点を丸めず、隣接する半透明の余白付きタイルで独立した部分clip coverageが乗算されることを防ぎます。平行移動、軸方向の拡縮、反転に対応します。保持型描画やReplayで加わるものを含め、回転・せん断は準備時に明示的に拒否します。外側のUI境界は通常のアンチエイリアス付きclipを維持します。
+
+採用済みの正規化Xタイルは、日付変更線の両側を含む可視の世界周回位置へ繰り返し表示します。固定の取得需要は変更せず、M3のタイル選択を開始しません。各表示コピーを同じ描画予算へ計上して事前検査します。記録と予算検査は投影・可視性・paintと形状型の適合条件を共有し、画面外や不適合の大量featureだけで小さな可視地図が拒否されないようにします。極端な繰返し表示数は、無制限にviewportを走査せず、パス確保前に拒否します。

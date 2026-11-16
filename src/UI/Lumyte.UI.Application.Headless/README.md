@@ -1,3 +1,5 @@
 # Lumyte.UI.Application.Headless
 
 専用ownerでCPUのUI更新とframe barrierを進めます。GPU、OS入力、物理IMEの対応は報告しません。UseHeadlessとUseRootまたはUseWindowsで構成します。
+
+実際の文書編集をHeadlessで検証する場合は、UiHeadlessApplicationOptions.TextInputServiceとTextInputTargetsを組で明示する。両者は利用側所有で、applicationより長く保持する。既定では文字入力backendを追加しない。`samples/Lumyte.UI.Numeric.Sample`は通常application lease、実Parley provider、借用する決定的backendを使用するが、OS IMEを模擬したという主張はしない。

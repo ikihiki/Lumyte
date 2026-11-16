@@ -8,6 +8,35 @@ namespace Lumyte.UI.Automation.Tests;
 /// <summary>Checks normal pointer/key series, actionability and exception cleanup without callback retries.</summary>
 public sealed class InputTests
 {
+    /// <summary>Ordinary content children remain legitimate wheel hits, without Click capability.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ScrollUsesChildHitWithoutActivationCapabilityAsync()
+    {
+        using var controller = new ScrollController();
+        await using var fixture = new Fixture(ScrollView(controller: controller, testId: "viewport")[Rectangle(width: 100, height: 300)]);
+        await fixture.Page.GetByTestId("viewport").ScrollAsync(new(0, 30));
+        Assert.Equal(30, controller.Offset);
+        Assert.Single(fixture.Host.Sent.OfType<UiWheelInput>());
+    }
+
+    /// <summary>Wheel input cannot escape into an occluding sibling viewport.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ScrollRejectsOccludingSiblingAsync()
+    {
+        using var target = new ScrollController();
+        using var occluder = new ScrollController();
+        await using var fixture = new Fixture(Panel()[ScrollView(controller: target, testId: "target", width: 100, height: 80)[SizedBox(height: 300)], ScrollView(controller: occluder, width: 100, height: 80)[SizedBox(width: 100, height: 300)]]);
+        UiAutomationNode requested = (await fixture.Page.SnapshotAsync()).Nodes.Single(node => node.TestId == "target");
+        Assert.True(requested.ActionableBounds.Width > 0);
+        Assert.True(requested.ActionableBounds.Height > 0);
+        await Assert.ThrowsAsync<UiAutomationException>(() => fixture.Page.GetByTestId("target").ScrollAsync(new(0, 30)));
+        Assert.Equal(0, target.Offset);
+        Assert.Equal(0, occluder.Offset);
+        Assert.Empty(fixture.Host.Sent);
+    }
+
     /// <summary>Checks one stable click emits ordinary input in order and invokes the callback once.</summary>
     /// <param name="hasCallback">Whether a callback exists.</param>
     /// <returns>The asynchronous check.</returns>

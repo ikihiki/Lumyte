@@ -4,6 +4,7 @@ namespace Lumyte.Diagnostics.UI.Automation;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 16, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(LegacyRemoteSnapshot))]
+[JsonSerializable(typeof(SelectionRemoteSnapshot))]
 internal partial class LegacySnapshotJsonContext : JsonSerializerContext
 {
 }

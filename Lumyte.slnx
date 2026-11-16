@@ -1,4 +1,14 @@
 <Solution>
+  <Folder Name="/src/Maps/">
+    <Project Path="src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
+    <Project Path="src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
+    <Project Path="src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
+  </Folder>
+  <Folder Name="/tests/Maps/">
+    <Project Path="tests/Maps/Lumyte.Maps.Session.Tests/Lumyte.Maps.Session.Tests.csproj" />
+    <Project Path="tests/Maps/Lumyte.Maps.UI.Tests/Lumyte.Maps.UI.Tests.csproj" />
+    <Project Path="tests/Maps/Lumyte.Maps.Tests/Lumyte.Maps.Tests.csproj" />
+  </Folder>
   <Folder Name="/benchmarks/Graphics/">
     <Project Path="benchmarks/Graphics/Lumyte.Graphics.Validation.Benchmark/Lumyte.Graphics.Validation.Benchmark.csproj" />
     <Project Path="benchmarks/Graphics/Lumyte.Resources.Graphics.Benchmark/Lumyte.Resources.Graphics.Benchmark.csproj" />
@@ -45,7 +55,11 @@
     <Project Path="benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.Maps.Browser.Sample/Lumyte.Maps.Browser.Sample.csproj" />
+    <Project Path="samples/Lumyte.Maps.Sample/Lumyte.Maps.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Layout.Sample/Lumyte.UI.Layout.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Scroll.Sample/Lumyte.UI.Scroll.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Numeric.Sample/Lumyte.UI.Numeric.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Media.Sample/Lumyte.UI.Media.Sample.csproj" />
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />

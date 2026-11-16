@@ -30,3 +30,10 @@ UIの通常入力へsnapshotを導入せず、コピーは自動操作からの�
 [設計](../../../docs/adr/ui/UI-0009-ui-automation.md)／[Native・headlessサンプル](../../../samples/Lumyte.UI.Sample/README.md)／[Browserサンプル](../../../samples/Lumyte.UI.Browser.Sample/README.md)
 
 `CheckAsync` / `UncheckAsync` は Check capability を要求し、既に目的値なら入力しません。変更時は通常のactionability/probeと入力leaseの下で `UiCheckInput` を一度配送し、三状態でも目的値を直接確定します。`SelectOptionAsync(key)` は group の SelectOption capability と option の Click capability を確認し、通常の Move/Down/Up を一系列だけ配送します。callback後の自動再送は行いません。
+
+ScrollAsyncはlocatorの表示領域中央から通常UiWheelInputを送ります。差分は有限の論理pixelで、
+排他的input lease、Popup routing、通常の入れ子残余を共有し、Widget setterを操作しません。
+
+## 数値の閉じた操作
+
+SetValueAsync/SetRangeAsyncは実部品の専用capabilityを要求する。通常の入力lease取得後に現在の幾何とprobeを再確認し、UiSetNumericInputを一回配送する。Rangeは二値を同時に受理し、callback後の再送はしない。NumericBoxは既存Fillを使用する。snapshot.Numericは実際の数値と妥当性、従来のValueは引き続き0〜1の正規化値である。

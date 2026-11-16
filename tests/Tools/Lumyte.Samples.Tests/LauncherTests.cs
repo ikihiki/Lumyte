@@ -53,6 +53,32 @@ public sealed class LauncherTests
         Assert.Empty(console.Output);
     }
 
+    /// <summary>Verifies the fixed local map consumer is registered in the real launcher.</summary>
+    [Fact]
+    public void MapsSampleSelectsTheHeadlessPublicConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "maps", "--backend", "headless"]), console);
+        Assert.Equal("maps", sample.Id);
+        Assert.Equal("samples/Lumyte.Maps.Sample", backend.Project);
+        Assert.Equal(["headless"], backend.Arguments);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Verifies the portable bounded memory map consumer uses browser publishing.</summary>
+    [Fact]
+    public void MapsSampleSelectsTheBrowserConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "maps", "--backend", "browser"]), console);
+        Assert.Equal("maps", sample.Id);
+        Assert.Equal("samples/Lumyte.Maps.Browser.Sample", backend.Project);
+        Assert.True(backend.Browser);
+        Assert.Empty(backend.Arguments);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies borrowed media is selectable through the headless host.</summary>
     [Fact]
     public void MediaSampleSelectsTheHeadlessConsumer()
@@ -75,6 +101,32 @@ public sealed class LauncherTests
         Assert.Equal("ui-layout", sample.Id);
         Assert.Equal("headless", backend.Id);
         Assert.Equal("samples/Lumyte.UI.Layout.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Verifies scroll is selectable through the headless host.</summary>
+    [Fact]
+    public void ScrollSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-scroll"]), console);
+        Assert.Equal("ui-scroll", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Scroll.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Verifies numeric editing is selectable through the ordinary headless application.</summary>
+    [Fact]
+    public void NumericSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-numeric"]), console);
+        Assert.Equal("ui-numeric", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Numeric.Sample", backend.Project);
         Assert.False(backend.Browser);
         Assert.Empty(console.Output);
     }

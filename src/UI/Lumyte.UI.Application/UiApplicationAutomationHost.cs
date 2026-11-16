@@ -85,6 +85,8 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
 
     public UiPointerProbe ProbePointer(UiSurface surface, Vector2 logicalPosition) => _application.Popups.ProbePointer(surface, logicalPosition);
 
+    public UiAutomationId? ProbeWheel(UiSurface surface, Vector2 logicalPosition) => _application.Popups.ProbeWheel(surface, logicalPosition);
+
     public bool CanReceiveKeys(UiSurface surface) => _application.Popups.CanReceiveKeys(surface);
 
     public bool Dispatch(UiSurface surface, UiInput input) => (_lease ?? throw new InvalidOperationException("Reserve input before dispatch.")).Dispatch(surface, input);
@@ -180,9 +182,9 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
                     _keys.Add(key.Key);
                 }
             }
-            else if (input is not UiCheckInput)
+            else if (input is not (UiCheckInput or UiSetNumericInput or UiWheelInput))
             {
-                throw new ArgumentException("Only pointer, key and checked-state input are lease-owned.", nameof(input));
+                throw new ArgumentException("Only pointer, key, wheel and checked-state input are lease-owned.", nameof(input));
             }
 
             bool consumed;

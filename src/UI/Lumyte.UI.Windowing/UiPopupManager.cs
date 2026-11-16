@@ -339,6 +339,27 @@ public sealed partial class UiPopupManager : IDisposable
         return hit?.Window == window && (menu is null || _popups.Values.Any(p => p.Window == window && p.Handle.State == UiPopupState.Open)) ? surface.ProbePointer(position) : default;
     }
 
+    /// <summary>Probes wheel routing without pointer activation callbacks.</summary>
+    /// <param name="surface">The registered destination.</param>
+    /// <param name="position">Surface-local position.</param>
+    /// <returns>The hit only if the same surface receives normal wheel input.</returns>
+    public UiAutomationId? ProbeWheel(UiSurface surface, Vector2 position)
+    {
+        UiWindowId? window = FindWindow(surface);
+        if (window is null || !_windows.TryGetSnapshot(window.Value, out UiWindowSnapshot? snapshot)
+            || snapshot!.State != UiWindowState.Open
+            || !_windows.TryTransformPoint(window.Value, snapshot.PresentationRoot, position, out Vector2 rootPoint))
+        {
+            return null;
+        }
+
+        UiWindowHit? hit = _windows.HitTest(snapshot.PresentationRoot, rootPoint);
+        Popup? menu = Deepest(snapshot.KeyboardScopeId);
+        bool openMenu = _popups.Values.Any(p => p.Window == window && !p.Closing && p.Mode == UiPopupInputMode.Menu && p.Handle.State == UiPopupState.Open);
+        return hit?.Window == window && hit.Value.InputMode != UiWindowInputMode.Candidate
+            && (menu is null || (menu.Handle.State == UiPopupState.Open && openMenu)) ? surface.ProbeWheel(position) : null;
+    }
+
     internal UiWindowId? FindWindow(UiSurface surface) => _owners.Values.FirstOrDefault(o => ReferenceEquals(o.Surface, surface))?.Window ?? _popups.Values.FirstOrDefault(p => ReferenceEquals(p.Surface, surface))?.Window;
 
     internal bool CanAnimate(Guid popupId)
@@ -382,6 +403,16 @@ public sealed partial class UiPopupManager : IDisposable
             };
         }
 
+        if (input is UiWheelInput wheel)
+        {
+            if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, wheel.Position, out Vector2 at))
+            {
+                throw new InvalidOperationException("coordinate-unavailable");
+            }
+
+            input = wheel with { Position = at };
+        }
+
         if (input is UiCheckInput check)
         {
             if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, check.Position, out Vector2 at))
@@ -390,6 +421,16 @@ public sealed partial class UiPopupManager : IDisposable
             }
 
             input = check with { Position = at };
+        }
+
+        if (input is UiSetNumericInput numeric)
+        {
+            if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, numeric.Position, out Vector2 at))
+            {
+                throw new InvalidOperationException("coordinate-unavailable");
+            }
+
+            input = numeric with { Position = at };
         }
 
         return Dispatch(new UiWindowInputEnvelope(origin, input));
@@ -980,6 +1021,20 @@ public sealed partial class UiPopupManager : IDisposable
         }
 
         Popup? menu = Deepest(rootState!.KeyboardScopeId);
+        if (input is UiWheelInput wheel)
+        {
+            UiWindowHit? hit = _windows.HitTest(originRoot, wheel.Position);
+            if (hit is not { } destination || destination.InputMode == UiWindowInputMode.Candidate
+                || (menu is not null && menu.Handle.State != UiPopupState.Open)
+                || Surface(destination.Window) is not { } targetSurface)
+            {
+                return menu is not null;
+            }
+
+            Popup? hitPopup = _popups.Values.FirstOrDefault(p => p.Window == destination.Window && !p.Closing && p.Mode == UiPopupInputMode.Menu && p.Handle.State == UiPopupState.Open);
+            return menu is not null && hitPopup is null ? true : targetSurface.Dispatch(wheel with { Position = destination.LocalPosition });
+        }
+
         if (input is UiPointerInput point)
         {
             UiWindowHit? hit = _windows.HitTest(originRoot, point.Position);
@@ -1084,6 +1139,34 @@ public sealed partial class UiPopupManager : IDisposable
             }
 
             return targetSurface.Dispatch(check with { Position = destination.LocalPosition });
+        }
+
+        if (input is UiSetNumericInput numeric)
+        {
+            UiWindowHit? hit = _windows.HitTest(originRoot, numeric.Position);
+            if (hit is not { } destination || destination.InputMode == UiWindowInputMode.Candidate
+                || (menu is not null && menu.Handle.State != UiPopupState.Open)
+                || Surface(destination.Window) is not { } targetSurface)
+            {
+                return false;
+            }
+
+            Popup? hitPopup = _popups.Values.FirstOrDefault(p => p.Window == destination.Window && !p.Closing && p.Mode == UiPopupInputMode.Menu && p.Handle.State == UiPopupState.Open);
+            if (menu is not null && hitPopup is null)
+            {
+                return false;
+            }
+
+            if (hitPopup is not null)
+            {
+                foreach (Popup child in _popups.Values.Where(p => p.Parent == hitPopup).ToArray())
+                {
+                    child.SuppressRestore = true;
+                    Close(child, UiPopupCloseReason.OutsidePress);
+                }
+            }
+
+            return targetSurface.Dispatch(numeric with { Position = destination.LocalPosition });
         }
 
         if (menu is not null && menu.Handle.State != UiPopupState.Open)

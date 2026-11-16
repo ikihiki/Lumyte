@@ -37,8 +37,10 @@ public sealed partial class UiSurface
                 throw new InvalidOperationException("Semantic automation values must be finite and between zero and one inclusive.");
             }
 
+            UiNumericState? numeric = redacted ? null : element.SemanticNumericState;
+            numeric?.Validate();
             bool indeterminate = !redacted && element.AutomationIndeterminate;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey));
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey, numeric));
             if (redacted)
             {
                 return;
@@ -82,6 +84,21 @@ public sealed partial class UiSurface
         }
 
         return RedactProbe(hit, null);
+    }
+
+    /// <summary>Probes the ordinary wheel hit without pointer activation callbacks.</summary>
+    /// <param name="logicalPosition">A surface-local position.</param>
+    /// <returns>The deepest visible input hit.</returns>
+    public UiAutomationId? ProbeWheel(Vector2 logicalPosition)
+    {
+        ThrowIfDisposed();
+        if (!float.IsFinite(logicalPosition.X) || !float.IsFinite(logicalPosition.Y))
+        {
+            throw new ArgumentOutOfRangeException(nameof(logicalPosition));
+        }
+
+        UpdateLayout();
+        return RedactProbe(HitTest(logicalPosition), null).HitElement;
     }
 
     internal UiAutomationId AllocateAutomationId() => new(_automationSurfaceId, checked(++_automationIdentity));

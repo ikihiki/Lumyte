@@ -27,3 +27,11 @@ DisposeAsyncは更新を止め、進行中renewを回収し、Revisionを確認�
 [設計](../../../docs/adr/ui/UI-0010-diagnostics-ui-automation.md)／[実行例](../../../samples/Lumyte.Diagnostics.UI.Automation.Operator.Sample/README.md)
 
 Popupのtarget metadataはParentTargetId、PopupId、ControlGroupIdを含みます。同じgroupの子はcontrol.PageFor(childTargetId)で明示選択し、既存controlのheartbeatとSequenceを使います。所属・許可はサーバーが毎回検証します。この版のContracts/Clientを同時に更新してください。
+
+## スクロール
+
+明示的なcontrolのPage.GetByTestIdで得たlocatorからScrollAsyncへUiRemotePointの符号付き論理pixel差分を渡せます。
+schemaVersion 5のscroll計画を通常wheel入力leaseで実行し、Observe pageでは入力できません。
+既存snapshotのフィールドは変えず、scroll部品のroleはnoneへ投影するため旧読取器でも処理できます。
+
+Schema 6のSetValueAsync/SetRangeAsyncは対応catalogを確認してから、通常のOverrideInput/control leaseで一回だけ操作する。Observe pageは数値入力も拒否する。数値snapshotは本文取得ではなく、NumericBoxのFillと本文検査の許可は既存の別契約を維持する。

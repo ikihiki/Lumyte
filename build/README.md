@@ -233,6 +233,8 @@ dotnet run --project build -c Release -- --target VerifyNamedColors --project sr
 
 値の規則と明示的なreference更新は[保守tool](../tools/colors/Lumyte.NamedColors.Generator/README.md)を参照してください。
 
+C5の検証にはTestUiScroll（core/ControlsとHeadless画面）およびTestUiScrollAot（strict NativeAOTとnative実行）を使う。
+
 ## 修正済みwgpu-native
 
 `WgpuNative`は、未送信command bufferのnative解放漏れを補正したABI互換ライブラリを、checksumで固定したソースから作成します。Rust/Pythonは既存のprivate SDK解決を再利用し、通常のWgpu buildとpublishへ修正版をコピーします。
@@ -242,3 +244,5 @@ dotnet run --project build -c Release -- --target WgpuNative --output artifacts/
 ```
 
 ソースpin・必要なnative compiler/libclang・override・全RIDのpack条件は[native手順](../native/wgpu_native/README.md)を参照してください。未収集の他RIDをhostのbinaryで代用しません。修正前のUI測定データは旧baseの記録として保持し、修正後の結果と混ぜません。
+
+C6の検証にはTestUiNumeric（Controls・TextEditing・Automationと実editorのHeadless画面）およびTestUiNumericAot（strict NativeAOTとnative実行）を使う。sampleには明示的なfont fileを渡す。
