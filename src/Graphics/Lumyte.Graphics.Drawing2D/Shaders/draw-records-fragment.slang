@@ -31,6 +31,9 @@ struct ImagePaintData2D {
     uint Alpha; uint FieldMode; uint Reserved0; uint Reserved1;
     GpuTextureRef Texture; GpuSamplerRef Sampler;
 };
+#ifndef LUMYTE_SHAPE_MEMBERSHIP
+#define LUMYTE_SHAPE_MEMBERSHIP 0
+#endif
 struct DrawPageMetadata2D {
     GpuBufferRef<DrawDirectoryEntry2D> PaintDirectory;
     GpuBufferRef<DrawDirectoryEntry2D> ClipDirectory;
@@ -41,6 +44,9 @@ struct DrawPageMetadata2D {
 #endif
 #if LUMYTE_RECORD_IMAGES
     GpuBufferRef<ImagePaintData2D> ImagePaintData;
+#endif
+#if LUMYTE_SHAPE_MEMBERSHIP
+    GpuBufferRef<uint> ShapeMembership;
 #endif
 };
 struct DrawRangeArguments2D {
@@ -328,6 +334,9 @@ EvaluationNode imageNode(ImagePaintData2D image)
 float shapeCoverage(DrawRecord2D r,DrawPageMetadata2D page,MaskDescriptor2D mask,float2 pixel)
 {
     float2 p=float2(dot(r.InverseX.xyz,float3(pixel,1)),dot(r.InverseY.xyz,float3(pixel,1)));
+#if LUMYTE_SHAPE_MEMBERSHIP
+    if((r.Flags&1u)!=0) return 1;
+#endif
     if(r.Kind==9) return 1;
     if(r.Kind==1) return all(p>=r.Shape0.xy) && all(p<r.Shape0.xy+r.Shape0.zw) ? 1 : 0;
     if(r.Kind==2)
@@ -492,6 +501,14 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
     if(root.Kind==0) return 0;
     float2 origin=floor(position.xy);
     uint outer=clipBits(page,record.ClipId,origin);
+#if LUMYTE_SHAPE_MEMBERSHIP
+    if((record.Flags&1u)!=0) {
+        uint2 point=uint2(origin-record.DeviceBounds.xy);
+        uint width=uint(record.DeviceBounds.z-record.DeviceBounds.x);
+        uint at=record.ExtraBits+point.y*width+point.x;
+        outer &= at<page.ShapeMembership.Count ? page.ShapeMembership.Load(at) : 0;
+    }
+#endif
     if(outer==0) return 0;
     MaskDescriptor2D mask=(MaskDescriptor2D)0;
     if(record.Kind==7 || record.Kind==8) mask=loadMask(page,record.PayloadOffset16/5);

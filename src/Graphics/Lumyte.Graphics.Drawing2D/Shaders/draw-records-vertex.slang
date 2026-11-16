@@ -25,6 +25,9 @@ struct ImagePaintData2D {
     uint Alpha; uint FieldMode; uint Reserved0; uint Reserved1;
     GpuTextureRef Texture; GpuSamplerRef Sampler;
 };
+#ifndef LUMYTE_SHAPE_MEMBERSHIP
+#define LUMYTE_SHAPE_MEMBERSHIP 0
+#endif
 struct DrawPageMetadata2D {
     GpuBufferRef<DrawDirectoryEntry2D> PaintDirectory;
     GpuBufferRef<DrawDirectoryEntry2D> ClipDirectory;
@@ -35,6 +38,9 @@ struct DrawPageMetadata2D {
 #endif
 #if LUMYTE_RECORD_IMAGES
     GpuBufferRef<ImagePaintData2D> ImagePaintData;
+#endif
+#if LUMYTE_SHAPE_MEMBERSHIP
+    GpuBufferRef<uint> ShapeMembership;
 #endif
 };
 struct DrawRangeArguments2D {

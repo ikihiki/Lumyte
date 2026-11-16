@@ -27,6 +27,14 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
         }
     }
 
+    public void ConfirmCompletion()
+    {
+        foreach (IRetainedCommandBatch2D batch in batches.OfType<IRetainedCommandBatch2D>())
+        {
+            batch.ConfirmCompletion();
+        }
+    }
+
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {
         foreach (IPreparedCommandBatch2D batch in batches)

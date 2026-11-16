@@ -91,6 +91,19 @@ public sealed class RenderGraph : IDisposable
         return resource;
     }
 
+    /// <summary>Reuses an imported texture allocation or imports it without transferring ownership.</summary>
+    /// <param name="texture">The borrowed texture allocation.</param>
+    /// <param name="initialState">The preceding state, used only for a new import.</param>
+    /// <param name="initialScope">The preceding accesses, used only for a new import.</param>
+    /// <param name="name">The optional diagnostic name.</param>
+    /// <returns>The unique graph handle; existing imports retain their original state and scope.</returns>
+    public RenderGraphTexture GetOrImportTexture(IGraphicsTexture texture, TextureState initialState, BarrierScope initialScope, string? name = null)
+    {
+        ArgumentNullException.ThrowIfNull(texture);
+        EnsureBuilding();
+        return _resources.OfType<RenderGraphTexture>().FirstOrDefault(resource => ReferenceEquals(resource.Allocation, texture)) ?? ImportTexture(texture, initialState, initialScope, name);
+    }
+
     /// <summary>Imports a whole typed buffer without transferring ownership.</summary>
     /// <typeparam name="T">The unmanaged element type.</typeparam>
     /// <param name="buffer">The allocation, initialized if read before a write.</param>
@@ -438,6 +451,36 @@ public sealed class RenderGraph : IDisposable
 
     internal RenderGraphShaderDataBuffer<T> LocalShaderData<T>(RenderGraphPass pass, IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
         where T : struct, IShaderArguments => LocalResource(pass, buffer, scope, () => new RenderGraphShaderDataBuffer<T>(this, buffer, default, "pass-local-shader-data"));
+
+    internal RenderGraphBuffer<T> PreparationBuffer<T>(IGraphicsBuffer<T> buffer)
+        where T : unmanaged
+    {
+        EnsureBuilding();
+        RenderGraphBuffer<T>? existing = _resources.OfType<RenderGraphBuffer<T>>().FirstOrDefault(resource => ReferenceEquals(resource.Allocation, buffer));
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var resource = new RenderGraphBuffer<T>(this, buffer, buffer.Memory == MemoryPreference.Upload ? new(PipelineStage.Host, ResourceAccess.HostWrite) : default, "drawing-preparation-buffer") { PreparationLocal = true };
+        Register(resource);
+        return resource;
+    }
+
+    internal RenderGraphShaderDataBuffer<T> PreparationShaderData<T>(IGraphicsShaderDataBuffer<T> buffer)
+        where T : struct, IShaderArguments
+    {
+        EnsureBuilding();
+        RenderGraphShaderDataBuffer<T>? existing = _resources.OfType<RenderGraphShaderDataBuffer<T>>().FirstOrDefault(resource => ReferenceEquals(resource.Allocation, buffer));
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var resource = new RenderGraphShaderDataBuffer<T>(this, buffer, buffer.Memory == MemoryPreference.Upload ? new(PipelineStage.Host, ResourceAccess.HostWrite) : default, "drawing-preparation-shader-data") { PreparationLocal = true };
+        Register(resource);
+        return resource;
+    }
 
     internal RenderGraphSampler GetSamplerResource(IGraphicsSampler sampler)
     {

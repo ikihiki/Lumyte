@@ -170,3 +170,15 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 返却済み状態は資産ではなく frame ごとの使用権に保持します。cleanup が失敗して古い Retire を再試行しても、後の frame に貸し出した資産を返却し直しません。GPU 完了または未送信が確定した枠の返却と、失敗した資産 cleanup の再試行を分け、失敗した資産は cache 側が保持します。Prepare が返る前に失敗した場合も枠を失わず、次の Prepare または renderer.Dispose で保留 cleanup を再試行します。cleanup が継続して失敗する場合は新規準備より先にその失敗を通知し、使用中 frame と誤って報告しません。Prepare と cleanup の両方が失敗した場合は、両方の例外を AggregateException に保持します。
 
 この直接描画経路は既存 direct renderer と同様に、RenderGraph の layer/effect 命令を受け付けません。対応しない命令は明示的に失敗し、別 shader へ黙って置き換えません。
+
+## 描画方式の選択
+
+`IRenderer2D` は借用 `Device`、`RetentionStatistics` と DrawList/read lease/snapshot の三つの `PrepareAsync` を共有します。Canvas2D と記録形式はbackend非依存です。
+
+- `Renderer2D.CreateDefault(device, options)` / `new Renderer2D(device, options)` は標準方式。パス・線・strokeのshape membershipをcomputeで16bit生成し、既存のGPU paint/clipとSrcOverへ渡します。既存5/6引数ctorはcustom rendererとshader互換性のため従来方式を維持します。
+- `SparseStripRenderer2D` はCPUで二進64bitのshape判定と水平stripを生成。full interiorはmaskなし、境界は16bit。paint/clip/compositionはGPUです。最適化scanline性能を主張しません。
+- `ComputeRenderer2D` はraw curve入力からGPUでcurve/stroke、tile count/scan/fill、backdrop、昇順draw候補、coverage/paint/compositionを実行。float4 bufferから通常rasterのSrcOver resolveを行い、Loadの背景を保持します。7 storage buffer bindingを要求し、deviceの実binding上限へ照合します。storage textureは使いません。
+
+`DrawingRendererOptions2D.MaxWorkingBytes` は既定256MiB。入力preflightも保守的に予約するため、低予算や複雑な入力は実payloadより早く拒否されます。custom commandと上限超過はfallbackしません。stroke dashはありません。
+
+可変mask/tile/scan/colorは同時in-flight frameで共有しません。Sparse/Computeはrendererごとの有限なCPU shape/strip cacheを使い、完成済みの保持GPU資産はidleから排他的に再利用します。paintは準備内で共有し、保持GPU資産でも再利用しますが、Graphをまたぐ汎用のCPU paint-program cacheは実装していません。`Record`だけでresidencyを公開しません。提出・完了・command破棄・Retireの既存契約を守ってください。

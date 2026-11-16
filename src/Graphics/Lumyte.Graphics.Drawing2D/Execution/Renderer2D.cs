@@ -10,12 +10,14 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <param name="resourceOwner">An optional owner transferred on successful construction and returned after renderer and prepared work finish.</param>
 /// <param name="validateResources">An optional runtime validation invoked before preparation and recording.</param>
 /// <param name="retentionOptions">Optional bounds for retained frames and idle compiled assets.</param>
-public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null) : IDisposable
+public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null) : IRenderer2D
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
     private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources, retentionOptions?.MaxCachedBytes ?? 64 * 1024 * 1024);
     private readonly RetainedDrawingCache2D _retained = new(retentionOptions ?? new());
+    private DrawingRendererOptions2D _options = new();
+    private bool _computeShapeMembership;
     private bool _disposed;
     private int _preparing;
 
@@ -30,8 +32,35 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     {
     }
 
+    /// <summary>Initializes a new instance of the <see cref="Renderer2D"/> class with compute-generated path membership.</summary>
+    /// <param name="device">The borrowed rendering device.</param>
+    /// <param name="options">The positive working-memory budget.</param>
+    /// <param name="retentionOptions">Independent retained frame and idle bounds.</param>
+    public Renderer2D(IGraphicDevice device, DrawingRendererOptions2D options, DrawingRetentionOptions2D? retentionOptions = null)
+        : this(device, DrawingCommandRenderers2D.CreateDefault(), retentionOptions: retentionOptions)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options.Validate();
+        _computeShapeMembership = true;
+    }
+
+    /// <summary>Gets the borrowed device, which this renderer never disposes.</summary>
+    public IGraphicDevice Device => _device;
+
     /// <summary>Gets the argument table policy used for direct and retained preparation.</summary>
     public DrawingArgumentTableMode ArgumentTableMode { get; init; } = DrawingArgumentTableMode.Auto;
+
+    /// <summary>Creates the standard embedded renderer with compute-generated path membership.</summary>
+    /// <param name="device">The borrowed rendering device.</param>
+    /// <param name="options">The positive per-preparation working budget.</param>
+    /// <param name="retentionOptions">The independent retained-cache bounds.</param>
+    /// <returns>The standard renderer; resources are created lazily.</returns>
+    public static Renderer2D CreateDefault(IGraphicDevice device, DrawingRendererOptions2D? options = null, DrawingRetentionOptions2D? retentionOptions = null)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        DrawingRendererOptions2D validated = (options ?? new()).Validate();
+        return new(device, DrawingCommandRenderers2D.CreateDefault(), retentionOptions: retentionOptions) { _options = validated, _computeShapeMembership = true };
+    }
 
     /// <summary>Prepares one-shot batches; creates no RenderGraph and never submits work.</summary>
     /// <param name="list">The pure drawing snapshot.</param>
@@ -50,6 +79,11 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             ValidateView(target.View);
             var info = new DrawingTargetInfo2D { Description = Describe(target.View.Texture), PixelScale = target.PixelScale, LoadOp = target.LoadOp, ClearColor = target.ClearColor };
             ValidateTarget(info);
+            if (_computeShapeMembership)
+            {
+                DrawingWorkingBudget2D.Validate(list, info, _options.MaxWorkingBytes);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             if (Interlocked.CompareExchange(ref _preparing, 1, 0) != 0)
             {
@@ -63,7 +97,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
-                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan);
+                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan) { ComputeShapeMembership = _computeShapeMembership, MaxWorkingBytes = _options.MaxWorkingBytes };
                 int index = 0;
                 using (var build = DrawingProfileScope.Start(4))
                 {
@@ -72,6 +106,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                         while (index < list.Commands.Count)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            context.OtherWorkingBytes = DrawingWorkingBudget2D.OwnedBytes(batches, context.ArgumentPlan);
                             IPreparedCommandBatch2D batch = IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
                                 ? await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
                                 : list.Commands[index] switch
@@ -91,6 +126,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                                 };
                             ArgumentNullException.ThrowIfNull(batch);
                             batches.Add(batch);
+                            if (_computeShapeMembership && DrawingWorkingBudget2D.OwnedBytes(batches) > _options.MaxWorkingBytes)
+                            {
+                                throw new NotSupportedException("Standard preparation exceeds the aggregate working-byte budget.");
+                            }
                         }
 
                         build?.Success();

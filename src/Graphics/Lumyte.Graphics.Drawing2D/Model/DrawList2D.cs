@@ -110,6 +110,8 @@ public sealed class DrawList2D
     /// <summary>Gets the number of immutable drawing commands in painter order.</summary>
     public int Count { get; }
 
+    internal long CapturedWorkingBytes { get; init; }
+
     internal bool HasRetainedPages => Volatile.Read(ref _retainedPages) is not null;
 
     internal IReadOnlyList<DrawingCommand2D> Commands => _commands ?? Materialize().Commands;

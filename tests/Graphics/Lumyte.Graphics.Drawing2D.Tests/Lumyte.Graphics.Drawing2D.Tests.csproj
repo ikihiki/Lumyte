@@ -6,6 +6,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Lumyte.Graphics.Drawing2D.RenderGraph.Tests/RendererImage*.cs" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI/Lumyte.UI.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />

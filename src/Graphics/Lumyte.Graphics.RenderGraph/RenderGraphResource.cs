@@ -22,9 +22,11 @@ public abstract class RenderGraphResource
 
     internal abstract string Kind { get; }
 
-    internal virtual bool InitiallyInitialized => !IsTransient;
+    internal virtual bool InitiallyInitialized => !IsTransient && (!PreparationLocal || (InitialScope.Access & ResourceAccess.HostWrite) != 0);
 
     internal RenderGraph Owner { get; }
+
+    internal bool PreparationLocal { get; set; }
 
     internal RenderGraphPass? LocalPassOwner { get; set; }
 
