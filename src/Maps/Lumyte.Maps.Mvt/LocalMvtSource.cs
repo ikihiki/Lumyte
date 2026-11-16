@@ -60,7 +60,7 @@ public sealed class LocalMvtSource(LocalMvtRegistration registration) : IResourc
 
         internal LocalMvtRegistration Registration => registration;
 
-        internal ReadOnlySpan<byte> Content => bytes;
+        internal ReadOnlyMemory<byte> Content => bytes;
 
         public override ValueTask<Stream> OpenReadAsync(long offset = 0, long? length = null, CancellationToken cancellationToken = default)
         {

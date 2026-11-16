@@ -4,6 +4,7 @@ internal sealed class DecodeBudget
 {
     private readonly MapTileLoadProfile _profile;
     private readonly int _inputBytes;
+    private byte[]? _scratch;
     private long _attributes;
     private long _features;
     private long _vertices;
@@ -17,6 +18,8 @@ internal sealed class DecodeBudget
             throw new InvalidDataException("Input capacity exceeded.");
         }
     }
+
+    internal byte[] Scratch => _scratch ??= Array<byte>(Math.Min(_inputBytes, _profile.MaxAttributeBytes), 1, false);
 
     internal long Total { get; private set; }
 

@@ -17,173 +17,218 @@ public static class MvtDecoder
     /// <param name="profile">Immutable registered limits.</param>
     /// <param name="sourceRevision">Observed snapshot revision.</param>
     /// <returns>Immutable CPU content.</returns>
-    public static MapTileContent Decode(ReadOnlySpan<byte> input, MapTileLoadProfile profile, string sourceRevision = "")
+    public static MapTileContent Decode(ReadOnlyMemory<byte> input, MapTileLoadProfile profile, string sourceRevision = "")
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(sourceRevision);
+        try
+        {
+            return DecodeCore(input, profile, sourceRevision);
+        }
+        catch (Exception exception) when (exception is ProtoBuf.ProtoException or EndOfStreamException or OverflowException or InvalidOperationException)
+        {
+            throw new InvalidDataException("Malformed protobuf input.", exception);
+        }
+    }
+
+    /// <summary>Decodes an owned byte array without copying the input.</summary>
+    /// <param name="input">An uncompressed MVT tile.</param>
+    /// <param name="profile">Immutable registered limits.</param>
+    /// <param name="sourceRevision">Observed snapshot revision.</param>
+    /// <returns>Immutable CPU content.</returns>
+    public static MapTileContent Decode(byte[] input, MapTileLoadProfile profile, string sourceRevision = "")
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        return Decode((ReadOnlyMemory<byte>)input, profile, sourceRevision);
+    }
+
+    private static MapTileContent DecodeCore(ReadOnlyMemory<byte> input, MapTileLoadProfile profile, string sourceRevision)
+    {
         var budget = new DecodeBudget(profile, input.Length);
         budget.Charge(256, false);
         budget.Charge(StringBytes(sourceRevision.Length));
-        int count = Count(input, 26);
+        int count = Count(input, 26, budget);
         MapTileLayer[] layers = budget.Array<MapTileLayer>(count, 8);
-        var reader = new ProtoReader(input);
-        int index = 0;
-        while (!reader.End)
+        var reader = new MvtWireReader(input, budget);
+        try
         {
-            int tag = reader.Tag();
-            if (tag == 26)
+            int index = 0;
+            while (!reader.End)
             {
-                MapTileLayer layer = Layer(reader.Bytes(), budget);
-                for (int i = 0; i < index; i++)
+                int tag = reader.Tag();
+                if (tag == 26)
                 {
-                    Require(layers[i].Name != layer.Name, "Duplicate layer name.");
+                    MapTileLayer layer = Layer(reader.Message(), budget);
+                    for (int i = 0; i < index; i++)
+                    {
+                        Require(layers[i].Name != layer.Name, "Duplicate layer name.");
+                    }
+
+                    layers[index++] = layer;
                 }
+                else
+                {
+                    RejectKnownWire(tag, 3);
+                    reader.Skip(tag & 7);
+                }
+            }
 
-                layers[index++] = layer;
-            }
-            else
-            {
-                reader.Skip(tag & 7);
-            }
+            budget.Charge(48);
+            return new MapTileContent(ImmutableCollectionsMarshal.AsImmutableArray(layers), sourceRevision, budget.Retained, budget.Total + input.Length);
         }
-
-        budget.Charge(48);
-        return new MapTileContent(ImmutableCollectionsMarshal.AsImmutableArray(layers), sourceRevision, budget.Retained, budget.Total + input.Length);
+        finally
+        {
+            reader.Dispose();
+        }
     }
 
-    private static MapTileLayer Layer(ReadOnlySpan<byte> bytes, DecodeBudget budget)
+    private static MapTileLayer Layer(ReadOnlyMemory<byte> bytes, DecodeBudget budget)
     {
         string? name = null;
         uint extent = 4096;
         bool hasExtent = false;
         bool version = false;
-        int featureCount = Count(bytes, 18);
-        int keyCount = Count(bytes, 26);
-        int valueCount = Count(bytes, 34);
+        int featureCount = Count(bytes, 18, budget);
+        int keyCount = Count(bytes, 26, budget);
+        int valueCount = Count(bytes, 34, budget);
         budget.Features(featureCount);
         string[] keys = budget.Array<string>(keyCount, 8, false);
         object[] values = budget.Array<object>(valueCount, 8, false);
         MapTileFeature[] features = budget.Array<MapTileFeature>(featureCount, 8);
         int keyIndex = 0;
         int valueIndex = 0;
-        var reader = new ProtoReader(bytes);
-        while (!reader.End)
+        var reader = new MvtWireReader(bytes, budget);
+        try
         {
-            int tag = reader.Tag();
-            switch (tag)
+            while (!reader.End)
             {
-                case 10:
-                    Require(name is null, "Duplicate layer name field.");
-                    name = String(reader.Bytes(), budget);
-                    break;
-                case 18:
-                    reader.Bytes();
-                    break;
-                case 26:
-                    keys[keyIndex++] = String(reader.Bytes(), budget);
-                    break;
-                case 34:
-                    values[valueIndex++] = Value(reader.Bytes(), budget);
-                    break;
-                case 40:
-                    Require(!hasExtent, "Duplicate extent.");
-                    extent = reader.UInt32();
-                    hasExtent = true;
-                    break;
-                case 120:
-                    Require(!version && reader.UInt32() == 2, "MVT version must be 2.");
-                    version = true;
-                    break;
-                default:
-                    RejectKnownWire(tag, 1, 2, 3, 4, 5, 15);
+                int tag = reader.Tag();
+                switch (tag)
+                {
+                    case 10:
+                        Require(name is null, "Duplicate layer name field.");
+                        name = String(reader.StringBytes(budget), budget);
+                        break;
+                    case 18:
+                        reader.Message();
+                        break;
+                    case 26:
+                        keys[keyIndex++] = String(reader.StringBytes(budget), budget);
+                        break;
+                    case 34:
+                        values[valueIndex++] = Value(reader.Message(), budget);
+                        break;
+                    case 40:
+                        Require(!hasExtent, "Duplicate extent.");
+                        extent = reader.UInt32();
+                        hasExtent = true;
+                        break;
+                    case 120:
+                        Require(!version && reader.UInt32() == 2, "MVT version must be 2.");
+                        version = true;
+                        break;
+                    default:
+                        RejectKnownWire(tag, 1, 2, 3, 4, 5, 15);
+                        reader.Skip(tag & 7);
+                        break;
+                }
+            }
+
+            Require(version && extent > 0 && name is "roads" or "buildings" or "water", "Unsupported layer schema, extent or version.");
+            reader.Reset();
+            int featureIndex = 0;
+            while (!reader.End)
+            {
+                int tag = reader.Tag();
+                if (tag == 18)
+                {
+                    features[featureIndex++] = Feature(reader.Message(), keys, values, name!, budget);
+                }
+                else
+                {
                     reader.Skip(tag & 7);
-                    break;
+                }
             }
-        }
 
-        Require(version && extent > 0 && name is "roads" or "buildings" or "water", "Unsupported layer schema, extent or version.");
-        reader = new ProtoReader(bytes);
-        int featureIndex = 0;
-        while (!reader.End)
+            budget.Charge(40);
+            return new MapTileLayer(name!, extent, ImmutableCollectionsMarshal.AsImmutableArray(features));
+        }
+        finally
         {
-            int tag = reader.Tag();
-            if (tag == 18)
-            {
-                features[featureIndex++] = Feature(reader.Bytes(), keys, values, name!, budget);
-            }
-            else
-            {
-                reader.Skip(tag & 7);
-            }
+            reader.Dispose();
         }
-
-        budget.Charge(40);
-        return new MapTileLayer(name!, extent, ImmutableCollectionsMarshal.AsImmutableArray(features));
     }
 
-    private static MapTileFeature Feature(ReadOnlySpan<byte> bytes, string[] keys, object[] values, string layer, DecodeBudget budget)
+    private static MapTileFeature Feature(ReadOnlyMemory<byte> bytes, string[] keys, object[] values, string layer, DecodeBudget budget)
     {
         ulong? id = null;
         uint type = 0;
         bool hasType = false;
-        int tagCount = RepeatedCount(bytes, 2);
-        int geometryCount = RepeatedCount(bytes, 4);
+        int tagCount = RepeatedCount(bytes, 2, budget);
+        int geometryCount = RepeatedCount(bytes, 4, budget);
         Require(tagCount % 2 == 0, "Odd tag index count.");
         uint[] tags = budget.Array<uint>(tagCount, 4, false);
         uint[] geometry = budget.Array<uint>(geometryCount, 4, false);
         int ti = 0;
         int gi = 0;
-        var reader = new ProtoReader(bytes);
-        while (!reader.End)
+        var reader = new MvtWireReader(bytes, budget);
+        try
         {
-            int tag = reader.Tag();
-            switch (tag)
+            while (!reader.End)
             {
-                case 8:
-                    Require(id is null, "Duplicate feature ID.");
-                    id = reader.Varint();
-                    break;
-                case 24:
-                    Require(!hasType, "Duplicate geometry type.");
-                    type = reader.UInt32();
-                    hasType = true;
-                    break;
-                case 16:
-                case 18:
-                    Repeated(ref reader, tag, tags, ref ti);
-                    break;
-                case 32:
-                case 34:
-                    Repeated(ref reader, tag, geometry, ref gi);
-                    break;
-                default:
-                    RejectKnownWire(tag, 1, 2, 3, 4);
-                    reader.Skip(tag & 7);
-                    break;
+                int tag = reader.Tag();
+                switch (tag)
+                {
+                    case 8:
+                        Require(id is null, "Duplicate feature ID.");
+                        id = reader.Varint();
+                        break;
+                    case 24:
+                        Require(!hasType, "Duplicate geometry type.");
+                        type = reader.UInt32();
+                        hasType = true;
+                        break;
+                    case 16:
+                    case 18:
+                        Repeated(ref reader, tag, tags, ref ti);
+                        break;
+                    case 32:
+                    case 34:
+                        Repeated(ref reader, tag, geometry, ref gi);
+                        break;
+                    default:
+                        RejectKnownWire(tag, 1, 2, 3, 4);
+                        reader.Skip(tag & 7);
+                        break;
+                }
             }
-        }
 
-        Require(hasType && (layer == "roads" ? type == 2 : type == 3), "Layer geometry does not match schema.");
-        MapTileAttribute[] attributes = budget.Array<MapTileAttribute>(tagCount / 2, 16);
-        string[] attributeNames = budget.Array<string>(attributes.Length, 8, false);
-        for (int i = 0; i < attributes.Length; i++)
+            Require(hasType && (layer == "roads" ? type == 2 : type == 3), "Layer geometry does not match schema.");
+            MapTileAttribute[] attributes = budget.Array<MapTileAttribute>(tagCount / 2, 16);
+            string[] attributeNames = budget.Array<string>(attributes.Length, 8, false);
+            for (int i = 0; i < attributes.Length; i++)
+            {
+                uint key = tags[i * 2];
+                uint value = tags[(i * 2) + 1];
+                Require(key < keys.Length && value < values.Length, "Tag index out of range.");
+                attributeNames[i] = keys[key];
+                attributes[i] = new MapTileAttribute(keys[key], values[value]);
+            }
+
+            Array.Sort(attributeNames, StringComparer.Ordinal);
+            for (int i = 1; i < attributeNames.Length; i++)
+            {
+                Require(attributeNames[i - 1] != attributeNames[i], "Duplicate feature attribute.");
+            }
+
+            ImmutableArray<MapTilePath> paths = Geometry(geometry, (MapGeometryType)type, budget);
+            budget.Charge(56);
+            return new MapTileFeature(id, (MapGeometryType)type, paths, ImmutableCollectionsMarshal.AsImmutableArray(attributes));
+        }
+        finally
         {
-            uint key = tags[i * 2];
-            uint value = tags[(i * 2) + 1];
-            Require(key < keys.Length && value < values.Length, "Tag index out of range.");
-            attributeNames[i] = keys[key];
-            attributes[i] = new MapTileAttribute(keys[key], values[value]);
+            reader.Dispose();
         }
-
-        Array.Sort(attributeNames, StringComparer.Ordinal);
-        for (int i = 1; i < attributeNames.Length; i++)
-        {
-            Require(attributeNames[i - 1] != attributeNames[i], "Duplicate feature attribute.");
-        }
-
-        ImmutableArray<MapTilePath> paths = Geometry(geometry, (MapGeometryType)type, budget);
-        budget.Charge(56);
-        return new MapTileFeature(id, (MapGeometryType)type, paths, ImmutableCollectionsMarshal.AsImmutableArray(attributes));
     }
 
     private static ImmutableArray<MapTilePath> Geometry(uint[] commands, MapGeometryType type, DecodeBudget budget)
@@ -271,32 +316,37 @@ public static class MvtDecoder
         y = (int)nextY;
     }
 
-    private static object Value(ReadOnlySpan<byte> bytes, DecodeBudget budget)
+    private static object Value(ReadOnlyMemory<byte> bytes, DecodeBudget budget)
     {
-        var reader = new ProtoReader(bytes);
-        object? value = null;
-        while (!reader.End)
+        var reader = new MvtWireReader(bytes, budget);
+        try
         {
-            int tag = reader.Tag();
-            Require(value is null, "MVT value must have exactly one typed field.");
-            budget.Charge(24);
-            value = tag switch
+            object? value = null;
+            while (!reader.End)
             {
-                10 => String(reader.Bytes(), budget),
-                21 => BitConverter.UInt32BitsToSingle((uint)reader.Fixed(4)),
-                25 => BitConverter.UInt64BitsToDouble(reader.Fixed(8)),
-                32 => unchecked((long)reader.Varint()),
-                40 => reader.Varint(),
-                48 => ZigZag(reader.Varint()),
-                56 => Boolean(reader.Varint()),
-                _ => throw new InvalidDataException("Unknown attribute value type."),
-            };
+                int tag = reader.Tag();
+                Require(value is null, "MVT value must have exactly one typed field.");
+                budget.Charge(24);
+                value = tag switch
+                {
+                    10 => String(reader.StringBytes(budget), budget),
+                    21 => reader.Single(),
+                    25 => reader.Double(),
+                    32 => reader.Int64(),
+                    40 => reader.Varint(),
+                    48 => reader.SignedInt64(),
+                    56 => Boolean(reader.Varint()),
+                    _ => throw new InvalidDataException("Unknown attribute value type."),
+                };
+            }
+
+            return value ?? throw new InvalidDataException("Empty attribute value.");
         }
-
-        return value ?? throw new InvalidDataException("Empty attribute value.");
+        finally
+        {
+            reader.Dispose();
+        }
     }
-
-    private static long ZigZag(ulong value) => (long)((value >> 1) ^ (ulong)-(long)(value & 1));
 
     private static bool Boolean(ulong value) => value <= 1 ? value != 0 : throw new InvalidDataException("Invalid bool.");
 
@@ -319,55 +369,64 @@ public static class MvtDecoder
 
     private static long StringBytes(int chars) => (26L + (chars * 2L) + 7) & ~7L;
 
-    private static int Count(ReadOnlySpan<byte> bytes, int expected)
+    private static int Count(ReadOnlyMemory<byte> bytes, int expected, DecodeBudget budget)
     {
-        var reader = new ProtoReader(bytes);
-        int count = 0;
-        while (!reader.End)
+        var reader = new MvtWireReader(bytes, budget);
+        try
         {
-            int tag = reader.Tag();
-            if (tag == expected)
+            int count = 0;
+            while (!reader.End)
             {
-                count++;
-            }
-
-            reader.Skip(tag & 7);
-        }
-
-        return count;
-    }
-
-    private static int RepeatedCount(ReadOnlySpan<byte> bytes, int field)
-    {
-        var reader = new ProtoReader(bytes);
-        int count = 0;
-        while (!reader.End)
-        {
-            int tag = reader.Tag();
-            if (tag == (field << 3))
-            {
-                reader.UInt32();
-                count++;
-            }
-            else if (tag == ((field << 3) | 2))
-            {
-                var packed = new ProtoReader(reader.Bytes());
-                while (!packed.End)
+                int tag = reader.Tag();
+                if (tag == expected)
                 {
-                    packed.UInt32();
                     count++;
                 }
-            }
-            else
-            {
+
                 reader.Skip(tag & 7);
             }
-        }
 
-        return count;
+            return count;
+        }
+        finally
+        {
+            reader.Dispose();
+        }
     }
 
-    private static void Repeated(ref ProtoReader reader, int tag, uint[] target, ref int index)
+    private static int RepeatedCount(ReadOnlyMemory<byte> bytes, int field, DecodeBudget budget)
+    {
+        var reader = new MvtWireReader(bytes, budget);
+        try
+        {
+            int count = 0;
+            while (!reader.End)
+            {
+                int tag = reader.Tag();
+                if (tag == (field << 3))
+                {
+                    reader.UInt32();
+                    count++;
+                }
+                else if (tag == ((field << 3) | 2))
+                {
+                    count += reader.PackedCount();
+                }
+                else
+                {
+                    reader.Skip(tag & 7);
+                }
+            }
+
+            return count;
+        }
+        finally
+        {
+            reader.Dispose();
+        }
+    }
+
+    private static void Repeated(ref MvtWireReader reader, int tag, uint[] target, ref int index)
     {
         if ((tag & 7) == 0)
         {
@@ -375,11 +434,7 @@ public static class MvtDecoder
         }
         else
         {
-            var packed = new ProtoReader(reader.Bytes());
-            while (!packed.End)
-            {
-                target[index++] = packed.UInt32();
-            }
+            reader.Packed(target, ref index);
         }
     }
 
