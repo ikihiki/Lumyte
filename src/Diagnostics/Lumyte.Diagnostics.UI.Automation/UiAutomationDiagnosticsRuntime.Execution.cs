@@ -57,7 +57,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             node.ParentId,
             node.TestId,
             node.Name,
-            node.Role is "togglebutton" or "checkbox" or "switch" or "radiobutton" or "radiogroup" ? "none" : node.Role,
+            node.Role is "scrollview" or "scrollbar" or "togglebutton" or "checkbox" or "switch" or "radiobutton" or "radiogroup" ? "none" : node.Role,
             node.Bounds,
             node.ClippedBounds,
             node.IsVisible,
@@ -122,6 +122,9 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                     UiClickOptions? click = plan.Position is { } point ? new() { Position = new Vector2((float)point.X, (float)point.Y), } : null;
                     await locator!.ClickAsync(click, token);
                     break;
+                case "scroll":
+                    await locator!.ScrollAsync(new Vector2((float)plan.Position!.X, (float)plan.Position.Y), cancellationToken: token);
+                    break;
                 case "focus":
                     await locator!.FocusAsync(cancellationToken: token);
                     break;
@@ -179,7 +182,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                     UiRemoteSnapshot snapshot = Snapshot(await page.SnapshotAsync(token));
                     result = plan.SchemaVersion < 4
                         ? SerializeBounded(LegacySnapshot(snapshot), LegacySnapshotJsonContext.Default.LegacyRemoteSnapshot)
-                        : SerializeBounded(snapshot, UiAutomationJsonContext.Default.UiRemoteSnapshot);
+                        : SerializeBounded(snapshot with { Nodes = snapshot.Nodes.Select(node => node.Role is "scrollview" or "scrollbar" ? node with { Role = "none" } : node).ToArray() }, UiAutomationJsonContext.Default.UiRemoteSnapshot);
                     break;
                 case "screenshot":
                     result = await page.ScreenshotAsync(token);
@@ -344,6 +347,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  cancellationToken);
 
         public UiPointerProbe ProbePointer(UiSurface surface, Vector2 position) => host is IUiAutomationRoutingHost routing ? routing.ProbePointer(surface, position) : surface.ProbePointer(position);
+
+        public UiAutomationId? ProbeWheel(UiSurface surface, Vector2 position) => host is IUiAutomationRoutingHost routing ? routing.ProbeWheel(surface, position) : surface.ProbeWheel(position);
 
         public bool CanReceiveKeys(UiSurface surface) => host is not IUiAutomationRoutingHost routing || routing.CanReceiveKeys(surface);
 

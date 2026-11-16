@@ -45,6 +45,8 @@
     <Project Path="benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.UI.Layout.Sample/Lumyte.UI.Layout.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Scroll.Sample/Lumyte.UI.Scroll.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Media.Sample/Lumyte.UI.Media.Sample.csproj" />
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />
@@ -238,6 +240,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Wgpu.Tests/Lumyte.Graphics.Wgpu.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Benchmark.Tests/Lumyte.Graphics.Benchmark.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />
@@ -267,6 +270,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.Benchmark.Tests/Lumyte.UI.Benchmark.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Media.Tests/Lumyte.UI.Media.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Media.Parley.Tests/Lumyte.UI.Media.Parley.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Navigation.Tests/Lumyte.UI.Navigation.Tests.csproj" />
@@ -281,5 +285,17 @@
   </Folder>
   <Folder Name="/tools/colors/">
     <Project Path="tools/colors/Lumyte.NamedColors.Generator/Lumyte.NamedColors.Generator.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/UI/">
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Browser.Benchmark/Lumyte.UI.Application.Browser.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Benchmark/Lumyte.UI.Application.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Desktop.Benchmark/Lumyte.UI.Application.Desktop.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Navigation.Benchmark/Lumyte.UI.Application.Navigation.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Automation.Benchmark/Lumyte.UI.Automation.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Benchmark/Lumyte.UI.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Navigation.Benchmark/Lumyte.UI.Navigation.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.TextEditing.Benchmark/Lumyte.UI.TextEditing.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.TextEditing.Parley.Benchmark/Lumyte.UI.TextEditing.Parley.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Windowing.Benchmark/Lumyte.UI.Windowing.Benchmark.csproj" />
   </Folder>
 </Solution>

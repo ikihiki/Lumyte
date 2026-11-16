@@ -29,6 +29,7 @@ public sealed class NativeModelWorkload : IDisposable
     private readonly IGraphicsTextureView[] _extraViews;
     private readonly IGraphicsTexture _depth;
     private readonly IGraphicsTextureView _depthView;
+    private readonly IGpuRef<ModelDrawArguments>[] _stableDraws;
     private int _frame;
 
     /// <summary>Initializes a new instance of the <see cref="NativeModelWorkload"/> class.</summary>
@@ -69,10 +70,22 @@ public sealed class NativeModelWorkload : IDisposable
         _vertices = _table.WriteBuffer(0, _mesh.Vertices.SliceElements(0, _mesh.Vertices.Count));
         _draw = Device.CreateShaderDataBuffer<ModelDrawArguments>(_artifact, 32);
         _drawUpload = Device.CreateShaderDataBuffer<ModelDrawArguments>(_artifact, 32, MemoryPreference.Upload);
+        _stableDraws = new IGpuRef<ModelDrawArguments>[32];
+        PrepareUnchangedRegistrations();
     }
 
     /// <summary>Gets deterministic recording observations.</summary>
     public VulkanDevice Device { get; }
+
+    /// <summary>Restores one full-range registration before unchanged-registration measurements.</summary>
+    public void PrepareUnchangedRegistrations()
+    {
+        IGpuRef<ModelDrawArguments> allDraws = _table.WriteBuffer(1, _draw.SliceElements(0, 32));
+        for (int i = 0; i < _stableDraws.Length; i++)
+        {
+            _stableDraws[i] = allDraws.GetElement((ulong)i);
+        }
+    }
 
     /// <summary>Allocates, bulk-packs, records upload, simulates completion and releases storage.</summary>
     /// <param name="packed">Whether to prepare packed CPU bytes.</param>
@@ -87,7 +100,7 @@ public sealed class NativeModelWorkload : IDisposable
     /// <summary>Updates transforms/material buffer and records indexed draws sharing one mesh.</summary>
     /// <param name="instances">The number of shared-mesh draw records.</param>
     /// <param name="complete">Whether untimed verification submits and waits.</param>
-    /// <param name="scenario">Numeric, Static, Mutation or CrossPass recording.</param>
+    /// <param name="scenario">Numeric, Static, Mutation, CrossPass or Unchanged recording.</param>
     /// <param name="targetCount">Color attachments from one to eight; zero is state-only.</param>
     /// <returns>The consumed value or operation observation.</returns>
     public ulong RecordInstances(int instances, bool complete = false, string scenario = "Numeric", int targetCount = 1)
@@ -163,7 +176,7 @@ public sealed class NativeModelWorkload : IDisposable
                 }
 
                 render.SetRenderState(State(ModelDrawing.CreateRenderState(_arguments[index].Material, doubleSided: index % 2 == 0) with { DepthStencil = new() }, targetCount));
-                var root = new ModelDrawRoot(_table.WriteBuffer(1, _draw.SliceElements((ulong)index, 1)));
+                var root = new ModelDrawRoot(scenario == "Unchanged" ? _stableDraws[index] : _table.WriteBuffer(1, _draw.SliceElements((ulong)index, 1)));
                 render.SetArguments(in root);
                 _mesh.Draw(render);
             }
@@ -185,10 +198,11 @@ public sealed class NativeModelWorkload : IDisposable
 
     /// <summary>Submits a real model then checks an analytic center red pixel outside timing.</summary>
     /// <param name="targetCount">Color attachments from one to eight. Output zero is red; other outputs retain their transparent clear.</param>
-    public void Verify(int targetCount = 1)
+    /// <param name="scenario">The exact recording scenario to submit outside timing.</param>
+    public void Verify(int targetCount = 1, string scenario = "Numeric")
     {
         ValidateTargets(targetCount);
-        RecordInstances(32, complete: true, targetCount: targetCount);
+        RecordInstances(32, complete: true, scenario: scenario, targetCount: targetCount);
         CheckPixel(_target, true);
         for (int i = 1; i < targetCount; i++)
         {

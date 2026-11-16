@@ -62,6 +62,9 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     protected override bool RequiresHostValidation => true;
 
     /// <inheritdoc/>
+    protected override bool PreservePointerGesture => true;
+
+    /// <inheritdoc/>
     protected override bool CacheRetainedDrawing => GetType() == typeof(TextBoxElement);
 
     /// <inheritdoc/>
@@ -244,9 +247,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     /// <returns>The operation result.</returns>
     protected override UiInputResult OnProbePointerDown(Vector2 localPosition) => UiInputResult.Handled;
 
-    /// <summary>On Input.</summary>
-    /// <param name = "context">The context.</param>
-    /// <returns>The operation result.</returns>
+    /// <inheritdoc/>
     protected override UiInputResult OnInput(in UiInputContext context)
     {
         if (context.Input is UiFocusChangedInput focus)

@@ -1,0 +1,8 @@
+{
+  "upstreamCommit": "d2e3330ade4ae1bb238d76b485926f067e7ee64c",
+  "archiveSha256": "78b8cb2e756f8ef4e2bc5d127c5f1cf345915ceb81830c5382f807adaaab3394",
+  "headerCommit": "7d3186c3dd2c708703524027b46b8703534ab3cc",
+  "headerSha256": "4ab5756e314c274c6c889c662c100e897dba4bfb2673f6ec5b104d47361100e6",
+  "cargoLockSha256": "f82b53b2d84322d91faa6bbafe2299ce6bfc5203162394e0dfb4c6b41c70eeec",
+  "rustToolchain": "1.99.1"
+}

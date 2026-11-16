@@ -14,7 +14,7 @@ public class NativeModelBenchmarks
     public int Count { get; set; }
 
     /// <summary>Gets or sets the descriptor and pass mutation scenario.</summary>
-    [Params("Numeric", "Static", "Mutation", "CrossPass")]
+    [Params("Numeric", "Static", "Mutation", "CrossPass", "Unchanged")]
     public string Scenario { get; set; } = "Numeric";
 
     /// <summary>Creates retained resources and warms native pipeline variants outside timing.</summary>
@@ -22,7 +22,12 @@ public class NativeModelBenchmarks
     public void Setup()
     {
         _workload = new();
-        _workload.Verify();
+        _workload.Verify(scenario: Scenario);
+        if (Scenario == "Unchanged")
+        {
+            _workload.PrepareUnchangedRegistrations();
+        }
+
         if (_workload.RecordInstances(Count, scenario: Scenario) != (ulong)Count || _workload.States(Count) != Count)
         {
             throw new InvalidOperationException("Native model workload did not execute.");

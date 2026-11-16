@@ -108,6 +108,7 @@ public sealed partial class UiSurface
 
     private void Publish(RebuildPlan plan)
     {
+        plan.FinalizeScrollBindings();
         UiProfiling.Add(1, 101, plan.Updates.Count);
         UiProfiling.Add(1, 102, plan.Removed.Length);
         foreach (ElementUpdate update in plan.Updates)

@@ -14,6 +14,11 @@ public partial class UiElement
 
     internal Vector2 InputOrigin { get; private set; }
 
+    internal bool BlocksAncestorPan => PreservePointerGesture;
+
+    /// <summary>Gets a value indicating whether ancestor touch panning must preserve this component gesture.</summary>
+    protected virtual bool PreservePointerGesture => false;
+
     internal UiInputResult InvokeInput(in UiInputContext context) => OnInput(in context);
 
     internal void InvokePointerCaptureChanged(UiPointerCaptureState state) => OnPointerCaptureChanged(state);

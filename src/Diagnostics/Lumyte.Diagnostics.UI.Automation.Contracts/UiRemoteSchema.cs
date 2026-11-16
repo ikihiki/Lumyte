@@ -142,7 +142,7 @@ public static class UiRemoteSchema
         using var document = JsonDocument.Parse(json, new() { MaxDepth = 16 });
         RejectDuplicates(document.RootElement);
         UiRemotePlan plan = JsonSerializer.Deserialize(json, UiAutomationJsonContext.Default.UiRemotePlan) ?? throw new JsonException("Missing plan.");
-        Require(plan.SchemaVersion is >= 1 and <= 4 && plan.Locator is not null && plan.Kind is "click" or "focus" or "press" or "count" or "expect" or "snapshot" or "screenshot" or "fill" or "expect-value" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option");
+        Require(plan.SchemaVersion is >= 1 and <= 5 && plan.Locator is not null && plan.Kind is "click" or "focus" or "press" or "count" or "expect" or "snapshot" or "screenshot" or "fill" or "expect-value" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option" or "scroll");
         Require(plan.SchemaVersion >= 2 || !document.RootElement.TryGetProperty("text", out _));
         Require(plan.SchemaVersion >= 3 || (!document.RootElement.TryGetProperty("candidate", out _) && !document.RootElement.TryGetProperty("candidateIndex", out _)));
         Require(plan.Kind is "snapshot" or "screenshot" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" ? plan.Locator.Length == 0 : plan.Locator.Length is >= 1 and <= 8);
@@ -165,10 +165,12 @@ public static class UiRemoteSchema
         Require(plan.SchemaVersion >= 4 || (!document.RootElement.TryGetProperty("optionKey", out _) && plan.Kind is not ("check" or "uncheck" or "select-option")));
         Require(plan.Kind == "select-option" ? !string.IsNullOrWhiteSpace(plan.OptionKey) && plan.OptionKey.Length <= 256 : plan.OptionKey is null);
 
-        Require(plan.Kind == "click" || plan.Position is null);
+        Require(plan.SchemaVersion >= 5 || plan.Kind != "scroll");
+        Require(plan.Kind != "scroll" || plan.Position is not null);
+        Require(plan.Kind is "click" or "scroll" || plan.Position is null);
         if (plan.Position is { } position)
         {
-            Require(double.IsFinite(position.X) && double.IsFinite(position.Y) && float.IsFinite((float)position.X) && float.IsFinite((float)position.Y) && position.X >= 0 && position.Y >= 0);
+            Require(double.IsFinite(position.X) && double.IsFinite(position.Y) && float.IsFinite((float)position.X) && float.IsFinite((float)position.Y) && (plan.Kind == "scroll" || (position.X >= 0 && position.Y >= 0)));
         }
 
         if (plan.Kind == "press")
@@ -227,7 +229,7 @@ public static class UiRemoteSchema
     /// <summary>Tests whether a plan can send input.</summary>
     /// <param name="plan">A validated plan.</param>
     /// <returns>Whether input authority is required.</returns>
-    public static bool IsAction(UiRemotePlan plan) => plan.Kind is "click" or "focus" or "press" or "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option";
+    public static bool IsAction(UiRemotePlan plan) => plan.Kind is "click" or "focus" or "press" or "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option" or "scroll";
 
     private static bool Counter(string value) => value is not null && value.Length <= 20 && ulong.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong parsed) && parsed != 0 && parsed.ToString(System.Globalization.CultureInfo.InvariantCulture) == value;
 

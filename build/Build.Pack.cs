@@ -10,7 +10,8 @@ internal sealed partial class Build
         Directory.CreateDirectory(output);
         if (Project is string project)
         {
-            if (SkipParleyPackage && Path.GetFileName(project) == "Lumyte.Graphics.Text.Parley.csproj")
+            if ((SkipParleyPackage && Path.GetFileName(project) == "Lumyte.Graphics.Text.Parley.csproj")
+                || (SkipWgpuPackage && Path.GetFileName(project) == "Lumyte.Graphics.Wgpu.csproj"))
             {
                 return;
             }
@@ -29,6 +30,7 @@ internal sealed partial class Build
             .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
             .Where(path => !HostOnly || IsHostProject(path))
             .Where(path => !SkipParleyPackage || Path.GetFileName(path) != "Lumyte.Graphics.Text.Parley.csproj")
+            .Where(path => !SkipWgpuPackage || Path.GetFileName(path) != "Lumyte.Graphics.Wgpu.csproj")
             .Order(StringComparer.Ordinal)
             .ToArray();
         if (projects.Length == 0)
