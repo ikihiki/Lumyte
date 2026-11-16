@@ -21,6 +21,12 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
+    private V.Pipeline _boundPipeline;
+    private V.PipelineLayout _boundDescriptorLayout;
+    private VulkanShaderBinding? _boundDescriptors;
+    private object? _boundProgram;
+    private int _pipelineBindCount;
+    private int _descriptorBindCount;
     private VulkanArgumentTable? _table;
     private VulkanArgumentTable? _argumentTableHint;
 
@@ -316,14 +322,35 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
         _pipeline.ValidateAlive();
 
-        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, registrations, _depthFormat, indexed ? _indexFormat : null);
-        owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
+        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, table?.LayoutKey, _depthFormat, indexed ? _indexFormat : null);
+
+        VulkanShaderBinding? binding = null;
         if (registrations != null)
         {
-            VulkanShaderBinding binding = table!.AcquireBinding(registrations, _pipeline.ArgumentLayout);
+            binding = table!.AcquireBinding(registrations, _pipeline.ArgumentLayout);
             owner.KeepBinding(binding, registrations);
+        }
+
+        // Publish only commands actually emitted. Program identity deliberately makes
+        // layout compatibility conservative even when native layouts are equivalent.
+        if (_boundPipeline.Handle != pipeline.Handle || !ReferenceEquals(_boundProgram, _pipeline))
+        {
+            owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
+            _boundPipeline = pipeline;
+            _pipelineBindCount++;
+        }
+
+        if (binding != null && (!ReferenceEquals(_boundDescriptors, binding) ||
+            _boundDescriptorLayout.Handle != _pipeline.ArgumentPipelineLayout.Handle ||
+            !ReferenceEquals(_boundProgram, _pipeline)))
+        {
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
+            _boundDescriptors = binding;
+            _boundDescriptorLayout = _pipeline.ArgumentPipelineLayout;
+            _descriptorBindCount++;
         }
+
+        _boundProgram = _pipeline;
     }
 }

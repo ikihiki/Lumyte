@@ -6,4 +6,8 @@ namespace Lumyte.UI;
 /// <param name="PointerId">The nonnegative host-assigned pointer identity.</param>
 /// <param name="Phase">The pointer transition.</param>
 /// <param name="Position">The finite surface-local position; cancellation may use zero.</param>
-public sealed record UiPointerInput(long PointerId, UiPointerPhase Phase, Vector2 Position) : UiInput;
+public sealed record UiPointerInput(long PointerId, UiPointerPhase Phase, Vector2 Position) : UiInput
+{
+    /// <summary>Gets the pointer source, defaulting to mouse for compatibility.</summary>
+    public UiPointerDevice Device { get; init; }
+}

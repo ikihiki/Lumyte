@@ -105,6 +105,11 @@ public partial class UiElement
 
     internal UiInvalidation ModifierChanges(Compose.Definitions.Widget next)
     {
+        if (!Widget.ParentData.AsSpan().SequenceEqual(next.ParentData))
+        {
+            return UiInvalidation.All;
+        }
+
         ReadOnlySpan<UiBoxModifier> before = Widget.BoxModifiers;
         ReadOnlySpan<UiBoxModifier> after = next.BoxModifiers;
         if (before.Length != after.Length)

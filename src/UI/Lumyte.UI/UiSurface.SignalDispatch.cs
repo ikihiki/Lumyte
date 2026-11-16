@@ -84,6 +84,7 @@ public sealed partial class UiSurface
 
         if (input is UiFocusLostInput)
         {
+            _panCandidates.Clear();
             bool cancelled = CancelAllInput();
             return (!_isDisposed && RouteInput(_rootElement, input)) || cancelled;
         }
@@ -107,9 +108,36 @@ public sealed partial class UiSurface
                 throw new ArgumentOutOfRangeException(nameof(input));
             }
 
-            UiElement? wheelHit = UiInputGeometry.Contains(Vector2.Zero, _viewport, wheel.Position)
-                ? _rootElement.FindInputHit(wheel.Position, _inputVersion) : null;
-            return wheelHit is not null && RouteInput(wheelHit, wheel);
+            UiElement? wheelHit = HitTest(wheel.Position);
+            Vector2 residual = wheel.Delta;
+            bool consumed = false;
+            for (UiElement? node = wheelHit; node is not null; node = node.Parent)
+            {
+                if (node is ScrollViewElement scroll && AcceptsCurrentInput(scroll))
+                {
+                    bool vertical = scroll.Widget.Orientation == UiOrientation.Vertical;
+                    float delta = vertical ? residual.Y : residual.X;
+                    float remainder = scroll.ApplyDelta(delta);
+                    if (_isDisposed || !ReferenceEquals(scroll.Surface, this))
+                    {
+                        return true;
+                    }
+
+                    consumed |= remainder != delta;
+                    residual = vertical ? new(residual.X, remainder) : new(remainder, residual.Y);
+                }
+                else if (DeliverInput(node, wheel with { Delta = residual }, false) != UiInputResult.Unhandled)
+                {
+                    return true;
+                }
+
+                if (_isDisposed || !ReferenceEquals(node.Surface, this))
+                {
+                    return consumed;
+                }
+            }
+
+            return consumed;
         }
 
         if (input is not UiPointerInput pointer)
@@ -118,9 +146,36 @@ public sealed partial class UiSurface
         }
 
         ArgumentOutOfRangeException.ThrowIfNegative(pointer.PointerId);
+        if (!Enum.IsDefined(pointer.Device))
+        {
+            throw new ArgumentOutOfRangeException(nameof(input));
+        }
+
         if (!float.IsFinite(pointer.Position.X) || !float.IsFinite(pointer.Position.Y))
         {
             throw new ArgumentOutOfRangeException(nameof(input));
+        }
+
+        try
+        {
+            if (RoutePan(pointer, out bool panConsumed))
+            {
+                return panConsumed;
+            }
+        }
+        catch (Exception failure)
+        {
+            _panCandidates.Remove(pointer.PointerId);
+            try
+            {
+                CancelPointer(pointer.PointerId);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException(failure, cleanupFailure);
+            }
+
+            throw;
         }
 
         if (pointer.Phase == UiPointerPhase.Cancel)
@@ -168,6 +223,7 @@ public sealed partial class UiSurface
         long focusChange = _focusChange;
         long focusRequest = _focusRequest;
         bool handled = hit is not null && RouteInput(hit, pointer);
+        handled |= pointer.Phase == UiPointerPhase.Down && _panCandidates.ContainsKey(pointer.PointerId);
         if (!_isDisposed && pointer.Phase == UiPointerPhase.Down && _focusChange == focusChange && _focusRequest == focusRequest
             && (!handled || _pointerCaptures.ContainsKey(pointer.PointerId)))
         {

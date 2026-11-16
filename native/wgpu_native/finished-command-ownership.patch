@@ -1,0 +1,10 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1459,6 +1459,6 @@
+     Arc::into_raw(Arc::new(WGPUCommandBufferImpl {
+         context: context.clone(),
+         id: command_buffer_id,
+-        open: atomic::AtomicBool::new(false),
++        open: atomic::AtomicBool::new(true),
+     }))
+ }

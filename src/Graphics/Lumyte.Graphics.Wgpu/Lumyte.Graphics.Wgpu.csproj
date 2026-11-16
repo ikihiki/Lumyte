@@ -10,7 +10,9 @@
     <Using Include="Lumyte.Graphics.Shared" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
-    <PackageReference Include="Ahjo.Wgpu" Version="0.7.0" />
+    <PackageReference Include="Ahjo.Wgpu" Version="0.7.0" ExcludeAssets="native" PrivateAssets="native" />
+    <PackageReference Include="Ahjo.Wgpu.Native" Version="0.7.0" ExcludeAssets="native" PrivateAssets="native" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
+  <Import Project="../../../build/Targets/WgpuNative.targets" />
 </Project>

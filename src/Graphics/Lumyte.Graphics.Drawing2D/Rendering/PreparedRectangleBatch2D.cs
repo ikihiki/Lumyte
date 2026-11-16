@@ -232,6 +232,11 @@ internal sealed class PreparedRectangleBatch2D : IRetainedCommandBatch2D
                 return;
             }
 
+            if (_reservation is not null)
+            {
+                _context.ArgumentPlan.RetirePreparedResources([_reservation]);
+            }
+
             if (_entry is { } entry)
             {
                 if (entry.Upload.IsMapped)
