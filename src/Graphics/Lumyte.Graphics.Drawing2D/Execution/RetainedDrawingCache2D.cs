@@ -91,6 +91,16 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
+    internal void RecordFrame(PreparedDraw2D drawing, IGraphicsCommandBuffer commands, DrawingProfileScope? profile)
+    {
+        // Retirement mutates shared logical tables. Keep physical binding snapshots
+        // serial with cache eviction even when another frame completes on a worker.
+        lock (_gate)
+        {
+            drawing.RecordCore(commands, profile);
+        }
+    }
+
     internal void AdmitFrame(FrameLease frame)
     {
         lock (_gate)
