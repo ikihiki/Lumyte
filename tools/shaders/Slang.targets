@@ -2,7 +2,6 @@
   <PropertyGroup>
     <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
     <_LumyteShaderToolProject>$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/Lumyte.ShaderCompiler.csproj</_LumyteShaderToolProject>
-    <_LumyteShaderTool>$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.ShaderCompiler.dll</_LumyteShaderTool>
     <_LumyteShaderDotnet Condition="'$(DotNetHostPath)' != ''">$(DotNetHostPath)</_LumyteShaderDotnet>
     <_LumyteShaderDotnet Condition="'$(_LumyteShaderDotnet)' == ''">dotnet</_LumyteShaderDotnet>
   </PropertyGroup>
@@ -40,10 +39,20 @@
   <!-- Use the shared MSBuild graph, not recursive independent dotnet build processes. -->
   <Target Name="PrepareLumyteShaderCompiler" Condition="'@(SlangShader)' != ''">
     <MSBuild Projects="$(_LumyteShaderToolProject)" Targets="Build" Properties="Configuration=Release"
-             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" BuildInParallel="false" />
+             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" BuildInParallel="false">
+      <Output TaskParameter="TargetOutputs" ItemName="_LumyteShaderToolTarget" />
+    </MSBuild>
+    <!-- Build returns the tool project's evaluated TargetPath, including alternate output layouts. -->
+    <PropertyGroup>
+      <_LumyteShaderTool>@(_LumyteShaderToolTarget->'%(FullPath)')</_LumyteShaderTool>
+      <_LumyteShaderToolDirectory>$([System.IO.Path]::GetDirectoryName('$(_LumyteShaderTool)'))</_LumyteShaderToolDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <_LumyteShaderToolInputs Include="$(_LumyteShaderTool);$(_LumyteShaderToolDirectory)/Lumyte.Graphics.Shaders.dll;$(_LumyteShaderToolDirectory)/Lumyte.Graphics.Abstractions.dll" />
+    </ItemGroup>
   </Target>
   <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);$(_LumyteShaderTool);$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.Graphics.Shaders.dll;$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll"
+          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);@(_LumyteShaderToolInputs)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != ''">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
