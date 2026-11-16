@@ -16,7 +16,7 @@ public sealed class MapStyle
         ArgumentException.ThrowIfNullOrWhiteSpace(schemaId);
         ArgumentException.ThrowIfNullOrWhiteSpace(version);
         ArgumentNullException.ThrowIfNull(layers);
-        _ = PaintGraph2D.Solid(background);
+        BackgroundPaint = PaintGraph2D.Solid(background);
         MapStyleLayer[] snapshot = layers.ToArray();
         if (snapshot.Any(layer => layer is null))
         {
@@ -40,4 +40,6 @@ public sealed class MapStyle
 
     /// <summary>Gets painter order, including separate road casing and interior passes.</summary>
     public IReadOnlyList<MapStyleLayer> Layers { get; }
+
+    internal PaintGraph2D BackgroundPaint { get; }
 }

@@ -11,5 +11,6 @@
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/Lumyte.Graphics.Drawing2D.RenderGraph.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Text.Parley/Lumyte.Graphics.Text.Parley.csproj" />
     <Compile Include="../../Graphics/Lumyte.Graphics.Tests/GpuFactAttribute.cs" Link="Fixtures/GpuFactAttribute.cs" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
   </ItemGroup>
 </Project>

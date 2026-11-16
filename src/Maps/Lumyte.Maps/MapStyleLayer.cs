@@ -13,7 +13,7 @@ public sealed class MapStyleLayer
     public MapStyleLayer(string sourceLayer, SRgba<float> color, StrokeStyle2D? stroke = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceLayer);
-        _ = PaintGraph2D.Solid(color);
+        Paint = PaintGraph2D.Solid(color);
         if (stroke is not null && (!float.IsFinite(stroke.Width) || stroke.Width <= 0
             || !float.IsFinite(stroke.MiterLimit) || stroke.MiterLimit < 1
             || !Enum.IsDefined(stroke.Cap) || !Enum.IsDefined(stroke.Join)))
@@ -34,4 +34,6 @@ public sealed class MapStyleLayer
 
     /// <summary>Gets the immutable stroke, or null for fills.</summary>
     public StrokeStyle2D? Stroke { get; }
+
+    internal PaintGraph2D Paint { get; }
 }

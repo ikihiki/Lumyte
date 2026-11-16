@@ -24,7 +24,7 @@ public sealed partial class MapSession
             try
             {
                 canvas.ClipRect(new(0, 0, _viewport.X, _viewport.Y));
-                canvas.FillRect(new(0, 0, _viewport.X, _viewport.Y), _style.Background);
+                canvas.FillRect(new(0, 0, _viewport.X, _viewport.Y), _style.BackgroundPaint);
                 foreach (MapStyleLayer paint in _style.Layers)
                 {
                     foreach (Entry entry in _entries)
@@ -63,11 +63,11 @@ public sealed partial class MapSession
                                         Path2D geometry = BuildPath(feature, layer.Extent, left, placement);
                                         if (paint.Stroke is { } stroke)
                                         {
-                                            canvas.StrokePath(geometry, paint.Color, stroke);
+                                            canvas.StrokePath(geometry, paint.Paint, stroke);
                                         }
                                         else
                                         {
-                                            canvas.FillPath(geometry, paint.Color, FillRule2D.NonZero);
+                                            canvas.FillPath(geometry, paint.Paint, FillRule2D.NonZero);
                                         }
                                     }
                                 }
