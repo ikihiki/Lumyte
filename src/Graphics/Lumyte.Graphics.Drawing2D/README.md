@@ -170,3 +170,9 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 返却済み状態は資産ではなく frame ごとの使用権に保持します。cleanup が失敗して古い Retire を再試行しても、後の frame に貸し出した資産を返却し直しません。GPU 完了または未送信が確定した枠の返却と、失敗した資産 cleanup の再試行を分け、失敗した資産は cache 側が保持します。Prepare が返る前に失敗した場合も枠を失わず、次の Prepare または renderer.Dispose で保留 cleanup を再試行します。cleanup が継続して失敗する場合は新規準備より先にその失敗を通知し、使用中 frame と誤って報告しません。Prepare と cleanup の両方が失敗した場合は、両方の例外を AggregateException に保持します。
 
 この直接描画経路は既存 direct renderer と同様に、RenderGraph の layer/effect 命令を受け付けません。対応しない命令は明示的に失敗し、別 shader へ黙って置き換えません。
+
+## Pixel ownership partitions
+
+`DrawingCanvas2D.ClipOwnershipRect(rect)` captures a rectangle independently of ordinary antialiased `ClipRect` UI boundaries. Preparation applies the target pixel scale and origin, then includes whole pixels whose centers lie in the transformed device-space half-open `[minimum, maximum)` bounds. Each included pixel keeps every shape/paint AA sample; adjacent translucent buffered drawings therefore do not multiply partial clip coverage at fractional seams. This changes only ownership, not camera coordinates or geometry.
+
+Translation, axis-aligned scale and reflection are supported. Rotation/shear introduced at recording, replay or retained-scene transformation is explicitly rejected during preparation; it never falls back to antialiased clipping. Singular transforms remain empty. Replay and retained page rebasing preserve ownership metadata, and structural clip caches distinguish ownership from AA geometry. Keep an ordinary outer `ClipRect` for antialiased UI bounds.
