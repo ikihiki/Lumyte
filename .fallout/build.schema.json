@@ -68,6 +68,8 @@
         "TestUiApplication",
         "TestUiControls",
         "TestUiControlsAot",
+        "TestUiLayout",
+        "TestUiLayoutAot",
         "TestUiMedia",
         "TestUiNavigation",
         "TestUiPages",
