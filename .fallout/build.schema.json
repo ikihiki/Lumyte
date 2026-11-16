@@ -21,6 +21,8 @@
         "BenchmarkGraphicsIntegration",
         "BenchmarkInput",
         "BenchmarkSignals",
+        "BenchmarkUI",
+        "BenchmarkUIIntegration",
         "CheckFormat",
         "CheckMarkdown",
         "CheckNativeFormat",

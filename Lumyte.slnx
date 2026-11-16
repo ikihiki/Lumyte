@@ -262,6 +262,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.Benchmark.Tests/Lumyte.UI.Benchmark.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Navigation.Tests/Lumyte.UI.Navigation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Application.Navigation.Tests/Lumyte.UI.Application.Navigation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Application.Tests/Lumyte.UI.Application.Tests.csproj" />
@@ -273,5 +274,17 @@
   </Folder>
   <Folder Name="/tools/colors/">
     <Project Path="tools/colors/Lumyte.NamedColors.Generator/Lumyte.NamedColors.Generator.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/UI/">
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Browser.Benchmark/Lumyte.UI.Application.Browser.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Benchmark/Lumyte.UI.Application.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Desktop.Benchmark/Lumyte.UI.Application.Desktop.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Application.Navigation.Benchmark/Lumyte.UI.Application.Navigation.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Automation.Benchmark/Lumyte.UI.Automation.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Benchmark/Lumyte.UI.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Navigation.Benchmark/Lumyte.UI.Navigation.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.TextEditing.Benchmark/Lumyte.UI.TextEditing.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.TextEditing.Parley.Benchmark/Lumyte.UI.TextEditing.Parley.Benchmark.csproj" />
+    <Project Path="benchmarks/UI/Lumyte.UI.Windowing.Benchmark/Lumyte.UI.Windowing.Benchmark.csproj" />
   </Folder>
 </Solution>

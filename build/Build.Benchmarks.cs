@@ -36,6 +36,10 @@ internal sealed partial class Build
 
     private Target BenchmarkGraphicsIntegration => definition => definition.Executes(() => RunBenchmarksAsync("Graphics", integratedGraphics: true));
 
+    private Target BenchmarkUI => definition => definition.Executes(() => RunBenchmarksAsync("UI"));
+
+    private Target BenchmarkUIIntegration => definition => definition.Executes(() => RunBenchmarksAsync("UI", integratedUI: true));
+
     private Target BenchmarkCoreEvaluate => definition => definition.Executes(EvaluateCoreAsync);
 
     private async Task EvaluateCoreAsync()
@@ -347,7 +351,7 @@ internal sealed partial class Build
         }
     }
 
-    private async Task RunBenchmarksAsync(string area, bool integratedGraphics = false)
+    private async Task RunBenchmarksAsync(string area, bool integratedGraphics = false, bool integratedUI = false)
     {
         string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
         if (Configuration != "Release")
@@ -360,7 +364,7 @@ internal sealed partial class Build
             throw new ArgumentOutOfRangeException(nameof(BenchmarkTimeoutSeconds), "The shared deadline must be positive and at most 900 seconds.");
         }
 
-        string[] projects = BenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject, area, area == "Graphics" ? integratedGraphics : null);
+        string[] projects = BenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject, area, area == "Graphics" ? integratedGraphics : null, area == "UI" ? integratedUI : null);
         string root = Path.GetFullPath(Output ?? Path.Combine(ArtifactRoot, area.ToLowerInvariant() + "-benchmarks", DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffff", System.Globalization.CultureInfo.InvariantCulture)));
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(Path.Combine(RepositoryDirectory, "artifacts", "nuget"));
@@ -372,7 +376,7 @@ internal sealed partial class Build
         var manifest = new JsonObject
         {
             ["schema"] = area.ToLowerInvariant() + "-benchmark-run-v1",
-            ["execution_kind"] = area == "Graphics" ? (integratedGraphics ? "gpu-integrated" : "cpu-only") : "component",
+            ["execution_kind"] = area == "Graphics" ? (integratedGraphics ? "gpu-integrated" : "cpu-only") : area == "UI" ? (integratedUI ? "ui-hardware-integrated" : "cpu-only") : "component",
             ["area"] = area,
             ["mode"] = BenchmarkList ? "catalog" : mode,
             ["project_filter"] = BenchmarkProject,
@@ -425,7 +429,7 @@ internal sealed partial class Build
                 }
 
                 string binaryHash = ComponentScreening.FileHash(binary);
-                string outputHash = BenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!);
+                string outputHash = BenchmarkExecutionOutputs(project, binary);
                 if (BenchmarkInputs(project, area) != inputHash)
                 {
                     throw new InvalidOperationException("Benchmark inputs changed during build; rebuild from frozen sources.");
@@ -469,7 +473,7 @@ internal sealed partial class Build
                     entry.Record["selected_cases"] = selected.DeepClone();
                     catalog["Cases"] = selected.DeepClone();
                     entry.Record["catalog"] = catalog;
-                    if (BenchmarkCatalog.OutputHash(Path.GetDirectoryName(entry.Binary)!) != entry.Record["outputs_sha256"]!.ToString())
+                    if (BenchmarkExecutionOutputs(entry.Project, entry.Binary) != entry.Record["outputs_sha256"]!.ToString())
                     {
                         throw new InvalidOperationException("Benchmark execution dependencies changed during the run.");
                     }
@@ -503,7 +507,7 @@ internal sealed partial class Build
                     }
                 }
 
-                if (BenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!) != record["outputs_sha256"]!.ToString())
+                if (BenchmarkExecutionOutputs(project, binary) != record["outputs_sha256"]!.ToString())
                 {
                     throw new InvalidOperationException("Benchmark execution dependencies changed during the run.");
                 }
@@ -529,6 +533,20 @@ internal sealed partial class Build
     private static Dictionary<string, string?> BenchmarkEnvironment(Dictionary<string, string?> inherited, string project)
         => new(inherited) { ["LUMYTE_BENCHMARK_PROJECT"] = project };
 
+    private static string BenchmarkExecutionOutputs(string project, string binary)
+    {
+        if (Path.GetFileNameWithoutExtension(project) != "Lumyte.UI.Application.Browser.Benchmark")
+        {
+            return BenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!);
+        }
+
+        string[] external = new[] { "LUMYTE_UI_BENCHMARK_BROWSER_ROOT", "LUMYTE_UI_BENCHMARK_CHROME" }
+            .Select(name => Environment.GetEnvironmentVariable(name))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => File.Exists(value) ? Path.GetDirectoryName(Path.GetFullPath(value!))! : Path.GetFullPath(value!)).ToArray();
+        return BenchmarkCatalog.OutputHash(Path.GetDirectoryName(binary)!, external);
+    }
+
     private string BenchmarkInputs(string project, string area)
     {
         var inputs = new List<string>
@@ -550,6 +568,14 @@ internal sealed partial class Build
         if (area == "Graphics")
         {
             foreach (string path in new[] { "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+            {
+                inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, path)));
+            }
+        }
+
+        if (area == "UI")
+        {
+            foreach (string path in new[] { "src/Graphics", "src/Animation", "src/Input", "src/Platform", "src/Diagnostics", "tools/graphics", "benchmarks/UI/Shared", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
             {
                 inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, path)));
             }

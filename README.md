@@ -15,6 +15,10 @@ dotnet run --project build -c Release -- --target Test
 - [サンプル一覧と共通ランチャー](samples/README.md)
 - [テストの分類と実行手順](tests/README.md)／[ベンチマーク一覧](benchmarks/README.md)
   - GraphicsのCPU計測: `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen`（GPUを含む統合計測とは別profile）。
+  - UIのCPU計測: `dotnet run --project build -c Release -- --target BenchmarkUI --benchmark-mode screen`。`--benchmark-list true`は未計測catalogを返す。
+  - UIの実backend・標準host計測は`BenchmarkUIIntegration`へ分離。明示的な`LUMYTE_UI_BENCHMARK_GPU=1`が必要。Desktopは所有displayを`LUMYTE_UI_BENCHMARK_OWNED_DISPLAY`と`DISPLAY`へ指定する。Browserは`benchmarks/UI/Shared/BrowserHost/BrowserHost.csproj`をpublishし、`LUMYTE_UI_BENCHMARK_BROWSER_ROOT`へwwwroot、`LUMYTE_UI_BENCHMARK_CHROME`へChrome実行ファイルを指定する。
+  - UIの実wgpu CPU記録は短い機能検証には成功したが、未送信記録を繰り返すcompareではnativeの`Not enough memory left`で失敗した。測定値は採用せず、定常反復の資源管理は未解決として区別する。
+  - UIの1000要素統合ケースは現ベースで破棄済みbuffer参照／pass終了時の例外を検出している。ケースと機能検証は残し、成功した小規模profileだけを測った結果を全体完了とは扱わない。提示は所有仮想画面／Browser内の完了で、物理scanout・VSyncやOS IMEの計測ではない。
 - [開発環境のセットアップ](docs/development-environment.md)
 - [共通ビルド手順](build/README.md)／[ビルド工程の設計](docs/adr/0004-build-orchestration.md)
 - [ADR の書き方と運用](docs/adr/0001-adr-writing-policy.md)
