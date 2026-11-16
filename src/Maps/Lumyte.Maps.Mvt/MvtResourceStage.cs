@@ -5,6 +5,7 @@ namespace Lumyte.Maps.Mvt;
 /// <summary>Reusable Resources stage accepting only the bounded snapshot owned by its exact registration.</summary>
 public sealed class MvtResourceStage : IResourceSourceStage<MapTileContent>
 {
+    private readonly BoundedMvtRegistration? _bounded;
     private readonly LocalMvtRegistration? _local;
     private readonly InMemoryMvtRegistration? _memory;
 
@@ -22,10 +23,21 @@ public sealed class MvtResourceStage : IResourceSourceStage<MapTileContent>
         _memory = registration ?? throw new ArgumentNullException(nameof(registration));
     }
 
+    /// <summary>Initializes a new instance of the <see cref="MvtResourceStage"/> class for bounded transport input.</summary>
+    /// <param name="registration">Exact registration shared with the source.</param>
+    public MvtResourceStage(BoundedMvtRegistration registration)
+    {
+        _bounded = registration ?? throw new ArgumentNullException(nameof(registration));
+    }
+
     /// <inheritdoc />
     public async ValueTask<MapTileContent> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
     {
-        if (_local is not null)
+        if (_bounded is not null)
+        {
+            _bounded.Validate(context.Address);
+        }
+        else if (_local is not null)
         {
             _local.Validate(context.Address);
         }
@@ -43,6 +55,11 @@ public sealed class MvtResourceStage : IResourceSourceStage<MapTileContent>
         if (snapshot is InMemoryMvtSource.Snapshot memory && ReferenceEquals(memory.Registration, _memory))
         {
             return MvtDecoder.Decode(memory.Content, _memory!.Profile, snapshot.Revision);
+        }
+
+        if (snapshot is BoundedMvtRegistration.Snapshot bounded && ReferenceEquals(bounded.Registration, _bounded))
+        {
+            return MvtDecoder.Decode(bounded.Content, _bounded!.Profile, snapshot.Revision);
         }
 
         throw new InvalidOperationException("The registered source must supply its own bounded memory snapshot.");

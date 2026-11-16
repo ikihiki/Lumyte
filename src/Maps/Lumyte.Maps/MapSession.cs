@@ -19,6 +19,7 @@ public sealed partial class MapSession : IAsyncDisposable
     private bool _stopping;
     private bool _disposed;
     private bool _entered;
+    private bool _retirementQuiescent;
 
     /// <summary>Initializes a new instance of the <see cref="MapSession"/> class.</summary>
     /// <param name="resources">Borrowed manager, outliving this session.</param>
@@ -88,9 +89,10 @@ public sealed partial class MapSession : IAsyncDisposable
     /// <summary>Gets the display dependency revision.</summary>
     public ulong DisplayRevision { get; private set; }
 
-    /// <summary>Gets a value indicating whether stop was requested and all retains reached terminal collection.</summary>
-    public bool IsStopped => _spatial ? SpatialStopped : _stopping && _maintenance is null
-        && !_maintenanceRequired && _maintenanceFailure is null && _entries.All(entry => entry.Operation is null);
+    /// <summary>Gets a value indicating whether stop reached producer quiescence; established quiescence remains stable during retirement.</summary>
+    /// <remarks>DisposeAsync owns final cleanup completion. Starting disposal before terminal collection does not establish quiescence.</remarks>
+    public bool IsStopped => _retirementQuiescent || (_spatial ? SpatialStopped : _stopping && _maintenance is null
+        && !_maintenanceRequired && _maintenanceFailure is null && _entries.All(entry => entry.Operation is null));
 
     /// <summary>Gets storage charged in full even for shared manager cache hits.</summary>
     public long ResidentCpuBytes => _entries.Sum(entry => entry.Charge);
@@ -336,6 +338,7 @@ public sealed partial class MapSession : IAsyncDisposable
             throw new InvalidOperationException("Session callbacks cannot reenter cleanup.");
         }
 
+        _retirementQuiescent = IsStopped;
         _stopping = true;
         _disposeTask = DisposeCoreAsync();
         return new(_disposeTask);

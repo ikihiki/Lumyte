@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/Maps/">
+    <Project Path="src/Maps/Lumyte.Maps.Http/Lumyte.Maps.Http.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <Project Path="src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />

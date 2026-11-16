@@ -43,3 +43,13 @@ Browser の既知の CDP deadline／cleanup 例外を合格に読み替えない
 既存 launcher の headless、strict NativeAOT publish／生成物の実行、strict linux-x64 trim publish／生成物の実行が、すべて実 tile arrival・Manager reclamation・停止まで成功した。strict flag は `ILLinkTreatWarningsAsErrors=true` と NativeAOT の `IlcTreatWarningsAsErrors=true`。Markdown は 340 files／0 issues、`git diff --check` も成功した。
 
 raw log は `final-summary.log`、`final-{session,ui,mvt,catalog,browser-js,launcher}.log`、`final-aot-{publish,run}.log`、`final-trim-{publish,run}.log`、`final-markdown.log`。Browser の全体実行はこの M4 gate で再試行・合格扱いにしていない。継承した M3 の既知の CDP／終了例外と、今回成功した JavaScript 契約試験は別の結果である。
+
+## 最終レビュー追補：Retire 中の producer quiescence
+
+親レビューで、fixed／finite の IsStopped が true になって RetireAsync に入った後、最終 maintenance が pending になって false へ戻る回帰を検出した。実 UiApplication の Turn は false の content を Advance するため、Dispose が所有している状態へ再入して application failure になる。spatial でも最終 sweep が別の unused generation に出会う場合に同じ問題がある。
+
+actual Headless UiApplication と MapView を使う 3 case（fixed／finite／spatial）を追加した。実 tile の採用後に停止し、Stage.Release を明示 gate で保持したまま owner dispatcher の turn と quiescence を観測する。spatial case は通常停止の実回収後に別の unused generation を用意し、最終 sweep を非同期にする。修正前の同じ試験は 3 件すべて、UiApplication.Turn → Content.Advance → MapSession.Enter の InvalidOperationException で失敗した。raw log は `retirement-before.log`。最初の DI fixture 構成エラーは別の `retirement-fixture-registration-before.log` に分離し、回帰再現の証拠には数えない。
+
+修正は MapSession だけの quiescence latch で、Dispose の入口ですでに IsStopped だった場合だけ保持する。単に DisposeTask が存在するだけで true にしない。追加の 3 case は、早期 Dispose 中に accepted retain が未完了なら、IsStopped=false、予約256 byte と in-flight 1 を維持し、実終端後にだけ解放できることを検証する。host の例外抑制・Advance 条件・scheduler は変更しない。最終 cleanup の実完了と失敗・再試行は、引き続き DisposeAsync の Task が所有する。
+
+修正後の同じ Headless 回帰 3 case は成功した（`retirement-after.log`）。最終 gate は Maps UI 8、session 42（実 Radeon GPU 5 を含む）、既存 application LifecycleTests 8 が成功し、失敗／skip は 0。strict NativeAOT／trim の publish と、各生成物での実 spatial path・reclamation・停止も成功した。Markdown 340 files／0 issues、diff check も成功。コマンドは `/tmp/lumyte-m4-retirement-gates.sh`、全体結果は `retirement-final-summary.log`、個別 raw log は `retirement-final-{ui,session,app}.log` と `retirement-{aot,trim}-{publish,run}.log`。修正は Maps の状態だけで、UiApplication／dispatcher／executor の production code は変更していない。
