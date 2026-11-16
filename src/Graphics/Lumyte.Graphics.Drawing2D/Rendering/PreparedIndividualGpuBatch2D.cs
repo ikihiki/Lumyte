@@ -108,6 +108,7 @@ internal sealed class PreparedIndividualGpuBatch2D : IRetainedCommandBatch2D
         }
 
         _disposed = true;
+        _context.ArgumentPlan.RetirePreparedResources(_commands.Select(command => command.Reservation));
         UnmapStaging();
         while (_owned.Count != 0)
         {

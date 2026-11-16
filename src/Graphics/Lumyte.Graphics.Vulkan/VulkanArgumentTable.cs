@@ -8,6 +8,8 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     private readonly Dictionary<uint, ArgumentRegistration> _samplers = new();
     private readonly Dictionary<uint, ArgumentRegistration> _buffers = new();
     private readonly Dictionary<(uint Textures, uint Samplers), VulkanShaderBinding> _sets = [];
+    private IShaderReference[]? _registrations;
+    private DescriptorLayoutKey? _layoutKey;
     private bool _sealed;
     private long _descriptorGeneration;
     private bool _disposed;
@@ -17,6 +19,38 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     public uint SamplerCapacity { get; } = desc.SamplerCapacity;
 
     public uint BufferCapacity { get; } = desc.BufferCapacity;
+
+    internal int SnapshotBuildCount { get; private set; }
+
+    internal int LayoutScanCount { get; private set; }
+
+    internal DescriptorLayoutKey LayoutKey
+    {
+        get
+        {
+            ThrowIfDisposed();
+            if (_layoutKey is not { } key)
+            {
+                uint textures = 1;
+                uint samplers = 1;
+                foreach (uint slot in _textures.Keys)
+                {
+                    textures = Math.Max(textures, checked(slot + 1));
+                }
+
+                foreach (uint slot in _samplers.Keys)
+                {
+                    samplers = Math.Max(samplers, checked(slot + 1));
+                }
+
+                key = new(textures, samplers);
+                _layoutKey = key;
+                LayoutScanCount++;
+            }
+
+            return key;
+        }
+    }
 
     internal long DescriptorGeneration => _descriptorGeneration;
 
@@ -98,6 +132,8 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         }
 
         DropSets();
+        _registrations = null;
+        _layoutKey = null;
         _textures.Clear();
         _samplers.Clear();
         _buffers.Clear();
@@ -107,7 +143,30 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     internal IShaderReference[] SnapshotRegistrations()
     {
         ThrowIfDisposed();
-        return _textures.Values.Concat(_samplers.Values).Concat(_buffers.Values).Cast<IShaderReference>().ToArray();
+        if (_registrations == null)
+        {
+            var registrations = new IShaderReference[_textures.Count + _samplers.Count + _buffers.Count];
+            int index = 0;
+            foreach (ArgumentRegistration entry in _textures.Values)
+            {
+                registrations[index++] = entry;
+            }
+
+            foreach (ArgumentRegistration entry in _samplers.Values)
+            {
+                registrations[index++] = entry;
+            }
+
+            foreach (ArgumentRegistration entry in _buffers.Values)
+            {
+                registrations[index++] = entry;
+            }
+
+            _registrations = registrations;
+            SnapshotBuildCount++;
+        }
+
+        return _registrations;
     }
 
     internal bool BelongsTo(VulkanDevice device) => ReferenceEquals(owner, device);
@@ -118,8 +177,9 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     {
         ThrowIfDisposed();
         VulkanShaderBinding.ValidateResources(registrations);
-        uint textures = registrations.Where(r => r.Resource is VulkanTextureView).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
-        uint samplers = registrations.Where(r => r.Resource is VulkanSampler).Select(r => checked(r.Slot + 1)).DefaultIfEmpty(1u).Max();
+        DescriptorLayoutKey shape = LayoutKey;
+        uint textures = shape.Textures;
+        uint samplers = shape.Samplers;
 
         // Every layout is manufactured by CreateLayout with exactly this canonical shape,
         // stage flags and binding flags. Native handle identity is deliberately irrelevant.
@@ -144,6 +204,7 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
 
     private void MutateDescriptors()
     {
+        _layoutKey = null;
         if (_sealed)
         {
             _descriptorGeneration++;
@@ -173,6 +234,7 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         var entry = new ArgumentRegistration(this, slot, resource, offset, size, count, access);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         slots[slot] = entry;
+        _registrations = null;
         if (!ReferenceEquals(slots, _buffers))
         {
             MutateDescriptors();
@@ -185,9 +247,13 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     {
         ThrowIfDisposed();
         ValidateSlot(capacity, slot);
-        if (slots.Remove(slot) && !ReferenceEquals(slots, _buffers))
+        if (slots.Remove(slot))
         {
-            MutateDescriptors();
+            _registrations = null;
+            if (!ReferenceEquals(slots, _buffers))
+            {
+                MutateDescriptors();
+            }
         }
     }
 

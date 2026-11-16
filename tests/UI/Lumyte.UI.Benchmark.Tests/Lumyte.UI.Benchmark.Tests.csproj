@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Benchmark/Lumyte.UI.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.TextEditing.Benchmark/Lumyte.UI.TextEditing.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.TextEditing.Parley.Benchmark/Lumyte.UI.TextEditing.Parley.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Windowing.Benchmark/Lumyte.UI.Windowing.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Navigation.Benchmark/Lumyte.UI.Navigation.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Application.Navigation.Benchmark/Lumyte.UI.Application.Navigation.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Automation.Benchmark/Lumyte.UI.Automation.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Application.Benchmark/Lumyte.UI.Application.Benchmark.csproj" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Application.Desktop.Benchmark/Lumyte.UI.Application.Desktop.Benchmark.csproj" />
+    <ProjectReference Include="../../../src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <Compile Include="../../../benchmarks/Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+    <ProjectReference Include="../../../benchmarks/UI/Lumyte.UI.Application.Browser.Benchmark/Lumyte.UI.Application.Browser.Benchmark.csproj" />
+  </ItemGroup>
+</Project>

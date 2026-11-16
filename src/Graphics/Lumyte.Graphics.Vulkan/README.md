@@ -260,14 +260,26 @@ ArgumentTable 自体の並行変更をサポートするものではありませ
 
 ArgumentTable は最新の sampled descriptor 世代内で互換 layout shape から immutable Set へ対応付けます。
 固定された登録内容には実際には一つの canonical shape だけが対応し、過去世代の cache は蓄積しません。
-cache は texture/sampler 登録だけを保持し、各 command が完全な per-draw 登録 snapshot を保持します。
+cache は texture/sampler 登録だけを保持します。table は全登録の immutable snapshot を変更まで再利用し、
+各 command が実際に参照した異なる snapshot を保持します。buffer 更新・release は全登録 snapshot だけを無効化し、
+sampled 登録の更新・release は snapshot と layout metadata の両方を無効化します。
+layout 数は登録件数ではなく最大 occupied slot + 1（空なら 1）を変更後に一度だけ求め、hole と最高 slot の削除を扱います。
 Draw/Dispatch が世代を seal し、その後の最初の texture/sampler 更新・release が一度だけ世代を分岐します。
 次の実行までの複数変更をまとめ、Set は次の Draw/Dispatch で遅延生成します。
 buffer/root の変更だけでは descriptor 世代を変えず、pass・command・frame を越えて再利用します。
 layout key は native handle ではなく、固定の binding 型・stage/partially-bound flags を持つ texture/sampler 数です。
 同じ shape の pipeline 再生成でも native handle の再利用と衝突しません。
 
-各 command は実行時の Set と登録資源 snapshot を保持します。
+各 command は実行時の異なる Set を一回だけ retain し、登録 snapshot は別の identity 集合で保持します。
+同じ Set の buffer-only 更新は以前の正確な範囲を含む全 snapshot を保持し、A/B/A は Set A を再 retain しません。
+集合の拡張は両方の所有権を公開する前に行い、確保失敗で片方の retain だけが残ることを防ぎます。
+Draw/Dispatch は table と sampled 資源の破棄を再利用 hit でも毎回検査します。
+
+各 pass の encoder は実際に発行した native pipeline と descriptor Set/layout を追跡します。
+同じ program・native pipeline は再 bind せず、同じ Set かつ同じ native pipeline-layout の場合だけ descriptor bind を省きます。
+program 変更は同形 layout でも保守的に再 bind し、render-state の native pipeline variant 変更だけなら descriptor を保持します。
+graphics/compute と pass/command の追跡は独立し、SetArguments の push constants は省略しません。
+検査・binding 準備の失敗は emitted-state を公開しません。void driver command の失敗には rollback を保証しません。
 古い世代を上書きせず、table の変更・Dispose は cache 所有権だけを外します。
 未送信 command は Dispose、送信済み command は既存の caller-managed GPU 完了後の Dispose によって所有権を返します。
 待機は自動挿入せず、完了前の raw command/resource Dispose を安全化しません。

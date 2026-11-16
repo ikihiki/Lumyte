@@ -137,6 +137,11 @@ internal sealed class UiLayoutPass
             node.LayoutComplete = true;
             node.LayoutOffsetSet = !ReferenceEquals(node, root);
             node.ResetContentGeometry();
+            if (node is ScrollViewElement scroll)
+            {
+                scroll.Controller.Geometry(0, 0);
+            }
+
             node.PublishLayout(Vector2.Zero, Vector2.Zero);
         }
     }

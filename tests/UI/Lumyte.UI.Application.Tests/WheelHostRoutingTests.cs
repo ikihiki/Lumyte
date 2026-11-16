@@ -42,16 +42,30 @@ public sealed class WheelHostRoutingTests
         host.Surface.SetViewport(child.ClientSize);
         host.Surface.UpdateLayout();
         host.Router.Attach(child, host.Surface);
-        Assert.True(host.Surface.Dispatch(new UiWheelInput(new(5, 6), new(0, 0.5f))), $"Local surface root size {host.Surface.RootElement.Size}; child viewport {child.ClientSize}");
+        Assert.True(host.Surface.Dispatch(new UiWheelInput(new(5, 6), new(0, -20))), $"Local surface root size {host.Surface.RootElement.Size}; child viewport {child.ClientSize}");
         events.Clear();
         Assert.True(host.Wheel(new(15, 26), new(0, 0.5f)), $"Root {root.ClientSize}; child {child.ClientSize}; window {host.Window.State}");
         Assert.Equal(new Vector2(5, 6), Assert.Single(events).Position);
-        Assert.Equal(new Vector2(0, 0.5f), events[0].Delta);
+        Assert.Equal(new Vector2(0, -20), events[0].Delta);
         Assert.False(host.Send(new MouseWheelData(new(0, 1))));
         Assert.False(host.Wheel(new(5, 5), new(0, 1)));
         host.Send(new FocusData(false));
         Assert.False(host.Send(new MouseWheelData(new(0, 1))));
         Assert.Single(events);
+    }
+
+    /// <summary>Both initial and captured touch input preserve device metadata and outside coordinates.</summary>
+    [Fact]
+    public void CapturedTouchPreservesDeviceAndOutsideCoordinates()
+    {
+        var events = new List<UiPointerInput>();
+        using var host = new Host(pointerEvents: events);
+        Assert.True(host.Send(new TouchData(new(17), TouchPhase.Began, new(50, 40), null)));
+        Assert.True(host.Send(new TouchData(new(17), TouchPhase.Moved, new(130, 140), null)));
+        Assert.Equal(new Vector2(130, 140), events[^1].Position);
+        Assert.All(events, input => Assert.Equal(UiPointerDevice.Touch, input.Device));
+        Assert.True(host.Send(new TouchData(new(17), TouchPhase.Ended, new(70, 60), null)));
+        Assert.Equal(UiPointerDevice.Touch, events[^1].Device);
     }
 
     private sealed class WheelWidget(List<UiWheelInput> events, List<UiPointerInput>? pointerEvents) : Definitions.Panel

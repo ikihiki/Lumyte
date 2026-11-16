@@ -30,10 +30,10 @@ dotnet run --project build -c Release -- --target Test --no-build --no-restore
 `dotnet run`の`-c Release`はrunner自身の構成、`--`以降の`--configuration`は対象projectの構成です。
 `--no-build --no-restore`では、同じconfigurationで作成済みの成果物を使用してください。
 Parleyのpackには、後述する4 RID分のnative資産が必要です。
-手元のhost以外の資産がない状態で、他のライブラリだけをpackする場合は`--skip-parley-package`を指定します。
+手元のhost以外の資産がない状態で、他のライブラリだけをpackする場合は`--skip-parley-package`を指定します。修正済みwgpu-nativeの全RID資産が未収集の場合は`--skip-wgpu-package`も指定します。これは配布物の選択であり、native実行・機能検証や既定packの欠落資産チェックは省略しません。
 
 ```sh
-dotnet run --project build -c Release -- --target Pack --skip-parley-package
+dotnet run --project build -c Release -- --target Pack --skip-parley-package --skip-wgpu-package
 ```
 
 ## 公式構成と責務
@@ -75,6 +75,7 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `VerifyEnvironment` / `NativeSmoke` | 共通環境の検証／Slang・CMake・vcpkg・Native NuGet・P/Invoke・software GPUの検証 |
 | `Direct3D12Native` | 選択したAgility SDK・MSVC・CMakeによるDirect3D 12 native DLLのビルド。`--agility-channel Stable/Preview` と復元済み `--agility-sdk-root` を使用 |
 | `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
+| `TestUiLayout` / `TestUiLayoutAot` | core layout全テストとフォント不要Headless配置画面／strict NativeAOT publishと実行 |
 | `TestUiControls` / `TestUiControlsAot` | Controlsの通常入力・意味情報と明示フォント付きHeadless設定画面／そのstrict NativeAOT publishと実行。前者は先にsolutionをCompile |
 | `TestUiMedia` | Media・Parley adapterの単体検査と実フォントを渡すHeadless sample（先にsolutionをCompile） |
 | `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
@@ -137,7 +138,7 @@ project指定のない`Pack`は`src/`からhost・Parley除外条件に合うpro
 
 ```sh
 dotnet run --project build -c Release -- --target CiNative --host-only
-dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package
+dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
 dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --host-only --no-build --no-restore
 dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser
 dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
@@ -196,6 +197,7 @@ Pythonはbuild用で、アプリのWASMには組み込みません。
 | `--output` | publish／pack、またはParley leafの出力先 |
 | `--no-build` / `--no-restore` | 既存のbuild／restore結果を使用 |
 | `--skip-parley-package` | 4 RID分を集めず、Parley以外のライブラリをpack |
+| `--skip-wgpu-package` | 修正済み全RID資産が未収集のとき、Wgpu以外のライブラリをpack |
 | `--dotnet-path` | 子プロセスに使うdotnetの明示指定 |
 | `--repository-root` | MSBuild leaf workerが独立した状態rootを使う場合の実checkoutパス |
 | `--toolchain` | Parley leaf targetのRust toolchainを上書き |
@@ -230,3 +232,15 @@ dotnet run --project build -c Release -- --target VerifyNamedColors --project sr
 ```
 
 値の規則と明示的なreference更新は[保守tool](../tools/colors/Lumyte.NamedColors.Generator/README.md)を参照してください。
+
+C5の検証にはTestUiScroll（core/ControlsとHeadless画面）およびTestUiScrollAot（strict NativeAOTとnative実行）を使う。
+
+## 修正済みwgpu-native
+
+`WgpuNative`は、未送信command bufferのnative解放漏れを補正したABI互換ライブラリを、checksumで固定したソースから作成します。Rust/Pythonは既存のprivate SDK解決を再利用し、通常のWgpu buildとpublishへ修正版をコピーします。
+
+```sh
+dotnet run --project build -c Release -- --target WgpuNative --output artifacts/wgpu-native
+```
+
+ソースpin・必要なnative compiler/libclang・override・全RIDのpack条件は[native手順](../native/wgpu_native/README.md)を参照してください。未収集の他RIDをhostのbinaryで代用しません。修正前のUI測定データは旧baseの記録として保持し、修正後の結果と混ぜません。

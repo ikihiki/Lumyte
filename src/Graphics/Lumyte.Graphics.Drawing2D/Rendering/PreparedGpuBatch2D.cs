@@ -106,6 +106,7 @@ internal sealed class PreparedGpuBatch2D : IRetainedCommandBatch2D
         }
 
         _disposed = true;
+        _context.ArgumentPlan.RetirePreparedResources(_commands.Select(command => command.Reservation));
         if (_upload?.IsMapped == true)
         {
             _upload.Unmap();

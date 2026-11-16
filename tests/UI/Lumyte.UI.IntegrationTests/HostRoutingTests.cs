@@ -14,6 +14,20 @@ namespace Lumyte.UI.IntegrationTests;
 /// <summary>Checks surface ownership and logical/physical coordinate boundaries.</summary>
 public sealed class HostRoutingTests
 {
+    /// <summary>Checks host wheel normalization follows the selected logical viewport.</summary>
+    [Fact]
+    public void WheelRoutesThroughLogicalViewportWithoutMouseActivation()
+    {
+        using var controller = new ScrollController();
+        using var host = new Host();
+        host.Surface.Rebuild(ScrollView(controller: controller)[SizedBox(width: 100, height: 400)]);
+        host.Surface.UpdateLayout();
+        host.Move(new(10));
+        Assert.True(host.Send(new MouseWheelData(new(0, -1))));
+        Assert.Equal(40, controller.Offset);
+        Assert.Equal(0, host.Clicks);
+    }
+
     /// <summary>Checks native capture delivers outside coordinates and consumes the terminal.</summary>
     [Fact]
     public void OutsideReleaseCancelsClickAndReturningInsideClicksOnce()
