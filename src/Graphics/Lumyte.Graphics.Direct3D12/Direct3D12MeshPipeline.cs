@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text.Json;
 using Lumyte.Graphics.Abstractions;
 
@@ -34,7 +35,7 @@ internal sealed unsafe class Direct3D12MeshPipeline : IMeshPipeline
         }
 
         JsonElement metadata = MeshShaderValidation.Read(mesh);
-        ValidateNativeOutput(metadata);
+        ValidateNativeOutput(metadata, mesh.Code);
         _topology = metadata.GetProperty("outputTopology").GetString() switch
         {
             "line" => PrimitiveTopology.LineList,
@@ -72,14 +73,21 @@ internal sealed unsafe class Direct3D12MeshPipeline : IMeshPipeline
         _disposed = true;
     }
 
+    internal static void ValidateNativeOutput(JsonElement metadata, ReadOnlySpan<byte> dxil)
+    {
+        ValidateNativeOutput(metadata);
+        if (ReadOutputSignatureRows(dxil) > 32)
+        {
+            throw new NotSupportedException("Mesh output exceeds D3D12 packed signature row limits.");
+        }
+    }
+
     internal static void ValidateNativeOutput(JsonElement metadata)
     {
-        // D3D12 rounds output arrays to 32-element blocks and permits at most
-        // 32 rows of vertex/primitive attributes, including reflected system values.
+        // Storage remains component-based; declaration count is not signature row count.
+        // D3D12 rounds output arrays to 32-element blocks.
         ulong vertexBytes = 0;
         ulong primitiveBytes = 0;
-        uint vertexRows = 0;
-        uint primitiveRows = 0;
         foreach (JsonElement output in metadata.GetProperty("outputs").EnumerateArray())
         {
             string type = output.GetProperty("type").GetString()!;
@@ -89,12 +97,10 @@ internal sealed unsafe class Direct3D12MeshPipeline : IMeshPipeline
             if (output.GetProperty("perPrimitive").GetBoolean())
             {
                 primitiveBytes += components * 4;
-                primitiveRows++;
             }
             else
             {
                 vertexBytes += components * 4;
-                vertexRows++;
             }
         }
 
@@ -102,10 +108,69 @@ internal sealed unsafe class Direct3D12MeshPipeline : IMeshPipeline
         ulong primitives = (metadata.GetProperty("maxOutputPrimitives").GetUInt32() + 31ul) & ~31ul;
         ulong outputBytes = (vertexBytes * vertices) + (primitiveBytes * primitives);
         ulong payloadBytes = metadata.GetProperty("payloadBytes").GetUInt64();
-        if (vertexRows + primitiveRows > 32 || outputBytes > 32768 || payloadBytes > 48128 || outputBytes > 48128 - payloadBytes)
+        if (outputBytes > 32768 || payloadBytes > 48128 || outputBytes > 48128 - payloadBytes)
         {
             throw new NotSupportedException("Mesh output exceeds D3D12 rounded output storage or attribute limits.");
         }
+    }
+
+    internal static ulong ReadOutputSignatureRows(ReadOnlySpan<byte> dxil)
+    {
+        // DXC DxilContainer.h: OSG1 is the vertex signature; PSG1 is the mesh
+        // primitive signature (the same container part used for hull patch constants).
+        if (dxil.Length < 32 || !dxil[..4].SequenceEqual("DXBC"u8) ||
+            ReadUInt32(dxil, 20) != 1 || ReadUInt32(dxil, 24) != dxil.Length)
+        {
+            throw new ArgumentException("A complete DXIL container is required.", nameof(dxil));
+        }
+
+        uint count = ReadUInt32(dxil, 28);
+        if (count > (dxil.Length - 32) / 4)
+        {
+            throw new ArgumentException("Invalid DXIL part table.", nameof(dxil));
+        }
+
+        ulong rows = 0;
+        bool vertexFound = false;
+        bool primitiveFound = false;
+        for (int i = 0; i < count; i++)
+        {
+            uint offset = ReadUInt32(dxil, 32 + (i * 4));
+            if (offset < 32ul + (count * 4ul) || offset > dxil.Length - 8 || (offset & 3) != 0)
+            {
+                throw new ArgumentException("Invalid DXIL part offset.", nameof(dxil));
+            }
+
+            ReadOnlySpan<byte> part = dxil[(int)offset..];
+            uint size = ReadUInt32(part, 4);
+            if (size > part.Length - 8)
+            {
+                throw new ArgumentException("Truncated DXIL part.", nameof(dxil));
+            }
+
+            bool vertex = part[..4].SequenceEqual("OSG1"u8);
+            bool primitive = part[..4].SequenceEqual("PSG1"u8);
+            if (!vertex && !primitive)
+            {
+                continue;
+            }
+
+            if ((vertex && vertexFound) || (primitive && primitiveFound))
+            {
+                throw new ArgumentException("Duplicate DXIL output signature.", nameof(dxil));
+            }
+
+            vertexFound |= vertex;
+            primitiveFound |= primitive;
+            rows += ReadSignatureRows(part.Slice(8, (int)size));
+        }
+
+        if (!vertexFound)
+        {
+            throw new ArgumentException("DXIL vertex output signature is missing.", nameof(dxil));
+        }
+
+        return rows;
     }
 
     internal void ValidateAlive()
@@ -173,6 +238,46 @@ internal sealed unsafe class Direct3D12MeshPipeline : IMeshPipeline
             }
         }
     }
+
+    private static uint ReadSignatureRows(ReadOnlySpan<byte> signature)
+    {
+        if (signature.Length < 8)
+        {
+            throw new ArgumentException("Truncated DXIL output signature.");
+        }
+
+        uint count = ReadUInt32(signature, 0);
+        uint offset = ReadUInt32(signature, 4);
+        if (offset < 8 || offset > signature.Length || (offset & 3) != 0 || count > (signature.Length - offset) / 32)
+        {
+            throw new ArgumentException("Invalid DXIL signature element table.");
+        }
+
+        uint rows = 0;
+        for (int i = 0; i < count; i++)
+        {
+            ReadOnlySpan<byte> element = signature.Slice((int)offset + (i * 32), 32);
+            uint register = ReadUInt32(element, 20);
+
+            // SV_CullPrimitive and other unallocated system values use UINT_MAX.
+            if (register == uint.MaxValue)
+            {
+                continue;
+            }
+
+            if (ReadUInt32(element, 0) != 0 || register >= 32 || element[24] == 0 || (element[24] & 0xf0) != 0)
+            {
+                throw new ArgumentException("Invalid mesh signature register allocation.");
+            }
+
+            rows = Math.Max(rows, register + 1);
+        }
+
+        return rows;
+    }
+
+    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset)
+        => BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
 
     private static Direct3D12Shader Borrow(IGraphicsShader shader, Direct3D12Device owner)
     {
