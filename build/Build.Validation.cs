@@ -64,6 +64,15 @@ internal sealed partial class Build
             await DotNetAsync("run", "--project", "samples/Lumyte.UI.Functions.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
         });
 
+    private Target TestUiMedia => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Media.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Media.Parley.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Media.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
     private Target TestUiApplication => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
@@ -314,6 +323,8 @@ internal sealed partial class Build
         string navigation = await PublishAotSampleAsync("samples/Lumyte.UI.Navigation.Sample", "ui-navigation-aot", "Lumyte.UI.Navigation.Sample", strict: true).ConfigureAwait(false);
         string functions = await PublishAotSampleAsync("samples/Lumyte.UI.Functions.Sample", "ui-functions-aot", "Lumyte.UI.Functions.Sample", strict: true).ConfigureAwait(false);
         await ToolAsync(functions).ConfigureAwait(false);
+        string media = await PublishAotSampleAsync("samples/Lumyte.UI.Media.Sample", "ui-media-aot", "Lumyte.UI.Media.Sample", strict: true).ConfigureAwait(false);
+        await ToolAsync(media, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         string pages = await PublishAotSampleAsync("samples/Lumyte.UI.Pages.Sample", "ui-pages-aot", "Lumyte.UI.Pages.Sample", strict: true).ConfigureAwait(false);
         await ToolAsync(pages).ConfigureAwait(false);
         string transitions = await PublishAotSampleAsync("samples/Lumyte.UI.Transitions.Sample", "ui-transitions-aot", "Lumyte.UI.Transitions.Sample", strict: true).ConfigureAwait(false);

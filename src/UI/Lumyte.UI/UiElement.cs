@@ -86,6 +86,7 @@ public partial class UiElement
 
         if (previous is null)
         {
+            ConnectFrameAnimation(Surface!);
             OnMounted();
         }
         else if (!ReferenceEquals(previous, Widget))
@@ -107,6 +108,7 @@ public partial class UiElement
         }
 
         DisconnectPresence(Surface!);
+        Surface!.RemoveFrameAnimation(this);
         Animations?.Dispose();
         Animations = null;
         Surface?.ForgetSignalElement(this);

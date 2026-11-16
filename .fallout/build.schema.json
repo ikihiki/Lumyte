@@ -68,6 +68,7 @@
         "TestSignals",
         "TestText",
         "TestUiApplication",
+        "TestUiMedia",
         "TestUiNavigation",
         "TestUiPages",
         "TestWasm",

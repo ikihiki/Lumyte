@@ -17,4 +17,19 @@ public enum UiRole
 
     /// <summary>A redacted IME candidate presenter.</summary>
     ImeCandidates,
+
+    /// <summary>Read-only text.</summary>
+    Text,
+
+    /// <summary>An image.</summary>
+    Image,
+
+    /// <summary>An icon.</summary>
+    Icon,
+
+    /// <summary>A progress indicator.</summary>
+    ProgressBar,
+
+    /// <summary>An indeterminate busy indicator.</summary>
+    BusyIndicator,
 }
