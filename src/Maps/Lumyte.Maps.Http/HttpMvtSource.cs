@@ -48,7 +48,7 @@ public sealed class HttpMvtSource : IResourceSource, IAsyncDisposable
 
     /// <summary>Creates a source borrowing a client under an explicit, unverified trusted-handler contract.</summary>
     /// <param name="registration">Registration.</param>
-    /// <param name="client">Client with redirects, cookies, automatic decompression and credential injection disabled; no default headers or mutable concurrent configuration.</param>
+    /// <param name="client">Client with redirects, cookies, response draining, automatic decompression and credential injection disabled; no default headers or mutable concurrent configuration.</param>
     /// <param name="trustHandlerContract">Must explicitly acknowledge that the library cannot inspect or verify the handler.</param>
     /// <param name="authorization">Optional header scoped to the allowed origin.</param>
     /// <param name="timeProvider">Clock and timers.</param>
@@ -147,6 +147,7 @@ public sealed class HttpMvtSource : IResourceSource, IAsyncDisposable
             AutomaticDecompression = DecompressionMethods.None,
             UseCookies = false,
             UseProxy = false,
+            MaxResponseDrainSize = 0,
             MaxResponseHeadersLength = 16,
             ConnectTimeout = TimeSpan.FromSeconds(10),
             MaxConnectionsPerServer = 4,
@@ -380,13 +381,19 @@ public sealed class HttpMvtSource : IResourceSource, IAsyncDisposable
             }
 
             string? media = response.Content.Headers.ContentType?.MediaType;
-            if (media is not ("application/vnd.mapbox-vector-tile" or "application/x-protobuf" or "application/octet-stream"))
+            if (!string.Equals(media, "application/vnd.mapbox-vector-tile", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(media, "application/x-protobuf", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(media, "application/octet-stream", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException("Unsupported tile content type.");
             }
 
             string[] encodings = response.Content.Headers.ContentEncoding.ToArray();
-            if (encodings.Length > 1 || (encodings.Length == 1 && encodings[0] is not ("gzip" or "br" or "identity")))
+            string? encoding = encodings.FirstOrDefault();
+            encoding = string.Equals(encoding, "gzip", StringComparison.OrdinalIgnoreCase) ? "gzip"
+                : string.Equals(encoding, "br", StringComparison.OrdinalIgnoreCase) ? "br"
+                : string.Equals(encoding, "identity", StringComparison.OrdinalIgnoreCase) ? "identity" : encoding;
+            if (encodings.Length > 1 || encoding is not (null or "gzip" or "br" or "identity"))
             {
                 throw new InvalidDataException("Unsupported transport content encoding.");
             }
@@ -399,7 +406,7 @@ public sealed class HttpMvtSource : IResourceSource, IAsyncDisposable
 
             await using Stream raw = await response.Content.ReadAsStreamAsync(cancellationToken);
             await using var counted = new CountedStream(raw, policy.MaxWireBytes);
-            await using Stream expanded = encodings.FirstOrDefault() switch
+            await using Stream expanded = encoding switch
             {
                 "gzip" => new GZipStream(counted, CompressionMode.Decompress, leaveOpen: true),
                 "br" => new BrotliStream(counted, CompressionMode.Decompress, leaveOpen: true),

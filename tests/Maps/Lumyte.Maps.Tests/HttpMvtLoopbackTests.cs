@@ -6,11 +6,13 @@ using System.Text;
 using Lumyte.Maps.Http;
 using Lumyte.Resources;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Lumyte.Maps.Tests;
 
 /// <summary>Real native sockets, framing, compression and cancellation, using only loopback HTTP.</summary>
-public sealed class HttpMvtLoopbackTests
+/// <param name="output">Functional fixture counters.</param>
+public sealed class HttpMvtLoopbackTests(ITestOutputHelper output)
 {
     /// <summary>Native source handles conditional 304, 404, 401 and selected 429/5xx retries.</summary>
     /// <param name="status">Initial server status.</param>
@@ -160,6 +162,65 @@ public sealed class HttpMvtLoopbackTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await pending);
     }
 
+    /// <summary>Actual native HTTP accepts case-insensitive representation tokens.</summary>
+    /// <param name="coding">Mixed-case coding.</param>
+    /// <returns>Completion.</returns>
+    [Theory]
+    [InlineData("GZip")]
+    [InlineData("BR")]
+    public async Task NativeMixedCaseTokensAsync(string coding)
+    {
+        byte[] payload = [1, 2, 3];
+        using var output = new MemoryStream();
+        using (Stream encoder = coding == "GZip" ? new GZipStream(output, CompressionLevel.SmallestSize, true) : new BrotliStream(output, CompressionLevel.SmallestSize, true))
+        {
+            encoder.Write(payload);
+        }
+
+        byte[] response = Response(200, output.ToArray(), $"Content-Encoding: {coding}");
+        string header = Encoding.Latin1.GetString(response).Replace("application/vnd.mapbox-vector-tile", "Application/Vnd.Mapbox-Vector-Tile", StringComparison.Ordinal);
+        await using var server = new Loopback((_, _) => Task.FromResult(Encoding.Latin1.GetBytes(header)));
+        HttpMvtRegistration registration = Registration(server.Scope);
+        await using var source = new HttpMvtSource(registration);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(payload)), await source.GetRevisionAsync(registration.GetKey(new(0, 0, 0)).Address.Id));
+        Assert.Equal(1, server.Count);
+    }
+
+    /// <summary>Unread keep-alive bodies must close within the operation cleanup budget, not drain after terminal admission.</summary>
+    /// <param name="status">Redirect, retry or content rejection.</param>
+    /// <returns>Completion.</returns>
+    [Theory]
+    [InlineData(302)]
+    [InlineData(503)]
+    [InlineData(200)]
+    public async Task NativeUnreadKeepAliveDoesNotDrainAsync(int status)
+    {
+        await using var server = new UnreadKeepAlive(status);
+        HttpMvtRegistration registration = Registration(server.Scope);
+        await using var source = new HttpMvtSource(registration);
+        Task<string?> operation = source.GetRevisionAsync(registration.GetKey(new(0, 0, 0)).Address.Id).AsTask();
+        if (status == 200)
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(async () => await operation);
+        }
+        else
+        {
+            Assert.NotNull(await operation);
+        }
+
+        // The body is withheld behind a barrier. No wall-clock throughput assertion:
+        // one second is the fixture's functional terminal socket-cleanup deadline.
+        await server.FirstClosed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(status == 200 ? 1 : 2, server.Accepted);
+        Assert.Equal(1, server.ClosedUnread);
+        await source.DisposeAsync();
+        server.ReleaseBody.TrySetResult();
+        await server.DelayedBodyFinished.Task;
+        Assert.Equal(0, server.DelayedBodyWrites);
+        Assert.Equal(0, server.UnreadConnections);
+        output.WriteLine($"keep-alive status={status}: accepted={server.Accepted}; closed-unread={server.ClosedUnread}; delayed-body-writes={server.DelayedBodyWrites}; unread-after-stop={server.UnreadConnections}");
+    }
+
     private static HttpMvtRegistration Registration(Uri scope, int maxWire = 4096, int maxExpanded = 4096) => new("native-local", "1", new("native"), new(scope, "fixture", maxWireBytes: maxWire, maxExpandedBytes: maxExpanded), new Dictionary<MapTileId, Uri> { [new(0, 0, 0)] = new(scope, "0.pbf") });
 
     private static byte[] Response(int status, byte[] body, string? extra = null, int? length = null)
@@ -176,6 +237,113 @@ public sealed class HttpMvtLoopbackTests
         }
 
         return [.. Encoding.ASCII.GetBytes(headers + "\r\n"), .. body];
+    }
+
+    private sealed class UnreadKeepAlive : IAsyncDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Task _run;
+        private int _accepted;
+        private int _closed;
+        private int _writes;
+
+        internal UnreadKeepAlive(int status)
+        {
+            _listener.Start();
+            Scope = new($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/tiles/");
+            _run = RunAsync(status);
+        }
+
+        internal Uri Scope { get; }
+
+        internal int Accepted => Volatile.Read(ref _accepted);
+
+        internal int ClosedUnread => Volatile.Read(ref _closed);
+
+        internal int DelayedBodyWrites => Volatile.Read(ref _writes);
+
+        internal int UnreadConnections => 1 - ClosedUnread;
+
+        internal TaskCompletionSource FirstClosed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource ReleaseBody { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource DelayedBodyFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask DisposeAsync()
+        {
+            ReleaseBody.TrySetResult();
+            await _stop.CancelAsync();
+            _listener.Stop();
+            try
+            {
+                await _run;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            _stop.Dispose();
+        }
+
+        private static async Task ReadRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
+        {
+            using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+            while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken)))
+            {
+            }
+        }
+
+        private async Task RunAsync(int status)
+        {
+            using TcpClient first = await _listener.AcceptTcpClientAsync(_stop.Token);
+            Interlocked.Increment(ref _accepted);
+            await using NetworkStream stream = first.GetStream();
+            await ReadRequestAsync(stream, _stop.Token);
+            string extra = status == 302 ? "Location: next.pbf\r\n" : status == 503 ? "Retry-After: 0\r\n" : string.Empty;
+            byte[] headers = Encoding.ASCII.GetBytes($"HTTP/1.1 {status} fixture\r\nContent-Type: text/plain\r\nContent-Length: 64\r\nConnection: keep-alive\r\n{extra}\r\n");
+            await stream.WriteAsync(headers, _stop.Token);
+            Task closed = MonitorClosedAsync(stream);
+            if (status != 200)
+            {
+                using TcpClient next = await _listener.AcceptTcpClientAsync(_stop.Token);
+                Interlocked.Increment(ref _accepted);
+                await using NetworkStream nextStream = next.GetStream();
+                await ReadRequestAsync(nextStream, _stop.Token);
+                await nextStream.WriteAsync(Response(200, [1]), _stop.Token);
+            }
+
+            await closed;
+            await ReleaseBody.Task.WaitAsync(_stop.Token);
+            if (ClosedUnread == 0)
+            {
+                Interlocked.Increment(ref _writes);
+                await stream.WriteAsync(new byte[64], _stop.Token);
+            }
+
+            DelayedBodyFinished.TrySetResult();
+        }
+
+        private async Task MonitorClosedAsync(NetworkStream stream)
+        {
+            byte[] one = new byte[1];
+            try
+            {
+                int read = await stream.ReadAsync(one, _stop.Token);
+                if (read != 0)
+                {
+                    throw new InvalidOperationException("Unexpected request bytes on withheld response connection.");
+                }
+            }
+            catch (IOException)
+            {
+                // A reset also proves the handler cannot retain a draining connection.
+            }
+
+            Interlocked.Increment(ref _closed);
+            FirstClosed.TrySetResult();
+        }
     }
 
     private sealed class OffsetClock : TimeProvider

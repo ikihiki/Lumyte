@@ -465,6 +465,37 @@ public sealed class HttpMvtTests
         Assert.Throws<InvalidDataException>(() => bounded.CreateSnapshot(bounded.GetKey(_tile).Address.Id, new byte[2], "revision"));
     }
 
+    /// <summary>HTTP media and content-coding tokens are case-insensitive, including decoder selection.</summary>
+    /// <param name="coding">Mixed-case coding.</param>
+    /// <returns>Completion.</returns>
+    [Theory]
+    [InlineData("GZip")]
+    [InlineData("BR")]
+    public async Task MixedCaseRepresentationTokensAsync(string coding)
+    {
+        byte[] bytes = [1, 2, 3];
+        using var compressed = new MemoryStream();
+        using (Stream encoder = coding == "GZip" ? new GZipStream(compressed, CompressionLevel.SmallestSize, true) : new BrotliStream(compressed, CompressionLevel.SmallestSize, true))
+        {
+            encoder.Write(bytes);
+        }
+
+        using var handler = new Script((_, _) =>
+        {
+            HttpResponseMessage response = Ok(compressed.ToArray());
+            response.Content.Headers.ContentType = new("Application/Vnd.Mapbox-Vector-Tile");
+            response.Content.Headers.ContentEncoding.Add(coding);
+            return Task.FromResult(response);
+        });
+        using var client = new HttpClient(handler);
+        HttpMvtRegistration registration = Registration();
+        await using var source = HttpMvtSource.BorrowTrustedClient(registration, client, true);
+        await using ResourceSourceSnapshot snapshot = await source.OpenSnapshotAsync(registration.GetKey(_tile).Address.Id);
+        Assert.Equal(bytes, await ReadAsync(snapshot));
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)), snapshot.Revision);
+        Assert.Equal(1, handler.Count);
+    }
+
     private static HttpMvtRegistration Registration(HttpMvtPolicy? policy = null) => new("fixture", "1", new("http"), policy ?? new(_scope, "public"), new Dictionary<MapTileId, Uri> { [_tile] = new(_scope, "0/0/0.pbf") });
 
     private static HttpResponseMessage Ok(byte[] bytes, string? etag = null)

@@ -45,6 +45,7 @@ GetRevisionAsyncとOpenSnapshotAsyncは同じ同期cacheを使う。Resourcesの
 - freshness中のcacheにもsnapshot pinを課す。容量不足は古い非pin cacheを退避し、なお不足なら取得前に拒否する。
 - ResponseHeadersReadでcounted wire/expanded読み取りを行う。Content-Lengthの事前検査に加え実読取りを数え、
   不明/偽length、cap+1、gzip/br展開超過を拒否する。多重/未知encodingと未知media typeは受理しない。
+  media typeとcontent-codingはHTTPの規則どおりOrdinalIgnoreCaseで照合し、GZip/BRも同じ展開器へ接続する。
   wireはContent-Encoding展開前のHTTP entity bodyであり、TLS/chunk framing/headerを含むTCP byte数ではない。
   owned handlerのresponse header上限は16 KiB。HTTP framingより後の余剰TCP bytesをentity bodyとは数えない。
 - injected TimeProviderがtotal deadlineとRetry-After（delta/date）を支配する。retryは429/500/502/503/504だけ、
@@ -55,9 +56,11 @@ GetRevisionAsyncとOpenSnapshotAsyncは同じ同期cacheを使う。Resourcesの
 ## handlerと配信条件
 
 owned native SocketsHttpHandlerはautomatic redirects/decompression/cookies/ambient proxyを無効にする。
+MaxResponseDrainSize=0で、拒否・redirect・retryの未読bodyをDispose後にhandlerが非同期drainする経路も無効にする。
+未読bodyはconnectionを閉じ、sourceのdeadline/容量/停止台帳の外に読取りを残さない。
 manual redirectは有限回で、同じscheme/authority/portとdirectory scope内のみ。別originへのAuthorization転送はない
 （別origin自体を拒否する）。URL userinfo/query/fragmentとpercent-encoded path/backslashを拒否する。
-BorrowTrustedClientはredirect/decompression/cookies/credential自動挿入無効、default headerなし、取消を順守するhandlerの
+BorrowTrustedClientはredirect/decompression/cookies/response draining/credential自動挿入無効、default headerなし、取消を順守するhandlerの
 **検証不能なtrusted handler contract**を明示承認した場合だけ使える。借用clientの所有権は移らない。
 
 strict transportはBrowser fetchでは保証できないため**Browserでは明示的に未対応として拒否**する。
@@ -70,3 +73,7 @@ M1のportable memory経路とBrowser HTTPを混同しない。Browser向け配�
 dotnet test tests/Maps/Lumyte.Maps.Tests。scripted handlerと実loopback TCP fixtureのみを利用し、
 外部公開サーバーに依存しない。200/304/404/401/429/selected5xx、conditional ETag、redirect/auth、
 body framing/length、gzip/br cap、deadline/cancel/stop、旧snapshot寿命、Resourcesの実decodeを検査する。
+
+review回帰試験はkeep-aliveの未読bodyをbarrierで保留し、redirect/retry/rejectionの終端後に
+connectionが閉じ、停止後に遅延bodyを書き込む対象が残らないことをsocket側のcounterで検査する。
+1秒のfixture cleanup deadlineは機能の終端条件であり、性能測定値・合否指標の公表ではない。
