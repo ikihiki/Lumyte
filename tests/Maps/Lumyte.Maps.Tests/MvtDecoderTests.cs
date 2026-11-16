@@ -119,6 +119,74 @@ public sealed class MvtDecoderTests
         Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, duplicate), new("large-attributes")));
     }
 
+    /// <summary>Library subitems must reject crossing a parent boundary even with following bytes available.</summary>
+    /// <param name="bytes">Malformed wire input.</param>
+    [Theory]
+    [InlineData(new byte[] { 26, 10 })]
+    [InlineData(new byte[] { 26, 1, 120, 2 })]
+    [InlineData(new byte[] { 26, 2, 13, 0, 0, 0, 0 })]
+    [InlineData(new byte[] { 26, 2, 10, 5, 114, 111, 97, 100, 115 })]
+    [InlineData(new byte[] { 24, 0 })]
+    [InlineData(new byte[] { 11, 12 })]
+    [InlineData(new byte[] { 12 })]
+    [InlineData(new byte[] { 0 })]
+    [InlineData(new byte[] { 26, 255, 255, 255, 255, 255, 255, 255, 255, 127 })]
+    public void RejectsSubitemCrossingAndInvalidWire(byte[] bytes)
+        => Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(bytes, new("wire")));
+
+    /// <summary>Each MVT known field retains strict wire and range checks.</summary>
+    [Fact]
+    public void RejectsKnownWrongWireAndOverflow()
+    {
+        byte[] layer = Join(Field(1, "roads"u8.ToArray()), Scalar(15, 2));
+        foreach (byte[] wrong in new byte[][] { Scalar(1, 1), Scalar(2, 1), Scalar(3, 1), Scalar(4, 1), Field(5, []), Field(15, []) })
+        {
+            Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(layer, wrong)), new("wire")));
+        }
+
+        // 2^32 must not be truncated to zero or an otherwise valid geometry type.
+        byte[] overflow = [128, 128, 128, 128, 16];
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(layer, [40], overflow)), new("wire")));
+        byte[] feature = Join(Scalar(3, 2), Field(4, [9, 0, 0, 10, 128, 128, 128, 128, 16, 0]));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(layer, Field(2, feature))), new("wire")));
+
+        // Packed uint32 continuation crosses into the following field.
+        feature = Join(Scalar(3, 2), Field(4, [128]), Scalar(1, 0));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(layer, Field(2, feature))), new("wire")));
+    }
+
+    /// <summary>Scratch is bounded independently from total UTF8 payload accounting and cannot replace invalid UTF8.</summary>
+    [Fact]
+    public void ScratchAndCumulativeAttributeLimits()
+    {
+        byte[] basis = Join(Field(1, "roads"u8.ToArray()), Scalar(15, 2));
+        byte[] tile = Field(3, Join(basis, Field(3, new byte[32])));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(tile, new("scratch", maxAttributeBytes: 8)));
+        byte[] repeated = Field(3, Join(basis, Field(3, "abc"u8.ToArray()), Field(3, "def"u8.ToArray())));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(repeated, new("total", maxAttributeBytes: 10)));
+        MapTileContent content = MvtDecoder.Decode(repeated, new("exact", maxAttributeBytes: 11));
+        Assert.Equal(content.PeakBuildBytes, MvtDecoder.Decode(repeated, new("exact", maxAttributeBytes: 11, maxReservationBytesPerTile: content.PeakBuildBytes)).PeakBuildBytes);
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(repeated, new("exact", maxAttributeBytes: 11, maxReservationBytesPerTile: content.PeakBuildBytes - 1)));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(basis, Field(3, [192, 175]))), new("utf8")));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(basis, Field(4, Field(1, [255])))), new("utf8")));
+    }
+
+    /// <summary>Public memory input borrows only the requested segment; arrays keep an unambiguous convenience entry.</summary>
+    [Fact]
+    public void DecodesMemorySegmentAndAllScalarTypes()
+    {
+        byte[][] values = [Field(1, "text"u8.ToArray()), Join([21], BitConverter.GetBytes(1.5f)), Join([25], BitConverter.GetBytes(2.5)), [32, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1], [40, 42], [48, 3], [56, 1]];
+        object[] expected = ["text", 1.5f, 2.5, -1L, 42UL, -2L, true];
+        uint[] tags = Enumerable.Range(0, values.Length).SelectMany(index => new[] { (uint)index, (uint)index }).ToArray();
+        byte[] feature = Join(Scalar(3, 2), Repeated(2, tags, true), Repeated(4, [9, 0, 0, 10, 2, 2], true));
+        byte[] layer = Join([Field(1, "roads"u8.ToArray()), Scalar(15, 2), Field(2, feature), .. values.Select(value => Field(4, value)), .. Enumerable.Range(0, values.Length).Select(index => Field(3, Encoding.UTF8.GetBytes($"k{index}")))]);
+        byte[] tile = Field(3, layer);
+        byte[] padded = Join([255], tile, [255]);
+        MapTileContent content = MvtDecoder.Decode(padded.AsMemory(1, tile.Length), new("memory"));
+        Assert.Equal(expected, content.Layers[0].Features[0].Attributes.Select(attribute => attribute.Value));
+        Assert.Throws<InvalidDataException>(() => MvtDecoder.Decode(Field(3, Join(Field(1, "roads"u8.ToArray()), Scalar(15, 2), Field(4, [56, 2]))), new("bool")));
+    }
+
     internal static byte[] Tile(string name, uint extent, uint[] geometry, bool packed = true, int featureCount = 1, uint[]? tags = null)
     {
         byte[] feature = Join(Scalar(3, name == "roads" || name == "transportation" ? 2U : 3U), Repeated(2, tags ?? [0, 0], packed), Repeated(4, geometry, packed));

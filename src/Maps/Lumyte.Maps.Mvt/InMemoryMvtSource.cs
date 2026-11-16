@@ -40,7 +40,7 @@ public sealed class InMemoryMvtSource(InMemoryMvtRegistration registration) : IR
 
         internal InMemoryMvtRegistration Registration => registration;
 
-        internal ReadOnlySpan<byte> Content => entry.Bytes;
+        internal ReadOnlyMemory<byte> Content => entry.Bytes;
 
         public override ValueTask<Stream> OpenReadAsync(long offset = 0, long? length = null, CancellationToken cancellationToken = default)
         {
