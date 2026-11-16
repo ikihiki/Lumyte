@@ -79,6 +79,29 @@ MVTはレイヤー名や属性の意味を統一しない。タイル集合は�
 
 decoderは既存のMVT実装を優先してadapter内で利用する。使用する依存の採否には、ライセンス、管理状況、Browser/AOT、穴付きポリゴン、不正入力と容量制限への対応を要求する。これらを未検証のまま互換性を約束せず、採用したdecoderによって公開地図モデルを変更しない。
 
+固定集合と空間需要で変わるのはsessionの入口であり、Managerを増やさない。以下のresources、tileSet、style、optionsと固定一覧は構築済みとし、描画とGPU drain後の解放処理は省略する。
+
+```csharp
+using Lumyte.Maps;
+
+// 変更前: 渡した一覧だけを固定／有限候補として扱う。
+var finite = new MapSession(resources, tileSet, style, options, fixedTiles);
+// 変更後: 対応zoom内のXYZ需要をcameraとviewportから計算する。
+var spatial = new MapSession(resources, tileSet, style, options);
+```
+
+### 空間需要と共有Managerの回収
+
+4引数のsessionは対応zoom内のXYZから需要を計算し、5引数のsessionは明示した固定／有限候補の動作を保つ。`SetCamera`と`SetViewport`は需要をdirtyにし、次の`Advance`で最新の状態へまとめる。可視、同じ内容の祖先、先読みの順に、中心からの距離と正規化IDで安定選択する。Xの繰返し表示は同じ取得IDを共有する。可視列数×行数を反復前に検査し、候補上限を超えたときは部分集合を無制限に作らず背景へ縮退する。
+
+`MaxResidentTiles`は採用、取得中、未採用完了、退役待ちを含むslotの上限であり、CPU予算は配送前のprofile全額予約と採用後の保持量、未回収の退役量を含む。先読み半径・候補数と祖先深さも制限する。可視集合が常駐容量へ収まらない場合は残りを待機させ、必要な可視タイルを無限に入れ替えない。親は準備済み子の下へ重ねず、欠けた子の所有cellだけを補う。親を保持したまま新しい可視タイルを受付できない場合は、親も退役して背景へ縮退し得る。
+
+未配送の不要要求は取消し、配送済みretainは終端まで所有する。完了時は内容版、profile、現在の需要と、manifestが固定する場合の期待revisionを検査する。同じ内容が再び必要なら旧cameraの要求結果も再利用できる。`SetTileSet`は不変の登録を明示的に切り替え、旧内容を新しい表示へ混在させない。借用Managerのsource／pipelineが新しいkeyを解決できる構成を前提とし、sourceの自動交換や汎用global providerは追加しない。未提供入力の失敗を自動の時間ベース再試行へ変換しない。
+
+CPU cacheは不要な未固定タイルをLRUで退役し、sessionが既存`ResourceManager.TrimAsync`を配送・回収する。Managerのbuild viewは要求tile以外のpublished snapshotもpinするため、同じManagerを使うMapSession間でmaintenance barrierを共有する。退役が必要なら新規Maps admissionを止め、受け付け済みMaps retainの終端回収後にtrimする。各退役batchは自分のtrim完了まで計上を保ち、後から加わった退役を古い完了だけで返金しない。新しいManager、executor、thread、`Task.Run`を作らない。
+
+他sessionのlive pinは返さず、その保持量は他sessionへ全額計上する。Maps以外の外部snapshot／build view、sourceの入力cache、hostの描画snapshot／GPU資源は別予算とする。MapSessionの制限をprocess全体の物理メモリ上限とは呼ばない。すべてのMaps ownerは非表示・停止中も配送済み結果を回収し、Cooperative実行では共有job pumpを継続する。fixed／finiteの最後のownerも非同期解放で未使用generationを回収し、cleanup失敗は再試行可能な状態と計上を残す。
+
 ### HTTP入力と展開後revision
 
 HTTPは独立した`Lumyte.Maps.Http`に置き、Mvt側にはtransport非依存の`BoundedMvtRegistration`とsnapshot受入境界だけを追加する。MvtからHttpへの参照は追加しない。同じ登録インスタンス、profile、完全なResourceAddressをstageが照合し、既存のprotobuf-net.Coreによるdecodeを再利用する。snapshotに渡すstorageはadapterが所有する非公開の不変メモリであり、callbackはそのaccountingを返す信頼境界とする。
@@ -288,8 +311,12 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +    {
 +        // 既定falseは固定集合。trueは明示した有限候補のみを可視選択する。
 +        public bool SelectVisibleTiles { get; init; }
-+        // 正数。固定／有限候補モードでは配送済み・採用済みを含む候補集合全体の上限。
-+        // 空間需要queueの未実行要求上限とは別の契約。
++        // 空間modeの採用・取得中・未採用完了・退役slotを含む。
++        public int MaxResidentTiles { get; init; } = 64;
++        public int PrefetchRadius { get; init; } = 1;
++        public int MaxPrefetchTiles { get; init; } = 8;
++        public int MaxFallbackDepth { get; init; } = 1;
++        // 正数。固定／有限候補では配送済み・採用済みを含む候補全体。空間modeでは一回の需要候補上限。
 +        public int MaxPendingTiles { get; init; } = 128;
 +        public int MaxInFlightTiles { get; init; } = 4;
 +        public int MaxCompletedTiles { get; init; } = 4;
@@ -306,6 +333,17 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +            MapStyle style, MapSessionOptions options, System.Collections.Generic.IReadOnlyList<MapTileId> fixedTiles);
 +        public MapCamera Camera { get; }
 +        public int SourceZoom { get; }
++        // 新しい登録は不変とし、schema・単一予約容量を検査する。空間modeのみ。
++        public void SetTileSet(MapTileSet tiles);
++        public int PendingTiles { get; }
++        public int RetiringTiles { get; }
++        public int ReadyVisibleTiles { get; }
++        public bool IsDemandOverflow { get; }
++        public bool IsCapacityBlocked { get; }
++        public bool IsMaintenanceInFlight { get; }
++        public System.Exception? MaintenanceFailure { get; }
++        // このsessionのtrimで観測した共有Managerのgeneration解放数。tile専用物理量ではない。
++        public ulong ReleasedGenerationCount { get; }
 +        public System.Collections.Generic.IReadOnlyList<MapTileId> VisibleTiles { get; }
 +        public void Pan(System.Numerics.Vector2 displacement);
 +        public void ZoomAt(System.Numerics.Vector2 position, double zoomDelta);
