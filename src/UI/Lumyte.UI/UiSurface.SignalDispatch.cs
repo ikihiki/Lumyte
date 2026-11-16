@@ -82,6 +82,49 @@ public sealed partial class UiSurface
             return false;
         }
 
+        if (input is UiSetNumericInput numeric)
+        {
+            if (!double.IsFinite(numeric.Value) || (numeric.Upper is { } upper && (!double.IsFinite(upper) || numeric.Value > upper))
+                || !float.IsFinite(numeric.Position.X) || !float.IsFinite(numeric.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(numeric.Target);
+            if (target is null || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || (target.SupportedActions & (numeric.Upper.HasValue ? UiAutomationActions.SetRange : UiAutomationActions.SetValue)) == 0 || target.AutomationActivePress || target.IsTransitioning
+                || !AcceptsCurrentInput(target)
+                || !IsInside(target, numeric.Position))
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            UiElement? checkHit = _rootElement.FindInputHit(numeric.Position, _inputVersion);
+            for (UiElement? node = checkHit; node is not null; node = node.Parent)
+            {
+                if (node.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                UiInputResult probe = node.InvokePointerProbe(numeric.Position - node.InputOrigin);
+                if (probe != UiInputResult.Unhandled)
+                {
+                    return ReferenceEquals(node, target) && probe == UiInputResult.Handled && DeliverInput(target, numeric, false) == UiInputResult.Handled;
+                }
+            }
+
+            return false;
+        }
+
         if (input is UiFocusLostInput)
         {
             _panCandidates.Clear();

@@ -72,6 +72,8 @@
         "TestUiControlsAot",
         "TestUiLayout",
         "TestUiLayoutAot",
+        "TestUiNumeric",
+        "TestUiNumericAot",
         "TestUiScroll",
         "TestUiScrollAot",
         "TestUiMedia",
