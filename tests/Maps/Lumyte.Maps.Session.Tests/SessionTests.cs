@@ -44,6 +44,34 @@ public sealed class SessionTests
         Assert.Equal(1, stage.Builds);
     }
 
+    /// <summary>The finite stage keeps a successful old demand as bounded adopted data without fetching an invisible pending tile.</summary>
+    /// <returns>The invisible terminal adoption checks.</returns>
+    [Fact]
+    public async Task SuccessfulInvisibleCompletionRemainsChargedUntilDisposalAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        await using var manager = new ResourceManager("invisible-adoption", new Source(), [stage], memory, new Runtime());
+        await using var map = new MapSession(manager, new Tiles(), Style(), new() { SelectVisibleTiles = true, MaxCompletedTiles = 1 }, [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetViewport(new(100, 100));
+        map.SetCamera(new(-90, 66.51326044311186, 1));
+        map.Advance();
+        map.SetCamera(new(90, 66.51326044311186, 1));
+        map.SetViewport(default);
+        stage.Complete();
+        await AdoptAsync(map);
+        Assert.Empty(map.VisibleTiles);
+        Assert.Equal(1, map.PublishedTiles);
+        Assert.Equal(128, map.ResidentCpuBytes);
+        Assert.Equal(0, map.InFlightTiles);
+        Assert.Equal(1, stage.Builds);
+        await manager.TrimAsync();
+        Assert.Equal(0, stage.Releases);
+        await map.DisposeAsync();
+        await manager.TrimAsync();
+        Assert.Equal(1, stage.Releases);
+    }
+
     /// <summary>Cancellation never abandons accepted retains or releases their reservations early.</summary>
     /// <returns>The lifetime checks.</returns>
     [Fact]

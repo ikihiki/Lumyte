@@ -156,9 +156,13 @@ try {
         await writeFile(process.env.LUMYTE_MAPS_SCREENSHOT ?? resolve(tmpdir(), "lumyte-maps-browser.png"), captured);
         console.log("Adopted tile and captured map GPU PNG: " + width + "x" + height + "; colors=" + colors.size);
     }
+    while (Date.now() < deadline && !await evaluate("globalThis.lumyteMapsProbe.HasPresentedInputAsync()")) await delay(25);
+    assert.equal(await evaluate("globalThis.lumyteMapsProbe.HasPresentedInputAsync()"), true,
+        "Physical UI input requires committed presentation geometry; state=" + await evaluate("globalThis.lumyteMapsProbe.GetState()"));
     const bounds = await evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()");
     const start = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
     const readCamera = async () => (await evaluate("globalThis.lumyteMapsProbe.GetCamera()")).split(",").map(Number);
+    await evaluate("(() => { globalThis.__mapInputEvents = []; for (const type of ['pointerdown','pointermove','pointerup','pointercancel','wheel']) window.addEventListener(type, e => globalThis.__mapInputEvents.push({ type, x:e.clientX, y:e.clientY, buttons:e.buttons, target:e.target.id, focused:document.hasFocus(), active:document.activeElement?.id }), true); })()");
     const initialCamera = await readCamera();
     await command("Input.dispatchMouseEvent", { type: "mouseMoved", ...start });
     await command("Input.dispatchMouseEvent", { type: "mousePressed", ...start, button: "left", buttons: 1, clickCount: 1 });
@@ -171,7 +175,7 @@ try {
             if (predicate(camera)) return camera;
             await delay(25);
         }
-        assert.fail("Actual input did not update camera: " + await readCamera());
+        assert.fail("Actual input did not update camera: " + await readCamera() + "; state=" + await evaluate("globalThis.lumyteMapsProbe.GetState()") + "; DOM=" + JSON.stringify(await evaluate("globalThis.__mapInputEvents")) + "; errors=" + JSON.stringify(errors) + "; progress=" + JSON.stringify(progress.slice(-10)));
     }
     const panned = await cameraUntil(camera => Math.abs(camera[0] - initialCamera[0] + 28.125) < 1e-8);
     const wheelPoint = { x: start.x + 80, y: start.y - 40 };

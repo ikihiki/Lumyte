@@ -14,3 +14,5 @@ node samples/Lumyte.Maps.Browser.Sample/verify-browser.mjs
 既定の動作確認は実際のタイル採用を要求し、mount済み`MapView`を`UiSurface.Record`と`UiDrawingScene2D`で記録して保持型描画の再利用を検査した後、所有アプリを停止して処理完了を待ちます。ホストGPUのPNGと地図の画素色も必須にする場合は`LUMYTE_MAPS_GPU_CAPTURE=1`を指定します。chromiumがPATHにない場合は`CHROME`に既存のBrowser実行ファイルを指定してください。これは一つの固定試験データでの動作確認であり、一般のMVT／Browser／AOT互換性、性能、無継ぎ目の証拠ではありません。
 
 検証スクリプトは CDP の実マウス入力を DOM へ配送し、40×20 論理 pixel のパンと +0.25 zoom のポインター基準を camera の公開観測値で確認します。これはブラウザーの実イベント経路の検証で、物理マウスや実画面での操作確認とは区別します。
+
+現在の検証では、提示済み入力幾何の公開 hit-test を待ってから CDP 入力を配送します。パン・wheel anchor・取得 zoom 0→1 の追加4枚の採用／再記録は成功しましたが、終了時に `A valid external Instance reference no longer exists.` が報告される未解決条件があります。Browser 全体を合格とは扱いません。raw log と制約は [検証記録](../../tests/Maps/IMPLEMENTATION-EVIDENCE.md) を参照してください。

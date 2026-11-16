@@ -30,6 +30,16 @@ public static partial class BrowserProbe
     [JSExport]
     public static string GetCamera() => FormattableString.Invariant($"{Content!.Camera.Longitude},{Content.Camera.Latitude},{Content.Camera.Zoom}");
 
+    /// <summary>Observes committed presentation geometry before injecting physical input into the host.</summary>
+    /// <returns>Whether the normal public window hit-test can address the map's presented center.</returns>
+    [JSExport]
+    public static async Task<bool> HasPresentedInputAsync() => await Application!.Dispatcher.InvokeAsync(() =>
+    {
+        UiApplicationWindowContext context = Context!;
+        return context.Windows.TryGetSnapshot(context.Window, out Lumyte.UI.Windowing.UiWindowSnapshot? snapshot) && snapshot is not null
+            && context.Windows.HitTest(snapshot.PresentationRoot, snapshot.ClientSize / 2) is not null;
+    });
+
     /// <summary>Gets current lifecycle diagnostics.</summary>
     /// <returns>Application state and failure.</returns>
     [JSExport]
