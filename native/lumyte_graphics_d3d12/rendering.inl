@@ -378,12 +378,20 @@ API void commands_detach_heaps(Commands* commands, ID3D12DescriptorHeap** rtv, I
     *dsv = commands->depth_target.Detach();
 }
 
-// PSO stream subobjects must start at pointer alignment.
+// PSO stream subobjects must start at pointer alignment. Tail padding is part of
+// that required ABI (notably for blend and sample descriptors).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
 template <D3D12_PIPELINE_STATE_SUBOBJECT_TYPE Kind, typename T> struct alignas(void*) MeshSubobject
 {
     D3D12_PIPELINE_STATE_SUBOBJECT_TYPE kind = Kind;
     T value{};
 };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 API UINT device_mesh_supported(Device* device) noexcept
 {
     D3D12_FEATURE_DATA_D3D12_OPTIONS7 options{};
