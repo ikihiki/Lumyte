@@ -40,7 +40,9 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  node.IsPressed,
  node.HasActivePress,
  new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, }.Where(action => (node.Actions & action) != 0).Select(action => action.ToString().ToLowerInvariant()).ToArray(),
- node.IsTransitioning);
+ node.IsTransitioning,
+ node.Value,
+ node.IsIndeterminate);
 
     private static UiLocator Locate(UiAutomationPage page, UiRemoteLocatorStep[] steps)
     {
@@ -53,7 +55,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             }
             else
             {
-                UiRole role = step.Role switch { "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, _ => UiRole.Group };
+                UiRole role = step.Role switch { "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
                 locator = locator is null ? page.GetByRole(role, step.Name, step.IncludeHidden) : locator.GetByRole(role, step.Name, step.IncludeHidden);
             }
         }

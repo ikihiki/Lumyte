@@ -11,13 +11,15 @@ internal sealed class LoopbackHandler : HttpMessageHandler
     private readonly TaskCompletionSource<Guid> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Thread _thread;
     private readonly bool _popups;
+    private readonly Action<Lumyte.UI.UiSurface>? _configureSurface;
     private bool _stop;
     private int _clicks;
     private int _dropStarts;
 
-    internal LoopbackHandler(bool popups = false)
+    internal LoopbackHandler(bool popups = false, Action<Lumyte.UI.UiSurface>? configureSurface = null)
     {
         _popups = popups;
+        _configureSurface = configureSurface;
         _thread = new Thread(Run) { IsBackground = true };
         _thread.Start();
     }
@@ -75,6 +77,7 @@ internal sealed class LoopbackHandler : HttpMessageHandler
         try
         {
             using var h = new Harness(screenshots: true);
+            _configureSurface?.Invoke(h.Surface);
             if (_popups)
             {
                 h.AddPopup();

@@ -31,7 +31,14 @@ public sealed partial class UiSurface
             hitTestVisible &= element.Widget.HitTestVisible;
             bool focusable = ReferenceEquals(element.InputVersion, _inputVersion) && element.InputFocusable;
             bool redacted = element.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds)));
+            double? value = redacted ? null : element.SemanticAutomationValue;
+            if (value is double number && (!double.IsFinite(number) || number < 0 || number > 1))
+            {
+                throw new InvalidOperationException("Semantic automation values must be finite and between zero and one inclusive.");
+            }
+
+            bool indeterminate = !redacted && element.AutomationIndeterminate;
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate));
             if (redacted)
             {
                 return;
