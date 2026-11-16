@@ -1,0 +1,44 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Lumyte.Core -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Core/bin/Debug/net10.0/Lumyte.Core.dll
+  Lumyte.Composition -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Composition/bin/Debug/net10.0/Lumyte.Composition.dll
+  Lumyte.Input.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Input/Lumyte.Input.Abstractions/bin/Debug/net10.0/Lumyte.Input.Abstractions.dll
+  Lumyte.Signals -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Signals/bin/Debug/net10.0/Lumyte.Signals.dll
+  Lumyte.Graphics.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Abstractions/bin/Debug/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Composition.Generators -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Composition.Generators/bin/Debug/netstandard2.0/Lumyte.Composition.Generators.dll
+  Lumyte.Graphics.Shared -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shared/bin/Debug/net10.0/Lumyte.Graphics.Shared.dll
+  Lumyte.StateMachines -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.StateMachines/bin/Debug/net10.0/Lumyte.StateMachines.dll
+  Lumyte.Graphics.RenderGraph -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.RenderGraph/bin/Debug/net10.0/Lumyte.Graphics.RenderGraph.dll
+  Lumyte.Mathematics -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Mathematics/bin/Debug/net10.0/Lumyte.Mathematics.dll
+  Lumyte.Graphics.Generators -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Generators/bin/Debug/netstandard2.0/Lumyte.Graphics.Generators.dll
+  Lumyte.Animation -> /home/hideaki/incremental-owner-ledger/src/Animation/Lumyte.Animation/bin/Debug/net10.0/Lumyte.Animation.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.ImageEffects -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.ImageEffects/bin/Debug/net10.0/Lumyte.Graphics.ImageEffects.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.Drawing2D -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D/bin/Debug/net10.0/Lumyte.Graphics.Drawing2D.dll
+  Lumyte.Graphics.Drawing2D.DependencyInjection -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D.DependencyInjection/bin/Debug/net10.0/Lumyte.Graphics.Drawing2D.DependencyInjection.dll
+  Lumyte.Graphics.Drawing2D.RenderGraph -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/bin/Debug/net10.0/Lumyte.Graphics.Drawing2D.RenderGraph.dll
+  Lumyte.UI -> /home/hideaki/incremental-owner-ledger/src/UI/Lumyte.UI/bin/Debug/net10.0/Lumyte.UI.dll
+  Lumyte.Graphics.Drawing2D.Tests -> /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/bin/Debug/net10.0/Lumyte.Graphics.Drawing2D.Tests.dll
+Test run for /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/bin/Debug/net10.0/Lumyte.Graphics.Drawing2D.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    26, Skipped:     0, Total:    26, Duration: 184 ms - Lumyte.Graphics.Drawing2D.Tests.dll (net10.0)

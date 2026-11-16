@@ -1,0 +1,81 @@
+  Determining projects to restore...
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shaders/Lumyte.Graphics.Shaders.csproj (in 149 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj (in 149 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Validation/Lumyte.Graphics.Validation.csproj (in 149 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj (in 149 ms).
+  Restored /home/hideaki/incremental-owner-ledger/samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj (in 149 ms).
+  Restored /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj (in 149 ms).
+  26 of 32 projects are up-to-date for restore.
+  Lumyte.Core -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Core/bin/Release/net10.0/Lumyte.Core.dll
+  Lumyte.Execution -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Execution/bin/Release/net10.0/Lumyte.Execution.dll
+  Lumyte.Signals -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Signals/bin/Release/net10.0/Lumyte.Signals.dll
+  Lumyte.Composition -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Composition/bin/Release/net10.0/Lumyte.Composition.dll
+  Lumyte.Memory -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Memory/bin/Release/net10.0/Lumyte.Memory.dll
+  Lumyte.Graphics.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Mathematics -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Mathematics/bin/Release/net10.0/Lumyte.Mathematics.dll
+  Lumyte.Input.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Input/Lumyte.Input.Abstractions/bin/Release/net10.0/Lumyte.Input.Abstractions.dll
+  Lumyte.Resources -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Resources/bin/Release/net10.0/Lumyte.Resources.dll
+  Lumyte.Composition.Generators -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Composition.Generators/bin/Release/netstandard2.0/Lumyte.Composition.Generators.dll
+  Lumyte.Graphics.Hosting -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Hosting/bin/Release/net10.0/Lumyte.Graphics.Hosting.dll
+  Lumyte.Graphics.Shared -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shared/bin/Release/net10.0/Lumyte.Graphics.Shared.dll
+  Lumyte.Memory.DependencyInjection -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Memory.DependencyInjection/bin/Release/net10.0/Lumyte.Memory.DependencyInjection.dll
+  Lumyte.Graphics.Generators -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Generators/bin/Release/netstandard2.0/Lumyte.Graphics.Generators.dll
+  Lumyte.Resources.Execution -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Resources.Execution/bin/Release/net10.0/Lumyte.Resources.Execution.dll
+  Lumyte.Graphics.RenderGraph -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.RenderGraph/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.dll
+  Lumyte.Graphics.Shaders -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shaders/bin/Release/net10.0/Lumyte.Graphics.Shaders.dll
+  Lumyte.StateMachines -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.StateMachines/bin/Release/net10.0/Lumyte.StateMachines.dll
+  2026.19
+  Lumyte.Resources.DependencyInjection -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Resources.DependencyInjection/bin/Release/net10.0/Lumyte.Resources.DependencyInjection.dll
+  2026.19
+  Lumyte.Animation -> /home/hideaki/incremental-owner-ledger/src/Animation/Lumyte.Animation/bin/Release/net10.0/Lumyte.Animation.dll
+  2026.19
+  Lumyte.Resources.Graphics -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Resources.Graphics/bin/Release/net10.0/Lumyte.Resources.Graphics.dll
+  Lumyte.Graphics.Validation -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Validation/bin/Release/net10.0/Lumyte.Graphics.Validation.dll
+  Lumyte.Graphics.Wgpu -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Wgpu/bin/Release/net10.0/Lumyte.Graphics.Wgpu.dll
+  Lumyte.Graphics.Vulkan -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Vulkan/bin/Release/net10.0/Lumyte.Graphics.Vulkan.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.ImageEffects -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.ImageEffects/bin/Release/net10.0/Lumyte.Graphics.ImageEffects.dll
+  Lumyte.Resources.Graphics.ImageEffects -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Resources.Graphics.ImageEffects/bin/Release/net10.0/Lumyte.Resources.Graphics.ImageEffects.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.Shared -> /home/hideaki/incremental-owner-ledger/samples/Lumyte.Graphics.Shared/bin/Release/net10.0/Lumyte.Graphics.Samples.Shared.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.Drawing2D -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.dll
+  Lumyte.Graphics.Drawing2D.RenderGraph -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.RenderGraph.dll
+  Lumyte.Resources.Graphics.Drawing2D -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Resources.Graphics.Drawing2D/bin/Release/net10.0/Lumyte.Resources.Graphics.Drawing2D.dll
+  Lumyte.UI -> /home/hideaki/incremental-owner-ledger/src/UI/Lumyte.UI/bin/Release/net10.0/Lumyte.UI.dll
+  2026.19
+  Lumyte.Graphics.Tests -> /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.Tests/bin/Release/net10.0/Lumyte.Graphics.Tests.dll
+Test run for /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.Tests/bin/Release/net10.0/Lumyte.Graphics.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    38, Skipped:     0, Total:    38, Duration: 17 s - Lumyte.Graphics.Tests.dll (net10.0)

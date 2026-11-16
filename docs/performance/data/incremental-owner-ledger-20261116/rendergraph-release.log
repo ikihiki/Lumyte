@@ -1,0 +1,17 @@
+  Determining projects to restore...
+  Restored /home/hideaki/incremental-owner-ledger/src/Diagnostics/Lumyte.Diagnostics/Lumyte.Diagnostics.csproj (in 170 ms).
+  Restored /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj (in 170 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj (in 170 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Diagnostics/Lumyte.Diagnostics.RenderGraph/Lumyte.Diagnostics.RenderGraph.csproj (in 170 ms).
+  3 of 7 projects are up-to-date for restore.
+  Lumyte.Graphics.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Graphics.Shared -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shared/bin/Release/net10.0/Lumyte.Graphics.Shared.dll
+  Lumyte.Graphics.RenderGraph -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.RenderGraph/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.dll
+  Lumyte.Diagnostics -> /home/hideaki/incremental-owner-ledger/src/Diagnostics/Lumyte.Diagnostics/bin/Release/net10.0/Lumyte.Diagnostics.dll
+  Lumyte.Diagnostics.Generators -> /home/hideaki/incremental-owner-ledger/src/Diagnostics/Lumyte.Diagnostics.Generators/bin/Release/netstandard2.0/Lumyte.Diagnostics.Generators.dll
+  Lumyte.Diagnostics.RenderGraph -> /home/hideaki/incremental-owner-ledger/src/Diagnostics/Lumyte.Diagnostics.RenderGraph/bin/Release/net10.0/Lumyte.Diagnostics.RenderGraph.dll
+  Lumyte.Graphics.RenderGraph.Tests -> /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.Tests.dll
+Test run for /home/hideaki/incremental-owner-ledger/tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/bin/Release/net10.0/Lumyte.Graphics.RenderGraph.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   141, Skipped:     0, Total:   141, Duration: 123 ms - Lumyte.Graphics.RenderGraph.Tests.dll (net10.0)

@@ -1,11 +1,22 @@
 # ADR-GRAPHICS-0037: Retained 所有者の差分会計
 
-- 状態: ローカル実装・検証中（未公開）
+- 状態: 提案
+- 実装範囲: ローカル実装・検証済み、未公開
 - 日付: 2026-11-16
-- 比較元: PR #143 公開 head `0ac47b4445a04b6960e737b323eab6ed498e34cc`
+- 基準コミット: `0ac47b4445a04b6960e737b323eab6ed498e34cc`
 - 関係: [固定 draw record](GRAPHICS-0034-fixed-draw-records.md) の保有量計算の内部実装を変更する。描画、所有期間、LRU、公開 API は変更しない。
 
+## 背景
+
+同じ retained asset の保有量を繰り返し問い合わせると、その都度すべての batch と共有 owner を列挙する。共有と in-flight の正確な union を保ったまま、変更されない owner の再列挙を避けたい。外部 batch の可変見積もりと再入は従来どおり観測する必要がある。
+
 ## 決定
+
+### 利用者の変更前・変更後
+
+公開 Renderer2D、DrawingScene2D、統計、予算、準備・記録・完了・retire の記述は変更しない。以前と同じ conservative byte charge を返し、内部の stable owner だけを差分会計する。custom renderer に通知 API や固定サイズ契約を要求しない。
+
+### 差分会計
 
 毎回全 asset の owner 辞書を組み立てる代わりに、参照同一性辞書に owner ごとの idle/active 参照数と byte charge を保持する。asset は重複を取り除いた owner/charge の配列を一度取得し、取得・返却・退避時だけ差分を反映する。数値 ID の再発行、slot map、generation は導入しない。asset 配列は pooled entry への参照を持たず、返却された entry を後から触れない。
 
@@ -31,8 +42,16 @@ idle union と idle+active union の二つの総量を Int128 で保持し、読
 
 metadata の managed 保有量は描画資源の CachedBytes と区別する。MaxCachedBytes/MaxCachedAssets は引き続き資源と LRU の予算であり、pool の metadata 保持上限で代用しない。
 
-## 検証
+## 検討した代替案
+
+- 辞書 scratch の再利用だけでは、問い合わせごとの全 owner 列挙が残る。正確な互換 fallback としては維持する。
+- サイズの一括 memoize は公開登録 owner の materialization や custom owner の任意の変更を取りこぼすため採用しない。
+- slot map、generation、全 graph observer は、この内部不変契約と asset 専有配列では必要ないため導入しない。
+
+## 結果と影響
+
+資源の所有期間や描画結果は変えず、asset と live owner に対応した metadata が増える。stable でない所有者の観測費用は残る。差分会計は GPU 解放の権限を追加しない。
+
+### 検証
 
 既存 mutable/reentrant/failure と 0/1/128/long.MaxValue の予算 oracle を維持する。新たに stable owner の一度だけの列挙、重複 page、両 scope の seeded reference union、飽和からの回復、pool 再利用、wrong-scope detach、shared plan materialization、実組込み packing/pool return、挿入失敗と再入 release を検証する。
-
-性能は標準 Drawing2D BenchmarkDotNet runner の OwnerAccountingReadBenchmarks と OwnerAccountingFrameBenchmarks で比較する。1/26 asset の単一統計 read と、26 asset の cached/dynamic frame に 0/1/2 read を含める。後者は差分更新の費用も含む。CPU-only managed device の simulated completion であり、native driver、GPU、UI frame の高速化は示さない。数値と再現手順は別の測定レポートに記録する。

@@ -1,0 +1,794 @@
+[
+  {
+    "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: False)",
+    "baseline_median_of_process_medians_us": 9.486865604400634,
+    "candidate_median_of_process_medians_us": 9.523275588989257,
+    "delta_us": 0.03640998458862299,
+    "change_percent": 0.3837936164261979,
+    "paired_deltas_us": [
+      0.2176227798461916,
+      -0.14480281066894563
+    ],
+    "baseline_process_spread_us": 0.6261320114135742,
+    "candidate_process_spread_us": 0.263706420898437,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: False)",
+        "median_us": 9.173799598693847,
+        "p95_us": 9.911782170867918,
+        "min_us": 9.072698669433594,
+        "max_us": 9.98486457824707,
+        "allocated_bytes": 34688,
+        "iteration_estimates_ns": [
+          9072.698669433594,
+          9264.90299987793,
+          9147.76985168457,
+          9174.036117553711,
+          9102.696014404297,
+          9108.250915527344,
+          9173.563079833984,
+          9682.202514648438,
+          9822.459228515625,
+          9984.86457824707
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: False)",
+        "median_us": 9.391422378540039,
+        "p95_us": 11.274520615386962,
+        "min_us": 9.200113388061524,
+        "max_us": 12.14683432006836,
+        "allocated_bytes": 30560,
+        "iteration_estimates_ns": [
+          12146.83432006836,
+          10208.359420776367,
+          9414.846328735352,
+          9200.113388061523,
+          9318.035140991211,
+          9525.01382446289,
+          9234.324935913086,
+          9367.998428344727,
+          9679.759994506836,
+          9361.389083862305
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: False)",
+        "median_us": 9.655128799438476,
+        "p95_us": 10.32648484725952,
+        "min_us": 9.426861404418945,
+        "max_us": 10.487315551757813,
+        "allocated_bytes": 30560,
+        "iteration_estimates_ns": [
+          10129.913986206055,
+          10487.315551757812,
+          9667.914932250977,
+          9851.748992919922,
+          9603.605026245117,
+          9642.342666625977,
+          9426.861404418945,
+          9795.340270996094,
+          9556.657608032227,
+          9502.833984375
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: False)",
+        "median_us": 9.799931610107421,
+        "p95_us": 9.98603761291504,
+        "min_us": 9.592654510498047,
+        "max_us": 9.986139511108398,
+        "allocated_bytes": 34688,
+        "iteration_estimates_ns": [
+          9964.682418823242,
+          9985.913070678711,
+          9986.139511108398,
+          9826.629486083984,
+          9955.758682250977,
+          9771.103820800781,
+          9592.654510498047,
+          9773.23373413086,
+          9727.048385620117,
+          9619.125244140625
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: True)",
+    "baseline_median_of_process_medians_us": 16.420835903167724,
+    "candidate_median_of_process_medians_us": 15.972746982574463,
+    "delta_us": -0.44808892059326055,
+    "change_percent": -2.728782646849426,
+    "paired_deltas_us": [
+      -0.5409933242797855,
+      -0.35518451690673736
+    ],
+    "baseline_process_spread_us": 4.065749061584475,
+    "candidate_process_spread_us": 3.8799402542114265,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: True)",
+        "median_us": 18.453710433959962,
+        "p95_us": 27.91106693115234,
+        "min_us": 15.424066375732421,
+        "max_us": 28.212440643310547,
+        "allocated_bytes": 50233,
+        "iteration_estimates_ns": [
+          26125.182830810547,
+          26339.034088134766,
+          27542.721282958984,
+          28212.440643310547,
+          21280.315460205078,
+          15430.11279296875,
+          15424.066375732422,
+          15580.239929199219,
+          15607.634338378906,
+          15627.105407714844
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: True)",
+        "median_us": 17.912717109680177,
+        "p95_us": 25.72332218017578,
+        "min_us": 13.780789672851563,
+        "max_us": 25.9748017578125,
+        "allocated_bytes": 45321,
+        "iteration_estimates_ns": [
+          13780.789672851562,
+          14398.208480834961,
+          16365.274703979492,
+          17998.63900756836,
+          24958.727767944336,
+          25974.8017578125,
+          25415.958251953125,
+          21082.620895385742,
+          17826.795211791992,
+          15520.59587097168
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: True)",
+        "median_us": 14.03277685546875,
+        "p95_us": 14.37423260192871,
+        "min_us": 13.65660317993164,
+        "max_us": 14.453251190185547,
+        "allocated_bytes": 45321,
+        "iteration_estimates_ns": [
+          14241.060470581055,
+          14005.839874267578,
+          13656.60317993164,
+          14453.251190185547,
+          14102.621459960938,
+          14277.654327392578,
+          13827.718032836914,
+          14003.56298828125,
+          13887.195129394531,
+          14059.713836669922
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 0, Dynamic: True)",
+        "median_us": 14.387961372375488,
+        "p95_us": 15.926913727569579,
+        "min_us": 14.13239633178711,
+        "max_us": 16.210032302856444,
+        "allocated_bytes": 50233,
+        "iteration_estimates_ns": [
+          14149.796844482422,
+          14132.39633178711,
+          14226.17333984375,
+          14402.75,
+          14240.314895629883,
+          14373.172744750977,
+          15580.879913330078,
+          15528.503952026367,
+          16210.032302856445,
+          15455.921875
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: False)",
+    "baseline_median_of_process_medians_us": 10.670436920166015,
+    "candidate_median_of_process_medians_us": 9.940468025207519,
+    "delta_us": -0.7299688949584962,
+    "change_percent": -6.841040347456917,
+    "paired_deltas_us": [
+      -1.2722224807739266,
+      -0.18771530914306744
+    ],
+    "baseline_process_spread_us": 1.5340126953124997,
+    "candidate_process_spread_us": 0.44950552368164054,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: False)",
+        "median_us": 11.437443267822266,
+        "p95_us": 15.820945206451416,
+        "min_us": 10.4739927444458,
+        "max_us": 15.903850105285645,
+        "allocated_bytes": 35729,
+        "iteration_estimates_ns": [
+          10473.9927444458,
+          10640.975624084473,
+          11479.192390441895,
+          12274.385551452637,
+          15719.616996765137,
+          15903.850105285645,
+          11608.238121032715,
+          11395.694145202637,
+          11173.291648864746,
+          10964.27596282959
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: False)",
+        "median_us": 10.165220787048339,
+        "p95_us": 13.024890025329585,
+        "min_us": 9.996888801574707,
+        "max_us": 14.882460472106933,
+        "allocated_bytes": 30560,
+        "iteration_estimates_ns": [
+          10754.526145935059,
+          14882.460472106934,
+          10457.69915008545,
+          10065.50463104248,
+          10156.151176452637,
+          10174.290397644043,
+          10262.482139587402,
+          9996.888801574707,
+          10029.772178649902,
+          10081.877876281738
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: False)",
+        "median_us": 9.715715263366699,
+        "p95_us": 17.478688300323483,
+        "min_us": 9.37354103088379,
+        "max_us": 18.527500579833983,
+        "allocated_bytes": 30560,
+        "iteration_estimates_ns": [
+          9561.748611450195,
+          9949.047592163086,
+          9731.877548217773,
+          9553.189895629883,
+          9699.552978515625,
+          9685.42318725586,
+          10752.675567626953,
+          16196.806625366211,
+          18527.500579833984,
+          9373.541030883789
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: False)",
+        "median_us": 9.903430572509766,
+        "p95_us": 11.069252796936034,
+        "min_us": 9.485158340454102,
+        "max_us": 11.117039108276368,
+        "allocated_bytes": 35729,
+        "iteration_estimates_ns": [
+          10948.566436767578,
+          11117.039108276367,
+          10822.073608398438,
+          11010.847305297852,
+          9943.452850341797,
+          9697.689041137695,
+          9863.408294677734,
+          9529.678436279297,
+          9485.158340454102,
+          9563.75112915039
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: True)",
+    "baseline_median_of_process_medians_us": 15.157630687713624,
+    "candidate_median_of_process_medians_us": 13.909753570556642,
+    "delta_us": -1.2478771171569818,
+    "change_percent": -8.232666060194216,
+    "paired_deltas_us": [
+      -1.5134394302368168,
+      -0.9823148040771486
+    ],
+    "baseline_process_spread_us": 2.236957160949707,
+    "candidate_process_spread_us": 1.705832534790039,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: True)",
+        "median_us": 16.276109268188478,
+        "p95_us": 16.402778843688964,
+        "min_us": 15.986344329833985,
+        "max_us": 16.41309436035156,
+        "allocated_bytes": 51273,
+        "iteration_estimates_ns": [
+          16220.811126708984,
+          16199.21499633789,
+          16272.383819580078,
+          16294.405059814453,
+          16279.834716796875,
+          16413.094360351562,
+          16390.170989990234,
+          16320.405670166016,
+          16035.805145263672,
+          15986.344329833984
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: True)",
+        "median_us": 14.76266983795166,
+        "p95_us": 16.009511248779297,
+        "min_us": 14.665089553833008,
+        "max_us": 16.57435479736328,
+        "allocated_bytes": 45321,
+        "iteration_estimates_ns": [
+          14680.747436523438,
+          14689.39665222168,
+          14908.560180664062,
+          14877.036270141602,
+          14762.633056640625,
+          14753.88298034668,
+          14665.089553833008,
+          16574.35479736328,
+          14762.706619262695,
+          15319.146911621094
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: True)",
+        "median_us": 13.056837303161622,
+        "p95_us": 13.254171882629395,
+        "min_us": 12.955295974731445,
+        "max_us": 13.262191009521484,
+        "allocated_bytes": 45321,
+        "iteration_estimates_ns": [
+          13030.169555664062,
+          13037.172134399414,
+          13026.720611572266,
+          13244.370727539062,
+          13262.191009521484,
+          13115.190231323242,
+          13105.842590332031,
+          13076.502471923828,
+          12955.295974731445,
+          13032.999740600586
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 1, Dynamic: True)",
+        "median_us": 14.03915210723877,
+        "p95_us": 14.366891743469237,
+        "min_us": 13.964123092651366,
+        "max_us": 14.463194091796876,
+        "allocated_bytes": 51273,
+        "iteration_estimates_ns": [
+          14071.263275146484,
+          14463.194091796875,
+          14007.040939331055,
+          13964.123092651367,
+          14249.188873291016,
+          14194.570846557617,
+          14114.176986694336,
+          14001.519302368164,
+          13981.757385253906,
+          13987.447479248047
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: False)",
+    "baseline_median_of_process_medians_us": 10.94528748703003,
+    "candidate_median_of_process_medians_us": 9.687722393035887,
+    "delta_us": -1.2575650939941418,
+    "change_percent": -11.489557450951693,
+    "paired_deltas_us": [
+      -0.6065549774169927,
+      -1.9085752105712892
+    ],
+    "baseline_process_spread_us": 0.17999646759033183,
+    "candidate_process_spread_us": 1.4820167007446283,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: False)",
+        "median_us": 11.035285720825195,
+        "p95_us": 12.348350407409667,
+        "min_us": 10.458166625976563,
+        "max_us": 12.688673385620117,
+        "allocated_bytes": 36769,
+        "iteration_estimates_ns": [
+          10458.166625976562,
+          11096.630645751953,
+          11028.522338867188,
+          11042.049102783203,
+          10902.317459106445,
+          10814.542755126953,
+          10889.282669067383,
+          11142.960968017578,
+          12688.673385620117,
+          11932.400100708008
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: False)",
+        "median_us": 10.428730743408202,
+        "p95_us": 12.19479751358032,
+        "min_us": 9.160937408447266,
+        "max_us": 12.911954986572265,
+        "allocated_bytes": 30560,
+        "iteration_estimates_ns": [
+          10855.543090820312,
+          10447.82681274414,
+          12911.954986572266,
+          10650.744506835938,
+          9765.203155517578,
+          11318.271713256836,
+          10087.448440551758,
+          10409.634674072266,
+          9484.127563476562,
+          9160.937408447266
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: False)",
+        "median_us": 8.946714042663574,
+        "p95_us": 9.396687352752684,
+        "min_us": 8.90452262878418,
+        "max_us": 9.502333786010743,
+        "allocated_bytes": 30560,
+        "iteration_estimates_ns": [
+          8940.22915649414,
+          9000.247970581055,
+          8948.605072021484,
+          8938.34065246582,
+          8904.52262878418,
+          8930.789657592773,
+          9021.88053894043,
+          8944.823013305664,
+          9267.563934326172,
+          9502.333786010742
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: False)",
+        "median_us": 10.855289253234863,
+        "p95_us": 11.966894608306884,
+        "min_us": 10.661849746704101,
+        "max_us": 11.990492080688476,
+        "allocated_bytes": 36769,
+        "iteration_estimates_ns": [
+          11990.492080688477,
+          11651.72933959961,
+          11475.698043823242,
+          11938.053253173828,
+          10711.119018554688,
+          10878.021499633789,
+          10661.849746704102,
+          10767.246200561523,
+          10832.557006835938,
+          10773.269134521484
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: True)",
+    "baseline_median_of_process_medians_us": 16.37862545013428,
+    "candidate_median_of_process_medians_us": 13.558237159729003,
+    "delta_us": -2.820388290405276,
+    "change_percent": -17.21993276537228,
+    "paired_deltas_us": [
+      -3.2863255538940432,
+      -2.3544510269165055
+    ],
+    "baseline_process_spread_us": 1.3426931304931635,
+    "candidate_process_spread_us": 0.4108186035156258,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: True)",
+        "median_us": 17.04997201538086,
+        "p95_us": 17.719101481628414,
+        "min_us": 15.566614288330078,
+        "max_us": 17.99016711425781,
+        "allocated_bytes": 52313,
+        "iteration_estimates_ns": [
+          15566.614288330078,
+          17044.379425048828,
+          17387.799041748047,
+          17990.167114257812,
+          17202.545867919922,
+          17055.56460571289,
+          17205.65509033203,
+          16727.51611328125,
+          16468.67938232422,
+          16158.959045410156
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: True)",
+        "median_us": 13.763646461486816,
+        "p95_us": 13.886366481781005,
+        "min_us": 13.504605377197265,
+        "max_us": 13.91050196838379,
+        "allocated_bytes": 45321,
+        "iteration_estimates_ns": [
+          13504.605377197266,
+          13745.80632019043,
+          13536.759353637695,
+          13856.867553710938,
+          13781.486602783203,
+          13793.353408813477,
+          13692.085098266602,
+          13740.313827514648,
+          13910.501968383789,
+          13847.160552978516
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: True)",
+        "median_us": 13.35282785797119,
+        "p95_us": 15.322958557128906,
+        "min_us": 12.986379653930664,
+        "max_us": 15.407489562988282,
+        "allocated_bytes": 45321,
+        "iteration_estimates_ns": [
+          13004.189407348633,
+          13034.217590332031,
+          12994.762420654297,
+          12986.379653930664,
+          13019.183822631836,
+          13671.438125610352,
+          14194.155776977539,
+          15196.604446411133,
+          15407.489562988281,
+          15219.642883300781
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingFrameBenchmarks.Frame(StatisticsReads: 2, Dynamic: True)",
+        "median_us": 15.707278884887696,
+        "p95_us": 16.19656312713623,
+        "min_us": 15.428235717773438,
+        "max_us": 16.225079803466798,
+        "allocated_bytes": 52313,
+        "iteration_estimates_ns": [
+          15428.235717773438,
+          15595.28286743164,
+          16131.136169433594,
+          16161.709411621094,
+          15596.078155517578,
+          15704.061431884766,
+          15500.56558227539,
+          16225.079803466797,
+          15966.516204833984,
+          15710.496337890625
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 1)",
+    "baseline_median_of_process_medians_us": 0.05049519447982311,
+    "candidate_median_of_process_medians_us": 0.030302640244364736,
+    "delta_us": -0.020192554235458376,
+    "change_percent": -39.9890612234931,
+    "paired_deltas_us": [
+      -0.020278516113758086,
+      -0.020106592357158663
+    ],
+    "baseline_process_spread_us": 0.00010891315340995356,
+    "candidate_process_spread_us": 6.301060318946936e-05,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 1)",
+        "median_us": 0.05054965105652809,
+        "p95_us": 0.050720968970656394,
+        "min_us": 0.05037209656834602,
+        "max_us": 0.050740596383810045,
+        "allocated_bytes": 40,
+        "iteration_estimates_ns": [
+          50.549157470464706,
+          50.63378247618675,
+          50.603356033563614,
+          50.74059638381004,
+          50.47016832232475,
+          50.372096568346024,
+          50.69697991013527,
+          50.372578114271164,
+          50.5292486846447,
+          50.550144642591476
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 1)",
+        "median_us": 0.030271134942770003,
+        "p95_us": 0.03176543261706829,
+        "min_us": 0.030214800715446473,
+        "max_us": 0.03289903920888901,
+        "allocated_bytes": 0,
+        "iteration_estimates_ns": [
+          30.379913449287415,
+          30.285422205924988,
+          30.33380424976349,
+          32.89903920888901,
+          30.214800715446472,
+          30.227693736553192,
+          30.235639452934265,
+          30.223635137081146,
+          30.25684767961502,
+          30.2862269282341
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 1)",
+        "median_us": 0.030334145545959472,
+        "p95_us": 0.030504104951024055,
+        "min_us": 0.03030258083343506,
+        "max_us": 0.0305182386636734,
+        "allocated_bytes": 0,
+        "iteration_estimates_ns": [
+          30.338123977184296,
+          30.486830413341522,
+          30.30376636981964,
+          30.30258083343506,
+          30.3198823928833,
+          30.32986479997635,
+          30.5182386636734,
+          30.33052349090576,
+          30.34715986251831,
+          30.337767601013184
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 1)",
+        "median_us": 0.050440737903118135,
+        "p95_us": 0.0505796481102705,
+        "min_us": 0.05023908507823944,
+        "max_us": 0.050616159439086914,
+        "allocated_bytes": 40,
+        "iteration_estimates_ns": [
+          50.23908507823944,
+          50.616159439086914,
+          50.466579139232635,
+          50.40827137231827,
+          50.3819505572319,
+          50.44113576412201,
+          50.29233521223068,
+          50.45220071077347,
+          50.44034004211426,
+          50.53502315282822
+        ]
+      }
+    }
+  },
+  {
+    "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 26)",
+    "baseline_median_of_process_medians_us": 0.6056086235046387,
+    "candidate_median_of_process_medians_us": 0.030653822556138036,
+    "delta_us": -0.5749548009485007,
+    "change_percent": -94.93834444120935,
+    "paired_deltas_us": [
+      -0.6111631843149662,
+      -0.5387464175820351
+    ],
+    "baseline_process_spread_us": 0.07295731163024899,
+    "candidate_process_spread_us": 0.0005405448973178871,
+    "processes": {
+      "A1": {
+        "run": "A1",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 26)",
+        "median_us": 0.6420872793197632,
+        "p95_us": 1.4168515004634856,
+        "min_us": 0.5614064407348632,
+        "max_us": 1.448003709793091,
+        "allocated_bytes": 1040,
+        "iteration_estimates_ns": [
+          561.4064407348633,
+          567.4207563400269,
+          597.8765954971313,
+          595.9473905563354,
+          622.0347909927368,
+          662.1397676467896,
+          783.9342308044434,
+          1247.0225524902344,
+          1378.776577949524,
+          1448.0037097930908
+        ]
+      },
+      "B1": {
+        "run": "B1",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 26)",
+        "median_us": 0.03092409500479698,
+        "p95_us": 0.03288253053724766,
+        "min_us": 0.030578161001205445,
+        "max_us": 0.03357825529575348,
+        "allocated_bytes": 0,
+        "iteration_estimates_ns": [
+          30.61954689025879,
+          30.740138947963715,
+          30.578161001205444,
+          31.108314514160156,
+          30.7736918926239,
+          30.652358889579773,
+          32.032200276851654,
+          33.57825529575348,
+          31.512224078178406,
+          31.074498116970062
+        ]
+      },
+      "B2": {
+        "run": "B2",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 26)",
+        "median_us": 0.030383550107479094,
+        "p95_us": 0.031120703426003454,
+        "min_us": 0.03029956379532814,
+        "max_us": 0.03149860975146294,
+        "allocated_bytes": 0,
+        "iteration_estimates_ns": [
+          30.33708956837654,
+          30.386900931596756,
+          30.45387801527977,
+          30.413695603609085,
+          30.380199283361435,
+          30.36810079216957,
+          30.658817917108536,
+          30.29956379532814,
+          30.36436042189598,
+          31.498609751462936
+        ]
+      },
+      "A2": {
+        "run": "A2",
+        "case": "OwnerAccountingReadBenchmarks.Read(NodeCount: 26)",
+        "median_us": 0.5691299676895142,
+        "p95_us": 0.8461938495635984,
+        "min_us": 0.5554497575759888,
+        "max_us": 0.9216206655502319,
+        "allocated_bytes": 1040,
+        "iteration_estimates_ns": [
+          555.4497575759888,
+          572.7907209396362,
+          754.005518913269,
+          921.6206655502319,
+          579.1104459762573,
+          557.97962474823,
+          565.4692144393921,
+          561.8137159347534,
+          563.8733415603638,
+          633.8441610336304
+        ]
+      }
+    }
+  }
+]

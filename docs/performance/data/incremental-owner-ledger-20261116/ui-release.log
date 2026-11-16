@@ -1,0 +1,38 @@
+  Determining projects to restore...
+  Restored /home/hideaki/incremental-owner-ledger/tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj (in 142 ms).
+  12 of 13 projects are up-to-date for restore.
+  Lumyte.Mathematics -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Mathematics/bin/Release/net10.0/Lumyte.Mathematics.dll
+  Lumyte.Input.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Input/Lumyte.Input.Abstractions/bin/Release/net10.0/Lumyte.Input.Abstractions.dll
+  Lumyte.Graphics.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Signals -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Signals/bin/Release/net10.0/Lumyte.Signals.dll
+  Lumyte.Composition -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Composition/bin/Release/net10.0/Lumyte.Composition.dll
+  Lumyte.Core -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Core/bin/Release/net10.0/Lumyte.Core.dll
+  Lumyte.Graphics.Generators -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Generators/bin/Release/netstandard2.0/Lumyte.Graphics.Generators.dll
+  Lumyte.Composition.Generators -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Composition.Generators/bin/Release/netstandard2.0/Lumyte.Composition.Generators.dll
+  Lumyte.StateMachines -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.StateMachines/bin/Release/net10.0/Lumyte.StateMachines.dll
+  2026.19
+  Lumyte.Animation -> /home/hideaki/incremental-owner-ledger/src/Animation/Lumyte.Animation/bin/Release/net10.0/Lumyte.Animation.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  Lumyte.Graphics.Drawing2D -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D/bin/Release/net10.0/Lumyte.Graphics.Drawing2D.dll
+  Lumyte.UI -> /home/hideaki/incremental-owner-ledger/src/UI/Lumyte.UI/bin/Release/net10.0/Lumyte.UI.dll
+  Lumyte.UI.Tests -> /home/hideaki/incremental-owner-ledger/tests/UI/Lumyte.UI.Tests/bin/Release/net10.0/Lumyte.UI.Tests.dll
+Test run for /home/hideaki/incremental-owner-ledger/tests/UI/Lumyte.UI.Tests/bin/Release/net10.0/Lumyte.UI.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   404, Skipped:     0, Total:   404, Duration: 1 s - Lumyte.UI.Tests.dll (net10.0)

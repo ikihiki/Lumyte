@@ -1,0 +1,39 @@
+  Determining projects to restore...
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj (in 200 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj (in 197 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj (in 197 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Hosting/Lumyte.Graphics.Hosting.csproj (in 197 ms).
+  Restored /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj (in 197 ms).
+  Restored /home/hideaki/incremental-owner-ledger/benchmarks/Graphics/Shared/CpuGraphics/Lumyte.Graphics.BenchmarkDevice.csproj (in 197 ms).
+  Restored /home/hideaki/incremental-owner-ledger/benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Lumyte.Graphics.Drawing2D.Benchmark.csproj (in 201 ms).
+  1 of 8 projects are up-to-date for restore.
+  Lumyte.Graphics.Abstractions -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Abstractions/bin/Release/net10.0/Lumyte.Graphics.Abstractions.dll
+  Lumyte.Graphics.Shared -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Shared/bin/Release/net10.0/Lumyte.Graphics.Shared.dll
+  Lumyte.Graphics.Hosting -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Hosting/bin/Release/net10.0/Lumyte.Graphics.Hosting.dll
+  Lumyte.Graphics.BenchmarkDevice -> /home/hideaki/incremental-owner-ledger/benchmarks/Graphics/Shared/CpuGraphics/bin/Release/net10.0/Lumyte.Graphics.BenchmarkDevice.dll
+  Lumyte.Mathematics -> /home/hideaki/incremental-owner-ledger/src/Core/Lumyte.Mathematics/bin/Release/net10.0/Lumyte.Mathematics.dll
+  Lumyte.Graphics.Generators -> /home/hideaki/incremental-owner-ledger/src/Graphics/Lumyte.Graphics.Generators/bin/Release/netstandard2.0/Lumyte.Graphics.Generators.dll
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+  2026.19
+MSBUILD : error MSB4166: Child node "2" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "5" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "4" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "3" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "6" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+
+Build FAILED.
+
+MSBUILD : error MSB4166: Child node "2" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "5" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "4" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "3" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+MSBUILD : error MSB4166: Child node "6" exited prematurely. Shutting down. Diagnostic information may be found in files in "/home/hideaki/.openclaw/runtime-tmp/MSBuildTemp0FU4Ox/" and will be named MSBuild_*.failure.txt. This location can be changed by setting the MSBUILDDEBUGPATH environment variable to a different directory.
+    0 Warning(s)
+    5 Error(s)
+
+Time Elapsed 00:00:15.37
