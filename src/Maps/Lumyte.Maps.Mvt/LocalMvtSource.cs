@@ -14,7 +14,7 @@ public sealed class LocalMvtSource(LocalMvtRegistration registration) : IResourc
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.Asynchronous);
         long length = stream.Length;
         MapTileLoadProfile profile = registration.Profile;
-        if (length > profile.MaxInputBytes || length + 256 > profile.MaxReservationBytesPerTile || length > int.MaxValue)
+        if (length > profile.MaxInputBytes || ((length + 31) & ~7L) + 512 > profile.MaxReservationBytesPerTile || length > int.MaxValue)
         {
             throw new InvalidDataException("Local input capacity exceeded.");
         }

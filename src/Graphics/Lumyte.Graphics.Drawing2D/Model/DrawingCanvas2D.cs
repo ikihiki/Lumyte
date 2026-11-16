@@ -99,6 +99,42 @@ public abstract class DrawingCanvas2D
         ClipPath(ModelValidation2D.RectanglePath(rect));
     }
 
+    /// <summary>Intersects the clip with a hard, half-open device-space pixel ownership rectangle.</summary>
+    /// <remarks>Pixel centers inside the transformed [minimum, maximum) rectangle own all shape samples.
+    /// Target pixel scale is applied during preparation; geometry is not snapped. Axis-aligned scales,
+    /// translations and reflections are supported. Rotation or shear, including replay and retained
+    /// transforms, throws <see cref="NotSupportedException"/> during preparation. Use ClipRect for an antialiased UI boundary.</remarks>
+    /// <param name="rect">The finite logical rectangle with nonnegative dimensions.</param>
+    public void ClipOwnershipRect(Rect2D rect)
+    {
+        RequireRecording();
+        ModelValidation2D.Rectangle(rect, nameof(rect));
+        ClipOwnershipRect(new Vector2(rect.X, rect.Y), new Vector2(rect.X + rect.Width, rect.Y + rect.Height));
+    }
+
+    /// <summary>Intersects ownership with explicit shared endpoints, without reconstructing maximum from width.</summary>
+    /// <param name="minimum">Finite minimum corner.</param>
+    /// <param name="maximum">Finite maximum corner, not less than minimum.</param>
+    /// <remarks>Preserves endpoints in the path; the rectangle overload's device-center and transform contract applies.</remarks>
+    public void ClipOwnershipRect(Vector2 minimum, Vector2 maximum)
+    {
+        RequireRecording();
+        ModelValidation2D.Vector(minimum, nameof(minimum));
+        ModelValidation2D.Vector(maximum, nameof(maximum));
+        if (maximum.X < minimum.X || maximum.Y < minimum.Y)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximum));
+        }
+
+        var builder = new PathBuilder2D();
+        builder.MoveTo(minimum);
+        builder.LineTo(new(maximum.X, minimum.Y));
+        builder.LineTo(maximum);
+        builder.LineTo(new(minimum.X, maximum.Y));
+        builder.Close();
+        _state = _state with { Clip = _state.Clip.Add(new ClipElement2D(builder.Build(), _state.Transform, FillRule2D.NonZero) { IsOwnership = true }) };
+    }
+
     /// <summary>Intersects the clip with a path fixed in the current transform.</summary>
     /// <param name="path">The immutable logical path.</param>
     /// <param name="rule">The contour fill rule.</param>
