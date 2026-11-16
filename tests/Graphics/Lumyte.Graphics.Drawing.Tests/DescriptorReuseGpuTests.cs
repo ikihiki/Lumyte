@@ -32,7 +32,7 @@ public sealed class DescriptorReuseGpuTests
             scene.Draw(render, 4, scene.Table, scene.Pipeline);
             scene.Draw(render, 5, scene.TableB, scene.Pipeline);
             scene.Draw(render, 6, scene.TableB, scene.PipelineB);
-            scene.Draw(render, 6, scene.TableB, scene.Pipeline);
+            scene.Draw(render, 6, scene.Table, scene.Pipeline);
             scene.Draw(render, 6, scene.TableB, scene.PipelineB);
         }
         finally
