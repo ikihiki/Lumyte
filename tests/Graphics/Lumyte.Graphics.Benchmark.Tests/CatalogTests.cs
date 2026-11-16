@@ -44,6 +44,7 @@ public sealed class CatalogTests
     /// <param name="methods">Expanded parameter case count.</param>
     [Theory]
     [InlineData("Lumyte.Graphics.Drawing2D.Benchmark", "MapCpuBenchmarks", 5)]
+    [InlineData("Lumyte.Graphics.Drawing2D.Benchmark", "MapStreamingBenchmarks", 1)]
     [InlineData("Lumyte.Graphics.Benchmark", "MapFramesBenchmarks", 8)]
     public void MapsCatalogIsDeviceFree(string assemblyName, string family, int methods)
     {

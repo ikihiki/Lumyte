@@ -48,6 +48,23 @@ public sealed class MapWorkloadTests
         }
     }
 
+    /// <summary>Checks genuine M4 spatial arrivals, publication, held retirement and actual manager trim.</summary>
+    /// <returns>Completion of the deterministic A-B-A ownership assertions.</returns>
+    [Fact]
+    public async Task ControlledStreamingUsesActualDemandRetirementAndManagerTrimAsync()
+    {
+        for (int repeat = 0; repeat < 2; repeat++)
+        {
+            Lumyte.Graphics.Drawing2D.Benchmark.Maps.StreamingObservation observed =
+                await Lumyte.Graphics.Drawing2D.Benchmark.Maps.MapStreamingWorkload.RunAsync();
+            Assert.Equal(3, observed.Builds);
+            Assert.Equal(3, observed.Publications);
+            Assert.Equal(2, observed.HeldRetirements);
+            Assert.Equal(2, observed.Releases);
+            Assert.Equal(2UL, observed.ManagerReleases);
+        }
+    }
+
     /// <summary>Checks real MapView recording reuse and M3 invalidation without a GPU.</summary>
     /// <returns>Completion of borrowed-session correctness checks.</returns>
     [Fact]

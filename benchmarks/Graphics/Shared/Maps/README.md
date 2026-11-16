@@ -18,7 +18,7 @@ path seed=0（乱数なし）。frame f: 基準cameraへ戻す→Pan((f%16)-8,(f
 - WarmCpuPrepareCommandRecordDispose: CPU mock準備/command記録/破棄の複合区間。GPU実行でない。
 - GPU MapFrames: session direct immutable reuseまたは実MapView/UiDrawingScene2D retained。prepare/command/Submit/実WaitAsync/Completed検証/retire/破棄を含む。depth1=CPU wall completion latency、depth3=独立target/view/prepared/command/submission slotの有界headless throughput。GPU timestamp、Present、FPSでない。
 - pixel readback/analytic oracleはGlobalSetup/Cleanupのみ、計測外、画像保存なし。独立生成式から建物内部・水内部・未被覆背景の3点を検証し、移動時は既知pan/scaleを解析適用する。raster同士の差分を正解としない。
-- demand/publication/arrival/retirement単独caseはM4実API供給後に追加。fixed-set Advance no-opをstreamingとして計測しない。
+- MapStreamingBenchmarks: 実M4 spatial ctorとSetCamera/SetViewport/Advanceを使用。XYZ (1,0,1)→(1,1,1)→(1,0,1)、128×128 viewport、resident上限1、prefetch/fallbackなし。MvtResourceStageの実decode前gateと実release前gateを制御し、未到着でReadyVisibleTiles=0、publication後=1、退避中のcharge保持、Manager Trim後ReleasedGenerationCount=2を検証する。fixture生成/registration、需要reconcile、実取得/decode/publication、LRU退避、manager trim、最終cleanupを含むcold local複合区間。各phase単独時間と偽らない。fixed-set Advance no-opでもHTTP streamingでもない。
 
 ## 再現
 
@@ -42,3 +42,5 @@ catalogはdevice-free。GPU correctnessは既存opt-in LUMYTE_GRAPHICS_INTEGRATI
 
 共有native libraryを使い再buildを避ける場合はtestに -p:LumyteBuildParleyNative=false -p:LumyteParleyNativeOutput="$LUMYTE_ENV_ROOT/../text-parley/native" を渡す（存在するlibraryを確認）。
 GPU oracleの再実行例: LUMYTE_GRAPHICS_INTEGRATION_GPU=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet test tests/Graphics/Lumyte.Graphics.Benchmark.Tests -c Release --no-build --filter FullyQualifiedName~MapSlotsDrain
+
+streaming catalog: dotnet run --no-build -c Release --project benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark -- --catalog --filter "*MapStreaming*"
