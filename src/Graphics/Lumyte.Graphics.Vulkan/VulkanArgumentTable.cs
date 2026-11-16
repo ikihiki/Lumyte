@@ -127,7 +127,15 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         if (!_sets.TryGetValue(key, out VulkanShaderBinding? binding))
         {
             binding = new(owner, this, registrations, layout);
-            _sets.Add(key, binding);
+            try
+            {
+                _sets.Add(key, binding);
+            }
+            catch
+            {
+                binding.Dispose();
+                throw;
+            }
         }
 
         _sealed = true;
@@ -138,20 +146,25 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     {
         if (_sealed)
         {
-            DropSets();
             _descriptorGeneration++;
             _sealed = false;
+            DropSets();
         }
     }
 
     private void DropSets()
     {
-        foreach (VulkanShaderBinding binding in _sets.Values)
+        try
         {
-            binding.Dispose();
+            foreach (VulkanShaderBinding binding in _sets.Values)
+            {
+                binding.Dispose();
+            }
         }
-
-        _sets.Clear();
+        finally
+        {
+            _sets.Clear();
+        }
     }
 
     private IGpuRef<T> Write<T>(Dictionary<uint, ArgumentRegistration> slots, uint capacity, uint slot, object resource, ulong count, ulong stride, ulong offset, ulong size, ShaderBufferAccess access = ShaderBufferAccess.ReadOnly)
@@ -159,12 +172,12 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         ValidateSlot(capacity, slot);
         var entry = new ArgumentRegistration(this, slot, resource, offset, size, count, access);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
+        slots[slot] = entry;
         if (!ReferenceEquals(slots, _buffers))
         {
             MutateDescriptors();
         }
 
-        slots[slot] = entry;
         return reference;
     }
 
@@ -172,12 +185,10 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
     {
         ThrowIfDisposed();
         ValidateSlot(capacity, slot);
-        if (slots.ContainsKey(slot) && !ReferenceEquals(slots, _buffers))
+        if (slots.Remove(slot) && !ReferenceEquals(slots, _buffers))
         {
             MutateDescriptors();
         }
-
-        slots.Remove(slot);
     }
 
     private void ValidateSlot(uint capacity, uint slot)

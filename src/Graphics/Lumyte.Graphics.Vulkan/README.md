@@ -254,7 +254,9 @@ Device 内の allocator が descriptor 数ごとに最大 32 Set の pool page �
 allocation/free は allocator 内で同期し、pool 枯渇・断片化時は新しい page に移ります。
 ArgumentTable 自体の並行変更をサポートするものではありません。
 
-ArgumentTable は最新の sampled descriptor 世代と互換 layout shape ごとに immutable Set を所有します。
+ArgumentTable は最新の sampled descriptor 世代内で互換 layout shape から immutable Set へ対応付けます。
+固定された登録内容には実際には一つの canonical shape だけが対応し、過去世代の cache は蓄積しません。
+cache は texture/sampler 登録だけを保持し、各 command が完全な per-draw 登録 snapshot を保持します。
 Draw/Dispatch が世代を seal し、その後の最初の texture/sampler 更新・release が一度だけ世代を分岐します。
 次の実行までの複数変更をまとめ、Set は次の Draw/Dispatch で遅延生成します。
 buffer/root の変更だけでは descriptor 世代を変えず、pass・command・frame を越えて再利用します。
@@ -267,3 +269,5 @@ layout key は native handle ではなく、固定の binding 型・stage/partia
 待機は自動挿入せず、完了前の raw command/resource Dispose を安全化しません。
 明示的に Dispose された sampled 資源は cache hit でも拒否します。
 Device.Dispose は native device より先に全 pool を破棄し、その後の lease 返却は native 呼出しを行いません。
+登録辞書の managed allocation 失敗は世代を変更しませんが、更新成功後の native free 失敗には rollback／再試行を保証しません。
+その場合も古い cache を外し、recorded command の所有権は保ち、残った pool は Device.Dispose で解放します。

@@ -88,6 +88,12 @@ public sealed class DescriptorReuseGpuTests
         commands.Finish();
         ICollection bindings = Bindings(commands);
         Assert.Equal(32, bindings.Count);
+        object cached = ((IDictionary)scene.Table.GetType().GetField("_sets", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(scene.Table)!).Values.Cast<object>().Single();
+        IShaderReference[] cachedResources = Registrations(cached);
+        Assert.Equal(2, cachedResources.Length);
+        Assert.All(cachedResources, r => Assert.True(r.Resource is IGraphicsTextureView or IGraphicsSampler));
+        scene.Table.ReleaseBuffer(1);
+        Assert.DoesNotContain(cachedResources, r => ReferenceEquals(r.Resource, scene.DrawData));
         IShaderReference[][] snapshots = bindings.Cast<object>().Select(Registrations).ToArray();
         Assert.Equal(1, Counter(scene, "AllocatedSets"));
         ulong[] offsets = snapshots.Select(a => Assert.Single(a, r => ReferenceEquals(r.Resource, scene.DrawData)).OffsetInBytes).ToArray();
@@ -96,6 +102,7 @@ public sealed class DescriptorReuseGpuTests
         scene.Table.Dispose();
         Assert.Equal(1, Counter(scene, "LiveSets"));
         commands.Dispose();
+        Assert.Empty(bindings);
         Assert.Equal(0, Counter(scene, "LiveSets"));
     }
 

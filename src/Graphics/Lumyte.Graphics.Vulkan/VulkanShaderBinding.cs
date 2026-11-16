@@ -12,7 +12,7 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 
     internal VulkanShaderBinding(VulkanDevice owner, VulkanArgumentTable table, IShaderReference[] registrations, DescriptorSetLayout layout)
     {
-        _registrations = registrations;
+        _registrations = registrations.Where(r => r.Resource is VulkanTextureView or VulkanSampler).ToArray();
         _table = table;
         try
         {

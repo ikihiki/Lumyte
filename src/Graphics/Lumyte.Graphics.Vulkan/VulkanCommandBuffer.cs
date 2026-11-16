@@ -254,8 +254,17 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
 
     internal void KeepBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
     {
+        var recorded = new RecordedBinding(binding, registrations);
         binding.Retain();
-        _bindings.Add(new RecordedBinding(binding, registrations));
+        try
+        {
+            _bindings.Add(recorded);
+        }
+        catch
+        {
+            binding.Dispose();
+            throw;
+        }
     }
 
     internal void ValidatePass(object pass) => ValidateEnd(pass);
