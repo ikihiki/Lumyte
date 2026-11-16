@@ -91,6 +91,11 @@ internal static class PipelineValidation
         ArgumentNullException.ThrowIfNull(state.Rasterization);
         ArgumentNullException.ThrowIfNull(state.DepthStencil);
         ArgumentNullException.ThrowIfNull(state.ColorTargets);
+        if ((uint)state.ColorTargets.Count > caps.MaxColorAttachments || state.ColorTargets.Count > RenderStateKey.MaxColorTargets)
+        {
+            throw new NotSupportedException("Color target count exceeds the enabled Vulkan limit (at most eight).");
+        }
+
         RasterizationStateDesc r = state.Rasterization;
         DepthStencilStateDesc d = state.DepthStencil;
         if (!Enum.IsDefined(state.Topology) || (state.StripIndexFormat is { } index && !Enum.IsDefined(index)) ||
@@ -127,7 +132,7 @@ internal static class PipelineValidation
         }
 
         GraphicsRenderStateDesc snapshot = state with { ColorTargets = Array.AsReadOnly(colors) };
-        return new(snapshot, JsonSerializer.Serialize(snapshot, PipelineJsonContext.Default.GraphicsRenderStateDesc));
+        return new(snapshot, new RenderStateKey(snapshot));
     }
 
     internal static void Viewport(Viewport v)
