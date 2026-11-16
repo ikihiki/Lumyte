@@ -22,6 +22,7 @@ public sealed class PreparedUploadInitializationTests
             Caps = new()
             {
                 ShaderTarget = target,
+                PreferDrawLocalArgumentTables = target == ShaderTarget.Wgsl,
                 MaxBufferSize = 1UL << 30,
                 ArgumentTableBindingLimits = new() { BuffersPerDraw = partitioned ? 2u : uint.MaxValue },
             },
@@ -42,7 +43,7 @@ public sealed class PreparedUploadInitializationTests
 
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = targetView });
         Assert.Equal(target == ShaderTarget.SpirV && !partitioned ? 1 : 3, device.InstructionUploads.Count);
-        Assert.Equal(partitioned ? 3 : 1, device.Tables.Count);
+        Assert.Equal(partitioned || target == ShaderTarget.Wgsl ? 3 : 1, device.Tables.Count);
         Assert.All(device.InstructionUploads, upload =>
         {
             Assert.Equal(0ul, upload.Offset);

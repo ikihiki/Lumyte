@@ -1,3 +1,4 @@
+import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import { BrowserEvaluationFailure, shouldIgnoreKnownBrowserTimeout } from "../../tools/graphics/browser-known-timeout.mjs";
 import assert from "node:assert/strict";
@@ -10,6 +11,9 @@ import { inflateSync } from "node:zlib";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = resolve(process.argv[2] ?? "samples/Lumyte.UI.Transitions.Browser.Sample/bin/Release/net10.0/publish/wwwroot");
+const traceGpu = browserGpuTraceEnabled();
+const traceStart = performance.now();
+let pngIndex = 0;
 const sequential = process.argv.includes("--sequential");
 const sameContent = process.argv.includes("--same-content");
 const executable = process.env.CHROME ?? "chromium";
@@ -38,6 +42,7 @@ let browser;
 let socket;
 let command;
 let stage = "startup";
+let traceStage;
 const errors = [];
 const progress = [];
 try {
@@ -89,7 +94,9 @@ try {
         } else if (message.method === "Runtime.consoleAPICalled") {
             const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
             if (message.params.type === "error") { errors.push(text); }
-            else { progress.push(text); }
+            else if (traceGpu && text.startsWith("Browser GPU trace:")) {
+                console.log(JSON.stringify({ check: "browser-ui-transitions-gpu", pngIndex, stage: traceStage ?? stage, elapsedMs: performance.now() - traceStart, trace: text }));
+            } else { progress.push(text); }
         }
     });
     command = function (method, params = {}) {
@@ -113,8 +120,11 @@ try {
     const throttle = Number(process.env.LUMYTE_BROWSER_CPU_THROTTLE ?? 1);
     assert.ok(Number.isFinite(throttle) && throttle >= 1 && throttle <= 20, "CPU throttle must be between 1 and 20");
     if (throttle > 1) await command("Emulation.setCPUThrottlingRate", { rate: throttle });
+    if (traceGpu || requiresSoftwareWebGpu()) await command("Page.enable");
+    if (traceGpu) {
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuTrace.toString()})();` });
+    }
     if (requiresSoftwareWebGpu()) {
-        await command("Page.enable");
         await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
     }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}${sequential ? "/?sequential" : sameContent ? "/?same-content" : ""}` });
@@ -136,7 +146,22 @@ try {
         await delay(100);
     }
     const probe = "globalThis.lumyteApplicationProbe";
-    async function png() { return Buffer.from(await evaluate(`${probe}.CapturePngAsync()`), "base64"); }
+    async function png() {
+        const index = ++pngIndex;
+        const start = performance.now();
+        const log = status => {
+            if (traceGpu && index <= 100) console.log(JSON.stringify({ check: "browser-ui-transitions-png", index, stage: traceStage ?? stage, status, elapsedMs: performance.now() - start }));
+        };
+        log("start");
+        try {
+            const result = Buffer.from(await evaluate(`${probe}.CapturePngAsync()`), "base64");
+            log("fulfilled");
+            return result;
+        } catch (error) {
+            log("rejected");
+            throw error;
+        }
+    }
     function pixel(buffer, x, y) {
         const chunks = [];
         for (let offset = 8; offset < buffer.length;) {
@@ -237,17 +262,21 @@ try {
     const url = await evaluate("location.href");
     const history = await evaluate("window.history.length");
     console.log("Element exit presented; requesting connected page");
+    if (traceGpu) traceStage = "connected-route-and-gate";
     await click("next");
     await until(`${probe}.GetRoute() === '/details' && ${probe}.GetState().includes('Animating')`);
     assert.equal(await evaluate(`${probe}.GetDisposed()`), 0, "The old DI scope survives the flight");
     assert.equal(await evaluate(`${probe}.IsGatedAsync()`), true);
+    if (traceGpu) traceStage = "connected-first-png";
     await png();
     await evaluate(`${probe}.AdvanceAsync(0.5)`);
+    if (traceGpu) traceStage = "connected-midpoint-png";
     const middle = await png();
     color(middle, 70, 40, sameContent ? [255, 188, 188, 255] : [225, 188, 225, 255]); // isolated half-alpha endpoints over the new white background
     if (sequential) color(middle, 20, 20, [188, 255, 188, 255]); // old page fading before new entry
     color(middle, 150, 60, [255, 255, 255, 255]); // no normal target duplicate
     assert.equal(await evaluate(`${probe}.GetVisual()`), "pending");
+    if (traceGpu) traceStage = "connected-remaining-transitions";
     await evaluate(`${probe}.SetPageGreenAsync()`);
     if (!sequential) await liveColor(20, 20, [0, 255, 0, 255]);
     assert.equal(await evaluate(`${probe}.GetVisual()`), "pending", "Target content updates must keep the flight alive");

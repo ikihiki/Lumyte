@@ -1,3 +1,11 @@
+// Adapter metadata is optional and may be privacy-filtered. Unknown stays shared.
+export function prefersDrawLocalArgumentTables(adapter) {
+    try {
+        const info = adapter?.info;
+        return typeof info?.architecture === "string" && info.architecture.toLowerCase() === "swiftshader";
+    } catch { return false; }
+}
+
 export async function createDevice() {
     const gpu = globalThis.navigator?.gpu;
     if (!gpu) {
@@ -12,6 +20,7 @@ export async function createDevice() {
         const limits = device.limits;
         const caps = Object.freeze({
             shaderTarget: 0, // WGSL.
+            preferDrawLocalArgumentTables: prefersDrawLocalArgumentTables(adapter),
             features: 3, // WebGPU core: indirect draw and anisotropic filtering.
             argumentTableBindingLimits: {
                 textureSlots: Math.floor(Math.min(2147483647, limits.maxStorageBufferBindingSize, limits.maxBufferSize) / 16),
