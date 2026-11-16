@@ -28,7 +28,7 @@ public sealed class UiRemotePage
     public UiRemoteLocator GetByTestId(string testId) => new(this, [Step(testId)]);
 
     /// <summary>Creates an exact semantic role/name locator.</summary>
-    /// <param name = "role">button or group.</param>
+    /// <param name = "role">A closed wire role: button, group, textbox, ime-candidates, text, image, icon, progressbar or busyindicator.</param>
     /// <param name = "name">Optional exact name.</param>
     /// <param name = "includeHidden">Whether hidden elements match.</param>
     /// <returns>A lazy locator.</returns>
@@ -102,7 +102,7 @@ public sealed class UiRemotePage
 
     internal static UiRemoteLocatorStep Step(string role, string? name, bool hidden)
     {
-        if (role is not ("button" or "group" or "textbox" or "ime-candidates") || name?.Length > 256)
+        if (role is not ("button" or "group" or "textbox" or "ime-candidates" or "text" or "image" or "icon" or "progressbar" or "busyindicator") || name?.Length > 256)
         {
             throw new ArgumentException("Unsupported role or name.", nameof(role));
         }

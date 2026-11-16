@@ -45,6 +45,7 @@
     <Project Path="benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.UI.Media.Sample/Lumyte.UI.Media.Sample.csproj" />
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />
     <Project Path="samples/Lumyte.Samples.Framework/Lumyte.Samples.Framework.csproj" />
@@ -169,6 +170,8 @@
     <Project Path="src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </Folder>
   <Folder Name="/src/UI/">
+    <Project Path="src/UI/Lumyte.UI.Media/Lumyte.UI.Media.csproj" />
+    <Project Path="src/UI/Lumyte.UI.Media.Parley/Lumyte.UI.Media.Parley.csproj" />
     <Project Path="src/UI/Lumyte.UI.Navigation/Lumyte.UI.Navigation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Application.Navigation/Lumyte.UI.Application.Navigation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Application.Navigation.Diagnostics/Lumyte.UI.Application.Navigation.Diagnostics.csproj" />
@@ -262,6 +265,8 @@
     </Project>
   </Folder>
   <Folder Name="/tests/UI/">
+    <Project Path="tests/UI/Lumyte.UI.Media.Tests/Lumyte.UI.Media.Tests.csproj" />
+    <Project Path="tests/UI/Lumyte.UI.Media.Parley.Tests/Lumyte.UI.Media.Parley.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Navigation.Tests/Lumyte.UI.Navigation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Application.Navigation.Tests/Lumyte.UI.Application.Navigation.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Application.Tests/Lumyte.UI.Application.Tests.csproj" />
