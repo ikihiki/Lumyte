@@ -306,6 +306,8 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        public MapTileLoadProfile LoadProfile { get; }
 +        // 正規化済みIDに同じ型付きkeyを返す。範囲外はArgumentOutOfRangeException。
 +        public abstract Lumyte.Resources.ResourceKey<MapTileContent> GetKey(MapTileId id);
++        // manifestが固定する場合だけ期待revisionを返す。既定nullは未知であり欠損ではない。
++        public virtual string? GetExpectedSourceRevision(MapTileId id);
 +    }
 +    public sealed record MapSessionOptions
 +    {
