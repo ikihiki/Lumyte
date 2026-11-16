@@ -37,7 +37,7 @@ using var renderer = new RenderGraphRenderer2D(
 using PreparedDrawingPasses2D prepared = await parent.Append2D(renderer);
 ```
 
-変更後の提案では、同じ通常Canvasで作ったDrawList2Dを、実行時に選んだrendererへ渡す。次の `paint`、`device`、同一親graph内のDisplayLinearな `world` は生成済みとする。worldがSceneLinearなら、3D側が共通のtone mappingを済ませてから渡す。
+変更後は、同じ通常Canvasで作ったDrawList2Dを、実行時に選んだrendererへ渡す。次の `paint`、`device`、同一親graph内のDisplayLinearな `world` は生成済みとする。worldがSceneLinearなら、3D側が共通のtone mappingを済ませてから渡す。
 
 ```csharp
 using Lumyte.Graphics.Drawing2D;
@@ -104,7 +104,11 @@ CPUは命令・曲線・変換・paintを符号化し、有限な保守的bounds
 
 ### GPU前処理の有限容量
 
-GPUの可変長出力を無制限なappendへ任せない。CPUは曲線ごとの分割数と、生成線分が触れ得る保守的タイル範囲から出力上限を計算し、固定範囲を予約する。二次・三次Bezierのdevice空間の二階微分上限Mから、各区間の弦誤差が `M/(8*N*N)<=0.125` となるNを選び、線分出力の開始位置をprefix sumで固定する。三次は二つの二階差分のnormの最大値の6倍、二次は二階差分のnormの2倍をMとする。Nは `max(1,ceil(sqrt(M/(8*0.125))))` とし、直線・Close・塗りの暗黙閉辺を含む線分合計は既存の一path 65536辺上限以下にする。計算と上への丸めはbinary64で行い、非finiteや容量超過をPrepareで拒否する。この誤差は幾何的な弦近似の上限であり、GPU座標計算の丸め誤差は別に検証する。
+GPUの可変長出力を無制限なappendへ任せない。CPUは曲線ごとの分割数と、生成線分が触れ得る保守的タイル範囲から出力上限を計算し、固定範囲を予約する。塗りでは二次・三次Bezierのdevice空間の二階微分上限Mから、各区間の弦誤差が `M/(8*N*N)<=0.125` となるNを選び、線分出力の開始位置をprefix sumで固定する。三次は二つの二階差分のnormの最大値の6倍、二次は二階差分のnormの2倍をMとする。Nは `max(1,ceil(sqrt(M/(8*0.125))))` とし、直線・Close・塗りの暗黙閉辺を含む線分合計は既存の一path 65536辺上限以下にする。計算と上への丸めはbinary64で行い、非finiteや容量超過をPrepareで拒否する。この誤差は幾何的な弦近似の上限であり、GPU座標計算の丸め誤差は別に検証する。
+
+strokeでは中心線だけの弦誤差を使わず、局所座標の接線変化と幅も分割数へ反映する。局所加速度上限M、変換後の加速度上限D、変換のFrobenius norm S、半幅w、導関数のcontrol hullを原点から分離して保守的に証明した速度下限m>0について、現在の中心線の弦法線を使う形状のbody・bevel join・butt capの幾何誤差は `D/(8*N*N)+S*w*M/(2*m*N)` で抑える。Nはこの式が0.125以下となる整数へ切り上げ、式を再検査する。全導関数が0の退化曲線と、同じ非負の直線方向へ動く曲線は別に判定し、それ以外の速度下限を証明できない入力は準備時に拒否する。mを正のepsilonへ置換しない。
+
+この証明は正確な算術でのbody・bevel・buttの近似上限であり、square cap・miter先端・round分割や、GPU float32の短い弦の減算・正規化・座標変換の誤差まで含む全画素保証ではない。これらは機能検証と明示した対応範囲で扱い、単なる分割数増加を旧CPU経路との画素完全一致の根拠にしない。
 
 strokeは基準コミットのStrokeStyle2Dにあるwidth、cap、join、miter limitを扱い、GPUは予約済みの範囲にだけ出力する。CPUは同じPathFlattening2D.Strokeの式でroundの分割数r（8以上4096以下）を決めるが、全接続の三角形は展開しない。平坦化辺上限Eとcontour数Cから、bodyは2E、joinはE+C箇所、capと孤立点は合わせて3C箇所を上限とし、一箇所max(2,r)三角形を予約する。roundの必要分割が4096を超える場合、または三角形予約合計が既存の65536を超える場合は準備を拒否する。geometry・paint・clipを含む既存の累積262144 Vector4予算と総作業bytesにも準備時に課金し、上限へclampして誤差条件を破ることはしない。
 
@@ -130,11 +134,11 @@ Append2Dは同じdeviceのparentがIsBuildingである間に呼ぶ。内部の�
 
 追加するcopy・compute・raster・resolveは独立したgraph passとして宣言する。UseBuffer/UseTextureのscopeとstateから、copy→compute、compute→fragment、raster→後続samplingの依存を親graphが作る。内部に大きな不透明な実行器を置いてgraphの依存解析を迂回しない。CPUで用意する入力のuploadとGPUで生成する出力を区別し、culled producerを読ませない。
 
-compute出力bufferのReadWrite登録とfragmentのReadOnly登録はpassごとの別表へ置く。選択表全体がbindingへ投影される基準コミットの `src/Graphics/Lumyte.Graphics.Shared/ShaderBindingData.cs` の制約に従い、同じ範囲のRO/RWを一表へ同時登録しない。表のbinding admissionとGPU barrierは両方必要である。GPU scanは複数dispatchとgraph依存で実装し、workgroup間をローカルbarrierだけで同期しない。
+compute出力bufferのReadWrite登録とfragmentのReadOnly登録はpassごとの別表へ置く。選択表全体がbindingへ投影される基準コミットの `src/Graphics/Lumyte.Graphics.Shared/ShaderBindingData.cs` の制約に従い、同じ範囲のRO/RWを一表へ同時登録しない。表のbinding admissionとGPU barrierは両方必要である。GPU scanは複数dispatchとgraph依存で実装し、workgroup間をローカルbarrierだけで同期しない。compute用の物理buffer bindingは七つとし、record、paintとclipの共有directory、mask descriptor、image descriptor、曲線入力とnumeric payloadの共有stream、書込storage、書込workへ分ける。共有stream内のoffsetは要素単位で保持し、shader側で各targetの参照ABIに従って解決する。共有directoryと共有入力は個別の部分ではなく、合算した登録範囲をdevice上限へ照合する。
 
 画像の一時資源はgraphがCreateTextureで作る。shader dataのABI登録と非同期mapをCompileより前に完了するため、bufferは準備ownerが作り、親graphへ準備専用の共有資源として登録する。この内部登録は複数passの依存・未初期化read検査を有効にし、外部importへのwriteのようなculling rootにはしない。単一pass専用のUseLocalBufferへ複数passのbufferを登録しない。固定pipeline、upload、rendererの資源tokenはIRenderGraphLifetimeへまとめて準備開始前にRetainする。成功したCompileでplanへ移し、未Compileの放棄、Append失敗、Compile失敗でも同じownerがcleanupを保持する。Append失敗後はparentを捨てて再構築し、部分的な追加を成功扱いしない。
 
-直接・保持描画では既存の一回Record、AttachSubmission、完了とcommand破棄後のRetireを維持する。immutableなCPU記録・形状・strip・paintのcacheと、frameごとに書くmask・tile・scan・色bufferを分け、in-flight frame間で可変領域を共有しない。cache keyにはbackend、入力identity、transform、clip、origin、DPR、extent、誤差規則、device/resource generationを含める。paint変更だけで再利用できるshape cacheと、paint込みの画像cacheを混同しない。
+直接・保持描画では既存の一回Record、AttachSubmission、完了とcommand破棄後のRetireを維持する。immutableなCPU記録・形状・strip・paintのcacheと、frameごとに書くmask・tile・scan・色bufferを分け、in-flight frame間で可変領域を共有しない。cache keyにはbackend、入力identity、transform、clip、origin、DPR、extent、誤差規則、device/resource generationを含める。CPUのshape cacheはrendererごとに分離した有限のLRUとし、path/meshのidentityを弱参照で比較する。疎stripはpaint・clipを含まない形状keyを使い、取得時に現在の命令を結び直し、strip/mask配列をcache所有者から分離する。直接保持描画の完成済みGPU資産はidleから排他的に借用し、同時に準備済みの別frameへ可変領域を共有しない。computeの再利用時にもpaint評価は再実行し、借用textureの内容変更を古い画像で隠さない。paint変更だけで再利用できるshape cacheと、paint込みの画像cacheを混同しない。
 
 Graph経路は公開APIに送信結果の通知を持たないため、RecordしただけでGPU residencyをrendererへ公開しない。Graphの一時GPU出力はplan内だけで使い、GPU完了後のplan解放で廃棄する。フレーム間ではCPUの不変データを再利用できるが、Graphをまたいだ完成済みGPU atlasや画像の再利用を自動で保証しない。呼出元が明示的に保持・importする画像は既存の外部資源寿命契約に従う。
 
@@ -179,6 +183,9 @@ RenderGraphCanvas2D、RenderGraphDrawList2D、既存のAppend2D(RenderGraphRende
 +    public sealed partial class Renderer2D : IRenderer2D
      {
 +        public IGraphicDevice Device { get; }
++        // 組込みの標準方式。既存5/6引数constructorは従来のshader/custom互換経路を保つ。
++        public Renderer2D(IGraphicDevice device, DrawingRendererOptions2D options,
++            DrawingRetentionOptions2D? retentionOptions = null);
 +        // 標準方式だけを生成。optionsは検証・snapshot化、GPU資源は遅延生成。
 +        public static Renderer2D CreateDefault(IGraphicDevice device,
 +            DrawingRendererOptions2D? options = null,
@@ -241,7 +248,8 @@ IRenderer2DはDrawing2D assemblyに置き、RenderGraphやImageEffectsの型を�
 +    internal interface IDrawingPassRenderer2D
 +    {
 +        ValueTask<DrawingPassPlan2D> PreparePassesAsync(DrawList2D content,
-+            DrawingTargetInfo2D target, CancellationToken cancellationToken);
++            DrawingTargetInfo2D target, DrawingArgumentPlan2D argumentPlan,
++            CancellationToken cancellationToken);
 +        ValueTask<DrawingPassPlan2D> PreparePassesAsync(DrawingSceneReadLease2D source,
 +            DrawingTargetInfo2D target, CancellationToken cancellationToken);
 +        ValueTask<DrawingPassPlan2D> PreparePassesAsync(DrawingSnapshot2D source,

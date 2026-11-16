@@ -49,12 +49,6 @@ public sealed partial class Drawing2DTests
             using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
             using IGraphicsTextureView view = target.CreateView();
             var destination = new RenderTarget2D { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = _blue };
-            if (ReferenceEquals(renderer, compute) && device.Caps.ArgumentTableBindingLimits.BuffersPerDraw < 10)
-            {
-                await Assert.ThrowsAsync<NotSupportedException>(async () => await renderer.PrepareAsync(list, destination));
-                continue;
-            }
-
             using PreparedDraw2D prepared = await renderer.PrepareAsync(list, destination);
             TextureCopyLayout layout = device.GetTextureCopyLayout(target.Format);
             uint pitch = ((32 + layout.BytesPerRowAlignment - 1) / layout.BytesPerRowAlignment) * layout.BytesPerRowAlignment;
