@@ -46,6 +46,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Lumyte.UI.Layout.Sample/Lumyte.UI.Layout.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Scroll.Sample/Lumyte.UI.Scroll.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Media.Sample/Lumyte.UI.Media.Sample.csproj" />
     <Project Path="samples/Lumyte.Mathematics.Sample/Lumyte.Mathematics.Sample.csproj" />
     <Project Path="samples/Lumyte.Samples/Lumyte.Samples.csproj" />

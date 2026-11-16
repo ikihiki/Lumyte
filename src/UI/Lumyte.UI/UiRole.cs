@@ -47,4 +47,10 @@ public enum UiRole
 
     /// <summary>A single selectable option.</summary>
     RadioButton,
+
+    /// <summary>A scroll viewport.</summary>
+    ScrollView,
+
+    /// <summary>A scroll position control.</summary>
+    ScrollBar,
 }

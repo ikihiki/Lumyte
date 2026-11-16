@@ -16,6 +16,35 @@ namespace Lumyte.UI.TextEditing.Tests;
 /// <summary>Defines connection tests.</summary>
 public sealed class ConnectionTests
 {
+    /// <summary>Checks a real editor publishes the same nonzero scroll translation as input geometry.</summary>
+    [Fact]
+    public void ScrolledEditorPublishesTranslatedImeCaret()
+    {
+        using var fixture = new Fixture(scrolled: true);
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextInputGeometry before = fixture.Connection.Geometry!;
+        fixture.Scroll.ScrollTo(40);
+        fixture.Pump();
+        TextInputGeometry after = fixture.Connection.Geometry!;
+        Assert.Equal(before.Caret.Y - 40, after.Caret.Y);
+        Assert.Equal(before.Caret.X, after.Caret.X);
+        Assert.Same(fixture.Editor, fixture.Surface.FocusedElement);
+        Assert.Equal(-40, fixture.Surface.RootElement.Children[0].Bounds.Y);
+    }
+
+    /// <summary>Checks touch editing capture is not stolen by an ancestor viewport.</summary>
+    [Fact]
+    public void EditorTouchSelectionPreservesViewportOffset()
+    {
+        using var fixture = new Fixture(scrolled: true);
+        fixture.Surface.Dispatch(new UiPointerInput(8, UiPointerPhase.Down, new(5, 5)) { Device = UiPointerDevice.Touch });
+        fixture.Surface.Dispatch(new UiPointerInput(8, UiPointerPhase.Move, new(5, -30)) { Device = UiPointerDevice.Touch });
+        fixture.Surface.Dispatch(new UiPointerInput(8, UiPointerPhase.Up, new(5, -30)) { Device = UiPointerDevice.Touch });
+        Assert.Equal(0, fixture.Scroll.Offset);
+        Assert.Same(fixture.Editor, fixture.Surface.FocusedElement);
+    }
+
     /// <summary>Checks IME caret uses the decorated body exactly once.</summary>
     [Fact]
     public void DecoratedEditorPublishesBodyCaretOffset()
@@ -493,7 +522,8 @@ public sealed class ConnectionTests
         /// <summary>Initializes a new instance of the <see cref = "Fixture"/> class.</summary>
         /// <param name="multipleEditors">Whether to create sibling editors in one surface.</param>
         /// <param name="decorated">Whether to apply nested body offsets.</param>
-        public Fixture(bool multipleEditors = false, bool decorated = false)
+        /// <param name="scrolled">Whether to wrap the editor in a real viewport.</param>
+        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false)
         {
             using Stream font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts/DejaVuSans.ttf"));
             string family = _engine.AddFont(font);
@@ -516,8 +546,8 @@ public sealed class ConnectionTests
                 Lumyte.UI.Compose.Border.Stroke(new(1, 0, 0, 1), 0)(editor);
             }
 
-            Surface = new(multipleEditors ? Lumyte.UI.Compose.Stack()[editor, other] : editor);
-            Editor = (TextBoxElement)(multipleEditors ? Surface.RootElement.Children[0] : Surface.RootElement);
+            Surface = new(scrolled ? Lumyte.UI.Compose.ScrollView(controller: Scroll)[Lumyte.UI.Compose.Stack()[editor, Lumyte.UI.Compose.SizedBox(height: 600)]] : multipleEditors ? Lumyte.UI.Compose.Stack()[editor, other] : editor);
+            Editor = (TextBoxElement)(scrolled ? Surface.RootElement.Children[0].Children[0] : multipleEditors ? Surface.RootElement.Children[0] : Surface.RootElement);
             _registration = Windows.Register(Source);
             Task<UiWindowBinding> binding = Windows.BindPresentationAsync(_registration.Window, Surface).AsTask();
             for (int index = 0; index < 12; index++)
@@ -533,6 +563,9 @@ public sealed class ConnectionTests
 
         /// <summary>Gets the source.</summary>
         public TestSource Source { get; } = new();
+
+        /// <summary>Gets the borrowed scroll controller.</summary>
+        public ScrollController Scroll { get; } = new();
 
         /// <summary>Gets the windows.</summary>
         public HostedUiWindowManager Windows { get; } = new();
@@ -604,6 +637,7 @@ public sealed class ConnectionTests
             Pump();
             Windows.Dispose();
             Surface.Dispose();
+            Scroll.Dispose();
             _engine.Dispose();
         }
     }

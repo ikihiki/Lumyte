@@ -88,6 +88,22 @@ internal sealed partial class Build
             await ToolAsync(layout).ConfigureAwait(false);
         });
 
+    private Target TestUiScroll => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Controls.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Scroll.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
+    private Target TestUiScrollAot => definition => definition
+        .Executes(async () =>
+        {
+            string scroll = await PublishAotSampleAsync("samples/Lumyte.UI.Scroll.Sample", "ui-scroll-aot", "Lumyte.UI.Scroll.Sample", strict: true).ConfigureAwait(false);
+            await ToolAsync(scroll, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
     private Target TestUiControls => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
