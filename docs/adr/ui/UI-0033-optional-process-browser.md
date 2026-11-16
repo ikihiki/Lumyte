@@ -1,4 +1,4 @@
-# ADR-UI-0032: UIを優先し、任意のブラウザを別プロセスで合成する
+# ADR-UI-0033: UIを優先し、任意のブラウザを別プロセスで合成する
 
 - 状態: 採用
 - 日付: 2026-11-16
@@ -65,7 +65,7 @@ helper未指定もローカルな利用不可として扱う。SessionはWindow�
 
 Application接続はengine-freeの共通部だけを参照する。Rust helperは固定したcef-rsとCEFを使い、子プロセスのbootstrapをstdin readerやIPC writerの作成より先に処理する。UIとhelperの接続はこのbackend専用の小さい固定形式とし、汎用RPCや任意の.NETオブジェクト公開を追加しない。
 
-helperパスは明示した絶対パスに限定し、引数はProcessStartInfo.ArgumentListで渡す。ユーザーの通常ブラウザprofileを取り込まない。親はhelper専用HOME・cache・tempを所有し、終了後に回収する。Linuxの任意ランチャーも同じhelper寿命の範囲に置く。
+helperパスは明示した絶対パスに限定し、引数はProcessStartInfo.ArgumentListで渡す。現在のmanaged supervisorはLinux・Python3・pidfdを要求し、未対応OSや依存不足ではBrowserだけを失敗させる。通常UIにこれらを要求しない。ユーザーの通常ブラウザprofileを取り込まない。親はhelper専用HOME・cache・tempを所有し、終了後に回収する。Linuxの任意ランチャーも同じhelper寿命の範囲に置く。
 
 起動期限は既定10秒、初期文書の期限は既定15秒とし、正の有限な上限付き値だけを受理する。UI ownerはpipeのread/write、native初期化、プロセス終了を同期的に待たない。startupの無応答、ロードの無応答、EOF、異常packet、queue上限、native processの終了は理由付きFaultedにし、未処理命令を再送しない。中止・失敗時は所有child treeの終了とreader/writerの回収を行う。
 

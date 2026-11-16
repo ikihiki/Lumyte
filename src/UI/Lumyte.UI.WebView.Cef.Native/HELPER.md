@@ -18,6 +18,14 @@ Linux $ORIGIN RUNPATH; launch with executable-directory cwd, sole managed argume
 `--lumyte-helper`. CEF re-launches this same executable with --type children,
 which bootstrap before any stdin reader or protocol writer is created.
 
+## Managed supervisor requirements
+
+The optional managed adapter currently requires Linux, /usr/bin/python3 and
+pidfd support. Its embedded supervisor is a separate process and uses subreaper
+adoption plus stable pidfd signaling to reclaim descendants after helper exit
+or abort, including nested session launchers. Missing prerequisites fault only
+the browser. Normal UI use does not require Python or native CEF.
+
 ## Protocol and lifecycle
 
 One session (1). u32LE packet size excludes its 4-byte prefix; maximum 16,777,280.

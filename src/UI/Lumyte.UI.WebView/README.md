@@ -7,6 +7,7 @@ The public Application.WebView.Cef integration uses a separate Rust/CEF156 proce
 ## Current capability boundary
 
 - Initial HTTP/S document display only; InputAvailable, PopupAvailable, ImeAvailable and NavigationCommandsAvailable are false. Post-creation navigation/history/reload/stop explicitly throw rather than succeeding without effect. Cancel stops the optional helper, not the UI application.
+- The managed process supervisor currently requires Linux, /usr/bin/python3 and pidfd support. Missing prerequisites fault only the browser; other platforms remain explicitly unavailable.
 - One session, bounded commands and packets, latest-only CPU frames, owned child profile/temp and deadline-controlled process teardown. Existing scene/frame/upload resource lifetimes remain in effect.
 - CPU pixel transport is implemented; actual sandboxed browser rendering, GPU composition and resizing are not acceptance-qualified on this host. Sandbox startup currently aborts in the child and the UI continues.
 - Windows bootstrap, persistent profiles, interactive input, DOM automation, accessibility bridging, JS/host RPC and GPU sharing are unsupported.
