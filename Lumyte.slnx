@@ -236,6 +236,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Wgpu.Tests/Lumyte.Graphics.Wgpu.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Benchmark.Tests/Lumyte.Graphics.Benchmark.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj" />

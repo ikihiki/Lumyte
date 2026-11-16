@@ -123,7 +123,9 @@ internal static class BenchmarkCatalog
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         IEnumerable<string> files = Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly)
-            .Where(file => file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            .Where(file => file.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
+                || file.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase)
+                || file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
                 || file.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase)
                 || file.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase));
         string runtimes = Path.Combine(directory, "runtimes");

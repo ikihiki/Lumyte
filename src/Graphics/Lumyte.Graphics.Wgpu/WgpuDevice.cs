@@ -92,10 +92,15 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
 
     internal A.Device NativeDevice => _device;
 
+    /// <summary>Installs the corrected native runtime before direct Ahjo native calls such as log callback registration.</summary>
+    /// <remarks>Call once before any Ahjo.Wgpu.Native entry point when combining that binding with this backend.</remarks>
+    public static void InitializeNativeRuntime() => WgpuNativeRuntime.EnsureInstalled();
+
     /// <summary>Creates a device independently of presentation targets using wgpu's default adapter selection and device limits.</summary>
     /// <returns>The owned native device; dispose it when the owner is finished.</returns>
     public static WgpuDevice Create()
     {
+        InitializeNativeRuntime();
         var instance = A.Instance.Create();
         A.Adapter? adapter = null;
         A.Device? device = null;

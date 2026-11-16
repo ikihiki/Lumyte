@@ -3,6 +3,9 @@ using System.Text.Json;
 using Lumyte.Benchmarks;
 using Xunit;
 
+// Native log callbacks are process-global; hardware fixtures must not race during opt-in runs.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Lumyte.UI.Benchmark.Tests;
 
 /// <summary>Checks device-free metadata discovery and purpose-only classifications.</summary>

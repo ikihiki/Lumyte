@@ -23,6 +23,7 @@ public sealed class NativeAdapterAudit : IDisposable
 
         try
         {
+            Lumyte.Graphics.Wgpu.WgpuDevice.InitializeNativeRuntime();
             WGPU.wgpuSetLogCallback(&OnLog, null);
             WGPU.wgpuSetLogLevel(WGPULogLevel.Debug);
         }

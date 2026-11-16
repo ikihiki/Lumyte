@@ -368,11 +368,12 @@ public sealed class BenchmarkCatalogTests
     [InlineData("tools/shaders/shape.slang")]
     [InlineData("build/Targets/Shader.targets")]
     [InlineData("native/lumyte_text_parley/src/lib.rs")]
+    [InlineData("native/wgpu_native/finished-command-ownership.patch")]
     [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
     public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
-        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        foreach (string directory in new[] { "src/Core", "src/Graphics", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
         }
@@ -475,7 +476,7 @@ public sealed class BenchmarkCatalogTests
     public async Task UiTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
-        foreach (string directory in new[] { "src/Core", "src/UI", "src/Graphics", "src/Animation", "src/Input", "src/Platform", "src/Diagnostics", "tools/graphics", "benchmarks/UI/Shared", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+        foreach (string directory in new[] { "src/Core", "src/UI", "src/Graphics", "src/Animation", "src/Input", "src/Platform", "src/Diagnostics", "tools/graphics", "benchmarks/UI/Shared", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
         {
             Directory.CreateDirectory(Path.Combine(fixture.Root, directory));
         }
@@ -500,6 +501,29 @@ public sealed class BenchmarkCatalogTests
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
+    }
+
+    /// <summary>Custom native backend assets copied at the output root remain fingerprinted.</summary>
+    /// <param name="filename">The platform-specific native payload name.</param>
+    [Theory]
+    [InlineData("liblumyte_wgpu_native.so")]
+    [InlineData("liblumyte_wgpu_native.dylib")]
+    public void RootNativeBackendChangesOutputIdentity(string filename)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "Native output " + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string file = Path.Combine(root, filename);
+            File.WriteAllText(file, "original native");
+            string first = BenchmarkCatalog.OutputHash(root);
+            File.WriteAllText(file, "changed native");
+            Assert.NotEqual(first, BenchmarkCatalog.OutputHash(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     /// <summary>External WASM and browser distributions are part of hardware executable provenance.</summary>
