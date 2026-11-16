@@ -46,6 +46,19 @@ await map.DisposeAsync();
 
 `MapView`のサイズは通常のUIレイアウトが決める。サイズ、カメラ、タイル到着が変わると地図の表示が更新される。Widget宣言の作成だけではI/Oを開始せず、`Compose.Use`に置いただけで非同期解放されるとも解釈しない。
 
+Browserで地図canvasがwheelを所有する場合だけ、既定動作の変更を明示する。既存の設定を省略したconsumerは従来のページスクロールを維持する。以下はcontent登録とアプリ終了処理を省略した設定部分である。
+
+```csharp
+using Lumyte.UI.Application;
+using Lumyte.UI.Application.Browser;
+
+// 変更前／既定: ページのwheel既定動作を維持する。
+var ordinary = UiApplication.CreateBuilder(args).UseBrowser();
+// 変更後: この地図canvasが入力受付中のwheel既定動作を所有する。
+var mapHost = UiApplication.CreateBuilder(args).UseBrowser(
+    new UiBrowserApplicationOptions { OwnWheelDefaults = true });
+```
+
 ### 責務と依存方向
 
 - `Lumyte.Maps`は地理座標、タイル集合、描画規則、session、CPU描画記録を持ち、ResourcesとDrawing2Dを参照する。UI、window、OS入力へは依存しない。
@@ -146,7 +159,7 @@ sessionの変更、`Advance`、`Record`は呼び出し側が直列化する。�
 
 `LayoutOverride`は有限のサイズを確定し、必要なら`SetViewport`で需要だけを更新する。ここでは取得を開始しない。直後の描画は現時点の採用済み集合を使い、新しい要求は次の`Advance`で配送する。同一サイズの通知はrevisionを増やさない。
 
-パンは既存pointer captureを使い、capture喪失・window非活性化で終了する。ホイールは`UiWheelInput(Position, Delta)`として既存のhit-testとbubblingへ配送し、pointer captureやkeyboard focusへ転送しない。位置とdeltaは同一acquisitionで取得し、DPIを入力へ再適用しない。`UiInputContext.PointerPosition`と`IsInside`はホイールにも適用する。wheelズームではポインター下の地理位置を保つ。通常のUI controlsやoverlayに入力優先順位を任せ、OSイベントの別経路を作らない。内部カメラを変更した後の描画・必要集合は同じカメラrevisionを使う。
+パンは既存pointer captureを使い、capture喪失・window非活性化で終了する。ホイールは`UiWheelInput(Position, Delta)`として既存のhit-testとbubblingへ配送し、pointer captureやkeyboard focusへ転送しない。Browserでは`UiBrowserApplicationOptions.OwnWheelDefaults`を既定falseの明示設定とし、地図サンプルだけtrueを指定する。表示・接続・入力受付中の対象canvas上でのみ通常wheelとCtrl+wheelのネイティブ既定動作を抑止し、他canvasやページ全体のスクロールを所有しない。位置とdeltaは同一acquisitionで取得し、DPIを入力へ再適用しない。`UiInputContext.PointerPosition`と`IsInside`はホイールにも適用する。wheelズームではポインター下の地理位置を保つ。通常のUI controlsやoverlayに入力優先順位を任せ、OSイベントの別経路を作らない。内部カメラを変更した後の描画・必要集合は同じカメラrevisionを使う。
 
 ### 所有権、失敗、終了
 
@@ -192,6 +205,23 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +        public bool IsInside { get; }
 +    }
 +}
+ namespace Lumyte.UI.Application.Browser
+ {
+     public sealed record UiBrowserApplicationOptions
+     {
++        // 既定false。対象canvasが表示・接続・入力受付中のときだけwheel既定動作を所有する。
++        public bool OwnWheelDefaults { get; init; }
+     }
+ }
+ namespace Lumyte.Platform.Browser
+ {
+     public sealed class BrowserPlatform
+     {
+-        public static System.Threading.Tasks.Task<BrowserPlatform> CreateAsync(System.Runtime.InteropServices.JavaScript.JSObject canvas, string modulePath = "./lumyte-windowing.js");
++        // ownWheelDefaultsの既定falseは従来のページ既定動作を維持する。
++        public static System.Threading.Tasks.Task<BrowserPlatform> CreateAsync(System.Runtime.InteropServices.JavaScript.JSObject canvas, string modulePath = "./lumyte-windowing.js", bool ownWheelDefaults = false);
+     }
+ }
 +namespace Lumyte.Maps
 +{
 +    public readonly record struct MapCamera(double Longitude, double Latitude, double Zoom);
@@ -230,7 +260,8 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +    {
 +        // 既定falseは固定集合。trueは明示した有限候補のみを可視選択する。
 +        public bool SelectVisibleTiles { get; init; }
-+        // 正数。MaxPendingTilesは実行中を除く。新規要求は容量不足時に待機する。
++        // 正数。固定／有限候補モードでは配送済み・採用済みを含む候補集合全体の上限。
++        // 空間需要queueの未実行要求上限とは別の契約。
 +        public int MaxPendingTiles { get; init; } = 128;
 +        public int MaxInFlightTiles { get; init; } = 4;
 +        public int MaxCompletedTiles { get; init; } = 4;
