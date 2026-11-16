@@ -9,6 +9,36 @@ namespace Lumyte.Graphics.RenderGraph.Tests;
 /// <summary>Exercises standard pass declarations and ordinary argument codecs without friend access.</summary>
 public sealed partial class PublicGraphEncoderConsumerTests
 {
+    /// <summary>Reference-free shader-data values do not force unrelated passes into one native table.</summary>
+    [Fact]
+    public void ReferenceFreeShaderDataAllowsIndependentTablePartitions()
+    {
+        var device = new PublicGraphConsumerDevice { Limits = new() { BuffersPerDraw = 2 } };
+        using var graph = new RenderGraph(device);
+        using var data = new TestShaderDataBuffer();
+        RenderGraphShaderDataBuffer<TestShaderData> shared = graph.ImportShaderDataBuffer(data, default);
+        using var first = new TestTypedBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead }, []);
+        using var second = new TestTypedBuffer<uint>(new() { Count = 1, Usage = BufferUsage.ShaderRead }, []);
+        RenderGraphBuffer<uint>[] separate = [graph.ImportBuffer(first, default), graph.ImportBuffer(second, default)];
+        var tables = new List<object>();
+        foreach (RenderGraphBuffer<uint> own in separate)
+        {
+            graph.AddPass("reference-free shared values", context =>
+            {
+                tables.Add(((IShaderReference)context.GetGpuRef(shared)).Table);
+                Assert.Same(tables[^1], ((IShaderReference)context.GetGpuRef(own)).Table);
+            }).UseShaderDataBuffer(shared, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead))
+              .UseBuffer(own, new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead)).KeepAlive();
+        }
+
+        using CompiledRenderGraph plan = graph.Compile();
+        using var commands = new PublicGraphConsumerCommands();
+        plan.Record(commands);
+        Assert.Equal(2, tables.Count);
+        Assert.NotSame(tables[0], tables[1]);
+        Assert.All(device.Tables, table => Assert.Equal(2u, table.BufferCapacity));
+    }
+
     /// <summary>No public resource-set factory, wrapper, registration path or alternate group alias remains.</summary>
     [Fact]
     public void PublicPassSurfaceHasNoResourceSetConcept()

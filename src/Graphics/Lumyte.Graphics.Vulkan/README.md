@@ -2,6 +2,12 @@
 
 [Silk.NET.Vulkan](https://www.nuget.org/packages/Silk.NET.Vulkan/2.23.0) 2.23.0 を使用し、Vulkan instance と logical device を生成します。対象は .NET 10 です。OS に Vulkan loader と対応ドライバーが必要です。
 
+## NativeAOTとloader配置
+
+厳格なNativeAOTでは、Silkの既定asset resolverが使うAssembly.Location／CodeBase／DependencyContextに依存しません。Vulkan loaderはアプリのbase directoryかOSのlibrary検索pathへ配置します。Windowsはvulkan-1.dll、Linuxはlibvulkan.so.1／libvulkan.so、macOSはlibvulkan.1.dylib／libvulkan.dylib／libMoltenVK.dylibを候補とします。Silk固有のcustom resolverやnative package cache探索は利用しません。iOS／tvOSの静的MoltenVKはmain programのexportを借用し、そのhandleを解放しません。Linux以外の配置・静的export保持は今回の実GPU検証対象外です。
+
+[厳格AOT smoke](../../../tests/Graphics/Lumyte.Graphics.Drawing2D.AotSmoke/README.md)はILLink／Ilc warning-as-errorを維持して三方式のgraph描画とreadbackを検証します。loader contextはbindingと共に所有され、device／instanceの破棄後に解放します。
+
 ## 生成と所有権
 
 ```csharp

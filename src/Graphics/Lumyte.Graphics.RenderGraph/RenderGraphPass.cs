@@ -18,7 +18,7 @@ public sealed class RenderGraphPass
     /// <summary>Gets the diagnostic pass name.</summary>
     public string Name { get; }
 
-    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && use.Resource.LocalPassOwner is null && RenderGraphValidation.IsWrite(use.Scope));
+    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && !use.Resource.PreparationLocal && use.Resource.LocalPassOwner is null && RenderGraphValidation.IsWrite(use.Scope));
 
     internal bool HasSideEffects { get; private set; }
 
@@ -162,6 +162,12 @@ public sealed class RenderGraphPass
         return this;
     }
 
+    internal RenderGraphPass UsePreparationBuffer<T>(BufferSlice<T> range, BarrierScope scope)
+        where T : unmanaged => UseBufferCore(Owner.PreparationBuffer(range.Buffer), range.Offset, range.Count, scope, discard: false, repeated: true);
+
+    internal RenderGraphPass UsePreparationShaderData<T>(ShaderDataSlice<T> range, BarrierScope scope)
+        where T : struct, IShaderArguments => UseShaderDataCore(Owner.PreparationShaderData(range.Buffer), range.Offset, range.Count, scope, discard: false, repeated: true);
+
     internal RenderGraphPass UseLocalBuffer<T>(BufferSlice<T> range, BarrierScope scope)
         where T : unmanaged => UseBufferCore(Owner.LocalBuffer(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);
 
@@ -199,7 +205,7 @@ public sealed class RenderGraphPass
         ArgumentNullException.ThrowIfNull(buffer);
         Range(offset, count, buffer.Count);
         ArgumentBufferAccess? access = ShaderAccess(scope);
-        GraphShaderBinding binding = new(buffer, offset, count, true, access, access is not null ? lookup => lookup.ReadBuffer(buffer, offset, count) : null);
+        GraphShaderBinding binding = new(buffer, offset, count, T.ReferenceCount != 0, access, access is not null ? lookup => lookup.ReadBuffer(buffer, offset, count) : null);
         AddUse(buffer, TextureState.Undefined, scope, discard, binding, repeated);
         return this;
     }

@@ -170,6 +170,11 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                 {
                     // Return state belongs to this frame, not to a reusable asset.
                     // A retry must not touch an asset borrowed by a later frame.
+                    if (completed && asset.Batch is IRetainedCommandBatch2D retained)
+                    {
+                        retained.ConfirmCompletion();
+                    }
+
                     asset.Resident |= completed;
                     if (!_disposed && asset.Resident && asset.Batch is IRetainedCommandBatch2D && asset.Batch is not RetainedBatchRun2D { Reusable: false })
                     {
@@ -499,11 +504,27 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     internal sealed record Key(DrawList2D[] Pages, Matrix3x2 Transform, DrawingSceneClip2D[] Clips, uint Width, uint Height, TextureFormat Format, float PixelScale, int FirstCommand = 0, int CommandCount = int.MaxValue)
     {
+        internal DrawingSceneEntry2D[] SceneEntries { get; init; } = [];
+
         internal bool Matches(Key other)
         {
             if (FirstCommand != other.FirstCommand || CommandCount != other.CommandCount || Transform != other.Transform || Width != other.Width || Height != other.Height || Format != other.Format || PixelScale != other.PixelScale || Pages.Length != other.Pages.Length || Clips.Length != other.Clips.Length)
             {
                 return false;
+            }
+
+            if (SceneEntries.Length != other.SceneEntries.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < SceneEntries.Length; i++)
+            {
+                DrawingSceneEntry2D left = SceneEntries[i], right = other.SceneEntries[i];
+                if (!ReferenceEquals(left.Content, right.Content) || left.Transform != right.Transform || !left.Clips.SequenceEqual(right.Clips))
+                {
+                    return false;
+                }
             }
 
             for (int i = 0; i < Pages.Length; i++)

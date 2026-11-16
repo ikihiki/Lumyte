@@ -99,7 +99,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new Pipeline(desc);
 
-    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
+    public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => new ComputePipeline(desc);
 
     public IGraphicsShaderDataBuffer<T> CreateShaderDataBuffer<T>(ShaderArtifact artifact, ulong count, MemoryPreference memory = MemoryPreference.Automatic)
         where T : struct, IShaderArguments
@@ -299,6 +299,15 @@ internal sealed class ProfilingDevice : IGraphicDevice
         }
     }
 
+    private sealed class ComputePipeline(ComputePipelineDesc desc) : IGraphicsComputePipeline
+    {
+        public ComputePipelineDesc Desc => desc;
+
+        public void Dispose()
+        {
+        }
+    }
+
     private sealed class ShaderBuffer<T>(ProfilingDevice device, ulong count, MemoryPreference memory) : IGraphicsShaderDataBuffer<T>
         where T : struct, IShaderArguments
     {
@@ -308,7 +317,7 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public ulong ShaderElementStrideInBytes => typeof(T).Name switch
         {
-            nameof(DrawRecord2D) => 96,
+            nameof(DrawRecord2D) or nameof(ShapeMembershipMetadata2D) => 96,
             nameof(DrawDirectoryEntry2D) => 16,
             nameof(DrawPageMetadata2D) or nameof(MaskDescriptor2D) => 80,
             nameof(DrawBasicMetadata2D) => 48,

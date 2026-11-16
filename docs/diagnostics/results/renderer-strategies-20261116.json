@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-16T04:39:37.296Z",
+  "productionRevision": "86ef5d848b124241e9ae83ba53972abbcdbf605d",
+  "sourceNotes": [
+    "Production unchanged after this revision; follow-up adds docs, removes obsolete test rejection guard and normalizes test EOLs.",
+    "Counts are scoped suites, not all repository tests.",
+    "Full logs retained locally under artifacts/renderer-verification; hashes identify them."
+  ],
+  "configuration": "Release",
+  "toolchain": {
+    "sdk": "10.0.403",
+    "slang": "2026.19"
+  },
+  "hardware": {
+    "gpu": "Radeon 8060S",
+    "driver": "RADV STRIX_HALO",
+    "mesa": "26.0.8",
+    "os": "Linux x64",
+    "icd": "radeon_icd.json",
+    "wgpuNativeHardwareTrace": "stage-aot-wgpu-loader.trace"
+  },
+  "unit": {
+    "file": "owner-budget-drawing.trx",
+    "sha256": "968968d7cc7cdc972dc52270e55b62ee5ba90b775df6cb66f53fb52c6cf55909",
+    "total": 501,
+    "passed": 501,
+    "failed": 0,
+    "skipped": 0
+  },
+  "graph": {
+    "passed": 143,
+    "failed": 0,
+    "skipped": 0,
+    "log": "owner-budget-graph.log"
+  },
+  "gpu": {
+    "file": "final-gpu.trx",
+    "sha256": "4de00601e8fc32fefe860342dc36197649722465fe8dcf838e087d8d0c806ab5",
+    "total": 19,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "tests": [
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanAlternativeRendererImageFieldOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanAlternativeRendererGeometryLoadOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanFixedRecordsAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanImagesAndGlyphRepresentationsAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanAlternativeRendererBackdropOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuAlternativeRendererGeometryLoadOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanNormalizedClipSamplesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuAlternativeRendererBackdropOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanAlternativeRendererRetainedOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanRendererStrategiesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanStandardCurveGraphOracleAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuAlternativeRendererImageFieldOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanAlternativeRendererMeshGradientOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuStandardCurveGraphOracleAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanComputeNonuniformStrokeOracleAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuComputeNonuniformStrokeOracleAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuRendererStrategiesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuAlternativeRendererMeshGradientOraclesAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuAlternativeRendererRetainedOraclesAsync",
+        "outcome": "Passed"
+      }
+    ]
+  },
+  "budgetRegression": {
+    "before": {
+      "file": "owner-budget-before.trx",
+      "sha256": "2e0b934041500f9ef668a6e50977eda351de0e623741371df6e9b7cf1c82226f",
+      "total": 3,
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0
+    },
+    "after": {
+      "file": "owner-budget-final-targeted.trx",
+      "sha256": "18cd97e1791610f1654073e619f656fe088f91c1f8ec1b7249718573e74788bb",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "strokeRegression": {
+    "before": {
+      "file": "stage-p1-before.trx",
+      "sha256": "5d23c2282c4cce83e1b64c467b6a6f80cdc404ad0337f307a6099f753104b9c3",
+      "total": 2,
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0,
+      "tests": [
+        {
+          "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanComputeNonuniformStrokeOracleAsync",
+          "outcome": "Failed"
+        },
+        {
+          "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuComputeNonuniformStrokeOracleAsync",
+          "outcome": "Failed"
+        }
+      ]
+    },
+    "afterTests": [
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.VulkanComputeNonuniformStrokeOracleAsync",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Lumyte.Graphics.Tests.Drawing2DTests.WgpuComputeNonuniformStrokeOracleAsync",
+        "outcome": "Passed"
+      }
+    ],
+    "expectedMask": "0x0FF0",
+    "expectedPremultipliedRgba": [
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "subdivisions": 385
+  },
+  "nativeAot": {
+    "publishAot": true,
+    "ILLinkTreatWarningsAsErrors": true,
+    "IlcTreatWarningsAsErrors": true,
+    "backends": [
+      "Vulkan",
+      "wgpu"
+    ],
+    "renderers": [
+      "Renderer2D",
+      "SparseStripRenderer2D",
+      "ComputeRenderer2D"
+    ],
+    "actualReadback": true,
+    "executableSha256": "7bce0573fe934c612f316fee37875b556bb2be89b30a3087e329274cefa85651"
+  },
+  "logs": [
+    {
+      "file": "owner-budget-graph.log",
+      "sha256": "3f2c25a063ab933b25eda96ca027f89e020a74c9531383a846a8505bb5e8e715"
+    },
+    {
+      "file": "owner-budget-final-build.log",
+      "sha256": "db99a414491e313a00efebecff4d2a9fe5f7891b65237068cc666ba0eff036b2"
+    },
+    {
+      "file": "owner-budget-native-build.log",
+      "sha256": "086e352946a91d2eec915b0237fc844cfda5b61c55d1b999c0cec92be44bd845"
+    },
+    {
+      "file": "final-native-build.log",
+      "sha256": "9c774c8bb0f2d7e07ce8a918495448cdabb90a691b41184d8b1e5af7f0e89ed0"
+    },
+    {
+      "file": "final-format-Lumyte.Graphics.Drawing2D.log",
+      "sha256": "09658d3cc4a053053ba73538997f405c36685bcc6d9355106a22989511c6e88f"
+    },
+    {
+      "file": "final-format-Lumyte.Graphics.Drawing2D.RenderGraph.log",
+      "sha256": "9513389d14f5e9ac96e0d218e99c635060c36dd09a2742161f0154f69f7f83c8"
+    },
+    {
+      "file": "final-format-Lumyte.Graphics.RenderGraph.log",
+      "sha256": "5bc95355da83fd02ad9006c65338b31504ab245b9692db96de8e6d249b131415"
+    },
+    {
+      "file": "final-format-Lumyte.Graphics.Vulkan.log",
+      "sha256": "730a56d9d4ddcc789364f6c6f198db44b07786c33a87a2698b0e4a3f9ec568bf"
+    },
+    {
+      "file": "final-format-Lumyte.Graphics.Drawing2D.Tests.log",
+      "sha256": "648873ed231718a001a4ba8ed8fd42e7a7a62d6f4b972a35ad9399d6750895db"
+    },
+    {
+      "file": "final-format-native-fixed.log",
+      "sha256": "3724c06f0e71ea05a16e07aa4af9bf6156360fe6067a1dca432bde3775def1be"
+    },
+    {
+      "file": "final-aot-publish.log",
+      "sha256": "b437a042b321244ea6ada0b75df3329b449ddd795c76fa80b5dbc1d2ff12733b"
+    },
+    {
+      "file": "final-aot-vulkan.log",
+      "sha256": "f3733c14b335680a98ba74be8654ccea88a7008fbf83a87ae8c0fb3b0a381cef"
+    },
+    {
+      "file": "final-aot-wgpu.log",
+      "sha256": "f3733c14b335680a98ba74be8654ccea88a7008fbf83a87ae8c0fb3b0a381cef"
+    },
+    {
+      "file": "owner-budget-hardware.log",
+      "sha256": "2bbbe1a68fcf96274f66376007b2ec00d6b6af1ec64ba2e4399f8881a1473d8b"
+    },
+    {
+      "file": "stage-aot-wgpu-loader.trace",
+      "sha256": "79b1ba294d260c4dc141c79c0bcfaac31d2becc6f5cdf7c8981d7cf7f3dc6d0c"
+    }
+  ],
+  "testSources": [
+    {
+      "file": "tests/Graphics/Lumyte.Graphics.Tests/Drawing2DTests.RendererOracles.cs",
+      "sha256": "e39a1f6300c4d21efc334bfde9bd25ec0cb15c2d158b84db19d29bf8cd68c53f"
+    },
+    {
+      "file": "tests/Graphics/Lumyte.Graphics.Tests/Drawing2DTests.RendererPaintOracles.cs",
+      "sha256": "e6ec298e51731b376f0cfcdc96b8de7257eb5570261d2fe27efd46bdf5e091e4"
+    },
+    {
+      "file": "tests/Graphics/Lumyte.Graphics.Tests/Drawing2DTests.RendererStrategies.cs",
+      "sha256": "ab0c5b5615045a62afb27b1a2557e780780769a2ac4c6a98a4d7114132e9aac2"
+    },
+    {
+      "file": "tests/Graphics/Lumyte.Graphics.Drawing2D.AotSmoke/Program.cs",
+      "sha256": "b65b32f1f6ed214082778bc93c38ee353f2992abdd27f7012a12de293d2f59ed"
+    }
+  ],
+  "limitations": [
+    "No performance benchmark/FPS claim.",
+    "Stroke theorem exact-arithmetic body/bevel/butt only, not all float32 output/other tips.",
+    "AOT execution Linux x64 only.",
+    "No standalone cross-frame CPU paint cache or automatic cross-graph GPU atlas reuse."
+  ]
+}
