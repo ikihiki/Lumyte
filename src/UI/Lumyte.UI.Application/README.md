@@ -48,3 +48,42 @@ Desktop／Browserの通常frameは、Presentationごとの`UiDrawingScene2D`を�
 Presence／ページ遷移などの特殊合成は既存の描画をopaqueな内容として毎frame再記録します。候補の検証も保持sceneのsnapshotを使用します。visual画像のcapture/updateは特殊合成用の不変fragmentを保持sceneとして準備し、通常frameと同じ保持frameの退役規約を使用します。独自の`OnRecord`は既定では毎frame実行し、明示的な`CacheRetainedDrawing`の契約だけを再利用します。
 
 非同期処理へ渡すのは内容を共有する不変の配置snapshotで、UI／sceneのborrowはGPU準備前に解放済みです。GPU完了と提示image解放の確認後にcommand memory、保持frame、submissionの順で退役します。送信成否が不明な場合はdevice世代の退役確認まで保持し、device再生成時はCPU記録も作り直します。Headlessを含む全内部driverは保持snapshotだけを受け取り、旧フレーム全体のDrawList生成・キャッシュ・direct送信分岐はありません。
+
+## Capture diagnostics (opt-in)
+
+Provider `Lumyte-UI-Application-Profiling` keyword `0x10` adds event 12,
+`CaptureState(requestId, profileRunId, frameId, sourceId, phase, reason,
+processingCount, owned, drawingBusy)`. The usual `0xF` filter is unchanged.
+IDs are diagnostic only and do not dequeue, retry, deduplicate or cancel work.
+
+- Phase 1: host request before dispatcher enqueue; 2: dispatcher entered.
+- Phase 3: driver queued, with current drawing key and busy state. Owned windows
+  read the application's entry task/key, not the external window task field.
+- Phase 4: matched frame, before the submission queue wait; processingCount
+  increments on every binding, including repeated binding of the same request.
+- Phase 5/6: crop+PNG processing begin/end; 7: processing rejected/failed; 8: host success; 9: cancellation;
+  10: host error. Terminal host events with unknown frame retain empty/zero keys;
+  join through requestId, never temporal proximity.
+- Reason 0: unspecified; 1: supplied host cancellation token signalled (possibly
+  an upstream linked automation token; not evidence of caller versus deadline);
+  2: application stop; 3: other/unknown; 4: result already completed;
+  5: target not visible; 6: readback unsupported. No exception text is emitted.
+
+Stages 14 (submission wait), 15 (image release), 29 (readback) are unchanged.
+New nested stages: 30 map await, 31 CPU copy/unmap/repack, 32 crop, 33 PNG encode.
+These are CPU elapsed scopes, not GPU timestamps. Stage keyword 0x2 plus control
+0x1 provides the existing frame/run/span joins; Capture alone creates frame keys
+but does not emit every stage.
+
+The browser samples link a shared EventListener only on explicit
+EnableCaptureDiagnostics(). It subscribes before runMain, tracks bounded open
+stages even before a request, and streams lifecycle plus stages related by the
+queued/matched frame keys. A queued request includes already-open stage records.
+The exact console prefix is `UI Capture trace: ` followed by
+`{eventId,name,ticks,frequency,data:{payloadName:scalar}}`. Guid values are strings.
+GetCaptureDiagnostics() returns JSON with enabled, dropped, streamed, events
+(last 64), requests (last state for up to 16 IDs), relations (pending request/frame pairs), lastStages (four frames), and openStages (up to four
+frames, eight spans each). The console stream has a 2048-record budget; terminal
+request records bypass that budget and remain in requests independently of the
+ring. dropped counts bounded-state/ring evictions and suppressed stream records,
+not EventPipe loss. Empty/zero identities remain honestly unassociated.

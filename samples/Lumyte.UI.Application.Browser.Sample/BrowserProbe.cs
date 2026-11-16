@@ -20,6 +20,15 @@ public static partial class BrowserProbe
 
     internal static UiApplication? Application { get; set; }
 
+    /// <summary>Enables bounded capture diagnostics before application startup.</summary>
+    [JSExport]
+    public static void EnableCaptureDiagnostics() => Lumyte.UI.SampleSupport.UiCaptureDiagnostics.Enable();
+
+    /// <summary>Gets bounded capture events and pending stage observations.</summary>
+    /// <returns>The diagnostic JSON snapshot.</returns>
+    [JSExport]
+    public static string GetCaptureDiagnostics() => Lumyte.UI.SampleSupport.UiCaptureDiagnostics.GetSnapshot();
+
     /// <summary>Gets the current animation value without evaluating time.</summary>
     /// <returns>The applied logical width.</returns>
     [JSExport]

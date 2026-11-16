@@ -16,6 +16,122 @@ namespace Lumyte.UI.Application.Tests;
 /// <summary>Checks standard EventSource profiling and retained resource lifecycle events.</summary>
 public sealed class ProfilingTests
 {
+    /// <summary>Checks request/frame joins and repeated processing behind an asynchronous gate.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task CaptureRelationsSurviveHeldGateAsync()
+    {
+        using var listener = new Capture((EventKeywords)16);
+        long request = UiApplicationProfiling.StartCapture();
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 42);
+        var source = Guid.NewGuid();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        UiApplicationProfiling.Capture(request, 3, key, source, owned: 1, busy: 1);
+        Task work = CompleteAsync();
+        Assert.False(work.IsCompleted);
+        Assert.Contains(listener.Events, item => item.Id == 12 && (int)item.Payload[4]! == 3 && (int)item.Payload[8]! == 1);
+        gate.SetResult();
+        await work;
+        Event[] related = listener.Events.Where(item => item.Id == 12 && (long)item.Payload[0]! == request && (long)item.Payload[2]! == 42).ToArray();
+        Assert.Equal(4, related.Length);
+        Assert.All(related, item => Assert.Equal(key.Run, item.Payload[1]));
+        Assert.Contains(related, item => (int)item.Payload[6]! == 2);
+        Assert.DoesNotContain(listener.Events, item => item.Id == 0);
+
+        async Task CompleteAsync()
+        {
+            await gate.Task;
+            UiApplicationProfiling.Capture(request, 4, key, source, processing: 1);
+            UiApplicationProfiling.Capture(request, 4, key, source, processing: 2);
+            UiApplicationProfiling.Capture(request, 9, key, source, reason: 1);
+        }
+    }
+
+    /// <summary>Checks opt-in separation from default profiling.</summary>
+    [Fact]
+    public void DefaultKeywordsDoNotCreateCaptureIdentity()
+    {
+        using var listener = new Capture((EventKeywords)15);
+        Assert.Equal(0, UiApplicationProfiling.StartCapture());
+        Assert.DoesNotContain(listener.Events, item => item.Id == 12);
+    }
+
+    /// <summary>Checks PNG nesting inside crop and readback.</summary>
+    [Fact]
+    public void PngScopeIsNestedInsideCrop()
+    {
+        using var listener = new Capture((EventKeywords)2);
+        using Activity activity = new Activity("capture-frame").Start();
+        activity.SetCustomProperty("Lumyte.Profiling.RunId", Guid.NewGuid());
+        activity.SetCustomProperty("Lumyte.Profiling.FrameId", 64L);
+        using (UiApplicationProfiling.Scope? readback = UiApplicationProfiling.Begin(29))
+        {
+            new UiFramePixels(1, 1, [255, 0, 0, 255]).Crop(new(0, 0, 1, 1));
+        }
+
+        Event crop = Assert.Single(listener.Events, item => item.Id == 1 && (int)item.Payload[4]! == 32);
+        Event png = Assert.Single(listener.Events, item => item.Id == 1 && (int)item.Payload[4]! == 33);
+        Assert.Equal(crop.Payload[2], png.Payload[3]);
+        Assert.Single(listener.Events, item => item.Id == 2 && Equals(item.Payload[2], png.Payload[2]));
+    }
+
+    /// <summary>Checks prior-frame open wait snapshots and reserved terminal recording.</summary>
+    [Fact]
+    public void SampleObserverIncludesAlreadyOpenWaitAndTerminal()
+    {
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics();
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 741);
+        using UiApplicationProfiling.Scope? wait = UiApplicationProfiling.Begin(14, key);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key, Guid.NewGuid(), owned: 1, busy: 1);
+        using (var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot()))
+        {
+            Assert.Contains(snapshot.RootElement.GetProperty("events").EnumerateArray(), item => item.GetProperty("eventId").GetInt32() == 1 && item.GetProperty("data").GetProperty("stage").GetInt32() == 14);
+        }
+
+        for (int i = 0; i < 2050; i++)
+        {
+            UiApplicationProfiling.Capture(request, 4, key, processing: i);
+        }
+
+        UiApplicationProfiling.Capture(request, 9, key, reason: 2);
+        UiApplicationProfiling.Capture(request, 6, key, processing: 2051);
+        Assert.True(observer.Snapshot().Length < 65536);
+        using var terminal = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.True(terminal.RootElement.GetProperty("dropped").GetInt64() > 0);
+        Assert.Equal(64, terminal.RootElement.GetProperty("events").GetArrayLength());
+        Assert.Contains(terminal.RootElement.GetProperty("requests").EnumerateArray(), item => item.GetProperty("data").GetProperty("phase").GetInt32() == 9);
+    }
+
+    /// <summary>Checks the real host preserves supplied cancellation through a held driver request.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task ScreenshotHostReportsCancellationWithoutChangingDriverLifetimeAsync()
+    {
+        using var listener = new Capture((EventKeywords)16);
+        var driver = new CaptureDriver();
+        UiApplicationBuilder builder = UiApplication.CreateBuilder();
+        builder.UseDriver(() => driver);
+        builder.UseWindows(_ => [Lumyte.UI.Application.Compose.Window("main", "Capture", root: _ => Panel(), onOpened: _ => driver.Opened.TrySetResult())]);
+        await using UiApplication app = builder.Build();
+        Task running = app.RunAsync();
+        await driver.Opened.Task;
+        using var surface = new UiSurface(Panel());
+        var host = (Lumyte.UI.Automation.IUiAutomationScreenshotHost)UiApplicationAutomationHost.Create(app, () => surface);
+        using var cancellation = new CancellationTokenSource();
+        Task<byte[]> capture = host.CapturePngAsync(cancellation.Token).AsTask();
+        await driver.Entered.Task;
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => capture);
+        Assert.False(driver.Release.Task.IsCompleted);
+        Event terminal = Assert.Single(listener.Events, item => item.Id == 12 && (int)item.Payload[4]! == 9);
+        Assert.Equal(1, terminal.Payload[5]);
+        Assert.Contains(listener.Events, item => item.Id == 12 && (int)item.Payload[4]! == 2 && Equals(item.Payload[0], terminal.Payload[0]));
+        driver.Release.SetResult();
+        app.RequestStop();
+        await running;
+    }
+
     /// <summary>Checks a disabled stage returns no scope and emits no events.</summary>
     [Fact]
     public void DisabledStagesReturnNoScopeOrEvents()
@@ -285,6 +401,38 @@ public sealed class ProfilingTests
         while (!condition())
         {
             await Task.Delay(1, timeout.Token);
+        }
+    }
+
+    private sealed class CaptureDriver : UiApplicationDriver
+    {
+        internal TaskCompletionSource Opened { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal override bool SupportsScreenshots => true;
+
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        internal override ValueTask InitializeAsync(UiApplication application, IServiceProvider services, bool textInput, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        internal override ValueTask<UiDriverWindow> CreateWindowAsync(string key, string title, Vector2 size, UiDriverWindow? owner, bool primary, CancellationToken cancellationToken) => ValueTask.FromResult<UiDriverWindow>(new TestWindow(key));
+
+        internal override void Pump()
+        {
+        }
+
+        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene) => Task.FromResult(true);
+
+        internal override ValueTask CloseWindowAsync(UiDriverWindow window) => window.DisposeAsync();
+
+        internal override async ValueTask<byte[]> CaptureAsync(UiSurface surface, CancellationToken token)
+        {
+            Entered.SetResult();
+            await Release.Task.WaitAsync(token);
+            return [];
         }
     }
 
