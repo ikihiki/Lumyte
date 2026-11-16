@@ -320,8 +320,8 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         owner.Owner.Api.CmdBindPipeline(owner.Native, V.PipelineBindPoint.Graphics, pipeline);
         if (registrations != null)
         {
-            var binding = new VulkanShaderBinding(owner.Owner, table!, registrations, _pipeline.ArgumentLayout);
-            owner.KeepBinding(binding);
+            VulkanShaderBinding binding = table!.AcquireBinding(registrations, _pipeline.ArgumentLayout);
+            owner.KeepBinding(binding, registrations);
             V.DescriptorSet set = binding.Native;
             owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
         }
