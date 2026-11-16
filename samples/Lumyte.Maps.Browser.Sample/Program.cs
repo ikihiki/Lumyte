@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 byte[] fixture = LocalFixture.CreateTile();
 var registration = new InMemoryMvtRegistration("handmade", "v1", new MapTileLoadProfile("browser-sample"), new Dictionary<MapTileId, ReadOnlyMemory<byte>> { [new(0, 0, 0)] = fixture, [new(1, 0, 0)] = fixture, [new(1, 0, 1)] = fixture, [new(1, 1, 0)] = fixture, [new(1, 1, 1)] = fixture, [new(2, 1, 1)] = fixture });
-UiApplicationBuilder builder = UiApplication.CreateBuilder(args).UseBrowser();
+UiApplicationBuilder builder = UiApplication.CreateBuilder(args).UseBrowser(new UiBrowserApplicationOptions { OwnWheelDefaults = true });
 builder.Services.AddMemoryManagement();
 builder.Services.AddSingleton(registration);
 builder.Services.AddResources(resources => resources.UseSource<InMemoryMvtSource>().AddSourcePipeline<MapTileContent, MvtResourceStage>());
