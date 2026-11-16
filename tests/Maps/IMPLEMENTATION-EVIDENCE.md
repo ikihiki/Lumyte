@@ -145,3 +145,17 @@ runMain completion/error flags, avoiding an external promise lifetime across run
 strictly trimmed final source passes with13 mounted commands, retained reuse, audited SwiftShader and
 orderly stop: /tmp/maps-prereq-browser-stopfix-publish.log and /tmp/maps-prereq-browser-stopfix-run.log.
 No generic host lifetime behavior or shutdown timeout was changed to make this sample pass.
+
+## protobuf-net.Core方式への移行後の検証
+
+protobufのwire読取りをApache-2.0の`protobuf-net.Core 3.4.40`の公開APIへ委譲し、手書きの`ProtoReader.cs`を削除した。MVTの意味検査、形状復元、strict UTF-8、確保前の容量検査は維持した。入力はReadOnlyMemoryとbyte配列overloadへ変更し、Local／InMemoryのsnapshotをコピーせず渡す。文字列scratchの実配列量とreader作成／再作成ごとの1024byteを累積計上するが、依存内部とruntime全体のallocation上限の証明ではない。より厳しいprofileでは従来より早く拒否する場合がある。
+
+- M1のRelease Rebuild：警告／エラー0、回帰試験29件成功、失敗／skip0。`/tmp/mvt-release-rebuild.log`、`/tmp/mvt-release-final-tests.log`。
+- M2統合後の再build：Maps33件、UI2件、sessionと実Radeon GPU13件、catalog18件が成功。失敗／skip0。`/tmp/migration-Lumyte.Maps.Tests.log`、`/tmp/migration-Lumyte.Maps.UI.Tests.log`、`/tmp/migration-Lumyte.Maps.Session.Tests.log`、`/tmp/migration-catalog.log`。
+- 実際のRelease launcherを実行し、実タイル採用を待って正常終了。`/tmp/migration-launcher.log`。
+- consumer全体のstrict NativeAOTとnative trim publish、および各成果物の実タイル採用・正常終了が成功。`/tmp/migration-aot-publish.log`、`/tmp/migration-aot-run.log`、`/tmp/migration-trim-publish.log`、`/tmp/migration-trim-run.log`。
+- strict Browser publishと、実ResourcesでのMVT採用、mount済みUI記録13命令、保持型記録の再利用は成功。ただし終了処理が`GraphicsDeviceLostException: A valid external Instance reference no longer exists.`で失敗した。Browser全体の検証成功とは扱わない。`/tmp/migration-browser-publish.log`、`/tmp/migration-browser-run.log`。
+
+追加の比較は移行前bd2bb792の隔離worktreeで1回、候補側の診断付き検証で1回だけ実施した。新たなbaseline実行は正常終了し、候補は同じ終了例外を再現した。スタックはBrowserSubmission.WaitAsync→UiHostPresenterのdrain→UiVisualCoordinator→UiApplicationViewSlotの解放を示す。Browserサンプル、Graphics／Platform／UIホスト、検証scriptはbaselineと差分がない。移行前の`/tmp/maps-prereq-final-browser-run-fixed.log`にも同じ例外の履歴があるが、今回のbaselineは成功しているため、移行によるタイミング影響を断定的に除外しない。`/tmp/migration-browser-baseline-publish.log`、`/tmp/migration-browser-baseline-run.log`、`/tmp/migration-browser-candidate-diagnostic.log`を保持し、assertion／期限の変更や成功するまでの反復は行っていない。
+
+独立した静的レビューでは具体的な移行ブロッカーなし。これはsourceと試験の読取りレビューであり、fuzzingや依存内部allocationの実測、Browser全体の合格を意味しない。以前の検証結果は履歴として残し、移行後の評価には本節を用いる。
