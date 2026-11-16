@@ -8,6 +8,17 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Checks device-center ownership separately from ordinary antialiased clipping.</summary>
 public sealed class OwnershipClipTests
 {
+    /// <summary>Explicit endpoints preserve a shared half-pixel edge without origin plus rounded width.</summary>
+    [Fact]
+    public void ExplicitEndpointsPartitionFractionalTileEdge()
+    {
+        DrawingCommand2D left = Record(c => c.ClipOwnershipRect(new Vector2(-100000000f, 0), new Vector2(5.5f, 20)));
+        DrawingCommand2D right = Record(c => c.ClipOwnershipRect(new Vector2(5.5f, 0), new Vector2(932.0881f, 20)));
+        Assert.Equal(0, Contains(Normalize(left, Target()).Bounds, 5));
+        Assert.Equal(1, Contains(Normalize(right, Target()).Bounds, 5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Record(c => c.ClipOwnershipRect(new Vector2(1, 0), Vector2.Zero)));
+    }
+
     /// <summary>Adjacent owners partition every pixel at fractional DPR and reflected/translated coordinates.</summary>
     /// <param name="scale">The target device scale.</param>
     /// <param name="reflect">Reflects the captured geometry.</param>

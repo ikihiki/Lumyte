@@ -66,6 +66,17 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
 
             bool rectangle = DrawingProgram2D.TryRectangle(element.Path, out Rect2D rect)
                 && transform.M12 == 0 && transform.M21 == 0;
+            if (element.IsOwnership)
+            {
+                IReadOnlyList<PathSegment2D> segments = element.Path.Segments;
+                rectangle = segments.Count == 5 && segments[0].Verb == PathVerb2D.Move
+                    && segments[1].Verb == PathVerb2D.Line && segments[2].Verb == PathVerb2D.Line
+                    && segments[3].Verb == PathVerb2D.Line && segments[4].Verb == PathVerb2D.Close
+                    && segments[0].P0.Y == segments[1].P0.Y && segments[1].P0.X == segments[2].P0.X
+                    && segments[2].P0.Y == segments[3].P0.Y && segments[3].P0.X == segments[0].P0.X
+                    && transform.M12 == 0 && transform.M21 == 0;
+            }
+
             if (element.IsOwnership && !rectangle)
             {
                 throw new NotSupportedException("Ownership clips require an axis-aligned rectangle after all captured, replay and retained transforms.");
@@ -74,8 +85,10 @@ internal sealed record NormalizedClip2D(NormalizedClipKind2D Kind, ScissorRect B
             rectangles &= rectangle;
             if (rectangle)
             {
-                Point a = Transform(new(rect.X, rect.Y), transform);
-                Point b = Transform(new(rect.X + rect.Width, rect.Y + rect.Height), transform);
+                Vector2 minimum = element.IsOwnership ? element.Path.Segments[0].P0 : new(rect.X, rect.Y);
+                Vector2 maximum = element.IsOwnership ? element.Path.Segments[2].P0 : new(rect.X + rect.Width, rect.Y + rect.Height);
+                Point a = Transform(new(minimum.X, minimum.Y), transform);
+                Point b = Transform(new(maximum.X, maximum.Y), transform);
                 (double Left, double Top, double Right, double Bottom) rectangleEdges = Geometry2D.EncloseBoundsEdges((a.X, a.Y, a.X, a.Y), (b.X, b.Y, b.X, b.Y));
                 if (element.IsOwnership)
                 {
