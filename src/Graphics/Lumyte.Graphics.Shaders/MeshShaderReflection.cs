@@ -126,9 +126,23 @@ internal static class MeshShaderReflection
             declarations = Regex.Replace(declarations, @"(?m)^[ \t]*#[^\r\n]*|//[^\r\n]*|/\*.*?\*/", string.Empty, RegexOptions.Singleline);
             var structures = Regex.Matches(declarations, @"\bstruct\s+(\w+)\s*\{([^}]+)\}\s*;", RegexOptions.Singleline)
                 .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value, StringComparer.Ordinal);
-            Match entry = Required(declarations, @"\b\w+\s+" + Regex.Escape(entryPoint) + @"\s*\((.*?)\)", "Fragment entry parameters", RegexOptions.Singleline);
+            Match entry = Required(declarations, @"\b\w+\s+" + Regex.Escape(entryPoint) + @"\s*\(", "Fragment entry parameters");
+            int end = entry.Index + entry.Length;
+            int depth = 1;
+            while (end < declarations.Length && depth != 0)
+            {
+                char current = declarations[end++];
+                depth += current == '(' ? 1 : current == ')' ? -1 : 0;
+            }
+
+            if (depth != 0)
+            {
+                throw new InvalidOperationException("Incomplete Fragment entry parameters.");
+            }
+
+            string parameters = declarations[(entry.Index + entry.Length)..(end - 1)];
             inputs = [];
-            foreach (string parameter in entry.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (string parameter in parameters.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (Regex.IsMatch(parameter, @"^out\s+"))
                 {
@@ -165,21 +179,31 @@ internal static class MeshShaderReflection
         uint location = 0;
         foreach (string declaration in body.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            Match field = Required(declaration, @"^(?:(nointerpolation|linear|noperspective|centroid|sample)\s+)*(\w+)\s+\w+\s*:\s*(\w+)\s*$", "output field");
-            string semantic = field.Groups[3].Value.ToUpperInvariant();
+            Match field = Required(declaration, @"^(?:(nointerpolation|linear|noperspective|centroid|sample)\s+)*(\w+)\s+\w+\s*(?:\[\s*(?:int\()?\s*(\d+)[uU]?\s*\)?\s*\])?\s*:\s*(\w+)\s*$", "output field");
+            string semantic = field.Groups[4].Value.ToUpperInvariant();
+            uint count = field.Groups[3].Success ? Parse(field.Groups[3].Value) : 1;
+            Match indexedSemantic = Required(semantic, @"^(.*?)(\d*)$", "semantic index");
+            string semanticName = indexedSemantic.Groups[1].Value;
+            uint firstIndex = indexedSemantic.Groups[2].Length == 0 ? 0 : Parse(indexedSemantic.Groups[2].Value);
             bool builtIn = semantic.StartsWith("SV_", StringComparison.Ordinal);
             string[] modifiers = field.Groups[1].Captures.Select(capture => capture.Value).ToArray();
             string interpolation = modifiers.Contains("nointerpolation") ? "nointerpolation" : modifiers.Contains("noperspective") ? "noperspective" : "linear";
             interpolation += modifiers.Contains("centroid") ? "+centroid" : string.Empty;
             interpolation += modifiers.Contains("sample") ? "+sample" : string.Empty;
-            outputs.Add((JsonNode)new JsonObject
+
+            // HLSL signature arrays occupy consecutive semantic indices, not one
+            // opaque array-typed input. Preserve each element for Mesh linkage.
+            for (uint index = 0; index < count; index++)
             {
-                ["semantic"] = semantic,
-                ["location"] = builtIn ? null : JsonValue.Create(location++),
-                ["type"] = field.Groups[2].Value,
-                ["interpolation"] = interpolation,
-                ["perPrimitive"] = primitive,
-            });
+                outputs.Add((JsonNode)new JsonObject
+                {
+                    ["semantic"] = field.Groups[3].Success ? semanticName + checked(firstIndex + index).ToString(CultureInfo.InvariantCulture) : semantic,
+                    ["location"] = builtIn ? null : JsonValue.Create(location++),
+                    ["type"] = field.Groups[2].Value,
+                    ["interpolation"] = interpolation,
+                    ["perPrimitive"] = primitive,
+                });
+            }
         }
     }
 
