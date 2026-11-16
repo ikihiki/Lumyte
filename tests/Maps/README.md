@@ -26,3 +26,9 @@ Mapsの試験projectは`Lumyte.slnx`へ登録しています。`build/Build.cs`�
 追加の実GPU試験は論理DPI 1／2、隣接するextent 1024／8192、半透明でタイル余白を持つポリゴン、道路の縁取りと内側、UI overlay、実際のUI親領域からはみ出してclipされる子を描画します。直接描画と保持型描画の全読戻し画素を比較し、解析的な期待色も独立に確認します。試験成果物はGit外へ保存します。結果は[実装の検証記録](IMPLEMENTATION-EVIDENCE.md)を参照してください。
 
 M3 の固定移動試験は public `UiSurface.Dispatch`／layout／直接と保持型記録を使います。capture loss・focus loss、overlay Button 優先、viewport 変更、正規化 ID の反復world共有と未知領域の背景を検証します。実 GPU の追加試験は 0.5 pixel パン→pointer 基準 +0.4 zoom→(-20,3) pixel パンの決定的な経路で、alpha 0.5 の解析的な期待値と直接／保持型の全画素一致を要求します。
+
+## M4 の空間 session
+
+4 引数 constructor の動的需要、visible-first／距離／ID 順、未配送取消、latest-content 採用、先読み／親 fallback、LRU と Manager の実 generation 回収を `Lumyte.Maps.Session.Tests` で検証します。real Cooperative ResourceRuntime の32回移動では、停止前30／停止後32の Stage.Release を要求します。Manager の snapshot pin を残したまま counter を返金しない共有 maintenance barrier と、fixed／finite が最後の owner になった場合も含めます。
+
+既存 Native sample／launcher の headless 実行は、16中心＋再訪の固定経路で tile arrival・実回収・停止を検査します。strict NativeAOT／trim の publish と実行は別 gate です。Browser は M3 有限集合の互換経路を維持し、既知の全体 smoke の赤を合格へ変更しません。詳細と raw log は [M4 検証記録](M4-IMPLEMENTATION-EVIDENCE.md) を参照してください。
