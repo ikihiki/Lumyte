@@ -11,6 +11,23 @@ namespace Lumyte.Diagnostics.UI.Automation.Tests;
 /// <summary>Checks read-only media semantics through runtime mapping and the typed wire client.</summary>
 public sealed class SemanticValueTests
 {
+    /// <summary>Remote wheel cannot mutate an occluding sibling instead of the requested subtree.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task RemoteScrollRejectsOccludingSiblingAsync()
+    {
+        using var requested = new ScrollController();
+        using var covering = new ScrollController();
+        using var handler = new LoopbackHandler(configureSurface: surface => surface.Rebuild(Panel()[ScrollView(controller: requested, testId: "requested", width: 200, height: 100)[SizedBox(height: 600)], ScrollView(controller: covering, width: 200, height: 100)[SizedBox(height: 600)]]));
+        using var http = new HttpClient(handler) { BaseAddress = new("http://diagnostics/") };
+        await using var client = new UiAutomationDiagnosticsClient(http, await handler.Ready);
+        UiRemoteTarget target = Assert.Single(await client.ListTargetsAsync());
+        await using UiRemoteControl control = await client.AcquireControlAsync(target.Id);
+        await Assert.ThrowsAnyAsync<Exception>(() => control.Page.GetByTestId("requested").ScrollAsync(new(0, 50)));
+        Assert.Equal(0, requested.Offset);
+        Assert.Equal(0, covering.Offset);
+    }
+
     /// <summary>Checks typed version-five wheel and legacy snapshot role projection through HTTP.</summary>
     /// <returns>The asynchronous check.</returns>
     [Fact]

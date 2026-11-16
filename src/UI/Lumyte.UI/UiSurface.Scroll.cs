@@ -42,8 +42,10 @@ public sealed partial class UiSurface
                 float length = vertical ? size.Y : size.X;
                 float viewport = scroll.Controller.Viewport;
                 float delta = start < 0 ? start : (double)start + length > viewport ? (float)Math.Min(start, (double)start + length - viewport) : 0;
+                ulong revision = TreeRevision;
                 float applied = delta - scroll.ApplyDelta(delta);
-                if (_isDisposed || !ReferenceEquals(element.Surface, this))
+                if (_isDisposed || TreeRevision != revision || !ReferenceEquals(element.Surface, this)
+                    || !ReferenceEquals(node.Parent, parent) || !ReferenceEquals(parent.Surface, this))
                 {
                     return true;
                 }

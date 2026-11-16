@@ -43,6 +43,9 @@ public sealed class ScrollBarTests
         Assert.True(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(110, 10))));
         Assert.True(surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Move, new(110, 50))));
         Assert.Equal(200, controller.Offset);
+        UiAutomationNode bar = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.Role == UiRole.ScrollBar);
+        Assert.Equal(0.5, bar.Value);
+        Assert.Equal(UiAutomationActions.Focus, bar.Actions);
         surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(110, 50)));
         surface.Dispatch(new UiKeyInput(Key.End, true));
         surface.Dispatch(new UiKeyInput(Key.End, false));

@@ -26,7 +26,7 @@ using var outer = new ScrollController();
 using var inner = new ScrollController();
 UiApplicationWindowContext? context = null;
 var opened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-UiApplicationBuilder builder = UiApplication.CreateBuilder([]).UseHeadless().UseTextInput(_ => provider);
+UiApplicationBuilder builder = UiApplication.CreateBuilder([]).UseHeadless(new() { ClientSize = new(400, 300) }).UseTextInput(_ => provider);
 builder.UseWindows(_ => [Window(
     "main",
     "Scroll",
@@ -41,73 +41,82 @@ builder.UseWindows(_ => [Window(
             Button(width: 100, height: 30, testId: "last")]],
         ScrollBar(controller: outer, testId: "scrollbar", with: [Grid.Cell(column: 1)])];
 },
+    initialClientSize: new(200, 100),
     onOpened: _ => opened.TrySetResult())]);
 await using UiApplication app = builder.Build();
 Task run = app.RunAsync();
 await opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
-await app.Dispatcher.InvokeAsync(() =>
+await context!.Automation.NextFrameAsync();
+await context.Automation.NextFrameAsync();
+await using (Lumyte.UI.Automation.IUiAutomationInputLease lease = await context!.Automation.AcquireInputAsync())
 {
-    UiSurface surface = context!.View.CurrentSurface!;
-    surface.SetViewport(new(200, 100));
-    surface.UpdateLayout();
-    surface.Dispatch(new UiWheelInput(new(10), new(0, 50)));
-    if (inner.Offset != 20 || outer.Offset != 30)
+    await app.Dispatcher.InvokeAsync(() =>
     {
-        throw new InvalidOperationException("Nested wheel residual diverged.");
-    }
+        UiSurface surface = context!.View.CurrentSurface!;
+        surface.SetViewport(new(200, 100));
+        surface.UpdateLayout();
+        surface.Dispatch(new UiWheelInput(new(10), new(0, 50)));
+        if (inner.Offset != 20 || outer.Offset != 30)
+        {
+            throw new InvalidOperationException("Nested wheel residual diverged.");
+        }
 
-    outer.ScrollTo(0);
-    inner.ScrollTo(0);
-    surface.UpdateLayout();
-    surface.Dispatch(new UiPointerInput(3, UiPointerPhase.Down, new(10, 60)) { Device = UiPointerDevice.Touch });
-    surface.Dispatch(new UiPointerInput(3, UiPointerPhase.Move, new(10, 10)) { Device = UiPointerDevice.Touch });
-    surface.Dispatch(new UiPointerInput(3, UiPointerPhase.Up, new(10, 10)) { Device = UiPointerDevice.Touch });
-    outer.ScrollTo(0);
-    surface.UpdateLayout();
-    int changes = 0;
-    outer.OnChanged = _ => changes++;
-    surface.Dispatch(new UiPointerInput(7, UiPointerPhase.Down, new(190, 5)));
-    surface.Dispatch(new UiPointerInput(7, UiPointerPhase.Move, new(190, 35)));
-    surface.Dispatch(new UiPointerInput(7, UiPointerPhase.Up, new(190, 35)));
-    if (outer.Offset <= 0 || changes != 1)
-    {
-        throw new InvalidOperationException("Real scrollbar thumb input did not change the borrowed controller exactly once.");
-    }
+        outer.ScrollTo(0);
+        inner.ScrollTo(0);
+        surface.UpdateLayout();
+        surface.Dispatch(new UiPointerInput(3, UiPointerPhase.Down, new(10, 60)) { Device = UiPointerDevice.Touch });
+        surface.Dispatch(new UiPointerInput(3, UiPointerPhase.Move, new(10, 10)) { Device = UiPointerDevice.Touch });
+        surface.Dispatch(new UiPointerInput(3, UiPointerPhase.Up, new(10, 10)) { Device = UiPointerDevice.Touch });
+        outer.ScrollTo(0);
+        surface.UpdateLayout();
+        int changes = 0;
+        outer.OnChanged = _ => changes++;
+        UiAutomationNode barNode = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "scrollbar");
+        System.Numerics.Vector2 barPoint = new(barNode.ActionableBounds.X + (barNode.ActionableBounds.Width / 2), barNode.ActionableBounds.Y + 5);
+        bool down = lease.Dispatch(surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Down, barPoint));
+        lease.Dispatch(surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Move, barPoint + new System.Numerics.Vector2(0, 30)));
+        lease.Dispatch(surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Up, barPoint + new System.Numerics.Vector2(0, 30)));
+        if (outer.Offset <= 0 || changes != 1)
+        {
+            throw new InvalidOperationException($"Real scrollbar thumb input diverged: offset={outer.Offset}, changes={changes}, down={down}, bar={barNode.Bounds}, hit={surface.ProbeWheel(barPoint)}.");
+        }
 
-    float dragged = outer.Offset;
-    surface.Dispatch(new UiKeyInput(Key.PageDown, true));
-    surface.Dispatch(new UiKeyInput(Key.PageDown, false));
-    if (outer.Offset <= dragged || changes != 2)
-    {
-        throw new InvalidOperationException("Real scrollbar keyboard input did not change the controller.");
-    }
+        float dragged = outer.Offset;
+        lease.Dispatch(surface, new UiKeyInput(Key.PageDown, true));
+        lease.Dispatch(surface, new UiKeyInput(Key.PageDown, false));
+        if (outer.Offset <= dragged || changes != 2)
+        {
+            throw new InvalidOperationException("Real scrollbar keyboard input did not change the controller.");
+        }
 
-    outer.ScrollTo(0);
-    surface.UpdateLayout();
-    surface.Dispatch(new UiPointerInput(8, UiPointerPhase.Down, new(190, 90)));
-    surface.Dispatch(new UiPointerInput(8, UiPointerPhase.Up, new(190, 90)));
-    if (outer.Offset != outer.Viewport)
-    {
-        throw new InvalidOperationException("Real scrollbar track input did not page.");
-    }
+        outer.ScrollTo(0);
+        surface.UpdateLayout();
+        lease.Dispatch(surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Down, new(barPoint.X, barNode.ActionableBounds.Y + barNode.ActionableBounds.Height - 5)));
+        lease.Dispatch(surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Up, new(barPoint.X, barNode.ActionableBounds.Y + barNode.ActionableBounds.Height - 5)));
+        if (outer.Offset != outer.Viewport)
+        {
+            throw new InvalidOperationException("Real scrollbar track input did not page.");
+        }
 
-    outer.OnChanged = null;
-    UiAutomationNode editorNode = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "editor");
-    var editor = (Lumyte.UI.TextEditing.TextBoxElement)surface.FindElement(editorNode.Id)!;
-    surface.BringIntoView(editor, editor.ContentBounds);
-    surface.TryFocus(editor);
-    if (editor.CurrentLayout is null || !ReferenceEquals(surface.FocusedElement, editor))
-    {
-        throw new InvalidOperationException("The borrowed TextBox provider was not retained through scrolling.");
-    }
+        outer.OnChanged = null;
+        UiAutomationNode editorNode = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "editor");
+        var editor = (Lumyte.UI.TextEditing.TextBoxElement)surface.FindElement(editorNode.Id)!;
+        surface.BringIntoView(editor, editor.ContentBounds);
+        surface.TryFocus(editor);
+        if (editor.CurrentLayout is null || !ReferenceEquals(surface.FocusedElement, editor))
+        {
+            throw new InvalidOperationException("The borrowed TextBox provider was not retained through scrolling.");
+        }
 
-    UiAutomationNode target = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "last");
-    surface.BringIntoView(surface.FindElement(target.Id)!, new(0, 0, 100, 30));
-    if (outer.Offset != outer.Maximum)
-    {
-        throw new InvalidOperationException("BringIntoView did not reveal the last button.");
-    }
-});
+        UiAutomationNode target = surface.CaptureAutomationSnapshot().Nodes.Single(node => node.TestId == "last");
+        surface.BringIntoView(surface.FindElement(target.Id)!, new(0, 0, 100, 30));
+        if (outer.Offset != outer.Maximum)
+        {
+            throw new InvalidOperationException("BringIntoView did not reveal the last button.");
+        }
+    });
+}
+
 await app.StopAsync();
 await run;
 Console.WriteLine("C5 headless nested wheel, touch pan, BringIntoView and real ScrollBar passed.");

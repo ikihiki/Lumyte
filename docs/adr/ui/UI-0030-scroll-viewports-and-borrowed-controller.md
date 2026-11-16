@@ -55,7 +55,7 @@ ScrollBarは有限制約からtrackと最小thumb長を計算する。thumbの�
 
 ### 自動操作の境界
 
-ローカルのScrollAsyncは通常のwheelを排他的入力leaseへ配送する。リモートのschemaVersion 5のscroll操作はpositionを符号付き論理差分として扱い、OverrideInput権限と通常のleaseを要求する。既存のsnapshotのフィールド数は変更せず、未知のscroll roleはnoneへ投影するため、v1〜v4の厳密な読取器を維持する。
+ローカルのScrollAsyncは通常のwheelを排他的入力leaseへ配送する。取得後の最新snapshotと通常のwheel hitを照合し、対象の子孫以外や別window、menuに遮られた対象へ入力しない。pointerのClick対象は要求しない。リモートのschemaVersion 5のscroll操作はpositionを符号付き論理差分として扱い、OverrideInput権限と通常のleaseを要求する。既存のsnapshotのフィールド数は変更せず、未知のscroll roleはnoneへ投影するため、v1〜v4の厳密な読取器を維持する。
 
 ### 契約とAPI差分
 
@@ -104,6 +104,8 @@ ScrollBarは有限制約からtrackと最小thumb長を計算する。thumbの�
 +    {
 +        // 接続済み対象とfinite矩形を要求する。
 +        public bool BringIntoView(UiElement element, Rect2D rectangle);
++        // 通常のwheelと同じ最深hit。pointerの有効化callbackは呼ばない。
++        public UiAutomationId? ProbeWheel(Vector2 logicalPosition);
 +    }
 +}
 +namespace Lumyte.UI.Controls

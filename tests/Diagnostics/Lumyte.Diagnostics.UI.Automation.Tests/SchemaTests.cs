@@ -42,10 +42,7 @@ public sealed class SchemaTests
     [InlineData("-1e999")]
     [InlineData("3.5e38")]
     [InlineData("-3.5e38")]
-    public void RawScrollDeltaMustFitFiniteFloat(string number)
-    {
-        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":5,\"kind\":\"scroll\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"viewport\"}],\"position\":{\"x\":" + number + ",\"y\":0}}"));
-    }
+    public void RawScrollDeltaMustFitFiniteFloat(string number) => Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":5,\"kind\":\"scroll\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"viewport\"}],\"position\":{\"x\":" + number + ",\"y\":0}}"));
 
     /// <summary>Checks canonical modifier normalization, explicit nullable fields and copied arrays.</summary>
     [Fact]

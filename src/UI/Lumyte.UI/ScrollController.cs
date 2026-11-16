@@ -68,6 +68,7 @@ public sealed class ScrollController : IDisposable
 
         CheckThread();
         _disposed = true;
+        _reservation = null;
         ScrollViewElement? owner = _owner;
         _owner = null;
         owner?.ControllerDisposed();
@@ -146,7 +147,7 @@ public sealed class ScrollController : IDisposable
         float accepted = (float)Math.Clamp((double)before + delta, 0, Maximum);
         float consumed = accepted - before;
         SetOffset(accepted);
-        return delta - consumed;
+        return delta >= 0 ? Math.Clamp(delta - consumed, 0, delta) : Math.Clamp(delta - consumed, delta, 0);
     }
 
     private void SetOffset(float value)

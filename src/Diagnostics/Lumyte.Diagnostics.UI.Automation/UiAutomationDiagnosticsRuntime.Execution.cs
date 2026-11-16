@@ -348,6 +348,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime
 
         public UiPointerProbe ProbePointer(UiSurface surface, Vector2 position) => host is IUiAutomationRoutingHost routing ? routing.ProbePointer(surface, position) : surface.ProbePointer(position);
 
+        public UiAutomationId? ProbeWheel(UiSurface surface, Vector2 position) => host is IUiAutomationRoutingHost routing ? routing.ProbeWheel(surface, position) : surface.ProbeWheel(position);
+
         public bool CanReceiveKeys(UiSurface surface) => host is not IUiAutomationRoutingHost routing || routing.CanReceiveKeys(surface);
 
         public bool Dispatch(UiSurface surface, UiInput input) => host is IUiAutomationRoutingHost routing ? routing.Dispatch(surface, input) : surface.Dispatch(input);

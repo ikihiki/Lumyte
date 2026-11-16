@@ -90,6 +90,11 @@ public sealed partial class UiSurface
     public UiAutomationId? ProbeWheel(Vector2 logicalPosition)
     {
         ThrowIfDisposed();
+        if (!float.IsFinite(logicalPosition.X) || !float.IsFinite(logicalPosition.Y))
+        {
+            throw new ArgumentOutOfRangeException(nameof(logicalPosition));
+        }
+
         UpdateLayout();
         return RedactProbe(HitTest(logicalPosition), null).HitElement;
     }

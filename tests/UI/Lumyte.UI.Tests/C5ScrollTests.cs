@@ -11,14 +11,17 @@ public sealed class C5ScrollTests
 {
     /// <summary>Callback movement cannot contribute to the wheel residual.</summary>
     /// <param name="callbackOffset">The independently requested callback offset.</param>
+    /// <param name="pan">Whether touch panning delivers the delta.</param>
     [Theory]
-    [InlineData(100)]
-    [InlineData(0)]
-    public void CallbackMovementCannotReverseWheelResidual(float callbackOffset)
+    [InlineData(100, false)]
+    [InlineData(0, false)]
+    [InlineData(100, true)]
+    [InlineData(0, true)]
+    public void CallbackMovementCannotReverseWheelResidual(float callbackOffset, bool pan)
     {
         using var outer = new ScrollController();
         using var inner = new ScrollController();
-        using var surface = new UiSurface(ScrollView(controller: outer)[Stack()[SizedBox(height: 100), ScrollView(controller: inner, height: 100)[SizedBox(height: 300)], SizedBox(height: 300)]]);
+        using var surface = new UiSurface(ScrollView(controller: outer)[Stack()[SizedBox(height: 100), ScrollView(controller: inner, width: 100, height: 100)[SizedBox(width: 100, height: 300)], SizedBox(height: 300)]]);
         surface.SetViewport(new(100));
         surface.UpdateLayout();
         outer.ScrollTo(100);
@@ -30,7 +33,17 @@ public sealed class C5ScrollTests
                 inner.ScrollTo(callbackOffset);
             }
         };
-        surface.Dispatch(new UiWheelInput(new(10), new(0, 50)));
+        if (pan)
+        {
+            surface.Dispatch(new UiPointerInput(77, UiPointerPhase.Down, new(10, 70)) { Device = UiPointerDevice.Touch });
+            surface.Dispatch(new UiPointerInput(77, UiPointerPhase.Move, new(10, 20)) { Device = UiPointerDevice.Touch });
+            surface.Dispatch(new UiPointerInput(77, UiPointerPhase.Up, new(10, 20)) { Device = UiPointerDevice.Touch });
+        }
+        else
+        {
+            surface.Dispatch(new UiWheelInput(new(10), new(0, 50)));
+        }
+
         Assert.Equal(100, outer.Offset);
         Assert.Equal(callbackOffset, inner.Offset);
     }
@@ -350,15 +363,6 @@ public sealed class C5ScrollTests
         Assert.Throws<InvalidOperationException>(() => invalid.UpdateLayout());
     }
 
-    private sealed class Probe(Func<UiBoxConstraints, Vector2> layout) : Definitions.Widget
-    {
-        protected override UiElement CreateElement() => new ProbeElement(this, layout);
-    }
-
-    private sealed class ProbeElement(Probe widget, Func<UiBoxConstraints, Vector2> layout) : UiElement<Probe>(widget)
-    {
-        protected override Vector2 LayoutOverride(UiBoxConstraints constraints) => layout(constraints);
-    }
     /// <summary>Fully cross-clipped descendants cannot reveal an unrelated outer axis.</summary>
     [Fact]
     public void CrossClippedRectangleDoesNotScrollOuterViewport()
@@ -391,16 +395,151 @@ public sealed class C5ScrollTests
         Assert.True(next.IsAttached);
     }
 
+    /// <summary>Partial cross clipping reveals only the visible portion through padded orthogonal ancestors.</summary>
+    /// <param name="padding">The inner modifier padding.</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    public void PartialCrossClipRevealsOnlyVisibleRectangle(float padding)
+    {
+        using var outer = new ScrollController();
+        using var inner = new ScrollController();
+        using var surface = new UiSurface(ScrollView(controller: outer, orientation: UiOrientation.Horizontal)[Stack(orientation: UiOrientation.Horizontal)[SizedBox(width: 120), ScrollView(controller: inner, width: 100, with: [Padding.All(padding)])[SizedBox(height: 300)], SizedBox(width: 300)]]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        UiElement target = surface.RootElement.Children[0].Children[1].Children[0];
+        surface.BringIntoView(target, new Rect2D(85, 0, 50, 10));
+        Assert.Equal(120 + (2 * padding), outer.Offset);
+    }
+
+    /// <summary>A later preparation error releases only the new reservation and leaves old bindings untouched.</summary>
+    [Fact]
+    public void FailedPreparationReleasesReservationWithoutChangingOldTree()
+    {
+        using var old = new ScrollController();
+        using var candidate = new ScrollController();
+        using var surface = new UiSurface(ScrollView(controller: old));
+        Definitions.Widget previous = surface.Root;
+        surface.Rebuild(Panel()[ScrollView(controller: candidate), new RejectPreparationWidget()]);
+        Assert.Throws<InvalidOperationException>(surface.UpdateTree);
+        Assert.Same(previous, surface.Root);
+        Assert.True(old.IsAttached);
+        Assert.False(candidate.IsAttached);
+        using var other = new UiSurface(ScrollView(controller: candidate));
+        Assert.True(candidate.IsAttached);
+    }
+
+    /// <summary>Reverse callback movement cannot create forward residual during negative wheel input.</summary>
+    [Fact]
+    public void NegativeWheelCallbackMovementKeepsResidualBounded()
+    {
+        using var outer = new ScrollController();
+        using var inner = new ScrollController();
+        using var surface = new UiSurface(ScrollView(controller: outer)[Stack()[SizedBox(height: 100), ScrollView(controller: inner, width: 100, height: 100)[SizedBox(width: 100, height: 300)], SizedBox(height: 300)]]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        outer.ScrollTo(100);
+        inner.ScrollTo(100);
+        surface.UpdateLayout();
+        inner.OnChanged = value =>
+        {
+            if (value == 50)
+            {
+                inner.ScrollTo(150);
+            }
+        };
+        surface.Dispatch(new UiWheelInput(new(10), new(0, -50)));
+        Assert.Equal(100, outer.Offset);
+        Assert.Equal(150, inner.Offset);
+    }
+
+    /// <summary>Disposal and geometry reentry do not change accepted wheel consumption.</summary>
+    [Fact]
+    public void WheelCallbackDisposalDoesNotCreateAncestorResidual()
+    {
+        using var outer = new ScrollController();
+        using var inner = new ScrollController();
+        using var surface = new UiSurface(ScrollView(controller: outer)[Stack()[ScrollView(controller: inner, width: 100, height: 100)[SizedBox(width: 100, height: 300)], SizedBox(height: 300)]]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        inner.OnChanged = _ =>
+        {
+            inner.Dispose();
+            surface.UpdateLayout();
+        };
+        surface.Dispatch(new UiWheelInput(new(10), new(0, 50)));
+        Assert.Equal(0, outer.Offset);
+        Assert.True(inner.IsDisposed);
+    }
+
+    /// <summary>BringIntoView uses accepted movement even when its callback makes an independent movement.</summary>
+    [Fact]
+    public void BringIntoViewCallbackMovementDoesNotMoveOuterBackwards()
+    {
+        using var outer = new ScrollController();
+        using var inner = new ScrollController();
+        using var surface = new UiSurface(ScrollView(controller: outer)[Stack()[SizedBox(height: 100), ScrollView(controller: inner, width: 100, height: 100)[SizedBox(width: 100, height: 300)], SizedBox(height: 300)]]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        outer.ScrollTo(100);
+        surface.UpdateLayout();
+        inner.OnChanged = value =>
+        {
+            if (value == 50)
+            {
+                inner.ScrollTo(100);
+            }
+        };
+        UiElement target = surface.RootElement.Children[0].Children[1].Children[0];
+        surface.BringIntoView(target, new(0, 140, 10, 10));
+        Assert.Equal(100, outer.Offset);
+        Assert.Equal(100, inner.Offset);
+    }
+
+    /// <summary>A non-scroll clipping ancestor also blocks reveal propagation.</summary>
+    [Fact]
+    public void GeneralClipToBoundsStopsFullyHiddenReveal()
+    {
+        using var controller = new ScrollController();
+        using var surface = new UiSurface(ScrollView(controller: controller, orientation: UiOrientation.Horizontal)[Stack(orientation: UiOrientation.Horizontal)[SizedBox(width: 120), Panel(width: 100, clipToBounds: true)[SizedBox(width: 100, height: 100)], SizedBox(width: 300)]]);
+        surface.SetViewport(new(100));
+        surface.UpdateLayout();
+        UiElement target = surface.RootElement.Children[0].Children[1].Children[0];
+        surface.BringIntoView(target, new(150, 0, 10, 10));
+        Assert.Equal(0, controller.Offset);
+    }
+
+    private sealed class Probe(Func<UiBoxConstraints, Vector2> layout) : Definitions.Widget
+    {
+        protected override UiElement CreateElement() => new ProbeElement(this, layout);
+    }
+
+    private sealed class ProbeElement(Probe widget, Func<UiBoxConstraints, Vector2> layout) : UiElement<Probe>(widget)
+    {
+        protected override Vector2 LayoutOverride(UiBoxConstraints constraints) => layout(constraints);
+    }
+
     private sealed class ReentryWidget(Action callback) : Definitions.Widget
     {
-        protected override UiElement CreateElement() => new ReentryElement(this, callback);
+        internal Action Callback { get; } = callback;
+
+        protected override UiElement CreateElement() => new ReentryElement(this);
     }
 
-    private sealed class ReentryElement(ReentryWidget widget, Action callback) : UiElement<ReentryWidget>(widget)
+    private sealed class ReentryElement(ReentryWidget widget) : UiElement<ReentryWidget>(widget)
     {
-        protected override void OnMounted() => callback();
+        protected override void OnMounted() => Widget.Callback();
 
-        protected override void OnWidgetUpdated(ReentryWidget previous) => callback();
+        protected override void OnWidgetUpdated(ReentryWidget previous) => Widget.Callback();
     }
 
+    private sealed class RejectPreparationWidget : Definitions.Widget
+    {
+        protected override UiElement CreateElement() => new RejectPreparationElement(this);
+    }
+
+    private sealed class RejectPreparationElement(RejectPreparationWidget widget) : UiElement<RejectPreparationWidget>(widget)
+    {
+        protected override Action? PrepareUpdate(RejectPreparationWidget next, UiElementUpdateContext context) => throw new InvalidOperationException("prepare");
+    }
 }
