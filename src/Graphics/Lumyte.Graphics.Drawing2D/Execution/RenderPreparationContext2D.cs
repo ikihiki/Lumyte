@@ -29,6 +29,10 @@ public sealed class RenderPreparationContext2D
     /// <summary>Gets the target geometry normalized to Load.</summary>
     public DrawingTargetInfo2D Target { get; }
 
+    internal bool ComputeShapeMembership { get; init; }
+
+    internal long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
+
     internal ClipNormalizationCache2D Clips { get; }
 
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
@@ -49,7 +53,7 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return new(Device, Target, _resources, argumentPlan);
+        return new(Device, Target, _resources, argumentPlan) { ComputeShapeMembership = ComputeShapeMembership, MaxWorkingBytes = MaxWorkingBytes };
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);

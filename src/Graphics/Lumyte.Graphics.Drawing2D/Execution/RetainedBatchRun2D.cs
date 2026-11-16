@@ -10,7 +10,7 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
 
     public long EstimatedBytes => batches.OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes);
 
-    internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D);
+    internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D && batch is not PreparedRecordBatch2D { HasShapeMembership: true });
 
     public void AccountMemory(Dictionary<object, long> owners)
     {

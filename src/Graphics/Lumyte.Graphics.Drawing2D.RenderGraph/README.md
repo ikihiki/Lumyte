@@ -103,3 +103,9 @@ compiled planの記録前にもprogramの失効を検査します。
 手動構成ではconstructorへDrawingResources2Dを渡します。GPU資源は利用側が保持するか、
 resourceOwnerへ所有者を渡してrendererとpreparedの内部共有に移譲します。
 fragment artifactはpipelineのshaderから取得し、別のprogram取得経路は持ちません。
+
+## 任意の描画方式からEffectImageへ
+
+`await graph.Append2D(renderer, content, new DrawingImageOptions2D { Bounds = bounds, PixelScale = dpr })` は `IRenderer2D` と DrawList/read lease/snapshot を受け、同じ親graph内に Rgba16Float / DisplayLinear の `EffectImage` を返します。毎回透明clearし、既存ImageEffectsへ接続できます。backend専用Canvasや入れ子graphは不要です。
+
+copy、compute、raster、resolveは別pass。ABI登録とmapのためbufferを準備ownerが確保し、複数pass専用の内部準備資源登録で依存とcullingを保ちます（単一passのUseLocalBufferではありません）。Append失敗後はgraphを廃棄してください。rendererをAppend完了後にDisposeしてもplan所有資源は残ります。graph外で作るGPU入力は呼出側の寿命契約です。

@@ -368,6 +368,8 @@ public sealed partial class Drawing2DTests
     {
         public CommandBufferState State => native.State;
 
+        internal int ComputePasses { get; private set; }
+
         internal List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> Roots { get; } = [];
 
         public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
@@ -389,7 +391,11 @@ public sealed partial class Drawing2DTests
 
         public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots, selection);
 
-        public IComputeEncoder BeginComputePass(ComputePassDesc desc) => native.BeginComputePass(desc);
+        public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+        {
+            ComputePasses++;
+            return native.BeginComputePass(desc);
+        }
 
         public void Finish() => native.Finish();
 

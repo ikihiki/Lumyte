@@ -25,7 +25,7 @@ public sealed partial class Renderer2D
     public ValueTask<PreparedDrawingFrame2D> PrepareAsync(DrawingSnapshot2D source, RenderTarget2D target, CancellationToken cancellationToken = default)
         => PrepareRetainedAsync(source, target, cancellationToken);
 
-    private static DrawList2D TransformPages(IReadOnlyList<DrawList2D> pages, Matrix3x2 transform, IReadOnlyList<DrawingSceneClip2D> parentClips, int firstCommand = 0, int commandCount = int.MaxValue)
+    internal static DrawList2D TransformPages(IReadOnlyList<DrawList2D> pages, Matrix3x2 transform, IReadOnlyList<DrawingSceneClip2D> parentClips, int firstCommand = 0, int commandCount = int.MaxValue)
     {
         var clips = new Dictionary<ClipStack2D, ClipStack2D>(ReferenceEqualityComparer.Instance);
         var result = new List<DrawingCommand2D>();
@@ -101,7 +101,7 @@ public sealed partial class Renderer2D
                 List<RetainedDrawingCache2D.Asset> assets = frame.Assets;
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
-                var context = new RenderPreparationContext2D(_device, info, _resources, plan);
+                var context = new RenderPreparationContext2D(_device, info, _resources, plan) { ComputeShapeMembership = _computeShapeMembership, MaxWorkingBytes = _options.MaxWorkingBytes };
 
                 // Capture only immutable page/property values. The source and its mutable lease
                 // are never captured by the returned frame or by cached GPU assets.
@@ -136,6 +136,11 @@ public sealed partial class Renderer2D
                                 transform?.Failure(error);
                                 throw;
                             }
+                        }
+
+                        if (_computeShapeMembership)
+                        {
+                            DrawingWorkingBudget2D.Validate(transformed, info, _options.MaxWorkingBytes);
                         }
 
                         var batches = new List<IPreparedCommandBatch2D>();
@@ -194,6 +199,10 @@ public sealed partial class Renderer2D
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                if (_computeShapeMembership && assets.Select(asset => asset.Batch).OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes) > _options.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Standard retained preparation exceeds MaxWorkingBytes.");
+                }
 
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
 

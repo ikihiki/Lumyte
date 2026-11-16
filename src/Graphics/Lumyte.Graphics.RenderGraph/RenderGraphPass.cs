@@ -18,7 +18,7 @@ public sealed class RenderGraphPass
     /// <summary>Gets the diagnostic pass name.</summary>
     public string Name { get; }
 
-    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && use.Resource.LocalPassOwner is null && RenderGraphValidation.IsWrite(use.Scope));
+    internal bool IsRoot => HasSideEffects || _uses.Any(use => !use.Resource.IsTransient && !use.Resource.PreparationLocal && use.Resource.LocalPassOwner is null && RenderGraphValidation.IsWrite(use.Scope));
 
     internal bool HasSideEffects { get; private set; }
 
@@ -161,6 +161,12 @@ public sealed class RenderGraphPass
         AddUse(texture, TextureState.Sampled, scope, false, new(texture, 0, 0, false, ArgumentBufferAccess.Read, lookup => lookup.ReadNativeTexture(texture, view)), repeated: true);
         return this;
     }
+
+    internal RenderGraphPass UsePreparationBuffer<T>(BufferSlice<T> range, BarrierScope scope)
+        where T : unmanaged => UseBufferCore(Owner.PreparationBuffer(range.Buffer), range.Offset, range.Count, scope, discard: false, repeated: true);
+
+    internal RenderGraphPass UsePreparationShaderData<T>(ShaderDataSlice<T> range, BarrierScope scope)
+        where T : struct, IShaderArguments => UseShaderDataCore(Owner.PreparationShaderData(range.Buffer), range.Offset, range.Count, scope, discard: false, repeated: true);
 
     internal RenderGraphPass UseLocalBuffer<T>(BufferSlice<T> range, BarrierScope scope)
         where T : unmanaged => UseBufferCore(Owner.LocalBuffer(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);

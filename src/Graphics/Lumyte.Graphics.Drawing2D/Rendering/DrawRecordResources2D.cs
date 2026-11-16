@@ -6,6 +6,7 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
 {
     private readonly List<IDisposable> _owned = [];
     private readonly Dictionary<int, IGraphicsPipeline> _pipelines = [];
+    private IGraphicsComputePipeline? _membership;
 
     internal DrawNumericPool2D NumericPool { get; } = new(device, poolBudget);
 
@@ -28,7 +29,7 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
             return existing;
         }
 
-        string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
+        string variant = mode switch { 8 => "-membership", 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
         IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-vertex.lshader")));
         IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-fragment.lshader")));
         DrawRecordAbi2D.Validate(vertex.Artifact, device.Caps.ShaderTarget, mode);
@@ -36,6 +37,17 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
         IGraphicsPipeline pipeline = Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
         _pipelines.Add(mode, pipeline);
         return pipeline;
+    }
+
+    internal IGraphicsComputePipeline GetMembershipPipeline()
+    {
+        if (_membership is not null)
+        {
+            return _membership;
+        }
+
+        IGraphicsShader shader = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.shape-membership-compute.lshader")));
+        return _membership = Own(device.CreateComputePipeline(new() { ComputeShader = shader }));
     }
 
     private T Own<T>(T value)

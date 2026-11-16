@@ -1,6 +1,6 @@
 # ADR-GRAPHICS-0036: 同じ2D記録を三種類の描画方式で実行し、共通グラフで合成する
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-11-16
 - 基準コミット: `b9c93f001f960221dc13eed5f6edc0bf04914c02`
 - 変更関係: 一部変更
@@ -132,7 +132,7 @@ Append2Dは同じdeviceのparentがIsBuildingである間に呼ぶ。内部の�
 
 compute出力bufferのReadWrite登録とfragmentのReadOnly登録はpassごとの別表へ置く。選択表全体がbindingへ投影される基準コミットの `src/Graphics/Lumyte.Graphics.Shared/ShaderBindingData.cs` の制約に従い、同じ範囲のRO/RWを一表へ同時登録しない。表のbinding admissionとGPU barrierは両方必要である。GPU scanは複数dispatchとgraph依存で実装し、workgroup間をローカルbarrierだけで同期しない。
 
-GPU一時資源はgraphがCreateBuffer/CreateTextureで作り、固定pipeline、upload、rendererの資源tokenはIRenderGraphLifetimeへまとめて準備開始前にRetainする。成功したCompileでplanへ移し、未Compileの放棄、Append失敗、Compile失敗でも同じownerがcleanupを保持する。Append失敗後はparentを捨てて再構築し、部分的な追加を成功扱いしない。
+画像の一時資源はgraphがCreateTextureで作る。shader dataのABI登録と非同期mapをCompileより前に完了するため、bufferは準備ownerが作り、親graphへ準備専用の共有資源として登録する。この内部登録は複数passの依存・未初期化read検査を有効にし、外部importへのwriteのようなculling rootにはしない。単一pass専用のUseLocalBufferへ複数passのbufferを登録しない。固定pipeline、upload、rendererの資源tokenはIRenderGraphLifetimeへまとめて準備開始前にRetainする。成功したCompileでplanへ移し、未Compileの放棄、Append失敗、Compile失敗でも同じownerがcleanupを保持する。Append失敗後はparentを捨てて再構築し、部分的な追加を成功扱いしない。
 
 直接・保持描画では既存の一回Record、AttachSubmission、完了とcommand破棄後のRetireを維持する。immutableなCPU記録・形状・strip・paintのcacheと、frameごとに書くmask・tile・scan・色bufferを分け、in-flight frame間で可変領域を共有しない。cache keyにはbackend、入力identity、transform、clip、origin、DPR、extent、誤差規則、device/resource generationを含める。paint変更だけで再利用できるshape cacheと、paint込みの画像cacheを混同しない。
 
