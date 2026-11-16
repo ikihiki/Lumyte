@@ -1,0 +1,24 @@
+using System.Runtime.Versioning;
+using Lumyte.Maps;
+using Lumyte.Maps.Browser.Sample;
+using Lumyte.Maps.Mvt;
+using Lumyte.Maps.Sample;
+using Lumyte.Memory.DependencyInjection;
+using Lumyte.Resources;
+using Lumyte.Resources.DependencyInjection;
+using Lumyte.UI.Application;
+using Lumyte.UI.Application.Browser;
+using Microsoft.Extensions.DependencyInjection;
+
+[assembly: SupportedOSPlatform("browser")]
+
+var registration = new InMemoryMvtRegistration("handmade", "v1", new MapTileLoadProfile("browser-sample"), new Dictionary<MapTileId, ReadOnlyMemory<byte>> { [new(0, 0, 0)] = LocalFixture.CreateTile() });
+UiApplicationBuilder builder = UiApplication.CreateBuilder(args).UseBrowser();
+builder.Services.AddMemoryManagement();
+builder.Services.AddSingleton(registration);
+builder.Services.AddResources(resources => resources.UseSource<InMemoryMvtSource>().AddSourcePipeline<MapTileContent, MvtResourceStage>());
+builder.UseContent(services => BrowserProbe.Content = new BrowserMapContent(services.GetRequiredService<ResourceManager>(), registration));
+await using UiApplication app = builder.Build();
+BrowserProbe.Application = app;
+await app.RunAsync();
+Console.WriteLine("Maps Browser stopped cleanly after bounded in-memory MVT adoption.");

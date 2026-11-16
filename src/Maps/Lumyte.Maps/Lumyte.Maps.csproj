@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Core/Lumyte.Resources/Lumyte.Resources.csproj" />
+    <ProjectReference Include="../../Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Execution/Lumyte.Execution.csproj" />
+  </ItemGroup>
+</Project>

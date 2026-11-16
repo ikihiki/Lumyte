@@ -53,6 +53,7 @@ internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
         {
             hash.Add(element.Transform);
             hash.Add(element.Rule);
+            hash.Add(element.IsOwnership);
             hash.Add(element.Path.Segments.Count);
             geometryBytes = checked(geometryBytes + ((long)element.Path.Segments.Count * 32));
             foreach (PathSegment2D segment in element.Path.Segments)
@@ -111,7 +112,7 @@ internal sealed class ClipNormalizationCache2D(DrawingTargetInfo2D target)
         for (int i = 0; i < left.Length; i++)
         {
             ClipElement2D a = left[i], b = right[i];
-            if (a.Transform != b.Transform || a.Rule != b.Rule
+            if (a.Transform != b.Transform || a.Rule != b.Rule || a.IsOwnership != b.IsOwnership
                 || a.Path.Segments.Count != b.Path.Segments.Count)
             {
                 return false;

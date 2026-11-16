@@ -171,3 +171,11 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 返却済み状態は資産ではなく frame ごとの使用権に保持します。cleanup が失敗して古い Retire を再試行しても、後の frame に貸し出した資産を返却し直しません。GPU 完了または未送信が確定した枠の返却と、失敗した資産 cleanup の再試行を分け、失敗した資産は cache 側が保持します。Prepare が返る前に失敗した場合も枠を失わず、次の Prepare または renderer.Dispose で保留 cleanup を再試行します。cleanup が継続して失敗する場合は新規準備より先にその失敗を通知し、使用中 frame と誤って報告しません。Prepare と cleanup の両方が失敗した場合は、両方の例外を AggregateException に保持します。
 
 この直接描画経路は既存 direct renderer と同様に、RenderGraph の layer/effect 命令を受け付けません。対応しない命令は明示的に失敗し、別 shader へ黙って置き換えません。
+
+## pixelの所有範囲の分割
+
+`DrawingCanvas2D.ClipOwnershipRect(rect)`は、通常のアンチエイリアス付き`ClipRect`によるUI境界とは別の矩形を記録します。準備時にtargetのpixel scaleと原点を適用し、変換後のdevice座標における半開領域`[minimum, maximum)`内に中心があるpixelを丸ごと含めます。含まれたpixelは形状・paintのすべてのアンチエイリアス用サンプルを維持するため、隣接する半透明の余白付き描画で、端数位置の継ぎ目に部分clip coverageが重ねて乗算されません。変えるのは所有範囲だけで、カメラ座標や形状は変更しません。
+
+平行移動、軸平行の拡縮、反転に対応します。記録、Replay、保持型sceneの変換で加わる回転・せん断は準備時に明示的に拒否し、アンチエイリアス付きclipへ暗黙に切り替えません。特異変換は空領域になります。Replayと保持型ページの再配置でも所有情報を維持し、構造的なclip cacheは所有範囲とアンチエイリアス形状を区別します。外側のUI境界には通常の`ClipRect`を使用してください。
+
+共有端点を持つ呼出側は `ClipOwnershipRect(Vector2 minimum, Vector2 maximum)` で幅への変換と再加算を避け、端点をそのまま記録できます。矩形 overload と同じ device 中心の所有・変換契約を使います。
