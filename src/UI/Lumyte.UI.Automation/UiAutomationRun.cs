@@ -139,10 +139,10 @@ internal sealed class UiAutomationRun : IDisposable
 
     internal bool CanReceiveKeys(UiSurface surface) => Host is not IUiAutomationRoutingHost routing || routing.CanReceiveKeys(surface);
 
-    internal void Send(IUiAutomationInputLease lease, UiSurface surface, UiInput input)
+    internal bool Send(IUiAutomationInputLease lease, UiSurface surface, UiInput input)
     {
         Trace("send " + input);
-        lease.Dispatch(surface, input);
+        return lease.Dispatch(surface, input);
     }
 
     private sealed class RoutingLease(IUiAutomationHost host, IUiAutomationRoutingHost routing, IUiAutomationInputLease inner) : IUiAutomationInputLease

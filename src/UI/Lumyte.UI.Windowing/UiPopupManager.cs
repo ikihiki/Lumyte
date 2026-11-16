@@ -382,6 +382,16 @@ public sealed partial class UiPopupManager : IDisposable
             };
         }
 
+        if (input is UiCheckInput check)
+        {
+            if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, check.Position, out Vector2 at))
+            {
+                throw new InvalidOperationException("coordinate-unavailable");
+            }
+
+            input = check with { Position = at };
+        }
+
         return Dispatch(new UiWindowInputEnvelope(origin, input));
     }
 
@@ -1046,6 +1056,34 @@ public sealed partial class UiPopupManager : IDisposable
             }
 
             return pointerHandled;
+        }
+
+        if (input is UiCheckInput check)
+        {
+            UiWindowHit? hit = _windows.HitTest(originRoot, check.Position);
+            if (hit is not { } destination || destination.InputMode == UiWindowInputMode.Candidate
+                || (menu is not null && menu.Handle.State != UiPopupState.Open)
+                || Surface(destination.Window) is not { } targetSurface)
+            {
+                return false;
+            }
+
+            Popup? hitPopup = _popups.Values.FirstOrDefault(p => p.Window == destination.Window && !p.Closing && p.Mode == UiPopupInputMode.Menu && p.Handle.State == UiPopupState.Open);
+            if (menu is not null && hitPopup is null)
+            {
+                return false;
+            }
+
+            if (hitPopup is not null)
+            {
+                foreach (Popup child in _popups.Values.Where(p => p.Parent == hitPopup).ToArray())
+                {
+                    child.SuppressRestore = true;
+                    Close(child, UiPopupCloseReason.OutsidePress);
+                }
+            }
+
+            return targetSurface.Dispatch(check with { Position = destination.LocalPosition });
         }
 
         if (menu is not null && menu.Handle.State != UiPopupState.Open)

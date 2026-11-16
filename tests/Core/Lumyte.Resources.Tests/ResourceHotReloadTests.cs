@@ -324,29 +324,60 @@ public sealed class ResourceHotReloadTests
     [InlineData(true)]
     public async Task RescanRevalidatesTrackedSourcesAsync(bool overflow)
     {
-        await using Fixture fixture = new(new()
+        await using Fixture fixture = new(ImmediateOptions() with
         {
             MaximumPendingChanges = 1,
         });
         using ResourceLease<Value> original = await fixture.Manager.AcquireLeaseForTestAsync(_key);
         await fixture.InitialCheck.Task.WaitAsync(_timeout);
-        TaskCompletionSource published = NewSignal();
-        fixture.Manager.Reloaded += (_, _) => published.TrySetResult();
-        fixture.Source.Revision = "second";
-        if (overflow)
+        TaskCompletionSource entered = NewSignal();
+        TaskCompletionSource resume = NewSignal();
+        fixture.Source.AfterRevision = async (_, token) =>
         {
-            await fixture.Changes.SendAsync(new(new("untracked-a"), null));
-            await fixture.Changes.SendAsync(new(new("untracked-b"), null));
+            fixture.Source.AfterRevision = null;
+            entered.TrySetResult();
+            await resume.Task.WaitAsync(token);
+        };
+        TaskCompletionSource<ResourceReloadResult> published = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Manager.Reloaded += (_, args) =>
+        {
+            if (args.Result.Status == ResourceReloadStatus.Published)
+            {
+                published.TrySetResult(args.Result);
+            }
+        };
+
+        // Keep the consumer inside an unchanged revision check while the watcher queues
+        // the next batch. Even with no debounce, both identifiers must remain pending.
+        try
+        {
+            await fixture.Changes.SendAsync(new(_asset, null));
+            await entered.Task.WaitAsync(_timeout);
+            fixture.Source.Revision = "second";
+            if (overflow)
+            {
+                await fixture.Changes.SendAsync(new(new("untracked-a"), null));
+                await fixture.Changes.SendAsync(new(new("untracked-b"), null));
+            }
+            else
+            {
+                await fixture.Changes.SendAsync(ResourceSourceChange.Rescan);
+            }
         }
-        else
+        finally
         {
-            await fixture.Changes.SendAsync(ResourceSourceChange.Rescan);
+            resume.TrySetResult();
         }
 
-        await published.Task.WaitAsync(_timeout);
-        Assert.Equal(ResourceReloadStatus.Published, fixture.Manager.LastReloadResult!.Status);
+        ResourceReloadResult result = await published.Task.WaitAsync(_timeout);
+        fixture.Changes.Complete();
+        await fixture.Manager.HotReloadCompletion.WaitAsync(_timeout);
+        Assert.Equal(ResourceReloadStatus.Published, result.Status);
+        Assert.Equal(1, result.UpdatedResources);
+        Assert.Equal(2, fixture.Pipeline.Builds);
         using ResourceLease<Value> current = await fixture.Manager.AcquireLeaseForTestAsync(_key);
         Assert.Equal("second", current.Value.Text);
+        Assert.Equal("first", original.Value.Text);
     }
 
     /// <summary>Watcher failures remain observable while ordinary resource loading remains available.</summary>

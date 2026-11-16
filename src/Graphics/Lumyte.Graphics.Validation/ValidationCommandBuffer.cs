@@ -138,6 +138,12 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
     {
         OutsidePass();
         ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
+        if ((uint)desc.ColorAttachments.Count > Device.Caps.MaxColorAttachments)
+        {
+            throw new ArgumentException("Color attachment count exceeds the enabled device limit.", nameof(desc));
+        }
+
         RenderPassDesc native = desc with { ColorAttachments = desc.ColorAttachments.Select(a => a with { View = Device.Unwrap(a.View) }).ToArray(), DepthStencilAttachment = desc.DepthStencilAttachment is { } depth ? depth with { View = Device.Unwrap(depth.View) } : null };
         using GraphicsValidation.RecordingTransaction tx = Device.Tracker.BeginRecording(this);
         foreach (RenderColorAttachmentDesc attachment in desc.ColorAttachments)

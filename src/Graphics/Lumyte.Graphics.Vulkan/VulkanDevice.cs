@@ -584,7 +584,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             MaxStorageBufferBindingSize = Math.Min(limits.MaxStorageBufferRange, maxBufferSize),
             MaxTextureDimension2D = limits.MaxImageDimension2D,
             MaxTextureArrayLayers = limits.MaxImageArrayLayers,
-            MaxColorAttachments = limits.MaxColorAttachments,
+            MaxColorAttachments = Math.Min(limits.MaxColorAttachments, RenderStateKey.MaxColorTargets),
             MaxSampledTexturesPerStage = limits.MaxPerStageDescriptorSampledImages,
             MaxSamplersPerStage = limits.MaxPerStageDescriptorSamplers,
             MaxSamplerAnisotropy = enabled.SamplerAnisotropy ? checked((ushort)Math.Min(16, Math.Floor(limits.MaxSamplerAnisotropy))) : (ushort)1,

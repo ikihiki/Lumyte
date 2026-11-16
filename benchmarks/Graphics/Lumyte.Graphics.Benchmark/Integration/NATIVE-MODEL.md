@@ -26,3 +26,26 @@ retain failures and outliers, and report iteration-estimate median/p95 plus Memo
 Keep raw results, environment, hashes and statistical qualification under artifacts, not tracked docs.
 Deterministic descriptor counts and ownership are covered by DescriptorReuseGpuTests and
 VulkanDescriptorGenerationTests, not wall-clock/allocation-budget unit assertions.
+
+## Fixed-size key comparison controls
+
+Use filters `*FixedKeyNativeBenchmarks*` and `*FixedKeyStateBenchmarks*` with the same runner.
+RecordIndexed covers 1/32 draws and 1/8 color attachments. PrepareStates covers
+1/32 state changes and matching 0/1/8-attachment passes, without draws or submission.
+Zero-color coverage is state/key correctness only: depth readback is not supported by
+this backend contract, so there is no zero-color full-record or depth-pixel timing claim.
+
+The model fragment shader writes only location zero. Setup submits a current frame and
+checks its opaque-red center at output zero. For eight targets, outputs one through seven
+have WriteMask.None and must retain their transparent clear; each is read back separately.
+This is not an eight-output shader/MRT shading benchmark. CrossPass supports one attachment
+only and rejects other combinations. Public workload target counts outside 0..8 are rejected
+before recording; RecordInstances/Verify additionally reject zero.
+
+For A/B, copy the exact same corrected workload and both benchmark classes into each variant,
+including the source-linked runner. Freeze the generated BDN child output and all DLL hashes
+once per variant, inspect generated benchmark IDs, then launch bounded independent A/B/B/A
+processes without rebuilding. Preserve all actual iterations and outliers, per-process
+median/p95/dispersion, GC operation denominators, and full preparation exports under artifacts.
+Standalone GC bytes per operation are raw measurements, not exporter-corrected MemoryDiagnoser
+integers. Report p95 as an iteration-estimate percentile, not individual-frame latency.

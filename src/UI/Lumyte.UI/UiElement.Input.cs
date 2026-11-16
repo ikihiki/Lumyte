@@ -67,6 +67,11 @@ public partial class UiElement
         return InputBounds.Contains(position) ? this : null;
     }
 
+    /// <summary>Tests a body-local point against the prepared input region, including clips.</summary>
+    /// <param name="localPosition">The body-local point.</param>
+    /// <returns>Whether normal pointer Down is inside this body.</returns>
+    protected bool IsInsideInputBody(Vector2 localPosition) => InputBounds.Contains(localPosition + InputOrigin);
+
     /// <summary>Handles one logical input; return Unhandled to offer it to the owning parent.</summary>
     /// <param name="context">The synchronous delivery context; do not retain it.</param>
     /// <returns>Consumption and propagation behavior.</returns>

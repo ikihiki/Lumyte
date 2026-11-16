@@ -161,6 +161,7 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 - 過去の配置が必要な場合だけ `CaptureSnapshot()` を呼びます。通常の編集に、毎回の過去 snapshot 保持を要求しません。
 - 木の節は自身の内容を先に描き、次に子を順序通り描きます。自身の描画と子を交互に置く場合は、それぞれを内容を持つ子として配置してください。
 - CPU ページと GPU batch は別です。同じ内容ノード内の隣接する互換命令を既存の batch 条件でまとめ、標準矩形の fast path を維持します。ノードをまたいだ batch 統合は行いません。小さなノードへの分割は局所置換を小さくしますが、draw 数が増える場合があります。大きな記録を新しく作って ReplaceContent すると、その内容のページ参照はすべて変わります。group transform/clip の変更では影響する資産を再準備する場合があり、GPU の O(1) 属性更新を保証しません。
+- 所有量の観測は毎回最新の共有 owner・page・pool の概算を読み直します。集計辞書のみ再利用し、観測終了時（例外時も）に参照を消去します。辞書配列の最大容量は生存中の cache に残り得ますが、資産がなくなるか renderer を破棄すると解放対象になります。この scratch は `CachedBytes` の資産概算に含まれず、managed heap 全体や実 VRAM の厳密値ではありません。
 - renderer の同時 frame と未使用 cache は `DrawingRetentionOptions2D` で制限します。`RetentionStatistics` は renderer が発行した compile/reuse と未使用資産の概算量で、driver 全体の draw/upload/VRAM 計測ではありません。
 - 独自 renderer は既存の登録表を通ります。標準 renderer のみが資産再利用へ参加し、独自 renderer の準備呼出しを推測で省略しません。
 - texture/view は借用です。内容の再利用を終え、全 GPU 使用が完了するまで生存させてください。

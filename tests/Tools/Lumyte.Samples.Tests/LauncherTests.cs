@@ -79,6 +79,32 @@ public sealed class LauncherTests
         Assert.Empty(console.Output);
     }
 
+    /// <summary>Verifies borrowed media is selectable through the headless host.</summary>
+    [Fact]
+    public void MediaSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-media"]), console);
+        Assert.Equal("ui-media", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Media.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Verifies controls is selectable through the headless host.</summary>
+    [Fact]
+    public void ControlsSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-controls"]), console);
+        Assert.Equal("ui-controls", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Controls.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies the launcher contract.</summary>
     [Fact]
     public void MissingBackendPromptsOnlyForCompatibleBackends()

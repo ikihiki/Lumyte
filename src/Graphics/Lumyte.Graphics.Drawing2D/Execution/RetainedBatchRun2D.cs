@@ -8,6 +8,8 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
     private int _remaining = batches.Count;
     private List<IPreparedCommandBatch2D>? _failedCleanup;
 
+    public bool HasStableOwners => batches.All(batch => batch is IRetainedMemory2D { HasStableOwners: true });
+
     public long EstimatedBytes => batches.OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes);
 
     internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D);

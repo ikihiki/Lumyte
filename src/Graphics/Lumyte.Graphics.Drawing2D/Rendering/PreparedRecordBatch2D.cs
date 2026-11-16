@@ -42,6 +42,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         void Copy(IGraphicsCommandBuffer commands);
     }
 
+    public bool HasStableOwners => true;
+
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
 
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages

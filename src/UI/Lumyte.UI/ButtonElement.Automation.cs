@@ -12,7 +12,7 @@ public partial class ButtonElement
     protected override bool IsAutomationPressed => IsPressed;
 
     /// <inheritdoc/>
-    protected override bool HasAutomationActivePress => _pressedPointer is not null || _pressedKey is not null;
+    protected override bool HasAutomationActivePress => _activation.HasActivePress;
 
     /// <inheritdoc/>
     protected override IEnumerable<UiElement> GetAutomationChildren() => GetChildren(Widget.Children);

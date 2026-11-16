@@ -103,6 +103,10 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     /// <summary>Gets opaque draw resource sets created through this preparation wrapper.</summary>
     internal IReadOnlyList<ShaderResources> Reservations => _scopes.AsReadOnly();
 
+    // Successful direct materialization publishes statistics once. No subsequent
+    // upload, packing-data release or lifetime-token return changes that charge.
+    internal bool MemorySizeIsStable => _closed && _resourceFactory is null && _registrations is { IsMaterialized: true };
+
     internal long EstimatedBytes => _resourceFactory is not null || _registrations is null
         ? checked(256 + ((long)_scopes.Count * 256))
         : checked(256 + ((_registrations.Statistics.Textures + _registrations.Statistics.Samplers + _registrations.Statistics.Buffers) * 256));

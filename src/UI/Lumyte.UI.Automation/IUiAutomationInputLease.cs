@@ -8,7 +8,7 @@ public interface IUiAutomationInputLease : IAsyncDisposable
 
     /// <summary>Tracks then dispatches this lease's input on the UI thread; validates the borrowed surface belongs to the host.</summary>
     /// <param name="surface">The surface borrowed inside RunOnUiThreadAsync.</param>
-    /// <param name="input">Input owned by this lease; pending keys and pointer capture are retained even if Dispatch throws.</param>
+    /// <param name="input">Pointer, key or desired checked-state input owned by this lease; pending keys and pointer capture are retained even if Dispatch throws. Checked-state input has no pending terminal to release.</param>
     /// <returns>Whether normal dispatch consumed the input.</returns>
     bool Dispatch(UiSurface surface, UiInput input);
 }
