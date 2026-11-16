@@ -12,7 +12,7 @@ bertt/mapbox-vector-tile-csの`ecefc028181e0197aca77b2d7ac2ea278f55cbbf`（`src/
 
 公開入力は`ReadOnlySpan<byte>`から`ReadOnlyMemory<byte>`に変更しました。`byte[]`用の明示overloadもあり曖昧さはありません。既存の所有メモリ／配列を渡し、呼出中は変更しないでください。Spanだけを持つ呼出元は所有メモリの取得方法を変更する必要があります。decoder内部で入力全体を`ToArray`しません。
 
-Coreのreader APIに対する独立したNativeAOT probeの成功は、decoder全体のBrowser／NativeAOT互換性の証明ではありません。本decoder全体と異なるruntime配置の評価は未完了です。
+Coreのreader APIに対する独立したNativeAOT probeの成功だけでは、decoder全体のBrowser／NativeAOT互換性の証明にはなりません。使用する入力形式とconsumerでNativeAOTとBrowserを別々に検証してください。異なるruntimeのメモリ配置を保証するものでもありません。
 
 ## 登録方法
 
