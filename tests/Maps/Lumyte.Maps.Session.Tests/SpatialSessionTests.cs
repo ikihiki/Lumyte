@@ -399,6 +399,87 @@ public sealed class SpatialSessionTests
         await PumpAsync(map, () => map.ReadyVisibleTiles == 4 && map.InFlightTiles == 0);
     }
 
+    /// <summary>The last fixed or finite owner performs manager cleanup even after a spatial owner returned its shared pin.</summary>
+    /// <param name="finite">Whether the legacy session selects from its finite universe.</param>
+    /// <returns>The final-owner cache cleanup checks.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FixedAndFiniteLastOwnerDisposalReclaimsSharedAndDistinctGenerationsAsync(bool finite)
+    {
+        await using var fixture = new Fixture();
+        fixture.Stage.CompleteAll();
+        await using MapSession spatial = fixture.Create(Options());
+        spatial.SetCamera(CameraAt(0.5, 0.5));
+        spatial.SetViewport(new(100, 100));
+        await PumpAsync(spatial, () => spatial.ReadyVisibleTiles == 1);
+        for (int x = 0; x < 4; x++)
+        {
+            await using var legacy = new MapSession(fixture.Manager, fixture.Tiles, new("test", "v1", new(0, 0, 0, 1), []), Options() with { SelectVisibleTiles = finite }, [new(2, x, 0)]);
+            legacy.SetCamera(CameraAt(x + 0.5, 0.5));
+            legacy.SetViewport(new(100, 100));
+            await PumpAsync(legacy, () => legacy.PublishedTiles == 1);
+            if (x == 0)
+            {
+                await spatial.DisposeAsync();
+                Assert.Empty(fixture.Stage.Releases);
+            }
+
+            await legacy.DisposeAsync();
+            Assert.Equal(x + 1, fixture.Stage.Releases.Count);
+        }
+
+        Assert.Equal(4, fixture.Stage.Started.Count);
+    }
+
+    /// <summary>Fixed and finite retains also hold the manager build-view barrier until their real completion is collected.</summary>
+    /// <param name="finite">Whether the old session selects its finite universe by viewport.</param>
+    /// <returns>The mixed-mode admission and cleanup checks.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FixedAndFiniteInFlightParticipateInSpatialMaintenanceBarrierAsync(bool finite)
+    {
+        await using var fixture = new Fixture();
+        await using MapSession spatial = fixture.Create(Options() with { MaxResidentTiles = 1, MaxResidentCpuBytes = 256 });
+        await using var legacy = new MapSession(fixture.Manager, fixture.Tiles, new("test", "v1", new(0, 0, 0, 1), []), Options() with { MaxInFlightTiles = 1, MaxCompletedTiles = 1, SelectVisibleTiles = finite }, [new(2, 1, 0), new(2, 3, 0)]);
+        using var finishOnExit = new StageCompletion(fixture.Stage);
+        spatial.SetViewport(new(100, 100));
+        spatial.SetCamera(CameraAt(0.5, 0.5));
+        await PumpAsync(spatial, () => fixture.Stage.Started.Count == 1);
+        fixture.Stage.Complete(fixture.Stage.Started[0]);
+        await PumpAsync(spatial, () => spatial.ReadyVisibleTiles == 1);
+        legacy.SetViewport(new(100, 100));
+        legacy.SetCamera(CameraAt(1.5, 0.5));
+        await PumpAsync(legacy, () => fixture.Stage.Started.Count == 2);
+        spatial.SetCamera(CameraAt(2.5, 0.5));
+        spatial.Advance();
+        Assert.Equal(1, spatial.RetiringTiles);
+        Assert.Equal(128, spatial.ResidentCpuBytes);
+        Assert.False(spatial.IsMaintenanceInFlight);
+        Assert.Empty(fixture.Stage.ReleaseAttempts);
+        legacy.SetCamera(CameraAt(3.5, 0.5));
+        fixture.Stage.Complete(fixture.Stage.Started[1]);
+        await PumpAsync(legacy, () => legacy.PublishedTiles == 1);
+        Assert.Equal(2, fixture.Stage.Started.Count);
+        fixture.Stage.CompleteAll();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (spatial.ReadyVisibleTiles != 1 || legacy.ReadyVisibleTiles != 1)
+        {
+            spatial.Advance();
+            legacy.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        Assert.Equal(4, fixture.Stage.Started.Count);
+        Assert.Single(fixture.Stage.Releases);
+        await legacy.DisposeAsync();
+        Assert.Equal(3, fixture.Stage.Releases.Count);
+        Assert.Equal(1, spatial.ReadyVisibleTiles);
+        await spatial.DisposeAsync();
+        Assert.Equal(4, fixture.Stage.Releases.Count);
+    }
+
     private static MapSessionOptions Options() => new()
     {
         MaxPendingTiles = 16,
