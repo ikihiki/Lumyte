@@ -340,6 +340,58 @@ contentは`BeginStop`→`IsStopped`確認→ホストのGPU drain→`RetireAsync
 +}
 ```
 
+HTTP入力に関する追加宣言の抜粋は次のとおり。policyの構築補助と各上限の詳細は省略する。
+
+```diff
++namespace Lumyte.Maps.Mvt
++{
++    public sealed class BoundedMvtRegistration
++    {
++        public BoundedMvtRegistration(string dataSetId, string contentVersion,
++            Lumyte.Maps.MapTileLoadProfile profile, System.Collections.Generic.IEnumerable<Lumyte.Maps.MapTileId> tiles);
++        public Lumyte.Maps.MapTileLoadProfile Profile { get; }
++        public Lumyte.Resources.ResourceKey<Lumyte.Maps.MapTileContent> GetKey(Lumyte.Maps.MapTileId tile);
++        // 非公開の不変storageを渡す信頼境界。snapshotとstreamの寿命まで計上を保持する。
++        public Lumyte.Resources.ResourceSourceSnapshot CreateSnapshot(Lumyte.Resources.ResourceId id,
++            System.ReadOnlyMemory<byte> bytes, string revision, System.Action? release = null);
++    }
++    public sealed class MvtResourceStage
++    {
++        public MvtResourceStage(BoundedMvtRegistration registration);
++    }
++}
++namespace Lumyte.Maps.Http
++{
++    public sealed class HttpMvtPolicy
++    {
++        public System.Uri Scope { get; }
++        public string AccessPartition { get; }
++        public int MaxWireBytes { get; }
++        public int MaxExpandedBytes { get; }
++        public int MaxEntries { get; }
++        public long MaxResidentBytes { get; }
++        public System.TimeSpan Deadline { get; }
++    }
++    public sealed class HttpMvtRegistration
++    {
++        public HttpMvtRegistration(string dataSetId, string contentVersion,
++            Lumyte.Maps.MapTileLoadProfile profile, HttpMvtPolicy policy,
++            System.Collections.Generic.IReadOnlyDictionary<Lumyte.Maps.MapTileId, System.Uri> endpoints);
++        public Lumyte.Maps.Mvt.BoundedMvtRegistration Mvt { get; }
++    }
++    public sealed class HttpMvtSource : Lumyte.Resources.IResourceSource, System.IAsyncDisposable
++    {
++        // strict Native handlerを所有する。認証情報をkeyやURLへ含めない。
++        public HttpMvtSource(HttpMvtRegistration registration,
++            System.Net.Http.Headers.AuthenticationHeaderValue? authorization = null, System.TimeProvider? timeProvider = null);
++        // trustHandlerContractを明示。借用handlerの設定を検証できたとは扱わない。
++        public static HttpMvtSource BorrowTrustedClient(HttpMvtRegistration registration,
++            System.Net.Http.HttpClient client, bool trustHandlerContract,
++            System.Net.Http.Headers.AuthenticationHeaderValue? authorization = null, System.TimeProvider? timeProvider = null);
++    }
++}
+```
+
 `SelectVisibleTiles`を使う有限候補モードは、候補一覧を`MaxPendingTiles`以下へ制限し、採用済みデータを停止まで保持する段階的な接続である。未知のIDは背景にし、未配送の不可視候補は配送しない。配送済みretainは終端まで所有して予算内で採用する。常駐容量不足では後続需要を待機させる。この段階を空間優先queueやLRUの実装と同一視しない。
 
 `MapSessionOptions`の既定値は測定目標ではなく、無制限な受付を避ける初期設定である。実行器の受付容量とManagerのmemory設定を検証し、単一タイルの予約が常駐予算を超える構成は生成時に拒否する。解放済みsessionの操作は`ObjectDisposedException`とし、未設定のviewportは0として扱う。
