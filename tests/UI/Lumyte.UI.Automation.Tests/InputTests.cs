@@ -8,6 +8,20 @@ namespace Lumyte.UI.Automation.Tests;
 /// <summary>Checks normal pointer/key series, actionability and exception cleanup without callback retries.</summary>
 public sealed class InputTests
 {
+    /// <summary>Wheel input cannot escape into an occluding sibling viewport.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ScrollRejectsOccludingSiblingAsync()
+    {
+        using var target = new ScrollController();
+        using var occluder = new ScrollController();
+        await using var fixture = new Fixture(Panel()[ScrollView(controller: target, testId: "target")[SizedBox(height: 300)], ScrollView(controller: occluder)[SizedBox(height: 300)]]);
+        await Assert.ThrowsAsync<UiAutomationException>(() => fixture.Page.GetByTestId("target").ScrollAsync(new(0, 30)));
+        Assert.Equal(0, target.Offset);
+        Assert.Equal(0, occluder.Offset);
+        Assert.Empty(fixture.Host.Sent);
+    }
+
     /// <summary>Checks one stable click emits ordinary input in order and invokes the callback once.</summary>
     /// <param name="hasCallback">Whether a callback exists.</param>
     /// <returns>The asynchronous check.</returns>

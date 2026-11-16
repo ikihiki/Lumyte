@@ -14,7 +14,7 @@ public sealed class SchemaTests
     [InlineData("{}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"actorId\":\"admin\"}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"kind\":\"click\",\"locator\":[]}")]
-    [InlineData("{\"schemaVersion\":5,\"kind\":\"snapshot\",\"locator\":[]}")]
+    [InlineData("{\"schemaVersion\":6,\"kind\":\"snapshot\",\"locator\":[]}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"position\":{\"x\":0,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"position\":{\"x\":-1,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"press\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"key\":\"enter\"}")]
@@ -22,6 +22,30 @@ public sealed class SchemaTests
     [InlineData("{\"schemaVersion\":1,\"kind\":\"expect\",\"locator\":[{\"kind\":\"role\",\"role\":\"button\"}],\"predicate\":\"visible\",\"count\":0}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\",\"value\":\"other\"}]}")]
     public void RejectsInvalidPlans(string json) => Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan(json));
+
+    /// <summary>Checks wheel input is versioned, finite and requires input authority.</summary>
+    [Fact]
+    public void ScrollPlansRequireVersionFiveAndFiniteDelta()
+    {
+        var plan = new UiRemotePlan(5, "scroll", [new("test-id", "viewport")], Position: new(-20, 40));
+        UiRemotePlan parsed = UiRemoteSchema.ParsePlan(UiRemoteSchema.SerializePlan(plan));
+        Assert.True(UiRemoteSchema.IsAction(parsed));
+        Assert.Equal(plan.Position, parsed.Position);
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { SchemaVersion = 4 }));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.SerializePlan(plan with { Position = null }));
+    }
+
+    /// <summary>Raw JSON rejects nonfinite doubles and finite doubles outside the float delta range.</summary>
+    /// <param name="number">The raw JSON numeric token.</param>
+    [Theory]
+    [InlineData("1e999")]
+    [InlineData("-1e999")]
+    [InlineData("3.5e38")]
+    [InlineData("-3.5e38")]
+    public void RawScrollDeltaMustFitFiniteFloat(string number)
+    {
+        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":5,\"kind\":\"scroll\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"viewport\"}],\"position\":{\"x\":" + number + ",\"y\":0}}"));
+    }
 
     /// <summary>Checks canonical modifier normalization, explicit nullable fields and copied arrays.</summary>
     [Fact]

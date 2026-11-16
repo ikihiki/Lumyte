@@ -84,6 +84,16 @@ public sealed partial class UiSurface
         return RedactProbe(hit, null);
     }
 
+    /// <summary>Probes the ordinary wheel hit without pointer activation callbacks.</summary>
+    /// <param name="logicalPosition">A surface-local position.</param>
+    /// <returns>The deepest visible input hit.</returns>
+    public UiAutomationId? ProbeWheel(Vector2 logicalPosition)
+    {
+        ThrowIfDisposed();
+        UpdateLayout();
+        return RedactProbe(HitTest(logicalPosition), null).HitElement;
+    }
+
     internal UiAutomationId AllocateAutomationId() => new(_automationSurfaceId, checked(++_automationIdentity));
 
     private static UiPointerProbe RedactProbe(UiElement? hit, UiAutomationId? target)

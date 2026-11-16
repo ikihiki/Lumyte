@@ -11,6 +11,12 @@ public interface IUiAutomationRoutingHost
     /// <returns>A probe only when that surface is the actual destination.</returns>
     UiPointerProbe ProbePointer(UiSurface surface, Vector2 logicalPosition);
 
+    /// <summary>Probes the actual wheel destination, including window and menu scope.</summary>
+    /// <param name="surface">The borrowed surface.</param>
+    /// <param name="logicalPosition">Surface-local position.</param>
+    /// <returns>The routed hit only when this surface receives wheel input.</returns>
+    UiAutomationId? ProbeWheel(UiSurface surface, Vector2 logicalPosition) => ProbePointer(surface, logicalPosition).HitElement;
+
     /// <summary>Tests whether this surface owns the current keyboard scope.</summary>
     /// <param name="surface">The host's borrowed surface.</param>
     /// <returns>Whether key input may reach that surface.</returns>

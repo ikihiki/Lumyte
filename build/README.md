@@ -231,3 +231,5 @@ dotnet run --project build -c Release -- --target VerifyNamedColors --project sr
 ```
 
 値の規則と明示的なreference更新は[保守tool](../tools/colors/Lumyte.NamedColors.Generator/README.md)を参照してください。
+
+C5の検証にはTestUiScroll（core/ControlsとHeadless画面）およびTestUiScrollAot（strict NativeAOTとnative実行）を使う。

@@ -11,6 +11,54 @@ namespace Lumyte.Diagnostics.UI.Automation.Tests;
 /// <summary>Checks read-only media semantics through runtime mapping and the typed wire client.</summary>
 public sealed class SemanticValueTests
 {
+    /// <summary>Checks typed version-five wheel and legacy snapshot role projection through HTTP.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ClientScrollUsesVersionFiveAndPreservesSnapshotShapeAsync()
+    {
+        using var controller = new ScrollController();
+        using var handler = new LoopbackHandler(configureSurface: surface => surface.Rebuild(ScrollView(controller: controller, testId: "viewport")[Stack()[SizedBox(height: 600), new SemanticWidget { Role = UiRole.CheckBox, Checked = null, Selected = true, Group = new(surface.RootElement.AutomationId.SurfaceId, 42), Option = "a", Selection = "a" }]]));
+        using var http = new HttpClient(handler) { BaseAddress = new("http://diagnostics/") };
+        await using var client = new UiAutomationDiagnosticsClient(http, await handler.Ready);
+        UiRemoteTarget target = Assert.Single(await client.ListTargetsAsync());
+        await using UiRemoteControl control = await client.AcquireControlAsync(target.Id);
+        await control.Page.GetByTestId("viewport").ScrollAsync(new(0, 50));
+        UiRemoteJob job = await client.Page(target.Id).StartObservationAsync(new(4, "snapshot", []));
+        UiRemoteJobStatus status = await job.WaitAsync();
+        byte[] bytes = await job.DownloadArtifactAsync(status.ResultArtifactId!.Value);
+        FrozenV4Snapshot snapshot = JsonSerializer.Deserialize(bytes, FrozenV4Context.Default.FrozenV4Snapshot)!;
+        FrozenV4Node choice = snapshot.Nodes.Single(node => node.Role == "checkbox");
+        Assert.Null(choice.IsChecked);
+        Assert.True(choice.IsSelected);
+        Assert.Equal("42", choice.SelectionGroup);
+        Assert.Equal("a", choice.OptionKey);
+        Assert.Equal("a", choice.SelectedKey);
+        Assert.Equal(-50, snapshot.Nodes[1].Bounds.Y);
+        Assert.Equal("none", snapshot.Nodes[0].Role);
+        await job.ReleaseAsync();
+    }
+
+    /// <summary>Checks strict old readers see the original shape for real scroll nodes.</summary>
+    /// <param name="version">The old schema version.</param>
+    /// <returns>The asynchronous check.</returns>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task ScrollViewportProjectsToStrictOldNodeShapeAsync(int version)
+    {
+        using var handler = new LoopbackHandler(configureSurface: surface => surface.Rebuild(ScrollView(testId: "viewport")[SizedBox(height: 600)]));
+        using var http = new HttpClient(handler) { BaseAddress = new("http://diagnostics/") };
+        await using var client = new UiAutomationDiagnosticsClient(http, await handler.Ready);
+        UiRemoteTarget target = Assert.Single(await client.ListTargetsAsync());
+        UiRemoteJob job = await client.Page(target.Id).StartObservationAsync(new(version, "snapshot", []));
+        UiRemoteJobStatus status = await job.WaitAsync();
+        byte[] bytes = await job.DownloadArtifactAsync(status.ResultArtifactId!.Value);
+        OldSnapshot snapshot = JsonSerializer.Deserialize(bytes, OldWireContext.Default.OldSnapshot)!;
+        Assert.Equal("none", snapshot.Nodes[0].Role);
+        await job.ReleaseAsync();
+    }
+
     /// <summary>Checks all new roles roundtrip, locate correctly, and retain semantic value/state.</summary>
     /// <returns>The asynchronous check.</returns>
     [Fact]
