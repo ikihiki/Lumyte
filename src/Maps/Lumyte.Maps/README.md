@@ -60,3 +60,5 @@ CPU試験は記録までを対象とします。NativeのGPU実行、trim付きp
 容量不足では不要 cache を退役し、必要な可視 tile まで無限に入れ替えません。可視集合が常駐容量を超えれば残りは待機し、`IsCapacityBlocked` を返します。進行中の予約が解消できる間は親 fallback を保ちますが、親だけで新しい可視 tile を受付できない場合は親を退役して背景へ縮退することがあります。
 
 `BeginStop` は未配送要求を取消し、新規公開を止めます。`IsStopped` は retain、退役、maintenance の実回収後だけ true です。`DisposeAsync` 単独でも同じ仕事を await し、解放失敗時は charge と後始末状態を保って再試行できます。同期 wait を UI owner へ押し込みません。失敗は `MaintenanceFailure`、進行は `PendingTiles`／`RetiringTiles`／`IsMaintenanceInFlight`／`ReadyVisibleTiles` で確認できます。`ReleasedGenerationCount` は自身の trim が実際に解放した Manager generation 数であり、性能値や session 専用の物理 tile 数ではありません。
+
+fixed／finite の通常の停止・描画規則は変えませんが、最終 `DisposeAsync` は spatial と同じ終端回収／Manager maintenance を使います。他の spatial session が先に共有 pin を返していても、最後の fixed／finite owner の解放後に未使用 generation を残し続けません。通常の fixed／finite `BeginStop` の `IsStopped` は従来どおり配送済み処理の回収を表し、最終 cleanup は `DisposeAsync` を await して確認します。解放失敗後は `IsStopped` を false にして再試行を要求します。

@@ -243,7 +243,7 @@ public sealed partial class MapSession
         }
     }
 
-    private async Task DisposeSpatialAsync()
+    private async Task DisposeOwnedAsync()
     {
         foreach (Entry entry in _entries)
         {

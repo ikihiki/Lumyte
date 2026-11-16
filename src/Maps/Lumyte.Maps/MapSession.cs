@@ -89,7 +89,8 @@ public sealed partial class MapSession : IAsyncDisposable
     public ulong DisplayRevision { get; private set; }
 
     /// <summary>Gets a value indicating whether stop was requested and all retains reached terminal collection.</summary>
-    public bool IsStopped => _spatial ? SpatialStopped : _stopping && _entries.All(entry => entry.Operation is null);
+    public bool IsStopped => _spatial ? SpatialStopped : _stopping && _maintenance is null
+        && !_maintenanceRequired && _maintenanceFailure is null && _entries.All(entry => entry.Operation is null);
 
     /// <summary>Gets storage charged in full even for shared manager cache hits.</summary>
     public long ResidentCpuBytes => _entries.Sum(entry => entry.Charge);
@@ -340,43 +341,7 @@ public sealed partial class MapSession : IAsyncDisposable
         return new(_disposeTask);
     }
 
-    private async Task DisposeCoreAsync()
-    {
-        if (_spatial)
-        {
-            await DisposeSpatialAsync().ConfigureAwait(false);
-            return;
-        }
-
-        foreach (Entry entry in _entries)
-        {
-            if (entry.Operation is { } operation)
-            {
-                ResourceReference<MapTileContent>? result = null;
-                try
-                {
-                    result = await operation.ConfigureAwait(false);
-                }
-                catch (Exception error)
-                {
-                    entry.Error = error;
-                }
-
-                result?.Dispose();
-                entry.Operation = null;
-                EndRetain(entry);
-            }
-
-            entry.Lease?.Dispose();
-            entry.Lease = null;
-            entry.Reference?.Dispose();
-            entry.Reference = null;
-            entry.Charge = 0;
-        }
-
-        _disposed = true;
-        Changed = null;
-    }
+    private Task DisposeCoreAsync() => DisposeOwnedAsync();
 
     private void Enter(bool changing)
     {
