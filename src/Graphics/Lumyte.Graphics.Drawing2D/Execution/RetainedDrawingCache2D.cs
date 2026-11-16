@@ -127,6 +127,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                     Asset asset = _idle[i];
                     Detach(asset);
                     _idle.RemoveAt(i);
+                    ReleaseUnusedMemoryScratch();
                     _reused++;
                     return asset;
                 }
@@ -192,6 +193,9 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     private void DisposeRetiring()
     {
+        // Drop traversal capacity before callbacks, including failed cleanup and
+        // disposal with active frames whose GPU resources must remain alive.
+        ReleaseUnusedMemoryScratch();
         List<Exception>? failures = null;
         for (int index = _retiring.Count - 1; index >= 0; index--)
         {
@@ -217,6 +221,16 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         if (failures is { Count: > 1 })
         {
             throw new AggregateException("Retained resource cleanup failed; the cache owns pending retries.", failures);
+        }
+    }
+
+    private void ReleaseUnusedMemoryScratch()
+    {
+        // Only variable assets need traversal scratch. Empty frame slots and
+        // stable ledger-backed assets must not retain its high-water capacity.
+        if (_disposed || (_idleVariableAssets == 0 && _activeVariableAssets == 0))
+        {
+            _memoryOwners = null;
         }
     }
 
@@ -357,9 +371,10 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             // An observation must not keep pages or shared plans alive, even on failure.
             owners.Clear();
 
-            // Dictionary arrays retain their high-water capacity only while this live
-            // cache has assets. They are traversal scratch, not cached drawing bytes.
-            _memoryOwners = _disposed || (_idle.Count == 0 && _active.Count == 0) ? null : owners;
+            // Dictionary arrays are traversal scratch, not cached drawing bytes.
+            // Reentrant transitions may have removed the last variable asset.
+            _memoryOwners = owners;
+            ReleaseUnusedMemoryScratch();
         }
 
         void Account(Asset asset)

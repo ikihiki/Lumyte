@@ -625,6 +625,71 @@ public sealed class RetainedRenderingCacheTests
         Assert.Equal(state.IdleRecordBytes, cache.Statistics.CachedBytes);
     }
 
+    /// <summary>Traversal capacity is released without another observation at ownership boundaries.</summary>
+    /// <param name="transition">The transition that releases the last accounted asset.</param>
+    [Theory]
+    [InlineData("abandon")]
+    [InlineData("evict")]
+    [InlineData("take")]
+    [InlineData("dispose-idle")]
+    [InlineData("dispose-active")]
+    [InlineData("cleanup-failure")]
+    public void AccountingScratchIsReleasedAtOwnershipBoundary(string transition)
+    {
+        using var cache = new RetainedDrawingCache2D(new() { MaxCachedAssets = transition == "evict" ? 0 : 64 });
+        var batch = new Batch();
+        RetainedDrawingCache2D.FrameLease frame = cache.AcquireFrame();
+        frame.Assets.Add(new(Key(), batch));
+        cache.AdmitFrame(frame);
+        Dictionary<object, long> scratch = Assert.IsType<Dictionary<object, long>>(batch.LastOwners);
+        Assert.True(scratch.EnsureCapacity(0) > 0);
+        Assert.Empty(scratch);
+        System.Reflection.FieldInfo field = typeof(RetainedDrawingCache2D).GetField("_memoryOwners", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        Assert.Same(scratch, field.GetValue(cache));
+
+        if (transition == "dispose-active")
+        {
+            cache.Dispose();
+            Assert.Equal(0, batch.Disposals);
+        }
+        else if (transition == "dispose-idle" || transition == "take")
+        {
+            cache.ReleaseFrame(frame, true);
+            Assert.Same(scratch, field.GetValue(cache));
+            if (transition == "take")
+            {
+                RetainedDrawingCache2D.FrameLease next = cache.AcquireFrame();
+                RetainedDrawingCache2D.Asset asset = Assert.IsType<RetainedDrawingCache2D.Asset>(cache.Take(Key()));
+                Assert.Null(field.GetValue(cache));
+                next.Assets.Add(asset);
+                cache.ReleaseFrame(next, true);
+            }
+
+            cache.Dispose();
+        }
+        else if (transition == "cleanup-failure")
+        {
+            batch.FailuresRemaining = 1;
+            Assert.Throws<InvalidOperationException>(() => cache.ReleaseFrame(frame, false));
+            Assert.Null(field.GetValue(cache));
+            cache.RetryCleanup();
+        }
+        else
+        {
+            cache.ReleaseFrame(frame, transition == "evict");
+        }
+
+        Assert.Null(field.GetValue(cache));
+        if (transition == "dispose-active")
+        {
+            cache.ReleaseFrame(frame, true);
+        }
+
+        Assert.Equal(transition == "cleanup-failure" ? 2 : 1, batch.Disposals);
+        Assert.Equal(0, cache.Statistics.ActiveFrames);
+        Assert.Equal(0, cache.Statistics.CachedBytes);
+    }
+
     private static RetainedDrawingCache2D.Key Key() => new([], Matrix3x2.Identity, [], 64, 64, TextureFormat.Rgba8Srgb, 1);
 
     private sealed class Batch : IRetainedCommandBatch2D, IRetainedMemory2D
