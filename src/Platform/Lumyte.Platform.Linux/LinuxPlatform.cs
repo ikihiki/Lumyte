@@ -304,13 +304,14 @@ public sealed class LinuxPlatform : IPlatform
                 {
                     ulong capture = _source.BeginAcquisition();
                     _source.Mouse(window.Id, new MouseMoveData(new Vector2((int)data.Data3, (int)(data.Data3 >> 32))), capture);
-                    _source.Mouse(window.Id, new MouseWheelData(button switch
+                    Vector2 delta = button switch
                     {
                         4 => new Vector2(0, 1),
                         5 => new Vector2(0, -1),
                         6 => new Vector2(-1, 0),
                         _ => new Vector2(1, 0),
-                    }), capture);
+                    };
+                    _source.Mouse(window.Id, new MouseWheelData(delta), capture);
                 }
             }
             else if (button is 1 or 2 or 3 or 8 or 9)
