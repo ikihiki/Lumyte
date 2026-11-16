@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Lumyte.Samples.Framework;
 using Spectre.Console.Testing;
 using Xunit;
@@ -7,6 +8,19 @@ namespace Lumyte.Samples.Tests;
 /// <summary>Tests launcher selection, argument isolation, and catalog coverage.</summary>
 public sealed class LauncherTests
 {
+    /// <summary>The engine-free helper required by no-build tests is built by the solution.</summary>
+    [Fact]
+    public void BrowserHelperFixtureIsAnEngineFreeSolutionProject()
+    {
+        string root = SampleHost.FindRoot(AppContext.BaseDirectory);
+        const string Project = "samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj";
+        var solution = XDocument.Load(Path.Combine(root, "Lumyte.slnx"));
+        Assert.Contains(solution.Descendants("Project"), element => (string?)element.Attribute("Path") == Project);
+        var fixture = XDocument.Load(Path.Combine(root, Project));
+        Assert.Empty(fixture.Descendants("PackageReference"));
+        Assert.Empty(fixture.Descendants("ProjectReference"));
+    }
+
     /// <summary>Verifies the launcher contract.</summary>
     [Fact]
     public void SeparatorPreservesArgumentsIncludingSpacesAndLauncherOptionNames()

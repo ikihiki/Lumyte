@@ -101,6 +101,7 @@
     <Project Path="samples/Lumyte.Graphics.Direct3D12.Sample/Lumyte.Graphics.Direct3D12.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <Project Path="samples/Lumyte.UI.WebView.Sample/Lumyte.UI.WebView.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
     <Project Path="src/Audio/Lumyte.Resources.Audio.DependencyInjection/Lumyte.Resources.Audio.DependencyInjection.csproj" />
