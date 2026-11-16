@@ -38,11 +38,16 @@
   </ItemGroup>
   <!-- Use the shared MSBuild graph, not recursive independent dotnet build processes. -->
   <Target Name="PrepareLumyteShaderCompiler" Condition="'@(SlangShader)' != ''">
-    <MSBuild Projects="$(_LumyteShaderToolProject)" Targets="Build" Properties="Configuration=Release"
+    <!-- NoBuild consumers (including Pack) may resolve existing output, never build it. -->
+    <PropertyGroup>
+      <_LumyteShaderToolTargetName Condition="'$(NoBuild)' != 'true'">Build</_LumyteShaderToolTargetName>
+      <_LumyteShaderToolTargetName Condition="'$(NoBuild)' == 'true'">GetTargetPath</_LumyteShaderToolTargetName>
+    </PropertyGroup>
+    <MSBuild Projects="$(_LumyteShaderToolProject)" Targets="$(_LumyteShaderToolTargetName)" Properties="Configuration=Release"
              RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" BuildInParallel="false">
       <Output TaskParameter="TargetOutputs" ItemName="_LumyteShaderToolTarget" />
     </MSBuild>
-    <!-- Build returns the tool project's evaluated TargetPath, including alternate output layouts. -->
+    <!-- Both targets return the evaluated TargetPath, including alternate output layouts. -->
     <PropertyGroup>
       <_LumyteShaderTool>@(_LumyteShaderToolTarget->'%(FullPath)')</_LumyteShaderTool>
       <_LumyteShaderToolDirectory>$([System.IO.Path]::GetDirectoryName('$(_LumyteShaderTool)'))</_LumyteShaderToolDirectory>
@@ -54,7 +59,7 @@
   <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
           Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);@(_LumyteShaderToolInputs)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
-          Condition="'@(SlangShader)' != ''">
+          Condition="'@(SlangShader)' != '' and '$(NoBuild)' != 'true'">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
     <ResolveSlangTargets Shader="@(SlangShader)">
       <Output TaskParameter="Targets" PropertyName="_ResolvedSlangTargets" />
@@ -64,6 +69,8 @@
   </Target>
   <Target Name="EmbedSlangShaders" BeforeTargets="AssignTargetPaths"
           DependsOnTargets="CompileSlangShaders" Condition="'@(SlangShader)' != ''">
+    <!-- NoBuild packaging consumes the already embedded assembly; stale or absent
+         intermediates must not compile shaders or require the compiler to exist. -->
     <ItemGroup>
       <_SlangBinaries Include="@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).lshader')" />
       <EmbeddedResource Include="@(_SlangBinaries)">

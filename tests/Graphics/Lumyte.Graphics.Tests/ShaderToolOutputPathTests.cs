@@ -120,6 +120,84 @@ public sealed class ShaderToolOutputPathTests
                 Assert.Equal(compilerTime, File.GetLastWriteTimeUtc(selectedCompiler));
                 Assert.True(File.GetLastWriteTimeUtc(artifact) > previous, assembly + " must invalidate shader output.");
             }
+
+            // Build a real packable shader consumer, then forbid every source build,
+            // restore and compiler invocation. NoBuild must consume its embedded assembly.
+            string consumer = Path.Combine(directory, "package");
+            Directory.CreateDirectory(consumer);
+            string consumerProject = Path.Combine(consumer, "fixture.csproj");
+            string consumerXml = """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+                  <ItemGroup><SlangShader Include="../fixture.slang" ResourceName="fixture" Targets="spirv" /></ItemGroup>
+                  <Import Project="../tools/shaders/Slang.targets" />
+                </Project>
+                """;
+            await File.WriteAllTextAsync(consumerProject, consumerXml);
+            await RunAsync(directory, "build", consumerProject, "-c", "Release", "-p:SlangCompilerPath=" + compiler);
+            string consumerAssembly = Assert.Single(
+                Directory.GetFiles(Path.Combine(directory, "alternate-output"), "fixture.dll", SearchOption.AllDirectories),
+                path => !Path.GetRelativePath(directory, path).Split(Path.DirectorySeparatorChar).Any(part => part is "ref" or "refint" or "obj"));
+            byte[] assemblyBytes = await File.ReadAllBytesAsync(consumerAssembly);
+            using (var embedded = new System.Reflection.PortableExecutable.PEReader(new MemoryStream(assemblyBytes)))
+            {
+                System.Reflection.Metadata.MetadataReader metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(embedded);
+                Assert.Contains(metadata.ManifestResources, handle => metadata.GetString(metadata.GetManifestResource(handle).Name) == "fixture.lshader");
+            }
+
+            string traps = """
+                <Project>
+                  <Target Name="ForbidSourceWork" BeforeTargets="Build;CoreCompile;Restore">
+                    <Error Text="NoBuild packaging attempted a build or restore." />
+                  </Target>
+                </Project>
+                """;
+            await File.WriteAllTextAsync(Path.Combine(directory, "Directory.Build.targets"), traps);
+            string[] pack = ["pack", consumerProject, "-c", "Release", "--no-build", "--no-restore", "-o", Path.Combine(directory, "packages"), "-p:DotNetHostPath=" + Path.Combine(directory, "compiler-execution-trap"), "-p:SlangCompilerPath=" + Path.Combine(directory, "native-compiler-trap")];
+            string consumerArtifact = Assert.Single(Directory.GetFiles(consumer, "fixture.lshader", SearchOption.AllDirectories)
+                .Concat(Directory.GetFiles(Path.Combine(directory, "alternate-output"), "fixture.lshader", SearchOption.AllDirectories)));
+            DateTime artifactTime = File.GetLastWriteTimeUtc(consumerArtifact);
+            await File.AppendAllTextAsync(Path.Combine(directory, "fixture.slang"), "\n// newer source must not compile during pack");
+            File.SetLastWriteTimeUtc(Path.Combine(directory, "fixture.slang"), DateTime.UtcNow.AddMinutes(1));
+            await RunAsync(directory, pack);
+            Assert.Equal(artifactTime, File.GetLastWriteTimeUtc(consumerArtifact));
+
+            // Missing intermediates and missing tool outputs are also valid: the final
+            // assembly already contains the shader. Missing final assembly is not valid.
+            File.Delete(consumerArtifact);
+            string toolRuntime = Assert.Single(
+                Directory.GetFiles(Path.Combine(directory, "alternate-output"), "Lumyte.ShaderCompiler.runtimeconfig.json", SearchOption.AllDirectories),
+                path => Path.GetRelativePath(directory, path).Split(Path.DirectorySeparatorChar).Contains("Lumyte.ShaderCompiler"));
+            string selectedTool = Path.Combine(Path.GetDirectoryName(toolRuntime)!, "Lumyte.ShaderCompiler.dll");
+            File.Delete(selectedTool);
+            string resolvedPath = Path.Combine(directory, "resolved-tool.txt");
+            string verifyToolXml = """
+                  <Target Name="VerifyExistingTool" DependsOnTargets="PrepareLumyteShaderCompiler">
+                    <WriteLinesToFile File="resolved-tool.txt" Lines="$(_LumyteShaderTool)" Overwrite="true" />
+                  </Target>
+                </Project>
+                """;
+            await File.WriteAllTextAsync(project, fixture.Replace("</Project>", verifyToolXml, StringComparison.Ordinal));
+            await RunAsync(directory, "msbuild", project, "-t:VerifyExistingTool", "-p:NoBuild=true", "-nologo");
+            Assert.Equal(selectedTool, (await File.ReadAllTextAsync(resolvedPath)).Trim());
+            Assert.False(File.Exists(selectedTool));
+            File.Delete(Path.Combine(directory, "fixture.slang"));
+            File.Delete(Assert.Single(Directory.GetFiles(Path.Combine(directory, "packages"), "*.nupkg")));
+            await RunAsync(directory, pack);
+            Assert.False(File.Exists(consumerArtifact));
+            Assert.False(File.Exists(selectedTool));
+            using (System.IO.Compression.ZipArchive package = System.IO.Compression.ZipFile.OpenRead(Assert.Single(Directory.GetFiles(Path.Combine(directory, "packages"), "*.nupkg"))))
+            {
+                using Stream packagedAssembly = package.GetEntry("lib/net10.0/fixture.dll")!.Open();
+                using var copy = new MemoryStream();
+                await packagedAssembly.CopyToAsync(copy);
+                Assert.Equal(assemblyBytes, copy.ToArray());
+            }
+
+            File.Delete(consumerAssembly);
+            string failure = await RunAsync(directory, false, pack);
+            Assert.Contains("NU5026", failure);
+            Assert.DoesNotContain("attempted a build or restore", failure);
         }
         finally
         {
@@ -127,7 +205,9 @@ public sealed class ShaderToolOutputPathTests
         }
     }
 
-    private static async Task RunAsync(string directory, params string[] arguments)
+    private static async Task RunAsync(string directory, params string[] arguments) => await RunAsync(directory, true, arguments);
+
+    private static async Task<string> RunAsync(string directory, bool success, params string[] arguments)
     {
         var start = new ProcessStartInfo("dotnet")
         {
@@ -158,6 +238,8 @@ public sealed class ShaderToolOutputPathTests
             throw;
         }
 
-        Assert.True(process.ExitCode == 0, string.Join(' ', arguments) + Environment.NewLine + await stdout + await stderr);
+        string output = await stdout + await stderr;
+        Assert.True(success ? process.ExitCode == 0 : process.ExitCode != 0, string.Join(' ', arguments) + Environment.NewLine + output);
+        return output;
     }
 }
