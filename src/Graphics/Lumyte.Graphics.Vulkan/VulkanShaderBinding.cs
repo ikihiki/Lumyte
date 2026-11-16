@@ -7,16 +7,16 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 {
     private readonly IShaderReference[] _registrations;
     private readonly VulkanArgumentTable _table;
-    private readonly VulkanDevice _owner;
-    private DescriptorPool _pool;
+    private VulkanDescriptorAllocator.Lease? _lease;
+    private int _references = 1;
 
     internal VulkanShaderBinding(VulkanDevice owner, VulkanArgumentTable table, IShaderReference[] registrations, DescriptorSetLayout layout)
     {
-        _owner = owner;
-        _registrations = registrations;
+        _registrations = registrations.Where(r => r.Resource is VulkanTextureView or VulkanSampler).ToArray();
         _table = table;
         try
         {
+            ValidateResources(registrations);
             IShaderReference[] textures = registrations.Where(r => r.Resource is VulkanTextureView).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
             IShaderReference[] samplers = registrations.Where(r => r.Resource is VulkanSampler).GroupBy(r => r.Slot).Select(g => g.First()).ToArray();
             uint textureCount = textures.Length == 0 ? 1 : checked(textures.Max(r => r.Slot) + 1);
@@ -26,13 +26,8 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
                 throw new NotSupportedException("Native descriptor slots exceed the device's per-stage limits.");
             }
 
-            DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[2];
-            sizes[0] = new() { Type = DescriptorType.SampledImage, DescriptorCount = checked((uint)textureCount) };
-            sizes[1] = new() { Type = DescriptorType.Sampler, DescriptorCount = checked((uint)samplerCount) };
-            var pool = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1, PoolSizeCount = 2, PPoolSizes = sizes };
-            Check(owner.Api.CreateDescriptorPool(owner.NativeDevice, &pool, null, out _pool));
-            var allocate = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = _pool, DescriptorSetCount = 1, PSetLayouts = &layout };
-            Check(owner.Api.AllocateDescriptorSets(owner.NativeDevice, &allocate, out DescriptorSet set));
+            _lease = owner.Descriptors.Allocate(layout, textureCount, samplerCount);
+            DescriptorSet set = _lease.Native;
             Native = set;
             WriteDescriptorSet write;
             for (int i = 0; i < textures.Length; i++)
@@ -60,14 +55,30 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
 
     public void Dispose()
     {
-        if (_pool.Handle != 0)
+        if (Interlocked.Decrement(ref _references) == 0)
         {
-            _owner.Api.DestroyDescriptorPool(_owner.NativeDevice, _pool, null);
-            _pool = default;
+            _lease?.Dispose();
+            _lease = null;
         }
 
         GC.KeepAlive(_registrations);
         GC.KeepAlive(_table);
+    }
+
+    internal static void ValidateResources(IShaderReference[] registrations)
+    {
+        foreach (IShaderReference registration in registrations)
+        {
+            if (registration.Resource is VulkanTextureView view)
+            {
+                _ = view.Native;
+                _ = ((VulkanTexture)view.Texture).Native;
+            }
+            else if (registration.Resource is VulkanSampler sampler)
+            {
+                _ = sampler.Native;
+            }
+        }
     }
 
     internal static DescriptorSetLayout CreateLayout(VulkanDevice owner, uint textures = 1, uint samplers = 1)
@@ -82,16 +93,5 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
         return layout;
     }
 
-    private void Check(Result result)
-    {
-        if (result == Result.ErrorDeviceLost)
-        {
-            _owner.ReportLoss("Vulkan operation failed: device lost.");
-        }
-
-        if (result != Result.Success)
-        {
-            throw new InvalidOperationException($"Vulkan shader binding operation failed: {result}.");
-        }
-    }
+    internal void Retain() => Interlocked.Increment(ref _references);
 }

@@ -252,7 +252,20 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         }
     }
 
-    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
+    internal void KeepBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
+    {
+        var recorded = new RecordedBinding(binding, registrations);
+        binding.Retain();
+        try
+        {
+            _bindings.Add(recorded);
+        }
+        catch
+        {
+            binding.Dispose();
+            throw;
+        }
+    }
 
     internal void ValidatePass(object pass) => ValidateEnd(pass);
 
@@ -300,6 +313,24 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         if (State != CommandBufferState.Recording || !ReferenceEquals(_active, pass))
         {
             throw new InvalidOperationException("This pass is not active.");
+        }
+    }
+
+    private sealed class RecordedBinding : IDisposable
+    {
+        private readonly VulkanShaderBinding _binding;
+        private readonly IShaderReference[] _registrations;
+
+        internal RecordedBinding(VulkanShaderBinding binding, IShaderReference[] registrations)
+        {
+            _binding = binding;
+            _registrations = registrations;
+        }
+
+        public void Dispose()
+        {
+            _binding.Dispose();
+            GC.KeepAlive(_registrations);
         }
     }
 }

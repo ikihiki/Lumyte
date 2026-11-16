@@ -341,5 +341,11 @@ internal sealed unsafe partial class VulkanCommandBuffer
         }
     }
 
-    private void DisposeNative() => _owner.Api.DestroyCommandPool(_owner.NativeDevice, _pool, null);
+    private void DisposeNative()
+    {
+        if (_owner.Status != GraphicsDeviceStatus.Disposed)
+        {
+            _owner.Api.DestroyCommandPool(_owner.NativeDevice, _pool, null);
+        }
+    }
 }
