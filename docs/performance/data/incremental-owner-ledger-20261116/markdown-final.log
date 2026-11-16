@@ -1,4 +1,0 @@
-markdownlint-cli2 v0.23.3 (markdownlint v0.41.1)
-Finding: docs/adr/graphics/GRAPHICS-0037-incremental-retained-owner-accounting.md docs/performance/incremental-owner-ledger-20261116.md docs/performance/data/incremental-owner-ledger-20261116/review-resolution.md **/*.md !.git/** !**/node_modules/** !artifacts/** !**/AnalyzerReleases.*.md
-Linting: 325 files
-Summary: 0 issues in 0 files
