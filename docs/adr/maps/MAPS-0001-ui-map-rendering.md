@@ -88,7 +88,7 @@ Xは世界を繰り返すが、取得IDは`x mod 2^z`へ正規化し、表示位
 
 所有境界には`DrawingCanvas2D.ClipOwnershipRect`を使う。準備時のtargetのDPIと原点、記録時および再利用時の変換を適用したdevice座標で、pixel中心が矩形の最小側以上・最大側未満に入るpixelだけを所有する。そのpixelでは形状のantialiasを維持し、所有clip自身はcoverageを減らさない。カメラ、頂点、線幅、通常の外周clipをpixel境界へ丸めない。隣接タイルの共有辺は正規化した同じタイル角から計算し、floatへ変換した最小・最大の端点を直接渡す。原点と幅を独立に丸めて最大端点を再構成すると、小数zoomで一つのpixelを二重所有し得るため、タイル境界には端点overloadを使う。
 
-基準コードでは同じ目的に通常の`ClipRect`だけを使用できる。変更後のタイル内部の記録例は次のとおりで、`canvas`はBegin済みの借用Canvas、`tileBounds`は論理座標の所有矩形、`bufferedPath`は所有境界の外側も保持した不変Pathである。外周のUI clipとホストの準備・GPU寿命は変えない。
+基準コードでは同じ目的に通常の`ClipRect`だけを使用できる。変更後のタイル内部の記録例は次のとおりで、`canvas`はBegin済みの借用Canvas、`tileBounds`は論理座標の所有矩形、`tileMinimum`と`tileMaximum`は共有角から直接計算した最小・最大端点、`bufferedPath`は所有境界の外側も保持した不変Pathである。外周のUI clipとホストの準備・GPU寿命は変えない。
 
 ```csharp
 using Lumyte.Graphics.Drawing2D;
@@ -101,7 +101,7 @@ canvas.Restore();
 
 // 変更後: 所有するpixelを分割し、形状のcoverageだけを合成する。
 canvas.Save();
-canvas.ClipOwnershipRect(tileBounds);
+canvas.ClipOwnershipRect(tileMinimum, tileMaximum);
 canvas.FillPath(bufferedPath, color);
 canvas.Restore();
 ```
