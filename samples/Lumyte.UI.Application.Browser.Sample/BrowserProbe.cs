@@ -57,6 +57,14 @@ public static partial class BrowserProbe
     public static async Task<string> CapturePngAsync()
     {
         var page = new UiAutomationPage(Context?.Automation ?? throw new InvalidOperationException("The sample has not opened its root."), new() { Timeout = TimeSpan.FromSeconds(30) });
-        return Convert.ToBase64String(await page.ScreenshotAsync());
+        try
+        {
+            return Convert.ToBase64String(await page.ScreenshotAsync());
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(exception.ToString());
+            throw;
+        }
     }
 }

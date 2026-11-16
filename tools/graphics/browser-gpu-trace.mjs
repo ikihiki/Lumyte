@@ -1,4 +1,4 @@
-// Only the Transitions verifier opts in; no production renderer configuration.
+// Verifiers opt in; no production renderer configuration.
 // Reuse the existing hosted software gate so the next CI run emits diagnostics
 // without workflow/Build.Validation changes; local runs can opt in independently.
 export function browserGpuTraceEnabled(environment = process.env) {
@@ -64,6 +64,17 @@ export function installBrowserGpuTrace(target = globalThis) {
     function device(value) {
         if (!value || seen.has(value)) return;
         seen.add(value);
+        wrap(value, "createComputePipeline");
+        wrap(value, "createComputePipelineAsync", true);
+        wrap(value, "destroy");
+        safely(() => value.lost?.then(info => emit({ method: "device.lost", status: info.reason, message: info.message })));
+        safely(() => value.addEventListener("uncapturederror", event => emit({ method: "uncapturederror", status: "error", message: event.error?.message })));
+        wrap(value, "createCommandEncoder", false, encoder => {
+            wrap(encoder, "beginComputePass", false, pass => {
+                wrap(pass, "dispatchWorkgroups");
+                wrap(pass, "dispatchWorkgroupsIndirect");
+            });
+        });
         wrap(value, "createRenderPipeline");
         wrap(value, "createRenderPipelineAsync", true);
         // Do not log buffer creation itself; only install the map observer.

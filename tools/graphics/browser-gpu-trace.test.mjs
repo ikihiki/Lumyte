@@ -139,3 +139,39 @@ test("Transitions injects conditionally before navigation, retains capture and k
     assert.match(source, /stage === "entry-midpoint-png" && failure instanceof BrowserEvaluationFailure/);
     assert.ok(!source.includes('stage = "connected-'));
 });
+
+ test("Application injects tracing before navigation and preserves failure evidence and original throw", async () => {
+    const source = await readFile(new URL("../../samples/Lumyte.UI.Application.Browser.Sample/verify-browser.mjs", import.meta.url), "utf8");
+    assert.ok(source.indexOf("installBrowserGpuTrace.toString()") < source.indexOf('await command("Page.navigate"'));
+    for (const field of ["chromeStderr: diagnostics", "errors, progress, state", "lumyteApplicationError", "__lumyteBrowserGpuAudit", "LUMYTE_BROWSER_FAILURE_REPORT", "throw error;"]) assert.ok(source.includes(field), field);
+    const probe = await readFile(new URL("../../samples/Lumyte.UI.Application.Browser.Sample/BrowserProbe.cs", import.meta.url), "utf8");
+    assert.ok(probe.includes("Console.Error.WriteLine(exception.ToString());"));
+    assert.ok(probe.includes("throw;"));
+    assert.ok(probe.includes("TimeSpan.FromSeconds(30)"));
+});
+
+test("compute dispatch, destroy, loss and uncaptured errors are observation-only", async () => {
+    const f = fixture();
+    const pass = { dispatchWorkgroups: (...args) => args, dispatchWorkgroupsIndirect: (...args) => args };
+    const encoder = { beginComputePass: () => pass };
+    const compute = {};
+    let listener, lose;
+    f.device.createComputePipeline = () => compute;
+    f.device.createCommandEncoder = () => encoder;
+    f.device.destroy = () => compute;
+    f.device.lost = new Promise(resolve => { lose = resolve; });
+    f.device.addEventListener = (type, handler) => { assert.equal(type, "uncapturederror"); listener = handler; };
+    installBrowserGpuTrace(f.page);
+    await connect(f);
+    assert.equal(f.device.createComputePipeline(), compute);
+    assert.equal(f.device.createCommandEncoder(), encoder);
+    assert.equal(encoder.beginComputePass(), pass);
+    assert.deepEqual(pass.dispatchWorkgroups(1, 2, 3), [1, 2, 3]);
+    assert.deepEqual(pass.dispatchWorkgroupsIndirect(f.buffer, 0), [f.buffer, 0]);
+    listener({ error: { message: "validation" }, preventDefault() { assert.fail("must not suppress errors"); } });
+    lose({ reason: "destroyed", message: "done" });
+    await Promise.resolve();
+    assert.equal(f.device.destroy(), compute);
+    assert.ok(f.logs.some(e => e.method === "device.lost" && e.message === "done"));
+    assert.ok(f.logs.some(e => e.method === "uncapturederror" && e.message === "validation"));
+});

@@ -1,3 +1,4 @@
+import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -33,6 +34,10 @@ await new Promise((resolve, reject) => {
 
 let browser;
 let socket;
+let diagnostics = "";
+const errors = [];
+const progress = [];
+let command;
 try {
     await readFile(resolve(root, "index.html"));
     browser = spawn(executable, [
@@ -40,7 +45,6 @@ try {
         ...browserGpuArguments(process.platform, "swiftshader"),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
-    let diagnostics = "";
     let launchError;
     browser.on("error", error => { launchError = error; });
     browser.stderr.on("data", data => { diagnostics += data; });
@@ -63,8 +67,6 @@ try {
     });
     let nextId = 0;
     const pending = new Map();
-    const errors = [];
-    const progress = [];
     socket.addEventListener("message", event => {
         const message = JSON.parse(event.data);
         if (message.id) {
@@ -87,7 +89,7 @@ try {
             else { progress.push(text); }
         }
     });
-    function command(method, params = {}) {
+    command = function (method, params = {}) {
         const id = ++nextId;
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -106,8 +108,11 @@ try {
     const throttle = Number(process.env.LUMYTE_BROWSER_CPU_THROTTLE ?? 1);
     assert.ok(Number.isFinite(throttle) && throttle >= 1 && throttle <= 20, "CPU throttle must be between 1 and 20");
     if (throttle > 1) await command("Emulation.setCPUThrottlingRate", { rate: throttle });
+    await command("Page.enable");
+    if (browserGpuTraceEnabled()) {
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuTrace.toString()})();` });
+    }
     if (requiresSoftwareWebGpu()) {
-        await command("Page.enable");
         await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
     }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
@@ -207,6 +212,15 @@ try {
         verifySoftwareWebGpu(audit.result.value);
     }
     console.log("UI Application Browser WebGPU smoke passed: presentation, animation midpoint/final GPU pixels, freeze/resume, automation GPU PNG, normal input, orderly stop and borrowed canvas.");
+} catch (error) {
+    let state;
+    try {
+        state = await command?.("Runtime.evaluate", { expression: "JSON.stringify({state: globalThis.lumyteApplicationProbe?.GetState(), applicationError: globalThis.lumyteApplicationError, audit: globalThis.__lumyteBrowserGpuAudit})", returnByValue: true });
+    } catch (diagnosticError) { state = String(diagnosticError); }
+    const failure = { chromeStderr: diagnostics, errors, progress, state };
+    console.error("Browser failure diagnostics:", JSON.stringify(failure, null, 2));
+    if (process.env.LUMYTE_BROWSER_FAILURE_REPORT) await writeFile(process.env.LUMYTE_BROWSER_FAILURE_REPORT, JSON.stringify(failure, null, 2));
+    throw error;
 } finally {
     socket?.close();
     if (browser?.pid && browser.exitCode === null && browser.signalCode === null) {
