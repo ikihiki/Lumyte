@@ -7,11 +7,16 @@ namespace Lumyte.UI.Application.Headless;
 
 internal sealed class HeadlessDriver(UiHeadlessApplicationOptions options) : UiApplicationDriver
 {
+    private UiApplication? _application;
+
+    internal override Lumyte.Platform.TextInput.Abstractions.ITextInputService? TextInput => options.TextInputService;
+
     public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     internal override ValueTask InitializeAsync(UiApplication application, IServiceProvider services, bool textInput, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _application = application;
         return ValueTask.CompletedTask;
     }
 
@@ -21,8 +26,18 @@ internal sealed class HeadlessDriver(UiHeadlessApplicationOptions options) : UiA
         return ValueTask.FromResult<UiDriverWindow>(new Window(key, primary ? options.ClientSize : size, options.Scale));
     }
 
+    internal override Lumyte.UI.Windowing.TextInput.IUiTextInputTargetResolver CreateTextTargets(UiApplication application) => options.TextInputTargets ?? base.CreateTextTargets(application);
+
     internal override void Pump()
     {
+        if (TextInput is { } service)
+        {
+            service.Advance();
+            foreach (Lumyte.Platform.TextInput.Abstractions.TextInputKey key in service.DrainKeys())
+            {
+                _application!.DispatchTextKey(key);
+            }
+        }
     }
 
     internal override Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene) => Task.FromResult(true);

@@ -21,7 +21,20 @@ public sealed class UiRemoteLocator
 
     internal UiRemotePage Page { get; }
 
-    private int QueryVersion => _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
+    private int QueryVersion => _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
+
+    /// <summary>Sets a finite scalar through the server's normal numeric input lease.</summary>
+    /// <param name="value">The desired finite value.</param>
+    /// <param name="cancellationToken">Cancels this operation.</param>
+    /// <returns>The completed operation.</returns>
+    public async Task SetValueAsync(double value, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(6, "set-value", _steps, NumericValue: value), cancellationToken);
+
+    /// <summary>Sets both finite ordered endpoints through one ordinary input.</summary>
+    /// <param name="lower">The finite lower value.</param>
+    /// <param name="upper">The finite upper value.</param>
+    /// <param name="cancellationToken">Cancels this operation.</param>
+    /// <returns>The completed operation.</returns>
+    public async Task SetRangeAsync(double lower, double upper, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(6, "set-range", _steps, NumericValue: lower, NumericUpper: upper), cancellationToken);
 
     /// <summary>Restricts an exact identity query to descendants.</summary>
     /// <param name = "testId">The identity.</param>

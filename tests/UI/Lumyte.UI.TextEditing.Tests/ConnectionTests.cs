@@ -1,5 +1,8 @@
+using System.Globalization;
 using Lumyte.Graphics.Text.Parley;
+using Lumyte.Input.Abstractions;
 using Lumyte.Platform.TextInput.Abstractions;
+using Lumyte.Signals;
 using Lumyte.TextEditing;
 using Lumyte.UI.Automation;
 using Lumyte.UI.SampleSupport;
@@ -16,6 +19,221 @@ namespace Lumyte.UI.TextEditing.Tests;
 /// <summary>Defines connection tests.</summary>
 public sealed class ConnectionTests
 {
+    /// <summary>Numeric Fill uses the actual document, borrowed provider and one existing editing lease.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task NumericFillRetainsInvalidBufferAndAcceptsValidLocaleAsync()
+    {
+        var declaration = new Compose.Definitions.NumericBox { Value = 2, Min = -100, Max = 100, Culture = CultureInfo.GetCultureInfo("fr-FR") };
+        var values = new List<double?>();
+        declaration.OnChanged = values.Add;
+        using var fixture = new Fixture(numeric: declaration);
+        NumericBoxElement numeric = Assert.IsType<NumericBoxElement>(fixture.Editor);
+        await using var host = new UiSampleAutomationHost(fixture.Surface, _ =>
+        {
+            fixture.Pump();
+            return ValueTask.CompletedTask;
+        });
+        var page = new UiAutomationPage(new UiTextAutomationHost(host, fixture.Connection, allowTextInspection: true));
+        UiLocator editor = page.GetByTestId("editor");
+        await editor.FillAsync("-");
+        fixture.Pump();
+        Assert.Equal("-", fixture.Document.CaptureSnapshot().CommittedText);
+        Assert.Equal(2, numeric.Value);
+        Assert.False(numeric.IsValid);
+        Assert.False(fixture.Surface.CaptureAutomationSnapshot().Nodes[0].Numeric!.IsValid);
+        await editor.FillAsync("12,5");
+        fixture.Pump();
+        Assert.Equal(12.5, numeric.Value);
+        Assert.True(numeric.IsValid);
+        Assert.Equal(new double?[] { 12.5 }, values);
+        Assert.NotNull(numeric.CurrentLayout);
+        Assert.Equal(2, fixture.Service.Acquisitions);
+        Assert.Equal(0, fixture.Service.Gates);
+        Assert.Single(fixture.Surface.CaptureAutomationSnapshot().Nodes);
+        Assert.Equal(UiRole.TextBox, fixture.Surface.CaptureAutomationSnapshot().Nodes[0].Role);
+        Assert.Null(fixture.Surface.CaptureAutomationSnapshot().Nodes[0].Value);
+    }
+
+    /// <summary>Incomplete numeric forms and nonfinite/out-of-range inputs do not alter the accepted value.</summary>
+    /// <param name="text">The actual edited text.</param>
+    [Theory]
+    [InlineData("+")]
+    [InlineData("1.")]
+    [InlineData("1e")]
+    [InlineData("1e-")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("1e999")]
+    [InlineData("101")]
+    [InlineData("1,000")]
+    public void NumericIncompleteAndInvalidTextRetainsAcceptedValue(string text)
+    {
+        using var fixture = new Fixture(numeric: new() { Value = 5, Min = -100, Max = 100 });
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        Assert.True(TextEditingCommands.ReplaceAll(fixture.Document, text, TextEditOrigin.Keyboard));
+        fixture.Pump();
+        NumericBoxElement numeric = Assert.IsType<NumericBoxElement>(fixture.Editor);
+        Assert.Equal(5, numeric.Value);
+        Assert.False(numeric.IsValid);
+        Assert.Equal(text, fixture.Document.CaptureSnapshot().CommittedText);
+        fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, true));
+        Assert.Equal(text, fixture.Document.CaptureSnapshot().CommittedText);
+        fixture.Surface.Dispatch(new UiKeyInput(Key.Escape, true));
+        Assert.Equal("5", fixture.Document.CaptureSnapshot().CommittedText);
+        Assert.True(numeric.IsValid);
+    }
+
+    /// <summary>Enter/focus commit once, empty is null, and declaration adoption is silent.</summary>
+    [Fact]
+    public void NumericCommitEmptyAndSilentAdoption()
+    {
+        int commits = 0;
+        int changes = 0;
+        using var fixture = new Fixture(numeric: new() { Value = 1, OnChanged = _ => changes++, OnCommitted = _ => commits++ });
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextEditingCommands.ReplaceAll(fixture.Document, "2e0", TextEditOrigin.Keyboard);
+        fixture.Pump();
+        fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, true));
+        fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, false));
+        fixture.Pump();
+        Assert.Equal("2", fixture.Document.CaptureSnapshot().CommittedText);
+        Assert.Equal(1, commits);
+        Assert.Equal(1, changes);
+        fixture.Surface.TryFocus(null);
+        fixture.Pump();
+        Assert.Equal(1, commits);
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextEditingCommands.ReplaceAll(fixture.Document, string.Empty, TextEditOrigin.Keyboard);
+        fixture.Pump();
+        Assert.Null(((NumericBoxElement)fixture.Editor).Value);
+        fixture.Surface.TryFocus(null);
+        Assert.Equal(2, commits);
+        fixture.Surface.Rebuild(Compose.NumericBox(value: 1, layoutProvider: fixture.Provider, testId: "editor"));
+        fixture.Pump();
+        Assert.Equal(1, ((NumericBoxElement)fixture.Editor).Value);
+        Assert.Equal("1", fixture.Document.CaptureSnapshot().CommittedText);
+        Assert.Equal(2, changes);
+    }
+
+    /// <summary>Preedit never updates numeric state and an external value cancels it through the existing session.</summary>
+    [Fact]
+    public void NumericPreeditAndExternalAdoptionUseSameEditorSession()
+    {
+        using var fixture = new Fixture(numeric: new() { Value = 5 });
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextDocument document = fixture.Document;
+        using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Platform))
+        {
+            edit.SetComposition(new(Guid.NewGuid(), new(0, 1), []));
+            edit.Replace(new(0, 1), "77", new(2, 2));
+            edit.Commit();
+        }
+
+        fixture.Pump();
+        Assert.Equal(5, ((NumericBoxElement)fixture.Editor).Value);
+        fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, true));
+        Assert.NotNull(document.CaptureSnapshot().Composition);
+        fixture.Surface.Rebuild(Compose.NumericBox(value: 9, layoutProvider: fixture.Provider, testId: "editor"));
+        fixture.Pump();
+        Assert.Same(document, fixture.Document);
+        Assert.Null(document.CaptureSnapshot().Composition);
+        Assert.Equal("9", document.CaptureSnapshot().CommittedText);
+        Assert.Equal(9, ((NumericBoxElement)fixture.Editor).Value);
+    }
+
+    /// <summary>Numeric Signal declarations remain one-way and adopt external values without sharing a document.</summary>
+    [Fact]
+    public void NumericSignalDoesNotImplicitlyWriteBackAndAdoptsExternalValue()
+    {
+        var model = Signal.Create<double?>(1);
+        using var fixture = new Fixture(numeric: new() { Value = 1 });
+        fixture.Surface.Rebuild(Compose.NumericBox(value: model, layoutProvider: fixture.Provider, testId: "editor"));
+        fixture.Pump();
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextDocument document = fixture.Document;
+        TextEditingCommands.ReplaceAll(document, "2", TextEditOrigin.Keyboard);
+        fixture.Pump();
+        Assert.Equal(2, ((NumericBoxElement)fixture.Editor).Value);
+        Assert.Equal(1, model.Value);
+        model.Value = 9;
+        fixture.Pump();
+        Assert.Equal(9, ((NumericBoxElement)fixture.Editor).Value);
+        Assert.Equal("9", document.CaptureSnapshot().CommittedText);
+        Assert.Same(document, fixture.Document);
+    }
+
+    /// <summary>Publication-driven disable/removal is cancellation, not a user editor commit.</summary>
+    /// <param name="remove">Whether to remove instead of disable the numeric editor.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NumericPublicationCancellationNeverCommitsOldBuffer(bool remove)
+    {
+        int commits = 0;
+        using var fixture = new Fixture(numeric: new() { Value = 1, OnCommitted = _ => commits++ });
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        TextEditingCommands.ReplaceAll(fixture.Document, "2", TextEditOrigin.Keyboard);
+        fixture.Pump();
+        Assert.Equal(2, ((NumericBoxElement)fixture.Editor).Value);
+        fixture.Surface.Rebuild(remove ? Lumyte.UI.Compose.Rectangle() : Compose.NumericBox(value: 9, isEnabled: false, layoutProvider: fixture.Provider, testId: "editor", onCommitted: _ => commits++));
+        fixture.Surface.UpdateTree();
+        Assert.Equal(0, commits);
+        if (!remove)
+        {
+            Assert.Equal(9, ((NumericBoxElement)fixture.Editor).Value);
+        }
+    }
+
+    /// <summary>Rebuilding from a change callback never commits a replacement declaration's value.</summary>
+    [Fact]
+    public void NumericCommitCallbackReentryCannotCommitReplacement()
+    {
+        int commits = 0;
+        using var fixture = new Fixture(numeric: new() { Value = 1 });
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        ((Compose.Definitions.NumericBox)fixture.Editor.Widget).OnChanged = _ =>
+        {
+            fixture.Surface.Rebuild(Compose.NumericBox(value: 9, layoutProvider: fixture.Provider, testId: "editor", onCommitted: _ => commits++));
+            fixture.Surface.UpdateTree();
+        };
+        TextEditingCommands.ReplaceAll(fixture.Document, "2", TextEditOrigin.Keyboard);
+        fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, true));
+        Assert.Equal(9, ((NumericBoxElement)fixture.Editor).Value);
+        Assert.Equal(0, commits);
+    }
+
+    /// <summary>Culture is immutable and shared numeric declarations own separate actual editor documents.</summary>
+    [Fact]
+    public void NumericCultureAndDocumentOwnershipAreExplicit()
+    {
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        Compose.Definitions.NumericBox declaration = Compose.NumericBox(value: 1.5, culture: culture);
+        culture.NumberFormat.NumberDecimalSeparator = ",";
+        Assert.Equal(".", declaration.Culture.NumberFormat.NumberDecimalSeparator);
+        Assert.True(declaration.Culture.IsReadOnly);
+        using var first = new UiSurface(declaration);
+        using var second = new UiSurface(declaration);
+        var a = (NumericBoxElement)first.RootElement;
+        var b = (NumericBoxElement)second.RootElement;
+        Assert.NotSame(a.Document, b.Document);
+        Assert.Equal("1.5", a.Document.CaptureSnapshot().CommittedText);
+        TextEditingCommands.ReplaceAll(a.Document, "2", TextEditOrigin.Keyboard);
+        Assert.Equal("1.5", b.Document.CaptureSnapshot().CommittedText);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        {
+            first.Rebuild(Compose.NumericBox(value: double.NaN));
+            first.UpdateTree();
+        });
+    }
+
     /// <summary>Checks a real editor publishes the same nonzero scroll translation as input geometry.</summary>
     [Fact]
     public void ScrolledEditorPublishesTranslatedImeCaret()
@@ -523,12 +741,13 @@ public sealed class ConnectionTests
         /// <param name="multipleEditors">Whether to create sibling editors in one surface.</param>
         /// <param name="decorated">Whether to apply nested body offsets.</param>
         /// <param name="scrolled">Whether to wrap the editor in a real viewport.</param>
-        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false)
+        /// <param name="numeric">An optional actual numeric editor declaration.</param>
+        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null)
         {
             using Stream font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts/DejaVuSans.ttf"));
             string family = _engine.AddFont(font);
             Provider = new ParleyUiTextLayoutProvider(_engine, new() { FontFamily = family });
-            var editor = new Compose.Definitions.TextBox()
+            Compose.Definitions.TextBox editor = numeric ?? new Compose.Definitions.TextBox()
             {
                 Text = string.Empty,
                 LayoutProvider = Provider,
@@ -539,6 +758,8 @@ public sealed class ConnectionTests
                     LastOrigin = change.Origin;
                 },
             };
+            editor.LayoutProvider = Provider;
+            editor.TestId = "editor";
             var other = new Compose.Definitions.TextBox { Text = string.Empty, LayoutProvider = Provider, TestId = "other" };
             if (decorated)
             {

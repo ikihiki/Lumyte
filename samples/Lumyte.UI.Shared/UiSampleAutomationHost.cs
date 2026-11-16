@@ -86,7 +86,7 @@ internal sealed class UiSampleAutomationHost(UiSurface surface, Func<Cancellatio
             {
                 _keys.Add(key.Key);
             }
-            else if (input is not (UiKeyInput or UiCheckInput or UiWheelInput))
+            else if (input is not (UiKeyInput or UiCheckInput or UiSetNumericInput or UiWheelInput))
             {
                 throw new ArgumentException("Only pointer, key, wheel and checked-state input belong to an input lease.", nameof(input));
             }

@@ -118,6 +118,19 @@ public sealed class LauncherTests
         Assert.Empty(console.Output);
     }
 
+    /// <summary>Verifies numeric editing is selectable through the ordinary headless application.</summary>
+    [Fact]
+    public void NumericSampleSelectsTheHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-numeric"]), console);
+        Assert.Equal("ui-numeric", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Numeric.Sample", backend.Project);
+        Assert.False(backend.Browser);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies controls is selectable through the headless host.</summary>
     [Fact]
     public void ControlsSampleSelectsTheHeadlessConsumer()

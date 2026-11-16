@@ -21,4 +21,10 @@ public enum UiAutomationActions
 
     /// <summary>Single option selection through ordinary input.</summary>
     SelectOption = 16,
+
+    /// <summary>Finite scalar numeric input.</summary>
+    SetValue = 32,
+
+    /// <summary>Atomic ordered range input.</summary>
+    SetRange = 64,
 }
