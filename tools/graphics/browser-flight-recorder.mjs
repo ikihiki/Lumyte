@@ -1,5 +1,5 @@
 import { createBrowserProcessRecorder } from "./browser-process-recorder.mjs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 
 // Chrome owns the rolling trace buffer. No screenshots, DOM snapshots, network
@@ -252,5 +252,31 @@ export function createBrowserFlightRecorder({ sample, mode = "default", environm
         });
         return finishPromise;
     }
-    return { arm, dispatch, request, finish, record, get status() { return status; } };
+    async function markQuarantined(policy, stillEligible = () => true) {
+        await finish(true);
+        if (!directory || status !== "saved" || truncated || bytes <= 0
+            || policy?.status !== "inconclusive-known-timeout" || !stillEligible()) return undefined;
+        try {
+            const path = join(directory, "manifest.json");
+            const saved = JSON.parse(await readFile(path, "utf8"));
+            if (saved.verdict !== "failed" || saved.incomplete || saved.truncated) return undefined;
+            const quarantine = { policyId: policy.policyId, status: policy.status, issue: policy.issue,
+                expiry: policy.expiry, reason: policy.reason, occurrences: 1, remainingAssertionsExecuted: false,
+                ...(environment.GITHUB_RUN_ID ? { runId: environment.GITHUB_RUN_ID } : {}),
+                ...(environment.GITHUB_RUN_ATTEMPT ? { runAttempt: environment.GITHUB_RUN_ATTEMPT } : {}) };
+            await writeFile(join(directory, "quarantine.json"), JSON.stringify(quarantine, null, 2) + "\n");
+            if (!stillEligible()) {
+                await writeFile(join(directory, "quarantine.json"), JSON.stringify({ ...quarantine, status: "revoked", occurrences: 0 }) + "\n");
+                return undefined;
+            }
+            await writeFile(path, JSON.stringify({ ...saved, verdict: "inconclusive", quarantine }, null, 2) + "\n");
+            if (!stillEligible()) {
+                await writeFile(path, JSON.stringify(saved, null, 2) + "\n");
+                await writeFile(join(directory, "quarantine.json"), JSON.stringify({ ...quarantine, status: "revoked", occurrences: 0 }) + "\n");
+                return undefined;
+            }
+            return { ...quarantine, path: directory };
+        } catch { return undefined; }
+    }
+    return { arm, dispatch, request, finish, markQuarantined, record, get status() { return status; } };
 }
