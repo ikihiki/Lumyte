@@ -55,7 +55,17 @@ public sealed partial class Drawing2DTests
         scene.Dispose();
         renderer.Dispose();
         Assert.Equal(2, renderer.RetentionStatistics.ActiveFrames);
-        await Task.WhenAll(CheckSparseVersionFrameAsync(device, newTarget, next, true), CheckSparseVersionFrameAsync(device, oldTarget, old, false));
+        var submitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int submittedCount = 0;
+        void MarkSubmitted()
+        {
+            if (Interlocked.Increment(ref submittedCount) == 2)
+            {
+                submitted.SetResult();
+            }
+        }
+
+        await Task.WhenAll(CheckSparseVersionFrameAsync(device, newTarget, next, true, MarkSubmitted, submitted.Task), CheckSparseVersionFrameAsync(device, oldTarget, old, false, MarkSubmitted, submitted.Task));
         Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
     }
 
@@ -67,7 +77,7 @@ public sealed partial class Drawing2DTests
         return canvas.End();
     }
 
-    private static async Task CheckSparseVersionFrameAsync(IGraphicDevice device, IGraphicsTexture target, PreparedDrawingFrame2D frame, bool green)
+    private static async Task CheckSparseVersionFrameAsync(IGraphicDevice device, IGraphicsTexture target, PreparedDrawingFrame2D frame, bool green, Action markSubmitted, Task bothSubmitted)
     {
         uint pitch = OracleRowPitch(device, 8);
         using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 4, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
@@ -83,6 +93,8 @@ public sealed partial class Drawing2DTests
         commands.Finish();
         using IGraphicsSubmission submission = device.Queue.Submit([commands]);
         frame.AttachSubmission(submission);
+        markSubmitted();
+        await bothSubmitted;
         await submission.WaitAsync();
         commands.Dispose();
         frame.Retire();
