@@ -63,13 +63,23 @@ internal sealed class DrawingResourceDeclarations2D(RenderGraphPass pass, Render
     }
 
     private void PreparedBuffer<T>(IGraphicsBuffer<T> buffer, BarrierScope scope)
-        where T : unmanaged => Add(buffer, scope, actual => pass.UseLocalBuffer(buffer, actual));
+        where T : unmanaged => PreparedBuffer(buffer.SliceElements(0, buffer.Count), scope);
 
     private void PreparedShaderData<T>(IGraphicsShaderDataBuffer<T> buffer, BarrierScope scope)
         where T : struct, IShaderArguments => Add(buffer, scope, actual => pass.UseLocalShaderDataBuffer(buffer, actual));
 
     private void PreparedBuffer<T>(BufferSlice<T> range, BarrierScope scope)
-        where T : unmanaged => _bindingDeclarations.Add(new(scope, actual => pass.UseLocalBuffer(range, actual)));
+        where T : unmanaged => _bindingDeclarations.Add(new(scope, actual =>
+        {
+            if ((actual.Access & ResourceAccess.ShaderWrite) != 0)
+            {
+                pass.UseLocalPreparedStorage(range, actual);
+            }
+            else
+            {
+                pass.UseLocalBuffer(range, actual);
+            }
+        }));
 
     private void PreparedShaderData<T>(ShaderDataSlice<T> range, BarrierScope scope)
         where T : struct, IShaderArguments => _bindingDeclarations.Add(new(scope, actual => pass.UseLocalShaderDataBuffer(range, actual)));

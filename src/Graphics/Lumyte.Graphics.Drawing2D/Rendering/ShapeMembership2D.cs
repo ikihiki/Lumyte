@@ -73,19 +73,25 @@ internal sealed class ShapeMembership2D : IDisposable
         var read = new BarrierScope(PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
         commands.Barrier(new ShaderDataBufferBarrierDesc<DrawRecord2D> { Buffer = records.SliceElements(0, records.Count), Before = new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead), After = read });
         commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = numeric.SliceElements(0, numeric.Count), Before = new(PipelineStage.Copy | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead), After = read });
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, output.Count), Before = default, After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite) });
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, output.Count), Before = default, After = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite) });
         IComputeEncoder compute = commands.BeginComputePass(new());
-        compute.SetPipeline(_pipeline);
-        foreach (Dispatch dispatch in _dispatches)
+        try
         {
-            var args = new ShapeMembershipArguments2D { Records = _records!, Numeric = _numeric!, Output = _output!, RecordIndex = dispatch.Record, Width = dispatch.Width, Height = dispatch.Height, Offset = dispatch.Offset };
-            _scope.Dispatch(compute, in args, dispatch.GroupsX, dispatch.GroupsY);
+            compute.SetPipeline(_pipeline);
+            foreach (Dispatch dispatch in _dispatches)
+            {
+                var args = new ShapeMembershipArguments2D { Records = _records!, Numeric = _numeric!, Output = _output!, RecordIndex = dispatch.Record, Width = dispatch.Width, Height = dispatch.Height, Offset = dispatch.Offset };
+                _scope.Dispatch(compute, in args, dispatch.GroupsX, dispatch.GroupsY);
+            }
+        }
+        finally
+        {
+            compute.End();
         }
 
-        compute.End();
-        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, output.Count), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderWrite), After = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
+        commands.Barrier(new BufferBarrierDesc<uint> { Buffer = output.SliceElements(0, output.Count), Before = new(PipelineStage.ComputeShader, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite), After = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
         commands.Barrier(new ShaderDataBufferBarrierDesc<DrawRecord2D> { Buffer = records.SliceElements(0, records.Count), Before = read, After = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
-        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = numeric.SliceElements(0, numeric.Count), Before = read, After = new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
+        commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = numeric.SliceElements(0, numeric.Count), Before = read, After = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead) });
     }
 
     internal readonly record struct Dispatch(uint Record, uint Width, uint Height, uint Offset, uint GroupsX, uint GroupsY);

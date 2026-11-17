@@ -179,6 +179,7 @@ public sealed partial class Drawing2DTests
         (EffectImage image, PreparedDrawingPasses2D drawing) = await AppendMembershipImageAsync(graph, renderer, canvas.End(), new(0, 0, 8, 8));
         using IDisposable drawingOwner = drawing;
         EffectImage output = graph.AppendOpacity(image, 0.5f);
+        renderer.Dispose();
         Vector4[] pixels = await ReadOracleGraphAsync(device, graph, output);
         AssertPixel(pixels, 8, 1, 1, new(0.5f, 0, 0, 0.5f));
         AssertPixel(pixels, 8, 7, 7, Vector4.Zero);

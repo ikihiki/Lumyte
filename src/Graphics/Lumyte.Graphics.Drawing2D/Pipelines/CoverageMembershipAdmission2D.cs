@@ -101,7 +101,7 @@ internal static class CoverageMembershipAdmission2D
                 buffers = Math.Max(buffers, 7u);
             }
 
-            uint textures = checked((uint)program.Views.Count);
+            uint textures = checked((uint)program.Views.Count + (membership ? 1u : 0u));
             uint samplers = checked((uint)program.Samplers.Count + (needsSampler || membership ? 1u : 0u));
             uint textureBindings = Math.Max(textures, limits.MinimumTextureBindings);
             uint samplerBindings = Math.Max(samplers, limits.MinimumSamplerBindings);

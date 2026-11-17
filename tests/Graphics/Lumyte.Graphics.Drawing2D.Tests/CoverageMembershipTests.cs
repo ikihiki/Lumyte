@@ -213,7 +213,7 @@ public sealed class CoverageMembershipTests
     [InlineData(false)]
     public async Task MixedElevenKindsUseCommonRootAsync(bool computeSupported)
     {
-        var device = new ProfilingDevice { Caps = new() { ShaderTarget = ShaderTarget.SpirV, MaxBufferSize = 1UL << 30, MaxComputeInvocationsPerWorkgroup = computeSupported ? 256u : 0u, MaxComputeWorkgroupSizeX = 16, MaxComputeWorkgroupSizeY = 16, MaxComputeWorkgroupSizeZ = 1, MaxComputeWorkgroupsPerDimension = 65535 } };
+        var device = new ProfilingDevice { Caps = new() { ShaderTarget = ShaderTarget.SpirV, MaxBufferSize = 1UL << 30, MaxComputeInvocationsPerWorkgroup = computeSupported ? 256u : 0u, MaxComputeWorkgroupSizeX = 16, MaxComputeWorkgroupSizeY = 16, MaxComputeWorkgroupSizeZ = 1, MaxComputeWorkgroupsPerDimension = 65535, ArgumentTableBindingLimits = new() { BufferSlots = 7, BuffersPerDraw = 7, DirectSlotBindings = true } } };
         using IGraphicsShader vertex = device.CreateShader(DrawingShaders2D.Vertex);
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });

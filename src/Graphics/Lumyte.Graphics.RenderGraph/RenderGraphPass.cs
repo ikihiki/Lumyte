@@ -165,6 +165,23 @@ public sealed class RenderGraphPass
     internal RenderGraphPass UseLocalBuffer<T>(BufferSlice<T> range, BarrierScope scope)
         where T : unmanaged => UseBufferCore(Owner.LocalBuffer(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);
 
+    // Prepared modules supply their own argument tables. A private compute writer
+    // still declares its full hazard/access scope, without manufacturing an extra
+    // writable binding in the co-recorded read-only raster table.
+    internal RenderGraphPass UseLocalPreparedStorage<T>(BufferSlice<T> range, BarrierScope scope)
+        where T : unmanaged
+    {
+        if ((scope.Access & ResourceAccess.ShaderWrite) == 0)
+        {
+            throw new ArgumentException("Private compute storage requires a declared shader write.", nameof(scope));
+        }
+
+        RenderGraphBuffer<T> buffer = Owner.LocalBuffer(this, range.Buffer, scope);
+        Range(range.Offset, range.Count, buffer.Count);
+        AddUse(buffer, TextureState.Undefined, scope, discard: false, repeated: true);
+        return this;
+    }
+
     internal RenderGraphPass UseLocalShaderDataBuffer<T>(ShaderDataSlice<T> range, BarrierScope scope)
         where T : struct, IShaderArguments => UseShaderDataCore(Owner.LocalShaderData(this, range.Buffer, scope), range.Offset, range.Count, scope, discard: false, repeated: true);
 

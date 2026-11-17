@@ -374,6 +374,8 @@ public sealed partial class Drawing2DTests
 
         internal int ComputeDispatches { get; private set; }
 
+        internal List<ShaderValueSnapshot> ComputeRoots { get; } = [];
+
         internal ulong PayloadCopyBytes { get; private set; }
 
         internal List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> Roots { get; } = [];
@@ -404,7 +406,7 @@ public sealed partial class Drawing2DTests
         public IComputeEncoder BeginComputePass(ComputePassDesc desc)
         {
             ComputePasses++;
-            return new MembershipCountingComputeEncoder(native.BeginComputePass(desc), () => ComputeDispatches++);
+            return new MembershipCountingComputeEncoder(native.BeginComputePass(desc), () => ComputeDispatches++, ComputeRoots);
         }
 
         public void Finish() => native.Finish();

@@ -565,7 +565,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             var shared = GraphDrawingArguments2D.Get(graph);
             if (shared.RequiresFallback(reservations))
             {
-                pass.UseTexture(shared.Fallback, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
+                pass.UseTexture(shared.Fallback, TextureState.Sampled, new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
             }
 
             foreach (ShaderResources resources in reservations)
