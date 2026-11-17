@@ -257,6 +257,17 @@ public sealed partial class Renderer2D
                                                 context.SetWorkingBytesSource(() => checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan)));
                                             }
 
+                                            if (MeshRecordProcessor(transformed.Commands[index]) is { } mesh)
+                                            {
+                                                ReadOnlyMemory<DrawingCommand2D> records = TakeMeshRecordBatch(context, transformed, ref index, mesh);
+                                                if (!records.IsEmpty)
+                                                {
+                                                    batches.Add(await mesh.PrepareRecordsAsync(context, records, cancellationToken).ConfigureAwait(false));
+                                                    plan.EnableWorkingReferenceBudget();
+                                                    continue;
+                                                }
+                                            }
+
                                             if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
                                             {
                                                 batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
@@ -400,6 +411,56 @@ public sealed partial class Renderer2D
             DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(context, TakeBatch<DrawPaintGraphCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
             _ => throw new NotSupportedException("Layer and effect commands require RenderGraphCanvas2D."),
         };
+
+    private Pipelines.MeshCoverageProcessor2D? MeshRecordProcessor(DrawingCommand2D command)
+    {
+        object? renderer = command switch
+        {
+            FillRectCommand2D => _renderers.FillRect,
+            FillRoundedRectCommand2D => _renderers.FillRoundedRect,
+            FillCircleCommand2D => _renderers.FillCircle,
+            DrawLineCommand2D => _renderers.DrawLine,
+            FillPathCommand2D => _renderers.FillPath,
+            StrokePathCommand2D => _renderers.StrokePath,
+            DrawImageCommand2D => _renderers.DrawImage,
+            DrawCoverageMaskCommand2D => _renderers.DrawCoverageMask,
+            DrawDistanceFieldCommand2D => _renderers.DrawDistanceField,
+            DrawPaintGraphCommand2D => _renderers.DrawPaintGraph,
+            _ => null,
+        };
+        return renderer is Pipelines.ICommandChoice2D choice && choice.CandidateProcessors.Count == 1
+            ? choice.CandidateProcessors[0] as Pipelines.MeshCoverageProcessor2D : null;
+    }
+
+    private ReadOnlyMemory<DrawingCommand2D> TakeMeshRecordBatch(RenderPreparationContext2D context, DrawList2D list, ref int index, Pipelines.MeshCoverageProcessor2D processor)
+    {
+        int end = index;
+        while (end < list.Commands.Count && MeshRecordProcessor(list.Commands[end]) is { } next && ReferenceEquals(processor.Service, next.Service))
+        {
+            end++;
+            if (end - index > processor.Service.Options.MaxCommands)
+            {
+                return default;
+            }
+        }
+
+        int count = end - index;
+        if (count <= 1 || !processor.CanPrepareRecords(context, count))
+        {
+            return default;
+        }
+
+        // Only closed singleton Mesh placements with the exact same build service
+        // share records. Mixed candidates/custom/Standard routes keep normal routing.
+        var selected = new DrawingCommand2D[count];
+        for (int i = 0; i < count; i++)
+        {
+            selected[i] = list.Commands[index + i];
+        }
+
+        index = end;
+        return selected;
+    }
 
     private bool IsImmutableTranslationRenderer(DrawingCommand2D command)
     {

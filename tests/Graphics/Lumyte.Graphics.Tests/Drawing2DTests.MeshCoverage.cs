@@ -46,6 +46,7 @@ public sealed partial class Drawing2DTests
             Assert.NotNull(recorded);
             Assert.True(recorded.MeshDispatches > 0);
             Assert.NotEmpty(recorded.Roots);
+            Console.WriteLine($"meshCoverage dpr={dpr} actualMeshDispatches={recorded.MeshDispatches} roots={recorded.Roots.Count} pixels={actual.Length}");
         }
     }
 

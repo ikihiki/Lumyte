@@ -470,6 +470,96 @@ public sealed class MeshCoverageTests
         Assert.Empty(device.Tables);
     }
 
+    /// <summary>Compatible kind-local Mesh placements share one immutable cold record owner across aliases.</summary>
+    /// <param name="separateService">Whether the middle kind has distinct semantic options.</param>
+    /// <returns>The CPU fail-first counterpart of the native cold sharing contract.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompatibleKindsColdAliasesUseOneActualRecordOwnerAsync(bool separateService)
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        Definitions.Renderer configuration = Configuration(resident: true);
+        if (separateService)
+        {
+            _ = configuration[Renderer.FillPath()[Array.Empty<IPipelineDeclaration2D<FillPathCommand2D>>()], Renderer.FillPath()[MeshFillPath(options: MeshCoverageLimits(maxCommands: 64, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))]];
+        }
+
+        using RendererBuildHost2D host = configuration.CreateHost();
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var texture = new DispatchTexture { Width = 64, Height = 64 };
+        using IGraphicsTextureView view = texture.CreateView();
+        var path = new PathBuilder2D();
+        path.MoveTo(new(2, 2));
+        path.QuadraticTo(new(5, 1.5f), new(5, 4));
+        path.LineTo(new(2, 5));
+        path.Close();
+        Path2D shape = path.Build();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillCircle(new(3.25f, 3.5f), 1.5f, new SRgba<float>(1, 0, 0, 0.5f));
+        canvas.FillPath(shape, new SRgba<float>(0, 1, 0, 0.5f));
+        canvas.StrokePath(shape, new SRgba<float>(0, 0, 1, 0.5f), new() { Width = 0.25f });
+        DrawList2D content = canvas.End();
+        using var scene = new DrawingScene2D();
+        scene.Insert(scene.Root, 0, content);
+        DrawingNodeId2D second = scene.Insert(scene.Root, 1, content);
+        scene.SetTransform(second, System.Numerics.Matrix3x2.CreateTranslation(1, 0));
+        using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
+        using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(snapshot, new RenderTarget2D { View = view });
+        using var commands = new ProfilingCommands();
+        frame.Record(commands);
+        try
+        {
+            RecordedDrawRange[] roots = commands.Events.OfType<RecordedDrawRange>().ToArray();
+            Assert.Equal(6, roots.Length);
+            if (separateService)
+            {
+                Assert.NotSame(roots[0].Records, roots[1].Records);
+                for (int i = 0; i < 3; i++)
+                {
+                    Assert.Same(roots[i].Records, roots[i + 3].Records);
+                }
+            }
+            else
+            {
+                Assert.All(roots, root => Assert.Same(roots[0].Records, root.Records));
+            }
+        }
+        finally
+        {
+            commands.Dispose();
+            frame.AbortUnsubmitted();
+        }
+    }
+
+    /// <summary>Record coalescing never splits an oversized typed batch to bypass its declared command bound.</summary>
+    /// <returns>The no-native-allocation rejection proof.</returns>
+    [Fact]
+    public async Task RetainedCoalescingDoesNotBypassMaximumCommandsAsync()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        using RendererBuildHost2D host = Configuration(resident: true).CreateHost();
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var texture = new DispatchTexture { Width = 64, Height = 64 };
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        for (int i = 0; i < 33; i++)
+        {
+            canvas.FillRect(new(4, 4, 8, 8), new SRgba<float>(1, 0, 0, 0.5f));
+        }
+
+        using var scene = new DrawingScene2D();
+        scene.Insert(scene.Root, 0, canvas.End());
+        using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await renderer.PrepareAsync(snapshot, new RenderTarget2D { View = view }));
+        Assert.Equal(0, device.NativeBuffers);
+        Assert.Equal(0, device.MeshPipelineCreations);
+    }
+
     private static DrawList2D Content(int variant)
     {
         var canvas = new Canvas2D();

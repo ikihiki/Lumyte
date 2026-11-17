@@ -12,6 +12,8 @@ internal sealed class MeshCoverageProcessor2D(MeshCoverageService2D service) : P
     IDrawDistanceFieldRenderer2D, IPipelineAdmission2D<DrawDistanceFieldCommand2D>,
     IDrawPaintGraphRenderer2D, IPipelineAdmission2D<DrawPaintGraphCommand2D>
 {
+    internal MeshCoverageService2D Service => service;
+
     public bool CanPrepare(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands) => Admit(context, commands.Length);
 
     public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default)
@@ -61,6 +63,11 @@ internal sealed class MeshCoverageProcessor2D(MeshCoverageService2D service) : P
 
     public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawPaintGraphCommand2D> commands, CancellationToken cancellationToken = default)
         => Prepare(context, commands, cancellationToken);
+
+    internal bool CanPrepareRecords(RenderPreparationContext2D context, int count) => Admit(context, count);
+
+    internal ValueTask<IPreparedCommandBatch2D> PrepareRecordsAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawingCommand2D> commands, CancellationToken token)
+        => Prepare(context, commands, token);
 
     private bool Admit(RenderPreparationContext2D context, int count) => count <= service.Options.MaxCommands && service.Supports(context.Device.Caps);
 

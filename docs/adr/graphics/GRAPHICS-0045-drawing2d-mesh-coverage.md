@@ -50,6 +50,8 @@ Mesh feature と非 null の MeshShaderLimits を両方要求する。実際の 
 
 保持方針を指定した場合、内部の Mesh record owner だけを不変 payload として識別する。任意の custom callback の retained interface や公開 flag は適格性を与えない。cache は一つの構築済み renderer に閉じ、固定された Slot、service、options と device 世代を越えて共有しない。従来の完了確認と先行 producer の証明を変えず、可変の root property は毎回記録する。平行移動の最適化は全候補が内部 Mesh processor の Slot に限り、custom または Standard を含む候補列では従来どおり再構築する。
 
+保持する連続命令では、各 Slot が単一の内部 Mesh 候補で、構築内の同一 service を参照し、合計命令数が全体の上限内に収まる場合だけ、共通の不変 record owner にまとめる。異なる options・service、Standard、custom と複数候補列では従来の型別 admission と候補順序を維持し、容量超過を分割で迂回しない。
+
 追加宣言は Lumyte.Graphics.Drawing2D.Pipelines に置く。既存 IRenderer2D、Canvas と PrepareAsync の戻り型は変更しない。
 
 ~~~diff
