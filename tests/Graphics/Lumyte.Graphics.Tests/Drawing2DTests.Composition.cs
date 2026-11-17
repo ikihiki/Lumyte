@@ -62,19 +62,11 @@ public sealed partial class Drawing2DTests
             return true;
         }
 
-        bool SupportsGeneral(ReadOnlyMemory<FillRectCommand2D> commands)
-        {
-            admissions.Add("general");
-            return !commands.IsEmpty;
-        }
-
-        IFillRectRenderer2D selected = FirstSupported2D.FillRect(
-            new((_, commands) => SupportsFast(commands), callback),
-            new((_, commands) => SupportsGeneral(commands), callback));
+        IFillRectRenderer2D selected = new NativeAdmissionRectangle((_, commands) => SupportsFast(commands), callback);
         Vector4[] custom = await RenderAsync(device, 16, 16, Draw, useDefaultResources: true, composed: true, rectangleBackend: selected);
         Assert.Equal(reference, custom);
         Assert.Equal(2, callback.Calls);
-        Assert.Equal(["fast", "fast", "general"], admissions);
+        Assert.Equal(["fast", "fast"], admissions);
         AssertPixel(composed, 16, 0, 0, new(0.5f, 0, 0, 0.5f));
         var defaults = DrawingCommandRenderers2D.CreateDefault();
         using var directResources = new ExternalDrawingResources(device, builtinIdentity: true);
@@ -92,7 +84,7 @@ public sealed partial class Drawing2DTests
         using RendererBuildHost2D declaredHost = ComposeDefinition(defaults);
         _ = declaredHost.Declaration[
             Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()],
-            Renderer.FillRect()[FirstSupportedFillRect(candidates: [new((_, _) => true, recipe)])]];
+            Renderer.FillRect()[recipe]];
         using var declaredResources = new ExternalDrawingResources(device, builtinIdentity: true);
         using IRenderer2D declaredRenderer = declaredHost.BuildRenderer(device, declaredResources.Resources, declaredResources, null);
         await CheckStandaloneAsync(device, declaredRenderer);
@@ -101,7 +93,7 @@ public sealed partial class Drawing2DTests
     }
 
     private static RendererBuildHost2D ComposeDefinition(DrawingCommandRenderers2D table) => new(Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 3, MaxCachedAssets = 512, MaxCachedBytes = 64 * 1024 * 1024 })[
-        Renderer.FillRect()[table.FillRect is DefaultFillRectRenderer2D ? StandardFillRect() : new BorrowedPipeline2D<FillRectCommand2D>(table.FillRect)],
+        Renderer.FillRect()[table.FillRect is DefaultFillRectRenderer2D ? new IPipelineDeclaration2D<FillRectCommand2D>[] { StandardFillRect() } : new IPipelineDeclaration2D<FillRectCommand2D>[] { new NativeAdmissionRecipe(table.FillRect), new BorrowedPipeline2D<FillRectCommand2D>(table.FillRect is NativeAdmissionRectangle admitted ? admitted.Backend : table.FillRect) }],
         Renderer.FillRoundedRect()[table.FillRoundedRect is DefaultFillRoundedRectRenderer2D ? StandardFillRoundedRect() : new BorrowedPipeline2D<FillRoundedRectCommand2D>(table.FillRoundedRect)],
         Renderer.FillCircle()[table.FillCircle is DefaultFillCircleRenderer2D ? StandardFillCircle() : new BorrowedPipeline2D<FillCircleCommand2D>(table.FillCircle)],
         Renderer.DrawLine()[table.DrawLine is DefaultDrawLineRenderer2D ? StandardDrawLine() : new BorrowedPipeline2D<DrawLineCommand2D>(table.DrawLine)],
@@ -142,5 +134,28 @@ public sealed partial class Drawing2DTests
             Calls++;
             return _backend.PrepareAsync(context, commands, cancellationToken);
         }
+    }
+
+    private sealed class NativeAdmissionRecipe(IFillRectRenderer2D backend) : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
+    {
+        public override Type ProcessorType => typeof(DeclaredAdmissionRectangle);
+
+        protected override object CreateElement(PipelineBuildContext2D context) => new DeclaredAdmissionRectangle(backend);
+    }
+
+    private sealed class DeclaredAdmissionRectangle(IFillRectRenderer2D backend) : PipelineElement2D, IFillRectRenderer2D, IPipelineAdmission2D<FillRectCommand2D>
+    {
+        public bool CanPrepare(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands) => backend is not IPipelineAdmission2D<FillRectCommand2D> admission || admission.CanPrepare(context, commands);
+
+        public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default) => backend.PrepareAsync(context, commands, cancellationToken);
+    }
+
+    private sealed class NativeAdmissionRectangle(Func<RenderPreparationContext2D, ReadOnlyMemory<FillRectCommand2D>, bool> supports, IFillRectRenderer2D backend) : IFillRectRenderer2D, IPipelineAdmission2D<FillRectCommand2D>
+    {
+        internal IFillRectRenderer2D Backend => backend;
+
+        public bool CanPrepare(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands) => supports(context, commands);
+
+        public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default) => backend.PrepareAsync(context, commands, cancellationToken);
     }
 }

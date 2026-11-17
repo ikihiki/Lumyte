@@ -16,7 +16,7 @@ internal static class CompositionSmoke
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
         Definitions.Renderer definition = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 2, MaxCachedAssets = 8, MaxCachedBytes = 1024 * 1024 })[
-            Renderer.FillRect()[FirstSupportedFillRect(candidates: [new((_, _) => false, StandardFillRect()), new((_, _) => true, new SmokeRectangle())])],
+            Renderer.FillRect()[new SmokeRectangle(false), new SmokeRectangle(true)],
             Renderer.FillRoundedRect()[StandardFillRoundedRect()],
             Renderer.FillCircle()[StandardFillCircle()],
             Renderer.DrawLine()[StandardDrawLine()],
@@ -53,16 +53,18 @@ internal static class CompositionSmoke
         Console.WriteLine("Native AOT eleven-kind composed renderer native wgpu submission completed.");
     }
 
-    private sealed class SmokeRectangle : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
+    private sealed class SmokeRectangle(bool accepts) : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
     {
         public override Type ProcessorType => typeof(SmokeRectangleProcessor);
 
-        protected override object CreateElement(PipelineBuildContext2D context) => new SmokeRectangleProcessor();
+        protected override object CreateElement(PipelineBuildContext2D context) => new SmokeRectangleProcessor(accepts);
     }
 
-    private sealed class SmokeRectangleProcessor : PipelineElement2D, IFillRectRenderer2D
+    private sealed class SmokeRectangleProcessor(bool accepts) : PipelineElement2D, IFillRectRenderer2D, IPipelineAdmission2D<FillRectCommand2D>
     {
         private readonly IFillRectRenderer2D _standard = new DefaultFillRectRenderer2D();
+
+        public bool CanPrepare(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands) => accepts;
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default) => _standard.PrepareAsync(context, commands, cancellationToken);
     }

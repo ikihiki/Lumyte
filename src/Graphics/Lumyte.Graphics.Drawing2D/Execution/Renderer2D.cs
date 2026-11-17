@@ -126,6 +126,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // CleanupUse transfers failed cleanup to the resource state and is idempotent.
+                // Finish fallible cleanup before moving the composition lease into a published owner.
+                planOwner.Dispose();
                 profile?.Success();
                 var prepared = new PreparedDraw2D(target, batches, profile?.Context, compositionUse);
                 compositionUse = null;

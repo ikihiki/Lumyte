@@ -14,8 +14,6 @@ public sealed class BorrowedPipeline2D<TCommand>(object processor) : PipelineDec
 
     internal override bool OwnsProcessor => false;
 
-    internal override IReadOnlyList<Type> ChoiceProcessors => (_processor as ICommandChoice2D)?.CandidateTypes ?? Array.Empty<Type>();
-
     /// <inheritdoc/>
     protected override object CreateElement(PipelineBuildContext2D context) => _processor;
 }

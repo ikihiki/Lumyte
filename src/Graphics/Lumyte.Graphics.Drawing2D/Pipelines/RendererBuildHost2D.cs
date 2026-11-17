@@ -25,7 +25,7 @@ public sealed class RendererBuildHost2D(DrawingCompose.Definitions.Renderer decl
     {
         lock (_gate)
         {
-            return Array.AsReadOnly(Freeze(device, resources).Select(Declaration.Describe).ToArray());
+            return Array.AsReadOnly(Freeze(device, resources).Select(Declaration.DescribeSnapshot).ToArray());
         }
     }
 
@@ -40,7 +40,7 @@ public sealed class RendererBuildHost2D(DrawingCompose.Definitions.Renderer decl
         lock (_gate)
         {
             CommandRoute2D[] routes = Freeze(device, resources);
-            var scope = new BackendCompileScope2D(device, resourceOwner, PipelineDeclaration2D.ValidateGraph(routes.Select(route => route.Declaration)));
+            var scope = new BackendCompileScope2D(device, resourceOwner, PipelineDeclaration2D.ValidateGraph(routes.SelectMany(route => route.Declarations)));
             try
             {
                 object[] leaves = new object[11];

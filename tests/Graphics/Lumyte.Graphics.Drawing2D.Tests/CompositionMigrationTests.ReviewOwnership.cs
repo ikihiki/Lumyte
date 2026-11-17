@@ -228,6 +228,62 @@ public sealed partial class CompositionMigrationTests
         Assert.Equal(1, manager.Disposals);
     }
 
+    /// <summary>Checks failed prepublication plan cleanup cannot orphan the automatic composition lease.</summary>
+    /// <returns>The asynchronous ownership check.</returns>
+    /// <param name="retained">Whether the returned owner is a retained frame.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReviewPlanCleanupFailureRetainsReachableCompositionOwnershipAsync(bool retained)
+    {
+        var device = new ProfilingDevice();
+        var manager = new UnretainedManager { PlanCleanup = new ThrowOncePlanResource() };
+        var key = new SharedDeclaration<UnretainedManager>("plan-failure", _ => manager);
+        using RendererBuildHost2D host = DefineRaw(key);
+        IRenderer2D renderer = host.BuildRenderer(device, Resources(device), null, null);
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        if (retained)
+        {
+            using var snapshot = new DrawingSnapshot2D(1, [new(default, RectCircleRect(), Matrix3x2.Identity, [], 1, 1)]);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => renderer.PrepareAsync(snapshot, new() { View = view }).AsTask());
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => renderer.PrepareAsync(RectCircleRect(), new() { View = view }).AsTask());
+        }
+
+        Assert.Equal(1, manager.PlanCleanup.Attempts);
+        renderer.Dispose();
+        Assert.Equal(2, manager.PlanCleanup.Attempts);
+        Assert.Equal(1, manager.Disposals);
+        renderer.Dispose();
+        Assert.Equal(1, manager.Disposals);
+        Assert.Equal(2, manager.PlanCleanup.Attempts);
+    }
+
+    /// <summary>Checks graph ownership remains reachable when unused-plan cleanup fails before Append returns.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ReviewGraphPlanCleanupFailureKeepsCompositionOwnerReachableAsync()
+    {
+        var device = new ProfilingDevice();
+        var manager = new UnretainedManager { PlanCleanup = new ThrowOncePlanResource() };
+        var key = new SharedDeclaration<UnretainedManager>("graph-plan-failure", _ => manager);
+        using RendererBuildHost2D build = DefineRaw(key);
+        IRenderer2D renderer = build.BuildRenderer(device, Resources(device), null, null);
+        using var texture = new DispatchTexture();
+        using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device);
+        (RenderGraphRenderer2D host, _) = RawGraphHost(graph, renderer, texture, false);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => graph.Append2D(host).AsTask());
+        Assert.Equal(1, manager.PlanCleanup.Attempts);
+        host.Dispose();
+        renderer.Dispose();
+        graph.Dispose();
+        Assert.Equal(2, manager.PlanCleanup.Attempts);
+        Assert.Equal(1, manager.Disposals);
+    }
+
     private static (RenderGraphRenderer2D Host, RenderTargetBinding2D Target) RawGraphHost(Lumyte.Graphics.RenderGraph.RenderGraph graph, IRenderer2D renderer, DispatchTexture texture, bool circle)
     {
         RenderGraphTexture handle = graph.ImportTexture(texture, TextureState.ColorAttachment, new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite));
@@ -258,8 +314,24 @@ public sealed partial class CompositionMigrationTests
         Renderer.DrawMesh()[key],
         Renderer.DrawPaintGraph()[key]]);
 
+    private sealed class ThrowOncePlanResource : IDisposable
+    {
+        internal int Attempts { get; private set; }
+
+        public void Dispose()
+        {
+            Attempts++;
+            if (Attempts == 1)
+            {
+                throw new InvalidOperationException("injected plan cleanup failure");
+            }
+        }
+    }
+
     private sealed class UnretainedManager : PipelineElement2D, IFillRectRenderer2D, IFillRoundedRectRenderer2D, IFillCircleRenderer2D, IDrawLineRenderer2D, IFillPathRenderer2D, IStrokePathRenderer2D, IDrawImageRenderer2D, IDrawCoverageMaskRenderer2D, IDrawDistanceFieldRenderer2D, IDrawMeshRenderer2D, IDrawPaintGraphRenderer2D, IDisposable
     {
+        internal ThrowOncePlanResource? PlanCleanup { get; init; }
+
         internal int Disposals { get; private set; }
 
         internal int Records { get; private set; }
@@ -283,7 +355,19 @@ public sealed partial class CompositionMigrationTests
             Disposals++;
         }
 
-        ValueTask<IPreparedCommandBatch2D> IFillRectRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken) => ValueTask.FromResult<IPreparedCommandBatch2D>(new UnretainedBatch(this));
+        ValueTask<IPreparedCommandBatch2D> IFillRectRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken)
+        {
+            if (PlanCleanup is not null)
+            {
+                var owned = (List<IDisposable>)typeof(DrawingArgumentPlan2D).GetField("_owned", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(context.ArgumentPlan)!;
+                if (!owned.Contains(PlanCleanup))
+                {
+                    owned.Add(PlanCleanup);
+                }
+            }
+
+            return ValueTask.FromResult<IPreparedCommandBatch2D>(new UnretainedBatch(this));
+        }
 
         ValueTask<IPreparedCommandBatch2D> IFillRoundedRectRenderer2D.PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRoundedRectCommand2D> commands, CancellationToken cancellationToken) => ValueTask.FromResult<IPreparedCommandBatch2D>(new UnretainedBatch(this));
 

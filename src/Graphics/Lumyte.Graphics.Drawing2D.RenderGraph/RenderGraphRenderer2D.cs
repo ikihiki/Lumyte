@@ -124,6 +124,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         DrawingArgumentPlan2D argumentPlan = pendingPlan;
         GraphDrawingArguments2D Shared() => sharedArguments ??= GraphDrawingArguments2D.Get(graph);
         var owner = new PreparedDrawingPasses2D();
+        IDisposable unusedPlanOwner = _resources.CleanupOwner(argumentPlan);
         try
         {
             owner.HoldComposition(_resources.RetainComposition(allowReturned: _resourceUse is not null));
@@ -132,21 +133,35 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);
             await argumentPlan.PrepareMappingsAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (!graphOwnsPlan)
+            {
+                // Complete fallible unused-plan cleanup while the catch still owns the batches and lease.
+                unusedPlanOwner.Dispose();
+            }
+
             return owner;
         }
         catch (Exception error)
         {
             argumentPlan.ReleasePreparationCaches();
+            if (!graphOwnsPlan)
+            {
+                try
+                {
+                    unusedPlanOwner.Dispose();
+                }
+                catch (Exception cleanup)
+                {
+                    _resources.CleanupAfterFailure(owner, new AggregateException(error, cleanup));
+                    throw new AggregateException(error, cleanup);
+                }
+            }
+
             _resources.CleanupAfterFailure(owner, error);
             throw;
         }
         finally
         {
-            if (!graphOwnsPlan)
-            {
-                using IDisposable unusedOwner = _resources.CleanupOwner(argumentPlan);
-            }
-
             Volatile.Write(ref _preparing, 0);
         }
     }

@@ -12,8 +12,6 @@ public abstract class PipelineDeclaration2D
     /// <summary>Gets declared processor metadata without creating an instance.</summary>
     public abstract Type ProcessorType { get; }
 
-    internal virtual IReadOnlyList<Type> ChoiceProcessors => Array.Empty<Type>();
-
     internal virtual bool OwnsProcessor => true;
 
     internal static IReadOnlySet<PipelineDeclaration2D> ValidateGraph(IEnumerable<PipelineDeclaration2D> roots)
@@ -42,6 +40,62 @@ public abstract class PipelineDeclaration2D
                 }
 
                 names[name] = declaration;
+            }
+
+            Type declarationType = declaration.GetType();
+            if (typeof(IPipelineDeclaration2D<FillRectCommand2D>).IsAssignableFrom(declarationType) && !typeof(IFillRectRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<FillRoundedRectCommand2D>).IsAssignableFrom(declarationType) && !typeof(IFillRoundedRectRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<FillCircleCommand2D>).IsAssignableFrom(declarationType) && !typeof(IFillCircleRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<DrawLineCommand2D>).IsAssignableFrom(declarationType) && !typeof(IDrawLineRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<FillPathCommand2D>).IsAssignableFrom(declarationType) && !typeof(IFillPathRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<StrokePathCommand2D>).IsAssignableFrom(declarationType) && !typeof(IStrokePathRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<DrawImageCommand2D>).IsAssignableFrom(declarationType) && !typeof(IDrawImageRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<DrawCoverageMaskCommand2D>).IsAssignableFrom(declarationType) && !typeof(IDrawCoverageMaskRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<DrawDistanceFieldCommand2D>).IsAssignableFrom(declarationType) && !typeof(IDrawDistanceFieldRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<DrawMeshCommand2D>).IsAssignableFrom(declarationType) && !typeof(IDrawMeshRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
+            }
+
+            if (typeof(IPipelineDeclaration2D<DrawPaintGraphCommand2D>).IsAssignableFrom(declarationType) && !typeof(IDrawPaintGraphRenderer2D).IsAssignableFrom(declaration.ProcessorType))
+            {
+                throw new ArgumentException("The nested declaration processor does not implement its typed capability.");
             }
 
             active.Add(declaration);

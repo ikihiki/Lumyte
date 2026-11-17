@@ -45,6 +45,8 @@ public sealed partial class CompositionMigrationTests
             }
 
             Assert.DoesNotContain("BackendBinding", type.Name, StringComparison.Ordinal);
+            Assert.False(type.Name.StartsWith("FirstSupport", StringComparison.Ordinal));
+            Assert.DoesNotContain("Candidate2D", type.Name, StringComparison.Ordinal);
             if (type.HasElementType)
             {
                 Check(type.GetElementType()!);
@@ -61,6 +63,7 @@ public sealed partial class CompositionMigrationTests
             Check(type);
             foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
             {
+                Assert.False(method.Name.StartsWith("FirstSupport", StringComparison.Ordinal));
                 Check(method.ReturnType);
                 foreach (ParameterInfo parameter in method.GetParameters())
                 {
@@ -90,18 +93,18 @@ public sealed partial class CompositionMigrationTests
     {
         int creates = 0;
         int predicates = 0;
-        var recipe = new RectangleRecipe(7, _ => creates++);
+        var recipe = new AdmissionRectangleRecipe((_, _) => Admit(true), new DispatchRenderers(), () => creates++);
         bool Admit(bool supported)
         {
             predicates++;
             return supported;
         }
 
-        PipelineCandidate2D<FillRectCommand2D>[] candidates = [new((_, _) => Admit(false), recipe), new((_, _) => Admit(true), recipe)];
-        Definitions.FirstSupportedFillRect choice = FirstSupportedFillRect(candidates: candidates);
+        IPipelineDeclaration2D<FillRectCommand2D>[] candidates = [new AdmissionRectangleRecipe((_, _) => Admit(false), new DispatchRenderers()), recipe];
+        Lumyte.Composition.CompositionSlotAssignment<Definitions.Renderer> choice = Renderer.FillRect()[candidates];
         candidates[0] = null!;
         Definitions.Renderer declaration = StandardDefinition();
-        _ = declaration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()], Renderer.FillRect()[choice]];
+        _ = declaration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()], choice];
         Assert.Equal(0, creates);
         Assert.Equal(2, declaration.DescribeDataflow()[0].ChoiceBackends.Count);
         Assert.Equal(0, predicates);
@@ -289,7 +292,7 @@ public sealed partial class CompositionMigrationTests
         Definitions.Renderer declaration = StandardDefinition();
         _ = declaration[
             Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()],
-            Renderer.FillRect()[FirstSupportedFillRect(candidates: rootConflict ? [new((_, _) => true, second)] : [new((_, _) => false, first), new((_, _) => true, second)])]];
+            Renderer.FillRect()[rootConflict ? new IPipelineDeclaration2D<FillRectCommand2D>[] { second } : new IPipelineDeclaration2D<FillRectCommand2D>[] { first, second }]];
         if (rootConflict)
         {
             _ = declaration[Renderer.FillCircle()[Array.Empty<IPipelineDeclaration2D<FillCircleCommand2D>>()], Renderer.FillCircle()[first]];
@@ -376,5 +379,23 @@ public sealed partial class CompositionMigrationTests
             Assert.Equal(7, configuration.Algorithm);
             return _standard.PrepareAsync(context, commands, cancellationToken);
         }
+    }
+
+    private sealed class AdmissionRectangleRecipe(Func<RenderPreparationContext2D, ReadOnlyMemory<FillRectCommand2D>, bool> supports, IFillRectRenderer2D backend, Action? created = null) : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
+    {
+        public override Type ProcessorType => typeof(AdmissionRectangleProcessor);
+
+        protected override object CreateElement(PipelineBuildContext2D context)
+        {
+            created?.Invoke();
+            return new AdmissionRectangleProcessor(supports, backend);
+        }
+    }
+
+    private sealed class AdmissionRectangleProcessor(Func<RenderPreparationContext2D, ReadOnlyMemory<FillRectCommand2D>, bool> supports, IFillRectRenderer2D backend) : PipelineElement2D, IFillRectRenderer2D, IPipelineAdmission2D<FillRectCommand2D>
+    {
+        public bool CanPrepare(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands) => supports(context, commands);
+
+        public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default) => backend.PrepareAsync(context, commands, cancellationToken);
     }
 }

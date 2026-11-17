@@ -6,6 +6,10 @@ namespace Lumyte.Graphics.Drawing2D.Pipelines;
 /// <param name="BackendType">The backend contract resolved during construction.</param>
 /// <param name="SharedIdentity">The explicit graph-local shared identity, or null for a borrowed leaf.</param>
 /// <param name="ConcreteBackendType">The actual borrowed backend or shared manager type.</param>
-/// <param name="ChoiceBackends">The explicit FirstSupported candidate order, without running predicates.</param>
+/// <param name="ChoiceBackends">The explicit slot candidate order, without running predicates.</param>
 /// <param name="Execution">The actual CPU/transfer/GPU contract.</param>
-public sealed record CommandRouteDescription2D(DrawKind2D Kind, Type CommandType, Type BackendType, string? SharedIdentity, Type ConcreteBackendType, IReadOnlyList<Type> ChoiceBackends, string Execution);
+public sealed record CommandRouteDescription2D(DrawKind2D Kind, Type CommandType, Type BackendType, string? SharedIdentity, Type ConcreteBackendType, IReadOnlyList<Type> ChoiceBackends, string Execution)
+{
+    /// <summary>Gets every ordered declaration identity from the compiled slot snapshot.</summary>
+    public IReadOnlyList<string?> CandidateIdentities { get; init; } = Array.Empty<string?>();
+}

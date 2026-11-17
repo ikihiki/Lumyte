@@ -31,7 +31,7 @@ using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefa
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, target, cancellationToken);
 ~~~
 
-変更後は全 11 種類を明示する。次は今回追加する生成 factory による完全な Slot 構成である。resources は呼出し側が選択した DrawingResources2D、resourceOwner と validateResources は既存と同じ所有者と検証 callback である。単機能の標準アルゴリズムには追加設定がないため空引数で宣言する。
+変更後は全 11 種類を明示し、複数候補は Slot の大括弧内へ直接優先順に並べる。次は今回追加する生成 factory による完全な Slot 構成である。resources は呼出し側が選択した DrawingResources2D、resourceOwner と validateResources は既存と同じ所有者と検証 callback である。単機能の標準アルゴリズムには追加設定がないため空引数で宣言する。FastRectangles とその処理型の実装は「同種別内だけの候補選択」で示す。
 
 ~~~csharp
 using Lumyte.Graphics.Drawing2D;
@@ -46,7 +46,7 @@ var bounds = new DrawingRetentionOptions2D
 };
 var declaration = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: bounds)
 [
-    Renderer.FillRect()[StandardFillRect()],
+    Renderer.FillRect()[new FastRectangles(), StandardFillRect()],
     Renderer.FillRoundedRect()[StandardFillRoundedRect()],
     Renderer.FillCircle()[StandardFillCircle()],
     Renderer.DrawLine()[StandardDrawLine()],
@@ -74,7 +74,7 @@ PipelineDeclaration2D は受動的な設定の基底型で、`IPipelineDeclarati
 
 標準宣言は既存の sealed DefaultFillRectRenderer2D などを構築時に新規作成し、実 instance を固定表へ直接配置する。標準処理を包む wrapper は挿入しない。互換用途だけに `BorrowedPipeline2D<TCommand>` を残し、caller 所有の既存 callback を借用できる。通常の Slot 構成に借用 token や共有 factory は不要である。
 
-既存の ComposeSlot と CompositionSlotAssignment を使い、各 Slot の子型を対応 command の `IPipelineDeclaration2D<TCommand>` にする。異なる種別の子や別対象の assignment は C# の型検査で拒否する。全種別に一つずつ明示し、CreateDefault や preset で不足を補わない。複数の子、null、二重代入は適用時に拒否し、空 children は Slot を消去する。凍結前なら明示的な消去後に再代入できる。
+既存の ComposeSlot と CompositionSlotAssignment を使い、各 Slot の子型を対応 command の `IPipelineDeclaration2D<TCommand>` にする。異なる種別の子や別対象の assignment は C# の型検査で拒否する。全種別に一つ以上の宣言を順に明示し、CreateDefault や preset で不足を補わない。null、同一 Slot 内の同一宣言参照、消去を挟まない二重代入は適用時に全体を検証して拒否し、部分置換しない。空 children は Slot を消去する。異なる種別間では同じ宣言参照を共有できる。凍結前なら明示的な消去後に再代入できる。
 
 配列は既存 Core の機構が捕捉時と適用時にコピーし、同じ assignment を独立した複数の root へ使える。共有宣言へ UI の一親制約は適用しない。最初の DescribeDataflow または構築が宣言 topology を凍結し、欠落、無効な予算・引数表方針、同名で異なる宣言、処理型と Slot 能力の不一致を処理生成前に拒否する。宣言の DescribeDataflow は device を必要とせず、生成も predicate 評価もしない。
 
@@ -121,18 +121,43 @@ var stroke = Renderer.StrokePath()[paths];
 
 ### 同種別内だけの候補選択
 
-FirstSupportedFillRect などの生成 factory は受動的な候補宣言を返す。fast と general は `IPipelineDeclaration2D<FillRectCommand2D>` の独自宣言で、既存 backend instance ではない。
+Slot の大括弧へ受動的なアルゴリズム宣言を優先順に直接並べる。候補を包む構築型や候補設定 token は設けない。次の宣言は設定だけを保持し、別型の処理が任意の型付き admission を実装する。
 
 ~~~csharp
-var rectangles = FirstSupportedFillRect(candidates:
-[
-    new((context, commands) => SupportsFastRect(context, commands), fast),
-    new((context, commands) => SupportsGeneralRect(context, commands), general)
-]);
-var slot = Renderer.FillRect()[rectangles];
+public sealed class FastRectangles : PipelineDeclaration2D,
+    IPipelineDeclaration2D<FillRectCommand2D>
+{
+    public override Type ProcessorType => typeof(FastRectanglesProcessor);
+    protected override object CreateElement(PipelineBuildContext2D context)
+        => new FastRectanglesProcessor();
+}
+
+public sealed class FastRectanglesProcessor : PipelineElement2D,
+    IFillRectRenderer2D, IPipelineAdmission2D<FillRectCommand2D>
+{
+    private readonly IFillRectRenderer2D _algorithm = new DefaultFillRectRenderer2D();
+    public bool CanPrepare(RenderPreparationContext2D context,
+        ReadOnlyMemory<FillRectCommand2D> commands)
+    {
+        foreach (FillRectCommand2D command in commands.Span)
+        {
+            if (command.Paint.Root is not SolidPaintNode2D ||
+                command.State.Transform != System.Numerics.Matrix3x2.Identity ||
+                command.State.Clip.Elements.Count != 0) return false;
+        }
+        return true;
+    }
+    public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
+        ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default)
+        => _algorithm.PrepareAsync(context, commands, cancellationToken);
+}
+
+var slot = Renderer.FillRect()[new FastRectangles(), StandardFillRect()];
 ~~~
 
-候補配列は宣言時に複製し、host が別型の choice processor と子処理群へ下げる。旧 FirstSupported2D の実行 interface factory は互換用途で維持するが、それだけを構築 API にしない。従来と同じ clip を共有する連続同種 batch に対し、その種別の predicate だけを先頭から評価する。最初の true を一度だけ PrepareAsync し、すべて false なら NotSupportedException とする。
+host は全候補を構築時に解決し、必要な Slot だけを内部の候補配送処理へ下げる。論理 kind の固定配送後、従来と同じ clip を共有する連続同種 batch 全体に対し、その Slot の CanPrepare だけを先頭から評価する。最初の true を一度だけ PrepareAsync し、すべて false なら NotSupportedException とする。batch 全体の判定であり、命令ごとの分割を約束しない。単一候補でも admission を省略しない。
+
+admission を実装しない従来の callback は batch 全体に対応する契約を維持する。単一の標準宣言は既存 sealed instance を包まず直接配置する。これはそのアルゴリズム自身の全対応能力であり、不足 Slot の補完や隠れた標準 fallback ではない。複数候補の内部配送処理は子処理を借用し、子の所有 scope と二重解放しない。
 
 predicate は GPU 確保・書込み・記録・送信をしない純粋な判定である。predicate の例外、不正入力、資源失効、実確保失敗、device failure を非対応へ変換せず、実処理の失敗後に次候補へ進めない。paint、clip、transform を含む実入力で判断し、矩形を path に変換する場合も同じ塗り領域と数値順序を維持する。基準 SHA の Model/FillRectCommand2D.cs は Rect/Paint/State、StrokeStyle2D.cs は width/cap/join/miter を持ち、存在しない dash を推測しない。
 
@@ -208,9 +233,11 @@ Graph は IRenderer2D の overload を使い、Drawing2D 内の friend interface
 +            IDisposable? resourceOwner, Action? validateResources);
 +        public void Dispose(); // 未公開処理の回収を再試行。構築済み renderer は独立。
 +    }
-+    public sealed record PipelineCandidate2D<TCommand>(
-+        Func<RenderPreparationContext2D, ReadOnlyMemory<TCommand>, bool> Supports,
-+        IPipelineDeclaration2D<TCommand> Pipeline) where TCommand : DrawingCommand2D;
++    public interface IPipelineAdmission2D<TCommand> where TCommand : DrawingCommand2D
++    {
++        // 凍結設定と入力だけを読む。GPU 書込み・記録・送信は禁止。
++        bool CanPrepare(RenderPreparationContext2D context, ReadOnlyMemory<TCommand> commands);
++    }
 +    public static partial class DrawingCompose
 +    {
 +        public static Definitions.RendererFactory Renderer { get; } // 生成 factory。
@@ -231,14 +258,7 @@ Graph は IRenderer2D の overload を使い、Drawing2D 内の friend interface
 +            [Composable(Factory = "DrawingCompose")]
 +            public sealed partial class StandardFillRect : PipelineDeclaration2D,
 +                IPipelineDeclaration2D<FillRectCommand2D>;
-+            [Composable(Factory = "DrawingCompose")]
-+            public partial class FirstSupportedFillRect : PipelineDeclaration2D,
-+                IPipelineDeclaration2D<FillRectCommand2D>
-+            {
-+                [ComposeParameter] public required IReadOnlyList<
-+                    PipelineCandidate2D<FillRectCommand2D>> Candidates { get; init; }
-+            }
-+            // 残り 10 種別も対応する標準宣言と候補宣言を持つ。
++            // 残り 10 種別も対応する標準宣言を持つ。
 +        }
 +    }
 +    public sealed class BorrowedPipeline2D<TCommand> : PipelineDeclaration2D,
@@ -265,7 +285,7 @@ DescribeDataflow は実際の凍結 route 配列から kind、command 型、処�
 ## 検討した代替案
 
 - 宣言を実行 interface の wrapper や factory 接続部品に改名する: 表面だけ変わり設定と実処理を分離できない。受動的な宣言と独立した host・処理型を使う。
-- 全描画を全 root の FirstSupported に渡す: 無関係な種別の判定も呼ぶため先に固定 kind 配送を行う。
+- 全描画を全 root の候補列へ渡す: 無関係な種別の判定も呼ぶため先に固定 kind 配送を行う。
 - 種別ごとに Renderer2D を作る: 共通引数表と順序付き記録の結合を失うため一つの coordinator へ構築する。
 - 同型 manager を暗黙共有する: 設定、device 世代、所有者が異なる実体を誤統合するため宣言参照だけを共有する。
 - UI の更新機構を導入する: 必要なのは宣言と実処理の分離であり、反応性や mount 更新は今回の責務でない。
