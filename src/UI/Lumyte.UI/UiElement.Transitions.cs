@@ -13,7 +13,9 @@ public partial class UiElement
 
     internal ulong VisualRevision => _visualRevision;
 
-    internal bool LayoutVisible => Widget.IsVisible && PresenceState != UiPresenceState.Hidden;
+    internal bool LayoutVisible => Widget.IsVisible && PresenceState != UiPresenceState.Hidden && IsContentActive;
+
+    internal bool IsContentActive => Parent is null || (Parent.IsContentActive && Parent.IsChildActive(this));
 
     internal bool TransitionCaptureSupported => SupportsTransitionCapture;
 
@@ -86,6 +88,11 @@ public partial class UiElement
     }
 
     internal void InvalidateChildVisuals() => InvalidateTransitionCapture();
+
+    /// <summary>Determines whether a retained direct child participates in layout, drawing and input.</summary>
+    /// <param name="child">A mounted direct child.</param>
+    /// <returns>Whether the parent currently presents the child.</returns>
+    protected virtual bool IsChildActive(UiElement child) => true;
 
     /// <summary>Compares component-specific drawing configuration for isolated capture reuse.</summary>
     /// <param name="other">The configuration in the other surface.</param>

@@ -5,6 +5,7 @@ using Lumyte.Platform.TextInput.Abstractions;
 using Lumyte.Signals;
 using Lumyte.TextEditing;
 using Lumyte.UI.Automation;
+using Lumyte.UI.Controls;
 using Lumyte.UI.SampleSupport;
 using Lumyte.UI.TextEditing.Automation;
 using Lumyte.UI.TextEditing.Parley;
@@ -710,6 +711,47 @@ public sealed class ConnectionTests
         Assert.Equal(1, changes);
     }
 
+    /// <summary>Parent gating retires actual editing sessions without replacing the document.</summary>
+    /// <param name="tabs">Whether to hide by selecting another tab.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RetainedPanelHideCancelsActualPreeditAndPreservesDocument(bool tabs)
+    {
+        using var fixture = new Fixture(panel: tabs ? 2 : 1);
+        Assert.True(fixture.Surface.TryFocus(fixture.Editor));
+        fixture.Pump();
+        Session session = fixture.Service.Current!;
+        TextDocument document = fixture.Document;
+        using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Platform))
+        {
+            edit.SetComposition(new(Guid.NewGuid(), new(0, 0), []));
+            edit.Commit();
+        }
+
+        fixture.Pump();
+        Assert.NotNull(document.CaptureSnapshot().Composition);
+        if (tabs)
+        {
+            fixture.Surface.TryFocus(fixture.Surface.RootElement.Children[1]);
+            fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, true));
+            fixture.Surface.Dispatch(new UiKeyInput(Key.Enter, false));
+        }
+        else
+        {
+            fixture.Surface.Dispatch(new UiExpandInput(fixture.Surface.RootElement.AutomationId, false, new(2)));
+        }
+
+        fixture.Pump();
+        Assert.True(session.IsReleased);
+        Assert.Null(document.CaptureSnapshot().Composition);
+        Assert.Same(document, fixture.Document);
+        Assert.True(fixture.Editor.IsMounted);
+        Assert.False(fixture.Surface.TryFocus(fixture.Editor));
+        Assert.Equal(System.Numerics.Vector2.Zero, fixture.Editor.Size);
+        Assert.DoesNotContain(fixture.Surface.CaptureAutomationSnapshot().Nodes, node => node.Id == fixture.Editor.AutomationId && node.IsVisible);
+    }
+
     private static TextBoxElement Element(UiSurface surface, Lumyte.UI.Compose.Definitions.Widget declaration)
     {
         var pending = new Stack<UiElement>();
@@ -742,7 +784,8 @@ public sealed class ConnectionTests
         /// <param name="decorated">Whether to apply nested body offsets.</param>
         /// <param name="scrolled">Whether to wrap the editor in a real viewport.</param>
         /// <param name="numeric">An optional actual numeric editor declaration.</param>
-        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null)
+        /// <param name="panel">Zero for none, one for Expander, two for tabs.</param>
+        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null, int panel = 0)
         {
             using Stream font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts/DejaVuSans.ttf"));
             string family = _engine.AddFont(font);
@@ -768,7 +811,15 @@ public sealed class ConnectionTests
             }
 
             Surface = new(scrolled ? Lumyte.UI.Compose.ScrollView(controller: Scroll)[Lumyte.UI.Compose.Stack()[editor, Lumyte.UI.Compose.SizedBox(height: 600)]] : multipleEditors ? Lumyte.UI.Compose.Stack()[editor, other] : editor);
-            Editor = (TextBoxElement)(scrolled ? Surface.RootElement.Children[0].Children[0] : multipleEditors ? Surface.RootElement.Children[0] : Surface.RootElement);
+            if (panel != 0)
+            {
+                Surface.Dispose();
+                Surface = new(panel == 1
+                    ? Controls.Compose.Expander(isExpanded: true)[Controls.Compose.Expander.Content()[editor]]
+                    : Controls.Compose.TabView(selectedKey: "a")[Controls.Compose.TabItem(key: "a")[Controls.Compose.TabItem.Content()[editor]], Controls.Compose.TabItem(key: "b")]);
+            }
+
+            Editor = Element(Surface, editor);
             _registration = Windows.Register(Source);
             Task<UiWindowBinding> binding = Windows.BindPresentationAsync(_registration.Window, Surface).AsTask();
             for (int index = 0; index < 12; index++)
