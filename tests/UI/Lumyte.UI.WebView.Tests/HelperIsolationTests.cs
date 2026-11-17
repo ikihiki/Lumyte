@@ -82,6 +82,7 @@ public sealed class HelperIsolationTests
     /// <returns>The verification.</returns>
     [CefHelperTheory]
     [InlineData("crash", "cef-helper-exited")]
+    [InlineData("sigabrt", "cef-helper-exited")]
     [InlineData("malformed", "cef-helper-protocol")]
     [InlineData("sequence-rewind", "cef-helper-protocol")]
     [InlineData("hang", "cef-startup-timeout")]
@@ -357,6 +358,7 @@ public sealed class HelperIsolationTests
         string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
         string extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
         string source = Path.Combine(root, "samples/Lumyte.UI.WebView.Helper.Sample/bin", configuration, "net10.0");
+        Assert.True(!OperatingSystem.IsLinux() || File.Exists(Path.Combine(source, "lumyte-cef-supervisor")), "Linux engine-free fixture must stage lumyte-cef-supervisor; build Helper.Sample first.");
         string target = Path.Combine(Path.GetTempPath(), "lumyte-helper-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(target);
         foreach (string file in Directory.GetFiles(source))

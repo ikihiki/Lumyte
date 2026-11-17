@@ -7,7 +7,8 @@ The public Application.WebView.Cef integration uses a separate Rust/CEF156 proce
 ## Current capability boundary
 
 - Initial HTTP/S document display only; InputAvailable, PopupAvailable, ImeAvailable and NavigationCommandsAvailable are false. Post-creation navigation/history/reload/stop explicitly throw rather than succeeding without effect. Cancel stops the optional helper, not the UI application.
-- The managed process supervisor currently requires Linux, /usr/bin/python3 and pidfd support. Missing prerequisites fault only the browser; other platforms remain explicitly unavailable.
+- The optional backend requires Linux, pidfd support and a separate CEF-free native supervisor beside the helper (or an explicit SupervisorExecutablePath). Production startup, teardown and the optional portal launcher have no Python dependency. Missing prerequisites fault only the browser; other platforms remain explicitly unavailable.
+- .NET and the CEF helper communicate through directly inherited pipes. The supervisor never relays pixels or commands. A backend-private Lumyte.Execution session workflow owns asynchronous I/O and its joined lifetime; cancellation precedes runtime shutdown.
 - One session, bounded commands and packets, latest-only CPU frames, owned child profile/temp and deadline-controlled process teardown. Existing scene/frame/upload resource lifetimes remain in effect.
 - CPU pixel transport is implemented. The explicit unsandboxed product helper has passed a trusted loopback HTTP, exact-pixel, resize and clean-exit functional trial. Sandboxed browser rendering and actual UI GPU composition remain unqualified on this host; default sandbox failure stays local to the browser.
 - Windows bootstrap, persistent profiles, interactive input, DOM automation, accessibility bridging, JS/host RPC and GPU sharing are unsupported.

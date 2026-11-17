@@ -6,6 +6,9 @@ public sealed record CefWebViewOptions
     /// <summary>Gets the absolute optional helper path. Null leaves the browser unavailable.</summary>
     public string? HelperExecutablePath { get; init; }
 
+    /// <summary>Gets the optional absolute native cleanup supervisor path. Null selects lumyte-cef-supervisor beside the helper.</summary>
+    public string? SupervisorExecutablePath { get; init; }
+
     /// <summary>Gets a value indicating whether the helper sandbox may be explicitly disabled. Unsafe: trusted local content only; never enabled automatically.</summary>
     public bool AllowUnsandboxed { get; init; }
 

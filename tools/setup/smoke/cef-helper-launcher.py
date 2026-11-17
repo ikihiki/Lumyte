@@ -48,6 +48,7 @@ int main(int argc, char **argv) {
  if(fwrite(header,1,sizeof(header),stdout)!=sizeof(header)) return 92;
  fflush(stdout);
  if(!strcmp(getenv("FIXTURE_MODE"),"abort")) raise(SIGABRT);
+ if(!strcmp(getenv("FIXTURE_MODE"),"stdout-close-alive")) { close(0); close(1); sleep(60); return 0; }
  int c;
  while((c=getchar())!=EOF) { if(putchar(c)==EOF) return 93; fflush(stdout); }
  return 0;
@@ -110,6 +111,8 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--weston-root',type=Path,required=True)
     ap.add_argument('--out',type=Path,required=True)
+    ap.add_argument('--tree-owner-fixture',type=Path,help='reuse an already-built isolated tree owner; no dotnet build')
+    ap.add_argument('--supervisor',type=Path,default=REPO/'artifacts/cef-supervisor/native/lumyte-cef-supervisor',help='explicit native utility for regression qualification')
     ap.add_argument('--native-helper',type=Path,help='optional real ELF: assert sandbox-enabled native failure, never rendering success')
     a=ap.parse_args(); out=a.out.resolve(); out.mkdir(parents=True,exist_ok=False)
     resource.setrlimit(resource.RLIMIT_CORE,(0,0))
@@ -119,22 +122,27 @@ def main():
     stage=out/'stage with spaces'; stage.mkdir()
     wrapper=stage/'lumyte-cef-helper-isolated'
     shutil.copy2(REPO/'tools/setup/run-cef-helper-isolated.sh',wrapper); wrapper.chmod(0o755)
+    shutil.copy2(a.supervisor.resolve(),stage/'lumyte-cef-supervisor')
     (out/'fixture.c').write_text(FIXTURE)
     run(['gcc','-Wall','-Wextra','-Werror','-o',str(stage/'lumyte-cef-helper'),str(out/'fixture.c')],stdout=sp.DEVNULL)
     if a.native_helper:
         native_stage=out/'native stage';native_stage.mkdir()
         for source in a.native_helper.resolve().parent.iterdir():
-            if source.name!='lumyte-cef-helper-isolated':(native_stage/source.name).symlink_to(source)
+            if source.name not in ('lumyte-cef-helper-isolated','lumyte-cef-supervisor'):(native_stage/source.name).symlink_to(source)
         shutil.copy2(wrapper,native_stage/wrapper.name)
+        shutil.copy2(stage/'lumyte-cef-supervisor',native_stage/'lumyte-cef-supervisor')
     project=out/'tree-kill';project.mkdir()
     (project/'tree-kill.csproj').write_text('<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>')
     (project/'Program.cs').write_text(TREE_KILL)
     (project/'NuGet.Config').write_text('<configuration><packageSources><clear /></packageSources></configuration>')
-    sdk=sp.check_output(['dotnet','--version'],cwd='/tmp',text=True).strip()
-    (project/'global.json').write_text(json.dumps(dict(sdk=dict(version=sdk))))
-    for name in ('Directory.Build.props','Directory.Build.targets'):
-        (project/name).write_text('<Project />')
-    with (out/'dotnet-build.log').open('w') as f: run(['dotnet','build',str(project),'-o',str(project/'bin'),'-v:q'],cwd=project,stdout=f,stderr=sp.STDOUT)
+    if a.tree_owner_fixture:
+        shutil.copytree(a.tree_owner_fixture.resolve(),project/'bin')
+    else:
+        sdk=sp.check_output(['dotnet','--version'],cwd='/tmp',text=True).strip()
+        (project/'global.json').write_text(json.dumps(dict(sdk=dict(version=sdk))))
+        for name in ('Directory.Build.props','Directory.Build.targets'):
+            (project/name).write_text('<Project />')
+        with (out/'dotnet-build.log').open('w') as f: run(['dotnet','build',str(project),'-o',str(project/'bin'),'-v:q'],cwd=project,stdout=f,stderr=sp.STDOUT)
     cases=[]; compositor=None
     runtime=Path(tempfile.mkdtemp(prefix='lumyte-launcher-display-'));runtime.chmod(0o700)
     try:
@@ -148,7 +156,7 @@ def main():
                 env.update(DISPLAY=':unused',PATH=str(path))
             t=time.monotonic();r=sp.run([str(wrapper),'--lumyte-helper'],input=b'',capture_output=True,env=env,timeout=3)
             assert r.returncode and not r.stdout and time.monotonic()-t<3
-            assert (b'display unavailable' if mode=='no-display' else b'missing dependency: dbus-run-session') in r.stderr
+            assert (b'display unavailable' if mode=='no-display' else b'missing dependency: dbus-daemon') in r.stderr
             cases.append(dict(case=mode,exit=r.returncode,residual_count=0));(out/(mode+'.stderr')).write_bytes(r.stderr)
         for invalid in (['--no-sandbox'], ['--lumyte-helper','--no-sandbox'], ['--lumyte-helper','--lumyte-allow-unsandboxed=false'], ['--lumyte-helper','--lumyte-allow-unsandboxed','--remote-debugging-port=9222'], ['--type=renderer']):
             r=sp.run([str(wrapper),*invalid],input=b'',capture_output=True,env=base,timeout=3)
@@ -168,11 +176,11 @@ def main():
             time.sleep(.05)
         # Only the dedicated compositor socket reaches launcher; no host display.
         base.update(WAYLAND_DISPLAY=str(runtime/'w'),XDG_RUNTIME_DIR=str(runtime))
-        for mode in ('explicit-unsandboxed','normal-eof','abort','term','tree-kill','startup-fail','portal-timeout','tree-kill-startup') + (('native-sandbox-failure',) if a.native_helper else ()):
+        for mode in ('explicit-unsandboxed','normal-eof','stdout-close-alive','abort','term','tree-kill','startup-fail','portal-timeout','tree-kill-startup') + (('native-sandbox-failure',) if a.native_helper else ()):
             root=Path(tempfile.mkdtemp(prefix='lumyte-browser-'));root.chmod(0o700)
             marker='LUMYTE_LAUNCHER_SMOKE='+root.name
             env=dict(base,HOME=str(root),TMPDIR=str(root),XDG_CONFIG_HOME=str(root),XDG_DATA_HOME=str(root),XDG_CACHE_HOME=str(root),
-                FIXTURE_PROOF=str(out/(mode+'.proof')),FIXTURE_MODE='abort' if mode=='abort' else 'normal',LUMYTE_LAUNCHER_SMOKE=root.name)
+                FIXTURE_PROOF=str(out/(mode+'.proof')),FIXTURE_MODE='abort' if mode=='abort' else 'stdout-close-alive' if mode=='stdout-close-alive' else 'normal',LUMYTE_LAUNCHER_SMOKE=root.name)
             if mode=='startup-fail':env['WAYLAND_DISPLAY']=str(runtime/'missing')
             target=native_stage/wrapper.name if mode=='native-sandbox-failure' else wrapper
             if mode in ('portal-timeout','tree-kill-startup'):
@@ -187,11 +195,30 @@ def main():
                     stdout=b''; stderr=b''
                 else:
                     p=sp.Popen([str(target),'--lumyte-helper']+(['--lumyte-allow-unsandboxed'] if mode=='explicit-unsandboxed' else []),cwd=target.parent,env=env,stdin=sp.PIPE,stdout=sp.PIPE,stderr=sp.PIPE)
-                    if mode in ('normal-eof','explicit-unsandboxed','abort','term'):
+                    if mode in ('normal-eof','explicit-unsandboxed','stdout-close-alive','abort','term'):
                         assert select.select([p.stdout],[],[],12)[0],mode
                         ready=p.stdout.read(44)
                         assert ready==struct.pack('<11I',40,101,1,0,0,0,0,0,0,0,0),(mode,ready,p.poll())
                         if mode=='term':p.terminate()
+                        if mode=='stdout-close-alive':
+                            assert select.select([p.stdout],[],[],2)[0], 'protocol EOF held by live portal owners'
+                            assert os.read(p.stdout.fileno(),1)==b'', 'expected empty EOF'
+                            assert p.poll() is None, 'outer owner must remain live before stop'
+                            helper_pid=int((out/(mode+'.proof')).read_text().splitlines()[0])
+                            assert Path('/proc/'+str(helper_pid)).exists(), 'helper must remain live before stop'
+                            live=processes(marker)
+                            assert len(live)>=5, 'portal owners must remain live before stop'
+                            pipes={os.readlink('/proc/self/fd/'+str(p.stdout.fileno())),os.readlink('/proc/self/fd/'+str(p.stdin.fileno()))}
+                            fd_rows=[]
+                            for pid in live:
+                                fds={}
+                                for fd in Path('/proc/'+str(pid)+'/fd').glob('*'):
+                                    try: fds[fd.name]=os.readlink(fd)
+                                    except FileNotFoundError: pass
+                                assert not pipes.intersection(fds.values()), (pid,fds,'retained protocol descriptor')
+                                fd_rows.append(dict(pid=pid,fds=fds))
+                            (out/'stdout-close-alive-fds.json').write_text(json.dumps(dict(eof_before_stop=True,helper_alive=True,outer_owner_alive=True,live_owned_count=len(live),protocol_handles_remaining=0,processes=fd_rows),indent=2))
+                            (root/'isolated-stop').touch()
                     if mode=='native-sandbox-failure':
                         body=b'http://127.0.0.1:1/'
                         packet=struct.pack('<I',40+len(body))+struct.pack('<IQqqiiI',1,1,0,0,800,600,len(body))+body
@@ -203,7 +230,7 @@ def main():
                     if mode in ('normal-eof','explicit-unsandboxed'):assert code==0 and stdout==payload,(code,stdout,stderr)
                     if mode=='abort':assert code==134 and not stdout,(mode,code,stdout,stderr)
                     if mode=='native-sandbox-failure':assert code==133 and not stdout and b'SUID sandbox helper binary' in stderr,(mode,code,stdout,stderr)
-                    if mode in ('term','startup-fail','portal-timeout','tree-kill-startup'):assert code!=0 and not stdout
+                    if mode in ('stdout-close-alive','term','startup-fail','portal-timeout','tree-kill-startup'):assert code!=0 and not stdout
                     if mode=='portal-timeout':assert b'private portals not ready' in stderr
                     (out/(mode+'.stderr')).write_bytes(stderr)
                 deadline=time.monotonic()+4

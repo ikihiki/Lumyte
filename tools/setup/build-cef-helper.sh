@@ -17,6 +17,8 @@ if [[ -z "${CEF_PATH:-}" ]]; then
   export CEF_PATH="$cache"
 fi
 cargo +1.99.1 build --offline --locked --manifest-path "$root/src/UI/Lumyte.UI.WebView.Cef.Native/Cargo.toml" --bin lumyte-cef-helper
+bash "$root/tools/setup/build-cef-supervisor.sh" >&2
+install -m755 "$root/artifacts/cef-supervisor/native/lumyte-cef-supervisor" "$CARGO_TARGET_DIR/debug/lumyte-cef-supervisor"
 # cef resources feature stages runtime resources beside the executable.
 # Optional wrapper; direct ELF remains the default.
 install -m 755 "$root/tools/setup/run-cef-helper-isolated.sh" "$CARGO_TARGET_DIR/debug/lumyte-cef-helper-isolated"

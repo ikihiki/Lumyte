@@ -65,7 +65,9 @@ helper未指定もローカルな利用不可として扱う。SessionはWindow�
 
 Application接続はengine-freeの共通部だけを参照する。Rust helperは固定したcef-rsとCEFを使い、子プロセスのbootstrapをstdin readerやIPC writerの作成より先に処理する。UIとhelperの接続はこのbackend専用の小さい固定形式とし、汎用RPCや任意の.NETオブジェクト公開を追加しない。
 
-helperパスは明示した絶対パスに限定し、引数はProcessStartInfo.ArgumentListで渡す。現在のmanaged supervisorはLinux・Python3・pidfdを要求し、未対応OSや依存不足ではBrowserだけを失敗させる。通常UIにこれらを要求しない。ユーザーの通常ブラウザprofileを取り込まない。親はhelper専用HOME・cache・tempを所有し、終了後に回収する。Chromiumが追加するsingleton socket名を含めLinuxのUnix-domain socket長制限に収まるよう、private rootはUTF-8で59byte以内にする。継承したtemp baseが長い場合は短い/tmp配下へ退避し、0700で原子的に作成する。継承元のディレクトリやホスト環境は変更・削除しない。Linuxの任意ランチャーも同じhelper寿命の範囲に置く。
+helperパスは明示した絶対パスに限定し、引数はProcessStartInfo.ArgumentListで渡す。監督はCEFにもPythonにも依存しない独立したLinux native executableとし、pidfdとsubreaperで所有子孫を回収する。managed設定のSupervisorExecutablePathを明示でき、未指定ならhelperと同じディレクトリのlumyte-cef-supervisorを使う。未対応OSや監督実行物の不足ではBrowserだけを失敗させ、起動時のコンパイルやPython fallbackを行わない。通常UIに監督やCEFを要求しない。ユーザーの通常ブラウザprofileを取り込まない。親はhelper専用HOME・cache・tempを所有し、終了後に回収する。Chromiumが追加するsingleton socket名を含めLinuxのUnix-domain socket長制限に収まるよう、private rootはUTF-8で59byte以内にする。継承したtemp baseが長い場合は短い/tmp配下へ退避し、0700で原子的に作成する。継承元のディレクトリやホスト環境は変更・削除しない。Linuxの任意ランチャーも同じhelper寿命の範囲に置く。監督は標準入出力を子へ継承して自分の参照を閉じ、画素や命令を読み書き・中継しない。.NETとCEF helperが直接pipeで通信する。
+
+Browser backendはprivateなLumyte.Execution runtimeとinstance WorkflowPortでsession単位の非同期I/O寿命を所有する。packetごとのcommandや独自Task.Run loopを増やさず、UI側は既存のlatest mailboxとcoalesced Wakeで更新する。UI共有runtimeのmodule登録制約は変更しない。CloseWindow・BeginStopで先にsessionを取消し、pipe・writer・reader・実process終了と回収をjoinした後にbackend runtimeを停止する。module.Stopを最初の取消通知に使うと静止待ちとの循環になるため行わない。timeoutだけでClosed扱いにはしない。監督の停止・回収が期限内に終わらない場合は、UI ownerへ停止失敗を観測させ、StopFailedとして有限時間で返す。未回収のprocess・root・workflowを保持し、同じ監督が実際に終了した後の再試行で退役を確認する。runtime停止の例外も元の例外としてownerが観測し、成功・失敗の両方でWakeする。停止再試行のために別processや別workflowを起動しない。
 
 起動期限は既定10秒、初期文書の期限は既定15秒とし、正の有限な上限付き値だけを受理する。UI ownerはpipeのread/write、native初期化、プロセス終了を同期的に待たない。startupの無応答、ロードの無応答、EOF、異常packet、queue上限、native processの終了は理由付きFaultedにし、未処理命令を再送しない。中止・失敗時は所有child treeの終了とreader/writerの回収を行う。
 
@@ -148,6 +150,7 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 +    public sealed record CefWebViewOptions
 +    {
 +        public string? HelperExecutablePath { get; init; }
++        public string? SupervisorExecutablePath { get; init; }
 +        public bool AllowUnsandboxed { get; init; } = false; // 信頼コンテンツ向けの明示選択のみ
 +        public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(10);
 +        public TimeSpan NavigationTimeout { get; init; } = TimeSpan.FromSeconds(15);

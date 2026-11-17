@@ -9,6 +9,8 @@ export LUMYTE_CEF_HELPER="$PWD/artifacts/cef-helper/target/debug/lumyte-cef-help
 dotnet run --project samples/Lumyte.UI.WebView.Cef.Sample -c Release -- --enable-experimental-cef
 ```
 
+Keep the separate `lumyte-cef-supervisor` beside the helper or launcher. The explicit build script stages both; custom integrations may set `CefWebViewOptions.SupervisorExecutablePath` to an absolute supervisor path. Neither the browser backend nor the optional portal launcher requires Python. .NET communicates directly with the helper pipes; the CEF-free supervisor only owns process cleanup, while backend-local `Lumyte.Execution` workflows manage asynchronous I/O lifetime.
+
 Use an absolute helper path. If it is missing, crashes, hangs or cannot initialize sandbox, the session faults locally and the sample returns to a native button. Build, registration and normal UI startup do not initialize CEF. The backend has one read-only initial document, finite startup/navigation deadlines and explicit cancellation; later navigation, input, IME and popup capabilities are false.
 
 The explicit build script stages an optional lumyte-cef-helper-isolated launcher beside the helper. Select that path instead only when the Linux session/portal workaround is needed; its dependencies and display must exist. It starts only an owned private bus/portal and does not modify the host user manager or desktop services. Missing setup remains a browser-local failure. See the native HELPER.md for the exact launcher contract.

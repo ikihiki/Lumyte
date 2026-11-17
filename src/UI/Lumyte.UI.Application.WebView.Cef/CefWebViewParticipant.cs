@@ -5,22 +5,45 @@ using Lumyte.UI.Windowing;
 
 namespace Lumyte.UI.Application.WebView.Cef;
 
-internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispatcher dispatcher) : IUiApplicationParticipant
+internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispatcher dispatcher, CefExecutionScope? execution = null) : IUiApplicationParticipant
 {
     private readonly Dictionary<Guid, WindowSessions> _windows = new();
     private readonly WebViewPixelBudget _cpu = new(options.CpuPixelBudgetBytes);
     private readonly WebViewPixelBudget _gpu = new(options.GpuImageBudgetBytes);
+    private readonly CefExecutionScope _execution = execution ?? new();
+    private Task? _executionStop;
     private bool _stopping;
     private int _wakePending;
 
-    public bool IsStopped => _stopping && _windows.Values.All(window => window.Retired);
+    public bool IsStopped
+    {
+        get
+        {
+            if (!_stopping)
+            {
+                return false;
+            }
+
+            if (_executionStop is { IsCompleted: true, IsCompletedSuccessfully: false } failed)
+            {
+                // Only completed tasks are read here: no synchronous owner wait.
+                // Clearing the attempt lets RetryStopAsync retry the retained runtime,
+                // even though UiApplication calls BeginStop only on its first attempt.
+                _executionStop = null;
+                failed.GetAwaiter().GetResult();
+            }
+
+            _executionStop ??= StopExecutionAsync();
+            return _windows.Values.All(window => window.Retired) && _executionStop.IsCompletedSuccessfully;
+        }
+    }
 
     public TimeSpan? NextWorkDelay => null;
 
     public ValueTask StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.CompletedTask;
+        return new(_execution.StartAsync());
     }
 
     public void OpenWindow(UiApplicationWindowContext context) => _windows.TryAdd(context.Id, new(context));
@@ -47,7 +70,19 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
     public bool IsWindowStopped(UiApplicationWindowContext context)
     {
         CloseWindow(context);
-        return !_windows.TryGetValue(context.Id, out WindowSessions? window) || window.Entries.Values.All(entry => entry.Engine.IsClosed);
+        if (!_windows.TryGetValue(context.Id, out WindowSessions? window))
+        {
+            return true;
+        }
+
+        foreach (Entry entry in window.Entries.Values)
+        {
+            // A failed bounded stop attempt is distinct from native ownership
+            // completion. Throw only at this retryable owner cleanup boundary.
+            entry.Engine.ThrowIfStopFailed();
+        }
+
+        return window.Entries.Values.All(entry => entry.Engine.IsClosed);
     }
 
     public void Advance()
@@ -77,11 +112,18 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
 
     public void BeginStop()
     {
+        if (_stopping)
+        {
+            return;
+        }
+
         _stopping = true;
         foreach (WindowSessions window in _windows.Values)
         {
             CloseWindow(window.Context);
         }
+
+        _executionStop = StopExecutionAsync();
     }
 
     public ValueTask DisposeAsync()
@@ -144,7 +186,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             throw new InvalidOperationException("cef-session-budget-exceeded");
         }
 
-        CefHelperSession engine = new(uri, _cpu, Wake, options);
+        CefHelperSession engine = new(uri, _cpu, Wake, options, _execution);
         var session = new UiWebViewSession(uri, context.CheckOwner, engine.Send);
         var entry = new Entry(context, session, engine, _cpu, _gpu);
         session.NavigationCommandsAvailable = false;
@@ -152,6 +194,23 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         session.CancelHost = engine.Close;
         window.Entries.Add(key, entry);
         return session;
+    }
+
+    private async Task StopExecutionAsync()
+    {
+        // BeginStop cancels each session before this wait. Runtime.StopAsync itself
+        // waits for pending workflows before calling module.StopAsync.
+        Task[] roots = _windows.Values.SelectMany(window => window.Entries.Values).Select(entry => entry.Engine.Completion).ToArray();
+        try
+        {
+            await Task.WhenAll(roots);
+            await _execution.StopAsync();
+        }
+        finally
+        {
+            // Failures need owner observation just as successful completions do.
+            Wake();
+        }
     }
 
     private void Wake()

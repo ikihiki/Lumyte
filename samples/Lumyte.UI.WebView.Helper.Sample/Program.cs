@@ -1,6 +1,13 @@
 using System.Text;
 using Lumyte.UI.Application.WebView.Cef;
 
+if (args.Contains("--detached-child", StringComparer.Ordinal))
+{
+    NativeMethods.SetSid();
+    await Task.Delay(Timeout.Infinite);
+    return;
+}
+
 if (args.Contains("--selfcheck", StringComparer.Ordinal))
 {
     using var stream = new MemoryStream();
@@ -30,9 +37,9 @@ CefHelperPacket start = await CefHelperProtocol.ReadAsync(input, CancellationTok
 if (mode.Contains("orphan-", StringComparison.Ordinal))
 {
     string marker = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "child.txt");
-    System.Diagnostics.Process child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/usr/bin/python3")
+    System.Diagnostics.Process child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!)
     {
-        ArgumentList = { "-c", "import os,time; os.setsid(); time.sleep(60)" },
+        ArgumentList = { "--detached-child" },
         UseShellExecute = false,
     })!;
     string home = Environment.GetEnvironmentVariable("HOME")!;
@@ -44,6 +51,13 @@ if (mode.Contains("orphan-", StringComparison.Ordinal))
 if (mode.EndsWith("slowready", StringComparison.Ordinal))
 {
     await Task.Delay(500);
+}
+
+if (mode.EndsWith("sigabrt", StringComparison.Ordinal))
+{
+    NativeMethods.DisableCoreDump(4, default);
+    NativeMethods.Raise(6);
+    throw new InvalidOperationException("SIGABRT did not terminate fixture.");
 }
 
 if (mode.EndsWith("crash", StringComparison.Ordinal))
@@ -108,5 +122,24 @@ while (true)
     else if (packet.Kind is 2 or 5 or 6 or 7 or 8)
     {
         await CefHelperProtocol.WriteAsync(output, new(102, Sequence: packet.Sequence, Body: packet.Body!.Length == 0 ? Encoding.UTF8.GetBytes("https://example.test/") : packet.Body), CancellationToken.None);
+    }
+}
+
+internal static partial class NativeMethods
+{
+    [System.Runtime.InteropServices.LibraryImport("libc", EntryPoint = "setsid")]
+    internal static partial int SetSid();
+
+    [System.Runtime.InteropServices.LibraryImport("libc", EntryPoint = "raise")]
+    internal static partial int Raise(int signal);
+
+    [System.Runtime.InteropServices.LibraryImport("libc", EntryPoint = "setrlimit")]
+    internal static partial int DisableCoreDump(int resource, in ResourceLimit limit);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal struct ResourceLimit
+    {
+        internal nuint Current;
+        internal nuint Maximum;
     }
 }

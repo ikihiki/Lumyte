@@ -9,9 +9,9 @@ internal sealed class CefHelperFactAttribute : FactAttribute
     /// <param name="requireNative">Whether native CEF qualification was explicitly requested.</param>
     public CefHelperFactAttribute(bool requireNative = false)
     {
-        if (!OperatingSystem.IsLinux() || !File.Exists("/usr/bin/python3"))
+        if (!OperatingSystem.IsLinux())
         {
-            Skip = "The optional helper supervisor requires Linux and Python3.";
+            Skip = "The optional helper supervisor requires Linux.";
         }
         else if (requireNative && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("LUMYTE_TEST_CEF_HELPER")))
         {

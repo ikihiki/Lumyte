@@ -8,9 +8,9 @@ internal sealed class CefHelperTheoryAttribute : TheoryAttribute
     /// <summary>Initializes a new instance of the <see cref="CefHelperTheoryAttribute"/> class.</summary>
     public CefHelperTheoryAttribute()
     {
-        if (!OperatingSystem.IsLinux() || !File.Exists("/usr/bin/python3"))
+        if (!OperatingSystem.IsLinux())
         {
-            Skip = "The optional helper supervisor requires Linux and Python3.";
+            Skip = "The optional helper supervisor requires Linux.";
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading.Channels;
 using Lumyte.UI.WebView;
@@ -14,6 +15,14 @@ internal sealed class CefHelperSession : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Channel<CefHelperPacket> _commands = Channel.CreateBounded<CefHelperPacket>(new BoundedChannelOptions(16) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private readonly Task _lifetime;
+    private readonly CefExecutionScope _execution;
+    private readonly bool _ownsExecution;
+    private bool _runtimeRetired;
+    private ExceptionDispatchInfo? _cleanupFailure;
+    private ExceptionDispatchInfo? _retirementFailure;
+    private Process? _cleanupOwner;
+    private string? _ownedDirectory;
+    private bool _cleanupProven = true;
     private HelperSnapshot _snapshot;
     private bool _dirty = true;
     private bool _closing;
@@ -27,14 +36,17 @@ internal sealed class CefHelperSession : IDisposable
     private bool _loading = true;
     private int _disposed;
 
-    internal CefHelperSession(Uri uri, WebViewPixelBudget budget, Action wake, CefWebViewOptions options)
+    internal CefHelperSession(Uri uri, WebViewPixelBudget budget, Action wake, CefWebViewOptions options, CefExecutionScope? execution = null, bool ownsExecution = false)
     {
         _options = options;
         _wake = wake;
         _snapshot = new(UiWebViewState.Creating, uri);
         ViewPixels = new(budget);
         PopupPixels = new(budget);
-        _lifetime = Task.Run(() => RunAsync(uri));
+        _execution = execution ?? new();
+        _ownsExecution = execution is null || ownsExecution;
+        _runtimeRetired = !_ownsExecution;
+        _lifetime = RunLifetimeAsync(uri);
     }
 
     internal WebViewPixelMailbox ViewPixels
@@ -47,9 +59,13 @@ internal sealed class CefHelperSession : IDisposable
         get;
     }
 
-    internal bool IsClosed => _lifetime.IsCompleted;
+    internal bool IsClosed => _lifetime.IsCompleted && Volatile.Read(ref _cleanupProven) && Volatile.Read(ref _runtimeRetired);
 
     internal Task Completion => _lifetime;
+
+    internal Process? CleanupOwner => _cleanupOwner;
+
+    internal string? OwnedDirectory => _ownedDirectory;
 
     public void Dispose()
     {
@@ -143,6 +159,39 @@ internal sealed class CefHelperSession : IDisposable
         _stop.Cancel();
     }
 
+    internal void ThrowIfStopFailed()
+    {
+        Volatile.Read(ref _cleanupFailure)?.Throw();
+        Volatile.Read(ref _retirementFailure)?.Throw();
+    }
+
+    internal async Task RetryStopAsync()
+    {
+        Close();
+        Volatile.Read(ref _cleanupFailure)?.Throw();
+        try
+        {
+            await _lifetime.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException) when (!_lifetime.IsCompleted)
+        {
+            ReportCleanupFailure();
+            ThrowIfStopFailed();
+        }
+        catch (Exception) when (Volatile.Read(ref _retirementFailure) is not null)
+        {
+            // The workflow result was already observed; retry only its owned retirement.
+        }
+
+        if (_ownsExecution && !Volatile.Read(ref _runtimeRetired))
+        {
+            await RetireExecutionAsync();
+        }
+
+        ThrowIfStopFailed();
+        _wake();
+    }
+
     private static async Task DrainDiagnosticsAsync(StreamReader reader, CancellationToken token)
     {
         // Never retain unbounded native stderr or leak addresses/profile information to UI.
@@ -175,11 +224,57 @@ internal sealed class CefHelperSession : IDisposable
         _wake();
     }
 
+    private async Task RunLifetimeAsync(Uri uri)
+    {
+        try
+        {
+            await _execution.ExecuteAsync(() => RunAsync(uri), _stop.Token);
+        }
+        catch (Exception)
+        {
+            Fail("cef-execution-unavailable");
+            if (!Volatile.Read(ref _cleanupProven))
+            {
+                ReportCleanupFailure();
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (_ownsExecution)
+                {
+                    await RetireExecutionAsync();
+                }
+            }
+            finally
+            {
+                _wake();
+            }
+        }
+    }
+
+    private async Task RetireExecutionAsync()
+    {
+        try
+        {
+            await _execution.StopAsync();
+            Volatile.Write(ref _runtimeRetired, true);
+            Volatile.Write(ref _retirementFailure, null);
+        }
+        catch (Exception error)
+        {
+            Volatile.Write(ref _retirementFailure, ExceptionDispatchInfo.Capture(error));
+            throw;
+        }
+    }
+
     private async Task RunAsync(Uri uri)
     {
         Process? process = null;
         Task? writer = null;
         Task? stderr = null;
+        Task? navigation = null;
         string? ownedDirectory = null;
         bool cleanupComplete = true;
         try
@@ -209,30 +304,29 @@ internal sealed class CefHelperSession : IDisposable
                 return;
             }
 
-            const string Python = "/usr/bin/python3";
-            if (!File.Exists(Python))
+            string supervisor = _options.SupervisorExecutablePath ?? Path.Combine(Path.GetDirectoryName(path)!, "lumyte-cef-supervisor");
+            if (!Path.IsPathFullyQualified(supervisor) || !File.Exists(supervisor))
             {
                 Fail("cef-helper-supervisor-unavailable");
                 return;
             }
 
             ownedDirectory = SelectOwnedDirectory(Path.GetTempPath());
+            _ownedDirectory = ownedDirectory;
 
-            // Set privacy atomically at creation, before staging code or launching children.
+            // Set privacy atomically at creation, before launching any children.
             Directory.CreateDirectory(ownedDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
-            string supervisor = Path.Combine(ownedDirectory, "supervisor.py");
-            using (Stream resource = typeof(CefHelperSession).Assembly.GetManifestResourceStream("Lumyte.CefHelperSupervisor")!)
-            using (FileStream staged = File.Create(supervisor))
-            {
-                await resource.CopyToAsync(staged, _stop.Token);
-            }
-
-            var start = new ProcessStartInfo(Python) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Path.GetDirectoryName(path)! };
-            start.ArgumentList.Add("-I");
-            start.ArgumentList.Add(supervisor);
-            start.ArgumentList.Add(Path.Combine(ownedDirectory, "stop"));
+            // Native inherits these pipe endpoints directly into the helper and closes
+            // its own fd0/fd1 references after spawn. No intermediary copies pixels.
+            var start = new ProcessStartInfo(supervisor) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Path.GetDirectoryName(path)! };
+            start.ArgumentList.Add("--owner");
             start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            start.ArgumentList.Add("--root");
+            start.ArgumentList.Add(ownedDirectory);
+            start.ArgumentList.Add("--stop");
+            start.ArgumentList.Add(Path.Combine(ownedDirectory, "stop"));
+            start.ArgumentList.Add("--");
             start.ArgumentList.Add(path);
             start.ArgumentList.Add("--lumyte-helper");
             if (_options.AllowUnsandboxed)
@@ -245,7 +339,10 @@ internal sealed class CefHelperSession : IDisposable
             start.Environment["XDG_CACHE_HOME"] = ownedDirectory;
             start.Environment["XDG_CONFIG_HOME"] = ownedDirectory;
             start.Environment["XDG_DATA_HOME"] = ownedDirectory;
+            _stop.Token.ThrowIfCancellationRequested();
             process = Process.Start(start) ?? throw new IOException("cef-helper-start-failed");
+            _cleanupOwner = process;
+            Volatile.Write(ref _cleanupProven, false);
             stderr = DrainDiagnosticsAsync(process.StandardError, _stop.Token);
             using var startup = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
             startup.CancelAfter(_options.StartupTimeout);
@@ -289,7 +386,7 @@ internal sealed class CefHelperSession : IDisposable
 
             writer = WriteCommandsAsync(process.StandardInput.BaseStream, _stop.Token);
             _wake();
-            _ = MonitorNavigationAsync(_stop.Token);
+            navigation = MonitorNavigationAsync(_stop.Token);
             while (!_stop.IsCancellationRequested)
             {
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
@@ -386,18 +483,65 @@ internal sealed class CefHelperSession : IDisposable
                 {
                     if (!process.HasExited)
                     {
-                        File.WriteAllText(Path.Combine(ownedDirectory!, "stop"), string.Empty);
-                        process.StandardInput.Close();
+                        try
+                        {
+                            File.WriteAllText(Path.Combine(ownedDirectory!, "stop"), string.Empty);
+                        }
+                        catch (DirectoryNotFoundException)
+                        {
+                            // The native reaper may already have removed its root.
+                        }
+                        catch (IOException)
+                        {
+                            ReportCleanupFailure();
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                            ReportCleanupFailure();
+                        }
+
+                        try
+                        {
+                            process.StandardInput.Close();
+                        }
+                        catch (IOException)
+                        {
+                            ReportCleanupFailure();
+                        }
                     }
 
-                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    Task exited = process.WaitForExitAsync();
+                    try
+                    {
+                        await exited.WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+                    catch (TimeoutException)
+                    {
+                        // A deadline is not a cleanup receipt. Keep ownership until
+                        // the reaper actually exits; the rest of the UI stays usable.
+                        ReportCleanupFailure();
+                        await exited;
+                    }
+
+                    // 125 denotes unproven cleanup; other nonzero exits propagate
+                    // helper failure only after the native reaper completed cleanup.
+                    cleanupComplete = process.ExitCode is not (125 or 2) && !Directory.Exists(ownedDirectory);
+                    if (!cleanupComplete)
+                    {
+                        ReportCleanupFailure();
+                    }
                 }
                 catch (Exception)
                 {
                     cleanupComplete = false;
+                    ReportCleanupFailure();
                 }
 
-                process.Dispose();
+                if (cleanupComplete)
+                {
+                    process.Dispose();
+                    _cleanupOwner = null;
+                }
             }
 
             if (writer is not null)
@@ -422,6 +566,17 @@ internal sealed class CefHelperSession : IDisposable
                 }
             }
 
+            if (navigation is not null)
+            {
+                await navigation;
+            }
+
+            Volatile.Write(ref _cleanupProven, cleanupComplete);
+            if (cleanupComplete)
+            {
+                Volatile.Write(ref _cleanupFailure, null);
+            }
+
             if (ownedDirectory is not null && cleanupComplete)
             {
                 try
@@ -433,8 +588,25 @@ internal sealed class CefHelperSession : IDisposable
                 }
             }
 
+            if (cleanupComplete)
+            {
+                _ownedDirectory = null;
+            }
+
             _wake();
         }
+    }
+
+    private void ReportCleanupFailure()
+    {
+        lock (_gate)
+        {
+            _cleanupFailure ??= ExceptionDispatchInfo.Capture(new IOException("cef-helper-cleanup-failed"));
+            _snapshot = _snapshot with { State = UiWebViewState.Faulted, FailureCode = "cef-helper-cleanup-failed", Loading = false };
+            _dirty = true;
+        }
+
+        _wake();
     }
 
     private async Task MonitorNavigationAsync(CancellationToken token)

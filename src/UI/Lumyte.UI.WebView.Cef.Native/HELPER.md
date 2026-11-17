@@ -46,18 +46,41 @@ separately (three attempts total; one complete receipt).
 From repository root: `bash tools/setup/build-cef-helper.sh`. Uses cached Rust
 1.99.1 and the existing pinned CEF cache; set CEF_PATH if its location differs.
 Output: `artifacts/cef-helper/target/debug/lumyte-cef-helper`, beside CEF libraries
-and resources staged by cef-rs. Keep that directory together. The executable has
+and resources staged by cef-rs, plus the separate lumyte-cef-supervisor and optional
+launcher. Keep that directory together. To build only the CEF-free supervisor,
+run `bash tools/setup/build-cef-supervisor.sh`; this does not require CEF_PATH or
+a CEF download. The helper build script prints only the helper executable path
+to stdout, with supervisor build information on stderr. The executable has
 Linux $ORIGIN RUNPATH; launch with executable-directory cwd, managed argument
 `--lumyte-helper` (plus the dedicated unsafe opt-in only when selected). CEF re-launches this same executable with --type children,
 which bootstrap before any stdin reader or protocol writer is created.
 
-## Managed supervisor requirements
+## Native supervisor and execution requirements
 
-The optional managed adapter currently requires Linux, /usr/bin/python3 and
-pidfd support. Its embedded supervisor is a separate process and uses subreaper
-adoption plus stable pidfd signaling to reclaim descendants after helper exit
-or abort, including nested session launchers. Missing prerequisites fault only
-the browser. Normal UI use does not require Python or native CEF.
+The optional adapter requires Linux, pidfd support and the separate
+lumyte-cef-supervisor executable. It has no CEF or Python dependency and uses
+subreaper adoption plus stable pidfd signaling to reclaim descendants after
+helper exit or abort, including nested session launchers. Set
+SupervisorExecutablePath explicitly or keep it beside the helper. Missing
+prerequisites fault only the browser; startup never compiles an executable or
+falls back to Python. Ordinary UI use requires neither executable.
+
+The helper inherits the .NET stdin/stdout pipes directly; the supervisor closes
+its own references after spawning and never reads, copies or relays protocol
+bytes. A backend-private Lumyte.Execution workflow owns each asynchronous session
+lifetime without registering a module in the UI shared resource runtime. Close
+cancels I/O and requests native cleanup before joining the session root, stopping
+the backend runtime and disposing owners. Runtime.Stop alone is not the session
+cancellation mechanism. Cleanup timeout or failure is observed by the UI owner
+as StopFailed, not an indefinite owner wait or a false Closed state. Outstanding
+process/root/workflow ownership remains retained; retry rechecks the same native
+owner and runtime retirement without launching a replacement session. Runtime
+stop failures are observed with the original exception and also wake the owner.
+
+The supervisor validates its private root and checks its identity before removal.
+The caller and same-UID filesystem environment are trusted; this is not a general
+security boundary against a malicious process replacing root paths concurrently.
+The sandbox-disabled mode does not make arbitrary pages safe.
 
 ## Protocol and lifecycle
 
@@ -117,7 +140,7 @@ introduced; AllowUnsandboxed is the single explicit security-mode option. Keep t
 --lumyte-helper with optional --lumyte-allow-unsandboxed, quoted without shell evaluation. CEF --type children
 use the real ELF via current_exe(), not the wrapper or another private bus.
 
-Requirements: Linux, Bash, Python3 (Linux subreaper and pidfd support), dbus-run-session,
+Requirements: Linux, Bash, the sibling native supervisor (subreaper and pidfd support), dbus-daemon,
 gdbus, coreutils timeout/readlink/stat/mkdir, and the distro frontend and GTK
 backend at /usr/libexec/xdg-desktop-portal{,-gtk}, plus
 /usr/libexec/xdg-permission-store. A working DISPLAY or
@@ -129,7 +152,7 @@ UI can continue. All portal-name checks share a five-second startup budget
 with 0.2-second per-query deadlines and bounded retries (process scheduling
 aside). Backend/store names are acquired before starting the frontend.
 
-The managed supervisor supplies a mode0700 lumyte-browser-* root as
+The managed adapter supplies a mode0700 lumyte-browser-* root as
 HOME/TMPDIR/XDG_CONFIG_HOME/XDG_CACHE_HOME/XDG_DATA_HOME; the launcher rejects
 other profile layouts. A private runtime/state directory, bus socket/configuration and GTK
 preference file live only under that root. Overlong Unix socket paths fail
@@ -140,6 +163,10 @@ host user bus. Portal and bus/activation logs go to private root files, not
 protocol stdout; the native helper keeps its own stderr. Reserved protocol and
 diagnostic descriptors are closed before entering the real ELF.
 
+The native supervisor directly owns a foreground dbus-daemon with a private
+configuration and bounded socket readiness; no dbus-run-session intermediary
+retains protocol handles. Bash owners and portal services close unused protocol
+descriptors, so helper stdout EOF is observable even while they remain alive.
 The private bus has no activation service directories: only the explicitly
 started frontend, GTK and permission store exist. Its private desktop-specific
 configuration prefers GTK. This deliberately narrower derivative of B avoids
@@ -151,7 +178,7 @@ apply only to directly started portal processes, not the native helper.
 This is not a byte-for-byte replay of the earlier full-session B condition;
 its engine-free readiness/lifecycle evidence does not establish a real-CEF
 latency improvement or rendered-browser success.
-The ELF inherits stdin/stdout unchanged. A non-exec supervisor reaps its own
+The ELF inherits stdin/stdout unchanged. The separate native supervisor reaps its own
 descendants by rechecked pidfd on EOF-driven helper exit, native abort, startup failure or TERM;
 the managed deadline still owns hung-native termination via its independent
 owned stop marker and separate subreaper supervisor. No global portal kill, host environment import,
@@ -184,6 +211,8 @@ this host-specific sandbox failure (exit133/SIGTRAP and the native SUID sandbox
 error), without altering sandbox settings. This is a failure-path test only.
 
 Each output directory must be new. Results and read-only host before/after
-snapshots are retained there. GCC, Python3, a local .NET10 SDK and extracted
+snapshots are retained there. Python is used only by this optional developer
+validation script, not by any deployed startup, supervision or portal path.
+GCC, Python3, a local .NET10 SDK and extracted
 Weston libraries are test-only dependencies; the standalone test project uses
 the installed SDK without changing the repository's pinned SDK or build files.
