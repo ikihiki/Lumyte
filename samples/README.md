@@ -39,6 +39,7 @@ Graphics の native host は続いて exercise を選びます。すべて指定
 | 描画 | `graphics-window` | 三角形・resize・Present / d3d12, warp |
 | 描画 | `text` | 多言語シェーピングと描画 / webgpu |
 | 契約検証 | `graphics` | 共通 GPU API / vulkan, wgpu, d3d12, warp, webgpu |
+| 契約検証 | `ui-collections` | 型付き項目、一覧選択、非編集combo / headless（明示font file） |
 | 契約検証 | `audio` | clip / voice の状態・所有権 / openal, webaudio |
 | 測定 | `pipeline-benchmark` | Vulkan pipeline cache の有無を比較 / vulkan |
 

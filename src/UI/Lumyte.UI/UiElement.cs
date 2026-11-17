@@ -34,12 +34,26 @@ public partial class UiElement
 
     internal IReadOnlyList<UiElementChildren> Slots => _slots;
 
+    internal bool HasCollectionItemOwnership { get; set; }
+
+    internal IReadOnlyList<UiElement> CollectionItemRoots { get; set; } = Array.Empty<UiElement>();
+
     internal bool UsesTreeValidation { get; set; }
 
     internal Action? Prepare(Widget next, UiElementUpdateContext context) => PrepareUpdate(next, context);
 
     internal void Publish(UiSurface surface, Widget widget, IReadOnlyList<UiElement>[] slots)
     {
+        if (Surface is null || !ReferenceEquals(_widget, widget))
+        {
+            if (Surface is not null)
+            {
+                _widget.MountedInstanceCount--;
+            }
+
+            widget.MountedInstanceCount++;
+        }
+
         _widget = widget;
         Surface = surface;
         if (AutomationId == default)
@@ -117,6 +131,7 @@ public partial class UiElement
         ContentReads = null;
         Contexts = null;
         Surface?.ForgetHostValidation(this);
+        _widget.MountedInstanceCount--;
         Surface = null;
         Parent = null;
         foreach (UiElement child in _children)

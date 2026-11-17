@@ -14,7 +14,7 @@ public sealed class SchemaTests
     [InlineData("{}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"actorId\":\"admin\"}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"kind\":\"click\",\"locator\":[]}")]
-    [InlineData("{\"schemaVersion\":7,\"kind\":\"snapshot\",\"locator\":[]}")]
+    [InlineData("{\"schemaVersion\":8,\"kind\":\"snapshot\",\"locator\":[]}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"snapshot\",\"locator\":[],\"position\":{\"x\":0,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"click\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"position\":{\"x\":-1,\"y\":0}}")]
     [InlineData("{\"schemaVersion\":1,\"kind\":\"press\",\"locator\":[{\"kind\":\"test-id\",\"value\":\"save\"}],\"key\":\"enter\"}")]

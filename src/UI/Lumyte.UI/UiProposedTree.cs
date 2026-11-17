@@ -82,6 +82,10 @@ internal sealed class UiProposedTree
         return children.Contains(child);
     }
 
+    internal Widget Configuration(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Next : element.Widget;
+
+    internal IEnumerable<UiElement> Children(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Slots.SelectMany(slot => slot) : element.Children;
+
     private UiElement Resolve(Widget widget, UiElement? receiver)
     {
         for (UiElement? current = receiver; current is not null; current = _parents!.GetValueOrDefault(current))
@@ -99,10 +103,6 @@ internal sealed class UiProposedTree
 
         return _elements![widget];
     }
-
-    private Widget Configuration(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Next : element.Widget;
-
-    private IEnumerable<UiElement> Children(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Slots.SelectMany(slot => slot) : element.Children;
 
     private void EnsureIndex()
     {
