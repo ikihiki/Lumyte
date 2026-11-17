@@ -78,6 +78,8 @@
         "TestUiNumericAot",
         "TestUiScroll",
         "TestUiScrollAot",
+        "TestUiTabs",
+        "TestUiTabsAot",
         "TestUiMedia",
         "TestUiNavigation",
         "TestUiPages",
