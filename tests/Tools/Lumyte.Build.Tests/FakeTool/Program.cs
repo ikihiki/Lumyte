@@ -13,6 +13,7 @@ internal static class Program
         "PYTHON", "PYTHON3", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "CC_wasm32_unknown_emscripten",
         "AR_wasm32_unknown_emscripten", "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER",
         "LUMYTE_BUILD_ASSEMBLY", "LUMYTE_BENCHMARK_PROJECT", "Configuration",
+        "LUMYTE_GRAPHICS_GPU_TESTS", "LUMYTE_OPENAL_TESTS", "LUMYTE_UI_BENCHMARK_GPU",
     ];
 
     private static int Main(string[] args)

@@ -89,6 +89,7 @@ public sealed class MapWorkloadTests
 
     /// <summary>Executes the deterministic map workload contract.</summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuIntegratedBenchmarkTests.IntegrationGpuFact]
     public async Task MapSlotsDrainAndPassIndependentOracleAsync()
     {

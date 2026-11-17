@@ -9,6 +9,7 @@ namespace Lumyte.Graphics.Tests;
 public sealed class TextureTests
 {
     /// <summary>Checks wgpu formats, subresource ranges and resource ownership.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void WgpuTexturesRetainViewSources()
     {
@@ -17,6 +18,7 @@ public sealed class TextureTests
     }
 
     /// <summary>Checks Vulkan formats, subresource ranges and resource ownership.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void VulkanTexturesRetainViewSources()
     {

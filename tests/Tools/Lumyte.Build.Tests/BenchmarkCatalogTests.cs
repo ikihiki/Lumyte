@@ -110,6 +110,7 @@ public sealed class BenchmarkCatalogTests
     /// <summary>Real Fallout validates mode before launching a project worker.</summary>
     /// <returns>The asynchronous entry-point assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task FalloutRejectsInvalidModeBeforeBuildAsync()
     {
         using var fixture = new BuildFixture();
@@ -121,6 +122,7 @@ public sealed class BenchmarkCatalogTests
     /// <summary>Unknown target projects fail rather than run a different product.</summary>
     /// <returns>The asynchronous selection assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task FalloutRejectsUnmatchedProjectAsync()
     {
         using var fixture = new BuildFixture();
@@ -136,6 +138,7 @@ public sealed class BenchmarkCatalogTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    [Trait("Execution", "Integration")]
     public async Task NoBuildRejectsUnverifiedInputsAsync(bool stale)
     {
         using var fixture = new BuildFixture();
@@ -169,6 +172,7 @@ public sealed class BenchmarkCatalogTests
     [InlineData("Lumyte.Demo.Benchmark.deps.json")]
     [InlineData("Lumyte.Demo.Benchmark.runtimeconfig.json")]
     [InlineData("runtimes/linux-x64/native/shim.so")]
+    [Trait("Execution", "Integration")]
     public async Task NoBuildRejectsChangedExecutionDependencyAsync(string relative)
     {
         using var fixture = new BuildFixture();
@@ -273,6 +277,7 @@ public sealed class BenchmarkCatalogTests
     /// <summary>A missing mode cannot trigger a benchmark or a hidden correctness preflight.</summary>
     /// <returns>The asynchronous invocation assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task FalloutRequiresExplicitModeUnlessListingAsync()
     {
         using var fixture = new BuildFixture();
@@ -288,6 +293,7 @@ public sealed class BenchmarkCatalogTests
     /// <summary>The Animation target reuses the guarded runner and fingerprints Animation product inputs.</summary>
     /// <returns>The target and stale-source assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task AnimationTargetRejectsStaleProductInputsAsync()
     {
         using var fixture = new BuildFixture();
@@ -322,6 +328,7 @@ public sealed class BenchmarkCatalogTests
     [Theory]
     [InlineData("Input")]
     [InlineData("Diagnostics")]
+    [Trait("Execution", "Integration")]
     public async Task InputTargetRejectsChangedDependenciesAsync(string changedArea)
     {
         using var fixture = new BuildFixture();
@@ -355,6 +362,7 @@ public sealed class BenchmarkCatalogTests
     /// <summary>The Audio target reuses the guarded runner and fingerprints Audio product inputs.</summary>
     /// <returns>The target and stale-source assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task AudioTargetRejectsStaleProductInputsAsync()
     {
         using var fixture = new BuildFixture();
@@ -399,6 +407,7 @@ public sealed class BenchmarkCatalogTests
     [InlineData("native/lumyte_text_parley/src/lib.rs")]
     [InlineData("native/wgpu_native/finished-command-ownership.patch")]
     [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
+    [Trait("Execution", "Integration")]
     public async Task GraphicsTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();
@@ -502,6 +511,7 @@ public sealed class BenchmarkCatalogTests
     [InlineData("src/Core/Lumyte.Agent/Agent.cs")]
     [InlineData("native/lumyte_text_parley/src/lib.rs")]
     [InlineData("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/Fixture.ttf")]
+    [Trait("Execution", "Integration")]
     public async Task UiTargetRejectsChangedSharedInputsAsync(string input)
     {
         using var fixture = new BuildFixture();

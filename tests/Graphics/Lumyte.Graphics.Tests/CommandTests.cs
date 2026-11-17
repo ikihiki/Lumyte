@@ -10,6 +10,7 @@ public sealed class CommandTests
 {
     /// <summary>Checks wgpu buffer and texture copies, clear and submission lifecycle.</summary>
     /// <returns>The asynchronous validation.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuCommandsCopyAndClearAsync()
     {
@@ -19,6 +20,7 @@ public sealed class CommandTests
 
     /// <summary>Checks Vulkan explicit barriers, copy, dynamic rendering and completion.</summary>
     /// <returns>The asynchronous validation.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanCommandsCopyAndClearAsync()
     {

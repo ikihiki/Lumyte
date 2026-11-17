@@ -28,7 +28,10 @@
         "CheckNativeFormat",
         "Ci",
         "CiBrowser",
+        "CiCpu",
         "CiDistribution",
+        "CiGpu",
+        "CiIntegration",
         "CiNative",
         "CiQuality",
         "Clean",
@@ -62,8 +65,11 @@
         "TestAot",
         "TestBrowserAudio",
         "TestBrowserContracts",
+        "TestCpu",
         "TestDiagnosticsProcesses",
         "TestDiagnosticsUi",
+        "TestGpu",
+        "TestIntegration",
         "TestRust",
         "TestSignals",
         "TestText",
@@ -74,19 +80,20 @@
         "TestUiControlsAot",
         "TestUiLayout",
         "TestUiLayoutAot",
-        "TestUiNumeric",
-        "TestUiNumericAot",
-        "TestUiScroll",
-        "TestUiScrollAot",
+        "TestUiMedia",
         "TestUiMenus",
         "TestUiMenusAot",
+        "TestUiNavigation",
+        "TestUiNumeric",
+        "TestUiNumericAot",
+        "TestUiPages",
+        "TestUiScroll",
+        "TestUiScrollAot",
         "TestUiTabs",
         "TestUiTabsAot",
-        "TestUiMedia",
-        "TestUiNavigation",
-        "TestUiPages",
         "TestWasm",
         "TestWindowing",
+        "UsvgNative",
         "VerifyEnvironment",
         "VerifyNamedColors",
         "VerifySdk",
@@ -307,6 +314,10 @@
           "type": "boolean",
           "description": "Exclude Parley packaging until native assets from all supported RIDs have been collected"
         },
+        "SkipWgpuPackage": {
+          "type": "boolean",
+          "description": "Exclude Wgpu packaging until corrected native assets from all supported RIDs have been collected"
+        },
         "Solution": {
           "type": "string",
           "description": "Solution to restore, compile and test"
@@ -314,10 +325,6 @@
         "Toolchain": {
           "type": "string",
           "description": "Rust toolchain override"
-        },
-        "SkipWgpuPackage": {
-          "type": "boolean",
-          "description": "Exclude Wgpu packaging until corrected native assets from all supported RIDs have been collected."
         }
       }
     },

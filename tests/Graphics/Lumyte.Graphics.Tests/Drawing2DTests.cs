@@ -27,6 +27,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks geometry, winding, transformed clips and coverage on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanGeometryAndCoverageAsync()
     {
@@ -37,6 +38,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks geometry, winding, transformed clips and coverage on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuGeometryAndCoverageAsync()
     {
@@ -47,6 +49,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks linear-light paints and all COLRv1 composite modes on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanPaintAndCompositeAsync()
     {
@@ -58,6 +61,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks linear-light paints and all COLRv1 composite modes on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuPaintAndCompositeAsync()
     {
@@ -69,6 +73,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks images, atlas sampling and external glyph representations on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanImagesAndGlyphRepresentationsAsync()
     {
@@ -79,6 +84,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks images, atlas sampling and external glyph representations on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuImagesAndGlyphRepresentationsAsync()
     {
@@ -89,6 +95,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanLayersEffectsAndBackdropAsync()
     {
@@ -113,6 +120,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuLayersEffectsAndBackdropAsync()
     {
@@ -137,6 +145,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanStandaloneSrgbTargetAsync()
     {
@@ -146,6 +155,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks standalone preparation and sRGB encoding on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuStandaloneSrgbTargetAsync()
     {

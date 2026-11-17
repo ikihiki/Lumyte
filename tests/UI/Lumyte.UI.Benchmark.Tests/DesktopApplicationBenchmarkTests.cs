@@ -100,6 +100,7 @@ public sealed class DesktopApplicationBenchmarkTests(ITestOutputHelper output)
     /// <summary>Exercises static, local and full actual standard desktop frames with untimed analytic pixels and orderly stop.</summary>
     /// <param name="count">The approved visible rectangle count.</param>
     /// <returns>The explicitly opted-in native functional validation, never a performance run.</returns>
+    [Trait("Execution", "Gpu")]
     [OwnedDesktopTheory]
     [InlineData(100)]
     [InlineData(1000)]

@@ -46,8 +46,16 @@ dotnet run --project build -c Release -- --target Pack --skip-parley-package --s
   build.schema.json           生成されるschema
 build/
   _build.csproj               実行するconsole project
-  Build.cs                    共通CLIとbuild・test・pack
-  Build.*.cs                  機能別の工程
+  Build.cs                    共通CLIとrestore・compile・pack
+  Build.Testing.cs             CPU / integration / GPUの排他的選択
+  TestLanes.json               test project既定と混在classの分類
+  Build.Browser.cs             Browser publish・process検証
+  Build.UI.cs                  UIの機能別検証と互換入口
+  Build.Diagnostics.cs         診断process・UI・gallery
+  Build.Samples.cs             sample・AOT・publish
+  Build.Quality.cs             format・lint
+  Build.Validation.cs          Text・Signals・window等の互換入口とログ
+  Build.*.cs                  その他の機能別工程
   Directory.Build.props       親MSBuild設定の自動importを遮断
   Directory.Build.targets
   Targets/                    各projectのMSBuild hook
@@ -90,11 +98,14 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `DiagnosticGallery` | 検証結果から診断galleryを生成 |
 | `Samples` / `TestAot` | CPU・Audio等のsample／NativeAOT publishと実行 |
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
-| `CiNative` | solutionのrestore・build・単体テスト |
+| `TestCpu` / `CiCpu` | managed契約。Linux x64のみで実行 |
+| `TestIntegration` / `CiIntegration` | 外部tool・process・native libraryの契約 |
+| `TestGpu` / `CiGpu` | 実backend・pixel/readback。既存opt-in条件を維持 |
+| `CiNative` | integrationのrestore・build・test（CiIntegrationの互換名） |
 | `CiBrowser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
 | `CiDistribution` | sample実行・NuGet pack |
 | `CiQuality` | C#・C/C++・Markdownの書式検査 |
-| `Ci` | 上記4カテゴリとRustテスト。個別Textテストはsolutionテストに含まれる |
+| `Ci` | CPU・integration・GPU・Browser・distribution・AOT・quality・Rust（CPUのためLinux x64限定） |
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
 OS別の実行対象は[workflow](../.github/workflows/composition.yml)で確認できます。
@@ -102,7 +113,9 @@ GitHub Pagesの配信権限はCIから分離したままです。
 
 ### CIの対象と再利用
 
-LinuxとWindowsは別jobとし、それぞれx64／arm64でnative検証を実行します。
+CPUは独立したLinux x64 jobのCiCpuで一度だけ実行します。GPUも独立Linux x64 jobのCiGpuへ分離し、cold-cache容量試験とbackend/pixel検証を維持します。
+LinuxとWindowsは別jobとし、それぞれx64／arm64でbuildとCiIntegrationを実行します。Windows／ARMでCPU全suiteは繰り返しません。
+分類と混在projectの選択規則は[テスト手順](../tests/README.md#実行レーン)を参照してください。
 `--host-only`は正本の`Lumyte.slnx`から現在のOS用solutionを`artifacts/ci/`へ生成します。
 LinuxではWindows Platform・Direct3D12と専用sample／testを除外し、WindowsではLinux Platformを除外します。
 Platformのテストprojectもhost用の参照とソースだけをコンパイルします。
@@ -116,7 +129,8 @@ AOTは独立したLinux x64 jobで、対象sampleだけをpublish・実行しま
 Windows専用packageとWindow sampleはWindows側で検証します。
 FormatはLinux／Windows各x64の独立したjobで、host用Releaseビルドを準備してC#の書式を検査します。
 native／Markdown lintはLinuxのFormat jobで一度だけ実行します。
-AOT・Format・Browser・nativeは並列に開始し、すべて成功してからParleyの統合packageを作成します。
+CPU・GPU・AOT・Format・Browser・nativeは並列に開始し、すべて成功してからParleyの統合packageを作成します。
+Browserの既知timeout許可は既存の狭い条件・期限のままとし、レーン全体の失敗を許可しません。
 環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
 Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
 

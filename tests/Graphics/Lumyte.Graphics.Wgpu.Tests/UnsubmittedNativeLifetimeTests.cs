@@ -14,11 +14,13 @@ public sealed class UnsubmittedNativeLifetimeTests(ITestOutputHelper output)
 {
     /// <summary>Checks 2500 warm and cold public recordings and analytic hardware pixels.</summary>
     /// <returns>The bounded native subprocess completion.</returns>
+    [Trait("Execution", "Gpu")]
     [HardwareFact]
     public Task PublicRecordingDoesNotExhaustUnsubmittedCommandsAsync() => RunChildAsync("--public-stress");
 
     /// <summary>Checks native registry counts, reference counts and both submission entry points.</summary>
     /// <returns>The bounded native subprocess completion.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeFunctionalFact]
     public Task NativeCommandRegistryRetiresAfterFinalReleaseAsync() => RunChildAsync("--native-fixed");
 

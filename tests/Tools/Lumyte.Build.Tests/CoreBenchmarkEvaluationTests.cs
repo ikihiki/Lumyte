@@ -156,6 +156,7 @@ public sealed class CoreBenchmarkEvaluationTests
     /// <summary>The real Fallout entry point rejects unsupported selection before starting builds.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ActualRunnerRejectsInvalidPurposeBeforeBuildAsync()
     {
         using var fixture = new BuildFixture();
@@ -168,6 +169,7 @@ public sealed class CoreBenchmarkEvaluationTests
     /// <summary>The real entry point requires an explicit measurement mode.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ActualRunnerRejectsMissingModeAsync()
     {
         using var fixture = new BuildFixture();

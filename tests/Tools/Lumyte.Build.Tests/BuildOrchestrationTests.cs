@@ -9,6 +9,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>Native orchestration preserves argument boundaries, inherited state and exact toolchain notices without Python on PATH.</summary>
     /// <returns>A task representing completion of the build assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task NativeBuildCopiesArtifactsWithoutPythonOnPathAsync()
     {
         using var fixture = new BuildFixture();
@@ -29,6 +30,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>Nested builds isolate Fallout state while reading the actual repository's crate.</summary>
     /// <returns>A task representing completion of the nested-build assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task NestedNativeBuildUsesTheRepositoryOutsideItsInvocationRootAsync()
     {
         using var fixture = new BuildFixture();
@@ -48,6 +50,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>The build returns failure when Cargo fails and does not publish stale outputs or query another tool.</summary>
     /// <returns>A task representing completion of the failed-build assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task CargoFailureStopsArtifactPublicationAsync()
     {
         using var fixture = new BuildFixture();
@@ -62,6 +65,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>A successful process exit cannot masquerade as a successful build when its expected output is missing.</summary>
     /// <returns>A task representing completion of the missing-output assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task MissingCargoArtifactFailsTheBuildAsync()
     {
         using var fixture = new BuildFixture();
@@ -74,6 +78,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>WASM rebuilds std using the workload SDK, preserves encoded flags and selects the explicit interpreter.</summary>
     /// <returns>A task representing completion of the WASM build assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task WasmBuildUsesTheSdkAndIsolatedPythonAsync()
     {
         using var fixture = new BuildFixture();
@@ -118,6 +123,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>Ambiguous Rust flags fail before Cargo can receive a silently different compilation configuration.</summary>
     /// <returns>A task representing completion of the invalid-flags assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task WasmRejectsUnencodedRustFlagsAsync()
     {
         using var fixture = new BuildFixture();
@@ -132,6 +138,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>Invalid SDK settings are rejected before starting compiler or interpreter processes.</summary>
     /// <returns>A task representing completion of the invalid-SDK assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task InvalidSdkDoesNotStartChildToolsAsync()
     {
         using var fixture = new BuildFixture();
@@ -143,6 +150,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>The MSBuild handoff contains the selected interpreter's complete Unicode path.</summary>
     /// <returns>A task representing completion of the interpreter-handoff assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task PrepareWasmToolsWritesTheResolvedInterpreterAsync()
     {
         using var fixture = new BuildFixture();
@@ -158,6 +166,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>An explicit missing interpreter fails instead of silently selecting an ambient Python or downloading one.</summary>
     /// <returns>A task representing completion of the missing-interpreter assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ExplicitMissingPythonFailsBeforeCompilationAsync()
     {
         using var fixture = new BuildFixture();
@@ -170,6 +179,7 @@ public sealed class BuildOrchestrationTests
     /// <summary>An unsupported interpreter cannot start a compiler even when its executable exits successfully.</summary>
     /// <returns>A task representing completion of the interpreter-version assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task UnsupportedPythonVersionFailsBeforeCompilationAsync()
     {
         using var fixture = new BuildFixture();

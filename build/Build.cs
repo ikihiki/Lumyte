@@ -77,13 +77,6 @@ internal sealed partial class Build : FalloutBuild
             await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
         });
 
-    private Target Test => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            await DotNetAsync("test", Project ?? BuildSolution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
-        });
-
     private Target Clean => definition => definition
         .Executes(async () =>
         {
@@ -125,16 +118,6 @@ internal sealed partial class Build : FalloutBuild
 
             await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
         });
-
-    private Target CheckFormat => definition => definition
-        .Executes(async () =>
-        {
-            await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["Configuration"] = Configuration },
-                "format", Project ?? BuildSolution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
-        });
-
-    private Target Ci => definition => definition
-        .DependsOn(CiNative, CiBrowser, CiDistribution, TestAot, CiQuality, TestRust);
 
     public static int Main() => Execute<Build>(build => build.Compile);
 

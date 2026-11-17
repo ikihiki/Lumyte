@@ -2,6 +2,34 @@
 
 `tests/<カテゴリ>/<プロジェクト名>/`に検証コードを配置します。性能の測定方法は[ベンチマーク一覧](../benchmarks/README.md)を参照してください。
 
+## 実行レーン
+
+テスト本体の依存で分類します。.NET test host自体は「別プロセス」に数えません。
+
+| 入口 | 契約 | CI |
+| --- | --- | --- |
+| TestCpu / CiCpu | managedな値・所有権・記録。外部tool、子process、native library、GPUを呼ばない | Linux x64のみ |
+| TestIntegration / CiIntegration | FakeToolを起動するbuild検証、Slang、Parley、usvg、native Audio、native window、通信 | Linux / Windowsのx64 / arm64 |
+| TestGpu / CiGpu | 実backendのshader実行・readback・pixel・native device契約 | Linux x64のsoftware Vulkan、Windowsの既存opt-in条件 |
+| CiBrowser | Node契約、Browser process、WebGPU、Audio | 独立Linux x64 job |
+
+build/TestLanes.jsonがsolution内のxUnit projectの正本です。新projectは分類しないと失敗します。
+混在projectのIntegrationClasses、個別のExecution=Integration trait、
+GPU Fact/TheoryのExecution=Gpu traitを使い、GPU優先で排他的に選びます。
+未指定のmanaged testはそのprojectの既定レーンへ入るため、新しいFactを追加しても実行漏れません。
+新しいnative/tool/processテストは対応するclass一覧またはtraitも更新してください。
+Toolsの純粋なcatalog・JSON検証、managed WAVE、fake window、Text/Editor benchmarkのmanaged契約はCPU側へ残し、同じproject内のFakeTool・native/font・compiler経路だけを統合側へ分けます。
+CPUレーンは継承したLUMYTE_*TEST* / LUMYTE_*BENCHMARK* opt-inを子test processから除去します。
+
+各レーンは通常のFallout入口で呼びます（例: dotnet run --project build -c Release -- --target TestCpu --host-only）。
+--projectで混在projectを指定しても同じfilterを適用します。
+各レーンは必要なbuildを先に行い、TRXをartifacts/test-results/{cpu,integration,gpu}/へ保存します。
+「CPU」はテスト本体の条件です。混在projectのコンパイル・埋め込みshader生成にはSDK/native build toolが必要な場合があります。
+従来のTestは全体／projectをfilterせずに実行する互換入口です。CiNativeはCiIntegrationの互換名です。
+Browser・AOT・sample・Rust等のprocess検証は下記の専用入口も維持します。
+GPUを使わずに確認できるrectangle poolの所有権・8→10 allocation契約は既存CpuGraphicsDeviceへ移しました。
+backend固有のvalidation、native retirement、pixel/readbackの試験はfakeへ置き換えていません。
+
 ## 単体テスト
 
 | カテゴリ | 主な検証対象 |

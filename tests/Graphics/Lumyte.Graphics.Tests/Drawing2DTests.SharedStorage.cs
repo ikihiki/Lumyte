@@ -14,6 +14,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks shared native-address ranges against separately allocated programs.</summary>
     /// <returns>The asynchronous readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanSharedStorageAsync()
     {
@@ -23,6 +24,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the portable separate-allocation fallback.</summary>
     /// <returns>The asynchronous readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuSharedStorageFallbackAsync()
     {

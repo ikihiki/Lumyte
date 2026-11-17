@@ -11,6 +11,7 @@ public sealed class PipelineTests
 {
     /// <summary>Checks wgpu draw variants, state snapshots and compute programs.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuPipelinesDrawAndDispatchAsync()
     {
@@ -24,6 +25,7 @@ public sealed class PipelineTests
 
     /// <summary>Checks Vulkan native graphics variants and compute programs.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanPipelinesDrawAndDispatchAsync()
     {
@@ -37,6 +39,7 @@ public sealed class PipelineTests
 
     /// <summary>Checks identical Vulkan draws without native graphics pipeline reuse.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanPipelinesWithoutCacheDrawAndDispatchAsync()
     {

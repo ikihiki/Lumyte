@@ -23,6 +23,7 @@ public sealed class ManagedGraphicsGpuTests
 {
     /// <summary>Checks Vulkan uses configured shared pipelines after renderer disposal and across effect graphs.</summary>
     /// <returns>The GPU check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanDefinedResourcesReadbackAsync()
     {
@@ -32,6 +33,7 @@ public sealed class ManagedGraphicsGpuTests
 
     /// <summary>Checks wgpu uses configured shared pipelines after renderer disposal and across effect graphs.</summary>
     /// <returns>The GPU check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuDefinedResourcesReadbackAsync()
     {

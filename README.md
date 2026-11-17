@@ -88,7 +88,8 @@ dotnet run --project build -c Release -- --target Test
 
 ソリューションは `Lumyte.slnx` を使用します。Falloutの`Test` targetで、
 `tests/` 内のソリューションに登録されたテストを実行します。
-CI は Linux／Windows の x64／aarch64 で、mise セットアップ後に同じFalloutの検証・ビルド・テスト工程を実行します。
+CPUテストはLinux x64のCiCpuで一度だけ実行し、CiIntegration・CiGpu・Browser検証と並列化します。
+Linux／Windowsのx64／aarch64のnative build・integration検証と配布artifact収集は維持します。
 すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。
 
 - [デバイス補正・仮想デバイスの設計](docs/adr/input/INPUT-0002-processing-and-recognition.md)

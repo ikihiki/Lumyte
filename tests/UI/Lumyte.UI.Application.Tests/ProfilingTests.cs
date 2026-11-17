@@ -444,6 +444,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks real presenter terminal counters, owner relation and confirmed retirement.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task PresenterTerminalCountersAndOwnerRelationAreUniqueAsync()
     {

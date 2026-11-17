@@ -29,6 +29,7 @@ public sealed class TypedGraphArgumentsTests
 
     /// <summary>Vulkan freezes ordinary typed values and validates the selected native pipeline at execution.</summary>
     /// <returns>The native submission and readback completion.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanTypedCallbackArgumentsAsync()
     {
@@ -42,6 +43,7 @@ public sealed class TypedGraphArgumentsTests
 
     /// <summary>Wgpu freezes ordinary typed values and validates the selected native pipeline at execution.</summary>
     /// <returns>The native submission and readback completion.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuTypedCallbackArgumentsAsync()
     {
