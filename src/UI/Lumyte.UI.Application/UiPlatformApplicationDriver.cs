@@ -749,7 +749,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                 await _graphics!.InitializeAsync(cancellationToken);
                 _lease = await _graphics.AcquireAsync(cancellationToken);
                 _device = _lease.Device;
-                _presenter = new(_device, Application.Options.Background, Application.Options.MaximumFramesInFlight);
+                _presenter = new(_device, Application.Options.Background, Application.Options.MaximumFramesInFlight, Application.Options.DrawingRetention);
             }
             catch (Exception error)
             {
@@ -789,7 +789,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             await _graphics.RecoverAsync();
             _lease = await _graphics.AcquireAsync();
             _device = _lease.Device;
-            _presenter = new(_device, Application.Options.Background, Application.Options.MaximumFramesInFlight);
+            _presenter = new(_device, Application.Options.Background, Application.Options.MaximumFramesInFlight, Application.Options.DrawingRetention);
             await Application.EndGraphicsRecoveryAsync();
         }
         catch (Exception error)

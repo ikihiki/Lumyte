@@ -3,6 +3,10 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <summary>Bounds retained GPU work and idle compiled assets per renderer.</summary>
 public sealed record DrawingRetentionOptions2D
 {
+    /// <summary>Gets a value indicating whether builtin record payloads support shared immutable instances and exact integer translation.</summary>
+    /// <remarks>Opt-in preserves the existing exclusive cache representation and memory charges by default. Custom renderers and shaders remain on the compatibility route.</remarks>
+    public bool EnableResidentInstances { get; init; }
+
     /// <summary>Gets the maximum number of prepared, recorded, or quarantined frames.</summary>
     public int MaxFramesInFlight { get; init; } = 3;
 
@@ -13,10 +17,14 @@ public sealed record DrawingRetentionOptions2D
     /// <remarks>Shared owned allocations and active immutable snapshots reserve this budget. Active frames are not evicted or retroactively rejected.</remarks>
     public long MaxCachedBytes { get; init; } = 64 * 1024 * 1024;
 
+    /// <summary>Gets the maximum preparation working set for resident payloads, including conservative staging reservations.</summary>
+    public long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
+
     internal void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxFramesInFlight, 1);
         ArgumentOutOfRangeException.ThrowIfNegative(MaxCachedAssets);
         ArgumentOutOfRangeException.ThrowIfNegative(MaxCachedBytes);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaxWorkingBytes, 1);
     }
 }

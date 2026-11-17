@@ -26,6 +26,10 @@ public sealed class PreparedDrawingFrame2D : IDisposable
         _release = release;
     }
 
+    internal IGraphicDevice Device => _device;
+
+    internal bool ClearsTarget => _drawing!.ClearsTarget;
+
     /// <summary>Records this frame exactly once without submitting it.</summary>
     /// <param name="commands">The caller-owned command memory, retained until retirement.</param>
     public void Record(IGraphicsCommandBuffer commands)
@@ -182,6 +186,12 @@ public sealed class PreparedDrawingFrame2D : IDisposable
                 profile.Snapshot(_cache.Statistics);
             }
         }
+    }
+
+    internal void DeclareGraphResources(IDrawingResourceDeclarations2D declarations, IGraphicsTexture texture)
+    {
+        ObjectDisposedException.ThrowIf(_released, this);
+        _drawing!.DeclareGraphResources(declarations, texture);
     }
 
     // Only the application presenter may substitute confirmed device-generation retirement.

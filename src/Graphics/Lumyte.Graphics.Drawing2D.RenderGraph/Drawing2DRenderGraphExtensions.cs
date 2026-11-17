@@ -3,7 +3,7 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
 /// <summary>Inserts configured layered drawing into a caller-owned parent render graph.</summary>
-public static class Drawing2DRenderGraphExtensions
+public static partial class Drawing2DRenderGraphExtensions
 {
     /// <summary>Appends drawing and effect passes; never compiles or executes a nested graph.</summary>
     /// <param name="graph">The parent graph owning all handles and temporary allocations.</param>

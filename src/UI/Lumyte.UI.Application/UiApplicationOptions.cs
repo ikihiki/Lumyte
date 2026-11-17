@@ -1,4 +1,5 @@
 using Lumyte.Core.Time;
+using Lumyte.Graphics.Drawing2D;
 using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.UI.Application;
@@ -36,8 +37,18 @@ public sealed record UiApplicationOptions
     /// <summary>Gets the GPU frame upper bound.</summary>
     public int MaximumFramesInFlight { get; init; } = 2;
 
+    /// <summary>Gets an explicit drawing retention policy, or null to preserve the exclusive-cache default.</summary>
+    /// <remarks>Its frame limit must equal MaximumFramesInFlight. No application-wide default is changed.</remarks>
+    public DrawingRetentionOptions2D? DrawingRetention { get; init; }
+
     internal void Validate()
     {
+        DrawingRetention?.Validate();
+        if (DrawingRetention is { } retention && retention.MaxFramesInFlight != MaximumFramesInFlight)
+        {
+            throw new ArgumentException("Drawing retention must use the application frame limit.", nameof(DrawingRetention));
+        }
+
         ArgumentNullException.ThrowIfNull(Motion);
         Motion.Validate();
         ArgumentNullException.ThrowIfNull(TimeProvider);

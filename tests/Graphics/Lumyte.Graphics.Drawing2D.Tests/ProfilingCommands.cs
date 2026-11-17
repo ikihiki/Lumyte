@@ -8,6 +8,10 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
 
     internal List<object> Events { get; } = [];
 
+    internal bool CountPayloadBytes { get; init; }
+
+    internal ulong PayloadCopyBytes { get; private set; }
+
     public void Barrier(MemoryBarrierDesc barrier) => Events.Add(barrier);
 
     public void Barrier<T>(BufferBarrierDesc<T> barrier)
@@ -20,10 +24,24 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
 
     public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
         where TSource : unmanaged
-        where TDestination : unmanaged => Events.Add("copy");
+        where TDestination : unmanaged
+    {
+        Events.Add("copy");
+        if (CountPayloadBytes)
+        {
+            PayloadCopyBytes += source.SizeInBytes;
+        }
+    }
 
     public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-        where T : struct, IShaderArguments => Events.Add("shader-copy");
+        where T : struct, IShaderArguments
+    {
+        Events.Add("shader-copy");
+        if (CountPayloadBytes)
+        {
+            PayloadCopyBytes += source.Count * source.Buffer.ShaderElementStrideInBytes;
+        }
+    }
 
     public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => Events.Add("texture-copy");
 
