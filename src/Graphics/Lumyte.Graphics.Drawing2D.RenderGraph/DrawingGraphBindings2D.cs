@@ -86,6 +86,10 @@ public sealed class DrawingGraphBindings2D
         where T : struct, IShaderArguments => _buffers.TryGetValue(buffer, out RenderGraphResource? resource) && resource is RenderGraphShaderDataBuffer<T> typed
             ? typed : throw new InvalidOperationException("The shader data has not been bound to this graph.");
 
+    internal IGraphicsTexture GetAllocation(RenderGraphTexture resource)
+        => _textures.FirstOrDefault(pair => ReferenceEquals(pair.Value, resource)).Key
+            ?? throw new ArgumentException("The target allocation must be bound before appending a resident frame.", nameof(resource));
+
     internal DrawingGraphBindings2D Snapshot()
     {
         var result = new DrawingGraphBindings2D(Graph);

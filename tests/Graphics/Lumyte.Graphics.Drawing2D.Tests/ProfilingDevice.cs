@@ -51,6 +51,10 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     internal int NativeBuffers { get; private set; }
 
+    internal int ShaderCreations { get; private set; }
+
+    internal int PipelineCreations { get; private set; }
+
     internal bool FailUploadDisposeOnce { get; init; }
 
     internal HashSet<object> DisposedBuffers { get; } = new(ReferenceEqualityComparer.Instance);
@@ -89,7 +93,11 @@ internal sealed class ProfilingDevice : IGraphicDevice
         return new Table(this, desc);
     }
 
-    public IGraphicsShader CreateShader(ShaderArtifact artifact) => new Shader(artifact);
+    public IGraphicsShader CreateShader(ShaderArtifact artifact)
+    {
+        ShaderCreations++;
+        return new Shader(artifact);
+    }
 
     public IGraphicsSemaphore CreateSemaphore() => throw new NotSupportedException();
 
@@ -99,7 +107,11 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
 
-    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => new Pipeline(desc);
+    public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
+    {
+        PipelineCreations++;
+        return new Pipeline(desc);
+    }
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
 
@@ -358,8 +370,6 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public ShaderDataSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-        public void Dispose()
-        {
-        }
+        public void Dispose() => device.DisposedBuffers.Add(this);
     }
 }

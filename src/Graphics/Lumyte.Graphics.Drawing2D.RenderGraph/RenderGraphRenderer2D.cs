@@ -28,6 +28,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private readonly IDisposable? _resourceUse;
     private readonly DrawingArgumentTableMode _argumentTableMode = DrawingArgumentTableMode.Auto;
+    private readonly long _maxWorkingBytes = 256L * 1024 * 1024;
     private bool _disposed;
     private int _preparing;
 
@@ -48,6 +49,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         _resourceUse = state.Retain(ensureResources: false);
         _resources = state;
         _argumentTableMode = source.ArgumentTableMode;
+        _maxWorkingBytes = source.MaxWorkingBytes;
     }
 
     /// <summary>Releases this host without disposing borrowed strategies or waiting for GPU work.</summary>
@@ -127,10 +129,20 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         IDisposable unusedPlanOwner = _resources.CleanupOwner(argumentPlan);
         try
         {
+            using IDisposable workingBytesUse = argumentPlan.HoldWorkingBytesSources();
             owner.HoldComposition(_resources.RetainComposition(allowReturned: _resourceUse is not null));
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);
+            if (owner.EnforcesWorkingBudget || argumentPlan.WorkingReferencesEnabled)
+            {
+                argumentPlan.EnableWorkingReferenceBudget();
+                if (checked(owner.WorkingBytes(argumentPlan) + argumentPlan.EstimatedBytes) > _maxWorkingBytes)
+                {
+                    throw new NotSupportedException("Combined graph prepared owners exceed MaxWorkingBytes before mapping.");
+                }
+            }
+
             await argumentPlan.PrepareMappingsAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (!graphOwnsPlan)
@@ -587,7 +599,11 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             }
 
             int firstReservation = argumentPlan.Reservations.Count;
-            var preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null);
+            var preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null)
+            {
+                MaxWorkingBytes = _maxWorkingBytes,
+            };
+            preparation.SetWorkingBytesSource(() => owner.WorkingBytes(argumentPlan));
             IPreparedCommandBatch2D batch = IsBuiltinRenderer(commands[index]) && preparation.RecordResources() is not null
                 ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end), cancellationToken).ConfigureAwait(false)
                 : commands[index] switch
@@ -607,6 +623,11 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
                 };
             ArgumentNullException.ThrowIfNull(batch);
             owner.Own(batch);
+            if (batch is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true })
+            {
+                argumentPlan.EnableWorkingReferenceBudget();
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             if (batch is PreparedRecordBatch2D records)
             {

@@ -40,6 +40,9 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     DrawingCommandRenderers2D IGraphRendererSource2D.CommandRenderers => _renderers;
 
     /// <inheritdoc/>
+    long IGraphRendererSource2D.MaxWorkingBytes => _retained.MaxWorkingBytes;
+
+    /// <inheritdoc/>
     DrawingResourceState2D IGraphRendererSource2D.ResourceState
     {
         get
@@ -81,7 +84,8 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
-                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan);
+                using IDisposable workingBytesUse = plan.HoldWorkingBytesSources();
+                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan) { MaxWorkingBytes = _retained.MaxWorkingBytes };
                 int index = 0;
                 using (var build = DrawingProfileScope.Start(4))
                 {
@@ -90,6 +94,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                         while (index < list.Commands.Count)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            context.SetWorkingBytesSource(() => DrawingWorkingBudget2D.OwnedBytes(batches, context.ArgumentPlan));
                             IPreparedCommandBatch2D batch = IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
                                 ? await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
                                 : list.Commands[index] switch
@@ -109,6 +114,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                                 };
                             ArgumentNullException.ThrowIfNull(batch);
                             batches.Add(batch);
+                            if (batch is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true })
+                            {
+                                plan.EnableWorkingReferenceBudget();
+                            }
                         }
 
                         build?.Success();
@@ -124,8 +133,23 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                     }
                 }
 
+                bool enforceWorkingBudget = plan.WorkingReferencesEnabled || batches.OfType<IPreparedWorkingBudget2D>().Any(batch => batch.EnforcesWorkingBudget);
+                if (enforceWorkingBudget)
+                {
+                    plan.EnableWorkingReferenceBudget();
+                }
+
+                if (enforceWorkingBudget && DrawingWorkingBudget2D.OwnedBytes(batches) > _retained.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Combined prepared owners exceed MaxWorkingBytes before upload.");
+                }
+
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (enforceWorkingBudget && DrawingWorkingBudget2D.OwnedBytes(batches) > _retained.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Materialized prepared owners exceed MaxWorkingBytes.");
+                }
 
                 // CleanupUse transfers failed cleanup to the resource state and is idempotent.
                 // Finish fallible cleanup before moving the composition lease into a published owner.

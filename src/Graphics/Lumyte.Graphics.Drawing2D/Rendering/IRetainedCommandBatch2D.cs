@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-/// <summary>Internal immutable prepared payload leased exclusively by a retained frame.</summary>
+/// <summary>Internal immutable prepared payload leased by completion-owned retained frames.</summary>
 /// <remarks>
 /// Sequential recording only. The owner must wait for GPU completion and command disposal
 /// before reuse or disposal. Only the owner publishes residency after confirmed completion;
