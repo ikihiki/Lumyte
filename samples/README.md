@@ -24,6 +24,7 @@ Graphics の native host は続いて exercise を選びます。すべて指定
 
 | 役割 | ID | 内容 / backend |
 | --- | --- | --- |
+| UI | `ui-tabs` | 保持タブ・折り畳み・実編集 / headless（明示font） |
 | 基礎 | `signals` | 値の購読と寿命 / managed |
 | 基礎 | `composition` | 宣言的な構築と生成 factory / managed |
 | 基礎 | `state-machines` | ガード・優先順位・型付き遷移 / managed |

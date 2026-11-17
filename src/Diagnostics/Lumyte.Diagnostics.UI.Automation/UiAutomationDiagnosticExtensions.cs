@@ -24,7 +24,7 @@ public static class UiAutomationDiagnosticExtensions
             Logger = provider.GetService<ILogger<UiAutomationDiagnosticsRuntime>>(),
             InstanceId = provider.GetRequiredService<IGameExecutionIdentity>().InstanceId,
         });
-        services.AddDiagnosticSubsystem<UiAutomationDiagnostics, TPoint>(new("ui.automation", "UI automation", 7));
+        services.AddDiagnosticSubsystem<UiAutomationDiagnostics, TPoint>(new("ui.automation", "UI automation", 8));
         return services;
     }
 }

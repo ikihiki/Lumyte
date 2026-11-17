@@ -19,8 +19,9 @@ public sealed class UiActivationRecognizer
     /// <param name="context">The current delivery context.</param>
     /// <param name="pointerDownDisposition">The owner probe result.</param>
     /// <param name="activate">The callback resolving current configuration at recognition.</param>
+    /// <param name="pointerInside">Optional owner-specific containment for the current pointer input.</param>
     /// <returns>The ordinary routing disposition.</returns>
-    public UiInputResult HandleInput(in UiInputContext context, UiInputResult pointerDownDisposition, Action activate)
+    public UiInputResult HandleInput(in UiInputContext context, UiInputResult pointerDownDisposition, Action activate, bool? pointerInside = null)
     {
         ArgumentNullException.ThrowIfNull(activate);
         if (context.Input is not UiPointerInput pointer)
@@ -50,11 +51,11 @@ public sealed class UiActivationRecognizer
                 context.RequestFocus();
                 return UiInputResult.Handled;
             case UiPointerPhase.Move when context.IsCaptured:
-                _pointerInside = context.IsInside;
+                _pointerInside = pointerInside ?? context.IsInside;
                 UpdatePressedState();
                 return UiInputResult.Handled;
             case UiPointerPhase.Up when context.IsCaptured:
-                if (context.IsInside)
+                if (pointerInside ?? context.IsInside)
                 {
                     activate();
                 }
