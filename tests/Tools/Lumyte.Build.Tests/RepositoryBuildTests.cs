@@ -7,6 +7,39 @@ namespace Lumyte.Build.Tests;
 /// <summary>Checks the repository targets through real Fallout execution and controlled dotnet processes.</summary>
 public sealed class RepositoryBuildTests
 {
+    /// <summary>The tabs gate runs retained controls, actual editor connections and the public sample.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task TabsGateUsesActualEditorAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiTabs", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Controls.Tests", Arguments(records[0]));
+        Assert.Contains("tests/UI/Lumyte.UI.TextEditing.Tests", Arguments(records[1]));
+        Assert.Contains("samples/Lumyte.UI.Tabs.Sample", Arguments(records[2]));
+    }
+
+    /// <summary>The tabs native gate retains both strict warning switches and serialized publication.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task TabsAotGateUsesStrictPublishAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiTabsAot", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        JsonElement publish = Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("samples/Lumyte.UI.Tabs.Sample", Arguments(publish));
+        Assert.Contains("-p:PublishAot=true", Arguments(publish));
+        Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-m:1", Arguments(publish));
+    }
+
     /// <summary>The layout gate invokes the built core suite and the font-free public sample.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]

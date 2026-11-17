@@ -82,6 +82,48 @@ public sealed partial class UiSurface
             return false;
         }
 
+        if (input is UiExpandInput expand)
+        {
+            if (!float.IsFinite(expand.Position.X) || !float.IsFinite(expand.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(expand.Target);
+            if (target is null || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || (target.SupportedActions & UiAutomationActions.ExpandCollapse) == 0 || target.AutomationActivePress || target.IsTransitioning
+                || !AcceptsCurrentInput(target)
+                || !IsInside(target, expand.Position))
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            UiElement? expandHit = _rootElement.FindInputHit(expand.Position, _inputVersion);
+            for (UiElement? node = expandHit; node is not null; node = node.Parent)
+            {
+                if (node.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                UiInputResult probe = node.InvokePointerProbe(expand.Position - node.InputOrigin);
+                if (probe != UiInputResult.Unhandled)
+                {
+                    return ReferenceEquals(node, target) && probe == UiInputResult.Handled && DeliverInput(target, expand, false) == UiInputResult.Handled;
+                }
+            }
+
+            return false;
+        }
+
         if (input is UiSetNumericInput numeric)
         {
             if (!double.IsFinite(numeric.Value) || (numeric.Upper is { } upper && (!double.IsFinite(upper) || numeric.Value > upper))
