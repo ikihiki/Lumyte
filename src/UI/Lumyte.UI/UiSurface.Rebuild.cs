@@ -74,7 +74,7 @@ public sealed partial class UiSurface
         }
     }
 
-    internal void RebuildSubtree(UiElement previous, Widget next)
+    internal void RebuildSubtree(UiElement previous, Widget next, bool refreshContent = false)
     {
         ThrowIfDisposed();
         if (!ReferenceEquals(previous.Surface, this))
@@ -91,11 +91,11 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: refreshContent);
             PrepareAnimationUpdates(plan);
             plan.Prepare();
             PrepareSignalUpdates(plan);
-            if (!_isDisposed)
+            if (!_isDisposed && _pendingRebuild is null && ReferenceEquals(previous.Surface, this))
             {
                 Publish(plan);
             }
@@ -144,6 +144,7 @@ public sealed partial class UiSurface
             if (update.Content is not null)
             {
                 update.Element.ContentReads = update.Content.Reads;
+                update.Element.RequiresFreshContentDescendants = update.Content.RequiresFreshDescendants;
             }
 
             update.Element.ConnectPresence(this, update.Previous);

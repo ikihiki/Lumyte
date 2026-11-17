@@ -159,6 +159,143 @@ public sealed class TextHostTests
         Assert.Equal("invalid-editor", Assert.Throws<UiApplicationException>(() => app.ValidateEditors(surface)).Code);
     }
 
+    /// <summary>Automatic dialog text attachment guards nested dialogs and menus until backend retirement.</summary>
+    /// <param name="menu">Selects a menu rather than a nested dialog.</param>
+    /// <param name="candidates">Includes a visible candidate binding with delayed retirement.</param>
+    /// <returns>The real application-loop verification.</returns>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DialogEditorRetirementBlocksNestedAdmissionAsync(bool menu, bool candidates)
+    {
+        var backend = new Backend { CandidatesEnabled = candidates };
+        var provider = new LayoutProvider();
+        var open = Signal.Create(false);
+        int factories = 0;
+        int opened = 0;
+        UiApplicationWindowContext? main = null;
+        UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1), ImeCandidates = new() { Policy = candidates ? ImeCandidateUiPolicy.PreferCustom : ImeCandidateUiPolicy.System } });
+        builder.UseDriver(() => new Driver(backend));
+        builder.UseTextInput(_ => provider);
+        builder.UseWindows(_ => [Window("main", "Main", root: context =>
+        {
+            main = context;
+            Lumyte.UI.Compose.Definitions.Button nestedContent = Lumyte.UI.Compose.Compute(() =>
+            {
+                factories++;
+                return Lumyte.UI.Compose.Button(width: 40, height: 20);
+            });
+            Lumyte.UI.Compose.Definitions.Widget nested = menu
+                ? Lumyte.UI.Compose.Compute(() => Lumyte.UI.Windowing.Compose.Popup(key: "popup", anchor: "editor", isOpen: open.Value, onOpened: _ => opened++)[nestedContent])
+                : Lumyte.UI.Compose.Compute(() => Lumyte.UI.Windowing.Compose.Dialog(key: "inner", isOpen: open.Value, title: "Inner", onOpened: _ => opened++)[nestedContent]);
+            return Lumyte.UI.Windowing.Compose.Dialog(key: "outer", title: "Outer", isOpen: true, initialFocus: "editor")[
+                Lumyte.UI.Compose.Stack()[TextBox(key: "editor", testId: "editor", text: "outer", layoutProvider: provider, width: 120, height: 24), Lumyte.UI.Compose.Button(testId: "activate", width: 40, height: 20), nested]];
+        })]);
+        UiApplication app = builder.Build();
+        Task running = app.RunAsync();
+        Session? old = null;
+        try
+        {
+            await WaitAsync(app, () => backend.Begins == 1 && main!.CaptureDialogs().Count == 1
+                && (!candidates || app.Windows.CaptureWindows().Any(window => window.Role == UiWindowRole.ImeCandidates && window.IsVisible)));
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                old = backend.Current!;
+                old.DelayRelease = true;
+                using (TextDocumentTransaction edit = old.Document.BeginEdit(TextEditOrigin.Platform))
+                {
+                    edit.SetComposition(new(Guid.NewGuid(), new(0, 1), []));
+                    edit.Commit();
+                }
+
+                Assert.True(old.Status.IsComposing);
+                factories = 0;
+                open.Value = true;
+            });
+            for (int index = 0; index < 8; index++)
+            {
+                await main!.Automation.NextFrameAsync();
+            }
+
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                Assert.False(old!.IsReleased);
+                Assert.True(old.Status.IsComposing);
+                Assert.Equal(menu ? 1 : 0, factories);
+                Assert.Equal(0, opened);
+                UiDialogOpened outer = Assert.Single(main!.CaptureDialogs());
+                if (!menu)
+                {
+                    UiWindowSnapshot inner = Assert.Single(app.Windows.CaptureWindows(), window => window.Owner == outer.Window && window.Role == UiWindowRole.Normal);
+                    Assert.False(inner.ShowIssued);
+                    Assert.False(inner.IsVisible);
+                }
+
+                old.DelayRelease = false;
+            });
+            if (candidates)
+            {
+                await WaitAsync(app, () => backend.CandidateRetirementStarted);
+                for (int index = 0; index < 8; index++)
+                {
+                    await main!.Automation.NextFrameAsync();
+                }
+
+                await app.Dispatcher.InvokeAsync(() =>
+                {
+                    Assert.True(old!.IsReleased);
+                    Assert.Equal(menu ? 1 : 0, factories);
+                    Assert.Equal(0, opened);
+                    UiDialogOpened outer = Assert.Single(main!.CaptureDialogs());
+                    if (!menu)
+                    {
+                        UiWindowSnapshot inner = Assert.Single(app.Windows.CaptureWindows(), window => window.Owner == outer.Window && window.Role == UiWindowRole.Normal);
+                        Assert.False(inner.ShowIssued);
+                        Assert.False(inner.IsVisible);
+                    }
+
+                    backend.CandidateRetirement.TrySetResult();
+                });
+            }
+
+            await WaitAsync(app, () => opened == 1);
+            Assert.True(old!.IsReleased);
+            Assert.Equal(1, factories);
+            await app.Dispatcher.InvokeAsync(() => open.Value = false);
+            await WaitAsync(app, () => main!.CaptureDialogs().Count == 1
+                && app.Windows.CaptureWindows().Count(window => window.Role == UiWindowRole.Normal) == 2);
+            IUiAutomationHost outerHost = await app.Dispatcher.InvokeAsync(() => main!.GetDialogAutomation(Assert.Single(main.CaptureDialogs()).DialogId));
+            var page = new UiAutomationPage(outerHost);
+            await page.GetByTestId("activate").ClickAsync();
+            await page.GetByTestId("editor").FillAsync("resumed");
+            await WaitAsync(app, () => backend.Begins >= 2);
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                Assert.False(backend.Current!.IsReleased);
+                Assert.Equal("resumed", backend.Current.Document.CaptureSnapshot().CommittedText);
+            });
+        }
+        finally
+        {
+            if (old is not null)
+            {
+                await app.Dispatcher.InvokeAsync(() =>
+                {
+                    old.DelayRelease = false;
+                    backend.CandidateRetirement.TrySetResult();
+                });
+            }
+
+            await app.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            await running;
+            await app.DisposeAsync();
+        }
+
+        Assert.Equal(0, backend.Gates);
+    }
+
     private static async Task WaitAsync(UiApplication app, Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -210,7 +347,7 @@ public sealed class TextHostTests
 
         internal override ValueTask InitializeAsync(UiApplication application, IServiceProvider services, bool textInput, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
-        internal override ValueTask<UiDriverWindow> CreateWindowAsync(string key, string title, Vector2 size, UiDriverWindow? owner, bool primary, CancellationToken cancellationToken) => ValueTask.FromResult<UiDriverWindow>(new Window(key, size));
+        internal override ValueTask<UiDriverWindow> CreateWindowAsync(string key, string title, Vector2 size, UiDriverWindow? owner, bool primary, CancellationToken cancellationToken) => ValueTask.FromResult<UiDriverWindow>(new Window(key, size, backend));
 
         internal override void Pump() => backend.Advance();
 
@@ -219,11 +356,14 @@ public sealed class TextHostTests
         internal override ValueTask CloseWindowAsync(UiDriverWindow window) => ValueTask.CompletedTask;
     }
 
-    private sealed class Window(string key, Vector2 size) : UiDriverWindow(key)
+    private sealed class Window(string key, Vector2 size, Backend backend) : UiDriverWindow(key)
     {
         private readonly Lumyte.Input.Abstractions.InputWindowId _origin = new(Guid.NewGuid());
         private readonly Guid _scope = Guid.NewGuid();
         private bool _visible;
+        private IUiWindowSource? _presentation;
+
+        internal override IUiWindowSource PresentationSource => backend.CandidatesEnabled ? _presentation ??= new DelayedSource(Source, backend) : Source;
 
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
@@ -233,6 +373,45 @@ public sealed class TextHostTests
 
         internal override void SetTitle(string title)
         {
+        }
+    }
+
+    private sealed class DelayedSource(IUiWindowSource source, Backend backend) : IUiWindowSource, IUiWindowPresentationStager
+    {
+        public Guid SourceId => source.SourceId;
+
+        private IUiWindowSource Inner => source;
+
+        public UiWindowSourceSnapshot CaptureState() => source.CaptureState();
+
+        public IUiStagedWindowPresentation BeginReplacement(IUiWindowPresentation? current, UiWindowPresentationView view, UiSurface candidate) => ((IUiWindowPresentationStager)source).BeginReplacement(current is DelayedPresentation delayed ? delayed.Inner : current, view, candidate);
+
+        public async ValueTask<IUiWindowPresentation> PreparePresentationAsync(UiWindowPresentationView view, UiSurface surface, CancellationToken cancellationToken)
+        {
+            IUiWindowPresentation presentation = await source.PreparePresentationAsync(view, surface, cancellationToken);
+            return new DelayedPresentation(presentation, backend, view.Role == UiWindowRole.ImeCandidates);
+        }
+
+        public bool TryTransformPoint(IUiWindowSource destination, Vector2 position, out Vector2 transformed) => source.TryTransformPoint(destination is DelayedSource delayed ? delayed.Inner : destination, position, out transformed);
+    }
+
+    private sealed class DelayedPresentation(IUiWindowPresentation presentation, Backend backend, bool candidate) : IUiWindowPresentation
+    {
+        public ulong PresentedGeometryRevision => presentation.PresentedGeometryRevision;
+
+        internal IUiWindowPresentation Inner => presentation;
+
+        public void Update(UiWindowPresentationView view) => presentation.Update(view);
+
+        public async ValueTask DisposeAsync()
+        {
+            if (candidate && backend.CandidatesEnabled)
+            {
+                backend.CandidateRetirementStarted = true;
+                await backend.CandidateRetirement.Task;
+            }
+
+            await presentation.DisposeAsync();
         }
     }
 
@@ -251,6 +430,12 @@ public sealed class TextHostTests
 
         internal Session? Current { get; private set; }
 
+        internal bool CandidatesEnabled { get; init; }
+
+        internal TaskCompletionSource CandidateRetirement { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal bool CandidateRetirementStarted { get; set; }
+
         internal int Begins { get; private set; }
 
         internal int Gates { get; private set; }
@@ -263,7 +448,7 @@ public sealed class TextHostTests
         {
             Assert.True(Current is null || Current.IsReleased);
             Begins++;
-            return Current = new(target, document, navigator);
+            return Current = new(target, document, navigator) { CandidatesEnabled = CandidatesEnabled };
         }
 
         public void Advance() => Current?.Advance();
@@ -279,9 +464,18 @@ public sealed class TextHostTests
 
     private sealed class Session(TextInputTarget target, TextDocument document, ITextDocumentNavigator navigator) : TextInputSessionBase(target, document, navigator, 1)
     {
+        public override ImeCandidateSupport CandidateSupport => new(CandidatesEnabled, CandidatesEnabled, false, string.Empty);
+
+        public override ImeCandidateState CandidateState => new(CandidatesEnabled ? new(Status.SessionId, Generation, 1) : null, ImeCandidatePresentationState.Custom, string.Empty);
+
         internal bool DelayRelease { get; set; }
 
+        internal bool CandidatesEnabled { get; init; }
+
         protected override bool CanRelease => !DelayRelease;
+
+        public override ImeCandidateSnapshot? CaptureCandidates() => !CandidatesEnabled || IsReleased ? null
+            : new(new(Status.SessionId, Generation, 1), 1, Document.CaptureSnapshot().Revision, [new(0, "candidate")], 0, [0], 0, ImeCandidateOperations.None);
 
         protected override void ReleaseCore()
         {

@@ -104,6 +104,23 @@ internal sealed partial class Build
             await ToolAsync(scroll, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         });
 
+    private Target TestUiDialogs => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Controls.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Windowing.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Application.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Dialogs.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
+    private Target TestUiDialogsAot => definition => definition
+        .Executes(async () =>
+        {
+            string dialogs = await PublishAotSampleAsync("samples/Lumyte.UI.Dialogs.Sample", "ui-dialogs-aot", "Lumyte.UI.Dialogs.Sample", strict: true).ConfigureAwait(false);
+            await ToolAsync(dialogs, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
     private Target TestUiMenus => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>

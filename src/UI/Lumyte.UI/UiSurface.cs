@@ -85,6 +85,7 @@ public sealed partial class UiSurface : IDisposable
         }
 
         _isDisposed = true;
+        CloseRequested = null;
         _panCandidates.Clear();
         _revealFocus = null;
         _restoreItemFocus = null;

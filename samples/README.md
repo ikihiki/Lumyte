@@ -105,3 +105,7 @@ OpenAL Soft は検証用ディレクトリに配置し、そのプロセスの P
 
 `ui-menus`の`headless` backendは[Menu・MenuItem・Tooltipの公開例](Lumyte.UI.Menus.Sample/README.md)です。
 明示font、submenu chainと受動表示中の実editor preeditを確認します。物理Window、Windows、Browserの提示検証ではありません。
+
+## ダイアログと通知
+
+`ui-dialogs` の `headless` backend は [宣言的 Dialog・通知 FIFO・recipes](Lumyte.UI.Dialogs.Sample/README.md)の公開例です。通常の Application と Diagnostics、明示 font、実際の編集接続、同じ input lease を使います。Native OS modal の activation は保証範囲に含みません。

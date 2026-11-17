@@ -253,3 +253,5 @@ C6の検証にはTestUiNumeric（Controls・TextEditing・Automationと実editor
 
 メニューと受動tooltipの検証にはTestUiMenus（Controls・Windowingの通常入力と公開Headless画面）、
 TestUiMenusAot（strict NativeAOTのpublishと実行）を使います。サンプルは明示fontを受け取ります。
+
+ダイアログ・通知・recipes の検証には TestUiDialogs（Controls / Windowing / Application と公開 Headless 画面）、TestUiDialogsAot（strict NativeAOT の publish と実行）を使います。明示 font と借用した実編集 backend を使い、Native OS modal の受け入れとは区別します。

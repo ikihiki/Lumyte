@@ -22,7 +22,7 @@ public sealed partial class UiPopupManager
             {
                 if (!reservation.Cancelled)
                 {
-                    UiPopupOwner resolved = owner();
+                    UiPopupOwner resolved = ResolveDialogOwner(owner(), admittedSurface);
                     if (!reservation.Cancelled)
                     {
                         if (!QueuedAnchorAvailable(resolved, request.Anchor, admittedSurface))
@@ -136,6 +136,7 @@ public sealed partial class UiPopupManager
         if (admittedSurface is null || !ReferenceEquals(anchor.Surface, admittedSurface)
             || !_owners.TryGetValue(owner.Id, out Owner? current) || !ReferenceEquals(current.Token, owner)
             || current.Releasing || current.Paused || owner.IsReleaseRequested
+            || !AllowsModal(FindWindow(admittedSurface) ?? current.Window)
             || !ReferenceEquals(anchor.InputVersion, admittedSurface.InputVersionForWindowing)
             || anchor.InputBounds.Right <= anchor.InputBounds.Left || anchor.InputBounds.Bottom <= anchor.InputBounds.Top)
         {

@@ -28,6 +28,8 @@ public sealed class UiApplicationWindowChrome
     private UiWindowBinding? _gripBinding;
     private UiPopupOwner? _headerOwner;
     private UiPopupOwner? _gripOwner;
+    private IDisposable? _headerScope;
+    private IDisposable? _gripScope;
     private UiApplicationAutomationHost? _headerHost;
     private UiApplicationAutomationHost? _gripHost;
     private Vector2 _position;
@@ -77,6 +79,8 @@ public sealed class UiApplicationWindowChrome
         Remember(_context.Windows.Place(_context.Window, Placement(_position)));
         _headerWindow = _context.Windows.Create(new(_context.Window, new(_size.X, TitleHeight), UiWindowRole.Tool, UiWindowInputMode.Interactive, Placement(_position - new Vector2(0, TitleHeight)), UiWindowPolicy.HostedOnly));
         _gripWindow = _context.Windows.Create(new(_context.Window, new(Math.Min(GripSize, _size.X), Math.Min(GripSize, _size.Y)), UiWindowRole.Tool, UiWindowInputMode.Interactive, Placement(_position + _size - Vector2.Min(new(GripSize), _size)), UiWindowPolicy.HostedOnly));
+        _headerScope = _application.Popups.RegisterLogicalChild(_headerWindow, _context.Window);
+        _gripScope = _application.Popups.RegisterLogicalChild(_gripWindow, _context.Window);
         _header = new(new HeaderRoot(this, _title, _context.TextLayoutProvider));
         _grip = new(new Motion(this, true));
         _headerBinding = await _context.Windows.BindPresentationAsync(_headerWindow, _header);
@@ -153,6 +157,11 @@ public sealed class UiApplicationWindowChrome
 
             _context.Windows.Release(window);
         }
+
+        _headerScope?.Dispose();
+        _headerScope = null;
+        _gripScope?.Dispose();
+        _gripScope = null;
     }
 
     internal void Advance()
