@@ -86,6 +86,7 @@
         "TestUiWebView",
         "TestWasm",
         "TestWindowing",
+        "UsvgNative",
         "VerifyEnvironment",
         "VerifyNamedColors",
         "VerifySdk",

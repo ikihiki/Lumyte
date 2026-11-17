@@ -67,7 +67,8 @@ falls back to Python. Ordinary UI use requires neither executable.
 
 The helper inherits the .NET stdin/stdout pipes directly; the supervisor closes
 its own references after spawning and never reads, copies or relays protocol
-bytes. A backend-private Lumyte.Execution workflow owns each asynchronous session
+bytes. Pixels use the versioned fixed three-slot shared mapping; these pipes
+carry only commands, state and empty-body frame notifications. A backend-private Lumyte.Execution workflow owns each asynchronous session
 lifetime without registering a module in the UI shared resource runtime. Close
 cancels I/O and requests native cleanup before joining the session root, stopping
 the backend runtime and disposing owners. Runtime.Stop alone is not the session
@@ -84,13 +85,17 @@ The sandbox-disabled mode does not make arbitrary pages safe.
 
 ## Protocol and lifecycle
 
-One session (1). u32LE packet size excludes its 4-byte prefix; maximum 16,777,280.
+One session (1). u32LE packet size excludes its 4-byte prefix. Accepted control
+bodies are at most4096 bytes; frame-notice bodies are empty. Pixel data lives
+only in the mapping described by [the shared-frame ABI](SHARED-FRAMES.md).
+Legacy frame-sized pipe bodies and old helper capabilities are rejected.
 40-byte payload header: u32 kind, u64 session, i64 generation, i64 sequence,
 i32 width, i32 height, u32 body length. Bodies are bytes, URLs/reasons UTF-8.
 Commands 1 start, 2 navigate, 3 viewport, 4 close, 5 back, 6 forward, 7 reload,
 8 stop. Events 101 native-created Ready, 102 main-frame load-end observed URL,
-103 copied premultiplied packed top-down BGRA8, 104 short fault, 105 closed after
-shutdown. Loaded is not a paint or successful HTTP-status guarantee.
+103 empty-body shared-frame notice, 104 short fault, 105 closed after shutdown.
+Ready101 carries the8-byte LUMYSHM1 magic and16-byte current mapping nonce.
+Shared slots contain premultiplied packed top-down BGRA8. Loaded is not a paint or successful HTTP-status guarantee.
 
 Input bodies are at most4096 bytes; non-URL commands require empty bodies.
 Input generation and sequence must be nonnegative. Viewport generations must
@@ -100,8 +105,12 @@ geometry/generation and monotonically increasing event sequence. The managed fal
 provide a paint generation token: equal-size revisits cannot distinguish the
 age of compositor content, and this is not a presentation fence.
 
-Parser allocation, input queue (8) and output queue (4) are bounded. Queue
-saturation fails closed rather than blocking the native owner. Stdout's protocol
+Parser allocation, input queue (8) and output queue (4) are bounded. Control queue
+saturation fails closed rather than blocking the native owner. Frame-notice
+saturation only drops the notice after shared publication; managed scans Ready
+slots after every valid packet, so queued state traffic cannot lose the last
+static frame. Held Reading slots are never overwritten; no writable slot drops
+a frame without waiting. Stdout's protocol
 fd is duplicated CLOEXEC; normal fd1 and CEF children point to stderr. Native
 callbacks and all browser operations run on the owner pump. EOF requests close;
 creation deadline15s, close grace5s, final writer drain1s. CEF initialize/pump/

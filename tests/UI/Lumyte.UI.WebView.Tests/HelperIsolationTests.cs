@@ -85,6 +85,7 @@ public sealed class HelperIsolationTests
     [InlineData("sigabrt", "cef-helper-exited")]
     [InlineData("malformed", "cef-helper-protocol")]
     [InlineData("sequence-rewind", "cef-helper-protocol")]
+    [InlineData("stale-ready", "cef-helper-protocol")]
     [InlineData("hang", "cef-startup-timeout")]
     [InlineData("navigationhang", "cef-navigation-timeout")]
     public async Task ChildFailurePreservesOwnerAsync(string mode, string reason)
@@ -114,12 +115,15 @@ public sealed class HelperIsolationTests
         }
     }
 
-    /// <summary>Explicit cancel releases child and latest frames without replay.</summary>
+    /// <summary>Explicit cancel releases child and latest frames even when a final notice was dropped.</summary>
+    /// <param name="mode">Notification fixture mode.</param>
     /// <returns>The verification.</returns>
-    [CefHelperFact]
-    public async Task CancelAndRegenerationReleaseResourcesAsync()
+    [CefHelperTheory]
+    [InlineData("normal")]
+    [InlineData("lost-notice")]
+    public async Task CancelAndRegenerationReleaseResourcesAsync(string mode)
     {
-        string executable = CopyHelper("normal");
+        string executable = CopyHelper(mode);
         var budget = new WebViewPixelBudget(1048576);
         try
         {
@@ -130,7 +134,17 @@ public sealed class HelperIsolationTests
                 return state.State == UiWebViewState.Ready;
             });
             helper.SetViewport(4, 4, 1, true, 7);
-            await WaitAsync(() => budget.Used > 0);
+            await WaitAsync(() =>
+            {
+                WebViewPixelMailbox.PixelLease? pending = helper.ViewPixels.Take();
+                if (pending is null)
+                {
+                    return false;
+                }
+
+                helper.ViewPixels.Return(pending);
+                return true;
+            });
             using (WebViewPixelMailbox.PixelLease? frame = helper.ViewPixels.Take())
             {
                 Assert.NotNull(frame);
@@ -139,7 +153,17 @@ public sealed class HelperIsolationTests
             }
 
             helper.SetViewport(3, 3, 1, true, 8);
-            await WaitAsync(() => budget.Used > 0);
+            await WaitAsync(() =>
+            {
+                WebViewPixelMailbox.PixelLease? pending = helper.ViewPixels.Take();
+                if (pending is null)
+                {
+                    return false;
+                }
+
+                helper.ViewPixels.Return(pending);
+                return true;
+            });
             using (WebViewPixelMailbox.PixelLease? frame = helper.ViewPixels.Take())
             {
                 Assert.Equal(8, frame!.Generation);
@@ -265,7 +289,17 @@ public sealed class HelperIsolationTests
                 helper.SetViewport(2, 2, 1, true, generation);
             }
 
-            await WaitAsync(() => budget.Used > 0);
+            await WaitAsync(() =>
+            {
+                WebViewPixelMailbox.PixelLease? pending = helper.ViewPixels.Take();
+                if (pending is null)
+                {
+                    return false;
+                }
+
+                helper.ViewPixels.Return(pending);
+                return true;
+            });
             using WebViewPixelMailbox.PixelLease? frame = helper.ViewPixels.Take();
             Assert.NotNull(frame);
             Assert.Equal(100, frame.Generation);
@@ -341,6 +375,115 @@ public sealed class HelperIsolationTests
                 System.Diagnostics.Process.GetProcessById(child).Kill();
             }
 
+            Directory.Delete(Path.GetDirectoryName(executable)!, true);
+        }
+    }
+
+    /// <summary>A frame published before Ready is consumed without a separate notice.</summary>
+    /// <returns>The verification.</returns>
+    [CefHelperFact]
+    public async Task InitialReadyRescansPublishedFrameAsync()
+    {
+        string executable = CopyHelper("ready-frame");
+        var budget = new WebViewPixelBudget(32 * 1024 * 1024);
+        try
+        {
+            using var helper = new CefHelperSession(new("https://example.test/"), budget, () => { }, new() { HelperExecutablePath = executable });
+            WebViewPixelMailbox.PixelLease? frame = null;
+            await WaitAsync(() => (frame = helper.ViewPixels.Take()) is not null);
+            using (frame)
+            {
+                Assert.Equal(800 * 600 * 4, frame!.Bytes.Length);
+                Assert.All(frame.Bytes, b => Assert.Equal(88, b));
+            }
+
+            helper.Close();
+            await helper.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            helper.Dispose();
+            Assert.Equal(0, budget.Used);
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(executable)!, true);
+        }
+    }
+
+    /// <summary>A viewport exceeding fixed shared capacity faults this browser without budget spill.</summary>
+    /// <returns>The verification.</returns>
+    [CefHelperFact]
+    public async Task FixedCapacityOversizeIsLocalAsync()
+    {
+        string executable = CopyHelper("normal");
+        var budget = new WebViewPixelBudget(1048576);
+        try
+        {
+            using var helper = new CefHelperSession(new("https://example.test/"), budget, () => { }, new() { HelperExecutablePath = executable });
+            await WaitAsync(() =>
+            {
+                helper.TryTakeSnapshot(out HelperSnapshot state);
+                return state.State == UiWebViewState.Ready;
+            });
+            helper.SetViewport(800, 600, 1, true, 1);
+            await helper.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            helper.TryTakeSnapshot(out HelperSnapshot fault);
+            Assert.Equal("cef-shared-frame-capacity", fault.FailureCode);
+            Assert.True(helper.IsClosed);
+            Assert.Equal(0, budget.Used);
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(executable)!, true);
+        }
+    }
+
+    /// <summary>Native can paint Start before Ready: both preexisting and late layout must fit a small actual budget.</summary>
+    /// <param name="late">Whether layout first arrives after bootstrap Ready.</param>
+    /// <returns>The verification.</returns>
+    [CefHelperTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SmallBudgetEarlyStartPaintAsync(bool late)
+    {
+        string executable = CopyHelper("start-paint");
+        var budget = new WebViewPixelBudget(1048576);
+        try
+        {
+            using var helper = new CefHelperSession(new("https://example.test/"), budget, () => { }, new() { HelperExecutablePath = executable });
+            if (!late)
+            {
+                helper.SetViewport(64, 64, 1, true, 1);
+            }
+
+            await WaitAsync(() =>
+            {
+                helper.TryTakeSnapshot(out HelperSnapshot state);
+                Assert.NotEqual(UiWebViewState.Faulted, state.State);
+                return state.State == UiWebViewState.Ready;
+            });
+            if (late)
+            {
+                Assert.Null(helper.ViewPixels.Take());
+                Assert.Equal("1x1", File.ReadAllText(Path.Combine(Path.GetDirectoryName(executable)!, "start-size.txt")));
+                helper.SetViewport(64, 64, 1, true, 1);
+            }
+
+            WebViewPixelMailbox.PixelLease? frame = null;
+            await WaitAsync(() => (frame = helper.ViewPixels.Take()) is not null);
+            using (frame)
+            {
+                Assert.Equal(1, frame!.Generation);
+                Assert.Equal(64 * 64 * 4, frame.Bytes.Length);
+            }
+
+            string initial = File.ReadAllText(Path.Combine(Path.GetDirectoryName(executable)!, "start-size.txt"));
+            Assert.Equal(late ? "1x1" : "64x64", initial);
+            helper.Close();
+            await helper.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            helper.Dispose();
+            Assert.Equal(0, budget.Used);
+        }
+        finally
+        {
             Directory.Delete(Path.GetDirectoryName(executable)!, true);
         }
     }

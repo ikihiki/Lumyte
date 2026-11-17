@@ -35,6 +35,7 @@ public sealed class CefStopRecoveryTests
         }
 
         UiWebViewSession? browser = null;
+        CefWebViewParticipant? participant = null;
         var options = new CefWebViewOptions { HelperExecutablePath = Path.Combine(directory, "fake-backpressure"), SupervisorExecutablePath = wrapper };
         UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1) }).UseHeadless();
 
@@ -42,6 +43,7 @@ public sealed class CefStopRecoveryTests
         typeof(UiApplicationBuilder).GetProperty("IntegrationDriverKind", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, "desktop");
         builder.UseCefWebViews(options).UseRoot(window =>
         {
+            participant = window.Services.GetRequiredService<CefWebViewParticipant>();
             browser = window.GetWebViewSession("browser", new("http://127.0.0.1/"));
             return Lumyte.UI.Compose.Panel();
         });
@@ -67,6 +69,15 @@ public sealed class CefStopRecoveryTests
             await advanced.Task.WaitAsync(TimeSpan.FromSeconds(2));
             NativeSignals.Send(pidfd, 18);
             await UntilAsync(() => !Directory.Exists(receipt[1]));
+
+            // Unlink is not the managed cleanup receipt: join the retained session before retry.
+            FieldInfo windowsField = typeof(CefWebViewParticipant).GetField("_windows", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var windows = (System.Collections.IDictionary)windowsField.GetValue(participant)!;
+            object window = windows.Values.Cast<object>().Single();
+            var entries = (System.Collections.IDictionary)window.GetType().GetProperty("Entries", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+            object entry = entries.Values.Cast<object>().Single();
+            var engine = (CefHelperSession)entry.GetType().GetProperty("Engine", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(entry)!;
+            await engine.Completion.WaitAsync(TimeSpan.FromSeconds(5));
             await app.RetryStopAsync().WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(UiApplicationState.Stopped, app.State);
         }
@@ -217,7 +228,8 @@ public sealed class CefStopRecoveryTests
             File.SetUnixFileMode(supervisor, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
-        using var session = new CefHelperSession(new("http://127.0.0.1/"), new(1024), () => { }, new()
+        var budget = new WebViewPixelBudget(1048576);
+        using var session = new CefHelperSession(new("http://127.0.0.1/"), budget, () => { }, new()
         {
             HelperExecutablePath = Path.Combine(directory, "fake-backpressure"),
             SupervisorExecutablePath = supervisor,
@@ -228,6 +240,8 @@ public sealed class CefStopRecoveryTests
             Assert.False(session.IsClosed);
             Assert.NotNull(session.CleanupOwner);
             Assert.True(session.CleanupOwner.HasExited);
+            Assert.True(budget.Used > 0);
+            Assert.NotNull(typeof(CefHelperSession).GetField("_sharedFrames", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session));
             Assert.True(Directory.Exists(session.OwnedDirectory));
             IOException original = Assert.Throws<IOException>(session.ThrowIfStopFailed);
             Assert.Equal("cef-helper-cleanup-failed", original.Message);
@@ -240,6 +254,7 @@ public sealed class CefStopRecoveryTests
             // This fixture exits without spawning anything. Production never substitutes
             // directory deletion for descendant-cleanup proof after a 125 receipt.
             session.CleanupOwner?.Dispose();
+            (typeof(CefHelperSession).GetField("_sharedFrames", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session) as IDisposable)?.Dispose();
             if (session.OwnedDirectory is { } root)
             {
                 Directory.Delete(root, true);

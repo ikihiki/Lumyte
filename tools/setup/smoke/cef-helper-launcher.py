@@ -72,6 +72,22 @@ await File.WriteAllTextAsync(args[2],await stderr.WaitAsync(TimeSpan.FromSeconds
 Directory.Delete(Environment.GetEnvironmentVariable("HOME")!, recursive:true);
 '''
 
+def create_shared_map(root):
+    # DEV-only owner initialization, matching the managed shm-v1 ABI.
+    capacity = 4 * 1024 * 1024
+    stride = (64 + capacity + 4095) & ~4095
+    length = 4096 + 3 * stride
+    nonce = os.urandom(16)
+    header = bytearray(4096)
+    struct.pack_into('<8sIIIIQQQ16s', header, 0, b'LUMYSHM1', 1, 4096, 3, 64, capacity, stride, length, nonce)
+    fd = os.open(root/'frames-v1.shm', os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.truncate(length)
+        f.write(header)
+        for index in range(3):
+            f.seek(4096 + index * stride)
+            f.write(struct.pack('<IIQqiiII16sII', 0, index, 0, 0, 0, 0, 0, 0, nonce, 1, 0))
+
 def run(cmd, **kwargs):
     return sp.run(cmd, check=True, timeout=40, **kwargs)
 
@@ -178,6 +194,7 @@ def main():
         base.update(WAYLAND_DISPLAY=str(runtime/'w'),XDG_RUNTIME_DIR=str(runtime))
         for mode in ('explicit-unsandboxed','normal-eof','stdout-close-alive','abort','term','tree-kill','startup-fail','portal-timeout','tree-kill-startup') + (('native-sandbox-failure',) if a.native_helper else ()):
             root=Path(tempfile.mkdtemp(prefix='lumyte-browser-'));root.chmod(0o700)
+            if mode=='native-sandbox-failure':create_shared_map(root)
             marker='LUMYTE_LAUNCHER_SMOKE='+root.name
             env=dict(base,HOME=str(root),TMPDIR=str(root),XDG_CONFIG_HOME=str(root),XDG_DATA_HOME=str(root),XDG_CACHE_HOME=str(root),
                 FIXTURE_PROOF=str(out/(mode+'.proof')),FIXTURE_MODE='abort' if mode=='abort' else 'stdout-close-alive' if mode=='stdout-close-alive' else 'normal',LUMYTE_LAUNCHER_SMOKE=root.name)

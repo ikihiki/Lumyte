@@ -48,12 +48,12 @@ internal static class CefHelperProtocol
 
         int width = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(32));
         int height = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(36));
-        if (kind == 103 && (width <= 0 || height <= 0 || (long)width * height * 4 != bodyLength))
+        if (kind == 103 && (width <= 0 || height <= 0 || width > 4096 || height > 4096 || bodyLength != 0))
         {
             throw new InvalidDataException("cef-protocol-frame");
         }
 
-        if (kind != 103 && bodyLength > 4096)
+        if ((kind == 101 && bodyLength != 24) || (kind != 103 && bodyLength > 4096))
         {
             throw new InvalidDataException("cef-protocol-state");
         }

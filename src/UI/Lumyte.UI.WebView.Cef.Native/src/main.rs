@@ -12,8 +12,10 @@ use std::{
 };
 mod helper_mode;
 mod helper_protocol;
+mod shared_frames;
 use helper_protocol::{Packet, geometry, http_url};
 struct Session {
+    frames: shared_frames::SharedFrames,
     browser: Option<Browser>,
     width: i32,
     height: i32,
@@ -26,7 +28,11 @@ struct Session {
 }
 impl Session {
     fn emit(&mut self, kind: u32, body: Vec<u8>) {
-        self.sequence = self.sequence.saturating_add(1);
+        let Some(sequence) = self.sequence.checked_add(1) else {
+            self.failed.store(true, Ordering::Release);
+            return;
+        };
+        self.sequence = sequence;
         let packet = Packet {
             kind,
             generation: self.generation,
@@ -35,9 +41,7 @@ impl Session {
             height: self.height,
             body,
         };
-        if self.tx.try_send(packet).is_err() {
-            self.failed.store(true, Ordering::Release);
-        }
+        enqueue(&self.tx, &self.failed, packet);
     }
     fn fault(&mut self, reason: &str) {
         self.emit(104, reason.as_bytes().to_vec());
@@ -67,7 +71,7 @@ wrap_life_span_handler! {
    let browser=browser.as_deref().cloned(); let closing=self.state.borrow().closing;
    self.state.borrow_mut().browser=browser.clone();
    if let Some(host)=browser.and_then(|b| b.host()) {host.set_audio_muted(1);if closing {host.close_browser(1);}}
-   self.state.borrow_mut().emit(101,vec![]);
+   let mut s=self.state.borrow_mut(); let body=s.frames.ready_body(); s.emit(101,body);
   }
   fn on_before_close(&self,_browser:Option<&mut Browser>) {let mut s=self.state.borrow_mut();s.browser=None;s.closed=true;}
   fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32 {1}
@@ -82,7 +86,12 @@ wrap_render_handler! {
    if s.closing || buffer.is_null() || type_!=PaintElementType::VIEW || width!=s.width || height!=s.height || !geometry(width,height) {return;}
    // CEF's buffer is borrowed for this callback. Copy only validated, tightly packed BGRA8.
    let bytes=unsafe{std::slice::from_raw_parts(buffer,width as usize*height as usize*4)};
-   s.emit(103,bytes.to_vec());
+   let generation=s.generation;
+   match s.frames.publish(generation,width,height,bytes) {
+    Ok(true)=>s.emit(103,vec![]),
+    Ok(false)=>{},
+    Err(reason)=>{s.fault(reason);s.failed.store(true,Ordering::Release);}
+   }
   }
  }
 }
@@ -204,6 +213,13 @@ fn run() -> i32 {
         eprintln!("cannot isolate protocol stdout");
         return 2;
     };
+    let frames = match shared_frames::SharedFrames::open_current() {
+        Ok(frames) => frames,
+        Err(error) => {
+            eprintln!("cef-helper-shared-frames: {error}");
+            return 2;
+        }
+    };
     let (tx, out) = mpsc::sync_channel::<Packet>(4);
     let failed = Arc::new(AtomicBool::new(false));
     let writer_failed = failed.clone();
@@ -236,6 +252,7 @@ fn run() -> i32 {
         }
     });
     let state = Shared::new(RefCell::new(Session {
+        frames,
         browser: None,
         width: 1,
         height: 1,
@@ -455,4 +472,116 @@ fn run() -> i32 {
 }
 fn main() {
     std::process::exit(run());
+}
+
+// Only frame notices are lossy. The shared Ready slot remains discoverable while
+// queued control packets drain; there is deliberately no pending/coalescing flag.
+fn enqueue(tx: &SyncSender<Packet>, failed: &AtomicBool, packet: Packet) {
+    match tx.try_send(packet) {
+        Ok(()) | Err(mpsc::TrySendError::Full(Packet { kind: 103, .. })) => {}
+        Err(_) => failed.store(true, Ordering::Release),
+    }
+}
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+    fn packet(kind: u32) -> Packet {
+        Packet {
+            kind,
+            generation: 1,
+            sequence: 1,
+            width: 1,
+            height: 1,
+            body: vec![],
+        }
+    }
+    #[test]
+    fn final_static_frame_survives_full_control_queue() {
+        let root = shared_frames::tests::Root::new();
+        root.create(|_| {});
+        let frames = shared_frames::SharedFrames::open_root(&root.0).unwrap();
+        let (tx, rx) = mpsc::sync_channel(4);
+        let failed = Arc::new(AtomicBool::new(false));
+        let mut session = Session {
+            frames,
+            browser: None,
+            width: 1,
+            height: 1,
+            generation: 1,
+            sequence: 0,
+            closing: false,
+            closed: false,
+            tx,
+            failed: failed.clone(),
+        };
+        for kind in [101, 102, 102, 102] {
+            session.emit(kind, vec![]);
+        }
+        assert!(session.frames.publish(1, 1, 1, &[9; 4]).unwrap());
+        session.emit(103, vec![]);
+        assert!(!failed.load(Ordering::Acquire));
+        assert_eq!(
+            rx.try_iter().map(|p| p.kind).collect::<Vec<_>>(),
+            [101, 102, 102, 102]
+        );
+        // No future paint or notice is needed: draining ANY queued valid packet
+        // lets the managed rescan acquire this final persistent Ready slot.
+        let bytes = std::fs::read(root.0.join("frames-v1.shm")).unwrap();
+        assert_eq!(&bytes[4096..4100], &2u32.to_le_bytes());
+        assert_eq!(&bytes[4104..4112], &1u64.to_le_bytes());
+        assert_eq!(&bytes[4160..4164], &[9; 4]);
+    }
+    #[test]
+    fn full_frame_notice_drops_but_controls_and_disconnect_fault() {
+        let (tx, rx) = mpsc::sync_channel(4);
+        let failed = AtomicBool::new(false);
+        for _ in 0..4 {
+            enqueue(&tx, &failed, packet(102));
+        }
+        enqueue(&tx, &failed, packet(103));
+        assert!(!failed.load(Ordering::Acquire));
+        assert_eq!(rx.try_iter().count(), 4);
+        for _ in 0..4 {
+            enqueue(&tx, &failed, packet(102));
+        }
+        enqueue(&tx, &failed, packet(104));
+        assert!(failed.load(Ordering::Acquire));
+        failed.store(false, Ordering::Release);
+        drop(rx);
+        enqueue(&tx, &failed, packet(103));
+        assert!(failed.load(Ordering::Acquire));
+    }
+}
+
+#[cfg(test)]
+mod allocation_probe {
+    use std::{
+        alloc::{GlobalAlloc, Layout, System},
+        cell::Cell,
+    };
+    thread_local! { pub static ENABLED: Cell<bool> = const {Cell::new(false)}; pub static COUNT: Cell<usize> = const {Cell::new(0)}; }
+    struct Probe;
+    unsafe impl GlobalAlloc for Probe {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            ENABLED.with(|enabled| {
+                if enabled.get() {
+                    COUNT.with(|count| count.set(count.get() + 1));
+                }
+            });
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            ENABLED.with(|enabled| {
+                if enabled.get() {
+                    COUNT.with(|count| count.set(count.get() + 1));
+                }
+            });
+            unsafe { System.realloc(ptr, layout, size) }
+        }
+    }
+    #[global_allocator]
+    static ALLOCATOR: Probe = Probe;
 }

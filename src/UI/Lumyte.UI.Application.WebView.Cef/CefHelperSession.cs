@@ -11,12 +11,14 @@ internal sealed class CefHelperSession : IDisposable
 {
     private readonly object _gate = new();
     private readonly CefWebViewOptions _options;
+    private readonly WebViewPixelBudget _budget;
     private readonly Action _wake;
     private readonly CancellationTokenSource _stop = new();
     private readonly Channel<CefHelperPacket> _commands = Channel.CreateBounded<CefHelperPacket>(new BoundedChannelOptions(16) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private readonly Task _lifetime;
     private readonly CefExecutionScope _execution;
     private readonly bool _ownsExecution;
+    private CefSharedFrames? _sharedFrames;
     private bool _runtimeRetired;
     private ExceptionDispatchInfo? _cleanupFailure;
     private ExceptionDispatchInfo? _retirementFailure;
@@ -39,6 +41,7 @@ internal sealed class CefHelperSession : IDisposable
     internal CefHelperSession(Uri uri, WebViewPixelBudget budget, Action wake, CefWebViewOptions options, CefExecutionScope? execution = null, bool ownsExecution = false)
     {
         _options = options;
+        _budget = budget;
         _wake = wake;
         _snapshot = new(UiWebViewState.Creating, uri);
         ViewPixels = new(budget);
@@ -137,6 +140,12 @@ internal sealed class CefHelperSession : IDisposable
             // Hidden/zero-sized views use a bounded 1x1 surface; no UI image is uploaded.
             _width = visible ? Math.Max(1, pixelsX) : 1;
             _height = visible ? Math.Max(1, pixelsY) : 1;
+            if (_sharedFrames is { } shared && (long)_width * _height * 4 > shared.Capacity)
+            {
+                Fail("cef-shared-frame-capacity");
+                return;
+            }
+
             var viewport = new CefHelperPacket(3, generation, Width: _width, Height: _height);
             if (_ready)
             {
@@ -317,6 +326,16 @@ internal sealed class CefHelperSession : IDisposable
             // Set privacy atomically at creation, before launching any children.
             Directory.CreateDirectory(ownedDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
+            lock (_gate)
+            {
+                _sharedFrames = new CefSharedFrames(ownedDirectory, _budget);
+                if (_pendingViewport is { } pending && (long)pending.Width * pending.Height * 4 > _sharedFrames.Capacity)
+                {
+                    Fail("cef-shared-frame-capacity");
+                    return;
+                }
+            }
+
             // Native inherits these pipe endpoints directly into the helper and closes
             // its own fd0/fd1 references after spawn. No intermediary copies pixels.
             var start = new ProcessStartInfo(supervisor) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Path.GetDirectoryName(path)! };
@@ -346,7 +365,35 @@ internal sealed class CefHelperSession : IDisposable
             stderr = DrainDiagnosticsAsync(process.StandardError, _stop.Token);
             using var startup = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
             startup.CancelAfter(_options.StartupTimeout);
-            await CefHelperProtocol.WriteAsync(process.StandardInput.BaseStream, new(1, Width: 800, Height: 600, Body: Encoding.UTF8.GetBytes(uri.AbsoluteUri)), startup.Token);
+            CefHelperPacket startPacket;
+            lock (_gate)
+            {
+                // OnPaint may precede Ready. Snapshot the latest requested geometry without
+                // advancing the caller-owned generation (native Start is always generation 0).
+                int initialWidth = _pendingViewport?.Width ?? 800;
+                int initialHeight = _pendingViewport?.Height ?? 600;
+                if ((long)initialWidth * initialHeight * 4 > _sharedFrames.Capacity)
+                {
+                    if (_pendingViewport is not null)
+                    {
+                        Fail("cef-shared-frame-capacity");
+                        return;
+                    }
+
+                    // Layout has not arrived: do not fault on an unrequested default surface.
+                    // Validate the bounded bootstrap normally, but suppress owned pixels until
+                    // SetViewport installs the actual generation with Resize.
+                    initialWidth = 1;
+                    initialHeight = 1;
+                    _width = 1;
+                    _height = 1;
+                    ViewPixels.Resize(-1);
+                }
+
+                startPacket = new(1, Width: initialWidth, Height: initialHeight, Body: Encoding.UTF8.GetBytes(uri.AbsoluteUri));
+            }
+
+            await CefHelperProtocol.WriteAsync(process.StandardInput.BaseStream, startPacket, startup.Token);
 
             CefHelperPacket first;
             try
@@ -365,7 +412,7 @@ internal sealed class CefHelperSession : IDisposable
                 return;
             }
 
-            if (first.Kind != 101)
+            if (first.Kind != 101 || first.Sequence < 0 || !_sharedFrames.MatchesReady(first.Body))
             {
                 throw new InvalidDataException("cef-helper-not-ready");
             }
@@ -382,6 +429,11 @@ internal sealed class CefHelperSession : IDisposable
                     Queue(viewport);
                     _pendingViewport = null;
                 }
+            }
+
+            lock (_gate)
+            {
+                _sharedFrames.Rescan(ViewPixels, _generation, _width, _height);
             }
 
             writer = WriteCommandsAsync(process.StandardInput.BaseStream, _stop.Token);
@@ -443,11 +495,13 @@ internal sealed class CefHelperSession : IDisposable
                                 throw new InvalidDataException("cef-protocol-geometry");
                             }
 
-                            ViewPixels.Publish(packet.Body!, packet.Width, packet.Height, packet.Generation);
+                            // Notice only; authoritative pixels and frame sequence are in the ring.
                             break;
                         case 104: Fail("cef-helper-fault"); break;
                         default: throw new InvalidDataException("cef-protocol-kind");
                     }
+
+                    _sharedFrames.Rescan(ViewPixels, _generation, _width, _height);
                 }
 
                 _wake();
@@ -467,6 +521,10 @@ internal sealed class CefHelperSession : IDisposable
         catch (EndOfStreamException)
         {
             Fail("cef-helper-exited");
+        }
+        catch (IOException error) when (error.Message == "cef-shared-budget")
+        {
+            Fail("cef-shared-budget");
         }
         catch (Exception)
         {
@@ -590,6 +648,8 @@ internal sealed class CefHelperSession : IDisposable
 
             if (cleanupComplete)
             {
+                _sharedFrames?.Dispose();
+                _sharedFrames = null;
                 _ownedDirectory = null;
             }
 

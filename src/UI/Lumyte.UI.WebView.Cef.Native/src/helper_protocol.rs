@@ -1,6 +1,7 @@
 //! Internal helper protocol. No user-input injection capability is exposed.
 use std::io::{self, Read, Write};
-pub const MAX: usize = 16_777_280;
+pub const MAX: usize = HEADER + 4096;
+pub const MAX_PIXELS: usize = 16 * 1024 * 1024;
 pub const HEADER: usize = 40;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Packet {
@@ -47,7 +48,7 @@ impl Packet {
         }))
     }
     pub fn write(&self, writer: &mut impl Write) -> io::Result<()> {
-        if self.body.len() > MAX - HEADER {
+        if self.body.len() > MAX - HEADER || (self.kind == 103 && !self.body.is_empty()) {
             return Err(io::Error::other("output too large"));
         }
         writer.write_all(&((HEADER + self.body.len()) as u32).to_le_bytes())?;
@@ -63,7 +64,7 @@ impl Packet {
     }
 }
 pub fn geometry(w: i32, h: i32) -> bool {
-    w > 0 && h > 0 && w <= 4096 && h <= 4096 && (w as usize) * (h as usize) * 4 <= MAX - HEADER
+    w > 0 && h > 0 && w <= 4096 && h <= 4096 && (w as usize) * (h as usize) * 4 <= MAX_PIXELS
 }
 pub fn http_url(bytes: &[u8]) -> Option<&str> {
     let s = std::str::from_utf8(bytes).ok()?;
@@ -111,5 +112,24 @@ mod tests {
         assert!(!geometry(-1, 64));
         assert!(http_url(b"file:///tmp/a").is_none());
         assert!(http_url(b"https://example.com/").is_some());
+    }
+    #[test]
+    fn frame_notice_is_exactly_44_bytes_and_never_pixels() {
+        let mut p = Packet {
+            kind: 103,
+            generation: 1,
+            sequence: 2,
+            width: 1,
+            height: 1,
+            body: vec![],
+        };
+        let mut bytes = vec![];
+        p.write(&mut bytes).unwrap();
+        assert_eq!(bytes.len(), 44);
+        p.body = vec![0; 4];
+        assert!(p.write(&mut vec![]).is_err());
+        let mut oversized = (HEADER as u32 + 4097).to_le_bytes().to_vec();
+        oversized.extend_from_slice(&[0; HEADER]);
+        assert!(Packet::read(&mut oversized.as_slice()).is_err());
     }
 }

@@ -11,10 +11,10 @@ if (args.Contains("--detached-child", StringComparer.Ordinal))
 if (args.Contains("--selfcheck", StringComparer.Ordinal))
 {
     using var stream = new MemoryStream();
-    await CefHelperProtocol.WriteAsync(stream, new(103, 7, Width: 1, Height: 1, Body: [20, 40, 80, 255]), CancellationToken.None);
+    await CefHelperProtocol.WriteAsync(stream, new(103, 7, Width: 1, Height: 1, Body: []), CancellationToken.None);
     stream.Position = 0;
     CefHelperPacket roundtrip = await CefHelperProtocol.ReadAsync(stream, CancellationToken.None);
-    if (roundtrip.Generation != 7 || roundtrip.Body!.Length != 4)
+    if (roundtrip.Generation != 7 || roundtrip.Body!.Length != 0 || stream.Length != 44)
     {
         throw new InvalidDataException("helper-selfcheck");
     }
@@ -76,7 +76,25 @@ if (mode.EndsWith("malformed", StringComparison.Ordinal))
     return;
 }
 
-await CefHelperProtocol.WriteAsync(output, new(101), CancellationToken.None);
+using var frames = new FakeSharedFrameProducer(Environment.GetEnvironmentVariable("TMPDIR")!);
+byte[] readyBody = frames.ReadyBody;
+if (mode.EndsWith("stale-ready", StringComparison.Ordinal))
+{
+    readyBody[23] ^= 1;
+}
+
+if (mode.EndsWith("start-paint", StringComparison.Ordinal))
+{
+    File.WriteAllText(Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "start-size.txt"), $"{start.Width}x{start.Height}");
+    frames.Publish(start.Width, start.Height, 0, 88);
+}
+
+if (mode.EndsWith("ready-frame", StringComparison.Ordinal))
+{
+    frames.Publish(start.Width, start.Height, 0, 88);
+}
+
+await CefHelperProtocol.WriteAsync(output, new(101, Body: readyBody), CancellationToken.None);
 if (mode.EndsWith("navigationhang", StringComparison.Ordinal))
 {
     await Task.Delay(Timeout.Infinite);
@@ -114,10 +132,17 @@ while (true)
 
     if (packet.Kind == 3)
     {
-        byte[] pixels = new byte[checked(packet.Width * packet.Height * 4)];
-        pixels.AsSpan().Fill(127);
-        await CefHelperProtocol.WriteAsync(output, new(103, packet.Generation - 1, Width: packet.Width, Height: packet.Height, Body: pixels), CancellationToken.None);
-        await CefHelperProtocol.WriteAsync(output, new(103, packet.Generation, Width: packet.Width, Height: packet.Height, Body: pixels), CancellationToken.None);
+        frames.Publish(packet.Width, packet.Height, Math.Max(0, packet.Generation - 1));
+        frames.Publish(packet.Width, packet.Height, packet.Generation);
+        if (mode.EndsWith("lost-notice", StringComparison.Ordinal))
+        {
+            // Model a full native frame-notification queue: final frame only has a state wake.
+            await CefHelperProtocol.WriteAsync(output, new(102, Body: start.Body), CancellationToken.None);
+        }
+        else
+        {
+            await CefHelperProtocol.WriteAsync(output, new(103, packet.Generation, Width: packet.Width, Height: packet.Height), CancellationToken.None);
+        }
     }
     else if (packet.Kind is 2 or 5 or 6 or 7 or 8)
     {
