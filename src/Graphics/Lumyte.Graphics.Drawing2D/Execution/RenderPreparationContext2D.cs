@@ -64,7 +64,7 @@ public sealed class RenderPreparationContext2D
         => new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources)
         {
             EnforceWorkingBudget = true,
-            MaxWorkingBytes = EnforceWorkingBudget ? Math.Min(MaxWorkingBytes, maximum) : maximum,
+            MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum),
             OtherWorkingBytes = OtherWorkingBytes,
         };
 

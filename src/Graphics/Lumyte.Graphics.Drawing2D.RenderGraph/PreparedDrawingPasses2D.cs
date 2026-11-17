@@ -45,6 +45,8 @@ public sealed class PreparedDrawingPasses2D : IDisposable
         _compositionUse = null;
     }
 
+    internal long WorkingBytes(object excludedOwner) => DrawingWorkingBudget2D.OwnedBytes(_resources.OfType<IPreparedCommandBatch2D>(), excludedOwner);
+
     internal void HoldComposition(IDisposable? compositionUse) => _compositionUse = compositionUse;
 
     internal void Own(IDisposable resource)

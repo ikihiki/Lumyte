@@ -1,5 +1,6 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.Pipelines;
+using Lumyte.Graphics.Drawing2D.RenderGraph;
 using Lumyte.Graphics.Shared;
 using Lumyte.Mathematics.Colors;
 using Xunit;
@@ -342,6 +343,77 @@ public sealed class MeshCoverageTests
         frame.AbortUnsubmitted();
     }
 
+    /// <summary>Component limits cannot hide a smaller root limit or allocations from earlier groups.</summary>
+    /// <param name="graphMode">Whether preparation uses the normal parent Graph bridge.</param>
+    /// <param name="groups">Alternating kind-local groups in painter order.</param>
+    /// <param name="rootBudget">The root's aggregate working limit.</param>
+    /// <returns>The managed budget admission verification.</returns>
+    [Theory]
+    [InlineData(false, 1, 32768L)]
+    [InlineData(true, 1, 32768L)]
+    [InlineData(false, 32, 65536L)]
+    [InlineData(true, 32, 65536L)]
+    public async Task RootAndEarlierGroupsBoundMeshPreparationAsync(bool graphMode, int groups, long rootBudget)
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        using RendererBuildHost2D host = Configuration(rootBudget: rootBudget).CreateHost();
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        if (graphMode)
+        {
+            var canvas = new RenderGraphCanvas2D();
+            canvas.Begin();
+            for (int i = 0; i < groups; i++)
+            {
+                if (i % 2 == 0)
+                {
+                    canvas.FillRect(new(2, 2, 8, 8), new SRgba<float>(1, 0, 0, 0.5f));
+                }
+                else
+                {
+                    canvas.FillCircle(new(8, 8), 4, new SRgba<float>(0, 1, 0, 0.5f));
+                }
+            }
+
+            using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device);
+            var description = new TextureDesc { Width = 32, Height = 32, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.Sampled };
+            Lumyte.Graphics.RenderGraph.RenderGraphTexture target = graph.CreateTexture(description);
+            var bindings = new DrawingGraphBindings2D(graph);
+            using var graphRenderer = new RenderGraphRenderer2D(renderer, canvas.End(), new() { Texture = target, Description = description }, bindings);
+            await Assert.ThrowsAsync<NotSupportedException>(async () => await graph.Append2D(graphRenderer));
+        }
+        else
+        {
+            var canvas = new Canvas2D();
+            canvas.Begin();
+            for (int i = 0; i < groups; i++)
+            {
+                if (i % 2 == 0)
+                {
+                    canvas.FillRect(new(2, 2, 8, 8), new SRgba<float>(1, 0, 0, 0.5f));
+                }
+                else
+                {
+                    canvas.FillCircle(new(8, 8), 4, new SRgba<float>(0, 1, 0, 0.5f));
+                }
+            }
+
+            using var texture = new DispatchTexture { Width = 32, Height = 32 };
+            using IGraphicsTextureView view = texture.CreateView();
+            DrawList2D content = canvas.End();
+            await Assert.ThrowsAsync<NotSupportedException>(async () => await renderer.PrepareAsync(content, new RenderTarget2D { View = view }));
+        }
+
+        if (groups == 1)
+        {
+            Assert.Equal(0, device.NativeBuffers);
+        }
+        else
+        {
+            Assert.True(device.NativeBuffers > 0);
+        }
+    }
+
     private static DrawList2D Content(int variant)
     {
         var canvas = new Canvas2D();
@@ -375,9 +447,9 @@ public sealed class MeshCoverageTests
         },
     };
 
-    private static Definitions.Renderer Configuration(bool resident = false) => Renderer(
+    private static Definitions.Renderer Configuration(bool resident = false, long rootBudget = 16 * 1024 * 1024) => Renderer(
         argumentTables: DrawingArgumentTableMode.Auto,
-        retention: resident ? RetentionGpuLimits(3, 32, 4 * 1024 * 1024, 16 * 1024 * 1024) : RetentionLimits(maxFramesInFlight: 3, maxCachedAssets: 32, maxCachedBytes: 4 * 1024 * 1024))[
+        retention: resident ? RetentionGpuLimits(3, 32, 4 * 1024 * 1024, rootBudget) : RetentionLimits(maxFramesInFlight: 3, maxCachedAssets: 32, maxCachedBytes: 4 * 1024 * 1024) with { MaxWorkingBytes = rootBudget })[
         Renderer.FillRect()[MeshFillRect(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
         Renderer.FillRoundedRect()[MeshFillRoundedRect(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
         Renderer.FillCircle()[MeshFillCircle(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
