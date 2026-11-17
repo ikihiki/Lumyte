@@ -84,6 +84,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
+                using IDisposable workingBytesUse = plan.HoldWorkingBytesSources();
                 var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan) { MaxWorkingBytes = _retained.MaxWorkingBytes };
                 int index = 0;
                 using (var build = DrawingProfileScope.Start(4))
