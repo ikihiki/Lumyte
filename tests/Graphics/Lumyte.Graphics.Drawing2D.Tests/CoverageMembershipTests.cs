@@ -41,6 +41,50 @@ public sealed class CoverageMembershipTests
         Assert.Equal(500, fork.WithWorkingLimit(2000).MaxWorkingBytes);
     }
 
+    /// <summary>The original preparation plan invalidates callbacks in every family fork, including another-plan forks.</summary>
+    /// <param name="resolve">Whether the budget scalar was needed before preparation ended.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MembershipForksReleaseSharedCallbackAtOriginalScopeEnd(bool resolve)
+    {
+        var device = new ProfilingDevice();
+        using var resources = new DrawingResourceState2D(device);
+        using var originalPlan = new DrawingArgumentPlan2D(device);
+        using var otherPlan = new DrawingArgumentPlan2D(device);
+        using var service = new CoverageMembershipService2D(device);
+        var context = new RenderPreparationContext2D(device, new() { Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment } }, resources, originalPlan) { MaxWorkingBytes = 1000 };
+        int reads = 0;
+        RenderPreparationContext2D fork;
+        using (originalPlan.HoldWorkingBytesSources())
+        {
+            context.SetWorkingBytesSource(() =>
+            {
+                reads++;
+                return 300;
+            });
+            fork = context.WithShapeMembership(service).WithArgumentPlan(otherPlan).WithWorkingLimit(500);
+            Assert.Equal(0, reads);
+            if (resolve)
+            {
+                Assert.Equal(300, fork.OtherWorkingBytes);
+            }
+        }
+
+        Assert.False(context.HasWorkingBytesSource);
+        Assert.False(fork.HasWorkingBytesSource);
+        Assert.Same(otherPlan, fork.ArgumentPlan);
+        Assert.Same(service, fork.MembershipService);
+        Assert.True(fork.ComputeShapeMembership);
+        Assert.True(fork.EnforceWorkingBudget);
+        Assert.Equal(resolve ? 300 : 0, fork.OtherWorkingBytes);
+        Assert.Equal(resolve ? 300 : 0, context.WithShapeMembership(service).OtherWorkingBytes);
+        Assert.Equal(resolve ? 1 : 0, reads);
+        Assert.Equal(0, device.NativeBuffers);
+        Assert.Equal(0, device.ShaderCreations);
+        Assert.Equal(0, device.Writes);
+    }
+
     /// <summary>Reused and distinct passive declarations share only one build-local service.</summary>
     [Fact]
     public void ReusedDeclarationCreatesDistinctProcessorsAndOneService()
