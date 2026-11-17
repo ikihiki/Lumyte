@@ -7,12 +7,12 @@ internal sealed class ExternalDrawingResources : IDisposable
 {
     private readonly List<IDisposable> _owned = [];
 
-    internal ExternalDrawingResources(IGraphicDevice device)
+    internal ExternalDrawingResources(IGraphicDevice device, bool builtinIdentity = false)
     {
         try
         {
-            var vertexArtifact = new ShaderArtifact(DrawingShaders2D.Vertex.GetBinary());
-            var fragmentArtifact = new ShaderArtifact(DrawingShaders2D.Fragment.GetBinary());
+            ShaderArtifact vertexArtifact = builtinIdentity ? DrawingShaders2D.Vertex : new(DrawingShaders2D.Vertex.GetBinary());
+            ShaderArtifact fragmentArtifact = builtinIdentity ? DrawingShaders2D.Fragment : new(DrawingShaders2D.Fragment.GetBinary());
             IGraphicsShader vertex = device.CreateShader(vertexArtifact);
             _owned.Add(vertex);
             IGraphicsShader fragment = device.CreateShader(fragmentArtifact);

@@ -11,6 +11,8 @@ internal sealed class DrawingResourceState2D : IDisposable
     private readonly long _numericPoolBudget;
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
+    private IDisposable? _compositionOwner;
+
     private SolidRectangleResources2D? _rectangles;
     private DrawRecordResources2D? _records;
     private int _users = 1;
@@ -73,12 +75,18 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
-    internal IDisposable Retain()
+    internal void AttachCompositionOwner(IDisposable owner) => _compositionOwner = owner;
+
+    internal IDisposable Retain(bool allowReturned = false, bool ensureResources = true)
     {
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_returned || _closing, this);
-            EnsureResources();
+            ObjectDisposedException.ThrowIf((_returned && !allowReturned) || _closing || _users == 0, this);
+            if (ensureResources)
+            {
+                EnsureResources();
+            }
+
             Validate();
             var use = new Use(this);
             _users++;
@@ -188,7 +196,7 @@ internal sealed class DrawingResourceState2D : IDisposable
             return;
         }
 
-        ObjectDisposedException.ThrowIf(_returned || _closing, this);
+        ObjectDisposedException.ThrowIf(_users == 0 || _closing, this);
         IGraphicDevice device = _device ?? throw new InvalidOperationException("Drawing requires a physical device.");
 
         // A failed earlier cleanup must finish before a new set of default resources is constructed.
@@ -227,6 +235,8 @@ internal sealed class DrawingResourceState2D : IDisposable
             _records = null;
             _rectangles?.Dispose();
             _rectangles = null;
+            _compositionOwner?.Dispose();
+            _compositionOwner = null;
             _owner?.Dispose();
             _owner = null;
         }

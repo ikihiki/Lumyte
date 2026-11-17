@@ -14,6 +14,12 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
+        if (args.Contains("--composition-wgpu", StringComparer.Ordinal))
+        {
+            CompositionSmoke.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         using var profiling = new ProfilingListener();
         bool host = args.Contains("--host", StringComparer.Ordinal);
         ShaderTransferDiagnostics.Verify();
