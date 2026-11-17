@@ -4,7 +4,7 @@ using Lumyte.Resources;
 
 namespace Lumyte.Maps;
 
-/// <summary>Owns a bounded, explicit fixed tile set; no automatic spatial requests or HTTP.</summary>
+/// <summary>Owns bounded explicit local tiles with fixed or viewport-selected admission; no HTTP.</summary>
 public sealed partial class MapSession : IAsyncDisposable
 {
     private readonly ResourceManager _resources;
@@ -64,7 +64,7 @@ public sealed partial class MapSession : IAsyncDisposable
                 throw new ArgumentException("Fixed demand contains a duplicate normalized tile.", nameof(fixedTiles));
             }
 
-            if (_entries.Count > 0 && _entries[0].Id.Zoom != normalized.Zoom)
+            if (!options.SelectVisibleTiles && _entries.Count > 0 && _entries[0].Id.Zoom != normalized.Zoom)
             {
                 throw new ArgumentException("M2 fixed sessions require a single zoom; overlapping parent/child fallback is not supported.", nameof(fixedTiles));
             }
@@ -97,6 +97,12 @@ public sealed partial class MapSession : IAsyncDisposable
 
     /// <summary>Gets the adopted tile count.</summary>
     public int PublishedTiles => _entries.Count(entry => entry.Lease is not null);
+
+    /// <summary>Gets integer acquisition zoom; continuous camera scale is applied only when recording.</summary>
+    public int SourceZoom => Math.Clamp((int)Math.Floor(Camera.Zoom), _tiles.MinZoom, _tiles.MaxZoom);
+
+    /// <summary>Gets normalized visible known IDs in deterministic tile order; repeated worlds share an ID.</summary>
+    public IReadOnlyList<MapTileId> VisibleTiles => _entries.Where(entry => IsVisible(entry.Id)).Select(entry => entry.Id).ToArray();
 
     /// <summary>Gets failed tile diagnostics in stable fixed-set order.</summary>
     public IReadOnlyList<Exception> Failures => _entries.Where(entry => entry.Error is not null).Select(entry => entry.Error!).ToArray();
@@ -132,7 +138,7 @@ public sealed partial class MapSession : IAsyncDisposable
         _attachment = null;
     }
 
-    /// <summary>Changes projection only; it never requests tiles outside the explicit set.</summary>
+    /// <summary>Changes projection and finite-set demand without starting I/O.</summary>
     /// <param name="camera">Finite camera coordinates.</param>
     public void SetCamera(MapCamera camera)
     {
@@ -238,7 +244,7 @@ public sealed partial class MapSession : IAsyncDisposable
             {
                 foreach (Entry entry in _entries)
                 {
-                    if (entry.Dispatched || InFlightTiles >= Math.Min(_options.MaxInFlightTiles, _options.MaxCompletedTiles)
+                    if (entry.Dispatched || (_options.SelectVisibleTiles && !IsVisible(entry.Id)) || InFlightTiles >= Math.Min(_options.MaxInFlightTiles, _options.MaxCompletedTiles)
                         || ResidentCpuBytes > _options.MaxResidentCpuBytes - _tiles.LoadProfile.MaxReservationBytesPerTile)
                     {
                         continue;
