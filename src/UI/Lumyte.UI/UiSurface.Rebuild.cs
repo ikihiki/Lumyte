@@ -191,7 +191,13 @@ public sealed partial class UiSurface
             }
         }
 
+        foreach ((UiElement owner, IReadOnlyList<UiElement> itemRoots) in plan.CollectionItemRootUpdates)
+        {
+            owner.CollectionItemRoots = itemRoots;
+        }
+
         _rootElement = plan.Root;
+        _rootElement.HasCollectionItemOwnership = plan.HasCollectionItemOwnership;
         TreeRevision = checked(TreeRevision + 1);
         if (structureChanged)
         {

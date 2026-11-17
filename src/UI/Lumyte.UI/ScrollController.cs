@@ -29,6 +29,8 @@ public sealed class ScrollController : IDisposable
     /// <summary>Gets or sets the synchronous, latest position-change callback.</summary>
     public Action<float>? OnChanged { get; set; }
 
+    internal Func<float?>? ItemAnchorResolver { get; set; }
+
     /// <summary>Sets a finite offset, clamped to the current range; does not mutate declarations.</summary>
     /// <param name="offset">The finite requested offset.</param>
     public void ScrollTo(float offset)
@@ -131,6 +133,16 @@ public sealed class ScrollController : IDisposable
         Extent = 0;
         Viewport = 0;
         Offset = 0;
+    }
+
+    internal void RestoreItemAnchor(float offset)
+    {
+        float restored = Math.Clamp(offset, 0, Maximum);
+        if (Offset != restored)
+        {
+            Offset = restored;
+            _owner?.OffsetChanged();
+        }
     }
 
     internal void Geometry(float extent, float viewport)
