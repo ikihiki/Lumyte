@@ -48,6 +48,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
     internal bool HasShapeMembership => _pages.Any(page => page.HasShapeMembership);
 
+    internal bool EnforcesWorkingBudget => _context.ComputeShapeMembership || _context.EnforceWorkingBudget;
+
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
         get
@@ -466,6 +468,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 // native or upload allocation, including scenes without path records.
                 long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
                 long peak = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + 32768 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
+                long complete = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + EstimateAllocationBytes());
+                peak = Math.Max(peak, complete);
                 if (peak > _batch._context.MaxWorkingBytes)
                 {
                     throw new NotSupportedException("Standard page resources exceed MaxWorkingBytes before allocation.");
@@ -609,7 +613,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 _membership = _batch.Own(new ShapeMembership2D(_batch._context.Device, (_batch._context.MembershipService?.Resources ?? _batch._resources).GetMembershipPipeline(), _records.Data, _numeric, _shapeMembership!, _shapeDispatches));
             }
 
-            if ((HasShapeMembership || _batch._context.EnforceWorkingBudget) && _batch.EstimatedBytes > _batch._context.MaxWorkingBytes)
+            if ((HasShapeMembership || _batch._context.EnforceWorkingBudget) && checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes) > _batch._context.MaxWorkingBytes)
             {
                 throw new NotSupportedException("Shape membership preparation exceeds the working-byte budget.");
             }
@@ -737,6 +741,53 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     Reservation.Draw(render, in selected, 6, 1, 0, 0);
                 }
             }
+        }
+
+        private long EstimateAllocationBytes()
+        {
+            static long Stream(long count, long stride) => checked(count * ((2 * stride) + 16 + 2048));
+            bool membership = _batch._context.ComputeShapeMembership && Cpu.Records.Any(record => record.Kind is 4 or 5);
+            long bytes = Stream(Cpu.Records.Count, 96);
+            if (!Cpu.IsSimple)
+            {
+                bytes = checked(bytes + Stream(Cpu.Paints.Count + (membership && Cpu.Clips.Count > 1 ? Cpu.Clips.Count : 0), 16));
+                if (Cpu.Clips.Count > 1 && !membership)
+                {
+                    bytes = checked(bytes + Stream(Cpu.Clips.Count, 16));
+                }
+
+                if (Cpu.Images.Count > 0 || membership)
+                {
+                    bytes = checked(bytes + Stream(Math.Max(1, Cpu.Images.Count), 128));
+                }
+
+                if (Cpu.Masks.Count > 0 || membership)
+                {
+                    bytes = checked(bytes + Stream(Math.Max(1, Cpu.Masks.Count), 80));
+                }
+
+                long metadataStride = membership ? 96 : Cpu.Masks.Count == 0 && Cpu.Images.Count == 0 ? 48 : Cpu.Masks.Count > 0 && Cpu.Images.Count > 0 ? 80 : 64;
+                bytes = checked(bytes + Stream(1, metadataStride));
+            }
+
+            if (membership)
+            {
+                long pixels = 0;
+                foreach (DrawRecord2D record in Cpu.Records.Where(record => record.Kind is 4 or 5))
+                {
+                    pixels = checked(pixels + checked((long)(record.DeviceBounds.Z - record.DeviceBounds.X) * (long)(record.DeviceBounds.W - record.DeviceBounds.Y)));
+                }
+
+                bytes = checked(bytes + checked(pixels * 4) + 1024);
+            }
+
+            // Native data/upload may each rent 2x capacity (64 bytes per cell).
+            // Also reserve canonical and retained source CPU list capacity (64 more).
+            bytes = checked(bytes + (Math.Max(1L, Cpu.Numeric.Count) * 128));
+
+            // Reserve table/registration bookkeeping in addition to every typed
+            // stream, including combined paint/clip directories and placeholder descriptors.
+            return checked(bytes + 32768 + (256L * (_views.Count + _samplers.Count + Scopes.Count + 1)));
         }
 
         private Stream<T> Create<T>(int count, ulong stride)
