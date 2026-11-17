@@ -347,16 +347,26 @@ public sealed class MeshCoverageTests
     /// <param name="graphMode">Whether preparation uses the normal parent Graph bridge.</param>
     /// <param name="groups">Alternating kind-local groups in painter order.</param>
     /// <param name="rootBudget">The root's aggregate working limit.</param>
+    /// <param name="standardRect">Whether earlier rectangles use the explicit legacy candidate.</param>
     /// <returns>The managed budget admission verification.</returns>
     [Theory]
-    [InlineData(false, 1, 32768L)]
-    [InlineData(true, 1, 32768L)]
-    [InlineData(false, 32, 65536L)]
-    [InlineData(true, 32, 65536L)]
-    public async Task RootAndEarlierGroupsBoundMeshPreparationAsync(bool graphMode, int groups, long rootBudget)
+    [InlineData(false, 1, 32768L, false)]
+    [InlineData(true, 1, 32768L, false)]
+    [InlineData(false, 32, 65536L, false)]
+    [InlineData(true, 32, 65536L, false)]
+    [InlineData(false, 128, 350000L, false)]
+    [InlineData(false, 32, 65536L, true)]
+    [InlineData(true, 32, 65536L, true)]
+    public async Task RootAndEarlierGroupsBoundMeshPreparationAsync(bool graphMode, int groups, long rootBudget, bool standardRect)
     {
         var device = new ProfilingDevice { Caps = SupportedCaps() };
-        using RendererBuildHost2D host = Configuration(rootBudget: rootBudget).CreateHost();
+        Definitions.Renderer configuration = Configuration(rootBudget: rootBudget);
+        if (standardRect)
+        {
+            _ = configuration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()], Renderer.FillRect()[StandardFillRect()]];
+        }
+
+        using RendererBuildHost2D host = configuration.CreateHost();
         DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
         using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
         if (graphMode)
@@ -401,7 +411,13 @@ public sealed class MeshCoverageTests
             using var texture = new DispatchTexture { Width = 32, Height = 32 };
             using IGraphicsTextureView view = texture.CreateView();
             DrawList2D content = canvas.End();
-            await Assert.ThrowsAsync<NotSupportedException>(async () => await renderer.PrepareAsync(content, new RenderTarget2D { View = view }));
+            NotSupportedException error = await Assert.ThrowsAsync<NotSupportedException>(async () => await renderer.PrepareAsync(content, new RenderTarget2D { View = view }));
+            if (groups == 128)
+            {
+                Assert.Equal("Resident page resources exceed MaxWorkingBytes before allocation.", error.Message);
+                Assert.Empty(device.Tables);
+                Assert.True(device.NativeBuffers < groups * 4);
+            }
         }
 
         if (groups == 1)
@@ -412,6 +428,46 @@ public sealed class MeshCoverageTests
         {
             Assert.True(device.NativeBuffers > 0);
         }
+    }
+
+    /// <summary>Final cumulative checks include previous groups and cannot overflow near the signed byte limit.</summary>
+    /// <param name="previous">Earlier groups' unique owned bytes.</param>
+    /// <param name="current">Current complete payload and shared plan charge.</param>
+    /// <param name="maximum">The root/component intersection.</param>
+    /// <param name="accepted">Whether the exact cumulative boundary is admitted.</param>
+    [Theory]
+    [InlineData(76352L, 76352L, 150000L, false)]
+    [InlineData(76352L, 76352L, 152704L, true)]
+    [InlineData(long.MaxValue, 1L, long.MaxValue, false)]
+    [InlineData(long.MaxValue - 1, 1L, long.MaxValue, true)]
+    [InlineData(0L, 1L, 0L, false)]
+    public void FinalCumulativeChargeIncludesEarlierGroupsWithoutOverflow(long previous, long current, long maximum, bool accepted)
+    {
+        if (accepted)
+        {
+            DrawingWorkingBudget2D.ValidateCumulative(previous, current, maximum);
+        }
+        else
+        {
+            Assert.Throws<NotSupportedException>(() => DrawingWorkingBudget2D.ValidateCumulative(previous, current, maximum));
+        }
+    }
+
+    /// <summary>Cancelled collection cannot strand provisional reference charges in the shared plan.</summary>
+    [Fact]
+    public void ProvisionalReferenceBudgetRollsBackWithScopes()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        using var plan = new DrawingArgumentPlan2D(device);
+        long initial = plan.EstimatedBytes;
+        (int Scopes, int Uploads) checkpoint = plan.Checkpoint();
+        ShaderResources scope = plan.Reserve();
+        plan.ReserveWorkingReferences(scope, 7, 4, 2);
+        Assert.True(plan.EstimatedBytes > initial);
+        plan.Rollback(checkpoint);
+        Assert.Equal(initial, plan.EstimatedBytes);
+        Assert.Equal(0, device.NativeBuffers);
+        Assert.Empty(device.Tables);
     }
 
     private static DrawList2D Content(int variant)

@@ -10,6 +10,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private readonly List<Upload> _uploads = [];
     private readonly List<ClipNormalizationCache2D> _preparationCaches = [];
     private readonly List<ShaderResources> _scopes = [];
+    private readonly Dictionary<ShaderResources, long> _workingReferences = new(ReferenceEqualityComparer.Instance);
     private readonly IGraphicDevice _device;
     private readonly Func<ArgumentTablePlan>? _registrationFactory;
     private readonly Func<ShaderResources>? _resourceFactory;
@@ -23,6 +24,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private IGraphicsSampler? _sampler;
     private IGraphicsTexture? _fallback;
     private IGraphicsTextureView? _fallbackView;
+    private long _workingReferenceBytes;
     private int _completedUploads;
     private int _users = 1;
     private bool _returned;
@@ -107,9 +109,16 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     // upload, packing-data release or lifetime-token return changes that charge.
     internal bool MemorySizeIsStable => _closed && _resourceFactory is null && _registrations is { IsMaterialized: true };
 
-    internal long EstimatedBytes => _resourceFactory is not null || _registrations is null
-        ? checked(256 + ((long)_scopes.Count * 256))
-        : checked(256 + ((_registrations.Statistics.Textures + _registrations.Statistics.Samplers + _registrations.Statistics.Buffers) * 256));
+    internal long EstimatedBytes
+    {
+        get
+        {
+            long bytes = _resourceFactory is not null || _registrations is null
+                ? checked(256 + ((long)_scopes.Count * 256))
+                : checked(256 + ((_registrations.Statistics.Textures + _registrations.Statistics.Samplers + _registrations.Statistics.Buffers) * 256));
+            return _registrations is { IsMaterialized: true } ? bytes : Math.Max(bytes, checked(256 + _workingReferenceBytes));
+        }
+    }
 
     /// <summary>Starts a whole draw reservation in painter order.</summary>
     /// <returns>The draw-local opaque resource set.</returns>
@@ -394,10 +403,28 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         {
             resources.Cancel();
             _preparedResources.Remove(resources);
+            if (_workingReferences.Remove(resources, out long bytes))
+            {
+                _workingReferenceBytes = checked(_workingReferenceBytes - bytes);
+            }
         }
 
         _scopes.RemoveRange(checkpoint.Scopes, _scopes.Count - checkpoint.Scopes);
         _uploads.RemoveRange(checkpoint.Uploads, _uploads.Count - checkpoint.Uploads);
+    }
+
+    internal void ReserveWorkingReferences(ShaderResources scope, uint buffers, int textures, int samplers)
+    {
+        if (_closed || !_scopes.Contains(scope))
+        {
+            throw new InvalidOperationException("Working references require a live collecting scope from this plan.");
+        }
+
+        // Include possible fallback view/sampler, without allocating native tables.
+        long bytes = checked(((long)buffers + textures + samplers + 2) * 256);
+        _workingReferences.TryGetValue(scope, out long previous);
+        _workingReferenceBytes = checked(_workingReferenceBytes - previous + bytes);
+        _workingReferences[scope] = bytes;
     }
 
     internal void MarkPreparedBuffer<T>(ShaderResources resources, BufferSlice<T> range, BarrierScope scope)

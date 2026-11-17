@@ -381,6 +381,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 return;
             }
 
+            _batch._context.ArgumentPlan.ReserveWorkingReferences(Reservation, Cpu.BufferCount, _views.Count, _samplers.Count);
             if (_batch._context.EnforceWorkingBudget)
             {
                 long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
@@ -455,6 +456,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             Reservation.RegisterBuffer(_numeric.SliceElements(0, count), reference => _numericRef = reference);
             _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | (_batch._resources.IsMesh ? PipelineStage.MeshShader : PipelineStage.VertexShader) | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             _batch._bytes = checked(_batch._bytes + (long)(_numeric.SizeInBytes + _numericUpload.SizeInBytes));
+            ValidateCompleteWorkingCharge();
             _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill);
         }
 
@@ -593,6 +595,14 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             return result;
         }
 
+        private void ValidateCompleteWorkingCharge()
+        {
+            if (_batch._context.EnforceWorkingBudget)
+            {
+                DrawingWorkingBudget2D.ValidateCumulative(_batch._context.OtherWorkingBytes, _batch.EstimatedBytes, _batch._context.MaxWorkingBytes);
+            }
+        }
+
         private async ValueTask MapAsync(CancellationToken token)
         {
             foreach (IStream stream in _streams)
@@ -605,6 +615,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
         private async ValueTask UploadAsync(CancellationToken token)
         {
+            ValidateCompleteWorkingCharge();
             await MapAsync(token).ConfigureAwait(false);
             Fill();
         }
@@ -615,6 +626,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             long copied = 0;
             try
             {
+                // Materialization can finalize shared table-generation charges after allocation.
+                ValidateCompleteWorkingCharge();
                 Cpu.Resolve(null!, _sampler!);
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)
