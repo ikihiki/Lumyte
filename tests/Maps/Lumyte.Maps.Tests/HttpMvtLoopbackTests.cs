@@ -221,6 +221,81 @@ public sealed class HttpMvtLoopbackTests(ITestOutputHelper output)
         output.WriteLine($"keep-alive status={status}: accepted={server.Accepted}; closed-unread={server.ClosedUnread}; delayed-body-writes={server.DelayedBodyWrites}; unread-after-stop={server.UnreadConnections}");
     }
 
+    /// <summary>Accept shutdown errors are ignored only after cancellation, not during normal operation.</summary>
+    /// <param name="disposed">Whether accept reports a disposed socket rather than an aborted socket.</param>
+    /// <param name="stopping">Whether the error occurs after shutdown begins.</param>
+    /// <returns>Completion.</returns>
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task NativeLoopbackAcceptShutdownAsync(bool disposed, bool stopping)
+    {
+        Exception failure = disposed ? new ObjectDisposedException(nameof(Socket)) : new SocketException((int)SocketError.OperationAborted);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new Loopback((_, _) => Task.FromResult(Response(200, [])), accept: async (_, token) =>
+        {
+            entered.TrySetResult();
+            if (stopping)
+            {
+                using CancellationTokenRegistration registration = token.Register(() => release.TrySetResult());
+                await release.Task;
+            }
+
+            throw failure;
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        if (stopping)
+        {
+            await server.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        else
+        {
+            // The synchronous accept failure is already recorded before DisposeAsync cancels.
+            Exception? actual = await Record.ExceptionAsync(() => server.DisposeAsync().AsTask());
+            Assert.Same(failure, actual);
+        }
+    }
+
+    /// <summary>Shutdown must not hide response-handler failures with the same exception types.</summary>
+    /// <param name="disposed">Whether the handler fails with a disposed socket.</param>
+    /// <returns>Completion.</returns>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task NativeLoopbackResponseFailureDuringStopAsync(bool disposed)
+    {
+        Exception failure = disposed ? new ObjectDisposedException(nameof(Socket)) : new SocketException((int)SocketError.OperationAborted);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new Loopback(async (_, _) =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+            throw failure;
+        });
+        using var client = new TcpClient();
+        await client.ConnectAsync(server.Scope.Host, server.Scope.Port);
+        await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes("GET /tiles/0.pbf HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Task stopping = server.DisposeAsync().AsTask();
+        release.TrySetResult();
+        Exception? actual = await Record.ExceptionAsync(() => stopping.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Same(failure, actual);
+    }
+
+    /// <summary>A listener with a real pending accept can be shut down without a client.</summary>
+    /// <returns>Completion.</returns>
+    [Fact]
+    public async Task NativeLoopbackPendingAcceptStopsAsync()
+    {
+        var server = new Loopback((_, _) => Task.FromResult(Response(200, [])));
+        await server.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, server.Count);
+    }
+
     private static HttpMvtRegistration Registration(Uri scope, int maxWire = 4096, int maxExpanded = 4096) => new("native-local", "1", new("native"), new(scope, "fixture", maxWireBytes: maxWire, maxExpandedBytes: maxExpanded), new Dictionary<MapTileId, Uri> { [new(0, 0, 0)] = new(scope, "0.pbf") });
 
     private static byte[] Response(int status, byte[] body, string? extra = null, int? length = null)
@@ -360,11 +435,11 @@ public sealed class HttpMvtLoopbackTests(ITestOutputHelper output)
         private readonly Task _run;
         private int _count;
 
-        internal Loopback(Func<int, string, Task<byte[]>> respond, bool holdOpen = false)
+        internal Loopback(Func<int, string, Task<byte[]>> respond, bool holdOpen = false, Func<TcpListener, CancellationToken, ValueTask<TcpClient>>? accept = null)
         {
             _listener.Start();
             Scope = new($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/tiles/");
-            _run = RunAsync(respond, holdOpen);
+            _run = RunAsync(respond, holdOpen, accept ?? ((listener, token) => listener.AcceptTcpClientAsync(token)));
         }
 
         internal Uri Scope { get; }
@@ -381,18 +456,36 @@ public sealed class HttpMvtLoopbackTests(ITestOutputHelper output)
             {
                 await _run;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (_stop.IsCancellationRequested)
             {
             }
-
-            _stop.Dispose();
+            finally
+            {
+                _stop.Dispose();
+            }
         }
 
-        private async Task RunAsync(Func<int, string, Task<byte[]>> respond, bool holdOpen)
+        private async Task RunAsync(Func<int, string, Task<byte[]>> respond, bool holdOpen, Func<TcpListener, CancellationToken, ValueTask<TcpClient>> accept)
         {
             while (!_stop.IsCancellationRequested)
             {
-                using TcpClient client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                TcpClient accepted;
+                try
+                {
+                    accepted = await accept(_listener, _stop.Token);
+                }
+                catch (ObjectDisposedException) when (_stop.IsCancellationRequested)
+                {
+                    // Stop can dispose the listener socket before accept observes cancellation.
+                    break;
+                }
+                catch (SocketException) when (_stop.IsCancellationRequested)
+                {
+                    // Some socket implementations report an aborted accept instead.
+                    break;
+                }
+
+                using TcpClient client = accepted;
                 await using NetworkStream stream = client.GetStream();
                 var request = new StringBuilder();
                 byte[] one = new byte[1];
