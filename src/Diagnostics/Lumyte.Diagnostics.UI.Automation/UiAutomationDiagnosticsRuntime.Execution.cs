@@ -95,7 +95,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             }
             else
             {
-                UiRole role = step.Role switch { "tabview" => UiRole.TabView, "tabitem" => UiRole.TabItem, "expander" => UiRole.Expander, "listbox" => UiRole.ListBox, "listitem" => UiRole.ListItem, "combobox" => UiRole.ComboBox, "slider" => UiRole.Slider, "rangeslider" => UiRole.RangeSlider, "togglebutton" => UiRole.ToggleButton, "checkbox" => UiRole.CheckBox, "switch" => UiRole.Switch, "radiogroup" => UiRole.RadioGroup, "radiobutton" => UiRole.RadioButton, "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
+                UiRole role = step.Role switch { "menu" => UiRole.Menu, "menuitem" => UiRole.MenuItem, "tooltip" => UiRole.Tooltip, "tabview" => UiRole.TabView, "tabitem" => UiRole.TabItem, "expander" => UiRole.Expander, "listbox" => UiRole.ListBox, "listitem" => UiRole.ListItem, "combobox" => UiRole.ComboBox, "slider" => UiRole.Slider, "rangeslider" => UiRole.RangeSlider, "togglebutton" => UiRole.ToggleButton, "checkbox" => UiRole.CheckBox, "switch" => UiRole.Switch, "radiogroup" => UiRole.RadioGroup, "radiobutton" => UiRole.RadioButton, "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
                 locator = locator is null ? page.GetByRole(role, step.Name, step.IncludeHidden) : locator.GetByRole(role, step.Name, step.IncludeHidden);
             }
         }
@@ -204,6 +204,11 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                     break;
                 case "snapshot":
                     UiRemoteSnapshot snapshot = Snapshot(await page.SnapshotAsync(token));
+                    if (plan.SchemaVersion < 9)
+                    {
+                        snapshot = snapshot with { Nodes = snapshot.Nodes.Select(node => node.Role is "menu" or "menuitem" or "tooltip" ? node with { Role = "none" } : node).ToArray() };
+                    }
+
                     if (plan.SchemaVersion < 8)
                     {
                         snapshot = snapshot with { Nodes = snapshot.Nodes.Select(node => node.Role is "tabview" or "tabitem" or "expander" ? node with { Role = "none", IsExpanded = null } : node).ToArray() };

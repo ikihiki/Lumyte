@@ -171,18 +171,26 @@ internal sealed class UiHostInputRouter
             return PointerEvent(input, 0, 0, UiPointerPhase.Move, move.Position);
         }
 
-        if (input.Data is MouseWheelData wheel && origin is InputWindowId wheelOrigin
-            && _positions.TryGetValue((input.DeviceId, wheelOrigin), out (Vector2 Position, InputCaptureStamp? Capture, ulong Sequence) wheelPosition))
+        if (input.Data is MouseWheelData wheel)
         {
-            Target? target = Select(wheelOrigin, wheelPosition.Position);
-            if (target is not null)
+            if (origin is not InputWindowId wheelOrigin || input.Capture is null
+                || !_positions.TryGetValue((input.DeviceId, wheelOrigin), out (Vector2 Position, InputCaptureStamp? Capture, ulong Sequence) position)
+                || position.Capture != input.Capture || input.Sequence - position.Sequence != 1)
             {
-                (Vector2 local, bool inside) = Local(target, wheelPosition.Position);
-                Vector2 delta = new(
-                    (float)Math.Clamp(-(double)wheel.Delta.X * 40, -float.MaxValue, float.MaxValue),
-                    (float)Math.Clamp(-(double)wheel.Delta.Y * 40, -float.MaxValue, float.MaxValue));
-                return inside && Deliver(target, new UiWheelInput(local, delta));
+                return false;
             }
+
+            Target? selected = Select(wheelOrigin, position.Position);
+            if (selected is null || !Live(selected))
+            {
+                return false;
+            }
+
+            (Vector2 local, bool inside) = Local(selected, position.Position);
+            Vector2 delta = new(
+                (float)Math.Clamp(-(double)wheel.Delta.X * 40, -float.MaxValue, float.MaxValue),
+                (float)Math.Clamp(-(double)wheel.Delta.Y * 40, -float.MaxValue, float.MaxValue));
+            return inside && Deliver(selected, new UiWheelInput(local, delta));
         }
 
         if (input.Data is MouseButtonData mouse)
@@ -331,7 +339,7 @@ internal sealed class UiHostInputRouter
                     {
                         (Vector2 local, bool visible) = Local(owner, position);
                         UiPointerPhase delivered = phase == UiPointerPhase.Up && !visible ? UiPointerPhase.Cancel : phase;
-                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, visible ? local : new(-1, -1)) { Device = kind == 1 ? UiPointerDevice.Touch : kind == 2 ? UiPointerDevice.Pen : UiPointerDevice.Mouse });
+                        Deliver(owner, new UiPointerInput(pointer.Id, delivered, phase == UiPointerPhase.Move || visible ? local : new(-1, -1)) { Device = kind == 1 ? UiPointerDevice.Touch : kind == 2 ? UiPointerDevice.Pen : UiPointerDevice.Mouse });
                     }
                 }
             }

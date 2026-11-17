@@ -7,6 +7,51 @@ namespace Lumyte.UI.Tests;
 /// <summary>Checks component-defined input handling without a concrete control dependency in the surface.</summary>
 public sealed class InputRoutingTests : UiElementTestBase
 {
+    /// <summary>Wheel hit testing ignores capture and honors overlay coordinates.</summary>
+    [Fact]
+    public void WheelRoutesByPositionAndControlsPrecedeBackground()
+    {
+        var seen = new List<(string Owner, Vector2? Position)>();
+        var back = new Control { Width = 100, Height = 100 };
+        back.Handle = c =>
+        {
+            if (c.Input is UiPointerInput { Phase: UiPointerPhase.Down })
+            {
+                c.CapturePointer();
+                return UiInputResult.Handled;
+            }
+
+            if (c.Input is UiWheelInput)
+            {
+                seen.Add(("back", c.PointerPosition));
+                return UiInputResult.Handled;
+            }
+
+            return UiInputResult.Unhandled;
+        };
+        var front = new Control { Width = 20, Height = 10 };
+        front.Handle = c =>
+        {
+            if (c.Input is UiWheelInput)
+            {
+                Assert.True(c.IsInside);
+                seen.Add(("front", c.PointerPosition));
+                return UiInputResult.Handled;
+            }
+
+            return UiInputResult.Unhandled;
+        };
+        using UiSurface surface = Surface(Panel()[back, Stack(width: 20, height: 30)[Panel(height: 20), front]]);
+        Assert.True(Send(surface, UiPointerPhase.Down, new(80, 80)));
+        Assert.True(surface.Dispatch(new UiWheelInput(new(2, 22), new(0, -40))));
+        Assert.Equal(("front", (Vector2?)new Vector2(2, 2)), Assert.Single(seen));
+        Assert.True(surface.Dispatch(new UiWheelInput(new(80, 80), new(0, -1))));
+        Assert.Equal("back", seen[^1].Owner);
+        Assert.False(surface.Dispatch(new UiWheelInput(new(120, 2), new(0, -40))));
+        Assert.Throws<ArgumentOutOfRangeException>(() => surface.Dispatch(new UiWheelInput(new(float.NaN, 0), Vector2.One)));
+        surface.Dispatch(new UiFocusLostInput());
+    }
+
     /// <summary>Checks an editor can consume Down, capture selection drag and receive terminal Up before its containing Button.</summary>
     [Fact]
     public void EditorInsideButtonOwnsItsDragAndReceivesLocalCoordinates()

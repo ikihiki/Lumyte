@@ -21,6 +21,18 @@ public sealed class LauncherTests
         Assert.Empty(fixture.Descendants("ProjectReference"));
     }
 
+    /// <summary>Menus and tooltips use the actual headless public consumer.</summary>
+    [Fact]
+    public void MenusSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-menus"]), console);
+        Assert.Equal("ui-menus", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Menus.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Retained tabs use the actual headless public consumer.</summary>
     [Fact]
     public void TabsSampleSelectsHeadlessConsumer()

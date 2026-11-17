@@ -35,6 +35,11 @@ public sealed class LocatorVersionTests
     [InlineData("tabview", "check")]
     [InlineData("tabitem", "uncheck")]
     [InlineData("expander", "set-value")]
+    [InlineData("menu", "check")]
+    [InlineData("menuitem", "uncheck")]
+    [InlineData("tooltip", "set-value")]
+    [InlineData("menu", "set-range")]
+    [InlineData("menu", "scroll")]
     [InlineData("plain", "scroll")]
     [InlineData("plain", "check")]
     [InlineData("plain", "uncheck")]
@@ -43,7 +48,7 @@ public sealed class LocatorVersionTests
     public async Task TypedOperationsHonorAncestorSchemaAsync(string ancestorRole, string operation)
     {
         using var handler = new LoopbackHandler(configureSurface: surface => surface.Rebuild(
-            ListBox<string>(items: new[] { "a" }, keySelector: x => x, itemTemplate: _ => Stack()[CheckBox(testId: "check", height: 20), Slider(testId: "scalar", height: 20), RangeSlider(testId: "range", value: new SliderRange(0.2, 0.8), height: 20)], role: ancestorRole switch { "combobox" => Lumyte.UI.UiRole.ComboBox, "tabview" => Lumyte.UI.UiRole.TabView, "tabitem" => Lumyte.UI.UiRole.TabItem, "expander" => Lumyte.UI.UiRole.Expander, _ => Lumyte.UI.UiRole.ListBox }, width: 200, height: 140, testId: "list")));
+            ListBox<string>(items: new[] { "a" }, keySelector: x => x, itemTemplate: _ => Stack()[CheckBox(testId: "check", height: 20), Slider(testId: "scalar", height: 20), RangeSlider(testId: "range", value: new SliderRange(0.2, 0.8), height: 20)], role: ancestorRole switch { "menu" => Lumyte.UI.UiRole.Menu, "menuitem" => Lumyte.UI.UiRole.MenuItem, "tooltip" => Lumyte.UI.UiRole.Tooltip, "combobox" => Lumyte.UI.UiRole.ComboBox, "tabview" => Lumyte.UI.UiRole.TabView, "tabitem" => Lumyte.UI.UiRole.TabItem, "expander" => Lumyte.UI.UiRole.Expander, _ => Lumyte.UI.UiRole.ListBox }, width: 200, height: 140, testId: "list")));
         using var http = new HttpClient(handler) { BaseAddress = new("http://diagnostics/") };
         await using var client = new UiAutomationDiagnosticsClient(http, await handler.Ready);
         UiRemoteTarget target = Assert.Single(await client.ListTargetsAsync());
@@ -78,7 +83,7 @@ public sealed class LocatorVersionTests
         Assert.Equal(1, await root.CountAsync());
         await control.Page.Expect(root).ToHaveCountAsync(1);
         int minimum = operation == "scroll" ? 5 : operation is "check" or "uncheck" ? 4 : 6;
-        Assert.Equal(ancestorRole == "plain" ? minimum : ancestorRole is "tabview" or "tabitem" or "expander" ? 8 : 7, Assert.Single(versions));
+        Assert.Equal(ancestorRole == "plain" ? minimum : ancestorRole is "menu" or "menuitem" or "tooltip" ? 9 : ancestorRole is "tabview" or "tabitem" or "expander" ? 8 : 7, Assert.Single(versions));
     }
 
     /// <summary>Old supported catalogs admit only operation and role versions they advertise.</summary>

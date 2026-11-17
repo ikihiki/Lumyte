@@ -567,7 +567,7 @@ internal sealed partial class Build
 
         if (area == "Graphics")
         {
-            foreach (string path in new[] { "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+            foreach (string path in new[] { "src/Maps", "src/UI", "src/Animation", "src/Input/Lumyte.Input.Abstractions", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
             {
                 inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, path)));
             }

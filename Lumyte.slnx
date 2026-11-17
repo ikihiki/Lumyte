@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/Maps/">
+    <Project Path="src/Maps/Lumyte.Maps.Http/Lumyte.Maps.Http.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <Project Path="src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
@@ -67,6 +68,7 @@
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Controls.Sample/Lumyte.UI.Controls.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Collections.Sample/Lumyte.UI.Collections.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Menus.Sample/Lumyte.UI.Menus.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Tabs.Sample/Lumyte.UI.Tabs.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Functions.Sample/Lumyte.UI.Functions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Sample/Lumyte.UI.Transitions.Sample.csproj" />

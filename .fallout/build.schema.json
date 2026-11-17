@@ -80,6 +80,8 @@
         "TestUiNumericAot",
         "TestUiScroll",
         "TestUiScrollAot",
+        "TestUiMenus",
+        "TestUiMenusAot",
         "TestUiTabs",
         "TestUiTabsAot",
         "TestUiMedia",

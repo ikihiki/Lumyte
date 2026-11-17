@@ -9,6 +9,55 @@ namespace Lumyte.Maps.Session.Tests;
 /// <summary>Fixed-set world repetition and shared record/preflight eligibility regressions.</summary>
 public sealed class MapRecordingTests
 {
+    /// <summary>Finite known IDs are selected before I/O, with exact viewport boundaries and integer source zoom.</summary>
+    /// <returns>The deterministic movement and acquisition checks.</returns>
+    [Fact]
+    public async Task VisibleFiniteUniverseSelectsSourceZoomAndSharesRepeatedWorldsAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage(false);
+        await using var manager = new ResourceManager("visible", new Source(), [stage], memory, new Runtime());
+        MapTileId[] universe = [new(1, 0, 0), new(1, 1, 0), new(2, 0, 0), new(2, 3, 0)];
+        await using var map = new MapSession(manager, new Tiles(1, 2), Style(false), new() { SelectVisibleTiles = true }, universe);
+        map.SetViewport(new(512, 128));
+        map.SetCamera(new(-90, 66.51326044311186, 1));
+        Assert.Equal([new MapTileId(1, 0, 0)], map.VisibleTiles);
+        Assert.Equal(0, stage.Builds);
+        await AdoptCountAsync(map, 1);
+        Assert.Equal(1, stage.Builds);
+        map.SetCamera(new(179, 66.51326044311186, 1.9));
+        Assert.Equal(1, map.SourceZoom);
+        Assert.Equal(universe.Take(2), map.VisibleTiles);
+        await AdoptCountAsync(map, 2);
+        map.SetCamera(new(-179, 66.51326044311186, 1.9));
+        Assert.Equal(universe.Take(2), map.VisibleTiles);
+        map.SetViewport(new(3000, 128));
+        Assert.Equal(2, map.VisibleTiles.Count);
+        map.Advance();
+        Assert.Equal(2, stage.Builds);
+        map.SetViewport(new(128, 128));
+        map.SetCamera(new(-135, 80, 2));
+        Assert.Equal(2, map.SourceZoom);
+        Assert.Equal([new MapTileId(2, 0, 0)], map.VisibleTiles);
+        await AdoptCountAsync(map, 3);
+        Assert.Equal(2, Record(map).Count);
+        map.SetCamera(new(0, 80, 2));
+        Assert.Empty(map.VisibleTiles);
+        Assert.Equal(1, Record(map).Count);
+        map.SetViewport(default);
+        map.SetCamera(new(135, 80, 2));
+        map.Advance();
+        Assert.Empty(map.VisibleTiles);
+        Assert.Equal(3, stage.Builds);
+        map.SetViewport(new(128, 128));
+        await AdoptCountAsync(map, 4);
+        Assert.Equal(4, stage.Builds);
+        Assert.Equal(2, Record(map).Count);
+        map.SetCamera(new(-135, 80, 2));
+        map.Advance();
+        Assert.Equal(4, stage.Builds);
+    }
+
     /// <summary>Both already-loaded sides remain visible near either dateline without new demand.</summary>
     /// <returns>The retained fixed-set checks.</returns>
     [Fact]
@@ -53,6 +102,16 @@ public sealed class MapRecordingTests
         Assert.Equal(0, Record(map).Count);
     }
 
+    private static async Task AdoptCountAsync(MapSession map, int count)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (map.PublishedTiles != count)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+    }
+
     private static DrawList2D Record(MapSession map)
     {
         var canvas = new Canvas2D();
@@ -79,9 +138,9 @@ public sealed class MapRecordingTests
         }
     }
 
-    private sealed class Tiles(int zoom) : MapTileSet("recording", "v1", "recording", zoom, zoom, "handmade", new("recording"))
+    private sealed class Tiles(int zoom, int? maximum = null) : MapTileSet("recording", "v1", "recording", zoom, maximum ?? zoom, "handmade", new("recording"))
     {
-        public override ResourceKey<MapTileContent> GetKey(MapTileId id) => new($"recording/{id.X}/{id.Y}");
+        public override ResourceKey<MapTileContent> GetKey(MapTileId id) => new($"recording/{id.Zoom}/{id.X}/{id.Y}");
     }
 
     private sealed class Stage(bool dense) : IResourceSourceStage<MapTileContent>

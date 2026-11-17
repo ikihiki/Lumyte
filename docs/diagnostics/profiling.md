@@ -93,3 +93,15 @@ snapshotの`terminalFrames`は、取消し／エラーを含む要求終了を�
 Linuxでは所有するChromeのGPU／renderer processのCPU時間とrunnable待ちを有界に記録します。利用可能な場合にだけ既存の`perf`でnative CPU sampleを取得し、権限・tool・processへのattach不足はmanifestへ明示します。hostのsysctlやcapabilityを自動変更しません。CPU時間の増加はCPUを使っていた証拠であり、コンパイルの証拠ではありません。Chrome traceもhardware GPU timestampやnative SwiftShader stackを保証せず、配布libraryのsymbol削除やJIT codeによりコンパイルとshader実行を区別できない場合があります。
 
 診断のために元の画素assertion、30秒のautomation期限、CDPの通常期限、既知timeoutの許可条件を変更しません。採取／停止／artifactの失敗は元の試験結果を置き換えず、診断側の独立した短いbudgetで打ち切ります。
+
+## Sequential connected PNG の期限付き隔離
+
+[追跡issue #172](https://github.com/ikihiki/Lumyte/issues/172) に対応する暫定策です。CIの`LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT=1`とsoftware WebGPU検証が有効なLinux実行だけが対象です。有効期限は **2026-12-01 00:00 UTC** で、期限切れ・診断不足は従来どおり失敗します。
+
+対象はTransitions sequential（same-contentではない）の`connected-first-png`、PNG19だけです。元の30秒managed deadline、正確なManagedError、Running/Animating状態、実applicationのSwiftShader auditに加え、要求ID・run/frame/spanを相関した終端snapshotがGPU完了待ちstage14を示し、`onSubmittedWorkDone`が未完了である必要があります。画素assertion、device loss、validation error、別の例外・mode・stage、Map専用Browser終了エラーは対象外です。
+
+一致した場合もscenarioは成功ではなく`inconclusive-known-timeout`です。元の例外を残し、未実行の後続assertionを`remainingAssertionsExecuted:false`と明記して警告を出します。Browserジョブ全体のcontinue-on-error、期限変更、成功するまでの再試行は行いません。現在のBrowserは通常どおり終了させ、次の独立したverifierを既存CI順序で実行します。
+
+完全な圧縮trace artifactを保存できたときだけ隔離します。`manifest.json`のverdictを`inconclusive`にし、`quarantine.json`へpolicy ID・issue・expiry・`occurrences:1`・利用可能なCI run/attemptを記録します。発生数は各実行のこの記録を合計して追跡でき、取消済み記録は`occurrences:0`です。保存失敗や遅れて届いたGPUエラーでは隔離せず元の失敗を維持します。
+
+解除には、原因修正と複数hostでの元のassertion・30秒期限を維持した実Browser完走の確認が必要です。単発の再実行成功では解決扱いにしません。従来のentry midpoint例外は別の許可条件であり、今回拡張していません。
