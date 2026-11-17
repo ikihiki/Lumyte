@@ -7,4 +7,6 @@
     </AssemblyAttribute>
     <Compile Include="$(MSBuildThisFileDirectory)Shared/CpuMethodTestFramework.cs" Link="Testing/CpuMethodTestFramework.cs" />
   </ItemGroup>
+  <!-- Lane properties remain local to each project; never pass one global VSTest filter. -->
+  <Import Project="$(LumyteTestLaneTargets)" Condition="'$(LumyteTestLaneTargets)' != ''" />
 </Project>

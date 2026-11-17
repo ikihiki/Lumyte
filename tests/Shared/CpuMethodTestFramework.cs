@@ -32,7 +32,6 @@ internal sealed class CpuMethodExecutor(AssemblyName assemblyName, ISourceInform
         bool filteredCpuSafe = TestAssembly.Assembly.GetCustomAttributes(typeof(AssemblyMetadataAttribute))
             .OfType<IReflectionAttributeInfo>().Any(attribute => attribute.Attribute is AssemblyMetadataAttribute { Key: "Lumyte.CpuMethodParallelism", Value: "true" });
         bool excluded = Environment.GetEnvironmentVariable("LUMYTE_TEST_SERIAL") == "1"
-            || TestAssembly.Assembly.Name.Contains("IntegrationTests", StringComparison.OrdinalIgnoreCase) == true
             || cases.Any(test => test.SkipReason == null && (test.Traits.Any(trait => trait.Value.Any(value => value.Equals("GPU", StringComparison.OrdinalIgnoreCase) || value.Equals("Integration", StringComparison.OrdinalIgnoreCase)))
                 || test.TestMethod.Method.GetCustomAttributes(typeof(FactAttribute)).Any(attribute => attribute is IReflectionAttributeInfo reflection && reflection.Attribute.GetType().Name.Contains("Gpu", StringComparison.OrdinalIgnoreCase))));
         if (excluded)

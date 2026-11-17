@@ -69,7 +69,12 @@ public sealed class ShaderBulkCaptureTests
             ShaderValueSnapshot[] snapshots = input.Select(item => IShaderArguments.Capture(in item)).ToArray();
             ShaderTransferField[] fields = Datum.TransferFields.ToArray();
             fields[1] = mode == 3 ? fields[1] with { Offset = 0 } : fields[1] with { ValueType = typeof(int) };
-            Assert.Throws<ArgumentException>(() => Layout().ValidateArguments(snapshots[0] with { DiagnosticFields = null, Fields = fields }, true));
+
+            // Explicit malformed metadata must override both deferred diagnostic sources,
+            // regardless of another method populating the type's diagnostic cache first.
+            ShaderValueSnapshot malformed = snapshots[0] with { DiagnosticFields = null, DiagnosticType = null, Fields = fields };
+            Assert.Same(fields, malformed.GetDiagnosticFields());
+            Assert.Throws<ArgumentException>(() => Layout().ValidateArguments(malformed, true));
             Assert.Equal(2, calls.Count);
         }
     }

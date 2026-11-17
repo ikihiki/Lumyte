@@ -270,3 +270,6 @@ C6の検証にはTest --suite ui --feature numeric（Controls・TextEditing・Au
 
 メニューと受動tooltipの検証にはTest --suite ui --feature menus（Controls・Windowingの通常入力と公開Headless画面）、
 Test --suite ui --feature menus --aot（strict NativeAOTのpublishと実行）を使います。サンプルは明示fontを受け取ります。
+
+分類レーンはartifacts/test-lanes/へ正本Lumyte.slnxを参照する.slnfとproject別VSTest filterを生成し、全選択projectを一度のdotnet testで実行します。
+[一括実行の設計と選択規則](TASK-MIGRATION.md#one-sdk-test-invocation-per-classified-lane)を参照してください。

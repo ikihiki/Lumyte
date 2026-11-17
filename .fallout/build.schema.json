@@ -218,7 +218,7 @@
         },
         "Lane": {
           "type": "string",
-          "description": "Test lane: all, cpu, integration, or gpu (managed suite only)"
+          "description": "Test lane: all, cpu, integration, or gpu (managed only; classified lanes use one SDK test invocation over a generated .slnf)"
         },
         "NoBuild": {
           "type": "boolean",

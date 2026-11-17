@@ -7,7 +7,7 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    [Parameter("Test lane: all, cpu, integration, or gpu (managed suite only).")]
+    [Parameter("Test lane: all, cpu, integration, or gpu (managed only; classified lanes use one SDK test invocation over a generated .slnf).")]
     public string Lane { get; set; } = "all";
 
     [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust.")]
@@ -152,30 +152,56 @@ internal sealed partial class Build
             }
         }
 
-        int launched = 0;
-        foreach (TestLane entry in catalog)
+        var selections = catalog.Select(entry => new
         {
-            string path = Path.GetFullPath(entry.Project, RepositoryDirectory);
-            if (!projects.Contains(path) || !IsHostProject(path) || (selected is not null && selected != path && selected != Path.GetDirectoryName(path)))
-            {
-                continue;
-            }
-
-            string? filter = entry.Filter(lane);
-            if (filter is null)
-            {
-                continue;
-            }
-
-            launched++;
-            await DotNetWithEnvironmentAsync(environment, "test", path, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1",
-                "--filter", filter, "--logger", $"trx;LogFileName={Path.GetFileNameWithoutExtension(path)}.trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant())).ConfigureAwait(false);
-        }
-
-        if (launched == 0)
+            Path = Path.GetFullPath(entry.Project, RepositoryDirectory),
+            Filter = entry.Filter(lane),
+        }).Where(entry => projects.Contains(entry.Path) && IsHostProject(entry.Path)
+            && (selected is null || selected == entry.Path || selected == Path.GetDirectoryName(entry.Path))
+            && entry.Filter is not null).ToArray();
+        if (selections.Length == 0)
         {
             throw new ArgumentException("No classified host test projects match the requested lane/project selection.");
         }
+
+        string directory = Path.Combine(ArtifactRoot, "test-lanes");
+        Directory.CreateDirectory(directory);
+        string filterFile = Path.Combine(directory, lane.ToLowerInvariant() + ".slnf");
+        string targetsFile = Path.Combine(directory, lane.ToLowerInvariant() + ".targets");
+        // A solution filter references the canonical .slnx, never a copied project list
+        // or an independently maintained solution. Project paths are solution-relative.
+        var solutionFilter = new
+        {
+            solution = new
+            {
+                path = Path.GetRelativePath(directory, solution),
+                projects = selections.Select(entry => Path.GetRelativePath(Path.GetDirectoryName(solution)!, entry.Path)).ToArray(),
+            },
+        };
+        await File.WriteAllTextAsync(filterFile, JsonSerializer.Serialize(solutionFilter, new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
+        var targets = new XElement("Project",
+            new XElement("PropertyGroup", new XElement("VSTestTestCaseFilter", "FullyQualifiedName=__UnselectedLumyteLaneProject__")));
+        foreach (var entry in selections)
+        {
+            // Filters must be project-local MSBuild properties, not a global --filter:
+            // mixed projects and default-integration projects have different predicates.
+            string projectPath = entry.Path.Replace("%", "%25", StringComparison.Ordinal)
+                .Replace("'", "%27", StringComparison.Ordinal).Replace("$", "%24", StringComparison.Ordinal)
+                .Replace("@", "%40", StringComparison.Ordinal);
+            targets.Add(new XElement("PropertyGroup", new XAttribute("Condition", $"'$(MSBuildProjectFullPath)' == '{projectPath}'"),
+                new XElement("LumyteLaneSelected", "true"),
+                new XElement("VSTestTestCaseFilter", entry.Filter),
+                new XElement("VSTestLogger", "trx%3bLogFileName=$(MSBuildProjectName).trx")));
+        }
+
+        targets.Add(new XElement("Target", new XAttribute("Name", "ValidateLumyteLaneProject"), new XAttribute("BeforeTargets", "VSTest"),
+            new XElement("Error", new XAttribute("Condition", "'$(IsTestProject)' == 'true' and '$(LumyteLaneSelected)' != 'true'"),
+                new XAttribute("Text", "The solution filter scheduled an unselected test project: $(MSBuildProjectFullPath)"))));
+        await File.WriteAllTextAsync(targetsFile, new XDocument(targets).ToString()).ConfigureAwait(false);
+        // One SDK invocation owns every selected project. -m:1 retains cross-project
+        // serial boundaries; the CPU xUnit adapter handles bounded method concurrency.
+        await DotNetWithEnvironmentAsync(environment, "test", filterFile, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1",
+            "-p:LumyteTestLaneTargets=" + targetsFile, "--results-directory", Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant())).ConfigureAwait(false);
     }
 
     private sealed record TestLane(string Project, string Default, string[] IntegrationClasses)

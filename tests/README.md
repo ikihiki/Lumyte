@@ -92,3 +92,7 @@ projectは直列、同時method数はassemblyごとに最大4（指定範囲1–
 明示的collection・assemblyの直列境界と、theoryデータ行の順序は維持します。
 GPU/integrationはこのschedulerを使わずcollectionも直列化します。
 [選択肢・移行と検証](../build/TASK-MIGRATION.md)を参照してください。
+
+分類レーンは正本Lumyte.slnxへの.slnfを生成し、**一度のdotnet test**で全対象を実行します。
+混在class・trait・integration既定projectのfilterはproject別のMSBuild propertyへ設定します。
+project名のIntegrationTestsという文字列ではCPU並列を無効化しません。

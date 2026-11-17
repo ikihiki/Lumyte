@@ -3,7 +3,7 @@
 Verified on Linux x64 using the pinned SDK/native paths from
 /tmp/lumyte-lanes-env.sh; no host configuration was changed.
 
-## Commands and results
+## Original consolidation checks
 
 The following commands were run from the repository root after sourcing that
 local environment. Logs are retained on the verification host.
@@ -43,3 +43,33 @@ Benchmark verification was a catalog run, not a performance measurement.
 Frozen ADRs and archived performance evidence retain historical target names and
 hashes; current callers and current documentation use the migration table in
 [TASK-MIGRATION.md](TASK-MIGRATION.md). No ADR lint exceptions were added or updated.
+
+## Solution-filter follow-up
+
+The classified lanes now issue exactly one SDK test command, replacing the
+original per-project loop. These checks supersede the original CPU/orchestration
+execution records above; target inventory remains 43.
+
+| Command | Result | Log |
+| --- | --- | --- |
+| dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4 | **One dotnet test**, canonical CPU .slnf with 50 projects; **4,179 passed, zero failed/skipped**; full host restore/compile also succeeded | /tmp/lumyte-slnf-cpu-full.log |
+| dotnet test tests/Tools/Lumyte.Build.Tests -c Release --nologo | **209 passed**, including solution-filter membership, one-command assertions, all original feature/native regressions and real SDK fixture | /tmp/lumyte-slnf-orchestration.log |
+| dotnet build/bin/Release/net10.0/_build.dll --root "$PWD/artifacts/slnf-integration-state" --repository-root "$PWD" --target Test --lane integration --project tests/Tools/Lumyte.Build.Tests --no-build --no-restore | **One dotnet test**, one selected project, **115 integration tests passed**; canonical source outside isolated invocation root | /tmp/lumyte-slnf-integration.log |
+| dotnet test tests/Tools/Lumyte.Build.Tests -c Release --nologo --filter FullyQualifiedName~SolutionFilterSdkTests --logger "console;verbosity=detailed" | **SDK 10.0.403**, canonical two-project .slnx; one real .slnf test invocation per lane: CPU 2 / integration 3 / GPU 2 cases; expected membership 1 / 2 / 2 | /tmp/lumyte-slnf-sdk-fixture.log |
+| dotnet build build -c Release --no-restore | 0 warnings/errors | /tmp/lumyte-slnf-build.log |
+
+The SDK fixture lives in a Unicode/spaced temporary checkout, imports the actual
+repository test hook, and verifies both legacy mixed-class and untagged
+integration-default predicates. Its CPU assembly is deliberately named
+Fixture.Fake.IntegrationTests; the same-class barrier proves that project naming
+cannot silently disable CPU method scheduling. Integration/GPU still use actual
+traits and the explicit serial environment boundary.
+
+Concurrent ordering exposed an existing malformed shader snapshot test fixture:
+clearing DiagnosticFields alone retained DiagnosticType, whose process cache
+could substitute valid metadata. The test now explicitly clears both deferred
+providers and asserts that the malformed Fields array is the one being validated.
+Its exception assertions remain unchanged; no test is skipped or serialized to
+mask the issue. SDK fixture build workers disable node reuse/shared compilation
+only for their own child process, avoiding inherited redirected-stream lifetimes;
+no host settings or production build policy is changed.

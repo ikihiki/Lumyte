@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Xml.Linq;
 using Xunit;
 
 namespace Lumyte.Build.Tests;
@@ -32,7 +33,26 @@ public sealed class TestLaneTests
         Assert.Equal(0, result.ExitCode);
         JsonElement record = Assert.Single(fixture.Records("dotnet"));
         string[] arguments = record.GetProperty("arguments").EnumerateArray().Select(value => value.GetString()!).ToArray();
-        Assert.Contains(expected, arguments[Array.IndexOf(arguments, "--filter") + 1], StringComparison.Ordinal);
+        Assert.Equal("test", arguments[0]);
+        Assert.EndsWith(".slnf", arguments[1], StringComparison.Ordinal);
+        Assert.DoesNotContain("--filter", arguments);
+        using var solutionFilter = JsonDocument.Parse(File.ReadAllText(arguments[1]));
+        JsonElement solution = solutionFilter.RootElement.GetProperty("solution");
+        Assert.Equal(fixture.Solution, Path.GetFullPath(solution.GetProperty("path").GetString()!, Path.GetDirectoryName(arguments[1])!));
+        string[] members = solution.GetProperty("projects").EnumerateArray().Select(value => Path.GetFullPath(value.GetString()!, fixture.Root)).ToArray();
+        Assert.Equal(lane == "cpu" ? [fixture.Project] : [fixture.Project, Path.Combine(fixture.Root, "Native Fixture.csproj")], members);
+        string targetsFile = Assert.Single(arguments, argument => argument.StartsWith("-p:LumyteTestLaneTargets=", StringComparison.Ordinal))["-p:LumyteTestLaneTargets=".Length..];
+        var targets = XDocument.Load(targetsFile);
+        XElement[] groups = targets.Root!.Elements("PropertyGroup").Where(group => group.Element("LumyteLaneSelected")?.Value == "true").ToArray();
+        Assert.Equal(members.Length, groups.Length);
+        Assert.Contains(expected, groups[0].Element("VSTestTestCaseFilter")!.Value, StringComparison.Ordinal);
+        if (lane == "integration")
+        {
+            Assert.Equal("Execution!=Gpu", groups[1].Element("VSTestTestCaseFilter")!.Value);
+            Assert.Contains("FullyQualifiedName~.ExternalTests.", groups[0].Element("VSTestTestCaseFilter")!.Value, StringComparison.Ordinal);
+        }
+
+        Assert.All(groups, group => Assert.Equal("trx%3bLogFileName=$(MSBuildProjectName).trx", group.Element("VSTestLogger")!.Value));
         Assert.Contains("--no-build", arguments);
         Assert.Contains("--no-restore", arguments);
         Assert.Equal(lane == "cpu" ? null : "1", record.GetProperty("environment").GetProperty("LUMYTE_TEST_SERIAL").GetString());
@@ -64,11 +84,13 @@ public sealed class TestLaneTests
     private static void PrepareCatalog(BuildFixture fixture)
     {
         File.WriteAllText(fixture.Project, "<Project><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>");
-        File.WriteAllText(fixture.Solution, $"<Solution><Project Path=\"{Path.GetFileName(fixture.Project)}\" /></Solution>");
+        File.WriteAllText(Path.Combine(fixture.Root, "Native Fixture.csproj"), "<Project><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>");
+        File.WriteAllText(fixture.Solution, $"<Solution><Project Path=\"{Path.GetFileName(fixture.Project)}\" /><Project Path=\"Native Fixture.csproj\" /></Solution>");
         Directory.CreateDirectory(Path.Combine(fixture.Root, "build"));
         File.WriteAllText(Path.Combine(fixture.Root, "build", "TestLanes.json"), JsonSerializer.Serialize(new[]
         {
             new { Project = Path.GetFileName(fixture.Project), Default = "Cpu", IntegrationClasses = new[] { "ExternalTests" } },
+            new { Project = "Native Fixture.csproj", Default = "Integration", IntegrationClasses = Array.Empty<string>() },
         }));
     }
 }

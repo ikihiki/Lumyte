@@ -42,6 +42,30 @@ retains the Vulkan sample workload, not a BDN category. Distribution and Quality
 are real compositions. Ci remains the aggregate without per-lane/browser aliases.
 Privileged screening notification remains separate from measurement.
 
+## One SDK test invocation per classified lane
+
+Each cpu/integration/gpu selection generates artifacts/test-lanes/{lane}.slnf
+against the canonical Lumyte.slnx, then issues **exactly one dotnet test command**
+for all selected host test projects. The filter stores canonical-solution-relative
+project paths; OS and explicit project selection are applied before generation.
+No per-project dotnet test loop or copied replacement solution is used.
+
+The adjacent {lane}.targets is imported through the existing test MSBuild hook.
+It sets VSTestTestCaseFilter separately for each project, preserving mixed legacy
+class lists, Execution traits, and untagged default-integration projects. A global
+CLI filter cannot represent those distinct predicates and is deliberately absent.
+The .slnf artifact alone cannot encode class predicates: use the common Test
+entry point, which supplies the adjacent targets property to the SDK invocation.
+Integration/GPU conservatively include host candidates because Execution traits
+can occur in any classified project; their per-project predicates select cases.
+An unselected project reaching VSTest fails instead of falling back to its full
+suite. Unique per-project TRX loggers avoid collisions within the one invocation. The
+MSBuild logger value escapes its embedded semicolon as %3b so the SDK does not
+interpret LogFileName as a second logger.
+MSBuild -m:1 retains serial project boundaries while the CPU adapter schedules
+bounded methods inside each assembly. The assembly name never classifies a lane;
+a CPU-only assembly named IntegrationTests is still method-parallel.
+
 ## CPU method concurrency
 
 CPU runs on Linux x64 only: projects are serial and **methods within the same
