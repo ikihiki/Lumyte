@@ -245,3 +245,30 @@ test("native recorder errors cannot mask original verdict", async t => {
     await f.recorder.finish(true);
     assert.equal((await f.manifest()).processRecorder.status, "finish-unavailable");
 });
+
+test("quarantine retains failed evidence but labels the scenario inconclusive, never passed", async t => {
+    const f = await fixture(t);
+    await f.recorder.arm(f.send);
+    await f.recorder.finish(true);
+    const policy = { policyId: "connected-png", status: "inconclusive-known-timeout", issue: "https://github.com/ikihiki/Lumyte/issues/172", expiry: "2026-12-01T00:00:00.000Z", reason: "automation-deadline-gpu-completion" };
+    const saved = await f.recorder.markQuarantined(policy);
+    assert.equal(saved.occurrences, 1);
+    const m = await f.manifest();
+    assert.equal(m.verdict, "inconclusive");
+    assert.equal(m.quarantine.remainingAssertionsExecuted, false);
+    assert.equal(m.status, "saved");
+    assert.equal(f.summaries.length, 1);
+});
+test("missing or incomplete artifacts cannot turn failure into quarantine", async t => {
+    const f = await fixture(t, { byteLimit: 4 });
+    await f.recorder.arm(f.send); await f.recorder.finish(true);
+    assert.equal(await f.recorder.markQuarantined({ status: "inconclusive-known-timeout" }), undefined);
+    assert.equal((await f.manifest()).verdict, "failed");
+});
+
+test("late errors revoke quarantine and retain a failed manifest", async t => {
+    const f = await fixture(t); await f.recorder.arm(f.send); await f.recorder.finish(true);
+    let checks = 0;
+    assert.equal(await f.recorder.markQuarantined({ status: "inconclusive-known-timeout" }, () => ++checks < 3), undefined);
+    assert.equal((await f.manifest()).verdict, "failed");
+});
