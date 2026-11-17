@@ -58,6 +58,22 @@ public static class FirstSupported2D
     /// <returns>The original typed replacement interface.</returns>
     public static IDrawPaintGraphRenderer2D DrawPaintGraph(params CommandCandidate2D<DrawPaintGraphCommand2D, IDrawPaintGraphRenderer2D>[] candidates) => new DrawPaintGraphChoice(candidates);
 
+    internal static Type GetProcessorType(DrawKind2D kind) => kind switch
+    {
+        DrawKind2D.FillRect => typeof(FillRectChoice),
+        DrawKind2D.FillRoundedRect => typeof(FillRoundedRectChoice),
+        DrawKind2D.FillCircle => typeof(FillCircleChoice),
+        DrawKind2D.DrawLine => typeof(DrawLineChoice),
+        DrawKind2D.FillPath => typeof(FillPathChoice),
+        DrawKind2D.StrokePath => typeof(StrokePathChoice),
+        DrawKind2D.DrawImage => typeof(DrawImageChoice),
+        DrawKind2D.DrawCoverageMask => typeof(DrawCoverageMaskChoice),
+        DrawKind2D.DrawDistanceField => typeof(DrawDistanceFieldChoice),
+        DrawKind2D.DrawMesh => typeof(DrawMeshChoice),
+        DrawKind2D.DrawPaintGraph => typeof(DrawPaintGraphChoice),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
     private static CommandCandidate2D<TCommand, TBackend>[] Copy<TCommand, TBackend>(CommandCandidate2D<TCommand, TBackend>[] candidates)
         where TCommand : DrawingCommand2D
         where TBackend : class
@@ -86,7 +102,7 @@ public static class FirstSupported2D
         throw new NotSupportedException("Every candidate for the selected command kind rejected the batch.");
     }
 
-    private sealed class FillRectChoice(CommandCandidate2D<FillRectCommand2D, IFillRectRenderer2D>[] candidates) : IFillRectRenderer2D, ICommandChoice2D
+    private sealed class FillRectChoice(CommandCandidate2D<FillRectCommand2D, IFillRectRenderer2D>[] candidates) : PipelineElement2D, IFillRectRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<FillRectCommand2D, IFillRectRenderer2D>[] _candidates = Copy(candidates);
 
@@ -100,7 +116,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class FillRoundedRectChoice(CommandCandidate2D<FillRoundedRectCommand2D, IFillRoundedRectRenderer2D>[] candidates) : IFillRoundedRectRenderer2D, ICommandChoice2D
+    private sealed class FillRoundedRectChoice(CommandCandidate2D<FillRoundedRectCommand2D, IFillRoundedRectRenderer2D>[] candidates) : PipelineElement2D, IFillRoundedRectRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<FillRoundedRectCommand2D, IFillRoundedRectRenderer2D>[] _candidates = Copy(candidates);
 
@@ -114,7 +130,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class FillCircleChoice(CommandCandidate2D<FillCircleCommand2D, IFillCircleRenderer2D>[] candidates) : IFillCircleRenderer2D, ICommandChoice2D
+    private sealed class FillCircleChoice(CommandCandidate2D<FillCircleCommand2D, IFillCircleRenderer2D>[] candidates) : PipelineElement2D, IFillCircleRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<FillCircleCommand2D, IFillCircleRenderer2D>[] _candidates = Copy(candidates);
 
@@ -128,7 +144,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class DrawLineChoice(CommandCandidate2D<DrawLineCommand2D, IDrawLineRenderer2D>[] candidates) : IDrawLineRenderer2D, ICommandChoice2D
+    private sealed class DrawLineChoice(CommandCandidate2D<DrawLineCommand2D, IDrawLineRenderer2D>[] candidates) : PipelineElement2D, IDrawLineRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<DrawLineCommand2D, IDrawLineRenderer2D>[] _candidates = Copy(candidates);
 
@@ -142,7 +158,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class FillPathChoice(CommandCandidate2D<FillPathCommand2D, IFillPathRenderer2D>[] candidates) : IFillPathRenderer2D, ICommandChoice2D
+    private sealed class FillPathChoice(CommandCandidate2D<FillPathCommand2D, IFillPathRenderer2D>[] candidates) : PipelineElement2D, IFillPathRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<FillPathCommand2D, IFillPathRenderer2D>[] _candidates = Copy(candidates);
 
@@ -156,7 +172,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class StrokePathChoice(CommandCandidate2D<StrokePathCommand2D, IStrokePathRenderer2D>[] candidates) : IStrokePathRenderer2D, ICommandChoice2D
+    private sealed class StrokePathChoice(CommandCandidate2D<StrokePathCommand2D, IStrokePathRenderer2D>[] candidates) : PipelineElement2D, IStrokePathRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<StrokePathCommand2D, IStrokePathRenderer2D>[] _candidates = Copy(candidates);
 
@@ -170,7 +186,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class DrawImageChoice(CommandCandidate2D<DrawImageCommand2D, IDrawImageRenderer2D>[] candidates) : IDrawImageRenderer2D, ICommandChoice2D
+    private sealed class DrawImageChoice(CommandCandidate2D<DrawImageCommand2D, IDrawImageRenderer2D>[] candidates) : PipelineElement2D, IDrawImageRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<DrawImageCommand2D, IDrawImageRenderer2D>[] _candidates = Copy(candidates);
 
@@ -184,7 +200,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class DrawCoverageMaskChoice(CommandCandidate2D<DrawCoverageMaskCommand2D, IDrawCoverageMaskRenderer2D>[] candidates) : IDrawCoverageMaskRenderer2D, ICommandChoice2D
+    private sealed class DrawCoverageMaskChoice(CommandCandidate2D<DrawCoverageMaskCommand2D, IDrawCoverageMaskRenderer2D>[] candidates) : PipelineElement2D, IDrawCoverageMaskRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<DrawCoverageMaskCommand2D, IDrawCoverageMaskRenderer2D>[] _candidates = Copy(candidates);
 
@@ -198,7 +214,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class DrawDistanceFieldChoice(CommandCandidate2D<DrawDistanceFieldCommand2D, IDrawDistanceFieldRenderer2D>[] candidates) : IDrawDistanceFieldRenderer2D, ICommandChoice2D
+    private sealed class DrawDistanceFieldChoice(CommandCandidate2D<DrawDistanceFieldCommand2D, IDrawDistanceFieldRenderer2D>[] candidates) : PipelineElement2D, IDrawDistanceFieldRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<DrawDistanceFieldCommand2D, IDrawDistanceFieldRenderer2D>[] _candidates = Copy(candidates);
 
@@ -212,7 +228,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class DrawMeshChoice(CommandCandidate2D<DrawMeshCommand2D, IDrawMeshRenderer2D>[] candidates) : IDrawMeshRenderer2D, ICommandChoice2D
+    private sealed class DrawMeshChoice(CommandCandidate2D<DrawMeshCommand2D, IDrawMeshRenderer2D>[] candidates) : PipelineElement2D, IDrawMeshRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<DrawMeshCommand2D, IDrawMeshRenderer2D>[] _candidates = Copy(candidates);
 
@@ -226,7 +242,7 @@ public static class FirstSupported2D
         }
     }
 
-    private sealed class DrawPaintGraphChoice(CommandCandidate2D<DrawPaintGraphCommand2D, IDrawPaintGraphRenderer2D>[] candidates) : IDrawPaintGraphRenderer2D, ICommandChoice2D
+    private sealed class DrawPaintGraphChoice(CommandCandidate2D<DrawPaintGraphCommand2D, IDrawPaintGraphRenderer2D>[] candidates) : PipelineElement2D, IDrawPaintGraphRenderer2D, ICommandChoice2D
     {
         private readonly CommandCandidate2D<DrawPaintGraphCommand2D, IDrawPaintGraphRenderer2D>[] _candidates = Copy(candidates);
 

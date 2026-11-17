@@ -1,11 +1,11 @@
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
-/// <summary>Host-owned immutable snapshot of one typed named slot.</summary>
-internal sealed class CommandRoute2D(DrawKind2D kind, IBackendBinding2D binding, Func<BackendCompileScope2D, object> compile)
+/// <summary>Immutable declaration topology resolved only by the runtime compiler.</summary>
+internal sealed class CommandRoute2D(DrawKind2D kind, PipelineDeclaration2D declaration)
 {
     internal DrawKind2D Kind { get; } = kind;
 
-    internal IBackendBinding2D Binding { get; } = binding;
+    internal PipelineDeclaration2D Declaration { get; } = declaration;
 
-    internal object Compile(BackendCompileScope2D scope) => compile(scope);
+    internal object Compile(BackendCompileScope2D scope) => scope.Resolve(Declaration);
 }

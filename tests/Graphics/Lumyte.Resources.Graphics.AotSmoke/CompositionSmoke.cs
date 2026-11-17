@@ -16,24 +16,25 @@ internal static class CompositionSmoke
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
         Definitions.Renderer definition = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 2, MaxCachedAssets = 8, MaxCachedBytes = 1024 * 1024 })[
-            Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(new DefaultFillRectRenderer2D())],
-            Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(new DefaultFillRoundedRectRenderer2D())],
-            Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Borrowed(new DefaultFillCircleRenderer2D())],
-            Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Borrowed(new DefaultDrawLineRenderer2D())],
-            Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Borrowed(new DefaultFillPathRenderer2D())],
-            Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Borrowed(new DefaultStrokePathRenderer2D())],
-            Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Borrowed(new DefaultDrawImageRenderer2D())],
-            Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(new DefaultDrawCoverageMaskRenderer2D())],
-            Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(new DefaultDrawDistanceFieldRenderer2D())],
-            Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(new DefaultDrawMeshRenderer2D())],
-            Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(new DefaultDrawPaintGraphRenderer2D())]];
+            Renderer.FillRect()[FirstSupportedFillRect(candidates: [new((_, _) => false, StandardFillRect()), new((_, _) => true, new SmokeRectangle())])],
+            Renderer.FillRoundedRect()[StandardFillRoundedRect()],
+            Renderer.FillCircle()[StandardFillCircle()],
+            Renderer.DrawLine()[StandardDrawLine()],
+            Renderer.FillPath()[StandardFillPath()],
+            Renderer.StrokePath()[StandardStrokePath()],
+            Renderer.DrawImage()[StandardDrawImage()],
+            Renderer.DrawCoverageMask()[StandardDrawCoverageMask()],
+            Renderer.DrawDistanceField()[StandardDrawDistanceField()],
+            Renderer.DrawMesh()[StandardDrawMesh()],
+            Renderer.DrawPaintGraph()[StandardDrawPaintGraph()]];
         var resources = new DrawingResources2D(device, pipeline);
-        if (definition.DescribeDataflow(device, resources).Count != 11)
+        using RendererBuildHost2D host = definition.CreateHost();
+        if (host.DescribeDataflow(device, resources).Count != 11)
         {
             throw new InvalidOperationException("Missing compiled kind routes.");
         }
 
-        using IRenderer2D renderer = definition.BuildRenderer(device, resources, null, null);
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
         using IGraphicsTexture texture = device.CreateTexture(new() { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment });
         using IGraphicsTextureView view = texture.CreateView();
         var canvas = new Canvas2D();
@@ -50,5 +51,19 @@ internal static class CompositionSmoke
         commands.Dispose();
         prepared.Dispose();
         Console.WriteLine("Native AOT eleven-kind composed renderer native wgpu submission completed.");
+    }
+
+    private sealed class SmokeRectangle : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
+    {
+        public override Type ProcessorType => typeof(SmokeRectangleProcessor);
+
+        protected override object CreateElement(PipelineBuildContext2D context) => new SmokeRectangleProcessor();
+    }
+
+    private sealed class SmokeRectangleProcessor : PipelineElement2D, IFillRectRenderer2D
+    {
+        private readonly IFillRectRenderer2D _standard = new DefaultFillRectRenderer2D();
+
+        public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default) => _standard.PrepareAsync(context, commands, cancellationToken);
     }
 }

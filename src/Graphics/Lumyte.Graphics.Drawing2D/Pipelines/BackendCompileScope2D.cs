@@ -2,12 +2,14 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
-internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? externalOwner = null) : IDisposable
+internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? externalOwner, IReadOnlySet<PipelineDeclaration2D> declarations) : IDisposable
 {
     private readonly Dictionary<object, object> _instances = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<string, object> _names = new(StringComparer.Ordinal);
     private readonly List<IDisposable> _owned = [];
+    private readonly HashSet<PipelineDeclaration2D> _creating = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<IDisposable> _ownedIdentities = new(ReferenceEqualityComparer.Instance);
+
+    private bool _committed;
 
     public void Dispose()
     {
@@ -17,32 +19,62 @@ internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? 
             _owned[last].Dispose();
             _owned.RemoveAt(last);
         }
+
+        if (!_committed && externalOwner is PipelineElement2D externalElement)
+        {
+            externalElement.ReleaseReservation(this);
+        }
     }
 
-    internal T Resolve<T>(SharedBackend2D<T> shared)
-        where T : class, IDisposable
+    internal void Commit() => _committed = true;
+
+    internal object Resolve(PipelineDeclaration2D declaration)
     {
-        if (_names.TryGetValue(shared.Name, out object? existing) && !ReferenceEquals(existing, shared))
+        if (!declarations.Contains(declaration))
         {
-            throw new ArgumentException("Conflicting declarations for the same shared backend identity.");
+            throw new ArgumentException("Child resolution requires an explicitly declared passive child topology.");
         }
 
-        _names[shared.Name] = shared;
-        if (_instances.TryGetValue(shared, out object? value))
+        if (_instances.TryGetValue(declaration, out object? existing))
         {
-            return (T)value;
+            return existing;
         }
 
-        T result = shared.Create(device) ?? throw new InvalidOperationException("A shared factory returned null.");
-
-        // The external owner remains caller-owned until Renderer2D construction succeeds.
-        // It has one disposal path in DrawingResourceState2D, even when factories alias it.
-        if (!ReferenceEquals(result, externalOwner) && _ownedIdentities.Add(result))
+        if (!_creating.Add(declaration))
         {
-            _owned.Add(result);
+            throw new ArgumentException("Recursive pipeline declaration construction is not supported.");
         }
 
-        _instances.Add(shared, result);
-        return result;
+        try
+        {
+            var context = new PipelineBuildContext2D(device, this);
+            object result;
+            try
+            {
+                result = declaration.CreateInstance(context);
+            }
+            finally
+            {
+                context.Close();
+            }
+
+            if (declaration.OwnsProcessor && result is PipelineElement2D element)
+            {
+                element.Adopt(declaration, this);
+            }
+
+            if (declaration.OwnsProcessor && result is IDisposable owner && !ReferenceEquals(owner, externalOwner) && _ownedIdentities.Add(owner))
+            {
+                _owned.Add(owner);
+            }
+
+            declaration.ValidateInstance(result);
+            _instances.Add(declaration, result);
+            return result;
+        }
+        finally
+        {
+            _creating.Remove(declaration);
+        }
     }
 }

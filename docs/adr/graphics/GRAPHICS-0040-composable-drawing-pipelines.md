@@ -1,37 +1,39 @@
-# ADR-GRAPHICS-0040: 描画種別ごとの構成を一つの renderer にまとめる
+# ADR-GRAPHICS-0040: 描画種別ごとの宣言を独立した処理 instance に構築する
 
 - 状態: 採用
 - 日付: 2026-11-17
 - 基準コミット: `06c3f3d71aab42d4913d4634673fdc8e0162e495`
 - 変更関係: 一部変更
 - 変更元: [GRAPHICS-0018 の命令別配送](GRAPHICS-0018-2d-graphics-engine.md#命令別interfaceとdi)
-- 変更対象: renderer の構築に命令種別別の Composition 宣言と明示共有を追加する。
-- 継続する判断: Canvas、既存の命令別 interface、CPU clip の数値規則、描画順、準備結果と資源所有権を維持する。
+- 変更対象: renderer の構築に受動的な Composition 宣言と独立した処理 instance を追加する。
+- 継続する判断: Canvas、命令別 interface、CPU clip の数値規則、描画順、準備結果と資源所有権を維持する。
 
 ## 背景
 
-renderer の作者は矩形とパスなどの実装を別々に設定しつつ、共通の管理対象を一つの instance にまとめたい。すべての描画をすべてのパイプラインへ問い合わせる方式では、無関係な描画種別の条件判定まで実行され、既存の固定配送と異なる責務になる。
+renderer の作者は矩形とパスなどのアルゴリズムを別々に設定しつつ、共通の処理状態を一つの instance にまとめたい。構築構文へ実行中の backend や所有権の接続部品を直接渡す方式では、設定と GPU 資源の寿命を分離できない。
 
-基準コミット `06c3f3d71aab42d4913d4634673fdc8e0162e495` の `src/Graphics/Lumyte.Graphics.Drawing2D/Execution/Renderer2D.cs` の `PrepareAsync` と `DrawingCommandRenderers2D` は 11 種類の interface へ連続命令を配送する。同じ SHA の `Renderer2D.Retained.cs` の `IsBuiltinRenderer` は組込みの具体型を識別し、種別をまたぐ `TakeBuiltinBatch` と `PreparedRecordBatch2D` により共通の記録列を作る。単に各 backend を wrapper に入れるだけでは、この結合を失う。
+基準コミット 06c3f3d71aab42d4913d4634673fdc8e0162e495 の src/Graphics/Lumyte.Graphics.Drawing2D/Execution/Renderer2D.cs の PrepareAsync と DrawingCommandRenderers2D は 11 種類の interface へ連続命令を配送する。同じ SHA の Renderer2D.Retained.cs の IsBuiltinRenderer は組込み具体型を識別し、TakeBuiltinBatch と PreparedRecordBatch2D により種別をまたぐ記録列を作る。全処理を wrapper で包むとこの結合を失う。
+
+同じ SHA の src/UI/Lumyte.UI/Compose.Widget.cs の Widget は設定と子構成を持ち、CreateInstance が別型の UiElement を作る。Compose.Rectangle.cs の Rectangle と RectangleElement.cs の RectangleElement も構築構文の型と実処理の型が別である。この責務分離を採用し、UI assembly への依存や UI の反応性・mount 更新は追加しない。
 
 ## 決定
 
-構築側は描画種別ごとの名前付き Slot を明示し、構築完了時に全宣言を一つの固定配送表と一つの renderer 資源管理へまとめる。同じ種別の中だけで FirstSupported の候補を評価し、共有する backend は graph 内の型付き identity を明示して同じ実 instance を注入する。通常の描画側は IRenderer2D と既存の準備結果だけを使う。
+構築構文は受動的な宣言だけを保持し、独立した RendererBuildHost2D が全 11 Slot を一つの固定配送表と資源管理へ構築する。同じ宣言参照だけを一つの構築内で共有し、通常の描画側は従来どおり IRenderer2D と既存の準備結果を使う。
 
 ### 利用者の変更前・変更後
 
 変更前は基準コードの固定表を constructor に渡す。device、target、list、cancellationToken は呼出し側が用意する。
 
-```csharp
+~~~csharp
 using Lumyte.Graphics.Drawing2D;
 
 using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, target, cancellationToken);
-```
+~~~
 
-変更後は同じ 11 種類を Composition で明示する。以下は今回追加する API による構成であり、すべての単機能 backend を列挙する。resources は呼出し側が選択した DrawingResources2D、resourceOwner と validateResources は既存と同じ所有者と検証 callback である。null の resources から graph を補完しない。
+変更後は全 11 種類を明示する。次は今回追加する生成 factory による完全な Slot 構成である。resources は呼出し側が選択した DrawingResources2D、resourceOwner と validateResources は既存と同じ所有者と検証 callback である。単機能の標準アルゴリズムには追加設定がないため空引数で宣言する。
 
-```csharp
+~~~csharp
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.Pipelines;
 using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
@@ -42,93 +44,120 @@ var bounds = new DrawingRetentionOptions2D
     MaxCachedAssets = 512,
     MaxCachedBytes = 64 * 1024 * 1024
 };
-var definition = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: bounds)
+var declaration = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: bounds)
 [
-    Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(new DefaultFillRectRenderer2D())],
-    Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(new DefaultFillRoundedRectRenderer2D())],
-    Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Borrowed(new DefaultFillCircleRenderer2D())],
-    Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Borrowed(new DefaultDrawLineRenderer2D())],
-    Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Borrowed(new DefaultFillPathRenderer2D())],
-    Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Borrowed(new DefaultStrokePathRenderer2D())],
-    Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Borrowed(new DefaultDrawImageRenderer2D())],
-    Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(new DefaultDrawCoverageMaskRenderer2D())],
-    Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(new DefaultDrawDistanceFieldRenderer2D())],
-    Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(new DefaultDrawMeshRenderer2D())],
-    Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(new DefaultDrawPaintGraphRenderer2D())]
+    Renderer.FillRect()[StandardFillRect()],
+    Renderer.FillRoundedRect()[StandardFillRoundedRect()],
+    Renderer.FillCircle()[StandardFillCircle()],
+    Renderer.DrawLine()[StandardDrawLine()],
+    Renderer.FillPath()[StandardFillPath()],
+    Renderer.StrokePath()[StandardStrokePath()],
+    Renderer.DrawImage()[StandardDrawImage()],
+    Renderer.DrawCoverageMask()[StandardDrawCoverageMask()],
+    Renderer.DrawDistanceField()[StandardDrawDistanceField()],
+    Renderer.DrawMesh()[StandardDrawMesh()],
+    Renderer.DrawPaintGraph()[StandardDrawPaintGraph()]
 ];
-using IRenderer2D renderer = definition.BuildRenderer(
-    device, resources, resourceOwner, validateResources);
+using RendererBuildHost2D host = declaration.CreateHost();
+using IRenderer2D renderer = host.BuildRenderer(device, resources, resourceOwner, validateResources);
 using PreparedDraw2D prepared = await renderer.PrepareAsync(list, target, cancellationToken);
 // Record、Finish、Submit、完了確認、command の破棄後に prepared を破棄する。
-```
+~~~
 
-既存の CreateDefault は互換 factory として残すが、新しい宣言の不足を埋めるためには呼び出さない。標準 backend はそれぞれ既存の単機能部品であり、11 個の子 Renderer2D や device を作るものではない。
+構築と回収がともに失敗した場合、host が未公開 instance の再試行責任を保持し、同じ host の BuildRenderer または Dispose で再試行する。再試行できる所有者を失わないよう、宣言上の BuildRenderer や一時的な自動破棄 host の拡張メソッドは設けない。構築済み renderer の所有権は host から独立する。
 
-### 構成と実行の境界
+### 宣言、名前付き Slot と実処理
 
-Lumyte.Composition と generator は Renderer factory、型付きの名前付き Slot、SlotAssignment を受ける indexer を生成する。Drawing2D の host は全 11 Slot を一緒に検査し、固定の DrawKind2D index に配置して DrawingCommandRenderers2D を作る。実行時は従来の switch が対象 interface を直接選び、root の列挙や無関係な predicate の評価をしない。
+Definitions.Renderer は必須方針と子宣言の topology だけを保持し、device、資源 snapshot、処理 instance、未回収の native owner、Dispose、PrepareAsync、Record は持たない。CreateHost は環境をまだ固定せず独立した構築 host を作る橋渡しであり、実構築を宣言へ委譲しない。
 
-全 11 種別の Slot に明示した binding を一つずつ指定する。各 Slot の children 型は元の interface に対応した BackendBinding2D であり、異なる backend 型や別対象の SlotAssignment は C# の型検査で拒否する。複数 children と null binding、同一 Slot への二重代入は代入時に拒否し、候補選択を自動生成しない。空 children はその Slot を消去する。凍結前の明示的な消去後は再代入できるが、欠落したままの検査・構築は GPU 確保前に拒否する。共有名の衝突、不一致 device、無効な予算と引数表設定も構築前に拒否する。
+PipelineDeclaration2D は受動的な設定の基底型で、`IPipelineDeclaration2D<TCommand>` は処理メソッドを持たない能力 marker である。CreateElement は構築時だけ呼ばれ、宣言と異なる処理型を返す。独自の所有処理型は PipelineElement2D を継承し、従来の命令別 interface を実装する。PipelineElement2D が構築 identity と採用済み宣言を保持し、別構築で既に採用した処理 instance の再返却を拒否する。既存 callback には新しい資源保持プロトコルを要求しない。
 
-Core の CompositionSlot は children 配列を捕捉時と適用時にコピーする。host は配列を保持せず、不変の binding 参照を自身の固定表へ保存する。同じ SlotAssignment と binding は独立した複数の定義へ適用でき、親を付け替えない。最初の DescribeDataflow または BuildRenderer が device、明示した DrawingResources2D と全 Slot を固定し、異なる device・資源 snapshot への再利用、凍結後と破棄後の Slot 変更を拒否する。宣言変更と準備の呼出しは利用側で直列化する。required init 設定と不変の binding 値を使い、候補配列もコピーする。
+標準宣言は既存の sealed DefaultFillRectRenderer2D などを構築時に新規作成し、実 instance を固定表へ直接配置する。標準処理を包む wrapper は挿入しない。互換用途だけに `BorrowedPipeline2D<TCommand>` を残し、caller 所有の既存 callback を借用できる。通常の Slot 構成に借用 token や共有 factory は不要である。
 
-### 同じ種別だけの FirstSupported
+既存の ComposeSlot と CompositionSlotAssignment を使い、各 Slot の子型を対応 command の `IPipelineDeclaration2D<TCommand>` にする。異なる種別の子や別対象の assignment は C# の型検査で拒否する。全種別に一つずつ明示し、CreateDefault や preset で不足を補わない。複数の子、null、二重代入は適用時に拒否し、空 children は Slot を消去する。凍結前なら明示的な消去後に再代入できる。
 
-FillRect の例では矩形の候補だけを評価する。FillPath などの宣言は候補選択に参加しない。
+配列は既存 Core の機構が捕捉時と適用時にコピーし、同じ assignment を独立した複数の root へ使える。共有宣言へ UI の一親制約は適用しない。最初の DescribeDataflow または構築が宣言 topology を凍結し、欠落、無効な予算・引数表方針、同名で異なる宣言、処理型と Slot 能力の不一致を処理生成前に拒否する。宣言の DescribeDataflow は device を必要とせず、生成も predicate 評価もしない。
 
-```csharp
-IFillRectRenderer2D selected = FirstSupported2D.FillRect(
-    new((context, commands) => SupportsFastRect(context, commands), fastRect),
-    new((context, commands) => SupportsGeneralRect(context, commands), generalRect));
-var route = Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(selected)];
-```
+host は最初の検査・構築で device と DrawingResources2D の snapshot を固定し、異なる環境と破棄後の利用を拒否する。同じ凍結宣言から独立した host を作れば別 device 世代にも構築できる。設定変更、構築と描画は利用側が直列化する。宣言は GPU 所有者でないため IDisposable を実装しない。
 
-SupportsFastRect と SupportsGeneralRect は呼出し側が指定する純粋な能力・状態判定であり、GPU 確保、書込み、記録、送信を行わない。判定単位は従来と同じ clip を共有する連続同種 batch とする。最初の true の backend を一回だけ PrepareAsync し、すべて false なら NotSupportedException とする。predicate の例外、不正入力、資源失効、実確保失敗、device failure を非対応に変換せず、次候補へ進めない。
+### 独自宣言と複数種別の共有
 
-矩形の適格性は paint、clip、transform を含む実入力で判断する。基準 SHA の `src/Graphics/Lumyte.Graphics.Drawing2D/Model/FillRectCommand2D.cs` は Rect/Paint/State を持つ。矩形を path に変換する backend を作者が用意する場合も同じ塗り領域と数値順序を維持し、塗りを輪郭に変えない。基準 SHA の `StrokeStyle2D.cs` は width/cap/join/miter のみを持つため、存在しない dash を推測しない。
+次は外部 assembly の作者が用意する宣言と処理の最小例である。宣言は資源を持たず、別型の PathsProcessor が二つの interface を処理する。標準処理への委譲は例を短くするためで、独自 shader の確保と解放は処理型の責務になる。
 
-### 設定の分割と実 instance の共有
+~~~csharp
+using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.Pipelines;
 
-同じ型という理由では共有しない。SharedBackend2D の同じ宣言を複数の BackendBinding2D から参照した場合だけ、一つの BuildRenderer の scope で factory を一回呼び、その実 instance を注入する。同名で異なる共有宣言は設定の不一致として拒否する。名前は graph 内だけで有効で、static registry、型名 singleton、弱参照による暗黙統合を設けない。
+public sealed class Paths : PipelineDeclaration2D,
+    IPipelineDeclaration2D<FillPathCommand2D>, IPipelineDeclaration2D<StrokePathCommand2D>
+{
+    public override Type ProcessorType => typeof(PathsProcessor);
+    protected override object CreateElement(PipelineBuildContext2D context) => new PathsProcessor();
+}
 
-同じ作者の PathManager が IFillPathRenderer2D と IStrokePathRenderer2D を実装する場合は、次の二宣言で同じ実 manager を使う。factory と PathManager の実装は作者が用意する。
+public sealed class PathsProcessor : PipelineElement2D, IFillPathRenderer2D, IStrokePathRenderer2D
+{
+    private readonly IFillPathRenderer2D _fill = new DefaultFillPathRenderer2D();
+    private readonly IStrokePathRenderer2D _stroke = new DefaultStrokePathRenderer2D();
 
-```csharp
-var paths = new SharedBackend2D<PathManager>("paths", device => CreatePathManager(device));
-var fill = Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Shared(paths, manager => manager)];
-var stroke = Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Shared(paths, manager => manager)];
-```
+    public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
+        ReadOnlyMemory<FillPathCommand2D> commands, CancellationToken cancellationToken = default)
+        => _fill.PrepareAsync(context, commands, cancellationToken);
 
-別の BuildRenderer 呼出しでは新しい scope と instance を作る。factory の戻り値と明示した resourceOwner が同じ実 instance の場合、構築成功時だけ外部 owner の一つの解放経路へ移す。構築失敗ではその caller 所有権を消費しない。異なる share key が同じ実 instance を返した場合も解放責任だけを参照 identity で一つにし、論理設定や型による実行の統合はしない。既存の借用 instance を明示する Borrowed は破棄しない。Shared の factory が返す instance は renderer 所有であり、host が direct の準備結果、retained の batch run、Graph の準備 owner に独立した使用権を持たせる。custom backend が context.RetainResources を呼ばなくても、記録と batch の破棄が成功するまで factory 所有の backend を保持する。回収に失敗した batch が残る間は使用権も保持し、retry 成功後に返す。context.RetainResources は従来の shader 等の借用資源を保持する用途として維持し、新しい backend 実装義務にはしない。
+    public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context,
+        ReadOnlyMemory<StrokePathCommand2D> commands, CancellationToken cancellationToken = default)
+        => _stroke.PrepareAsync(context, commands, cancellationToken);
+}
 
-renderer ごとの DrawingResourceState2D、RetainedDrawingCache2D、所有者 ledger は一つとする。DrawingArgumentPlan2D は各 PrepareAsync ごとに一つで、全種別が同じ context を通じて登録し、最後に SealAsync する。別 frame の可変 scratch、mask、出力、登録中の引数表を共有しない。読取り geometry の世代共有や copy-on-write は個別 backend の不変資源契約に従う。
+var paths = new Paths();
+var fill = Renderer.FillPath()[paths];
+var stroke = Renderer.StrokePath()[paths];
+// この二つと、残り九種別を明示した assignment を同じ root に適用する。
+~~~
 
-この共有は backend/service の構築単位であり、複数種別の全入力を収集して一回だけ評価する汎用 Share stage ではない。そのような一回評価、任意の CPU/GPU DAG、Compute/Sparse 方式、Fork/Join、fixture import は今回の API として公開しない。
+同じ宣言参照から一つの構築内で実処理を一度だけ作る。別の BuildRenderer では独立した処理を作り、同型でも異なる宣言を自動統合しない。名前は診断と衝突検査にだけ使い、型 singleton、global registry、弱参照による統合はしない。子宣言を持つ独自アルゴリズムは GetChildDeclarations で受動的な子の topology を列挙し、構築専用 PipelineBuildContext2D.GetProcessor でその子を解決できる。名前衝突と循環は子を含む全構成で生成前に検査し、列挙されていない子の生成は拒否する。context の解決権限は CreateElement の終了時に閉じ、成功・失敗・renderer 破棄後に遅延生成できない。
 
-### 組込みの実処理と結合
+論理宣言と物理所有者の identity は別である。異なる宣言が同じ物理 owner を返す場合、同一構築内では解放責任だけを参照 identity で一つにする。resourceOwner と処理 owner の同一実体も成功時だけ外部 owner の経路へ移し、失敗時は caller 所有権を消費しない。ただし未公開の依存処理の回収が失敗した間は再採用の予約を保持し、回収完了後にだけ予約を返す。異なる処理 owner は依存する外部資源 owner より先に破棄する。
 
-組込み leaf は元の DefaultFillRectRenderer2D などの実 instance のまま固定表へ入れる。IsBuiltinRenderer の具体型識別を壊す汎用 wrapper は挿入しない。連続した互換組込み命令は種別が異なっても TakeBuiltinBatch に入り、PreparedRecordBatch2D が同じ記録列を作る。
+### 同種別内だけの候補選択
 
-基準 SHA の `src/Graphics/Lumyte.Graphics.Drawing2D/Execution/Renderer2D.cs`、`Renderer2D.Retained.cs` と `PreparedRecordBatch2D.cs` の処理順を維持する。CPU 側で論理命令の順に record、geometry、paint と clip の参照を準備し、共通引数計画に登録する。引数表を確定し、準備結果の Record で必要な転送と draw を記録する。従来の fragment で形状 coverage と paint を評価する融合 pass を、存在しない独立 Coverage prepass に置き換えて説明しない。
+FirstSupportedFillRect などの生成 factory は受動的な候補宣言を返す。fast と general は `IPipelineDeclaration2D<FillRectCommand2D>` の独自宣言で、既存 backend instance ではない。
 
-custom leaf と明示 FirstSupported adapter は元の typed PrepareAsync を実行する。custom kind を組込みと誤認して bypass せず、隣の組込み区間だけを結合する。候補を包む adapter 自体は組込み具体型ではないため、その選択 batch の cross-kind 結合は行わない。Painter order、clip 境界、途中失敗時の既存 batch の回収を維持する。
+~~~csharp
+var rectangles = FirstSupportedFillRect(candidates:
+[
+    new((context, commands) => SupportsFastRect(context, commands), fast),
+    new((context, commands) => SupportsGeneralRect(context, commands), general)
+]);
+var slot = Renderer.FillRect()[rectangles];
+~~~
 
-### 同じ凍結構成からの処理一覧
+候補配列は宣言時に複製し、host が別型の choice processor と子処理群へ下げる。旧 FirstSupported2D の実行 interface factory は互換用途で維持するが、それだけを構築 API にしない。従来と同じ clip を共有する連続同種 batch に対し、その種別の predicate だけを先頭から評価する。最初の true を一度だけ PrepareAsync し、すべて false なら NotSupportedException とする。
 
-DescribeDataflow は BuildRenderer が使う凍結 route 配列から、kind、入力 command 型、元の backend interface、共有名、具体 backend または宣言された manager 型、明示 FirstSupported の候補順位、CPU/転送/GPU 契約を返す。inspection は factory を実行せず、資源 owner を移動しない。静的な処理契約は実行済み pass 数や入力ごとの選択結果ではない。
+predicate は GPU 確保・書込み・記録・送信をしない純粋な判定である。predicate の例外、不正入力、資源失効、実確保失敗、device failure を非対応へ変換せず、実処理の失敗後に次候補へ進めない。paint、clip、transform を含む実入力で判断し、矩形を path に変換する場合も同じ塗り領域と数値順序を維持する。基準 SHA の Model/FillRectCommand2D.cs は Rect/Paint/State、StrokeStyle2D.cs は width/cap/join/miter を持ち、存在しない dash を推測しない。
 
-公開する粒度は今回移植する typed backend 境界である。backend 内の任意 shader や CPU algorithm の分解、候補 predicate の実行結果、転送量を inspection から推測して表示しない。
+### 資源・記録・Graph の継続契約
+
+renderer ごとの DrawingResourceState2D、RetainedDrawingCache2D と所有者 ledger は一つである。DrawingArgumentPlan2D は各 PrepareAsync ごとに一つで、全種別が同じ context へ登録して最後に SealAsync する。frame ごとの可変 scratch、mask、出力、登録中の引数表は共有しない。読取り geometry の世代共有、copy-on-write、table reference lease を維持する。
+
+基準 SHA の Renderer2D.cs、Renderer2D.Retained.cs と PreparedRecordBatch2D.cs の順序を維持し、論理命令順に record、geometry、paint と clip を準備して共通引数計画を確定する。Record が転送と draw を記録し、従来の fragment が形状 coverage と paint を融合評価する。独立した Coverage prepass が存在すると説明しない。互換な連続組込み命令は種別をまたいで結合し、custom や choice を組込みと誤認して bypass しない。Painter order と clip 境界を維持する。
+
+構築 scope は direct の準備結果、retained batch run、Graph の準備 owner の使用権から保持する。custom batch が context.RetainResources を呼ばなくても、その batch の回収成功まで所有処理を保持する。全 batch の回収成功前に使用権を返さず、失敗 owner は再試行可能な経路に残す。既存 RetainResources の任意性と custom 構成での shader の遅延確保を維持する。
+
+Graph は IRenderer2D の overload を使い、Drawing2D 内の friend interface が同じ固定表、resource coordinator と ArgumentTableMode を接続する。未対応の外部 renderer と異なる device は graph 変更前に拒否する。source の破棄後も有効な Graph host の借用を typed command、layer、backdrop、capture へ伝えるが、実借用なしに閉じた owner の guard を緩めない。失敗した Append の回収を先に再試行してから host 借用を返す。
+
+元の renderer とそれから借用した Graph host の準備は利用側が直列化する。retained frame は Record、Finish、Submit、AttachSubmission、実完了確認、command 破棄、Retire、Dispose の順に扱う。未記録は Dispose、記録済みで確実に未送信なら command 破棄後に AbortUnsubmitted を使う。待機キャンセルを GPU の取消しとみなさず、受理不明なら実完了または確認済み device 世代退役まで隔離保持する。
 
 ### 公開 API 差分
 
-以下は基準 SHA から追加・変更する宣言の抜粋である。生成 factory は既存 generator を使用する。DrawingCompose.Renderer は Definitions.RendererFactory delegate で、引数は必須の argumentTables、retention と任意の with（IReadOnlyList<Action<Definitions.Renderer>>、既定 null）である。生成される Renderer.FillRect() などは CompositionSlot<Definitions.Renderer, BackendBinding2D<対応 interface>> を返し、その children indexer が CompositionSlotAssignment<Definitions.Renderer> を作る。Renderer 定義の indexer はこの assignment の params 配列を順に適用して同じ定義を返す。一般の Children collection と独立した描画種別ノードは公開しない。
+以下は基準コミットからの追加・変更の抜粋である。factory、required ComposeParameter、Slot と assignment indexer は既存 generator だけを使う。非同期 factory や通常描画側の stage runner は追加しない。
 
-```diff
+~~~diff
  namespace Lumyte.Graphics.Drawing2D
  {
 +    public interface IRenderer2D : IDisposable
 +    {
-+        IGraphicDevice Device { get; } // 借用 device。
++        IGraphicDevice Device { get; }
 +        DrawingRetentionStatistics2D RetentionStatistics { get; }
 +        ValueTask<PreparedDraw2D> PrepareAsync(DrawList2D list, RenderTarget2D target,
 +            CancellationToken cancellationToken = default);
@@ -140,110 +169,111 @@ DescribeDataflow は BuildRenderer が使う凍結 route 配列から、kind、�
 -    public sealed partial class Renderer2D : IDisposable
 +    public sealed partial class Renderer2D : IRenderer2D
      {
-+        public IGraphicDevice Device { get; }
-         // 従来の 5 引数・6 引数 constructor と準備・破棄の契約を維持。
++        public IGraphicDevice Device { get; } // 借用 device。
+         // 既存の 5 引数・6 引数 constructor と準備・破棄の契約を維持。
      }
  }
 +namespace Lumyte.Graphics.Drawing2D.Pipelines
 +{
-+    public sealed class SharedBackend2D<T>(string name, Func<IGraphicDevice, T> create)
-+        where T : class, IDisposable;
-+    public sealed class BackendBinding2D<T> where T : class
++    public interface IPipelineDeclaration2D<TCommand> where TCommand : DrawingCommand2D
 +    {
-+        public static BackendBinding2D<T> Borrowed(T backend);
-+        public static BackendBinding2D<T> Shared<TShared>(SharedBackend2D<TShared> shared,
-+            Func<TShared, T> select) where TShared : class, IDisposable;
++        PipelineDeclaration2D Declaration { get; }
 +    }
-+    public sealed record CommandCandidate2D<TCommand, TBackend>(
++    public abstract class PipelineDeclaration2D
++    {
++        public PipelineDeclaration2D Declaration { get; }
++        public virtual string? Name { get; }
++        public abstract Type ProcessorType { get; } // 純粋な metadata。
++        protected abstract object CreateElement(PipelineBuildContext2D context);
++        protected virtual IEnumerable<PipelineDeclaration2D> GetChildDeclarations();
++    }
++    public abstract class PipelineElement2D
++    {
++        public PipelineDeclaration2D? Declaration { get; } // 実処理側の採用済み設定。
++    }
++    public sealed class PipelineBuildContext2D
++    {
++        public IGraphicDevice Device { get; }
++        public TProcessor GetProcessor<TProcessor>(PipelineDeclaration2D declaration)
++            where TProcessor : class;
++    }
++    public sealed class RendererBuildHost2D : IDisposable
++    {
++        public RendererBuildHost2D(DrawingCompose.Definitions.Renderer declaration);
++        public DrawingCompose.Definitions.Renderer Declaration { get; }
++        public IReadOnlyList<CommandRouteDescription2D> DescribeDataflow(
++            IGraphicDevice device, DrawingResources2D resources);
++        // 成功時だけ owner を引き取る。失敗時の回収を host が保持する。
++        public IRenderer2D BuildRenderer(IGraphicDevice device, DrawingResources2D resources,
++            IDisposable? resourceOwner, Action? validateResources);
++        public void Dispose(); // 未公開処理の回収を再試行。構築済み renderer は独立。
++    }
++    public sealed record PipelineCandidate2D<TCommand>(
 +        Func<RenderPreparationContext2D, ReadOnlyMemory<TCommand>, bool> Supports,
-+        TBackend Backend) where TCommand : DrawingCommand2D where TBackend : class;
-+    public static class FirstSupported2D
-+    {
-+        public static IFillRectRenderer2D FillRect(params
-+            CommandCandidate2D<FillRectCommand2D, IFillRectRenderer2D>[] candidates);
-+        // 残り 10 種別も元の interface と command 型を一対一に対応させる。
-+    }
++        IPipelineDeclaration2D<TCommand> Pipeline) where TCommand : DrawingCommand2D;
 +    public static partial class DrawingCompose
 +    {
-+        // 生成 factory。必須設定に暗黙の値を挿入しない。
-+        public static Definitions.RendererFactory Renderer { get; }
++        public static Definitions.RendererFactory Renderer { get; } // 生成 factory。
 +        public static partial class Definitions
 +        {
-+            public delegate Definitions.Renderer RendererFactory(
-+                DrawingArgumentTableMode argumentTables, DrawingRetentionOptions2D retention,
-+                IReadOnlyList<Action<Definitions.Renderer>>? with = null);
 +            [Composable(Factory = "DrawingCompose")]
-+            public partial class Renderer : IDisposable
++            public partial class Renderer
 +            {
 +                [ComposeParameter] public required DrawingRetentionOptions2D Retention { get; init; }
 +                [ComposeParameter] public required DrawingArgumentTableMode ArgumentTables { get; init; }
 +                public Renderer this[params CompositionSlotAssignment<Renderer>[] content] { get; }
-+                public IReadOnlyList<CommandRouteDescription2D> DescribeDataflow(IGraphicDevice device, DrawingResources2D resources);
++                public RendererBuildHost2D CreateHost();
++                public IReadOnlyList<CommandRouteDescription2D> DescribeDataflow();
 +                [ComposeSlot] private static void FillRect(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IFillRectRenderer2D>> children);
-+                [ComposeSlot] private static void FillRoundedRect(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IFillRoundedRectRenderer2D>> children);
-+                [ComposeSlot] private static void FillCircle(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IFillCircleRenderer2D>> children);
-+                [ComposeSlot] private static void DrawLine(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IDrawLineRenderer2D>> children);
-+                [ComposeSlot] private static void FillPath(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IFillPathRenderer2D>> children);
-+                [ComposeSlot] private static void StrokePath(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IStrokePathRenderer2D>> children);
-+                [ComposeSlot] private static void DrawImage(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IDrawImageRenderer2D>> children);
-+                [ComposeSlot] private static void DrawCoverageMask(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IDrawCoverageMaskRenderer2D>> children);
-+                [ComposeSlot] private static void DrawDistanceField(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IDrawDistanceFieldRenderer2D>> children);
-+                [ComposeSlot] private static void DrawMesh(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IDrawMeshRenderer2D>> children);
-+                [ComposeSlot] private static void DrawPaintGraph(Renderer target,
-+                    IReadOnlyList<BackendBinding2D<IDrawPaintGraphRenderer2D>> children);
-+                public void Dispose(); // 未公開 scope の回収を再試行。構築済み renderer は独立。
-+                // resources 必須。成功した構築だけが resourceOwner を引き取る。
-+                public IRenderer2D BuildRenderer(IGraphicDevice device, DrawingResources2D resources,
-+                    IDisposable? resourceOwner, Action? validateResources);
++                    IReadOnlyList<IPipelineDeclaration2D<FillRectCommand2D>> children);
++                // 残り 10 Slot も完全な利用例の種別名と command 型に対応する。
 +            }
++            [Composable(Factory = "DrawingCompose")]
++            public sealed partial class StandardFillRect : PipelineDeclaration2D,
++                IPipelineDeclaration2D<FillRectCommand2D>;
++            [Composable(Factory = "DrawingCompose")]
++            public partial class FirstSupportedFillRect : PipelineDeclaration2D,
++                IPipelineDeclaration2D<FillRectCommand2D>
++            {
++                [ComposeParameter] public required IReadOnlyList<
++                    PipelineCandidate2D<FillRectCommand2D>> Candidates { get; init; }
++            }
++            // 残り 10 種別も対応する標準宣言と候補宣言を持つ。
 +        }
 +    }
-+    public static class DrawingComposeRendererCompositionExtensions
++    public sealed class BorrowedPipeline2D<TCommand> : PipelineDeclaration2D,
++        IPipelineDeclaration2D<TCommand> where TCommand : DrawingCommand2D
 +    {
-+        public static CompositionSlot<DrawingCompose.Definitions.Renderer,
-+            BackendBinding2D<IFillRectRenderer2D>> FillRect(
-+                this DrawingCompose.Definitions.RendererFactory factory);
-+        // 残り 10 Slot も対応 interface の binding を受ける。
++        public BorrowedPipeline2D(object processor); // 明示的な caller 所有 callback の互換用途。
 +    }
 +}
  namespace Lumyte.Graphics.Drawing2D.RenderGraph
  {
      public sealed class RenderGraphRenderer2D
      {
-+        // 同じ table と資源 coordinator を借用。未対応実装は graph 変更前に拒否。
++        // 同じ固定表と資源管理を借用。未対応実装は graph 変更前に拒否。
 +        public RenderGraphRenderer2D(IRenderer2D renderer, RenderGraphDrawList2D list,
 +            RenderTargetBinding2D target, DrawingGraphBindings2D bindings);
      }
  }
-```
+~~~
 
-### Graph 接続と寿命
+生成される Renderer.FillRect() は `CompositionSlot<Definitions.Renderer, IPipelineDeclaration2D<FillRectCommand2D>>` を返す。children indexer は `CompositionSlotAssignment<Definitions.Renderer>` を返し、root の indexer が順に適用する。処理 interface や実行 binding を child 型にしない。
 
-Graph 側は構築済み IRenderer2D を新 overload へ渡す。Drawing2D 内の friend interface が元の固定表と resource coordinator を接続し、公開 consumer runner や具体型への downcast を要求しない。元の table constructor と source factory callback、graph-local handle の所有権と記録 callback の guard は維持する。借用した host 間で backend の可変状態を同時使用しないよう、一つの renderer とそれから借用した Graph host の準備は呼出し側が直列化する。未対応の外部 IRenderer2D と異なる device は graph を変更する前に拒否する。source の破棄後も有効な host 借用を layer と backdrop の全 compositor に伝え、型付き描画だけを例外扱いしない。source と Graph host の両方を破棄しても、準備済み owner が参照する backend はその batch の回収完了まで保持する。
-
-基準 SHA の `src/Graphics/Lumyte.Graphics.Drawing2D/Execution/PreparedDraw2D.cs` と `PreparedDrawingFrame2D.cs` の既存の所有権を維持する。retained frame は Record、Finish、Submit、AttachSubmission、実完了確認、command 破棄、Retire、Dispose の順に扱う。未記録は Dispose、記録済みで確実に未送信なら command 破棄後に AbortUnsubmitted を使う。
-
-待機キャンセルを GPU の取消しとみなさない。Submit の受理が不明なら frame と参照資源を隔離し、実完了または確認済み device 世代退役まで保持する。renderer の破棄は生きている準備結果の資源を先に解放しない。構築途中の失敗で取得済み shared instance を回収し、回収失敗は定義が retry owner を保持して次回の構築前に再試行する。
+DescribeDataflow は実際の凍結 route 配列から kind、command 型、処理 interface、宣言名、宣言された処理型、候補順序と CPU・転送・GPU 契約を返す。predicate や CreateElement は実行せず、実行済み pass 数、入力ごとの選択結果、転送量は推測しない。
 
 ## 検討した代替案
 
-- 全描画を全 root の FirstSupported に渡す: 一つの候補列で表現できるが、無関係な種別の判定まで呼ばれる。先に固定 kind 配送を行う。
-- 種別ごとに独立した Renderer2D を作る: 設定は分かれるが、共通引数表と順序付き記録の結合が失われる。全 root を一つの coordinator へ compile する。
-- 同じ型の manager を自動的に一つにする: 設定や device 世代、所有者が異なる instance を誤って統合する。明示した graph-local identity のみを共有する。
-- 現行実装を任意 CPU/GPU stage に分解したとみなす: 存在しない物理 pass や実行能力を保証してしまう。今回の境界は既存 typed backend とその共有・選択に限定する。
+- 宣言を実行 interface の wrapper や factory 接続部品に改名する: 表面だけ変わり設定と実処理を分離できない。受動的な宣言と独立した host・処理型を使う。
+- 全描画を全 root の FirstSupported に渡す: 無関係な種別の判定も呼ぶため先に固定 kind 配送を行う。
+- 種別ごとに Renderer2D を作る: 共通引数表と順序付き記録の結合を失うため一つの coordinator へ構築する。
+- 同型 manager を暗黙共有する: 設定、device 世代、所有者が異なる実体を誤統合するため宣言参照だけを共有する。
+- UI の更新機構を導入する: 必要なのは宣言と実処理の分離であり、反応性や mount 更新は今回の責務でない。
 
 ## 結果と影響
 
-構築側は 11 種類と共有 identity を明示する責務を負うが、描画側は既存の Canvas と準備結果をそのまま使える。種別の設定が分かれても資源管理と Painter order は一つであり、組込みの結合と custom replacement を両立する。
+構築側は全種別と独立した host の寿命を明示するが、描画側は既存 Canvas、IRenderer2D と準備結果を使える。構築構文の型は GPU 資源を所有せず同じ宣言から独立した処理を作り直せる。組込みの種別横断結合と既存 custom replacement を維持する。
 
-受入れ条件は、全種別の元 interface の実呼出し、無関係な候補呼出しがゼロ、同種の選択順序、実 manager の共有利用と一回破棄、別構築の分離、途中失敗と retry、組込みの結合数と GPU 転送の同等性で確認する。direct・retained・Graph の資源寿命、既存 pixel oracle、AOT と trimming の契約も維持する。性能値や速度向上はこの判断の保証に含めない。
+受入れ条件は、全生成 Slot の外部 assembly 利用、公開 signature からの実行 binding の不在、宣言時の生成・predicate 呼出しゼロ、別型の実処理生成、共有と独立構築、途中失敗と回収再試行、元 interface の実呼出し、組込み結合と pixel oracle、direct・retained・Graph の資源寿命、AOT と trimming で確認する。
+
+範囲は現行 11 種別の宣言・構築・処理境界である。全 Path 入力の一括評価、任意 CPU/GPU DAG、Fork/Join、Compute/Sparse 処理 engine は含めない。性能値や速度向上は保証しない。
