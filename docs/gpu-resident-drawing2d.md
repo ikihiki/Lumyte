@@ -24,7 +24,8 @@ frame.Retire();
 
 legacy Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), retentionOptions: ...) も同じ option を受け取る。
 標準経路の変更は有効化後だけに限定し、既存の 5/6 引数 constructor、custom shader、custom renderer の契約を維持する。
-公開 API の追加は DrawingRetentionOptions2D.EnableResidentInstances（既定 false）だけである。
+core の option は DrawingRetentionOptions2D.EnableResidentInstances（既定 false）であり、
+Graph integration は後述の AppendResident2D overload を追加する。
 
 ## 実装境界
 
@@ -54,7 +55,7 @@ canonical quad を target の縁で切り落としたまま再配置しない。
 Standard の device-coordinate membership は integer translation によって sample grid の位相が変わらないため、同じ canonical pixel index の 16-bit sample mask を読む。
 coverage の平均値同士を乗算したり、mask を再サンプリングしたりしない。
 
-content replacement はその node の run を新規構築し、変更しない node の GPU identity を保持する。
+content replacement は変更された invalidation chunk を新規構築し、変更しない chunks/nodes の GPU identity を保持する。
 insert/remove/order/hide/show は frame の run 配列を更新し、painter order を保存する。
 ancestor transform/clip は解決済み property の変更として照合する。
 scale、DPR、clip、複雑な paint、範囲外の幾何は従来の数値契約のまま依存 run を再構築する。
@@ -106,3 +107,81 @@ source tools/setup/activate.sh
 dotnet test tests/Graphics/Lumyte.Graphics.Drawing2D.Tests -c Release --filter GpuResidentVersionTests
 LUMYTE_GRAPHICS_GPU_TESTS=1 dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --filter 'FullyQualifiedName~ResidentVersions|FullyQualifiedName~ResidentMutations|FullyQualifiedName~ResidentDeviceGenerations'
 ```
+
+## アプリケーションと共有 Graph への採用
+
+通常の UiHostPresenter は builtin Standard renderer の EnableResidentInstances を有効にし、
+既存 maximumFrames をそのまま MaxFramesInFlight に渡す。
+汎用 Renderer2D constructor と custom resource/renderer の既定は false のままである。
+candidate、visual capture/update、通常描画は同じ PreparedDrawingFrame2D の
+submission/completion/command retirement 契約を使用する。
+外側の実 clip は保持するため、一般的な host placement の整数移動まで upload=0 とは約束しない。
+
+共有 RenderGraph は明示的な AppendResident2D を利用できる。
+既存の Append2D/IDrawingPassRenderer2D は従来どおり descriptor preparation を行い、
+この opt-in を暗黙に適用しない。
+
+- external target を graph.ImportTexture し、その allocation を DrawingGraphBindings2D に BindTexture する。
+- 通常の renderer.PrepareAsync(snapshot, target) で frozen frame を準備する。
+- graph.AppendResident2D(frame, targetBinding, bindings) を compile より前に一度だけ呼ぶ。
+- plan.Record(commands)、Finish、Submit を実行し、実 submission を frame.AttachSubmission に渡す。
+- GPU completion を待ち、commands、plan、graph を Dispose してから frame.Retire する。
+
+この API は prepared frame を caller から借り、plan に ownership を移さない。
+borrowed image/sampler/target も caller が完了まで保持する。
+pass の外部 texture 宣言と binding snapshot は compile 前に固定される。
+private copy/compute/raster は一つの pass 内で実行され、必要な初期化だけを consumer から分離して cull しない。
+Record、plan.Dispose、graph.Dispose は residency を公開しない。
+unexecuted plan は Dispose 後に未記録 frame.Dispose、record 済み never-submitted work は
+command Dispose 後に AbortUnsubmitted を使用する。unknown submit は解放せず quarantine する。
+
+現 route の target は既に allocation/view を持つ imported texture であり、外部 write は Graph の
+observable root となる。未使用 transient output の culling や late-bound target allocation はこの overload の対象外である。
+これは nested graph、GPU tree mirror、新 shader ABI ではない。
+
+## content page と GPU invalidation chunk
+
+EnableResidentInstances=true の retained route は最大 4 canonical CPU pages（最大 256 logical commands）を
+一つの immutable GPU invalidation chunk とする。false は従来の whole entry である。
+これは「dirty page だけ」の実装ではない。WithPage は含まれる最大 4 pages の chunk 全体を再構築する。
+同じ entry のそれ以外の prefix/suffix chunks は元の native payload、registration、table generation を共有する。
+初期 192 compatible commands は 64-command の CPU page 境界を跨いで一つの GPU record range に batch する。
+個々の command が複数 records に展開される場合、実 record packing、texture/clip/capacity 境界が
+GPU allocation/draw を決定し、logical command count を physical record count と取り違えない。
+
+chunk ごとに既存 PreparedRecordBatch2D/ResidentBatchLease2D を使い、別 arena は導入しない。
+同じ chunk の再編集は copy-on-write であり、古い frame の ranges を書き換えない。
+全 owner は既存 cache/ledger と最後の lease の cleanup に従い、idle asset/byte cap が断片の保持を制限する。
+active frame の owner を cap 達成のために破棄しない。単一 oversized payload は既存 binding/working limit により拒否する。
+さらに細かい page/record span の再利用や、初期 whole-entry allocation 内の untouched ranges を切り出す方式は未実装である。
+frame-visible traversal と全 raster は依然 O(visible) であり、frame 全体の O(dirty) や速度向上は主張しない。
+
+## integration の counter と検証単位
+
+integration の payloadCopyBytes は、実際に発行された CopyBuffer の source storage bytes の和である。
+raw buffer は SizeInBytes、shader-data は Count × ShaderElementStrideInBytes を数える。
+frame-private root の SetArguments、target 初期化、readback、画面 present の費用はこの値に含めない。
+ゼロ byte はそれらの frame work や raster がゼロという意味ではない。
+CompiledRuns は GPU invalidation chunks の構築回数であり、CPU pages、physical draw 数、driver VRAM 量ではない。
+
+ResidentIntegrationTests は 640 commands の 3 chunks から中央 chunk だけを変更し、
+残る prefix/suffix の native records identity と no-op/dirty copy bytes を比較する。
+192 compatible commands の初期 preparation が CPU page 境界を跨いで一つの record range になることも検査する。
+ResidentGraph は Vulkan と native wgpu の実 submission/completion 後にだけ
+次の frame の同じ native payload/table generation を共有し、fresh direct pixels と比較する。
+通常 presenter の native test は no-op の geometry/table identity、payload copy と membership dispatch の不変を検査する。
+外側 placement、実 clip、DPR、visibility の pixel reference は revision=0 の hosted source で検査する。
+
+生データ、失敗した controls、TRX、actual source/binary hash と再現 command は
+artifacts/gpu-residency/integration/ に保存する。cached Shinjuku は既存の環境 opt-in fixture だけを使用し、
+MVT 本体を test source や repository へ追加しない。whole-map の page update 検証は逐次完了であり、
+3 simultaneous submitted revisions の証明は独立 target/command/submission の native ResidentVersions fixture で行う。
+Browser SwiftShader の検査は機能検証であって hardware 性能の根拠ではない。
+
+WgpuHostedRevisionZeroMutations は実 UiHostedDrawingSource と UiHostPresenter を通し、
+no-op、signal による一つの leaf の変更、外側 clip/scale/placement、hide/show と、
+presentation/UiSurface Dispose 後の古い captured snapshot を native GPU で検査する。
+全画素を別の新規 legacy direct renderer と比較し、変更しない sibling の native buffer/table identity を保持する。
+外側 clip を別の矩形に変更して元へ戻す場合、host は新しい immutable Path2D を構築するため、
+現 dependency-keyed route は同じ形状であっても依存 chunks を再構築する。
+この case の copy bytes も保存し、visibility 復帰やすべての property 更新を常に zero-upload とは呼ばない。

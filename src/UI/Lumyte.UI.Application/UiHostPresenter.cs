@@ -23,7 +23,7 @@ internal sealed partial class UiHostPresenter : IDisposable
         _intermediates = new(CreateIntermediate);
         try
         {
-            _renderer = Own(Renderer2D.CreateDefault(device, retentionOptions: new() { MaxFramesInFlight = maximumFrames }));
+            _renderer = Own(Renderer2D.CreateDefault(device, retentionOptions: new() { EnableResidentInstances = true, MaxFramesInFlight = maximumFrames }));
             IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(UiHostPresenter).Assembly, "Lumyte.UI.Application.present-vertex.lshader")));
             IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(UiHostPresenter).Assembly, "Lumyte.UI.Application.present-fragment.lshader")));
             _pipeline = Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));

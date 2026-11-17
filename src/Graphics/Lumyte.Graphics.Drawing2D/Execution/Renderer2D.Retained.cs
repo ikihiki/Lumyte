@@ -70,7 +70,7 @@ public sealed partial class Renderer2D
     // A deliberately exact subset: the inverse is identity with integer translation.
     // Flattening/stroke expansion stays in local coordinates at unchanged linear scale;
     // transformed paint, clip masks and DPR-dependent geometry are not rebased.
-    internal static bool CanTranslateResident(DrawingSceneEntry2D entry, DrawingTargetInfo2D target)
+    internal static bool CanTranslateResident(DrawingSceneEntry2D entry, DrawingTargetInfo2D target, IReadOnlyList<DrawList2D>? pages = null)
     {
         Matrix3x2 t = entry.Transform;
         if (target.PixelScale != 1 || target.PixelOrigin != Vector2.Zero || entry.Clips.Count != 0
@@ -82,7 +82,7 @@ public sealed partial class Renderer2D
             return false;
         }
 
-        foreach (DrawList2D page in entry.Content.RetainedPages.Pages)
+        foreach (DrawList2D page in pages ?? entry.Content.RetainedPages.Pages)
         {
             foreach (DrawingCommand2D command in page.Commands)
             {
@@ -171,124 +171,133 @@ public sealed partial class Renderer2D
                     if (entry.Content.RetainedPages.Count != 0)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        int firstCommand = 0;
-                        int commandCount = entry.Content.RetainedPages.Count;
-                        DrawList2D[] pages = entry.Content.RetainedPages.Pages.ToArray();
-                        Vector2 translation = default;
-                        Matrix3x2 payloadTransform = entry.Transform;
-                        if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsBuiltinRenderer)) && CanTranslateResident(entry, info) && context.RecordResources() is not null)
-                        {
-                            translation = entry.Transform.Translation;
-                            payloadTransform = Matrix3x2.Identity;
-                        }
 
-                        var key = new RetainedDrawingCache2D.Key(pages, payloadTransform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale, firstCommand, commandCount);
-                        groups++;
-                        RetainedDrawingCache2D.Asset? cached = _retained.Take(key, frame);
-                        if (cached is not null)
+                        // Four canonical CPU pages form one independently owned invalidation chunk.
+                        // This is not a 64-command draw split: compatible records still batch across
+                        // page boundaries, and backend record expansion/capacity governs GPU draws.
+                        int pagesPerChunk = _retained.ResidentInstancesEnabled ? 4 : int.MaxValue;
+                        for (int pageIndex = 0; pageIndex < entry.Content.RetainedPages.PageCount;)
                         {
-                            reused++;
-                            SetInstance(cached, entry, translation);
-                            try
+                            DrawList2D[] pages = entry.Content.RetainedPages.Pages.Skip(pageIndex).Take(pagesPerChunk).ToArray();
+                            pageIndex += pages.Length;
+                            int firstCommand = 0;
+                            int commandCount = pages.Sum(page => page.Commands.Count);
+                            Vector2 translation = default;
+                            Matrix3x2 payloadTransform = entry.Transform;
+                            if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsBuiltinRenderer)) && CanTranslateResident(entry, info, pages) && context.RecordResources() is not null)
                             {
-                                assets.Add(cached);
-                            }
-                            catch
-                            {
-                                _retained.QueueCleanup(cached.Batch);
-                                throw;
+                                translation = entry.Transform.Translation;
+                                payloadTransform = Matrix3x2.Identity;
                             }
 
-                            continue;
-                        }
-
-                        context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch), context.ArgumentPlan));
-                        if (bounded && context.OtherWorkingBytes >= _options.MaxWorkingBytes)
-                        {
-                            throw new NotSupportedException("Standard scene capture and live assets exceed MaxWorkingBytes.");
-                        }
-
-                        DrawList2D transformed;
-                        using (var transform = DrawingProfileScope.Start(3))
-                        {
-                            try
+                            var key = new RetainedDrawingCache2D.Key(pages, payloadTransform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale, firstCommand, commandCount);
+                            groups++;
+                            RetainedDrawingCache2D.Asset? cached = _retained.Take(key, frame);
+                            if (cached is not null)
                             {
-                                transformed = TransformPages(pages, payloadTransform, entry.Clips, firstCommand, commandCount);
-                                transform?.Success();
+                                reused++;
+                                SetInstance(cached, entry, translation);
+                                try
+                                {
+                                    assets.Add(cached);
+                                }
+                                catch
+                                {
+                                    _retained.QueueCleanup(cached.Batch);
+                                    throw;
+                                }
+
+                                continue;
                             }
-                            catch (Exception error)
+
+                            context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch), context.ArgumentPlan));
+                            if (bounded && context.OtherWorkingBytes >= _options.MaxWorkingBytes)
                             {
-                                transform?.Failure(error);
-                                throw;
+                                throw new NotSupportedException("Standard scene capture and live assets exceed MaxWorkingBytes.");
                             }
-                        }
 
-                        if (bounded)
-                        {
-                            DrawingWorkingBudget2D.Validate(transformed, info, _options.MaxWorkingBytes - context.OtherWorkingBytes);
-                        }
-
-                        var batches = new List<IPreparedCommandBatch2D>();
-                        IPreparedCommandBatch2D? unpublishedPayload = null;
-                        try
-                        {
-                            int index = 0;
-                            using (var build = DrawingProfileScope.Start(4))
+                            DrawList2D transformed;
+                            using (var transform = DrawingProfileScope.Start(3))
                             {
                                 try
                                 {
-                                    while (index < transformed.Commands.Count)
-                                    {
-                                        context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
-                                        if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
-                                        {
-                                            batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
-                                            continue;
-                                        }
-
-                                        batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
-
-                                        // Match the default contiguous type/clip batching contract.
-                                        DrawingCommand2D command = transformed.Commands[index++];
-                                        while (index < transformed.Commands.Count && transformed.Commands[index].GetType() == command.GetType() && ReferenceEquals(transformed.Commands[index].State.Clip, command.State.Clip))
-                                        {
-                                            index++;
-                                        }
-                                    }
-
-                                    build?.Success();
+                                    transformed = TransformPages(pages, payloadTransform, entry.Clips, firstCommand, commandCount);
+                                    transform?.Success();
                                 }
                                 catch (Exception error)
                                 {
-                                    build?.Failure(error);
+                                    transform?.Failure(error);
                                     throw;
                                 }
-                                finally
+                            }
+
+                            if (bounded)
+                            {
+                                DrawingWorkingBudget2D.Validate(transformed, info, _options.MaxWorkingBytes - context.OtherWorkingBytes);
+                            }
+
+                            var batches = new List<IPreparedCommandBatch2D>();
+                            IPreparedCommandBatch2D? unpublishedPayload = null;
+                            try
+                            {
+                                int index = 0;
+                                using (var build = DrawingProfileScope.Start(4))
                                 {
-                                    build?.Counter(5, batches.Count);
+                                    try
+                                    {
+                                        while (index < transformed.Commands.Count)
+                                        {
+                                            context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
+                                            if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
+                                            {
+                                                batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
+                                                continue;
+                                            }
+
+                                            batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
+
+                                            // Match the default contiguous type/clip batching contract.
+                                            DrawingCommand2D command = transformed.Commands[index++];
+                                            while (index < transformed.Commands.Count && transformed.Commands[index].GetType() == command.GetType() && ReferenceEquals(transformed.Commands[index].State.Clip, command.State.Clip))
+                                            {
+                                                index++;
+                                            }
+                                        }
+
+                                        build?.Success();
+                                    }
+                                    catch (Exception error)
+                                    {
+                                        build?.Failure(error);
+                                        throw;
+                                    }
+                                    finally
+                                    {
+                                        build?.Counter(5, batches.Count);
+                                    }
                                 }
-                            }
 
-                            _retained.CountCompilation();
-                            compiled++;
-                            var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer));
-                            unpublishedPayload = _retained.ResidentInstancesEnabled && run.Shareable ? new ResidentBatchLease2D(run) : run;
-                            var asset = new RetainedDrawingCache2D.Asset(key, unpublishedPayload);
-                            SetInstance(asset, entry, translation);
-                            assets.Add(asset);
-                        }
-                        catch
-                        {
-                            if (unpublishedPayload is not null)
-                            {
-                                _retained.QueueCleanup(unpublishedPayload);
+                                _retained.CountCompilation();
+                                compiled++;
+                                var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer));
+                                unpublishedPayload = _retained.ResidentInstancesEnabled && run.Shareable ? new ResidentBatchLease2D(run) : run;
+                                var asset = new RetainedDrawingCache2D.Asset(key, unpublishedPayload);
+                                SetInstance(asset, entry, translation);
+                                assets.Add(asset);
                             }
-                            else if (batches.Count != 0)
+                            catch
                             {
-                                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
-                            }
+                                if (unpublishedPayload is not null)
+                                {
+                                    _retained.QueueCleanup(unpublishedPayload);
+                                }
+                                else if (batches.Count != 0)
+                                {
+                                    _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
+                                }
 
-                            throw;
+                                throw;
+                            }
                         }
                     }
                 }

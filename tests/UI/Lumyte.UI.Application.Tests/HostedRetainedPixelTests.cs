@@ -63,7 +63,7 @@ public sealed partial class HostedRetainedPixelTests
     public async Task WgpuHostedRetainedMatchesDirectPixelsAsync()
     {
         using var device = WgpuDevice.Create();
-        using IRenderer2D renderer = Renderer2D.CreateDefault(device);
+        using IRenderer2D renderer = Renderer2D.CreateDefault(device, retentionOptions: new() { EnableResidentInstances = true });
         using var directRenderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
         using var surface = new UiSurface(Panel()[Rectangle(width: 14, height: 12, fill: new SRgba<float>(1, 0, 0, 1)), Rectangle(width: 9, height: 18, fill: new SRgba<float>(0, 0, 1, 0.5f))]);
         using var overlay = new UiSurface(Rectangle(fill: new SRgba<float>(0, 1, 0, 0.5f)));
@@ -169,6 +169,23 @@ public sealed partial class HostedRetainedPixelTests
         using var swapchain = new RecordingSwapchain(device);
         Assert.Equal(SurfaceStatus.Success, await presenter.DrawAsync(swapchain, snapshot, Guid.NewGuid()));
         Assert.True(device.Dispatches > 0);
+        IShaderReference[] originalPayloads = device.RecordReferences.ToArray();
+        Assert.NotEmpty(originalPayloads);
+        device.RecordReferences.Clear();
+        int dispatches = device.Dispatches;
+        ulong payloadBytes = device.PayloadCopyBytes;
+        Assert.True(payloadBytes > 0);
+        Assert.Equal(SurfaceStatus.Success, await presenter.DrawAsync(swapchain, snapshot, Guid.NewGuid()));
+        Assert.Equal(dispatches, device.Dispatches);
+        Assert.Equal(payloadBytes, device.PayloadCopyBytes);
+        Assert.Equal(originalPayloads.Length, device.RecordReferences.Count);
+        for (int i = 0; i < originalPayloads.Length; i++)
+        {
+            Assert.Same(originalPayloads[i].Resource, device.RecordReferences[i].Resource);
+            Assert.Same(originalPayloads[i].Table, device.RecordReferences[i].Table);
+        }
+
+        Console.WriteLine($"ordinaryHost coldPayloadBytes={payloadBytes} noOpPayloadBytes={device.PayloadCopyBytes - payloadBytes} noOpDispatches={device.Dispatches - dispatches}");
     }
 
     private sealed class RecordingSwapchain : IGraphicsSwapchain

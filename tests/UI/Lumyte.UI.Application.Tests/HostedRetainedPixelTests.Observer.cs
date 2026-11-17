@@ -1,4 +1,5 @@
 using Lumyte.Graphics.Abstractions;
+using Xunit;
 
 namespace Lumyte.UI.Application.Tests;
 
@@ -26,6 +27,10 @@ public sealed partial class HostedRetainedPixelTests
         public IGraphicsQueue Queue => new ObservedQueue(_native.Queue);
 
         internal int Dispatches { get; set; }
+
+        internal ulong PayloadCopyBytes { get; set; }
+
+        internal List<IShaderReference> RecordReferences { get; } = [];
 
         internal List<(ArgumentTableDesc Desc, IArgumentTable Table)> Tables { get; } = [];
 
@@ -72,7 +77,11 @@ public sealed partial class HostedRetainedPixelTests
 
         public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
             where TSource : unmanaged
-            where TDestination : unmanaged => native.CopyBuffer(source, destination);
+            where TDestination : unmanaged
+        {
+            device.PayloadCopyBytes = checked(device.PayloadCopyBytes + source.SizeInBytes);
+            native.CopyBuffer(source, destination);
+        }
 
         public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => native.CopyTexture(source, destination);
 
@@ -93,14 +102,18 @@ public sealed partial class HostedRetainedPixelTests
             }
         }
 
-        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => native.BeginRenderPass(desc);
+        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new ObservedRender(native.BeginRenderPass(desc), device);
 
         public IComputeEncoder BeginComputePass(ComputePassDesc desc) => new ObservedCompute(native.BeginComputePass(desc), device);
 
         public void Finish() => native.Finish();
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : struct, IShaderArguments => native.CopyBuffer(source, destination);
+            where T : struct, IShaderArguments
+        {
+            device.PayloadCopyBytes = checked(device.PayloadCopyBytes + (source.Count * source.Buffer.ShaderElementStrideInBytes));
+            native.CopyBuffer(source, destination);
+        }
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
             where T : struct, IShaderArguments => native.Barrier(barrier);
@@ -117,6 +130,54 @@ public sealed partial class HostedRetainedPixelTests
         public IGraphicsSubmission Submit(QueueSubmitDesc desc) => native.Submit(desc with { CommandBuffers = desc.CommandBuffers.Select(Unwrap).ToArray(), WaitSemaphores = [], SignalSemaphores = [] });
 
         private static IGraphicsCommandBuffer Unwrap(IGraphicsCommandBuffer command) => command is ObservedCommands observed ? observed.Native : command;
+    }
+
+    private sealed class ObservedRender(IRenderEncoder native, ObservedDevice device) : IRenderEncoder
+    {
+        public void SetArgumentValidation(Func<IShaderReferenceMetadata, Action<IReadOnlyCollection<IShaderReference>>?>? prepare) => native.SetArgumentValidation(prepare);
+
+        public void SetArgumentTable(IArgumentTable table) => native.SetArgumentTable(table);
+
+        public void SetArguments<T>(in T arguments)
+            where T : struct, IShaderArguments
+        {
+            if (T.ShaderTypeName == "DrawRangeArguments2D")
+            {
+                ShaderValueSnapshot snapshot = IShaderArguments.Capture(in arguments);
+                device.RecordReferences.Add(Assert.IsAssignableFrom<IShaderReference>(snapshot.Values.Single(value => value.Offset == 0).Reference));
+            }
+
+            native.SetArguments(in arguments);
+        }
+
+        public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
+            where T : unmanaged => native.SetArguments(in arguments, rootParameter, shaderTypeName);
+
+        public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);
+
+        public void SetRenderState(GraphicsRenderStateDesc state) => native.SetRenderState(state);
+
+        public void SetViewport(Viewport viewport) => native.SetViewport(viewport);
+
+        public void SetScissor(ScissorRect scissor) => native.SetScissor(scissor);
+
+        public void SetBlendConstant(BlendConstant value) => native.SetBlendConstant(value);
+
+        public void SetStencilReference(uint reference) => native.SetStencilReference(reference);
+
+        public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0) => native.Draw(vertexCount, instanceCount, firstVertex, firstInstance);
+
+        public void SetIndexBuffer(BufferSlice<ushort> indices) => native.SetIndexBuffer(indices);
+
+        public void SetIndexBuffer(BufferSlice<uint> indices) => native.SetIndexBuffer(indices);
+
+        public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0) => native.DrawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+
+        public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments) => native.DrawIndirect(arguments);
+
+        public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments) => native.DrawIndexedIndirect(arguments);
+
+        public void End() => native.End();
     }
 
     private sealed class ObservedCompute(IComputeEncoder native, ObservedDevice device) : IComputeEncoder

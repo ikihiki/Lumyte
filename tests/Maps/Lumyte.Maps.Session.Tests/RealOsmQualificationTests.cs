@@ -66,8 +66,8 @@ public sealed class RealOsmQualificationTests
         Assert.Equal(1518, MvtDecoder.Decode(bytes, profile, "cached-shinjuku").Layers.Sum(layer => layer.Features.Length));
         foreach (int capacity in new[] { 1, 3 })
         {
-            using IRenderer2D legacy = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), retentionOptions: new() { MaxFramesInFlight = capacity });
-            using IRenderer2D standard = Renderer2D.CreateDefault(device, retentionOptions: new() { MaxFramesInFlight = capacity });
+            using IRenderer2D legacy = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), retentionOptions: new() { EnableResidentInstances = true, MaxFramesInFlight = capacity });
+            using IRenderer2D standard = Renderer2D.CreateDefault(device, retentionOptions: new() { EnableResidentInstances = true, MaxFramesInFlight = capacity });
             foreach ((string Name, float Dpi, double Pan, double Zoom, uint Width) scenario in new[] { ("static", 1f, 0.0, 16.0, 512u), ("pan", 1.5f, 0.0002, 16.0, 512u), ("zoom", 2f, 0.0, 16.2, 512u), ("resize", 1f, 0.0, 16.0, 576u) })
             {
                 map.SetCamera(new(lon + scenario.Pan, lat, scenario.Zoom));
@@ -100,6 +100,26 @@ public sealed class RealOsmQualificationTests
                         byte[] reused = await RenderAsync(device, drawing, variant.Renderer, dpi, scenario.Width, borrow);
                         Assert.Equal(direct, reused);
                         Assert.True(variant.Renderer.RetentionStatistics.ReusedRuns > 0);
+                        if (scenario.Name == "static" && dpi == 1)
+                        {
+                            // Move one feature command without reducing the cached full tile.
+                            DrawingCommand2D[] page = drawing.RetainedPages.Pages[0].Commands.ToArray();
+                            int featureIndex = Array.FindIndex(page, command => command is FillPathCommand2D or StrokePathCommand2D);
+                            Assert.InRange(featureIndex, 0, page.Length - 1);
+                            page[featureIndex] = page[featureIndex] with { State = page[featureIndex].State with { Transform = page[featureIndex].State.Transform * System.Numerics.Matrix3x2.CreateTranslation(1, 0) } };
+                            DrawList2D edited = drawing.WithPage(0, new DrawList2D(page));
+                            using var editedScene = new DrawingScene2D();
+                            editedScene.Insert(editedScene.Root, 0, edited);
+                            using DrawingSceneReadLease2D editedBorrow = editedScene.Borrow();
+                            long compiled = variant.Renderer.RetentionStatistics.CompiledRuns;
+                            byte[] editedDirect = await RenderAsync(device, edited, variant.Renderer, dpi, scenario.Width, null);
+                            byte[] editedRetained = await RenderAsync(device, edited, variant.Renderer, dpi, scenario.Width, editedBorrow);
+                            Assert.Equal(editedDirect, editedRetained);
+                            Assert.Equal(compiled + 1, variant.Renderer.RetentionStatistics.CompiledRuns);
+                            Assert.Equal(direct, await RenderAsync(device, drawing, variant.Renderer, dpi, scenario.Width, borrow));
+                            Console.WriteLine($"realResident backend={backend} variant={variant.Name} capacity={capacity} commands={drawing.Count} dirtyPage=0 rebuiltChunks=1");
+                        }
+
                         File.WriteAllBytes(Path.Combine(output, $"{capacity}-{scenario.Name}-dpi{dpi}-{variant.Name}.rgba"), direct);
                     }
                 }
