@@ -121,42 +121,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     public void ConfirmCompletion() => _completed = true;
 
     public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
-    {
-        ArgumentNullException.ThrowIfNull(commands);
-        ArgumentNullException.ThrowIfNull(target);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _context.ValidateResources();
-        if (resident && HasShapeMembership && !_completed)
-        {
-            throw new InvalidOperationException("Shape membership residency requires confirmed completion.");
-        }
-
-        if (_views.Any(view => ReferenceEquals(view.Texture, target.Texture)))
-        {
-            throw new ArgumentException("A command cannot sample its active target.", nameof(target));
-        }
-
-        _context.ArgumentPlan.InitializeFallback(commands);
-        foreach (Page page in _pages)
-        {
-            if (page.RecordCount == 0)
-            {
-                continue;
-            }
-
-            if (!resident)
-            {
-                page.Copy(commands);
-            }
-
-            if (!resident)
-            {
-                page.Compute(commands);
-            }
-
-            page.Record(commands, target, 0, (uint)page.RecordCount);
-        }
-    }
+        => RecordInstance(commands, target, resident, default);
 
     public void Dispose()
     {
@@ -178,7 +143,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
-        if (context.ComputeShapeMembership)
+        if (context.ComputeShapeMembership || context.EnforceWorkingBudget)
         {
             DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes);
         }
@@ -276,6 +241,44 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             compile?.Failure(error);
             context.CleanupAfterFailure(batch, error);
             throw;
+        }
+    }
+
+    internal void RecordInstance(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident, Vector2 translation, bool earlierProducer = false)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(target);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _context.ValidateResources();
+        if (resident && HasShapeMembership && !_completed)
+        {
+            throw new InvalidOperationException("Shape membership residency requires confirmed completion.");
+        }
+
+        if (_views.Any(view => ReferenceEquals(view.Texture, target.Texture)))
+        {
+            throw new ArgumentException("A command cannot sample its active target.", nameof(target));
+        }
+
+        _context.ArgumentPlan.InitializeFallback(commands);
+        foreach (Page page in _pages)
+        {
+            if (page.RecordCount == 0)
+            {
+                continue;
+            }
+
+            if (!resident && !earlierProducer)
+            {
+                page.Copy(commands);
+            }
+
+            if (!resident && !earlierProducer)
+            {
+                page.Compute(commands);
+            }
+
+            page.Record(commands, target, 0, (uint)page.RecordCount, translation);
         }
     }
 
@@ -454,7 +457,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 return;
             }
 
-            if (_batch._context.ComputeShapeMembership)
+            if (_batch._context.ComputeShapeMembership || _batch._context.EnforceWorkingBudget)
             {
                 // Account every page stream and packing/table overhead before the first
                 // native or upload allocation, including scenes without path records.
@@ -605,7 +608,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 _membership = _batch.Own(new ShapeMembership2D(_batch._context.Device, _batch._resources.GetMembershipPipeline(), _records.Data, _numeric, _shapeMembership!, _shapeDispatches));
             }
 
-            if (HasShapeMembership && _batch.EstimatedBytes > _batch._context.MaxWorkingBytes)
+            if ((HasShapeMembership || _batch._context.EnforceWorkingBudget) && _batch.EstimatedBytes > _batch._context.MaxWorkingBytes)
             {
                 throw new NotSupportedException("Shape membership preparation exceeds the working-byte budget.");
             }
@@ -613,7 +616,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill);
         }
 
-        internal void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target, uint first, uint count)
+        internal void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target, uint first, uint count, Vector2 translation = default)
         {
             DrawRecordPage2D.ValidateRange(first, count, (uint)RecordCount);
             if (count == 0)
@@ -636,7 +639,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             if (_mode == 4)
             {
-                DrawSimple(render, info, first, count);
+                DrawSimple(render, info, first, count, translation);
             }
             else
             {
@@ -644,15 +647,15 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 {
                     case 9:
                     case 10:
-                    case 8: Draw(render, info, _membershipMetadata!.Reference!, first, count); break;
+                    case 8: Draw(render, info, _membershipMetadata!.Reference!, first, count, translation); break;
                     case 11:
                     case 12:
-                    case 0: Draw(render, info, _basicMetadata!.Reference!, first, count); break;
-                    case 1: Draw(render, info, _maskMetadata!.Reference!, first, count); break;
+                    case 0: Draw(render, info, _basicMetadata!.Reference!, first, count, translation); break;
+                    case 1: Draw(render, info, _maskMetadata!.Reference!, first, count, translation); break;
                     case 2:
                     case 6:
-                    case 7: Draw(render, info, _imageMetadata!.Reference!, first, count); break;
-                    default: Draw(render, info, _metadata!.Reference!, first, count); break;
+                    case 7: Draw(render, info, _imageMetadata!.Reference!, first, count, translation); break;
+                    default: Draw(render, info, _metadata!.Reference!, first, count, translation); break;
                 }
             }
 
@@ -725,10 +728,10 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
-        private void Draw<TMetadata>(IRenderEncoder render, DrawingTargetInfo2D info, IGpuRef<TMetadata> metadata, uint first, uint count)
+        private void Draw<TMetadata>(IRenderEncoder render, DrawingTargetInfo2D info, IGpuRef<TMetadata> metadata, uint first, uint count, Vector2 translation)
             where TMetadata : struct, IShaderArguments
         {
-            var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
+            var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, BitConverter.SingleToUInt32Bits(translation.X), BitConverter.SingleToUInt32Bits(translation.Y));
             if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
             {
                 Reservation.Draw(render, in args, 6, count, 0, 0);
@@ -743,9 +746,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
-        private void DrawSimple(IRenderEncoder render, DrawingTargetInfo2D info, uint first, uint count)
+        private void DrawSimple(IRenderEncoder render, DrawingTargetInfo2D info, uint first, uint count, Vector2 translation)
         {
-            var args = new SimpleDrawRangeArguments2D(_records.Reference!, _numericRef!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
+            var args = new SimpleDrawRangeArguments2D(_records.Reference!, _numericRef!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, BitConverter.SingleToUInt32Bits(translation.X), BitConverter.SingleToUInt32Bits(translation.Y));
             if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
             {
                 Reservation.Draw(render, in args, 6, count, 0, 0);

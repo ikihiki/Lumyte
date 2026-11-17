@@ -64,6 +64,7 @@ Output main(uint vertex : SV_VertexID, uint instance : SV_InstanceID)
     uint index = arguments.FirstRecord + min(instance, arguments.RecordCount - 1);
     DrawRecord2D record = arguments.Records.Load(min(index, arguments.Records.Count - 1));
     float2 pixel = lerp(record.DeviceBounds.xy, record.DeviceBounds.zw, corners[vertex]);
+    pixel += float2(asfloat(arguments.Reserved0), asfloat(arguments.Reserved1));
     Output output;
     output.Position = float4(pixel.x * 2 / arguments.TargetSize.x - 1, 1 - pixel.y * 2 / arguments.TargetSize.y, 0, 1);
     output.Index = index;

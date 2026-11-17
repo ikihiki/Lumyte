@@ -179,6 +179,7 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 平行移動、軸平行の拡縮、反転に対応します。記録、Replay、保持型sceneの変換で加わる回転・せん断は準備時に明示的に拒否し、アンチエイリアス付きclipへ暗黙に切り替えません。特異変換は空領域になります。Replayと保持型ページの再配置でも所有情報を維持し、構造的なclip cacheは所有範囲とアンチエイリアス形状を区別します。外側のUI境界には通常の`ClipRect`を使用してください。
 
 共有端点を持つ呼出側は `ClipOwnershipRect(Vector2 minimum, Vector2 maximum)` で幅への変換と再加算を避け、端点をそのまま記録できます。矩形 overload と同じ device 中心の所有・変換契約を使います。
+
 ## 描画方式の選択
 
 `IRenderer2D` は借用 `Device`、`RetentionStatistics` と DrawList/read lease/snapshot の三つの `PrepareAsync` を共有します。Canvas2D と記録形式はbackend非依存です。
@@ -190,3 +191,7 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 `DrawingRendererOptions2D.MaxWorkingBytes` は既定256MiB。入力preflightも保守的に予約するため、低予算や複雑な入力は実payloadより早く拒否されます。custom commandと上限超過はfallbackしません。stroke dashはありません。
 
 可変mask/tile/scan/colorは同時in-flight frameで共有しません。Sparse/Computeはrendererごとの有限なCPU shape/strip cacheを使い、完成済みの保持GPU資産はidleから排他的に再利用します。paintは準備内で共有し、保持GPU資産でも再利用しますが、Graphをまたぐ汎用のCPU paint-program cacheは実装していません。`Record`だけでresidencyを公開しません。提出・完了・command破棄・Retireの既存契約を守ってください。
+
+## GPU 常駐 instance
+
+`DrawingRetentionOptions2D.EnableResidentInstances = true` で、legacy/Standard の組込み record payload を完了後に複数 frame で共有できます。資格を満たす整数平行移動は geometry/paint の再 compile・再 upload なしで GPU property binding だけを更新します。既定は従来の排他的 cache です。[利用例、数値契約、所有権と検証](../../../docs/gpu-resident-drawing2d.md) を参照してください。

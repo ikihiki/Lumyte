@@ -534,7 +534,7 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
     DrawRecord2D record=arguments.Records.Load(min(index,arguments.Records.Count-1));
     if(record.PaintId==0) return 0;
     float4 color=arguments.Palette.Load(min(record.PaintId-1,arguments.Palette.Count-1));
-    float2 origin=floor(position.xy); float coverage=0;
+    float2 origin=floor(position.xy)-float2(asfloat(arguments.Reserved0),asfloat(arguments.Reserved1)); float coverage=0;
     for(uint sample=0;sample<16;sample++) coverage+=simpleShape(record,origin+(float2(sample%4,sample/4)+0.5)/4);
     return color*(coverage/16);
 }
@@ -546,7 +546,7 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
     DrawPageMetadata2D page=arguments.PageMetadata.Load(0);
     DrawDirectoryEntry2D root=page.PaintDirectory.Load(min(record.PaintId,page.PaintDirectory.Count-1));
     if(root.Kind==0) return 0;
-    float2 origin=floor(position.xy);
+    float2 origin=floor(position.xy)-float2(asfloat(arguments.Reserved0),asfloat(arguments.Reserved1));
     uint outer=clipBits(page,record.ClipId,origin);
 #if LUMYTE_SHAPE_MEMBERSHIP
     if((record.Flags&1u)!=0) {

@@ -370,11 +370,20 @@ public sealed partial class Drawing2DTests
 
         internal int ComputePasses { get; private set; }
 
+        internal int BufferCopies { get; private set; }
+
+        internal ulong PayloadCopyBytes { get; private set; }
+
         internal List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> Roots { get; } = [];
 
         public void CopyBuffer<TSource, TDestination>(BufferSlice<TSource> source, BufferSlice<TDestination> destination)
             where TSource : unmanaged
-            where TDestination : unmanaged => native.CopyBuffer(source, destination);
+            where TDestination : unmanaged
+        {
+            BufferCopies++;
+            PayloadCopyBytes = checked(PayloadCopyBytes + source.SizeInBytes);
+            native.CopyBuffer(source, destination);
+        }
 
         public void CopyTexture(TextureCopyRegion source, TextureCopyRegion destination) => native.CopyTexture(source, destination);
 
@@ -400,7 +409,12 @@ public sealed partial class Drawing2DTests
         public void Finish() => native.Finish();
 
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
-            where T : struct, IShaderArguments => native.CopyBuffer(source, destination);
+            where T : struct, IShaderArguments
+        {
+            BufferCopies++;
+            PayloadCopyBytes = checked(PayloadCopyBytes + (source.Count * source.Buffer.ShaderElementStrideInBytes));
+            native.CopyBuffer(source, destination);
+        }
 
         public void Barrier<T>(ShaderDataBufferBarrierDesc<T> barrier)
             where T : struct, IShaderArguments => native.Barrier(barrier);

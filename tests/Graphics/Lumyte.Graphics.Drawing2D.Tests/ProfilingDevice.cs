@@ -365,8 +365,6 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public ShaderDataSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-        public void Dispose()
-        {
-        }
+        public void Dispose() => device.DisposedBuffers.Add(this);
     }
 }

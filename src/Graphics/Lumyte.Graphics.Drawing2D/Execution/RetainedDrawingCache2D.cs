@@ -27,6 +27,8 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         _options = options;
     }
 
+    internal bool ResidentInstancesEnabled => _options.EnableResidentInstances;
+
     internal DrawingRetentionStatistics2D Statistics
     {
         get
@@ -126,7 +128,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         }
     }
 
-    internal Asset? Take(Key key)
+    internal Asset? Take(Key key, FrameLease? requestingFrame = null)
     {
         lock (_gate)
         {
@@ -140,6 +142,25 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                     ReleaseUnusedMemoryScratch();
                     _reused++;
                     return asset;
+                }
+            }
+
+            // Only completed read-only payloads may cross simultaneous frame versions.
+            foreach (FrameLease frame in _active)
+            {
+                foreach (Asset asset in frame.Assets)
+                {
+                    if (asset.Key.Matches(key) && asset.Batch is ResidentBatchLease2D shared
+                        && _options.EnableResidentInstances && (asset.Resident || ReferenceEquals(frame, requestingFrame)))
+                    {
+                        _reused++;
+                        return new(key, shared.Fork())
+                        {
+                            Resident = asset.Resident,
+                            Translation = asset.Translation,
+                            InitializationSource = asset.Resident ? null : asset.InitializationSource ?? asset,
+                        };
+                    }
                 }
             }
 
@@ -175,6 +196,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                         retained.ConfirmCompletion();
                     }
 
+                    asset.ClearInitializationProof();
                     asset.Resident |= completed;
                     if (!_disposed && asset.Resident && asset.Batch is IRetainedCommandBatch2D && asset.Batch is not RetainedBatchRun2D { Reusable: false })
                     {
@@ -475,11 +497,23 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
     internal sealed class Asset(Key key, IPreparedCommandBatch2D batch) : IPreparedCommandBatch2D
     {
+        private IGraphicsCommandBuffer? _initializedCommands;
+
         internal Key Key { get; } = key;
 
         internal IPreparedCommandBatch2D Batch { get; } = batch;
 
         internal bool Resident { get; set; }
+
+        internal Vector2 Translation { get; set; }
+
+        internal Asset? InitializationSource { get; set; }
+
+        internal DrawingNodeId2D Node { get; set; }
+
+        internal ulong ContentRevision { get; set; }
+
+        internal ulong PropertyRevision { get; set; }
 
         internal KeyValuePair<object, long>[]? Owners { get; set; }
 
@@ -489,7 +523,22 @@ internal sealed class RetainedDrawingCache2D : IDisposable
 
         public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
         {
-            if (Batch is IRetainedCommandBatch2D retained)
+            if (Batch is ResidentBatchLease2D instance)
+            {
+                bool earlierProducer = false;
+                if (!Resident && InitializationSource is { } producer)
+                {
+                    if (!ReferenceEquals(producer._initializedCommands, commands))
+                    {
+                        throw new InvalidOperationException("An initialization alias requires its successful earlier producer in the same command buffer.");
+                    }
+
+                    earlierProducer = true;
+                }
+
+                instance.RecordInstance(commands, target, Resident, Translation, earlierProducer);
+            }
+            else if (Batch is IRetainedCommandBatch2D retained)
             {
                 retained.RecordRetained(commands, target, Resident);
             }
@@ -497,9 +546,17 @@ internal sealed class RetainedDrawingCache2D : IDisposable
             {
                 Batch.Record(commands, target);
             }
+
+            _initializedCommands = commands;
         }
 
         public void Dispose() => throw new InvalidOperationException("Compiled assets are owned by the frame cache.");
+
+        internal void ClearInitializationProof()
+        {
+            _initializedCommands = null;
+            InitializationSource = null;
+        }
     }
 
     internal sealed record Key(DrawList2D[] Pages, Matrix3x2 Transform, DrawingSceneClip2D[] Clips, uint Width, uint Height, TextureFormat Format, float PixelScale, int FirstCommand = 0, int CommandCount = int.MaxValue)

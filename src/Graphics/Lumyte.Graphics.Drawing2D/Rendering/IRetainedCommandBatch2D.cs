@@ -2,10 +2,11 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-/// <summary>Internal immutable prepared payload leased exclusively by a retained frame.</summary>
+/// <summary>Internal prepared payload with explicit initialization and retirement ownership.</summary>
 /// <remarks>
-/// Sequential recording only. The owner must wait for GPU completion and command disposal
-/// before reuse or disposal. Only the owner publishes residency after confirmed completion;
+/// Recording is serialized. The default lease is exclusive; explicitly immutable builtin
+/// owners may share completed payloads while retaining every consuming frame. Disposal waits
+/// for every GPU completion and command retirement. Only the owner publishes residency after confirmed completion;
 /// recording uploads alone does not make this asset resident.
 /// </remarks>
 internal interface IRetainedCommandBatch2D : IPreparedCommandBatch2D

@@ -67,6 +67,64 @@ public sealed partial class Renderer2D
         return new(result);
     }
 
+    // A deliberately exact subset: the inverse is identity with integer translation.
+    // Flattening/stroke expansion stays in local coordinates at unchanged linear scale;
+    // transformed paint, clip masks and DPR-dependent geometry are not rebased.
+    internal static bool CanTranslateResident(DrawingSceneEntry2D entry, DrawingTargetInfo2D target)
+    {
+        Matrix3x2 t = entry.Transform;
+        if (target.PixelScale != 1 || target.PixelOrigin != Vector2.Zero || entry.Clips.Count != 0
+            || t.M11 != 1 || t.M12 != 0 || t.M21 != 0 || t.M22 != 1
+            || MathF.Abs(t.M31) > 8192 || MathF.Abs(t.M32) > 8192
+            || t.M31 != MathF.Truncate(t.M31) || t.M32 != MathF.Truncate(t.M32)
+            || target.Description.Width > 8192 || target.Description.Height > 8192)
+        {
+            return false;
+        }
+
+        foreach (DrawList2D page in entry.Content.RetainedPages.Pages)
+        {
+            foreach (DrawingCommand2D command in page.Commands)
+            {
+                if (command.State.Transform != Matrix3x2.Identity || command.State.Clip.Elements.Count != 0)
+                {
+                    return false;
+                }
+
+                PaintGraph2D? paint = command switch
+                {
+                    FillRectCommand2D value => value.Paint,
+                    FillRoundedRectCommand2D value => value.Paint,
+                    FillCircleCommand2D value => value.Paint,
+                    FillPathCommand2D value => value.Paint,
+                    StrokePathCommand2D value => value.Paint,
+                    DrawLineCommand2D value => value.Paint,
+                    _ => null,
+                };
+
+                // Local geometry and subdivision depend on the linear transform,
+                // not integer translation. Preserve the complete canonical quad.
+                if (paint?.Root is not SolidPaintNode2D || DrawingBounds2D.LocalBounds(command) is not { } bounds
+                    || bounds.X < 1 || bounds.Y < 1
+                    || bounds.X + bounds.Width > target.Description.Width - 1
+                    || bounds.Y + bounds.Height > target.Description.Height - 1)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static void SetInstance(RetainedDrawingCache2D.Asset asset, DrawingSceneEntry2D entry, Vector2 translation)
+    {
+        asset.Node = entry.Node;
+        asset.ContentRevision = entry.ContentRevision;
+        asset.PropertyRevision = entry.PropertyRevision;
+        asset.Translation = translation;
+    }
+
     private async ValueTask<PreparedDrawingFrame2D> PrepareRetainedAsync(IDrawingSceneSource2D source, RenderTarget2D target, CancellationToken cancellationToken)
     {
         using var profile = DrawingProfileScope.Start(2, root: true);
@@ -96,14 +154,15 @@ public sealed partial class Renderer2D
             RetainedDrawingCache2D.FrameLease? frame = null;
             try
             {
-                long captureBytes = _computeShapeMembership ? DrawingSceneCapture2D.ValidateCapture(source, _options.MaxWorkingBytes, cancellationToken) : 0;
+                bool bounded = _computeShapeMembership || _retained.ResidentInstancesEnabled;
+                long captureBytes = bounded ? DrawingSceneCapture2D.ValidateCapture(source, _options.MaxWorkingBytes, cancellationToken) : 0;
 
                 _retained.BindStorageOwner(_resources);
                 frame = _retained.AcquireFrame();
                 RetainedDrawingCache2D.AssetList assets = frame.Assets;
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
-                var context = new RenderPreparationContext2D(_device, info, _resources, plan) { ComputeShapeMembership = _computeShapeMembership, MaxWorkingBytes = _options.MaxWorkingBytes };
+                var context = new RenderPreparationContext2D(_device, info, _resources, plan) { ComputeShapeMembership = _computeShapeMembership, EnforceWorkingBudget = bounded, MaxWorkingBytes = _options.MaxWorkingBytes };
 
                 // Capture only immutable page/property values. The source and its mutable lease
                 // are never captured by the returned frame or by cached GPU assets.
@@ -115,18 +174,36 @@ public sealed partial class Renderer2D
                         int firstCommand = 0;
                         int commandCount = entry.Content.RetainedPages.Count;
                         DrawList2D[] pages = entry.Content.RetainedPages.Pages.ToArray();
-                        var key = new RetainedDrawingCache2D.Key(pages, entry.Transform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale, firstCommand, commandCount);
+                        Vector2 translation = default;
+                        Matrix3x2 payloadTransform = entry.Transform;
+                        if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsBuiltinRenderer)) && CanTranslateResident(entry, info) && context.RecordResources() is not null)
+                        {
+                            translation = entry.Transform.Translation;
+                            payloadTransform = Matrix3x2.Identity;
+                        }
+
+                        var key = new RetainedDrawingCache2D.Key(pages, payloadTransform, entry.Clips.ToArray(), info.Description.Width, info.Description.Height, info.Description.Format, info.PixelScale, firstCommand, commandCount);
                         groups++;
-                        RetainedDrawingCache2D.Asset? cached = _retained.Take(key);
+                        RetainedDrawingCache2D.Asset? cached = _retained.Take(key, frame);
                         if (cached is not null)
                         {
                             reused++;
-                            assets.Add(cached);
+                            SetInstance(cached, entry, translation);
+                            try
+                            {
+                                assets.Add(cached);
+                            }
+                            catch
+                            {
+                                _retained.QueueCleanup(cached.Batch);
+                                throw;
+                            }
+
                             continue;
                         }
 
                         context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch), context.ArgumentPlan));
-                        if (_computeShapeMembership && context.OtherWorkingBytes >= _options.MaxWorkingBytes)
+                        if (bounded && context.OtherWorkingBytes >= _options.MaxWorkingBytes)
                         {
                             throw new NotSupportedException("Standard scene capture and live assets exceed MaxWorkingBytes.");
                         }
@@ -136,7 +213,7 @@ public sealed partial class Renderer2D
                         {
                             try
                             {
-                                transformed = TransformPages(pages, entry.Transform, entry.Clips, firstCommand, commandCount);
+                                transformed = TransformPages(pages, payloadTransform, entry.Clips, firstCommand, commandCount);
                                 transform?.Success();
                             }
                             catch (Exception error)
@@ -146,12 +223,13 @@ public sealed partial class Renderer2D
                             }
                         }
 
-                        if (_computeShapeMembership)
+                        if (bounded)
                         {
                             DrawingWorkingBudget2D.Validate(transformed, info, _options.MaxWorkingBytes - context.OtherWorkingBytes);
                         }
 
                         var batches = new List<IPreparedCommandBatch2D>();
+                        IPreparedCommandBatch2D? unpublishedPayload = null;
                         try
                         {
                             int index = 0;
@@ -193,11 +271,19 @@ public sealed partial class Renderer2D
 
                             _retained.CountCompilation();
                             compiled++;
-                            assets.Add(new(key, new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer))));
+                            var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer));
+                            unpublishedPayload = _retained.ResidentInstancesEnabled && run.Shareable ? new ResidentBatchLease2D(run) : run;
+                            var asset = new RetainedDrawingCache2D.Asset(key, unpublishedPayload);
+                            SetInstance(asset, entry, translation);
+                            assets.Add(asset);
                         }
                         catch
                         {
-                            if (batches.Count != 0)
+                            if (unpublishedPayload is not null)
+                            {
+                                _retained.QueueCleanup(unpublishedPayload);
+                            }
+                            else if (batches.Count != 0)
                             {
                                 _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
                             }
@@ -208,7 +294,7 @@ public sealed partial class Renderer2D
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                if (_computeShapeMembership && checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch))) > _options.MaxWorkingBytes)
+                if (bounded && checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch))) > _options.MaxWorkingBytes)
                 {
                     throw new NotSupportedException("Standard retained preparation exceeds MaxWorkingBytes.");
                 }
