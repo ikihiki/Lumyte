@@ -5,7 +5,7 @@ using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D
+internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
     private static readonly BarrierScope _read = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
     private readonly RenderPreparationContext2D _context;
@@ -45,6 +45,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     public bool HasStableOwners => true;
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
+
+    public bool EnforcesWorkingBudget => _context.EnforceWorkingBudget;
 
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
@@ -112,9 +114,16 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
+        if (!context.EnforceWorkingBudget && context.ArgumentPlan.WorkingReferencesEnabled)
+        {
+            context = context.WithWorkingLimit(context.MaxWorkingBytes);
+        }
+
         if (context.EnforceWorkingBudget)
         {
-            DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes);
+            context.ArgumentPlan.EnableWorkingReferenceBudget();
+            DrawingWorkingBudget2D.ValidateCumulative(context.OtherWorkingBytes, context.ArgumentPlan.EstimatedBytes, context.MaxWorkingBytes);
+            DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes - context.ArgumentPlan.EstimatedBytes);
         }
 
         DrawRecordResources2D? resources = context.RecordResources();
@@ -376,8 +385,10 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 return;
             }
 
+            long workingReferenceBytes = checked(((long)Cpu.BufferCount + _views.Count + _samplers.Count + 2) * 256);
             if (_batch._context.EnforceWorkingBudget)
             {
+                _batch._context.ArgumentPlan.ReserveWorkingReferences(Reservation, Cpu.BufferCount, _views.Count, _samplers.Count);
                 long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
                 long peak = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + 32768 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
                 if (peak > _batch._context.MaxWorkingBytes)
@@ -440,7 +451,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             Reservation.RegisterBuffer(_numeric.SliceElements(0, count), reference => _numericRef = reference);
             _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             _batch._bytes = checked(_batch._bytes + (long)(_numeric.SizeInBytes + _numericUpload.SizeInBytes));
-            _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill);
+            ValidateCompleteWorkingCharge();
+            _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill, workingReferenceBytes);
         }
 
         internal void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target, uint first, uint count, Vector2 translation = default)
@@ -554,8 +566,17 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             return result;
         }
 
+        private void ValidateCompleteWorkingCharge()
+        {
+            if (_batch._context.EnforceWorkingBudget)
+            {
+                DrawingWorkingBudget2D.ValidateCumulative(_batch._context.OtherWorkingBytes, _batch.EstimatedBytes, _batch._context.MaxWorkingBytes);
+            }
+        }
+
         private async ValueTask MapAsync(CancellationToken token)
         {
+            ValidateCompleteWorkingCharge();
             foreach (IStream stream in _streams)
             {
                 await stream.MapAsync(token).ConfigureAwait(false);
@@ -576,6 +597,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             long copied = 0;
             try
             {
+                ValidateCompleteWorkingCharge();
                 Cpu.Resolve(null!, _sampler!);
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)

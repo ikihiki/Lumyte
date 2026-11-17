@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D
+internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
     private readonly RenderPreparationContext2D _context;
     private readonly List<IDisposable> _owned = [];
@@ -45,6 +45,8 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
     public bool HasStableOwners => true;
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
+
+    public bool EnforcesWorkingBudget => _context.EnforceWorkingBudget;
 
     internal IReadOnlyList<ShaderResources> Reservations => [_scope];
 
@@ -140,11 +142,12 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
     }
 
     // Subtraction after nonnegative range checks avoids overflowing cumulative sums.
-    internal static void ValidateWorkingCapacity(long ownBytes, long otherBytes, long argumentBytes, long maximum)
+    internal static void ValidateWorkingCapacity(long ownBytes, long otherBytes, long argumentBytes, long maximum, long additionalArgumentBytes = 0)
     {
-        if (ownBytes < 0 || otherBytes < 0 || argumentBytes < 0 || maximum <= 0
+        if (ownBytes < 0 || otherBytes < 0 || argumentBytes < 0 || additionalArgumentBytes < 0 || maximum <= 0
             || otherBytes > maximum || ownBytes > maximum - otherBytes
-            || argumentBytes > maximum - otherBytes - ownBytes)
+            || argumentBytes > maximum - otherBytes - ownBytes
+            || additionalArgumentBytes > maximum - otherBytes - ownBytes - argumentBytes)
         {
             throw new NotSupportedException("Sparse resources exceed the cumulative working-byte budget.");
         }
@@ -152,6 +155,12 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
 
     internal static ValueTask<PreparedSparseStripBatch2D> PrepareAsync(RenderPreparationContext2D context, SparseStripPlan2D strips, CancellationToken cancellationToken)
     {
+        if (!context.EnforceWorkingBudget)
+        {
+            context = context.WithWorkingLimit(context.MaxWorkingBytes);
+        }
+
+        context.ArgumentPlan.EnableWorkingReferenceBudget();
         var batch = new PreparedSparseStripBatch2D(context) { _bytes = strips.WorkingBytes };
         try
         {
@@ -302,8 +311,9 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         // Reserve all of them before growing the strip record/mask/directory lists.
         // Keep the upper bound after clipping for late upload/table packing ownership.
         long compilerBytes = _bytes;
+        long workingReferenceBytes = checked((11L + _views.Count + _samplers.Count) * 256);
         _bytes = checked(compilerBytes + PayloadWorkingBytes(plan.Strips.LongLength, numericCapacity, checked(_page.Clips.Count + plan.Strips.LongLength)));
-        ValidateWorkingCapacity(_bytes, _context.OtherWorkingBytes, _context.ArgumentPlan.EstimatedBytes, _context.MaxWorkingBytes);
+        ValidateWorkingCapacity(_bytes, _context.OtherWorkingBytes, _context.ArgumentPlan.EstimatedBytes, _context.MaxWorkingBytes, workingReferenceBytes);
 
         foreach (SparseStrip2D sourceStrip in plan.Strips)
         {
@@ -368,6 +378,11 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
             return;
         }
 
+        // Sparse mode3 always binds seven streams, not the canonical page's
+        // optimized BufferCount. Defaults add a texture and sampler before the common
+        // generation allowance. Preserve the same full footprint in the upload scalar.
+        _context.ArgumentPlan.ReserveWorkingReferences(_scope, 7, checked(_views.Count + 1), checked(_samplers.Count + 1));
+        ValidateCompleteWorkingCharge();
         IGraphicsSampler sampler = _context.ArgumentPlan.Sampler(_context.Resources);
         _scope.RegisterSampler(sampler, value => _sampler = value);
         _context.ArgumentPlan.Fallback(_scope, value => _fallback = value);
@@ -378,7 +393,7 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         AddShader(_page.Masks.Count == 0 ? new List<MaskDescriptor2D> { default } : _page.Masks, value => _masks = value, () => _page.Masks.Count == 0 ? [new(default, default, 0, 0, 0, 0, _fallback!, _sampler!)] : _page.Masks.ToArray());
         AddShader(_page.Images.Count == 0 ? new List<ImagePaintData2D> { default } : _page.Images, value => _images = value, () => _page.Images.Count == 0 ? [new(default, default, default, default, 0, 0, 0, 0, 0, 0, 0, 0, _fallback!, _sampler!)] : _page.Images.ToArray());
         AddShader(new List<DrawPageMetadata2D> { default }, value => _metadata = value, () => [new(_paints!, _clips!, _numeric!, _masks!, _images!)]);
-        _context.ArgumentPlan.DeferUpload(_scope, UploadAsync, MapAsync, Fill);
+        _context.ArgumentPlan.DeferUpload(_scope, UploadAsync, MapAsync, Fill, workingReferenceBytes);
     }
 
     private long PayloadWorkingBytes(long records, long numeric, long clips)
@@ -386,13 +401,12 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         // Preserve existing record/paint packing/cohort rates. Numeric/clip rates
         // include list capacity plus upload and destination. Mask/image rates also
         // include late reference-bearing arrays. Seven mode3 streams always exist.
-        // Fixed scratch covers stream owners, metadata, fallback and packing, with
-        // an additional charge for every possible buffer/texture/sampler binding.
+        // Fixed scratch covers stream owners, metadata, fallback and packing.
+        // The shared argument plan separately owns the complete binding charge.
         long masks = Math.Max(1, _page.Masks.Count);
         long images = Math.Max(1, _page.Images.Count);
-        long registrations = checked(9L + _views.Count + _samplers.Count);
         return checked(32768L + (records * 4096) + (numeric * 64) + (_page.Paints.Count * 4096L)
-            + (clips * 64) + (masks * 512) + (images * 768) + (registrations * 256));
+            + (clips * 64) + (masks * 512) + (images * 768));
     }
 
     private void AddShader<T>(List<T> values, Action<IGpuRef<T>> resolved, Func<T[]>? late = null)
@@ -457,8 +471,12 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         });
     }
 
+    private void ValidateCompleteWorkingCharge()
+        => DrawingWorkingBudget2D.ValidateCumulative(_context.OtherWorkingBytes, EstimatedBytes, _context.MaxWorkingBytes);
+
     private async ValueTask MapAsync(CancellationToken token)
     {
+        ValidateCompleteWorkingCharge();
         foreach (Func<CancellationToken, ValueTask> map in _maps)
         {
             await map(token).ConfigureAwait(false);
@@ -475,6 +493,7 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
     {
         try
         {
+            ValidateCompleteWorkingCharge();
             _page.Resolve(_fallback!, _sampler!);
             foreach (Action fill in _fills)
             {

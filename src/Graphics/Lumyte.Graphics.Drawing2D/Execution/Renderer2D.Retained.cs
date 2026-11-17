@@ -247,7 +247,15 @@ public sealed partial class Renderer2D
                                     {
                                         while (index < transformed.Commands.Count)
                                         {
-                                            context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
+                                            if (context.EnforceWorkingBudget)
+                                            {
+                                                context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
+                                            }
+                                            else
+                                            {
+                                                context.SetWorkingBytesSource(() => checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan)));
+                                            }
+
                                             if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
                                             {
                                                 batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
@@ -255,6 +263,10 @@ public sealed partial class Renderer2D
                                             }
 
                                             batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
+                                            if (batches[^1] is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true })
+                                            {
+                                                plan.EnableWorkingReferenceBudget();
+                                            }
 
                                             // Match the default contiguous type/clip batching contract.
                                             DrawingCommand2D command = transformed.Commands[index++];
@@ -305,9 +317,20 @@ public sealed partial class Renderer2D
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                bool enforceWorkingBudget = _retained.ResidentInstancesEnabled || plan.WorkingReferencesEnabled || assets.Any(asset => asset.Batch is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true });
+                if (enforceWorkingBudget)
+                {
+                    plan.EnableWorkingReferenceBudget();
+                }
+
+                if (enforceWorkingBudget && checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch))) > _retained.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Retained frame working set exceeds MaxWorkingBytes before materialization.");
+                }
+
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
 
-                if (_retained.ResidentInstancesEnabled && checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch))) > _retained.MaxWorkingBytes)
+                if (enforceWorkingBudget && checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch))) > _retained.MaxWorkingBytes)
                 {
                     throw new NotSupportedException("Retained frame working set exceeds MaxWorkingBytes.");
                 }

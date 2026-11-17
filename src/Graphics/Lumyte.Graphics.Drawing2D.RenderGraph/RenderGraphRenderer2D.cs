@@ -133,6 +133,15 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);
+            if (owner.EnforcesWorkingBudget || argumentPlan.WorkingReferencesEnabled)
+            {
+                argumentPlan.EnableWorkingReferenceBudget();
+                if (checked(owner.WorkingBytes(argumentPlan) + argumentPlan.EstimatedBytes) > _maxWorkingBytes)
+                {
+                    throw new NotSupportedException("Combined graph prepared owners exceed MaxWorkingBytes before mapping.");
+                }
+            }
+
             await argumentPlan.PrepareMappingsAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (!graphOwnsPlan)
@@ -592,8 +601,8 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             var preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null)
             {
                 MaxWorkingBytes = _maxWorkingBytes,
-                OtherWorkingBytes = owner.WorkingBytes(argumentPlan),
             };
+            preparation.SetWorkingBytesSource(() => owner.WorkingBytes(argumentPlan));
             IPreparedCommandBatch2D batch = IsBuiltinRenderer(commands[index]) && preparation.RecordResources() is not null
                 ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end), cancellationToken).ConfigureAwait(false)
                 : commands[index] switch
@@ -613,6 +622,11 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
                 };
             ArgumentNullException.ThrowIfNull(batch);
             owner.Own(batch);
+            if (batch is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true })
+            {
+                argumentPlan.EnableWorkingReferenceBudget();
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             if (batch is PreparedRecordBatch2D records)
             {
