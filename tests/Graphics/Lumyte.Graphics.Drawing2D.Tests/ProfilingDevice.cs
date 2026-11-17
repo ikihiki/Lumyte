@@ -55,6 +55,8 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     internal int PipelineCreations { get; private set; }
 
+    internal int MeshPipelineCreations { get; private set; }
+
     internal bool FailUploadDisposeOnce { get; init; }
 
     internal HashSet<object> DisposedBuffers { get; } = new(ReferenceEqualityComparer.Instance);
@@ -105,7 +107,11 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
 
-    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc)
+    {
+        MeshPipelineCreations++;
+        return new MeshPipeline(desc);
+    }
 
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
@@ -146,6 +152,15 @@ internal sealed class ProfilingDevice : IGraphicDevice
     private sealed class Shader(ShaderArtifact artifact) : IGraphicsShader
     {
         public ShaderArtifact Artifact => artifact;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class MeshPipeline(MeshPipelineDesc desc) : IMeshPipeline
+    {
+        public MeshPipelineDesc Desc => desc;
 
         public void Dispose()
         {

@@ -60,6 +60,14 @@ public sealed class RenderPreparationContext2D
         return new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes, OtherWorkingBytes = OtherWorkingBytes };
     }
 
+    internal RenderPreparationContext2D WithWorkingLimit(long maximum)
+        => new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources)
+        {
+            EnforceWorkingBudget = true,
+            MaxWorkingBytes = EnforceWorkingBudget ? Math.Min(MaxWorkingBytes, maximum) : maximum,
+            OtherWorkingBytes = OtherWorkingBytes,
+        };
+
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);
 
     internal DrawRecordResources2D? RecordResources() => _resources.Records();
