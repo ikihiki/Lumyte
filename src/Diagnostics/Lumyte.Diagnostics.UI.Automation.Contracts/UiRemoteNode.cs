@@ -24,5 +24,6 @@ namespace Lumyte.Diagnostics.UI.Automation.Contracts;
 /// <param name="SelectionGroup">Selection group UInt64 identity as decimal string.</param>
 /// <param name="OptionKey">Ordinal option key.</param>
 /// <param name="SelectedKey">Group selected key.</param>
+/// <param name="IsExpanded">Accepted expansion state in schema 8.</param>
 /// <param name="Numeric">Exact finite numeric metadata, available in schema 6 only.</param>
-public sealed record UiRemoteNode(string Id, string? ParentId, string? TestId, string? Name, string Role, UiRemoteRect Bounds, UiRemoteRect ClippedBounds, bool IsVisible, bool IsEnabled, bool HitTestVisible, bool IsFocusable, bool IsFocused, bool IsPressed, bool HasActivePress, string[] Actions, bool IsTransitioning = false, double? Value = null, bool IsIndeterminate = false, bool? IsChecked = null, bool? IsSelected = null, string? SelectionGroup = null, string? OptionKey = null, string? SelectedKey = null, UiRemoteNumericState? Numeric = null);
+public sealed record UiRemoteNode(string Id, string? ParentId, string? TestId, string? Name, string Role, UiRemoteRect Bounds, UiRemoteRect ClippedBounds, bool IsVisible, bool IsEnabled, bool HitTestVisible, bool IsFocusable, bool IsFocused, bool IsPressed, bool HasActivePress, string[] Actions, bool IsTransitioning = false, double? Value = null, bool IsIndeterminate = false, bool? IsChecked = null, bool? IsSelected = null, string? SelectionGroup = null, string? OptionKey = null, string? SelectedKey = null, UiRemoteNumericState? Numeric = null, bool? IsExpanded = null);

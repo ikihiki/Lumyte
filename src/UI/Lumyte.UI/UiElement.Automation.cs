@@ -16,6 +16,8 @@ public partial class UiElement
 
     internal double? SemanticAutomationValue => AutomationValue;
 
+    internal Lumyte.Graphics.Drawing2D.Rect2D SemanticActionRegion => AutomationActionRegion;
+
     internal UiNumericState? SemanticNumericState => NumericState;
 
     internal bool AutomationIndeterminate => IsAutomationIndeterminate;
@@ -23,6 +25,8 @@ public partial class UiElement
     internal bool AutomationPressed => IsAutomationPressed;
 
     internal bool AutomationActivePress => HasAutomationActivePress;
+
+    internal bool? SemanticAutomationExpanded => AutomationExpanded;
 
     internal bool? SemanticAutomationChecked => AutomationChecked;
 
@@ -34,11 +38,17 @@ public partial class UiElement
 
     internal string? SemanticAutomationSelectedKey => AutomationSelectedKey;
 
+    /// <summary>Gets the body-local region used to choose ordinary automation input points.</summary>
+    protected virtual Lumyte.Graphics.Drawing2D.Rect2D AutomationActionRegion => new(0, 0, ContentSize.X, ContentSize.Y);
+
     /// <summary>Gets detached finite numeric values without disclosing editable text.</summary>
     protected virtual UiNumericState? NumericState => null;
 
     /// <summary>Gets the detached component selection metadata.</summary>
     protected virtual bool? AutomationChecked => null;
+
+    /// <summary>Gets accepted expansion state for a collapsible component.</summary>
+    protected virtual bool? AutomationExpanded => null;
 
     /// <summary>Gets the detached component selection metadata.</summary>
     protected virtual bool? AutomationSelected => null;

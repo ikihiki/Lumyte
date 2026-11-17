@@ -55,7 +55,7 @@ public partial class UiElement
     internal UiElement? FindInputHit(Vector2 position, object? version)
     {
         UiProfiling.Add(4, 401);
-        if (!ReferenceEquals(InputVersion, version) || !_inputSubtreeBounds.Contains(position))
+        if (!IsContentActive || !ReferenceEquals(InputVersion, version) || !_inputSubtreeBounds.Contains(position))
         {
             return null;
         }
@@ -69,8 +69,13 @@ public partial class UiElement
             }
         }
 
-        return InputBounds.Contains(position) ? this : null;
+        return InputBounds.Contains(position) && HitTestSelf(position - InputOrigin) ? this : null;
     }
+
+    /// <summary>Tests whether this component itself occupies a body-local input point.</summary>
+    /// <param name="localPosition">The body-local point inside prepared bounds.</param>
+    /// <returns>Whether to return this component after testing its children.</returns>
+    protected virtual bool HitTestSelf(Vector2 localPosition) => true;
 
     /// <summary>Tests a body-local point against the prepared input region, including clips.</summary>
     /// <param name="localPosition">The body-local point.</param>

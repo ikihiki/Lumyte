@@ -27,4 +27,7 @@ public enum UiAutomationActions
 
     /// <summary>Atomic ordered range input.</summary>
     SetRange = 64,
+
+    /// <summary>Desired expansion through ordinary header input.</summary>
+    ExpandCollapse = 128,
 }
