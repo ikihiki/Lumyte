@@ -10,7 +10,6 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private readonly List<Upload> _uploads = [];
     private readonly List<ClipNormalizationCache2D> _preparationCaches = [];
     private readonly List<ShaderResources> _scopes = [];
-    private readonly Dictionary<ShaderResources, long> _workingReferences = new(ReferenceEqualityComparer.Instance);
     private readonly IGraphicDevice _device;
     private readonly Func<ArgumentTablePlan>? _registrationFactory;
     private readonly Func<ShaderResources>? _resourceFactory;
@@ -18,13 +17,15 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private readonly Action<ShaderResources, Action<IGpuRef<IGraphicsTextureView>>>? _graphFallback;
     private readonly IGraphicsSampler? _sharedSampler;
     private readonly Func<IGraphicsSampler>? _samplerFactory;
+    private Dictionary<ShaderResources, long>? _workingReferences;
+    private long _workingReferenceBytes;
+    private bool _workingReferencesEnabled;
     private ArgumentTablePlan? _registrations;
     private IDisposable? _tableOwner;
     private ShaderResources? _legacy;
     private IGraphicsSampler? _sampler;
     private IGraphicsTexture? _fallback;
     private IGraphicsTextureView? _fallbackView;
-    private long _workingReferenceBytes;
     private int _completedUploads;
     private int _users = 1;
     private bool _returned;
@@ -109,6 +110,8 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     // upload, packing-data release or lifetime-token return changes that charge.
     internal bool MemorySizeIsStable => _closed && _resourceFactory is null && _registrations is { IsMaterialized: true };
 
+    internal bool WorkingReferencesEnabled => _workingReferencesEnabled;
+
     internal long EstimatedBytes
     {
         get
@@ -116,7 +119,13 @@ public sealed class DrawingArgumentPlan2D : IDisposable
             long bytes = _resourceFactory is not null || _registrations is null
                 ? checked(256 + ((long)_scopes.Count * 256))
                 : checked(256 + ((_registrations.Statistics.Textures + _registrations.Statistics.Samplers + _registrations.Statistics.Buffers) * 256));
-            return _registrations is { IsMaterialized: true } ? bytes : Math.Max(bytes, checked(256 + _workingReferenceBytes));
+            if (!_workingReferencesEnabled || _registrations is { IsMaterialized: true })
+            {
+                return bytes;
+            }
+
+            long unreservedScopes = _scopes.Count - (_workingReferences?.Count ?? 0);
+            return Math.Max(bytes, checked(256 + _workingReferenceBytes + (unreservedScopes * 256)));
         }
     }
 
@@ -207,25 +216,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     /// <param name="prepareMapping">An optional graph append-time asynchronous map operation.</param>
     /// <param name="uploadMapped">A graph-time synchronous pack/unmap operation.</param>
     public void DeferUpload(ShaderResources trigger, Func<CancellationToken, ValueTask> upload, Func<CancellationToken, ValueTask>? prepareMapping = null, Action? uploadMapped = null)
-    {
-        if (_closed)
-        {
-            throw new InvalidOperationException("Argument payload collection is closed.");
-        }
-
-        ArgumentNullException.ThrowIfNull(upload);
-        if (!_scopes.Contains(trigger))
-        {
-            throw new ArgumentException("The resource set belongs to another drawing preparation.", nameof(trigger));
-        }
-
-        Upload pending = new(trigger, upload, prepareMapping, uploadMapped);
-        _uploads.Add(pending);
-        if (DeferredMaterialization)
-        {
-            trigger.WhenReady(() => FinalizeUpload(pending));
-        }
-    }
+        => DeferUpload(trigger, upload, prepareMapping, uploadMapped, 0);
 
     /// <summary>Materializes a direct preparation and awaits its payload uploads before publication.</summary>
     /// <param name="cancellationToken">Cancels without publishing incomplete work.</param>
@@ -333,6 +324,33 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         }
     }
 
+    internal void DeferUpload(ShaderResources trigger, Func<CancellationToken, ValueTask> upload, Func<CancellationToken, ValueTask>? prepareMapping, Action? uploadMapped, long workingReferenceBytes)
+    {
+        if (_closed)
+        {
+            throw new InvalidOperationException("Argument payload collection is closed.");
+        }
+
+        ArgumentNullException.ThrowIfNull(upload);
+        if (!_scopes.Contains(trigger))
+        {
+            throw new ArgumentException("The resource set belongs to another drawing preparation.", nameof(trigger));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(workingReferenceBytes);
+        if (_workingReferencesEnabled && workingReferenceBytes != 0)
+        {
+            ReserveWorkingReferenceBytes(trigger, workingReferenceBytes);
+        }
+
+        Upload pending = new(trigger, upload, prepareMapping, uploadMapped, workingReferenceBytes);
+        _uploads.Add(pending);
+        if (DeferredMaterialization)
+        {
+            trigger.WhenReady(() => FinalizeUpload(pending));
+        }
+    }
+
     internal void CancelUnpublished(ShaderResources resources)
     {
         if (!_scopes.Contains(resources))
@@ -342,6 +360,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
 
         resources.Cancel();
         _scopes.Remove(resources);
+        ReleaseWorkingReferences(resources);
         _preparedResources.Remove(resources);
     }
 
@@ -357,6 +376,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
             resource.Retire();
             _preparedResources.Remove(resource);
             _scopes.Remove(resource);
+            ReleaseWorkingReferences(resource);
         }
     }
 
@@ -403,28 +423,49 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         {
             resources.Cancel();
             _preparedResources.Remove(resources);
-            if (_workingReferences.Remove(resources, out long bytes))
-            {
-                _workingReferenceBytes = checked(_workingReferenceBytes - bytes);
-            }
+            ReleaseWorkingReferences(resources);
         }
 
         _scopes.RemoveRange(checkpoint.Scopes, _scopes.Count - checkpoint.Scopes);
         _uploads.RemoveRange(checkpoint.Uploads, _uploads.Count - checkpoint.Uploads);
     }
 
+    internal void EnableWorkingReferenceBudget()
+    {
+        if (_workingReferencesEnabled)
+        {
+            return;
+        }
+
+        var references = new Dictionary<ShaderResources, long>(ReferenceEqualityComparer.Instance);
+        long total = 0;
+
+        // Upload entries already belong to legacy pages. The first explicit
+        // budget request activates their immutable estimates, never native work.
+        foreach (Upload upload in _uploads)
+        {
+            if (upload.WorkingReferenceBytes != 0 && _scopes.Contains(upload.Trigger) && references.TryAdd(upload.Trigger, upload.WorkingReferenceBytes))
+            {
+                total = checked(total + upload.WorkingReferenceBytes);
+            }
+        }
+
+        _workingReferences = references;
+        _workingReferenceBytes = total;
+        _workingReferencesEnabled = true;
+    }
+
     internal void ReserveWorkingReferences(ShaderResources scope, uint buffers, int textures, int samplers)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(textures);
+        ArgumentOutOfRangeException.ThrowIfNegative(samplers);
         if (_closed || !_scopes.Contains(scope))
         {
             throw new InvalidOperationException("Working references require a live collecting scope from this plan.");
         }
 
-        // Include possible fallback view/sampler, without allocating native tables.
         long bytes = checked(((long)buffers + textures + samplers + 2) * 256);
-        _workingReferences.TryGetValue(scope, out long previous);
-        _workingReferenceBytes = checked(_workingReferenceBytes - previous + bytes);
-        _workingReferences[scope] = bytes;
+        ReserveWorkingReferenceBytes(scope, bytes);
     }
 
     internal void MarkPreparedBuffer<T>(ShaderResources resources, BufferSlice<T> range, BarrierScope scope)
@@ -501,6 +542,29 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         return marks;
     }
 
+    private void ReserveWorkingReferenceBytes(ShaderResources scope, long bytes)
+    {
+        EnableWorkingReferenceBudget();
+        Dictionary<ShaderResources, long> references = _workingReferences ?? new(ReferenceEqualityComparer.Instance);
+        references.TryGetValue(scope, out long previous);
+        long total = checked(_workingReferenceBytes - previous + bytes);
+        references[scope] = bytes;
+        _workingReferences = references;
+        _workingReferenceBytes = total;
+    }
+
+    private void ReleaseWorkingReferences(ShaderResources scope)
+    {
+        if (_workingReferences is not null && _workingReferences.Remove(scope, out long bytes))
+        {
+            _workingReferenceBytes = checked(_workingReferenceBytes - bytes);
+            if (_workingReferences.Count == 0)
+            {
+                _workingReferences = null;
+            }
+        }
+    }
+
     private T Own<T>(T resource)
         where T : IDisposable
     {
@@ -528,9 +592,11 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         _users--;
     }
 
-    private sealed class Upload(ShaderResources trigger, Func<CancellationToken, ValueTask> async, Func<CancellationToken, ValueTask>? prepareMapping, Action? mapped)
+    private sealed class Upload(ShaderResources trigger, Func<CancellationToken, ValueTask> async, Func<CancellationToken, ValueTask>? prepareMapping, Action? mapped, long workingReferenceBytes)
     {
         internal ShaderResources Trigger { get; } = trigger;
+
+        internal long WorkingReferenceBytes { get; } = workingReferenceBytes;
 
         internal Func<CancellationToken, ValueTask> Async { get; } = async;
 

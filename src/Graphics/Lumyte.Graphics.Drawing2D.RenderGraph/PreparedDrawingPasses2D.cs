@@ -13,6 +13,8 @@ public sealed class PreparedDrawingPasses2D : IDisposable
     {
     }
 
+    internal bool EnforcesWorkingBudget => _resources.OfType<IPreparedWorkingBudget2D>().Any(batch => batch.EnforcesWorkingBudget);
+
     /// <summary>Releases owned resources in reverse order; failed entries remain owned for a later retry.</summary>
     public void Dispose()
     {

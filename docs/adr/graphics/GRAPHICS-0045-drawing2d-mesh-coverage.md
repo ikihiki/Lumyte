@@ -38,6 +38,8 @@ FillRect、FillRoundedRect、FillCircle、DrawLine、FillPath、StrokePath、Dra
 
 Mesh feature と非 null の MeshShaderLimits を両方要求する。実際の target artifact の reflection から local size、output vertex・primitive 数、shared・payload・output byte 数と合計上限を照合し、準備の GPU allocation より前に拒否する。Task は使わない。WGSL、Browser、現在の Wgpu は非対応とする。DXIL の offline compile と D3D12 の実機実行は別の受け入れ条件である。
 
+作業量制限を要求する処理だけが累積会計を有効にし、従来処理だけの frame では追加の所有者走査と参照予約辞書を作らない。context の派生は未評価の会計元を保持し、先行する従来 page の参照数は upload に保持した不変の見積値から取り込む。
+
 作業量の上限は MeshCoverageLimits と root の保持方針の小さい方とし、Direct と通常の親 Graph の両方で、それ以前の連続 group が所有する資源も含めて判定する。同じ引数計画は重複計上せず、次の group の GPU buffer 確保より前に残り容量を確認する。record、paint directory と数値列に加え、引数表の buffer・view・sampler 参照世代も収集段階で予約し、表の実体化後にだけ増える未計上分を残さない。確保後と payload の最終化時にも以前の group を含む完全な合計を、加算の overflow を起こさず再検査する。
 
 一つの workgroup が一つの record を生成し、各 record の DrawMeshTasks(1) を painter order で記録する。dispatch をまたいだ順序、既存の target Load、blend、clip、DPR と平行移動の 8 byte property を保つ。Copy からの可視化には MeshShader と FragmentShader を使う。
