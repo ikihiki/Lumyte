@@ -59,4 +59,13 @@ public enum UiRole
 
     /// <summary>An ordered two-thumb numeric track.</summary>
     RangeSlider,
+
+    /// <summary>A single-choice item collection.</summary>
+    ListBox,
+
+    /// <summary>A selectable collection item.</summary>
+    ListItem,
+
+    /// <summary>A non-editable popup selector.</summary>
+    ComboBox,
 }

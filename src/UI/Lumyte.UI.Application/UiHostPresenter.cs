@@ -326,29 +326,51 @@ internal sealed partial class UiHostPresenter : IDisposable
                 if (readback is not null && status is SurfaceStatus.Success or SurfaceStatus.Suboptimal)
                 {
                     UiApplicationProfiling.Scope? captureProfile = activeProfile = UiApplicationProfiling.Begin(29);
-                    await readback.MapAsync(frame.RetirementToken);
-                    byte[] padded = new byte[checked((int)readback.Count)];
+                    using (UiApplicationProfiling.Scope? mapProfile = UiApplicationProfiling.Begin(30))
+                    {
+                        try
+                        {
+                            await readback.MapAsync(frame.RetirementToken);
+                        }
+                        catch (Exception error)
+                        {
+                            mapProfile?.Failed(error);
+                            throw;
+                        }
+                    }
+
+                    using UiApplicationProfiling.Scope? repackProfile = UiApplicationProfiling.Begin(31);
+                    byte[] pixels;
                     try
                     {
-                        readback.CopyTo(padded);
-                    }
-                    finally
-                    {
-                        readback.Unmap();
-                    }
-
-                    byte[] pixels = new byte[checked((int)(target.Width * target.Height * 4))];
-                    for (int row = 0; row < target.Height; row++)
-                    {
-                        padded.AsSpan(checked(row * (int)pitch), checked((int)target.Width * 4)).CopyTo(pixels.AsSpan(checked(row * (int)target.Width * 4)));
-                    }
-
-                    if (readbackFormat is TextureFormat.Bgra8Unorm or TextureFormat.Bgra8Srgb)
-                    {
-                        for (int index = 0; index < pixels.Length; index += 4)
+                        byte[] padded = new byte[checked((int)readback.Count)];
+                        try
                         {
-                            (pixels[index], pixels[index + 2]) = (pixels[index + 2], pixels[index]);
+                            readback.CopyTo(padded);
                         }
+                        finally
+                        {
+                            readback.Unmap();
+                        }
+
+                        pixels = new byte[checked((int)(target.Width * target.Height * 4))];
+                        for (int row = 0; row < target.Height; row++)
+                        {
+                            padded.AsSpan(checked(row * (int)pitch), checked((int)target.Width * 4)).CopyTo(pixels.AsSpan(checked(row * (int)target.Width * 4)));
+                        }
+
+                        if (readbackFormat is TextureFormat.Bgra8Unorm or TextureFormat.Bgra8Srgb)
+                        {
+                            for (int index = 0; index < pixels.Length; index += 4)
+                            {
+                                (pixels[index], pixels[index + 2]) = (pixels[index + 2], pixels[index]);
+                            }
+                        }
+                    }
+                    catch (Exception error)
+                    {
+                        repackProfile?.Failed(error);
+                        throw;
                     }
 
                     if (captureProfile is not null)
@@ -356,6 +378,7 @@ internal sealed partial class UiHostPresenter : IDisposable
                         captureBytes = pixels.Length;
                     }
 
+                    repackProfile?.Dispose();
                     capture!(new(target.Width, target.Height, pixels));
                     captureProfile?.Counter(14, pixels.Length);
                     captureProfile?.Dispose();

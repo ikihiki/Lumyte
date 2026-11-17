@@ -10,7 +10,10 @@ namespace Lumyte.Graphics.Shaders;
 public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShaderCompiler
 {
     /// <inheritdoc />
-    public async Task<ShaderArtifact> CompileAsync(ShaderCompilationDesc desc, CancellationToken cancellationToken = default)
+    public Task<ShaderArtifact> CompileAsync(ShaderCompilationDesc desc, CancellationToken cancellationToken = default)
+        => CompileOfflineAsync(desc, [], cancellationToken);
+
+    internal async Task<ShaderArtifact> CompileOfflineAsync(ShaderCompilationDesc desc, IReadOnlyList<string> additionalArguments, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentException.ThrowIfNullOrWhiteSpace(desc.Source);
@@ -21,6 +24,21 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             throw new ArgumentException("Unknown shader target or stage.", nameof(desc));
         }
 
+        bool meshStage = desc.Stage is ShaderStage.Mesh or ShaderStage.Task;
+        if (meshStage && desc.Target == ShaderTarget.Wgsl)
+        {
+            throw new NotSupportedException("WGSL does not support Mesh or Task shaders.");
+        }
+
+        string stage = desc.Stage switch
+        {
+            ShaderStage.Vertex => "vertex",
+            ShaderStage.Fragment => "fragment",
+            ShaderStage.Compute => "compute",
+            ShaderStage.Mesh => "mesh",
+            ShaderStage.Task => "amplification",
+            _ => throw new ArgumentException("Unknown shader stage.", nameof(desc)),
+        };
         cancellationToken.ThrowIfCancellationRequested();
         string directory = Path.Combine(Path.GetTempPath(), $"lumyte-shader-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -37,21 +55,47 @@ public sealed class SlangShaderCompiler(string compilerPath = "slangc") : IShade
             }
 
             string compilerVersion = (await RunCompilerAsync(["-version"], cancellationToken)).Trim();
-            ShaderTarget[] targets = desc.Target is { } selected ? [selected] : [ShaderTarget.Wgsl, ShaderTarget.SpirV, ShaderTarget.Dxil];
+            ShaderTarget[] targets = desc.Target is { } selected ? [selected] : meshStage ? [ShaderTarget.SpirV, ShaderTarget.Dxil] : [ShaderTarget.Wgsl, ShaderTarget.SpirV, ShaderTarget.Dxil];
             var results = new List<ShaderTargetData>();
             foreach (ShaderTarget target in targets)
             {
                 string prepared = ShaderSourcePreparation.Prepare(desc.Source);
                 await File.WriteAllTextAsync(source, prepared, cancellationToken);
-                string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", desc.Stage.ToString().ToLowerInvariant(), "-target", target switch { ShaderTarget.Wgsl => "wgsl", ShaderTarget.Dxil => "dxil", _ => "spirv" }, "-matrix-layout-row-major", target switch { ShaderTarget.SpirV => "-DLUMYTE_SPIRV=1", ShaderTarget.Dxil => "-DLUMYTE_DXIL=1", _ => "-DLUMYTE_WGSL=1" }, "-I", directory, "-reflection-json", reflection, "-o", output];
+                string[] arguments = [source, "-entry", desc.EntryPoint, "-stage", stage, "-target", target switch { ShaderTarget.Wgsl => "wgsl", ShaderTarget.Dxil => "dxil", _ => "spirv" }, "-matrix-layout-row-major", target switch { ShaderTarget.SpirV => "-DLUMYTE_SPIRV=1", ShaderTarget.Dxil => "-DLUMYTE_DXIL=1", _ => "-DLUMYTE_WGSL=1" }, "-I", directory, "-reflection-json", reflection, "-o", output];
+                arguments = [.. arguments, .. additionalArguments];
                 if (target == ShaderTarget.Dxil)
                 {
                     arguments = [.. arguments, "-profile", "sm_6_6"];
                 }
 
+                if (meshStage && target == ShaderTarget.SpirV)
+                {
+                    arguments = [.. arguments, "-capability", "spvMeshShadingEXT", "-emit-spirv-directly"];
+                }
+
                 _ = await RunCompilerAsync(arguments, cancellationToken);
                 byte[] code = await File.ReadAllBytesAsync(output, cancellationToken);
                 string reflectionJson = ShaderSourcePreparation.CompleteReflection(await File.ReadAllTextAsync(reflection, cancellationToken), desc.Source, target);
+                if (meshStage || (desc.Stage == ShaderStage.Fragment && target != ShaderTarget.Wgsl))
+                {
+                    string declarations = Path.Combine(directory, "declarations.hlsl");
+                    string define = target == ShaderTarget.SpirV ? "-DLUMYTE_SPIRV=1" : "-DLUMYTE_DXIL=1";
+                    _ = await RunCompilerAsync([source, "-entry", desc.EntryPoint, "-stage", stage, "-target", "hlsl", "-profile", "sm_6_6", "-matrix-layout-row-major", define, "-I", directory, .. additionalArguments, "-o", declarations], cancellationToken);
+                    string emitted = await File.ReadAllTextAsync(declarations, cancellationToken);
+                    reflectionJson = meshStage ? MeshShaderReflection.Complete(reflectionJson, emitted, desc.Stage, desc.EntryPoint, target, code)
+                        : MeshShaderReflection.CompleteFragment(reflectionJson, emitted, desc.EntryPoint, target, code);
+                }
+
+                if (meshStage)
+                {
+                    reflectionJson = MeshShaderMetadata.CompleteIntegrity(reflectionJson, code);
+                }
+
+                if (desc.Stage == ShaderStage.Fragment && target != ShaderTarget.Wgsl)
+                {
+                    reflectionJson = MeshShaderMetadata.CompleteFragmentIntegrity(reflectionJson, code);
+                }
+
                 results.Add(new(target, desc.Stage, desc.EntryPoint, compilerVersion, "row-major", code, reflectionJson));
             }
 

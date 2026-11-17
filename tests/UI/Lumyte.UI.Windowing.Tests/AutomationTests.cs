@@ -241,6 +241,39 @@ public sealed class AutomationTests
         }
     }
 
+    /// <summary>A combo covered by another normal window cannot open through automation.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task ComboAutomationHonorsNormalWindowOcclusionAsync()
+    {
+        using var f = new Fixture();
+        var popupHost = new Lumyte.UI.Controls.Windowing.CollectionPopupHost(f.Popups, f.Owner);
+        f.Surface.Rebuild(Lumyte.UI.Collections.Compose.ComboBox<string>(items: new[] { "a" }, keySelector: item => item, itemTemplate: _ => Lumyte.UI.Compose.SizedBox(height: 20), selectedItemTemplate: _ => Lumyte.UI.Compose.SizedBox(height: 20), emptyTemplate: () => Lumyte.UI.Compose.SizedBox(height: 20), popupHost: popupHost, testId: "combo"));
+        f.Surface.UpdateLayout();
+        using var other = new UiSurface(Lumyte.UI.Compose.Button());
+        UiWindowId window = f.Windows.Create(new(f.Registration.Window, new(200, 150), UiWindowRole.Normal, UiWindowInputMode.Interactive, new(f.Registration.Window, new(0, 0, 0, 0), UiWindowPlacementSide.Below)));
+        Task<UiWindowBinding> pending = f.Windows.BindPresentationAsync(window, other).AsTask();
+        f.Pump();
+        UiWindowBinding binding = await pending;
+        using UiPopupOwner owner = f.Popups.RegisterOwner(window, other);
+        f.Windows.Show(window);
+        f.Pump();
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => f.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(f.Popups, Factory(f.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(f.Surface));
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("combo").ClickAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        Assert.Empty(f.Popups.CapturePopups());
+        owner.Dispose();
+        Task retired = binding.DisposeAsync().AsTask();
+        f.Pump();
+        Assert.True(retired.IsCompletedSuccessfully);
+        f.Windows.Close(window);
+        f.Pump();
+        f.Windows.Release(window);
+        f.Pump();
+    }
+
     private sealed class Host(UiSurface surface, Action nextFrame, SemaphoreSlim gate) : IUiAutomationHost
     {
         private static long _next;

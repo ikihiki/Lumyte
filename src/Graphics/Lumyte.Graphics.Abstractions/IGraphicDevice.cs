@@ -79,6 +79,11 @@ public interface IGraphicDevice
     /// <returns>The owned backend program.</returns>
     IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc);
 
+    /// <summary>Creates a mesh program borrowing same-device modules; unsupported features or limits throw NotSupportedException.</summary>
+    /// <param name="desc">The immutable program description; invalid stage or ABI throws ArgumentException.</param>
+    /// <returns>The owned program. Disposed modules throw ObjectDisposedException.</returns>
+    IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc);
+
     /// <summary>Creates a compute program from embedded entry and workgroup metadata.</summary>
     /// <param name="desc">The compute description.</param>
     /// <returns>The owned executable program.</returns>

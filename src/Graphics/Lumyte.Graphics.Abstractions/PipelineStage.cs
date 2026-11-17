@@ -34,8 +34,14 @@ public enum PipelineStage
     /// <summary>Specifies ColorOutput.</summary>
     ColorOutput = 128,
 
+    /// <summary>Specifies mesh shader execution.</summary>
+    MeshShader = 512,
+
+    /// <summary>Specifies task shader execution.</summary>
+    TaskShader = 1024,
+
     /// <summary>Specifies AllGraphics.</summary>
-    AllGraphics = IndexInput | VertexShader | FragmentShader | ColorOutput | DepthStencil,
+    AllGraphics = IndexInput | VertexShader | MeshShader | TaskShader | FragmentShader | ColorOutput | DepthStencil,
 
     /// <summary>Specifies AllCommands.</summary>
     AllCommands = Copy | DrawIndirect | AllGraphics | ComputeShader,

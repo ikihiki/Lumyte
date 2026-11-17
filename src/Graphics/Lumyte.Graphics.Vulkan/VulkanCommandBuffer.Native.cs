@@ -24,57 +24,6 @@ internal sealed unsafe partial class VulkanCommandBuffer
         _active = null;
     }
 
-    private static PipelineStageFlags2 Stages(BarrierScope scope)
-    {
-        PipelineStageFlags flags = 0;
-        if ((scope.Stages & PipelineStage.Host) != 0)
-        {
-            flags |= PipelineStageFlags.HostBit;
-        }
-
-        if ((scope.Stages & PipelineStage.Copy) != 0)
-        {
-            flags |= PipelineStageFlags.TransferBit;
-        }
-
-        if ((scope.Stages & PipelineStage.VertexShader) != 0)
-        {
-            flags |= PipelineStageFlags.VertexShaderBit;
-        }
-
-        if ((scope.Stages & PipelineStage.FragmentShader) != 0)
-        {
-            flags |= PipelineStageFlags.FragmentShaderBit;
-        }
-
-        if ((scope.Stages & PipelineStage.ComputeShader) != 0)
-        {
-            flags |= PipelineStageFlags.ComputeShaderBit;
-        }
-
-        if ((scope.Stages & PipelineStage.ColorOutput) != 0)
-        {
-            flags |= PipelineStageFlags.ColorAttachmentOutputBit;
-        }
-
-        if ((scope.Stages & PipelineStage.DrawIndirect) != 0)
-        {
-            flags |= PipelineStageFlags.DrawIndirectBit;
-        }
-
-        if ((scope.Stages & PipelineStage.IndexInput) != 0)
-        {
-            flags |= PipelineStageFlags.VertexInputBit;
-        }
-
-        if ((scope.Stages & PipelineStage.DepthStencil) != 0)
-        {
-            flags |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
-        }
-
-        return (PipelineStageFlags2)flags;
-    }
-
     private static AccessFlags2 Access(BarrierScope scope)
     {
         AccessFlags flags = 0;
@@ -164,6 +113,68 @@ internal sealed unsafe partial class VulkanCommandBuffer
     private static Offset3D Origin(TextureCopyRegion region) => new(checked((int)region.OriginX), checked((int)region.OriginY), 0);
 
     private static Extent3D Extent(TextureCopyRegion region) => new(region.Width, region.Height, 1);
+
+    private PipelineStageFlags2 Stages(BarrierScope scope)
+    {
+        PipelineStage stages = _owner.NormalizeStages(scope.Stages);
+        PipelineStageFlags flags = 0;
+        if ((stages & PipelineStage.MeshShader) != 0)
+        {
+            flags |= PipelineStageFlags.MeshShaderBitExt;
+        }
+
+        if ((stages & PipelineStage.TaskShader) != 0)
+        {
+            flags |= PipelineStageFlags.TaskShaderBitExt;
+        }
+
+        if ((stages & PipelineStage.Host) != 0)
+        {
+            flags |= PipelineStageFlags.HostBit;
+        }
+
+        if ((stages & PipelineStage.Copy) != 0)
+        {
+            flags |= PipelineStageFlags.TransferBit;
+        }
+
+        if ((stages & PipelineStage.VertexShader) != 0)
+        {
+            flags |= PipelineStageFlags.VertexShaderBit;
+        }
+
+        if ((stages & PipelineStage.FragmentShader) != 0)
+        {
+            flags |= PipelineStageFlags.FragmentShaderBit;
+        }
+
+        if ((stages & PipelineStage.ComputeShader) != 0)
+        {
+            flags |= PipelineStageFlags.ComputeShaderBit;
+        }
+
+        if ((stages & PipelineStage.ColorOutput) != 0)
+        {
+            flags |= PipelineStageFlags.ColorAttachmentOutputBit;
+        }
+
+        if ((stages & PipelineStage.DrawIndirect) != 0)
+        {
+            flags |= PipelineStageFlags.DrawIndirectBit;
+        }
+
+        if ((stages & PipelineStage.IndexInput) != 0)
+        {
+            flags |= PipelineStageFlags.VertexInputBit;
+        }
+
+        if ((stages & PipelineStage.DepthStencil) != 0)
+        {
+            flags |= PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
+        }
+
+        return (PipelineStageFlags2)flags;
+    }
 
     private void Check(Result result, string operation)
     {

@@ -1,3 +1,4 @@
+import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -31,8 +32,11 @@ await new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", resolve);
 });
 
+const traceCapture = captureDiagnosticsEnabled();
+const captureTrace = createCaptureTraceReporter();
 let browser;
 let socket;
+let command;
 try {
     await readFile(resolve(root, "index.html"));
     browser = spawn(executable, [
@@ -73,35 +77,43 @@ try {
             if (!action) { return; }
             if (message.error) { action.reject(new Error(JSON.stringify(message.error))); }
             else { action.resolve(message.result); }
+        } else if (message.method === "Runtime.bindingCalled" && message.params.name === captureDiagnosticBinding) {
+            captureTrace.observe(message.params.payload, { sample: "application" });
+            captureTrace.observeGpu(message.params.payload, { sample: "application" });
         } else if (message.method === "Log.entryAdded") {
             const entry = message.params.entry;
             if (entry.source !== "network") {
+                const captureObserved = traceCapture && captureTrace.observe(entry.text, { sample: "application" });
                 if (entry.level === "error" || /Destroyed texture|Validation Error|Error while parsing WGSL|[Ii]nvalid (?:command|bind|pipeline)/.test(entry.text)) errors.push(entry.text);
+                else if (captureObserved) { /* Already forwarded by the bounded reporter. */ }
                 else progress.push(entry.text);
             }
         } else if (message.method === "Runtime.exceptionThrown") {
             errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
         } else if (message.method === "Runtime.consoleAPICalled") {
             const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
+            const captureObserved = traceCapture && captureTrace.observe(text, { sample: "application" });
             if (message.params.type === "error") { errors.push(text); }
+            else if (captureObserved) { /* Forwarded once by the bounded reporter, not retained in progress. */ }
             else { progress.push(text); }
         }
     });
-    function command(method, params = {}) {
+    command = (method, params = {}, timeoutMs) => {
         const id = ++nextId;
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
-            }, method === "Page.navigate" ? 60000 : method === "Runtime.evaluate" ? 45000 : 10000);
+            }, timeoutMs ?? (method === "Page.navigate" ? 60000 : method === "Runtime.evaluate" ? 45000 : 10000));
             pending.set(id, {
                 resolve: value => { clearTimeout(timeout); resolve(value); },
                 reject: error => { clearTimeout(timeout); reject(error); },
             });
             socket.send(JSON.stringify({ id, method, params }));
         });
-    }
+    };
     await command("Runtime.enable");
+    if (traceCapture) await command("Runtime.addBinding", { name: captureDiagnosticBinding });
     await command("Log.enable");
     const throttle = Number(process.env.LUMYTE_BROWSER_CPU_THROTTLE ?? 1);
     assert.ok(Number.isFinite(throttle) && throttle >= 1 && throttle <= 20, "CPU throttle must be between 1 and 20");
@@ -109,6 +121,10 @@ try {
     if (requiresSoftwareWebGpu()) {
         await command("Page.enable");
         await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
+    }
+    if (traceCapture) {
+        await command("Page.enable");
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installCaptureDiagnosticsRequest.toString()})();` });
     }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     async function evaluate(expression) {
@@ -207,6 +223,9 @@ try {
         verifySoftwareWebGpu(audit.result.value);
     }
     console.log("UI Application Browser WebGPU smoke passed: presentation, animation midpoint/final GPU pixels, freeze/resume, automation GPU PNG, normal input, orderly stop and borrowed canvas.");
+} catch (failure) {
+    if (traceCapture) await captureTrace.failure(command, { sample: "application" });
+    throw failure;
 } finally {
     socket?.close();
     if (browser?.pid && browser.exitCode === null && browser.signalCode === null) {

@@ -277,6 +277,10 @@ public sealed class GraphicsApiConvenienceTests
         public void SetArguments<T>(in T arguments, string rootParameter = "arguments", string? shaderTypeName = null)
             where T : unmanaged => throw new NotSupportedException();
 
+        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+
         public void SetPipeline(IGraphicsPipeline pipeline) => throw new NotSupportedException();
 
         public void SetRenderState(GraphicsRenderStateDesc state) => throw new NotSupportedException();

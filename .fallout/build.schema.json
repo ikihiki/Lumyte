@@ -70,6 +70,8 @@
         "TestSignals",
         "TestText",
         "TestUiApplication",
+        "TestUiCollections",
+        "TestUiCollectionsAot",
         "TestUiControls",
         "TestUiControlsAot",
         "TestUiLayout",

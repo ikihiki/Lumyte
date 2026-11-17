@@ -345,9 +345,21 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
     {
         var window = (Window)target;
         ulong epoch = _lease?.State.Epoch ?? 0;
+        UiApplicationProfiling.Key captureKey = window.ProfileKey;
         UiVisualSnapshot[] visuals = window.Source.RecordedVisuals();
         IDisposable[] visualLeases = visuals.Select(visual => visual.Retain()).ToArray();
         Capture[] captures = window.Captures.Where(capture => !capture.Token.IsCancellationRequested).ToArray();
+        Dictionary<Capture, int>? captureProcessing = null;
+        foreach (Capture capture in captures)
+        {
+            if (capture.RequestId != 0)
+            {
+                int processing = ++capture.ProcessingCount;
+                (captureProcessing ??= []).Add(capture, processing);
+                UiApplicationProfiling.Capture(capture.RequestId, 4, captureKey, window.Source.SourceId, processing: processing, owned: window.Owned ? 1 : 0);
+            }
+        }
+
         using UiFrameSubmissionQueue.Flight flight = await _framesInFlight.EnterAsync();
         try
         {
@@ -402,6 +414,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                 }
                 else
                 {
+                    UiApplicationProfiling.Capture(capture.RequestId, 7, captureKey, window.Source.SourceId, reason: 5, processing: captureProcessing?.GetValueOrDefault(capture) ?? 0);
                     capture.Completion.TrySetException(new InvalidOperationException("The target is no longer visible."));
                 }
             }
@@ -413,10 +426,13 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
                     try
                     {
                         capture.Token.ThrowIfCancellationRequested();
-                        capture.Completion.TrySetResult(pixels.Crop(crop));
+                        UiApplicationProfiling.Capture(capture.RequestId, 5, captureKey, window.Source.SourceId, processing: captureProcessing?.GetValueOrDefault(capture) ?? 0);
+                        bool completed = capture.Completion.TrySetResult(pixels.Crop(crop));
+                        UiApplicationProfiling.Capture(capture.RequestId, 6, captureKey, window.Source.SourceId, reason: completed ? 0 : 4, processing: captureProcessing?.GetValueOrDefault(capture) ?? 0);
                     }
                     catch (Exception error)
                     {
+                        UiApplicationProfiling.Capture(capture.RequestId, 7, captureKey, window.Source.SourceId, reason: error is OperationCanceledException ? 1 : 3, processing: captureProcessing?.GetValueOrDefault(capture) ?? 0);
                         capture.Completion.TrySetException(error);
                     }
                 }
@@ -431,6 +447,7 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
             {
                 foreach (Capture capture in crops.Keys)
                 {
+                    UiApplicationProfiling.Capture(capture.RequestId, 7, captureKey, window.Source.SourceId, reason: 6, processing: captureProcessing?.GetValueOrDefault(capture) ?? 0);
                     capture.Completion.TrySetException(error);
                 }
 
@@ -575,7 +592,14 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         IWindow? native = ResolveNative(snapshot.SourceId);
         Window window = _windows.FirstOrDefault(window => ReferenceEquals(window.NativeWindow, native)) ?? throw new NotSupportedException("The target has no native presentation.");
         var completion = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var request = new Capture(surface, token, completion);
+        long requestId = UiApplicationProfiling.CurrentCapture();
+        var request = new Capture(surface, token, completion, requestId);
+        if (requestId != 0)
+        {
+            (bool busy, UiApplicationProfiling.Key key) = window.Owned ? Application.CaptureDrawingState(window) : (window.Drawing is not null, window.ProfileKey);
+            UiApplicationProfiling.Capture(requestId, 3, key, window.Source.SourceId, owned: window.Owned ? 1 : 0, busy: busy ? 1 : 0);
+        }
+
         window.Captures.Add(request);
         try
         {
@@ -786,7 +810,18 @@ internal abstract class UiPlatformApplicationDriver : UiApplicationDriver, IUiNa
         }
     }
 
-    private sealed record Capture(UiSurface Surface, CancellationToken Token, TaskCompletionSource<byte[]> Completion);
+    private sealed class Capture(UiSurface surface, CancellationToken token, TaskCompletionSource<byte[]> completion, long requestId)
+    {
+        internal UiSurface Surface { get; } = surface;
+
+        internal CancellationToken Token { get; } = token;
+
+        internal TaskCompletionSource<byte[]> Completion { get; } = completion;
+
+        internal long RequestId { get; } = requestId;
+
+        internal int ProcessingCount { get; set; }
+    }
 
     private sealed class Window : UiDriverWindow
     {

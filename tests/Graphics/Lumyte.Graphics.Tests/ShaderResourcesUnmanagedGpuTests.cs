@@ -225,6 +225,10 @@ public sealed class ShaderResourcesUnmanagedGpuTests
 
         public void SetArgumentTable(IArgumentTable table) => native.SetArgumentTable(table);
 
+        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);
 
         public void SetRenderState(GraphicsRenderStateDesc state) => native.SetRenderState(state);
