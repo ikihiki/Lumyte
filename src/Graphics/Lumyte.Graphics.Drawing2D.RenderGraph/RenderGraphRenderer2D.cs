@@ -26,14 +26,42 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     private readonly DrawingGraphBindings2D _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
     private readonly DrawingResourceState2D _resources = new(bindings.Graph.Device, resources, resourceOwner, validateResources);
 
+    private readonly IDisposable? _resourceUse;
+    private readonly DrawingArgumentTableMode _argumentTableMode = DrawingArgumentTableMode.Auto;
     private bool _disposed;
     private int _preparing;
+
+    /// <summary>Initializes a new instance of the <see cref="RenderGraphRenderer2D"/> class using the compiled command table and resource coordinator.</summary>
+    /// <param name="renderer">The configured renderer; external implementations without the internal bridge are rejected before graph mutation.</param>
+    /// <param name="list">The immutable layered recording.</param>
+    /// <param name="target">The graph-local target.</param>
+    /// <param name="bindings">The graph resource bindings.</param>
+    public RenderGraphRenderer2D(IRenderer2D renderer, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings)
+        : this(Bridge(renderer, list, target, bindings), list, target, bindings)
+    {
+    }
+
+    private RenderGraphRenderer2D(IGraphRendererSource2D source, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings)
+        : this(source.CommandRenderers, list, target, bindings)
+    {
+        DrawingResourceState2D state = source.ResourceState;
+        _resourceUse = state.Retain(ensureResources: false);
+        _resources = state;
+        _argumentTableMode = source.ArgumentTableMode;
+    }
 
     /// <summary>Releases this host without disposing borrowed strategies or waiting for GPU work.</summary>
     public void Dispose()
     {
         _disposed = true;
-        _resources.Dispose();
+        if (_resourceUse is not null)
+        {
+            _resources.ReturnBorrow(_resourceUse);
+        }
+        else
+        {
+            _resources.Dispose();
+        }
     }
 
     /// <summary>Appends drawing passes to a shared graph and returns their fixed resource owner.</summary>
@@ -89,34 +117,67 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
                 }
 
                 return shared.CreateResources();
-            });
+            })
+        {
+            ArgumentTableMode = _argumentTableMode,
+        };
         DrawingArgumentPlan2D argumentPlan = pendingPlan;
         GraphDrawingArguments2D Shared() => sharedArguments ??= GraphDrawingArguments2D.Get(graph);
         var owner = new PreparedDrawingPasses2D();
+        IDisposable unusedPlanOwner = _resources.CleanupOwner(argumentPlan);
         try
         {
+            owner.HoldComposition(_resources.RetainComposition(allowReturned: _resourceUse is not null));
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);
             await argumentPlan.PrepareMappingsAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (!graphOwnsPlan)
+            {
+                // Complete fallible unused-plan cleanup while the catch still owns the batches and lease.
+                unusedPlanOwner.Dispose();
+            }
+
             return owner;
         }
         catch (Exception error)
         {
             argumentPlan.ReleasePreparationCaches();
+            if (!graphOwnsPlan)
+            {
+                try
+                {
+                    unusedPlanOwner.Dispose();
+                }
+                catch (Exception cleanup)
+                {
+                    _resources.CleanupAfterFailure(owner, new AggregateException(error, cleanup));
+                    throw new AggregateException(error, cleanup);
+                }
+            }
+
             _resources.CleanupAfterFailure(owner, error);
             throw;
         }
         finally
         {
-            if (!graphOwnsPlan)
-            {
-                using IDisposable unusedOwner = _resources.CleanupOwner(argumentPlan);
-            }
-
             Volatile.Write(ref _preparing, 0);
         }
+    }
+
+    private static IGraphRendererSource2D Bridge(IRenderer2D renderer, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings)
+    {
+        ArgumentNullException.ThrowIfNull(renderer);
+        ArgumentNullException.ThrowIfNull(list);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(bindings);
+        if (!ReferenceEquals(renderer.Device, bindings.Graph.Device))
+        {
+            throw new ArgumentException("Renderer and graph must use the same device.", nameof(renderer));
+        }
+
+        return renderer as IGraphRendererSource2D ?? throw new NotSupportedException("This renderer does not expose the internal graph preparation bridge.");
     }
 
     private static void ValidateTarget(RenderTargetBinding2D target)
@@ -505,7 +566,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     private async ValueTask AppendCommandsAsync(RenderGraphBuilder graph, DrawList2D list, int begin, int end, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, PreparedDrawingPasses2D owner, DrawingArgumentPlan2D argumentPlan, CancellationToken cancellationToken)
     {
         IReadOnlyList<DrawingCommand2D> commands = list.Commands;
-        var context = new GraphPreparationContext2D(graph.Device!, graph, bindings, target, _resources);
+        var context = new GraphPreparationContext2D(graph.Device!, graph, bindings, target, _resources, _resourceUse is not null);
         int index = begin;
         while (index < end)
         {
@@ -526,22 +587,22 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             }
 
             int firstReservation = argumentPlan.Reservations.Count;
-            RenderPreparationContext2D preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan);
+            var preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null);
             IPreparedCommandBatch2D batch = IsBuiltinRenderer(commands[index]) && preparation.RecordResources() is not null
                 ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end), cancellationToken).ConfigureAwait(false)
                 : commands[index] switch
                 {
-                    FillRectCommand2D => await _renderers.FillRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    FillRoundedRectCommand2D => await _renderers.FillRoundedRect.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillRoundedRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    FillCircleCommand2D => await _renderers.FillCircle.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillCircleCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    DrawLineCommand2D => await _renderers.DrawLine.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawLineCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    FillPathCommand2D => await _renderers.FillPath.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<FillPathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    StrokePathCommand2D => await _renderers.StrokePath.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<StrokePathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    DrawImageCommand2D => await _renderers.DrawImage.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawImageCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    DrawCoverageMaskCommand2D => await _renderers.DrawCoverageMask.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawCoverageMaskCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    DrawDistanceFieldCommand2D => await _renderers.DrawDistanceField.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawDistanceFieldCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    DrawMeshCommand2D => await _renderers.DrawMesh.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawMeshCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
-                    DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState).WithArgumentPlan(argumentPlan), TakeBatch<DrawPaintGraphCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillRectCommand2D => await _renderers.FillRect.PrepareAsync(preparation, TakeBatch<FillRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillRoundedRectCommand2D => await _renderers.FillRoundedRect.PrepareAsync(preparation, TakeBatch<FillRoundedRectCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillCircleCommand2D => await _renderers.FillCircle.PrepareAsync(preparation, TakeBatch<FillCircleCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawLineCommand2D => await _renderers.DrawLine.PrepareAsync(preparation, TakeBatch<DrawLineCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    FillPathCommand2D => await _renderers.FillPath.PrepareAsync(preparation, TakeBatch<FillPathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    StrokePathCommand2D => await _renderers.StrokePath.PrepareAsync(preparation, TakeBatch<StrokePathCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawImageCommand2D => await _renderers.DrawImage.PrepareAsync(preparation, TakeBatch<DrawImageCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawCoverageMaskCommand2D => await _renderers.DrawCoverageMask.PrepareAsync(preparation, TakeBatch<DrawCoverageMaskCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawDistanceFieldCommand2D => await _renderers.DrawDistanceField.PrepareAsync(preparation, TakeBatch<DrawDistanceFieldCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawMeshCommand2D => await _renderers.DrawMesh.PrepareAsync(preparation, TakeBatch<DrawMeshCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
+                    DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(preparation, TakeBatch<DrawPaintGraphCommand2D>(list, ref index, end, context.Device), cancellationToken).ConfigureAwait(false),
                     _ => throw new InvalidOperationException("The drawing snapshot contains an unsupported structural command."),
                 };
             ArgumentNullException.ThrowIfNull(batch);
@@ -601,7 +662,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         EffectPixelRect captureBounds = Bounds(context.Target);
         RenderTargetBinding2D capture = CreateIntermediate(context.Graph, captureBounds, context.Target.PixelScale, "drawing2d.backdrop.snapshot");
         AppendClear(context.Graph, capture);
-        var captureContext = new GraphPreparationContext2D(context.Device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load }, context.ResourceState);
+        var captureContext = new GraphPreparationContext2D(context.Device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load }, context.ResourceState, context.AllowReturnedResources);
         var targetSource = new GraphImageSource2D(context.Target.Texture, context.Target.Description, Bounds(context.Target));
         var emptyState = new DrawingState2D(Matrix3x2.Identity, ClipStack2D.Empty);
         IPreparedGraphCommandBatch2D snapshot = await DrawingGraphCompositor.PrepareAsync(captureContext, targetSource, emptyState, replace: true, ct: cancellationToken).ConfigureAwait(false);

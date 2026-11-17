@@ -139,8 +139,10 @@ public sealed partial class Renderer2D
                         }
 
                         var batches = new List<IPreparedCommandBatch2D>();
+                        IDisposable? compositionUse = null;
                         try
                         {
+                            compositionUse = _resources.RetainComposition();
                             int index = 0;
                             using (var build = DrawingProfileScope.Start(4))
                             {
@@ -179,13 +181,15 @@ public sealed partial class Renderer2D
 
                             _retained.CountCompilation();
                             compiled++;
-                            assets.Add(new(key, new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer))));
+                            assets.Add(new(key, new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer), compositionUse)));
+                            compositionUse = null;
                         }
                         catch
                         {
-                            if (batches.Count != 0)
+                            if (batches.Count != 0 || compositionUse is not null)
                             {
-                                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
+                                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false, compositionUse));
+                                compositionUse = null;
                             }
 
                             throw;

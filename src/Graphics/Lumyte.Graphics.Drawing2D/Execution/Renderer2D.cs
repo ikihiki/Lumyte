@@ -10,7 +10,7 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <param name="resourceOwner">An optional owner transferred on successful construction and returned after renderer and prepared work finish.</param>
 /// <param name="validateResources">An optional runtime validation invoked before preparation and recording.</param>
 /// <param name="retentionOptions">Optional bounds for retained frames and idle compiled assets.</param>
-public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null) : IDisposable
+public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null) : IRenderer2D, IGraphRendererSource2D
 {
     private readonly IGraphicDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
@@ -32,6 +32,22 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 
     /// <summary>Gets the argument table policy used for direct and retained preparation.</summary>
     public DrawingArgumentTableMode ArgumentTableMode { get; init; } = DrawingArgumentTableMode.Auto;
+
+    /// <summary>Gets the borrowed generation-specific device.</summary>
+    public IGraphicDevice Device => _device;
+
+    /// <inheritdoc/>
+    DrawingCommandRenderers2D IGraphRendererSource2D.CommandRenderers => _renderers;
+
+    /// <inheritdoc/>
+    DrawingResourceState2D IGraphRendererSource2D.ResourceState
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _resources;
+        }
+    }
 
     /// <summary>Prepares one-shot batches; creates no RenderGraph and never submits work.</summary>
     /// <param name="list">The pure drawing snapshot.</param>
@@ -57,8 +73,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             }
 
             var batches = new List<IPreparedCommandBatch2D>();
+            IDisposable? compositionUse = null;
             try
             {
+                compositionUse = _resources.RetainComposition();
                 _retained.BindStorageOwner(_resources);
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
@@ -108,12 +126,19 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // CleanupUse transfers failed cleanup to the resource state and is idempotent.
+                // Finish fallible cleanup before moving the composition lease into a published owner.
+                planOwner.Dispose();
                 profile?.Success();
-                return new PreparedDraw2D(target, batches, profile?.Context);
+                var prepared = new PreparedDraw2D(target, batches, profile?.Context, compositionUse);
+                compositionUse = null;
+                return prepared;
             }
             catch (Exception preparationFailure)
             {
-                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false));
+                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false, compositionUse));
+                compositionUse = null;
                 try
                 {
                     _retained.RetryCleanup();
@@ -151,6 +176,8 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
         _retained.Dispose();
         _resources.Dispose();
     }
+
+    internal void AttachCompositionOwner(IDisposable owner) => _resources.AttachCompositionOwner(owner);
 
     private static TextureDesc Describe(IGraphicsTexture texture) => new()
     {

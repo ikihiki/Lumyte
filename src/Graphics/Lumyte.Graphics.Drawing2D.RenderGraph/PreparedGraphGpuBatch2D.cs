@@ -24,7 +24,7 @@ internal sealed class PreparedGraphGpuBatch2D : IPreparedGraphCommandBatch2D
         _shared = GraphDrawingArguments2D.Get(context.Graph);
         try
         {
-            Own(context.ResourceState.Retain());
+            Own(context.ResourceState.Retain(context.AllowReturnedResources));
             cancellationToken.ThrowIfCancellationRequested();
             DrawingResources2D resources = context.Resources;
             _artifact = resources.Pipeline.Desc.FragmentShader?.Artifact ?? throw new ArgumentException("Drawing requires a fragment shader.");

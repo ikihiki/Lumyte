@@ -6,13 +6,14 @@ namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 /// <summary>Exposes borrowed resources during preparation of a typed command batch.</summary>
 internal sealed class GraphPreparationContext2D
 {
-    internal GraphPreparationContext2D(IGraphicDevice device, RenderGraphBuilder graph, DrawingGraphBindings2D bindings, RenderTargetBinding2D target, DrawingResourceState2D resources)
+    internal GraphPreparationContext2D(IGraphicDevice device, RenderGraphBuilder graph, DrawingGraphBindings2D bindings, RenderTargetBinding2D target, DrawingResourceState2D resources, bool allowReturnedResources = false)
     {
         Device = device;
         Graph = graph;
         Bindings = bindings;
         Target = target;
         ResourceState = resources;
+        AllowReturnedResources = allowReturnedResources;
     }
 
     /// <summary>Gets the borrowed graphic device.</summary>
@@ -31,4 +32,6 @@ internal sealed class GraphPreparationContext2D
     public RenderTargetBinding2D Target { get; }
 
     internal DrawingResourceState2D ResourceState { get; }
+
+    internal bool AllowReturnedResources { get; }
 }
