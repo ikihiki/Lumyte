@@ -14,11 +14,13 @@ public sealed class ShaderSourcePreparationGpuTests
 {
     /// <summary>Vulkan reads all four numeric components with diagnostics off and on.</summary>
     /// <returns>The completed readback.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNumericWireReadbackAsync() => await CheckAsync(ShaderTarget.SpirV);
 
     /// <summary>Wgpu reads float3 at C# offset four rather than uniform offset sixteen.</summary>
     /// <returns>The completed readback.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuNumericWireReadbackAsync() => await CheckAsync(ShaderTarget.Wgsl);
 

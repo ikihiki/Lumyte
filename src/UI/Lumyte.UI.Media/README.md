@@ -77,6 +77,6 @@ ProgressBarはValue、BusyIndicatorはIsIndeterminateをimmutable snapshotとwir
 ## 実行と制限
 
 [sample](../../../samples/Lumyte.UI.Media.Sample/README.md)は実フォントを渡して標準Headless hostで動く公開APIのscenarioです。
-共通runnerのTestUiMediaと各test projectで検証します。
+共通runnerのTest --suite ui --feature mediaと各test projectで検証します。
 Textは選択/編集なし、Imageはload/decodeなし、IconはButtonなしです。
 Windows、Browser、NativeAOTとGPUの実行可否は各実行記録で区別します。

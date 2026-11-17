@@ -14,6 +14,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Exercises every built-in command and compact paint family on the Vulkan backend.</summary>
     /// <returns>The completed hardware readbacks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanFixedRecordsAsync()
     {
@@ -23,6 +24,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Exercises the identical format with ordered fallback draws on the WGSL backend.</summary>
     /// <returns>The completed hardware readbacks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuFixedRecordsAsync()
     {
@@ -32,6 +34,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Changes only the public root snapshot and native instance count to select GPU-resident records.</summary>
     /// <returns>The independent first/middle/end/empty range readbacks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanFixedRecordSelectedInstancesAsync()
     {

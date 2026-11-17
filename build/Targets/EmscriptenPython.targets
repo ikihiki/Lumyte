@@ -9,7 +9,7 @@
     <PropertyGroup>
       <LumyteParleyPythonPath Condition="'$(LumyteParleyPythonPath)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(EmscriptenPythonToolsPath)python.exe')">$(EmscriptenPythonToolsPath)python.exe</LumyteParleyPythonPath>
     </PropertyGroup>
-    <Exec Command="$(_LumyteParleyBuildCommand) --target PrepareWasmTools --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --emsdk &quot;$([MSBuild]::EnsureTrailingSlash('$(EmscriptenSdkToolsPath)')).&quot; --python-path-file &quot;$(LumyteParleyPythonPathFile)&quot; --python &quot;$(LumyteParleyPythonPath)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Setup --setup-tool wasm-python --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --emsdk &quot;$([MSBuild]::EnsureTrailingSlash('$(EmscriptenSdkToolsPath)')).&quot; --python-path-file &quot;$(LumyteParleyPythonPathFile)&quot; --python &quot;$(LumyteParleyPythonPath)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
     <ReadLinesFromFile File="$(LumyteParleyPythonPathFile)">
       <Output TaskParameter="Lines" PropertyName="LumyteParleyPythonPath" />
     </ReadLinesFromFile>

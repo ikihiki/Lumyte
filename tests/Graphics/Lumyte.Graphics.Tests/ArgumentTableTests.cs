@@ -9,6 +9,7 @@ namespace Lumyte.Graphics.Tests;
 public sealed class ArgumentTableTests
 {
     /// <summary>Checks wgpu registration generations, typed elements and resource lifetime.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void WgpuArgumentTablesTrackRegistrations()
     {
@@ -19,6 +20,7 @@ public sealed class ArgumentTableTests
     }
 
     /// <summary>Checks Vulkan registration generations, typed elements and resource lifetime.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void VulkanArgumentTablesTrackRegistrations()
     {

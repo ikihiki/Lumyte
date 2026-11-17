@@ -56,6 +56,7 @@ public sealed class MeshPipelineTests
     /// <summary>Executes a mesh PSO on explicitly enabled hardware and verifies rasterized pixels.</summary>
     /// <param name="useTask">Whether an amplification shader launches the mesh group.</param>
     /// <returns>The asynchronous GPU readback verification.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityTheory]
     [InlineData(false)]
     [InlineData(true)]

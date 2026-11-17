@@ -193,6 +193,7 @@ public sealed class SessionTests
 
     /// <summary>Executes real Vulkan drawing and readback for holes and ordered road passes.</summary>
     /// <returns>Actual GPU completion and analytic interior pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task VulkanMapPixelsAsync()
     {

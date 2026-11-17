@@ -150,6 +150,7 @@ public sealed class ComponentScreeningTests
     /// <summary>A shared deadline kills a process tree and preserves partial logs.</summary>
     /// <returns>Completion of deadline assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task DeadlineAndFailureAsync()
     {
         if (OperatingSystem.IsWindows())
@@ -183,6 +184,7 @@ public sealed class ComponentScreeningTests
     /// <summary>An exited parent cannot leave output draining beyond the shared deadline.</summary>
     /// <returns>Completion of retained-pipe assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task RetainedPipeDeadlineAsync()
     {
         if (OperatingSystem.IsWindows())
@@ -222,6 +224,7 @@ public sealed class ComponentScreeningTests
     [InlineData(-1)]
     [InlineData(0)]
     [InlineData(5)]
+    [Trait("Execution", "Integration")]
     public async Task FinallyReportAsync(double seconds)
     {
         using var temp = new ScreeningTemporaryDirectory();
@@ -254,6 +257,7 @@ public sealed class ComponentScreeningTests
     /// <summary>Exact two-commit diff includes deletion; snapshots exclude dirty sources and replace the whole harness.</summary>
     /// <returns>Completion of Git integration assertions.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ExactShaPlanAndSnapshotAsync()
     {
         using var temp = new ScreeningTemporaryDirectory();

@@ -12,6 +12,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Vulkan integer scissors preserve exact public-API pixels.</summary>
     /// <returns>The asynchronous checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanIntegerScissorPixelsAsync()
     {
@@ -21,6 +22,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Wgpu integer scissors preserve exact public-API pixels.</summary>
     /// <returns>The asynchronous checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuIntegerScissorPixelsAsync()
     {

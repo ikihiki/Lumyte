@@ -22,7 +22,7 @@ fi
 bash "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
 # Relocate extracted ICD paths through the same .NET build entry point.
-dotnet run --project "$repo_root/build" -c Release -- --target SetupDxc
-dotnet run --project "$repo_root/build" -c Release -- --target ConfigureLavapipe
+dotnet run --project "$repo_root/build" -c Release -- --target Setup --setup-tool dxc
+dotnet run --project "$repo_root/build" -c Release -- --target Setup --setup-tool lavapipe
 
 "$VCPKG_ROOT/vcpkg" version

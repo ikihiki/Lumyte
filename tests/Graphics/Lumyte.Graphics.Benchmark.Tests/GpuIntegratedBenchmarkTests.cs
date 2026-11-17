@@ -8,6 +8,7 @@ public sealed class GpuIntegratedBenchmarkTests
 {
     /// <summary>Verifies all twelve expanded benchmark cases and repeated slot reuse against analytic final pixels.</summary>
     /// <returns>Completion of the untimed hardware checks.</returns>
+    [Trait("Execution", "Gpu")]
     [IntegrationGpuFact]
     public async Task RectangleFramesCompleteAndMatchAnalyticPixelsAsync()
     {

@@ -81,6 +81,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks pending native waits, independent cancellation and disposal rejection before a controlled signal.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task PendingFenceWaitsUntilNativeSignalAsync()
     {
@@ -111,6 +112,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks concurrent public waits and reuse after an already canceled wait on a real device.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task SubmissionSupportsConcurrentWaitersAsync()
     {
@@ -162,6 +164,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks reverse caller wait order cannot block an earlier fence behind a later pending fence.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task ReverseWaitOrderDoesNotBlockEarlierSubmissionAsync()
     {
@@ -186,6 +189,7 @@ public sealed class VulkanCompletionTests
     }
 
     /// <summary>Checks status-only completion can dispose while a native wait is retiring.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void StatusOnlyCompletionSupportsDeviceDisposal()
     {
@@ -201,6 +205,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks a cached loss cannot turn into successful wait completion when the native fence later signals.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task ObservedLossWinsOverNativeSuccessAsync()
     {

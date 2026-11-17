@@ -32,6 +32,7 @@ public sealed class FinalRootGenerationTests
 
     /// <summary>Vulkan preserves independent roots, rejected selections, and explicit snapshots.</summary>
     /// <returns>The completed native readback checks in both validation modes.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanFinalRootGenerationsAsync()
     {
@@ -48,6 +49,7 @@ public sealed class FinalRootGenerationTests
 
     /// <summary>Vulkan skips repeated binds without losing distinct roots or A/B/A ownership.</summary>
     /// <returns>The completed compute readback oracle.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanRecordingReusePreservesOrderedRootsAsync()
     {
@@ -104,6 +106,7 @@ public sealed class FinalRootGenerationTests
 
     /// <summary>Wgpu preserves independent roots, rejected selections, and explicit snapshots.</summary>
     /// <returns>The completed native readback checks in both validation modes.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuFinalRootGenerationsAsync()
     {

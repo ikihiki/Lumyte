@@ -32,6 +32,7 @@ public sealed class ColorShaderTransferTests
 
     /// <summary>Both color encodings traverse valid native Vulkan copies with diagnostics disabled and enabled.</summary>
     /// <returns>The completed native copy checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanColorStorageCopiesRemainUnconvertedAsync()
     {
@@ -47,6 +48,7 @@ public sealed class ColorShaderTransferTests
 
     /// <summary>Both color encodings traverse valid native Wgpu copies with diagnostics disabled and enabled.</summary>
     /// <returns>The completed native copy checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuColorStorageCopiesRemainUnconvertedAsync()
     {

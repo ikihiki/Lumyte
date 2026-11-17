@@ -14,6 +14,7 @@ using static Lumyte.UI.Compose;
 namespace Lumyte.UI.Application.Tests;
 
 /// <summary>Checks standard EventSource profiling and retained resource lifecycle events.</summary>
+[Collection("Application profiling")]
 public sealed class ProfilingTests
 {
     /// <summary>Checks request/frame joins and repeated processing behind an asynchronous gate.</summary>
@@ -444,6 +445,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks real presenter terminal counters, owner relation and confirmed retirement.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task PresenterTerminalCountersAndOwnerRelationAreUniqueAsync()
     {

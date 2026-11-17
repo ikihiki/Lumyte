@@ -5,6 +5,7 @@ using Fallout.Common;
 
 namespace Lumyte.Build;
 
+[ConsoleHelp(Priority = 6)]
 internal sealed partial class Build : FalloutBuild
 {
     [Parameter("Solution to restore, compile and test.")]
@@ -50,39 +51,40 @@ internal sealed partial class Build : FalloutBuild
 
     private string NodeExecutable => Node ?? FindExecutable("node");
 
-    private Target Restore => definition => definition
-        .OnlyWhenDynamic(() => !NoRestore && !NoBuild)
-        .Executes(async () =>
+    private Target Compile => definition => definition.Executes(CompileAsync);
+
+    private async Task RestoreAsync()
+    {
+        if (NoRestore)
         {
-            var arguments = new List<string> { "restore", Project ?? BuildSolution };
-            if (Runtime is not null)
-            {
-                arguments.AddRange(["--runtime", Runtime]);
-            }
+            return;
+        }
 
-            await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
-        });
-
-    private Target Compile => definition => definition
-        .DependsOn(Restore)
-        .OnlyWhenDynamic(() => !NoBuild)
-        .Executes(async () =>
+        var arguments = new List<string> { "restore", Project ?? BuildSolution };
+        if (Runtime is not null)
         {
-            var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
-            if (Runtime is not null)
-            {
-                arguments.AddRange(["--runtime", Runtime]);
-            }
+            arguments.AddRange(["--runtime", Runtime]);
+        }
 
-            await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
-        });
+        await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
+    }
 
-    private Target Test => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
+    private async Task CompileAsync()
+    {
+        if (NoBuild)
         {
-            await DotNetAsync("test", Project ?? BuildSolution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
-        });
+            return;
+        }
+
+        await RestoreAsync().ConfigureAwait(false);
+        var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
+        if (Runtime is not null)
+        {
+            arguments.AddRange(["--runtime", Runtime]);
+        }
+
+        await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
+    }
 
     private Target Clean => definition => definition
         .Executes(async () =>
@@ -90,18 +92,14 @@ internal sealed partial class Build : FalloutBuild
             await DotNetAsync("clean", Project ?? BuildSolution, "--configuration", Configuration).ConfigureAwait(false);
         });
 
-    private Target Pack => definition => definition
-        .DependsOn(Compile)
-        .Executes(PackAsync);
-
-    private Target PreparePublish => definition => definition
-        .OnlyWhenDynamic(() => !NoBuild && (Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample").Contains("Browser", StringComparison.Ordinal))
-        .Executes(InstallWasmToolsAsync);
-
     private Target Publish => definition => definition
-        .DependsOn(PreparePublish)
         .Executes(async () =>
         {
+            if (!NoBuild && (Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample").Contains("Browser", StringComparison.Ordinal))
+            {
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+            }
+
             var arguments = new List<string> { "publish", Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample", "--configuration", Configuration };
             if (NoBuild)
             {
@@ -126,16 +124,6 @@ internal sealed partial class Build : FalloutBuild
             await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
         });
 
-    private Target CheckFormat => definition => definition
-        .Executes(async () =>
-        {
-            await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["Configuration"] = Configuration },
-                "format", Project ?? BuildSolution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
-        });
-
-    private Target Ci => definition => definition
-        .DependsOn(CiNative, CiBrowser, CiDistribution, TestAot, CiQuality, TestRust);
-
     public static int Main() => Execute<Build>(build => build.Compile);
 
     private async Task InstallWasmToolsAsync()
@@ -154,6 +142,11 @@ internal sealed partial class Build : FalloutBuild
             ["LUMYTE_BUILD_ASSEMBLY"] = Assembly.GetExecutingAssembly().Location,
             ["LumyteAgilityChannel"] = SelectedAgilityChannel,
         };
+        overrides.TryAdd("LUMYTE_LANE_CATALOG", null);
+        overrides.TryAdd("LUMYTE_LANE_INVENTORY", null);
+        overrides.TryAdd("LUMYTE_CPU_METHOD_PARALLELISM", null);
+        overrides.TryAdd("LUMYTE_TEST_SERIAL", null);
+
         // Browser project references can evaluate the same managed dependency
         // with distinct interop properties. Serialize publication to keep their
         // shared output paths from being written concurrently.

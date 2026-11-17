@@ -41,7 +41,7 @@ mise install --locked
 mise reshim
 mise run setup-native
 source "$script_dir/activate.sh"
-dotnet run --project build -c Release -- --target VerifySdk
+dotnet run --project build -c Release -- --target Verify --verify-scope sdk
 mise ls --current
 echo 'Setup complete. Run: source tools/setup/activate.sh'
 echo 'Then validate with: mise run verify'

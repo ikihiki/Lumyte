@@ -21,6 +21,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
     }
 
     /// <summary>Checks DWORD rounding and immutable command ownership without backend API exposure.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void RootPayloadUsesPhysicalPushLimit()
     {
@@ -41,6 +42,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
 
     /// <summary>Dispatches small roots and the actual native limit with diagnostics off and on.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task DispatchPushesSelectedPayloadAsync()
     {
@@ -64,6 +66,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
 
     /// <summary>Admission cannot end or retarget recording; direct pipeline disposal is caught before emission.</summary>
     /// <returns>The completed native guard checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task AdmissionCannotInvalidateNativeSelectionAsync()
     {
@@ -127,6 +130,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
 
     /// <summary>Rejects an oversized artifact before any Set call or native pipeline creation.</summary>
     /// <returns>The completed actual-shader boundary checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task ShaderCapacityIsCheckedBeforeNativeCreationAsync()
     {
@@ -152,6 +156,7 @@ public sealed class VulkanPushConstantTests(ITestOutputHelper output)
     }
 
     /// <summary>Checks all root names while excluding draw information and schema probes.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void ArtifactValidationChecksEveryApplicationRoot()
     {

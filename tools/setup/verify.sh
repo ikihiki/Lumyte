@@ -4,4 +4,4 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
 source "$script_dir/activate.sh"
 cd "$repo_root"
-dotnet run --project build -c Release -- --target VerifyEnvironment
+dotnet run --project build -c Release -- --target Verify --verify-scope environment

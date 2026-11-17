@@ -19,6 +19,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cpu:
+    name: CPU Tests (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
+      - name: Prepare build tools
+        run: bash tools/setup/setup.sh
+      - name: Run CPU tests
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4
+      - name: Upload CPU results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-cpu
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
+  gpu:
+    name: GPU (Linux x64, software Vulkan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Cache dependencies
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: native
+      - name: Prepare GPU build
+        run: |
+          bash tools/setup/setup.sh
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --host-only
+      - name: Native / cold-cache maximum drawing program
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          export LUMYTE_GRAPHICS_GPU_TESTS=1
+          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          # A unique empty driver cache prevents a previous shader binary from hiding the regression.
+          export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
+
+      - name: GPU backend and pixel contracts
+        run: |
+          source tools/setup/activate.sh
+          export LUMYTE_GRAPHICS_GPU_TESTS=1
+          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore --pipeline-validation
+      - name: Upload GPU results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-gpu
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
   linux:
     name: Linux (${{ matrix.arch }})
     strategy:
@@ -67,31 +130,15 @@ jobs:
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
 
-      - name: Native / cold-cache maximum drawing program
-        if: matrix.arch == 'x64'
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          export LUMYTE_GRAPHICS_GPU_TESTS=1
-          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-          # A unique empty driver cache prevents a previous shader binary from hiding the regression.
-          export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
-
-      - name: Run solution tests (Linux)
+      - name: Run integration tests (Linux)
         shell: bash
         run: |
           source tools/setup/activate.sh
           if [[ "${{ matrix.arch }}" == 'x64' ]]; then
-            export LUMYTE_GRAPHICS_GPU_TESTS=1
-            export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
             export LUMYTE_OPENAL_TESTS=1
             export ALSOFT_DRIVERS=null
           fi
-          dotnet run --project build -c Release --no-build --no-restore -- --target CiNative --configuration Release --host-only --no-build --no-restore
-          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
-            dotnet run --project build -c Release --no-build --no-restore -- --target PipelineBenchmark --configuration Release --no-build --no-restore
-          fi
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --configuration Release --host-only --no-build --no-restore
 
       - name: Upload native Parley package assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -119,20 +166,20 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y xvfb xauth
           fi
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestWindowing --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
 
       - name: Distribution / samples and packages
         if: matrix.arch == 'x64'
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --configuration Release --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
+          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --configuration Release --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
 
       - name: Verify diagnostic server and game processes
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestDiagnosticsProcesses --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-processes --configuration Release --no-build --no-restore
 
       - name: Verify server-hosted diagnostic UI
         if: matrix.os == 'ubuntu-24.04'
@@ -141,7 +188,7 @@ jobs:
           CHROME: /usr/bin/google-chrome
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestDiagnosticsUi --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-ui --configuration Release --no-build --no-restore
 
       - name: Generate diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -152,7 +199,7 @@ jobs:
           PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target DiagnosticGallery
+          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --distribution-output diagnostic-gallery
 
       - name: Upload diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -206,11 +253,12 @@ jobs:
           . ./tools/setup/activate.ps1
           Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
 
-      - name: Run solution tests (Windows)
+      - name: Run integration tests (Windows)
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CiNative', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'integration', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'gpu', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
 
       - name: Upload native Parley package assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -232,7 +280,7 @@ jobs:
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'PublishWindowSample', '--configuration', 'Release', '--no-build', '--no-restore')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'window-sample', '--configuration', 'Release', '--no-build', '--no-restore')
 
       - name: Distribution / Windows packages
         if: matrix.arch == 'x64'
@@ -240,7 +288,7 @@ jobs:
         run: |
           . ./tools/setup/activate.ps1
           foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
-            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Pack', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
+            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'packages', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
           }
 
   browser:
@@ -312,7 +360,7 @@ jobs:
           LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: "1"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser --configuration Release
 
       - name: Upload browser results
         if: always()
@@ -355,7 +403,7 @@ jobs:
         run: |
           source tools/setup/activate.sh
           # Each AOT publish restores and builds its own project references.
-          dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --configuration Release --host-only --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --configuration Release --host-only --no-build --no-restore
 
   format:
     name: Format (${{ matrix.platform }} x64)
@@ -409,18 +457,18 @@ jobs:
         shell: bash
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --configuration Release --host-only
+          dotnet run --project build -c Release --no-build --no-restore -- --target Quality --configuration Release --host-only
 
       - name: Quality / format (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CheckFormat', '--configuration', 'Release', '--host-only')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Quality', '--quality-scope', 'managed', '--configuration', 'Release', '--host-only')
 
   package:
     name: Parley native NuGet package
-    needs: [linux, windows, browser, aot, format]
+    needs: [cpu, gpu, linux, windows, browser, aot, format]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -443,14 +491,11 @@ jobs:
           name: parley-managed
           path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
 
-      - name: Restore package metadata
+      - name: Package validated runtime assets
         run: |
           # NuGet.config registers the local feed; it must exist before dotnet run restores the runner.
           mkdir -p artifacts/nuget
-          dotnet run --project build -c Release -- --target Restore --project src/Graphics/Lumyte.Graphics.Text.Parley
-
-      - name: Package validated runtime assets
-        run: dotnet run --project build -c Release --no-build --no-restore -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release -- --target Distribution --distribution-output packages --project src/Graphics/Lumyte.Graphics.Text.Parley --no-build --restore-metadata
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

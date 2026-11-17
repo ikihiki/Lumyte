@@ -78,6 +78,7 @@ public sealed class UnmanagedShaderTransferTests
 
     /// <summary>External numeric elements traverse explicit upload and readback on Vulkan.</summary>
     /// <returns>The completed transfer check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanExternalNumericElementsTransferWithoutGeneratorAsync()
     {
@@ -87,6 +88,7 @@ public sealed class UnmanagedShaderTransferTests
 
     /// <summary>External numeric elements traverse explicit upload and readback on Wgpu.</summary>
     /// <returns>The completed transfer check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuExternalNumericElementsTransferWithoutGeneratorAsync()
     {
@@ -96,6 +98,7 @@ public sealed class UnmanagedShaderTransferTests
 
     /// <summary>Enabled managed diagnostics permit a valid Vulkan upload and readback.</summary>
     /// <returns>The completed transfer check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanValidatedExternalElementsAsync()
     {
@@ -106,6 +109,7 @@ public sealed class UnmanagedShaderTransferTests
 
     /// <summary>Enabled managed diagnostics permit a valid Wgpu upload and readback.</summary>
     /// <returns>The completed transfer check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuValidatedExternalElementsAsync()
     {
