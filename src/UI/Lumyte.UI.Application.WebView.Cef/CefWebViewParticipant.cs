@@ -296,7 +296,14 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
                 throw new ArgumentOutOfRangeException(nameof(logicalSize));
             }
 
-            float scale = window.Windows.TryGetSnapshot(window.Window, out UiWindowSnapshot? snapshot) && snapshot is not null ? snapshot.Scale.X : 1;
+            // Hiding/detaching can follow presentation failure after its native window vanished.
+            // Only visible updates need a live snapshot; hidden updates retain the validated scale.
+            float scale = _scale;
+            if (visible)
+            {
+                scale = window.Windows.TryGetSnapshot(window.Window, out UiWindowSnapshot? snapshot) && snapshot is not null ? snapshot.Scale.X : 1;
+            }
+
             if (!float.IsFinite(scale) || scale <= 0)
             {
                 throw new InvalidOperationException("cef-invalid-window-scale");
