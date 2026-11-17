@@ -28,7 +28,7 @@ function fixture({ perf = false, rewritten = false, hanging = false } = {}) {
         queueMicrotask(() => { child.stderr.emit("data", Buffer.from("permission denied")); child.exitCode = 1; child.emit("exit", 1); });
         return child;
     };
-    const recorder = createBrowserProcessRecorder({ browserPid: 100, read, list, link: async () => "/chrome", launch,
+    const recorder = createBrowserProcessRecorder({ browserPid: 100, platform: "linux", read, list, link: async () => "/chrome", launch,
         environment: perf ? { LUMYTE_BROWSER_PERF: "/perf" } : {}, intervalMs: 1000000, maxSamples: 2, stopGraceMs: 5,
         signalGroup: (pid, signal) => {
             assert.equal(pid, 5678); signals.push(signal);
@@ -80,4 +80,22 @@ test("cleanup kills the entire owned group even when timeout exits before perf",
  await f.recorder.finish();
  assert.deepEqual(f.signals, ["SIGINT", "SIGKILL"]);
  assert.equal(f.groupAlive(), false);
+});
+
+test("CI perf discovery follows version-directory symlinks", { skip: process.platform !== "linux" }, async () => {
+ const { mkdtemp, mkdir, writeFile, symlink, rm, readFile } = await import("node:fs/promises");
+ const { tmpdir } = await import("node:os");
+ const { join } = await import("node:path");
+ const { execFileSync } = await import("node:child_process");
+ const root = await mkdtemp(join(tmpdir(), "lumyte-perf-layout-"));
+ try {
+  const actual = join(root, "linux-tools-version"), links = join(root, "linux-tools");
+  await mkdir(actual); await mkdir(links);
+  await writeFile(join(actual, "perf"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+  await symlink(actual, join(links, "version-generic"));
+  assert.equal(execFileSync("find", [links, "-type", "f", "-name", "perf", "-executable"], { encoding: "utf8" }), "");
+  assert.match(execFileSync("find", ["-L", links, "-type", "f", "-name", "perf", "-executable"], { encoding: "utf8" }), /version-generic\/perf/);
+  const workflow = await readFile(new URL("../../.github/workflows/composition.yml", import.meta.url), "utf8");
+  assert.match(workflow, /find -L \/usr\/lib\/linux-tools -type f/);
+ } finally { await rm(root, { recursive: true, force: true }); }
 });
