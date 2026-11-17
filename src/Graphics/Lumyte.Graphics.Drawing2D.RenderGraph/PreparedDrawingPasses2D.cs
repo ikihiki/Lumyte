@@ -13,6 +13,8 @@ public sealed class PreparedDrawingPasses2D : IDisposable
     {
     }
 
+    internal bool EnforcesWorkingBudget => _resources.OfType<IPreparedWorkingBudget2D>().Any(batch => batch.EnforcesWorkingBudget);
+
     /// <summary>Releases owned resources in reverse order; failed entries remain owned for a later retry.</summary>
     public void Dispose()
     {
@@ -44,6 +46,8 @@ public sealed class PreparedDrawingPasses2D : IDisposable
         _compositionUse?.Dispose();
         _compositionUse = null;
     }
+
+    internal long WorkingBytes(object excludedOwner) => DrawingWorkingBudget2D.OwnedBytes(_resources.OfType<IPreparedCommandBatch2D>(), excludedOwner);
 
     internal void HoldComposition(IDisposable? compositionUse) => _compositionUse = compositionUse;
 

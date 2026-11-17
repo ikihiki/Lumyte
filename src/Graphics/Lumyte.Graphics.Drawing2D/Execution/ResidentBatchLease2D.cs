@@ -7,7 +7,7 @@ namespace Lumyte.Graphics.Drawing2D;
 // generation) alive. The cache gate serializes lease counts and recording. Forks
 // require a completed immutable payload or a same-frame initialization alias;
 // alias recording separately proves its successful earlier command producer.
-internal sealed class ResidentBatchLease2D : IRetainedCommandBatch2D, IRetainedMemory2D
+internal sealed class ResidentBatchLease2D : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
     private readonly Owner _owner;
     private bool _released;
@@ -27,6 +27,8 @@ internal sealed class ResidentBatchLease2D : IRetainedCommandBatch2D, IRetainedM
     }
 
     public bool HasStableOwners => _owner.Batch.HasStableOwners;
+
+    public bool EnforcesWorkingBudget => _owner.Batch.EnforcesWorkingBudget;
 
     public long EstimatedBytes => checked(_owner.Batch.EstimatedBytes + 192);
 
