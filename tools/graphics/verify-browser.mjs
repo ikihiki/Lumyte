@@ -136,6 +136,7 @@ try {
     assert.match(result.report, /MaxBufferSize: [1-9]\d* bytes/);
     assert.match(result.report, /MaxTextureDimension2D: [1-9]\d* texels/);
     assert.match(result.report, /StorageBufferOffsetAlignment: [1-9]\d* bytes/);
+    assert.ok(result.report.includes("CoverageMembership path/stroke compute and exact pixel checks passed."));
     assert.match(result.report, /Buffer checks passed:/);
     assert.match(result.report, /Texture checks passed:/);
     assert.match(result.report, /Sampler checks passed:/);

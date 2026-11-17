@@ -31,6 +31,12 @@ public sealed class RenderPreparationContext2D
     /// <summary>Gets the target geometry normalized to Load.</summary>
     public DrawingTargetInfo2D Target { get; }
 
+    internal bool SupportsCanonicalRecords => _resources.SupportsCanonicalRecords;
+
+    internal bool ComputeShapeMembership { get; init; }
+
+    internal Pipelines.CoverageMembershipService2D? MembershipService { get; init; }
+
     internal ClipNormalizationCache2D Clips { get; }
 
     internal bool EnforceWorkingBudget { get; init; }
@@ -61,6 +67,15 @@ public sealed class RenderPreparationContext2D
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);
+
+    internal RenderPreparationContext2D WithShapeMembership(Pipelines.CoverageMembershipService2D service) => new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources)
+    {
+        ComputeShapeMembership = true,
+        MembershipService = service,
+        EnforceWorkingBudget = true,
+        MaxWorkingBytes = MaxWorkingBytes,
+        OtherWorkingBytes = OtherWorkingBytes,
+    };
 
     internal DrawRecordResources2D? RecordResources() => _resources.Records();
 

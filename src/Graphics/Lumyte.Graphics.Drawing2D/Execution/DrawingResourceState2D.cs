@@ -60,6 +60,22 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
+    internal bool SupportsCanonicalRecords
+    {
+        get
+        {
+            if (_resources is null)
+            {
+                return true;
+            }
+
+            GraphicsPipelineDesc pipeline = _resources.Pipeline.Desc;
+            return ReferenceEquals(pipeline.VertexShader.Artifact, DrawingShaders2D.Vertex)
+                && ReferenceEquals(pipeline.FragmentShader?.Artifact, DrawingShaders2D.Fragment)
+                && pipeline.TopologyClass == PrimitiveTopologyClass.Triangle && !pipeline.AlphaToCoverageEnable;
+        }
+    }
+
     public void Dispose()
     {
         lock (_gate)

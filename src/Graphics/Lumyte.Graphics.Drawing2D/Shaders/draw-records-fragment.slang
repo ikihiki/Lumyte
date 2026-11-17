@@ -1,4 +1,5 @@
 #include "lumyte.slang"
+#include "stroke-membership.slang"
 #ifndef LUMYTE_SMALL_PAINT_GRAPH
 #define LUMYTE_SMALL_PAINT_GRAPH 0
 #endif
@@ -31,6 +32,9 @@ struct ImagePaintData2D {
     uint Alpha; uint FieldMode; uint Reserved0; uint Reserved1;
     GpuTextureRef Texture; GpuSamplerRef Sampler;
 };
+#ifndef LUMYTE_SHAPE_MEMBERSHIP
+#define LUMYTE_SHAPE_MEMBERSHIP 0
+#endif
 struct DrawPageMetadata2D {
     GpuBufferRef<DrawDirectoryEntry2D> PaintDirectory;
     GpuBufferRef<DrawDirectoryEntry2D> ClipDirectory;
@@ -41,6 +45,9 @@ struct DrawPageMetadata2D {
 #endif
 #if LUMYTE_RECORD_IMAGES
     GpuBufferRef<ImagePaintData2D> ImagePaintData;
+#endif
+#if LUMYTE_SHAPE_MEMBERSHIP
+    GpuBufferRef<uint> ShapeMembership;
 #endif
 };
 struct DrawRangeArguments2D {
@@ -221,6 +228,17 @@ float pathCoverage(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
     }
     return n.Mode==0 ? (winding!=0 ? 1 : 0) : ((abs(winding)%2)!=0 ? 1 : 0);
 }
+float strokeCoverage(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
+{
+    for(uint i=0;i<n.Count;i++)
+    {
+        float2 a=numericLoad(data,n.First+i*3).xy;
+        float2 b=numericLoad(data,n.First+i*3+1).xy;
+        float2 c=numericLoad(data,n.First+i*3+2).xy;
+        if(strokeTriangleContains(a,b,c,p)) return 1;
+    }
+    return 0;
+}
 float meshCoverage(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
 {
     float result=0;
@@ -328,6 +346,9 @@ EvaluationNode imageNode(ImagePaintData2D image)
 float shapeCoverage(DrawRecord2D r,DrawPageMetadata2D page,MaskDescriptor2D mask,float2 pixel)
 {
     float2 p=float2(dot(r.InverseX.xyz,float3(pixel,1)),dot(r.InverseY.xyz,float3(pixel,1)));
+#if LUMYTE_SHAPE_MEMBERSHIP
+    if((r.Flags&1u)!=0) return 1;
+#endif
     if(r.Kind==9) return 1;
     if(r.Kind==1) return all(p>=r.Shape0.xy) && all(p<r.Shape0.xy+r.Shape0.zw) ? 1 : 0;
     if(r.Kind==2)
@@ -347,7 +368,7 @@ float shapeCoverage(DrawRecord2D r,DrawPageMetadata2D page,MaskDescriptor2D mask
             float2 center=floor(pixel)+0.5;
             p=float2(dot(r.InverseX.xyz,float3(center,1)),dot(r.InverseY.xyz,float3(center,1)));
         }
-        return meshCoverage(n,p,page.NumericPayload);
+        return r.Kind==5 ? strokeCoverage(n,p,page.NumericPayload) : meshCoverage(n,p,page.NumericPayload);
     }
     if(any(p<r.Shape0.xy) || any(p>=r.Shape0.xy+r.Shape0.zw)) return 0;
     float2 texel=mask.Source.xy+(p-r.Shape0.xy)*mask.Source.zw/r.Shape0.zw;
@@ -414,6 +435,25 @@ float4 leafValue(EvaluationNode n,float2 pixel,GpuBufferRef<float4> numeric)
     float2 p=float2(dot(n.T0.xyz,float3(pixel,1)),dot(n.T1.xyz,float3(pixel,1)));
     return n.Kind==9 ? imagePattern(n,p) : gradient(n,p,numeric);
 }
+EvaluationNode decodePaintNode(DrawPageMetadata2D page,uint ids[256],uint count,uint i,float2 origin)
+{
+    DrawDirectoryEntry2D entry=page.PaintDirectory.Load(min(ids[min(i,255)],page.PaintDirectory.Count-1));
+    EvaluationNode n=(EvaluationNode)0;
+    if(entry.Kind<=5 || entry.Kind==9)
+    {
+        n=paintLeaf(page,entry);
+        if(entry.Kind==9) n.First=findId(ids,count,n.First);
+    }
+    else
+    {
+        float4 cell=page.NumericPayload.Load(min(entry.PayloadOffset16,page.NumericPayload.Count-1)); uint4 data=asuint(cell);
+        n.First=findId(ids,count,data.x);
+        if(entry.Kind==6) { n.Kind=10; n.A=float4(cell.y,0,0,0); }
+        else if(entry.Kind==7) { n.Kind=12; n.Count=findId(ids,count,data.y); n.Mode=data.z; }
+        else if(entry.Kind==8) { n.Kind=18; n.Mode=clipBits(page,data.y,origin); }
+    }
+    return n;
+}
 float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,MaskDescriptor2D mask,uint outer,float2 origin,uint ids[256],uint count)
 {
     // These are register/private-memory evaluator views, not a GPU stream.
@@ -422,21 +462,7 @@ float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,
     for(uint i=1;i<count;i++)
     {
         uint at=min(i,uint(capacity-1));
-        DrawDirectoryEntry2D entry=page.PaintDirectory.Load(min(ids[min(i,255)],page.PaintDirectory.Count-1));
-        EvaluationNode n=(EvaluationNode)0;
-        if(entry.Kind<=5 || entry.Kind==9)
-        {
-            n=paintLeaf(page,entry);
-            if(entry.Kind==9) n.First=findId(ids,count,n.First);
-        }
-        else
-        {
-            float4 cell=page.NumericPayload.Load(min(entry.PayloadOffset16,page.NumericPayload.Count-1)); uint4 data=asuint(cell);
-            n.First=findId(ids,count,data.x);
-            if(entry.Kind==6) { n.Kind=10; n.A=float4(cell.y,0,0,0); }
-            else if(entry.Kind==7) { n.Kind=12; n.Count=findId(ids,count,data.y); n.Mode=data.z; }
-            else if(entry.Kind==8) { n.Kind=18; n.Mode=clipBits(page,data.y,origin); }
-        }
+        EvaluationNode n=decodePaintNode(page,ids,count,i,origin);
         nodes[at]=n;
     }
     float4 result=0;
@@ -461,6 +487,36 @@ float4 shadeGraph<let capacity:int>(DrawRecord2D record,DrawPageMetadata2D page,
             values[at]=value;
         }
         result+=shapeCoverage(record,page,mask,pixel)*values[min(count-1,uint(capacity-1))];
+    }
+    return result/16;
+}
+// Large closures retain every value but decode one immutable node at a time.
+// Avoid the large EvaluationNode[256] private aggregate without reducing the
+// admitted logical graph or changing correlated sample order or float math.
+float4 shadeGraphStreaming(DrawRecord2D record,DrawPageMetadata2D page,MaskDescriptor2D mask,uint outer,float2 origin,uint ids[256],uint count)
+{
+    float4 result=0;
+    for(uint sample=0;sample<16;sample++)
+    {
+        if(((outer>>sample)&1)==0) continue;
+        float2 pixel=origin+(float2(sample%4,sample/4)+0.5)/4;
+        float4 values[256]; values[0]=0;
+        for(uint i=1;i<count;i++)
+        {
+            EvaluationNode n=decodePaintNode(page,ids,count,i,origin);
+            float4 value=0;
+            if(n.Kind==10) value=values[min(n.First,255)]*n.A.x;
+            else if(n.Kind==12) value=composite(values[min(n.First,255)],values[min(n.Count,255)],n.Mode);
+            else if(n.Kind==18) value=((n.Mode>>sample)&1)!=0 ? values[min(n.First,255)] : float4(0);
+            else if(n.Kind==15)
+            {
+                float2 p=float2(dot(n.T0.xyz,float3(pixel,1)),dot(n.T1.xyz,float3(pixel,1)));
+                value=values[min(n.First,255)]*distanceFieldCoverage(n,p);
+            }
+            else value=leafValue(n,pixel,page.NumericPayload);
+            values[min(i,255)]=value;
+        }
+        result+=shapeCoverage(record,page,mask,pixel)*values[min(count-1,255)];
     }
     return result/16;
 }
@@ -492,6 +548,14 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
     if(root.Kind==0) return 0;
     float2 origin=floor(position.xy)-float2(asfloat(arguments.Reserved0),asfloat(arguments.Reserved1));
     uint outer=clipBits(page,record.ClipId,origin);
+#if LUMYTE_SHAPE_MEMBERSHIP
+    if((record.Flags&1u)!=0) {
+        uint2 point=uint2(origin-record.DeviceBounds.xy);
+        uint width=uint(record.DeviceBounds.z-record.DeviceBounds.x);
+        uint at=record.ExtraBits+point.y*width+point.x;
+        outer &= at<page.ShapeMembership.Count ? page.ShapeMembership.Load(at) : 0;
+    }
+#endif
     if(outer==0) return 0;
     MaskDescriptor2D mask=(MaskDescriptor2D)0;
     if(record.Kind==7 || record.Kind==8) mask=loadMask(page,record.PayloadOffset16/5);
@@ -514,7 +578,7 @@ float4 main(float4 position:SV_Position,nointerpolation uint index:TEXCOORD0):SV
 #else
     return count<=8 ? shadeGraph<8>(record,page,mask,outer,origin,ids,count)
         : count<=16 ? shadeGraph<16>(record,page,mask,outer,origin,ids,count)
-        : shadeGraph<256>(record,page,mask,outer,origin,ids,count);
+        : shadeGraphStreaming(record,page,mask,outer,origin,ids,count);
 #endif
 }
 

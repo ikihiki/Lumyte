@@ -35,6 +35,8 @@ internal static partial class Program
         List<string> reports = [];
         Record(CapsDisplay.Describe(device), reports);
         await GraphicsExercises.RunAsync(device, "suite", report => Record(report, reports));
+        await MembershipExercise.RunAsync(device);
+        Record("CoverageMembership path/stroke compute and exact pixel checks passed.", reports);
         using JSObject context = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no GPUCanvasContext.");
         using JSObject secondContext = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteSecondSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no second GPUCanvasContext.");
         using JSObject invalidContext = JSHost.GlobalThis.GetPropertyAsJSObject("lumyteInvalidSurfaceContext") ?? throw new InvalidOperationException("Test bootstrap supplied no invalid context.");
