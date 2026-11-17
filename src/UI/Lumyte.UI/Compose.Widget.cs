@@ -22,6 +22,8 @@ public static partial class Compose
 
             internal int MountedInstanceCount { get; set; }
 
+            internal bool HasBeenMounted { get; set; }
+
             internal bool HasDeclarationParent { get; set; }
 
             internal IReadOnlyList<WidgetChildren> ChildCollections => _childCollections is { } children ? children : Array.Empty<WidgetChildren>();

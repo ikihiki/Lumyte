@@ -104,6 +104,22 @@ internal sealed partial class Build
             await ToolAsync(scroll, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         });
 
+    private Target TestUiMenus => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Controls.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Windowing.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Menus.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
+    private Target TestUiMenusAot => definition => definition
+        .Executes(async () =>
+        {
+            string menus = await PublishAotSampleAsync("samples/Lumyte.UI.Menus.Sample", "ui-menus-aot", "Lumyte.UI.Menus.Sample", strict: true).ConfigureAwait(false);
+            await ToolAsync(menus, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
     private Target TestUiTabs => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>

@@ -37,6 +37,7 @@ internal static class SampleCatalog
         new("ui-controls", "UI: 選択と切替の設定画面 (font file が必要)", Native("headless", "UI.Controls")),
         new("ui-layout", "UI: 一回計測のFlex・Wrap・Grid", Native("headless", "UI.Layout")),
         new("ui-scroll", "UI: 入れ子のwheel・touch・表示位置 (font file が必要)", Native("headless", "UI.Scroll")),
+        new("ui-menus", "UI: メニュー・チェック・submenu・受動tooltip (font file が必要)", Native("headless", "UI.Menus")),
         new("ui-tabs", "UI: 保持タブ・折り畳み・編集 (font file が必要)", Native("headless", "UI.Tabs")),
         new("ui-collections", "UI: 項目・単一選択・非編集combo (font file が必要)", Native("headless", "UI.Collections")),
         new("ui-numeric", "UI: 数値・範囲・実editor入力 (font file が必要)", Native("headless", "UI.Numeric")),

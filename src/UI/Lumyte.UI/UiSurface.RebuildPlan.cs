@@ -23,6 +23,7 @@ public sealed partial class UiSurface
             }
 
             Root = changedRoot;
+            Root.HasIndependentContentOwnership = previous?.HasIndependentContentOwnership == true;
             _validators = validators?.ToArray() ?? [];
             _shared = shared;
             var pending = new System.Collections.Generic.Stack<(UiElement Element, Widget Next, UiElement? Parent, UiUseEnvironment? Context)>();
@@ -398,7 +399,7 @@ public sealed partial class UiSurface
 
         private void PrepareCollectionOwnership(UiProposedTree projection)
         {
-            if (!Root.HasCollectionItemOwnership && !Updates.Any(update => update.Content?.CollectionItemRoots is not null))
+            if (!Root.HasIndependentContentOwnership && !Root.HasCollectionItemOwnership && !Updates.Any(update => update.Content?.CollectionItemRoots is not null))
             {
                 return;
             }
@@ -449,6 +450,11 @@ public sealed partial class UiSurface
                 entries.UnionWith(roots);
             }
 
+            if (Root.HasIndependentContentOwnership)
+            {
+                entries.Add(Root);
+            }
+
             HasCollectionItemOwnership = entries.Count != 0;
             if (entries.Count == 0)
             {
@@ -467,7 +473,8 @@ public sealed partial class UiSurface
 
                     // An unchanged declaration is legal only on the very same mounted element.
                     int ownMount = element.IsMounted && ReferenceEquals(element.Widget, widget) ? 1 : 0;
-                    if (occurrences[widget] != 1 || widget.MountedInstanceCount != ownMount)
+                    if (occurrences[widget] != 1 || widget.MountedInstanceCount != ownMount
+                        || (Root.HasIndependentContentOwnership && ownMount == 0 && widget.HasBeenMounted))
                     {
                         throw new InvalidOperationException("Realized item descendants must be disjoint and cannot be mounted elsewhere.");
                     }

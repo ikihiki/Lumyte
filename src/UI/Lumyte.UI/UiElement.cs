@@ -36,6 +36,8 @@ public partial class UiElement
 
     internal bool HasCollectionItemOwnership { get; set; }
 
+    internal bool HasIndependentContentOwnership { get; set; }
+
     internal IReadOnlyList<UiElement> CollectionItemRoots { get; set; } = Array.Empty<UiElement>();
 
     internal bool UsesTreeValidation { get; set; }
@@ -55,6 +57,7 @@ public partial class UiElement
         }
 
         _widget = widget;
+        widget.HasBeenMounted = true;
         Surface = surface;
         if (AutomationId == default)
         {

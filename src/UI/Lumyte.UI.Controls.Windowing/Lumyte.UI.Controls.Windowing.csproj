@@ -3,6 +3,7 @@
   <ItemGroup>
     <None Update="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="../Lumyte.UI.Collections/Lumyte.UI.Collections.csproj" />
+    <ProjectReference Include="../Lumyte.UI.Controls/Lumyte.UI.Controls.csproj" />
     <ProjectReference Include="../Lumyte.UI.Windowing/Lumyte.UI.Windowing.csproj" />
   </ItemGroup>
 </Project>

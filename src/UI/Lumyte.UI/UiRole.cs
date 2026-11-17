@@ -77,4 +77,13 @@ public enum UiRole
 
     /// <summary>A collapsible content panel.</summary>
     Expander,
+
+    /// <summary>A command menu.</summary>
+    Menu,
+
+    /// <summary>A command, checked command or submenu anchor.</summary>
+    MenuItem,
+
+    /// <summary>A passive contextual tooltip with its anchor.</summary>
+    Tooltip,
 }

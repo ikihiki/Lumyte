@@ -42,6 +42,8 @@ public sealed class UiPopupRequest
 
     internal UiSurface? PreparedSurface { get; set; }
 
+    internal Widget? PreparedContent { get; set; }
+
     internal UiElement Anchor { get; set; }
 
     internal Func<UiElement?>? ResolveAnchor { get; set; }
