@@ -18,7 +18,7 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
 
     internal bool Shareable => selectedBuiltins && batches.All(batch => batch is PreparedRecordBatch2D);
 
-    internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D);
+    internal bool Reusable => (selectedBuiltins || batches.All(batch => batch is PreparedSparseStripBatch2D)) && batches.All(batch => batch is IRetainedCommandBatch2D);
 
     public void AccountMemory(Dictionary<object, long> owners)
     {
@@ -103,7 +103,7 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
                 commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
             }
 
-            if (selectedBuiltins && batches[i] is IRetainedCommandBatch2D retained)
+            if ((selectedBuiltins || batches[i] is PreparedSparseStripBatch2D) && batches[i] is IRetainedCommandBatch2D retained)
             {
                 if (retained is PreparedRecordBatch2D records)
                 {
