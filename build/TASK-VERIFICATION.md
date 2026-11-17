@@ -3,7 +3,23 @@
 Verified on Linux x64 using the pinned SDK/native paths from
 /tmp/lumyte-lanes-env.sh; no host configuration was changed.
 
-## Current: CI audit repairs
+## Current: Windows help inventory line endings
+
+CI run 44191811812 at fc4a298e confirms the redirected-help handle exception
+is gone, and Linux integration/GPU logs contain zero unmatched-test warnings.
+Windows x64 and ARM64 instead exposed the inventory test parser: unpadded
+target names ending in CRLF were missed by its multiline regular expression
+(18 expected, four counted). Normalize platform line endings before parsing;
+keep the real help exit-zero and exact target-count assertions unchanged.
+
+The new LF/CRLF/CR regression was executed against the old parser: LF passed
+and CRLF/CR failed. With normalization, the complete orchestration suite passes
+**265 tests, zero failures/skips** (/tmp/lumyte-crlf-after-full.log). The original
+failing regression is retained in /tmp/lumyte-crlf-before.log. Release C# format
+verification and git diff --check pass. Actual Windows and downstream package
+execution remain for the next exact-head CI run.
+
+## Historical: initial CI audit repairs
 
 Fallout 10.5.0 release source still reads Console.BufferWidth in redirected help,
 so this repair retains the locked 10.4.0 dependency. A supported initialization

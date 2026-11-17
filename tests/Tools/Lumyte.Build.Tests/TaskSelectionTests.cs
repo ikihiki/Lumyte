@@ -18,9 +18,7 @@ public sealed class TaskSelectionTests
         using var fixture = new BuildFixture();
         BuildFixture.ProcessResult result = await fixture.RunAsync(target, "--help");
         Assert.True(result.ExitCode == 0, result.Output + result.Error);
-        string targets = result.Output.Split("Parameters", StringSplitOptions.None)[0];
-        string[] names = System.Text.RegularExpressions.Regex.Matches(targets, @"^  ([A-Za-z][A-Za-z0-9]+)(?: +|$)", System.Text.RegularExpressions.RegexOptions.Multiline)
-            .Select(match => match.Groups[1].Value).ToArray();
+        string[] names = ReadTargetNames(result.Output);
         Assert.Equal(18, names.Length);
         Assert.Equal(["Test"], names.Where(name => name.StartsWith("Test", StringComparison.Ordinal)));
         Assert.DoesNotContain(names, name => name.StartsWith("Ci", StringComparison.Ordinal) && name != "Ci");
@@ -37,6 +35,18 @@ public sealed class TaskSelectionTests
         Assert.DoesNotContain("NotRun", result.Output, StringComparison.Ordinal);
         Assert.DoesNotContain("invalid", result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.False(Directory.Exists(fixture.Log));
+    }
+
+    /// <summary>Target inventory parsing accepts every platform line ending without losing unpadded names.</summary>
+    /// <param name="lineEnding">The line ending emitted by the child process.</param>
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    public void TargetInventoryAcceptsPlatformLineEndings(string lineEnding)
+    {
+        string output = string.Join(lineEnding, "Targets (with their direct dependencies):", string.Empty, "  Compile (default)", "  Test", "  Quality", "Parameters:", "  NotATarget");
+        Assert.Equal(["Compile", "Test", "Quality"], ReadTargetNames(output));
     }
 
     /// <summary>Invalid or incompatible selectors fail before restore, build, or test launches.</summary>
@@ -131,5 +141,12 @@ public sealed class TaskSelectionTests
         Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", args);
         Assert.Contains("-p:IlcTreatWarningsAsErrors=true", args);
         Assert.Contains("-m:1", args);
+    }
+
+    private static string[] ReadTargetNames(string output)
+    {
+        string targets = output.ReplaceLineEndings("\n").Split("Parameters", StringSplitOptions.None)[0];
+        return System.Text.RegularExpressions.Regex.Matches(targets, @"^  ([A-Za-z][A-Za-z0-9]+)(?: +|$)", System.Text.RegularExpressions.RegexOptions.Multiline)
+            .Select(match => match.Groups[1].Value).ToArray();
     }
 }
