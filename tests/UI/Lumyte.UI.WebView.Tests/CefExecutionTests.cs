@@ -13,40 +13,74 @@ public sealed class CefExecutionTests
     [Fact]
     public async Task IoResumesThroughExecutionSchedulerAsync()
     {
-        var scope = new CefExecutionScope();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         string pipeName = "lumyte-cef-test-" + Guid.NewGuid().ToString("N");
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var connectionDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         using var reader = new NamedPipeServerStream(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         using var writer = new NamedPipeClientStream(".", pipeName, PipeDirection.Out, PipeOptions.Asynchronous);
-        Task connect = writer.ConnectAsync(deadline.Token);
-        await reader.WaitForConnectionAsync(deadline.Token);
+        Task connect = writer.ConnectAsync(connectionDeadline.Token);
+        await reader.WaitForConnectionAsync(connectionDeadline.Token);
         await connect;
+
+        // Preparation and startup require the same physical host thread. Pipe connection
+        // can resume on another thread, even when the caller has a synchronization context.
+        var scope = new CefExecutionScope();
+        using var stop = new CancellationTokenSource();
         SynchronizationContext? caller = SynchronizationContext.Current;
         SynchronizationContext? workflow = null;
         Task root = scope.ExecuteAsync(
             async () =>
             {
                 workflow = SynchronizationContext.Current;
-                entered.SetResult();
                 byte[] packet = new byte[1];
-                await reader.ReadExactlyAsync(packet, deadline.Token);
+                ValueTask read = reader.ReadExactlyAsync(packet, stop.Token);
+                Assert.False(read.IsCompleted);
+                entered.SetResult();
+                await read;
                 Assert.Equal(42, packet[0]);
                 Assert.NotNull(workflow);
                 Assert.NotSame(caller, workflow);
                 Assert.Same(workflow, SynchronizationContext.Current);
             },
-            CancellationToken.None);
+            stop.Token);
+        Exception? failure = null;
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Observe a startup/workflow fault immediately rather than hiding it behind
+            // the entry timeout (and then an expired peer-write cancellation token).
+            await await Task.WhenAny(entered.Task, root).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(entered.Task.IsCompletedSuccessfully);
             Assert.False(root.IsCompleted);
+            using var writeDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await writer.WriteAsync(new byte[] { 42 }, writeDeadline.Token);
+            await root.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception error)
+        {
+            failure = error;
+            throw;
         }
         finally
         {
-            await writer.WriteAsync(new byte[] { 42 }, deadline.Token);
-            await root.WaitAsync(TimeSpan.FromSeconds(5));
-            await scope.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            stop.Cancel();
+            try
+            {
+                try
+                {
+                    await root.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                {
+                }
+                finally
+                {
+                    await scope.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                }
+            }
+            catch (Exception) when (failure is not null)
+            {
+                // Cleanup must still join and stop, but never replace the original failure.
+            }
         }
     }
 
