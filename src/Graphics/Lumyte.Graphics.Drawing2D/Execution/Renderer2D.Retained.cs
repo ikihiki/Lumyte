@@ -161,6 +161,7 @@ public sealed partial class Renderer2D
                 RetainedDrawingCache2D.AssetList assets = frame.Assets;
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
+                using IDisposable workingBytesUse = plan.HoldWorkingBytesSources();
                 var context = new RenderPreparationContext2D(_device, info, _resources, plan) { EnforceWorkingBudget = _retained.ResidentInstancesEnabled, MaxWorkingBytes = _retained.MaxWorkingBytes };
 
                 // Capture only immutable page/property values. The source and its mutable lease
