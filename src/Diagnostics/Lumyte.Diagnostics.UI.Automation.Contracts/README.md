@@ -19,3 +19,7 @@ schemaVersion 1–3 の snapshot 応答は従来の18 node fieldだけを返し�
 ## Schema 6の数値入力
 
 set-valueは有限なnumericValue、set-rangeは有限で順序付きのnumericValue/numericUpperを要求する。numeric情報は実数の範囲、step、scalarまたは二値、本文を含まない妥当性を持つ。新field・role・commandはv6だけで使用でき、v1〜v3の18項目、v4/v5の23項目のsnapshotは専用projectionで固定する。既存Valueの0〜1契約は変更しない。
+
+## 項目roleの版
+
+schemaVersion 7はlistbox／listitem／comboboxの検索を追加します。通常入力に接続されたListBoxは既存select-optionを使い、ComboBoxはclick／pressと独立popup pageを使います。新しいfieldと数値commandを追加しません。v1–3の18、v4–5の23、v6の24 node fieldは保持し、新roleをnoneへ投影します。v6の数値情報は変更しません。

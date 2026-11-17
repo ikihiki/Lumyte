@@ -88,6 +88,23 @@ public sealed class RepositoryBuildTests
         Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
     }
 
+    /// <summary>The collection native gate enforces trimming and compiler warnings.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task CollectionsAotGateUsesStrictPublishAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiCollectionsAot", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        JsonElement publish = Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("samples/Lumyte.UI.Collections.Sample", Arguments(publish));
+        Assert.Contains("-p:PublishAot=true", Arguments(publish));
+        Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
+    }
+
     /// <summary>Compilation restores once, preserves path boundaries and uses the requested application configuration.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]

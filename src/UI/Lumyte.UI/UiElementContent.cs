@@ -20,6 +20,8 @@ public sealed class UiElementContent
     /// <summary>Gets the proposed content configuration; its mounted instance belongs to the element.</summary>
     public Widget Content { get; }
 
+    internal IReadOnlyList<Widget>? CollectionItemRoots { get; init; }
+
     internal Action? Commit { get; }
 
     internal SignalReadSet? Reads { get; init; }
