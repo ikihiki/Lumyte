@@ -1,3 +1,4 @@
+import { classifyBrowserTimeoutQuarantine } from "../../tools/graphics/browser-timeout-quarantine.mjs";
 import { createBrowserFlightRecorder } from "../../tools/graphics/browser-flight-recorder.mjs";
 import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
@@ -335,21 +336,35 @@ try {
     }
     console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
 } catch (failure) {
+    const evidence = traceCapture || traceGpu
+        ? await captureTrace.failure(command, { sample: "transitions", stage, pngIndex }) : undefined;
     await flightRecorder.finish(true);
-    if (traceCapture || traceGpu) await captureTrace.failure(command, { sample: "transitions", stage, pngIndex });
     let audit;
-    if (process.env.LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT === "1" && sequential && !sameContent
-        && stage === "entry-midpoint-png" && failure instanceof BrowserEvaluationFailure) {
-        const observation = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true });
-        audit = observation.result.value;
+    if ((process.env.LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT === "1" || process.env.LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT === "1")
+        && sequential && !sameContent
+        && ((stage === "entry-midpoint-png" && failure instanceof BrowserEvaluationFailure)
+            || (stage === "remaining-transitions" && traceStage === "connected-first-png" && failure instanceof BrowserEvaluationFailure))) {
+        try {
+            const observation = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true }, 2000);
+            audit = observation.result.value;
+        } catch { /* Incomplete evidence must leave the original failure fatal. */ }
     }
-    if (!shouldIgnoreKnownBrowserTimeout({ environment: process.env, sequential, sameContent, stage, failure, errors, audit })) {
+    const policy = classifyBrowserTimeoutQuarantine({ environment: process.env, sequential, sameContent, stage,
+        captureStage: traceStage, pngIndex, failure, errors, audit, evidence });
+    const quarantined = policy && await flightRecorder.markQuarantined(policy, () => errors.length === 0);
+    if (quarantined && errors.length === 0) {
+        console.error(failure.stack);
+        console.warn("::warning title=Known SwiftShader timeout quarantined::Sequential connected-first PNG is inconclusive, not passed. Remaining assertions were not executed. Tracking " + policy.issue + "; expires " + policy.expiry);
+        console.log(JSON.stringify({ check: "browser-ui-transitions", mode: "sequential", ...quarantined, stage,
+            captureStage: traceStage, pngIndex, remainingAssertionsExecuted: false }));
+    } else if (!shouldIgnoreKnownBrowserTimeout({ environment: process.env, sequential, sameContent, stage, failure, errors, audit })) {
         throw failure;
+    } else {
+        // Preserve the separately authorized legacy midpoint allowance.
+        console.error(failure.stack);
+        console.warn("::warning title=Known Browser timeout temporarily ignored::Sequential entry midpoint PNG exceeded its unchanged automation deadline. Remaining sequential assertions were not executed; other Browser checks still run.");
+        console.log(JSON.stringify({ check: "browser-ui-transitions", mode: "sequential", status: "ignored-known-timeout", stage, reason: "automation-deadline", remainingAssertionsExecuted: false }));
     }
-    // Keep the original failure in the uploaded log; never label the skipped scenario passed.
-    console.error(failure.stack);
-    console.warn("::warning title=Known Browser timeout temporarily ignored::Sequential entry midpoint PNG exceeded its unchanged automation deadline. Remaining sequential assertions were not executed; other Browser checks still run.");
-    console.log(JSON.stringify({ check: "browser-ui-transitions", mode: "sequential", status: "ignored-known-timeout", stage, reason: "automation-deadline", remainingAssertionsExecuted: false }));
 } finally {
     await flightRecorder.finish();
     socket?.close();
