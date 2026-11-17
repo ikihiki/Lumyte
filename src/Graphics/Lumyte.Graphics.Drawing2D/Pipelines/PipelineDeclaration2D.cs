@@ -6,7 +6,7 @@ public abstract class PipelineDeclaration2D
     /// <summary>Gets this passive identity.</summary>
     public PipelineDeclaration2D Declaration => this;
 
-    /// <summary>Gets an optional graph-local diagnostic name.</summary>
+    /// <summary>Gets an optional diagnostic label; it never controls identity or sharing.</summary>
     public virtual string? Name => null;
 
     /// <summary>Gets declared processor metadata without creating an instance.</summary>
@@ -14,32 +14,15 @@ public abstract class PipelineDeclaration2D
 
     internal virtual bool OwnsProcessor => true;
 
-    internal static IReadOnlySet<PipelineDeclaration2D> ValidateGraph(IEnumerable<PipelineDeclaration2D> roots)
+    internal static PipelineOccurrence2D[] CaptureGraph(IEnumerable<PipelineDeclaration2D> roots, string kind)
     {
-        var visited = new HashSet<PipelineDeclaration2D>(ReferenceEqualityComparer.Instance);
         var active = new HashSet<PipelineDeclaration2D>(ReferenceEqualityComparer.Instance);
-        var names = new Dictionary<string, PipelineDeclaration2D>(StringComparer.Ordinal);
-        void Visit(PipelineDeclaration2D declaration)
+        PipelineOccurrence2D Visit(PipelineDeclaration2D declaration, string path)
         {
             ArgumentNullException.ThrowIfNull(declaration);
             if (active.Contains(declaration))
             {
                 throw new ArgumentException("Recursive passive child topology is not supported.");
-            }
-
-            if (!visited.Add(declaration))
-            {
-                return;
-            }
-
-            if (declaration.Name is string name)
-            {
-                if (string.IsNullOrWhiteSpace(name) || (names.TryGetValue(name, out PipelineDeclaration2D? previous) && !ReferenceEquals(previous, declaration)))
-                {
-                    throw new ArgumentException("Conflicting graph-local declaration identities.");
-                }
-
-                names[name] = declaration;
             }
 
             Type declarationType = declaration.GetType();
@@ -99,20 +82,12 @@ public abstract class PipelineDeclaration2D
             }
 
             active.Add(declaration);
-            foreach (PipelineDeclaration2D child in declaration.GetChildDeclarations())
-            {
-                Visit(child);
-            }
-
+            PipelineOccurrence2D[] children = declaration.GetChildDeclarations().Select((child, index) => Visit(child, $"{path}/{index}")).ToArray();
             active.Remove(declaration);
+            return new(declaration, path, children);
         }
 
-        foreach (PipelineDeclaration2D root in roots)
-        {
-            Visit(root);
-        }
-
-        return visited;
+        return roots.Select((root, index) => Visit(root, $"{kind}/{index}")).ToArray();
     }
 
     internal object CreateInstance(PipelineBuildContext2D context) => CreateElement(context) ?? throw new InvalidOperationException("CreateElement returned null.");

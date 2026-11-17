@@ -139,9 +139,9 @@ public sealed partial class CompositionMigrationTests
         Assert.Same(secondDevice, two.Device);
     }
 
-    /// <summary>Checks a custom CreateElement cannot return processing state already adopted by another build.</summary>
+    /// <summary>Checks service factories cannot return owned dependencies already adopted by another build.</summary>
     [Fact]
-    public void ReusedOwnedProcessorIsRejectedWithoutDisposingLiveFirstBuild()
+    public void ReusedOwnedServiceIsRejectedWithoutDisposingLiveFirstBuild()
     {
         var instance = new SharedBackend();
         var recipe = new SharedDeclaration<SharedBackend>("not-fresh", _ => instance);
@@ -246,6 +246,8 @@ public sealed partial class CompositionMigrationTests
 
         Assert.NotNull(captured);
         Assert.Throws<InvalidOperationException>(() => captured.GetProcessor<IFillRectRenderer2D>(recipe));
+        Assert.Throws<InvalidOperationException>(() => captured.GetChild<IFillRectRenderer2D>(0));
+        Assert.Throws<InvalidOperationException>(() => captured.GetSharedService(new OccurrenceServiceRequest(1, () => { })));
         Assert.Equal(1, captures);
     }
 
@@ -273,12 +275,12 @@ public sealed partial class CompositionMigrationTests
         Assert.Equal(1, caller.Disposals);
     }
 
-    /// <summary>Checks graph-local name conflicts through passive choices before creating any runtime processor.</summary>
+    /// <summary>Checks diagnostic labels are non-unique while an explicitly equal semantic request shares its service.</summary>
     /// <param name="rootConflict">Whether the conflict joins a choice child with another root slot.</param>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void NestedDeclarationConflictsRejectBeforeCreation(bool rootConflict)
+    public void DiagnosticNamesDoNotMergeOrRejectPlacements(bool rootConflict)
     {
         int creates = 0;
         SharedBackend Create()
@@ -298,15 +300,15 @@ public sealed partial class CompositionMigrationTests
             _ = declaration[Renderer.FillCircle()[Array.Empty<IPipelineDeclaration2D<FillCircleCommand2D>>()], Renderer.FillCircle()[first]];
         }
 
-        Assert.Throws<ArgumentException>(() => declaration.DescribeDataflow());
+        Assert.Equal(11, declaration.DescribeDataflow().Count);
         Assert.Equal(0, creates);
         using RendererBuildHost2D host = declaration.CreateHost();
         var device = new ProfilingDevice();
-        Assert.Throws<ArgumentException>(() => host.BuildRenderer(device, Resources(device), null, null));
-        Assert.Equal(0, creates);
+        using IRenderer2D renderer = host.BuildRenderer(device, Resources(device), null, null);
+        Assert.Equal(1, creates);
     }
 
-    private static Definitions.Renderer StandardDefinition() => Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D())[
+    private static Definitions.Renderer StandardDefinition() => Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: RetentionLimits(maxFramesInFlight: 3, maxCachedAssets: 512, maxCachedBytes: 64 * 1024 * 1024))[
         Renderer.FillRect()[StandardFillRect()],
         Renderer.FillRoundedRect()[StandardFillRoundedRect()],
         Renderer.FillCircle()[StandardFillCircle()],
@@ -321,12 +323,12 @@ public sealed partial class CompositionMigrationTests
 
     private sealed class ContextRectangleRecipe(Action<PipelineBuildContext2D> capture) : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
     {
-        public override Type ProcessorType => typeof(SharedBackend);
+        public override Type ProcessorType => typeof(ServiceProcessor<SharedBackend>);
 
         protected override object CreateElement(PipelineBuildContext2D context)
         {
             capture(context);
-            return new SharedBackend();
+            return new ServiceProcessor<SharedBackend>(context.GetSharedService(new TestServiceRequest<SharedBackend>("context-test", _ => new SharedBackend())));
         }
     }
 

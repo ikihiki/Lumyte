@@ -2,13 +2,15 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
-internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? externalOwner, IReadOnlySet<PipelineDeclaration2D> declarations) : IDisposable
+internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? externalOwner) : IDisposable
 {
-    private readonly Dictionary<object, object> _instances = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<PipelineOccurrence2D, object> _instances = new(ReferenceEqualityComparer.Instance);
     private readonly List<IDisposable> _owned = [];
-    private readonly HashSet<PipelineDeclaration2D> _creating = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<PipelineOccurrence2D> _creating = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<IDisposable> _ownedIdentities = new(ReferenceEqualityComparer.Instance);
 
+    private readonly Dictionary<(Type Service, string Kind, object Options), (Type Factory, int Version, PipelineSharedService2D Value)> _services = [];
+    private readonly HashSet<(Type Service, string Kind, object Options)> _creatingServices = [];
     private bool _committed;
 
     public void Dispose()
@@ -20,34 +22,83 @@ internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? 
             _owned.RemoveAt(last);
         }
 
+        if (!_committed && externalOwner is PipelineSharedService2D externalService)
+        {
+            externalService.ReleaseReservation(this);
+        }
+
         if (!_committed && externalOwner is PipelineElement2D externalElement)
         {
             externalElement.ReleaseReservation(this);
         }
     }
 
-    internal void Commit() => _committed = true;
-
-    internal object Resolve(PipelineDeclaration2D declaration)
+    internal TService GetService<TService, TOptions>(PipelineServiceRequest2D<TService, TOptions> request, PipelineBuildContext2D context)
+        where TService : PipelineSharedService2D
+        where TOptions : notnull
     {
-        if (!declarations.Contains(declaration))
+        (Type Service, string Kind, object Options) key = (typeof(TService), request.Kind, (object)request.Options);
+        if (_services.TryGetValue(key, out (Type Factory, int Version, PipelineSharedService2D Value) existing))
         {
-            throw new ArgumentException("Child resolution requires an explicitly declared passive child topology.");
+            if (existing.Factory != request.GetType() || existing.Version != request.Version)
+            {
+                throw new ArgumentException("Incompatible factories requested the same semantic service identity.");
+            }
+
+            return (TService)existing.Value;
         }
 
-        if (_instances.TryGetValue(declaration, out object? existing))
+        if (!_creatingServices.Add(key))
+        {
+            throw new ArgumentException("Recursive shared service dependency.");
+        }
+
+        try
+        {
+            PipelineBuildContext2D callback = context.CreateCallbackContext();
+            TService service;
+            try
+            {
+                service = request.CreateInstance(callback) ?? throw new InvalidOperationException("Service factory returned null.");
+            }
+            finally
+            {
+                callback.Close();
+            }
+
+            service.Adopt(this);
+            if (!ReferenceEquals(service, externalOwner) && _ownedIdentities.Add(service))
+            {
+                _owned.Add(service);
+            }
+
+            _services.Add(key, (request.GetType(), request.Version, service));
+            return service;
+        }
+        finally
+        {
+            _creatingServices.Remove(key);
+        }
+    }
+
+    internal void Commit() => _committed = true;
+
+    internal object Resolve(PipelineOccurrence2D occurrence)
+    {
+        PipelineDeclaration2D declaration = occurrence.Declaration;
+        if (_instances.TryGetValue(occurrence, out object? existing))
         {
             return existing;
         }
 
-        if (!_creating.Add(declaration))
+        if (!_creating.Add(occurrence))
         {
             throw new ArgumentException("Recursive pipeline declaration construction is not supported.");
         }
 
         try
         {
-            var context = new PipelineBuildContext2D(device, this);
+            var context = new PipelineBuildContext2D(device, this, occurrence);
             object result;
             try
             {
@@ -58,9 +109,14 @@ internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? 
                 context.Close();
             }
 
+            if (declaration.OwnsProcessor && result is PipelineSharedService2D service)
+            {
+                service.Adopt(this);
+            }
+
             if (declaration.OwnsProcessor && result is PipelineElement2D element)
             {
-                element.Adopt(declaration, this);
+                element.Adopt(declaration, this, occurrence);
             }
 
             if (declaration.OwnsProcessor && result is IDisposable owner && !ReferenceEquals(owner, externalOwner) && _ownedIdentities.Add(owner))
@@ -69,12 +125,12 @@ internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? 
             }
 
             declaration.ValidateInstance(result);
-            _instances.Add(declaration, result);
+            _instances.Add(occurrence, result);
             return result;
         }
         finally
         {
-            _creating.Remove(declaration);
+            _creating.Remove(occurrence);
         }
     }
 }

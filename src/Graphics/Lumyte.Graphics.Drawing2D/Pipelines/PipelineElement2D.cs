@@ -10,17 +10,20 @@ public abstract class PipelineElement2D
 
     private object? BuildIdentity { get; set; }
 
-    internal void Adopt(PipelineDeclaration2D declaration, object buildIdentity)
+    private object? OccurrenceIdentity { get; set; }
+
+    internal void Adopt(PipelineDeclaration2D declaration, object buildIdentity, object occurrenceIdentity)
     {
         lock (_adoptionGate)
         {
-            if (BuildIdentity is not null && !ReferenceEquals(BuildIdentity, buildIdentity))
+            if (BuildIdentity is not null && (!ReferenceEquals(BuildIdentity, buildIdentity) || !ReferenceEquals(OccurrenceIdentity, occurrenceIdentity)))
             {
-                throw new InvalidOperationException("CreateElement must return a fresh processor, not a processor already adopted by another build.");
+                throw new InvalidOperationException("CreateElement must return a fresh processor, not a processor already adopted by another placement or build.");
             }
 
             Declaration ??= declaration;
             BuildIdentity = buildIdentity;
+            OccurrenceIdentity = occurrenceIdentity;
         }
     }
 
@@ -31,6 +34,7 @@ public abstract class PipelineElement2D
             if (ReferenceEquals(BuildIdentity, buildIdentity))
             {
                 BuildIdentity = null;
+                OccurrenceIdentity = null;
                 Declaration = null;
             }
         }

@@ -176,7 +176,7 @@ public sealed partial class CompositionMigrationTests
         var one = new SharedDeclaration<SharedBackend>("same", _ => Create());
         var two = new SharedDeclaration<SharedBackend>("same", _ => Create());
         RendererBuildHost2D conflict = DefineShared(one, two);
-        Assert.Throws<ArgumentException>(() => conflict.DescribeDataflow(device, Resources(device)));
+        Assert.Equal(11, conflict.DescribeDataflow(device, Resources(device)).Count);
         Assert.Equal(0, creates);
         Assert.Throws<ArgumentException>(() => valid.BuildRenderer(device, Resources(new ProfilingDevice()), null, null));
     }
@@ -582,7 +582,7 @@ public sealed partial class CompositionMigrationTests
         }
     }
 
-    private sealed class SharedBackend : PipelineElement2D, IFillRectRenderer2D, IFillRoundedRectRenderer2D, IFillCircleRenderer2D, IDrawLineRenderer2D, IFillPathRenderer2D, IStrokePathRenderer2D, IDrawImageRenderer2D, IDrawCoverageMaskRenderer2D, IDrawDistanceFieldRenderer2D, IDrawMeshRenderer2D, IDrawPaintGraphRenderer2D, IDisposable
+    private sealed class SharedBackend : PipelineSharedService2D, IFillRectRenderer2D, IFillRoundedRectRenderer2D, IFillCircleRenderer2D, IDrawLineRenderer2D, IFillPathRenderer2D, IStrokePathRenderer2D, IDrawImageRenderer2D, IDrawCoverageMaskRenderer2D, IDrawDistanceFieldRenderer2D, IDrawMeshRenderer2D, IDrawPaintGraphRenderer2D, IDisposable
     {
         private readonly DispatchRenderers _backend = new();
 
@@ -598,7 +598,7 @@ public sealed partial class CompositionMigrationTests
 
         internal int DisposalAttempts { get; private set; }
 
-        public void Dispose()
+        public override void Dispose()
         {
             DisposalAttempts++;
             if (FailDisposeOnce && DisposalAttempts == 1)

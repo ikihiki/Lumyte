@@ -328,7 +328,7 @@ public sealed partial class CompositionMigrationTests
         }
     }
 
-    private sealed class UnretainedManager : PipelineElement2D, IFillRectRenderer2D, IFillRoundedRectRenderer2D, IFillCircleRenderer2D, IDrawLineRenderer2D, IFillPathRenderer2D, IStrokePathRenderer2D, IDrawImageRenderer2D, IDrawCoverageMaskRenderer2D, IDrawDistanceFieldRenderer2D, IDrawMeshRenderer2D, IDrawPaintGraphRenderer2D, IDisposable
+    private sealed class UnretainedManager : PipelineSharedService2D, IFillRectRenderer2D, IFillRoundedRectRenderer2D, IFillCircleRenderer2D, IDrawLineRenderer2D, IFillPathRenderer2D, IStrokePathRenderer2D, IDrawImageRenderer2D, IDrawCoverageMaskRenderer2D, IDrawDistanceFieldRenderer2D, IDrawMeshRenderer2D, IDrawPaintGraphRenderer2D, IDisposable
     {
         internal ThrowOncePlanResource? PlanCleanup { get; init; }
 
@@ -344,7 +344,7 @@ public sealed partial class CompositionMigrationTests
 
         private int DisposeAttempts { get; set; }
 
-        public void Dispose()
+        public override void Dispose()
         {
             DisposeAttempts++;
             if (FailDisposeOnce && DisposeAttempts == 1)

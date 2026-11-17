@@ -94,7 +94,8 @@ public sealed partial class CompositionMigrationTests
         {
             _ = declaration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()]];
             Assert.Throws<ArgumentException>(() => _ = declaration[Renderer.FillRect()[first, null!]]);
-            Assert.Throws<ArgumentException>(() => _ = declaration[Renderer.FillRect()[first, first]]);
+            _ = declaration[Renderer.FillRect()[first, first]];
+            _ = declaration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()]];
             assignment.Apply(declaration);
             Assert.Throws<ArgumentException>(() => assignment.Apply(declaration));
             Assert.Equal(new[] { typeof(DefaultFillRectRenderer2D), typeof(DefaultFillRectRenderer2D) }, declaration.DescribeDataflow()[0].ChoiceBackends);
@@ -129,7 +130,7 @@ public sealed partial class CompositionMigrationTests
         using var texture = new DispatchTexture();
         using IGraphicsTextureView view = texture.CreateView();
         using PreparedDraw2D prepared = await renderer.PrepareAsync(RectCircleRect(), new() { View = view });
-        Assert.Equal(3, nested.Instance!.Calls.Count);
+        Assert.Equal(3, nested.Instance!.Manager.Calls.Count);
     }
 
     /// <summary>Checks nested capabilities and cycles are validated before any factory.</summary>
@@ -191,10 +192,10 @@ public sealed partial class CompositionMigrationTests
         canvas.DrawPaintGraph(paint);
         using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view });
         Assert.Equal(11, backend.Commands.Count);
-        Assert.Equal(11, rejected.Processor!.Probes);
-        Assert.Equal(11, accepted.Processor!.Probes);
-        Assert.Equal(1, rejected.Creates);
-        Assert.Equal(1, accepted.Creates);
+        Assert.Equal(11, rejected.Processors.Sum(processor => processor.Probes));
+        Assert.Equal(11, accepted.Processors.Sum(processor => processor.Probes));
+        Assert.Equal(11, rejected.Creates);
+        Assert.Equal(11, accepted.Creates);
     }
 
     private sealed class AllKindAdmissionRecipe(bool accepts, DispatchRenderers backend) : PipelineDeclaration2D,
@@ -214,12 +215,14 @@ public sealed partial class CompositionMigrationTests
 
         internal int Creates { get; private set; }
 
-        internal AllKindAdmissionProcessor? Processor { get; private set; }
+        internal List<AllKindAdmissionProcessor> Processors { get; } = [];
 
         protected override object CreateElement(PipelineBuildContext2D context)
         {
             Creates++;
-            return Processor = new AllKindAdmissionProcessor(accepts, backend);
+            var processor = new AllKindAdmissionProcessor(accepts, backend);
+            Processors.Add(processor);
+            return processor;
         }
     }
 
@@ -340,13 +343,17 @@ public sealed partial class CompositionMigrationTests
 
     private sealed class NestedRectangleRecipe(PipelineDeclaration2D child) : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
     {
-        public override Type ProcessorType => typeof(SharedBackend);
+        public override Type ProcessorType => typeof(ServiceProcessor<SharedBackend>);
 
-        internal SharedBackend? Instance { get; private set; }
+        internal ServiceProcessor<SharedBackend>? Instance { get; private set; }
 
         protected override IEnumerable<PipelineDeclaration2D> GetChildDeclarations() => [child];
 
-        protected override object CreateElement(PipelineBuildContext2D context) => Instance = context.GetProcessor<SharedBackend>(child);
+        protected override object CreateElement(PipelineBuildContext2D context)
+        {
+            Instance = context.GetChild<ServiceProcessor<SharedBackend>>(0);
+            return new ServiceProcessor<SharedBackend>(Instance.Manager);
+        }
     }
 
     private sealed class InvalidNestedRecipe(bool cycle) : PipelineDeclaration2D, IPipelineDeclaration2D<FillRectCommand2D>
@@ -360,7 +367,7 @@ public sealed partial class CompositionMigrationTests
         protected override object CreateElement(PipelineBuildContext2D context)
         {
             Creates++;
-            return new SharedBackend();
+            return new ServiceProcessor<SharedBackend>(new SharedBackend());
         }
     }
 

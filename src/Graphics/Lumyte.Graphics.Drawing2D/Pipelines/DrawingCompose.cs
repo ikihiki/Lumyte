@@ -76,7 +76,10 @@ public static partial class DrawingCompose
                         }
                     }
 
-                    PipelineDeclaration2D.ValidateGraph(_slots.SelectMany(route => route!.Declarations));
+                    foreach (CommandRoute2D route in _slots.Select(route => route!))
+                    {
+                        route.Occurrences = PipelineDeclaration2D.CaptureGraph(route.Declarations, route.Kind.ToString());
+                    }
 
                     return _frozen = _slots.Select(route => route!).ToArray();
                 }
@@ -84,6 +87,8 @@ public static partial class DrawingCompose
 
             internal CommandRouteDescription2D DescribeSnapshot(CommandRoute2D route) => Describe(route) with
             {
+                OccurrencePaths = Array.AsReadOnly(route.Occurrences.SelectMany(occurrence => occurrence.EnumeratePaths()).ToArray()),
+                CandidatePaths = Array.AsReadOnly(route.Occurrences.Select(occurrence => occurrence.Path).ToArray()),
                 CandidateIdentities = Array.AsReadOnly(route.Declarations.Select(declaration => declaration.Name).ToArray()),
             };
 
@@ -165,11 +170,6 @@ public static partial class DrawingCompose
                     }
 
                     PipelineDeclaration2D[] declarations = children.Select(child => child.Declaration).ToArray();
-                    if (declarations.Distinct(ReferenceEqualityComparer.Instance).Count() != declarations.Length)
-                    {
-                        throw new ArgumentException("Duplicate declaration references within a slot are not useful.", nameof(children));
-                    }
-
                     _slots[index] = new(kind, declarations);
                 }
             }

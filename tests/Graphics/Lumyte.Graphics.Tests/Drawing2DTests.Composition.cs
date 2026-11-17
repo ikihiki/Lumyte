@@ -90,6 +90,59 @@ public sealed partial class Drawing2DTests
         await CheckStandaloneAsync(device, declaredRenderer);
         Assert.Equal(1, declaredCalls);
         Assert.Equal(1, declaredResources.Disposals);
+        using RendererBuildHost2D pathsHost = ComposeDefinition(defaults);
+        _ = pathsHost.Declaration[
+            Renderer.FillPath()[Array.Empty<IPipelineDeclaration2D<FillPathCommand2D>>()],
+            Renderer.FillPath()[Lumyte.Resources.Graphics.AotSmoke.CustomCompose.Paths(maxSegments: 4096)],
+            Renderer.StrokePath()[Array.Empty<IPipelineDeclaration2D<StrokePathCommand2D>>()],
+            Renderer.StrokePath()[Lumyte.Resources.Graphics.AotSmoke.CustomCompose.Paths(maxSegments: 4096)]];
+        using var pathsResources = new ExternalDrawingResources(device, builtinIdentity: true);
+        using IRenderer2D pathsRenderer = pathsHost.BuildRenderer(device, pathsResources.Resources, pathsResources, null);
+        await CheckSharedPathPixelsAsync(device, pathsRenderer);
+    }
+
+    private static async Task CheckSharedPathPixelsAsync(IGraphicDevice device, IRenderer2D renderer)
+    {
+        using IGraphicsTexture texture = device.CreateTexture(new() { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        Path2D path = Rectangle(2, 2, 10, 10);
+        canvas.FillPath(path, new SRgba<float>(0, 0, 1, 1));
+        canvas.StrokePath(path, new SRgba<float>(1, 0, 0, 1), new StrokeStyle2D { Width = 2 });
+        using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new() { View = view, LoadOp = AttachmentLoadOp.Clear });
+        renderer.Dispose();
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite) });
+        prepared.Record(commands);
+        uint pitch = Math.Max(16 * 8, device.GetTextureCopyLayout(TextureFormat.Rgba16Float).BytesPerRowAlignment);
+        using IGraphicsBuffer<byte> readback = device.CreateBuffer<byte>(new() { Count = pitch * 16, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+        commands.Barrier(new TextureBarrierDesc { Texture = texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite), After = _copyRead });
+        commands.CopyTextureToBuffer(new() { Texture = texture, Width = 16, Height = 16 }, new() { Buffer = readback.SliceElements(0, readback.Count), BytesPerRow = pitch, RowsPerImage = 16 });
+        commands.Barrier(new BufferBarrierDesc<byte> { Buffer = readback.SliceElements(0, readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
+        commands.Finish();
+        using IGraphicsSubmission submission = device.Queue.Submit([commands]);
+        await submission.WaitAsync();
+        commands.Dispose();
+        prepared.Dispose();
+
+        // The shared manager is used by both real path processors through preparation and record.
+        await readback.MapAsync();
+        byte[] bytes = new byte[readback.Count];
+        readback.CopyTo(bytes);
+        readback.Unmap();
+        var pixels = new Vector4[16 * 16];
+        for (int y = 0; y < 16; y++)
+        {
+            for (int x = 0; x < 16; x++)
+            {
+                int offset = checked((int)((y * pitch) + (x * 8)));
+                pixels[(y * 16) + x] = new(ReadHalf(bytes, offset), ReadHalf(bytes, offset + 2), ReadHalf(bytes, offset + 4), ReadHalf(bytes, offset + 6));
+            }
+        }
+
+        AssertPixel(pixels, 16, 7, 7, new(0, 0, 1, 1));
+        AssertPixel(pixels, 16, 2, 7, new(1, 0, 0, 1));
     }
 
     private static RendererBuildHost2D ComposeDefinition(DrawingCommandRenderers2D table) => new(Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 3, MaxCachedAssets = 512, MaxCachedBytes = 64 * 1024 * 1024 })[
