@@ -42,7 +42,7 @@ public sealed partial class UiSurface
                 _applyingRebuild = true;
                 try
                 {
-                    using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
+                    using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate, rootEnvironment: _rootEnvironment);
                     PrepareAnimationUpdates(plan);
                     plan.Prepare(this);
                     PrepareSignalUpdates(plan);
@@ -91,7 +91,7 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, rootEnvironment: _rootEnvironment);
             PrepareAnimationUpdates(plan);
             plan.Prepare(this);
             PrepareSignalUpdates(plan);

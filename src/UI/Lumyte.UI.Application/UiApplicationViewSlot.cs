@@ -183,7 +183,7 @@ public sealed partial class UiApplicationViewSlot
             _constructingWindow = context;
             try
             {
-                Surface = new(root, application.Dispatcher, application.AnimationClock);
+                Surface = new(root, application.Dispatcher, application.AnimationClock, application.CreateRootEnvironment(context));
             }
             finally
             {

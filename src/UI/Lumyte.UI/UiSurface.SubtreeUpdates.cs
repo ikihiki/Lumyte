@@ -58,7 +58,7 @@ public sealed partial class UiSurface
                 {
                     if (RebuildPlan.CanBatchLeaf(element, next))
                     {
-                        prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate);
+                        prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate, _rootEnvironment);
                         if (prepared.Content is null && prepared.Next.ChildCollections.Count == 0)
                         {
                             if (leaves is null)
@@ -75,7 +75,7 @@ public sealed partial class UiSurface
                     }
 
                     leaves = null;
-                    var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared);
+                    var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared, _rootEnvironment);
                     prepared = null;
                     plans.Add(local);
                     covered.UnionWith(local.Updates.Select(update => update.Element));

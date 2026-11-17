@@ -7,15 +7,22 @@ namespace Lumyte.UI;
 public sealed partial class UiSurface : IDisposable
 {
     private readonly HashSet<UiElement> _treeValidators = new(ReferenceEqualityComparer.Instance);
+    private readonly UiUseEnvironment? _rootEnvironment;
     private UiElement _rootElement;
     private bool _isDisposed;
 
     /// <summary>Initializes a new instance of the <see cref="UiSurface"/> class.</summary>
     /// <param name="root">The passive root declaration.</param>
     public UiSurface(Widget root)
+        : this(root, (UiUseEnvironment?)null)
     {
+    }
+
+    private UiSurface(Widget root, UiUseEnvironment? environment)
+    {
+        _rootEnvironment = environment;
         ValidateRoot(root);
-        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate);
+        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate, rootEnvironment: _rootEnvironment);
         _rootElement = plan.Root;
         _applyingRebuild = true;
         try

@@ -231,6 +231,18 @@ public sealed partial class UiApplication : IAsyncDisposable
         await waiter.Task.WaitAsync(cancellationToken);
     }
 
+    internal UiUseEnvironment? CreateRootEnvironment(UiApplicationWindowContext context)
+    {
+        Owner.CheckOwner();
+        Lumyte.UI.Compose.Definitions.Widget carrier = Lumyte.UI.Compose.Panel();
+        foreach (IUiApplicationParticipant participant in _participants)
+        {
+            carrier = participant.ProvideRootContext(context, carrier);
+        }
+
+        return carrier.ProvidedContexts;
+    }
+
     private static TaskCompletionSource NewCompletion() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private void SetState(UiApplicationState state) => Volatile.Write(ref _state, (int)state);

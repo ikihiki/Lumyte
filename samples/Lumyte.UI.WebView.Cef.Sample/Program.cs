@@ -1,9 +1,7 @@
 using Lumyte.UI.Application;
 using Lumyte.UI.Application.Desktop;
 using Lumyte.UI.Application.WebView.Cef;
-using Lumyte.UI.WebView;
 using static Lumyte.UI.Compose;
-using static Lumyte.UI.WebView.Compose;
 
 if (args.Contains("--selfcheck", StringComparer.Ordinal))
 {
@@ -42,27 +40,10 @@ if (enabled)
     builder.UseCefWebViews(new() { HelperExecutablePath = Environment.GetEnvironmentVariable("LUMYTE_CEF_HELPER"), AllowUnsandboxed = allowUnsandboxed });
 }
 
-builder.UseRoot(window =>
-{
-    if (!enabled)
-    {
-        return Button(width: 800, height: 80, automationName: "Native UI — optional browser disabled");
-    }
-
-    UiWebViewSession page = window.GetWebViewSession("page", browserUri);
-    page.StateChanged += (_, _) =>
-    {
-        if (page.State == UiWebViewState.Faulted && window.View.CurrentSurface is { } surface)
-        {
-            surface.Rebuild(Button(width: 800, height: 80, automationName: "Native UI — " + page.FailureCode));
-        }
-    };
-
-    // Native controls remain the application. The read-only browser is an optional fallback.
-    return page.State == UiWebViewState.Faulted
-        ? Button(width: 800, height: 80, automationName: "Native UI — " + page.FailureCode)
-        : WebView(session: page, width: 800, height: 600, automationName: "Optional read-only browser");
-});
+// The application supplies browser context automatically. Function parameters carry no window/session.
+builder.UseRoot(_ => enabled
+    ? Lumyte.UI.WebView.Cef.Sample.BrowserSampleUi.MixedPage(browserUri)
+    : Button(width: 800, height: 80, automationName: "Native UI — optional browser disabled"));
 await using UiApplication app = builder.Build();
 await app.RunAsync();
 return 0;

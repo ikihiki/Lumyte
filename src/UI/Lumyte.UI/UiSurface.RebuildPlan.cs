@@ -12,7 +12,7 @@ public sealed partial class UiSurface
         private readonly UiElement[] _validators;
         private readonly IReadOnlyDictionary<UiSharedElementKey, UiElement>? _shared;
 
-        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null, Action<ElementUpdate>? prepareArguments = null, ElementUpdate? preparedRoot = null)
+        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null, Action<ElementUpdate>? prepareArguments = null, ElementUpdate? preparedRoot = null, UiUseEnvironment? rootEnvironment = null)
         {
             var retained = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             var unchanged = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
@@ -26,7 +26,7 @@ public sealed partial class UiSurface
             _validators = validators?.ToArray() ?? [];
             _shared = shared;
             var pending = new System.Collections.Generic.Stack<(UiElement Element, Widget Next, UiElement? Parent, UiUseEnvironment? Context)>();
-            pending.Push((Root, next, previous?.Parent, previous?.Parent?.Contexts));
+            pending.Push((Root, next, previous?.Parent, previous?.Parent?.Contexts ?? rootEnvironment));
             try
             {
                 while (pending.TryPop(out (UiElement Element, Widget Next, UiElement? Parent, UiUseEnvironment? Context) item))
@@ -288,13 +288,13 @@ public sealed partial class UiSurface
             && !ReferenceEquals(element.Widget, next)
             && element.Widget.GetType() == next.GetType() && element.Widget.Key == next.Key;
 
-        internal static ElementUpdate PrepareLeaf(UiElement element, Widget next, Action<ElementUpdate> prepareArguments)
+        internal static ElementUpdate PrepareLeaf(UiElement element, Widget next, Action<ElementUpdate> prepareArguments, UiUseEnvironment? rootEnvironment = null)
         {
             var update = new ElementUpdate(element, element.Widget, next, [], false);
             try
             {
                 prepareArguments(update);
-                update.Contexts = UiUseEnvironment.Overlay(element.Parent?.Contexts, next.ProvidedContexts);
+                update.Contexts = UiUseEnvironment.Overlay(element.Parent?.Contexts ?? rootEnvironment, next.ProvidedContexts);
                 update.Content = element.PrepareContent(update.Next, new(element.Parent, update.Contexts));
                 return update;
             }

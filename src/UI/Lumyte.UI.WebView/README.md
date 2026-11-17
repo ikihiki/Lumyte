@@ -4,6 +4,40 @@ The native UI is primary. WebView is an explicitly selected fallback and borrows
 
 The public Application.WebView.Cef integration uses a separate Rust/CEF156 process. The UI process does not load CefGlue or libcef. Missing helpers, native aborts, startup/navigation timeouts, malformed IPC and cancellation fault only the browser session; callers can replace the view with their ordinary UI. No implicit retries or automatic sandbox-disable fallback are provided. AllowUnsandboxed=true explicitly selects an unsafe mode for trusted content; its default is false and process isolation is not a security boundary without the sandbox.
 
+## Function components without window/session parameters
+
+Configure UseCefWebViews once, then call UiWebViewHooks.UseWebView(key, initialUri)
+inside a generated composable function. The application automatically provides a
+stable window-scoped session source; component arguments need neither a window nor
+a browser session. Existing GetWebViewSession remains available for explicit use.
+
+Inside function evaluation:
+
+```csharp
+using static Lumyte.UI.WebView.UiWebViewHooks;
+using static Lumyte.UI.WebView.Compose;
+
+var browser = UseWebView("help", new Uri("https://example.com/"));
+return WebView(session: browser, width: 640, height: 360);
+```
+
+Use the generated function factory in the parent declaration, not a direct call
+to its definition. Hooks require an active function build; callbacks capture the
+returned session rather than invoking hooks again. Standalone surfaces can use
+ProvideWebViewSessions with an explicitly borrowed IUiWebViewSessions provider.
+
+A key identifies a window-owned session, not an element. The same key and initial
+URI reuse it through signal updates, rebuilds and remounts. Changing the initial
+URI for a key is rejected. One session may attach to only one live WebView, and
+the CEF backend's single-session budget is unchanged. Unmounting a component does
+not dispose the borrowed session; the owning window controls its teardown.
+StateChanged is an ordinary event, not an implicit reactive hook: do not add a
+subscription on every function evaluation.
+
+The [mixed UI sample](../../../samples/Lumyte.UI.WebView.Cef.Sample/BrowserSampleUi.cs)
+places a nested function's WebView inside a clipped, padded Panel alongside native
+header and counter controls. Only document parameters cross component boundaries.
+
 ## Current capability boundary
 
 - Initial HTTP/S document display only; InputAvailable, PopupAvailable, ImeAvailable and NavigationCommandsAvailable are false. Post-creation navigation/history/reload/stop explicitly throw rather than succeeding without effect. Cancel stops the optional helper, not the UI application.

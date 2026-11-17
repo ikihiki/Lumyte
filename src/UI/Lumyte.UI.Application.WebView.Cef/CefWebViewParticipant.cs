@@ -46,7 +46,19 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         return new(_execution.StartAsync());
     }
 
-    public void OpenWindow(UiApplicationWindowContext context) => _windows.TryAdd(context.Id, new(context));
+    public Lumyte.UI.Compose.Definitions.Widget ProvideRootContext(UiApplicationWindowContext context, Lumyte.UI.Compose.Definitions.Widget root)
+    {
+        context.CheckOwner();
+        if (!_windows.TryGetValue(context.Id, out WindowSessions? window))
+        {
+            window = new(context, this);
+            _windows.Add(context.Id, window);
+        }
+
+        return UiWebViewHooks.ProvideWebViewSessions(window, root);
+    }
+
+    public void OpenWindow(UiApplicationWindowContext context) => _windows.TryAdd(context.Id, new(context, this));
 
     public void CloseWindow(UiApplicationWindowContext context)
     {
@@ -163,7 +175,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         UiWebViewSession.ValidateUri(uri);
         if (!_stopping)
         {
-            _windows.TryAdd(context.Id, new(context));
+            _windows.TryAdd(context.Id, new(context, this));
         }
 
         if (_stopping || !_windows.TryGetValue(context.Id, out WindowSessions? window) || window.Closing)
@@ -227,7 +239,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         }
     }
 
-    private sealed class WindowSessions(UiApplicationWindowContext context)
+    private sealed class WindowSessions(UiApplicationWindowContext context, CefWebViewParticipant participant) : IUiWebViewSessions
     {
         internal UiApplicationWindowContext Context { get; } = context;
 
@@ -236,6 +248,17 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         internal bool Closing { get; set; }
 
         internal bool Retired { get; set; }
+
+        public UiWebViewSession GetSession(string key, Uri initialUri)
+        {
+            Context.CheckOwner();
+            if (Closing || Retired)
+            {
+                throw new ObjectDisposedException(nameof(UiApplicationWindowContext));
+            }
+
+            return participant.GetSession(Context, key, initialUri);
+        }
     }
 
     private sealed class Entry(UiApplicationWindowContext window, UiWebViewSession session, CefHelperSession engine, WebViewPixelBudget cpu, WebViewPixelBudget gpu) : IWebViewHost
@@ -329,7 +352,9 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
                 }
             }
 
-            if (_uploadFaulted)
+            // A creating or unavailable optional browser has no upload work. In particular,
+            // missing prerequisites must not ask the UI driver for graphics services.
+            if (_uploadFaulted || Session.State != UiWebViewState.Ready)
             {
                 return;
             }

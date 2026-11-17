@@ -14,6 +14,12 @@ internal interface IUiApplicationParticipant
     /// <returns>Startup completion.</returns>
     ValueTask StartAsync(CancellationToken cancellationToken);
 
+    /// <summary>Provides borrowed function context before any initial or staged root is evaluated.</summary>
+    /// <param name="context">The non-reusable owning window.</param>
+    /// <param name="root">A fresh context carrier, not application content.</param>
+    /// <returns>The carrier with optional integration context.</returns>
+    Lumyte.UI.Compose.Definitions.Widget ProvideRootContext(UiApplicationWindowContext context, Lumyte.UI.Compose.Definitions.Widget root) => root;
+
     /// <summary>Registers a prepared window.</summary>
     /// <param name="context">The borrowed window context.</param>
     void OpenWindow(UiApplicationWindowContext context);
