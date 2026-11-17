@@ -13,10 +13,29 @@ public sealed partial class UiSurface : IDisposable
     /// <summary>Initializes a new instance of the <see cref="UiSurface"/> class.</summary>
     /// <param name="root">The passive root declaration.</param>
     public UiSurface(Widget root)
+        : this(root, independentContent: false)
+    {
+    }
+
+    internal UiSurface(Widget root, bool independentContent)
     {
         ValidateRoot(root);
+        if (independentContent)
+        {
+            root.ValidateFreshItemRoot();
+            if (root.HasBeenMounted)
+            {
+                throw new InvalidOperationException("Popup content roots must be newly constructed for every opening.");
+            }
+        }
+
         using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate);
         _rootElement = plan.Root;
+        if (independentContent)
+        {
+            _rootElement.HasIndependentContentOwnership = true;
+        }
+
         _applyingRebuild = true;
         try
         {

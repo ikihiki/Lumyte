@@ -22,6 +22,8 @@ set-valueは有限なnumericValue、set-rangeは有限で順序付きのnumericV
 
 ## 項目roleの版
 
-schemaVersion 8はtabview／tabitem／expanderの検索、expand／collapse、nullableなisExpandedを追加します。v1–7の厳密なfield集合と数値metadataは保持し、新しいroleをnoneへ投影します。v8だけ25 node fieldを公開します。expand／collapseは普通のheader probeと排他的leaseでUiExpandInputを配送し、既に目的値なら入力しません。
+schemaVersion 9はmenu／menuitem／tooltipのroleを追加します。新しいwire fieldやcommandは追加しません。v1–8では新roleをnoneへ投影し、v1–3の18、v4–5の23、v6–7の24、v8の25 node fieldと数値metadataを維持します。MenuItemは実際の能力に応じて既存click、check／uncheck、expand／collapseを使います。型付きclientは祖先を含むlocator全体と操作最低版の最大値を使います。
+
+schemaVersion 8はtabview／tabitem／expanderの検索、expand／collapse、nullableなisExpandedを追加します。v1–7の厳密なfield集合と数値metadataは保持し、新しいroleをnoneへ投影します。v8以降は25 node fieldを公開します。expand／collapseは普通のheader probeと排他的leaseでUiExpandInputを配送し、既に目的値なら入力しません。
 
 schemaVersion 7はlistbox／listitem／comboboxの検索を追加します。通常入力に接続されたListBoxは既存select-optionを使い、ComboBoxはclick／pressと独立popup pageを使います。新しいfieldと数値commandを追加しません。v1–3の18、v4–5の23、v6の24 node fieldは保持し、新roleをnoneへ投影します。v6の数値情報は変更しません。

@@ -100,3 +100,8 @@ RGB10A2 は RGB を厳密比較し、alpha 0.5 の量子化結果だけ隣接す
 ローカルの結果とログは `artifacts/sample-validation/results.json` にまとめています。
 OpenAL Soft は検証用ディレクトリに配置し、そのプロセスの PATH に追加しました。再実行時にも OpenAL DLL の探索パスが必要です。
 この結果は当該 Windows 環境での確認であり、他 OS・全ドライバー・全ブラウザー・Preview SDK の部分プログラム・スピーカーの聴感品質を保証するものではありません。
+
+## メニューと受動ツールチップ
+
+`ui-menus`の`headless` backendは[Menu・MenuItem・Tooltipの公開例](Lumyte.UI.Menus.Sample/README.md)です。
+明示font、submenu chainと受動表示中の実editor preeditを確認します。物理Window、Windows、Browserの提示検証ではありません。

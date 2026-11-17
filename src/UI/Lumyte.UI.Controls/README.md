@@ -65,3 +65,33 @@ TabViewは左の縦見出し列と右の選択内容を一回ずつ配置しま�
 AutomationはTabViewのSelectOptionAsync、TabItemのClick、ExpanderのExpandAsync／CollapseAsyncを使えます。
 後者は受理値を検査する冪等な通常入力であり、CheckBoxの偽装ではありません。
 [公開Headlessサンプル](../../../samples/Lumyte.UI.Tabs.Sample/README.md)は明示fontと実際の編集接続を使います。
+
+## Menu・MenuItem・Tooltip
+
+Menuは、非空・ordinal一意の継承Keyを持つ直属MenuItemと既存Separatorを縦に並べます。
+MenuItemの通常内容は0〜1個の表示ラベルです。内部Buttonを追加せず、MenuItem自身がClickとfocusを持ちます。
+上下・Home・Endで有効な項目へ移動し、Rightでsubmenuを開き、Enter・Spaceで一回だけ操作します。
+IsCheckableを指定した項目だけがboolのIsCheckedとCheck操作を公開します。受理値とsubmenu状態はsurfaceごとに独立します。
+
+```csharp
+using static Lumyte.UI.Compose;
+using static Lumyte.UI.Controls.Compose;
+
+var menu = Menu(popupHost: host)[
+    MenuItem(key: "save", onInvoke: Save)[Rectangle(width: 160, height: 24)],
+    Separator(),
+    MenuItem(key: "check", isCheckable: true, onChanged: SaveChecked)[Rectangle(width: 160, height: 24)],
+    MenuItem(key: "more", createSubmenu: CreateFreshMenu)[Rectangle(width: 160, height: 24)]
+];
+```
+
+hostは任意packageのMenuPopupHostを借用します。ルート表示は既存Windowing.Compose.Popupの内容にMenuを置き、OnDismissでアプリの表示モデルを更新します。
+commandのOnInvokeとCreateSubmenu、またはチェックとsubmenuの併用は拒否します。新しい宣言の値は通知なしに採用し、入力がWidgetやSignalを暗黙に変更することはありません。
+
+Tooltipは0〜1個の通常アンカーと、開くたびに新しいツリーを返すCreatePopupを持ちます。
+IsOpenは明示的な表示モデルで、hover／focusから値を作るtriggerやtimerは含みません。
+Passive popupの表示・終了はeditor focus、preedit、pointer、wheelを奪わず、子の入力対象とautomation IDを保ちます。
+新しい宣言の採用・取り外し・実効非表示で古い要求を取消します。factoryの失敗でも既存menuは維持します。
+
+[公開Headlessサンプル](../../../samples/Lumyte.UI.Menus.Sample/README.md)は明示font、通常popup入力と実編集接続を使います。
+判断は[UI-0035](../../../docs/adr/ui/UI-0035-menu-and-passive-tooltip.md)を参照してください。

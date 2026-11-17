@@ -102,7 +102,7 @@ public sealed class UiRemotePage
 
     internal static UiRemoteLocatorStep Step(string role, string? name, bool hidden)
     {
-        if (role is not ("button" or "group" or "textbox" or "ime-candidates" or "text" or "image" or "icon" or "progressbar" or "busyindicator" or "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton" or "slider" or "rangeslider" or "listbox" or "listitem" or "combobox" or "tabview" or "tabitem" or "expander") || name?.Length > 256)
+        if (role is not ("button" or "group" or "textbox" or "ime-candidates" or "text" or "image" or "icon" or "progressbar" or "busyindicator" or "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton" or "slider" or "rangeslider" or "listbox" or "listitem" or "combobox" or "tabview" or "tabitem" or "expander" or "menu" or "menuitem" or "tooltip") || name?.Length > 256)
         {
             throw new ArgumentException("Unsupported role or name.", nameof(role));
         }

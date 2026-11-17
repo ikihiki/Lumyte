@@ -528,6 +528,18 @@ public sealed partial class UiPopupManager : IDisposable
         _commands.Enqueue(() =>
         {
             popup.Accepted = true;
+            if (handle.IsCloseRequested || popup.Closing)
+            {
+                Close(popup, UiPopupCloseReason.Requested);
+                return;
+            }
+
+            if (!Anchor(popup, out _))
+            {
+                Close(popup, UiPopupCloseReason.AnchorUnavailable);
+                return;
+            }
+
             if (popup.Mode == UiPopupInputMode.Menu)
             {
                 foreach (Popup previous in _popups.Values.Where(p => p != popup && p.Accepted && p.Mode == UiPopupInputMode.Menu && (parent is null ? p.Parent is null && SameScope(p.Owner, owner) : p.Parent == parent)).ToArray())
@@ -654,13 +666,14 @@ public sealed partial class UiPopupManager : IDisposable
             try
             {
                 UiPopupRequest request = p.Request!;
-                content = request.PreparedSurface is null ? UiSurface.CaptureBuild(request.CreateContent) : request.CreateContent();
+                content = request.PreparedContent ?? (request.PreparedSurface is null ? UiSurface.CaptureBuild(request.CreateContent) : request.CreateContent());
+                request.PreparedContent = null;
                 if (request.PreparedSurface is { } prepared && !ReferenceEquals(prepared.Root, content))
                 {
                     throw new InvalidOperationException("Prepared popup content must match the accepted declaration.");
                 }
 
-                p.Surface = request.PreparedSurface ?? new(content);
+                p.Surface = request.PreparedSurface ?? new(content, independentContent: true);
                 request.PreparedSurface = null;
                 if (VisualLifetime?.Invoke(p.Surface) is { } visual)
                 {
@@ -731,6 +744,7 @@ public sealed partial class UiPopupManager : IDisposable
             {
                 p.Previous = p.Parent?.Surface ?? p.Owner.Surface;
                 p.Bookmark = p.Previous.CaptureFocus();
+                p.PreviousFocusRequest = p.Previous.FocusRequest;
                 CancelWindow(p.Parent?.Window ?? p.Owner.Window, p.Previous);
                 p.Surface!.MoveFocus(UiFocusNavigation.First);
             }
@@ -907,7 +921,7 @@ public sealed partial class UiPopupManager : IDisposable
         p.GuardRelease = [];
         p.GuardCancellation.Dispose();
 
-        if (!p.SuppressRestore && p.Previous is not null && p.Bookmark is not null && !p.Owner.Releasing && SameLiveOwner(p.Owner))
+        if (!p.SuppressRestore && p.Previous is not null && p.Bookmark is not null && p.Previous.FocusRequest == p.PreviousFocusRequest && !p.Owner.Releasing && SameLiveOwner(p.Owner))
         {
             if (!p.Previous.TryRestoreFocus(p.Bookmark))
             {
@@ -1330,6 +1344,8 @@ public sealed partial class UiPopupManager : IDisposable
         internal UiSurface? Previous { get; set; }
 
         internal UiFocusBookmark? Bookmark { get; set; }
+
+        internal long PreviousFocusRequest { get; set; }
 
         internal UiWindowId? Window { get; set; }
 
