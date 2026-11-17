@@ -15,6 +15,10 @@ public sealed class CiInterfaceTests
         string[] targets = Regex.Matches(workflow, "--target(?:', '|'? +)([A-Za-z0-9]+)")
             .Select(match => match.Groups[1].Value).Distinct().Order(StringComparer.Ordinal).ToArray();
         Assert.Equal(["Compile", "Distribution", "Quality", "Test"], targets);
+        string cpuJob = workflow[workflow.IndexOf("  cpu:", StringComparison.Ordinal)..workflow.IndexOf("  gpu:", StringComparison.Ordinal)];
+        Assert.Contains("name: CPU Tests (Linux x64)", cpuJob, StringComparison.Ordinal);
+        Assert.Contains("name: Run CPU tests", cpuJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("integration", cpuJob, StringComparison.OrdinalIgnoreCase);
         foreach (string contract in new[]
         {
             "--lane cpu", "--lane integration", "--lane gpu", "--pipeline-validation", "--suite browser", "--suite aot",

@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   cpu:
-    name: CPU (Linux x64)
+    name: CPU Tests (Linux x64)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -31,7 +31,7 @@ jobs:
           profile: native
       - name: Prepare build tools
         run: bash tools/setup/setup.sh
-      - name: CPU contracts (method-parallel, no native or child-process test bodies)
+      - name: Run CPU tests
         run: |
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4
