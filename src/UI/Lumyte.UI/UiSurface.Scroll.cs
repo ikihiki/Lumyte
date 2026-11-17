@@ -88,7 +88,7 @@ public sealed partial class UiSurface
     internal void QueueItemFocus(UiElement target, long request)
     {
         // Rebuild invalidation is not a request. Preserve only the intent captured in preparation.
-        if (_focusRequest == request)
+        if (_focusRequest == request && ReferenceEquals(target.Surface, this) && AcceptsCurrentInput(target) && target.PermitsFocus)
         {
             _restoreItemFocus = target;
             _restoreItemFocusRequest = request;
@@ -113,7 +113,8 @@ public sealed partial class UiSurface
             {
                 if (parent is ScrollViewElement)
                 {
-                    BringIntoView(target, target.ContentBounds);
+                    Rect2D region = target.SemanticActionRegion;
+                    BringIntoView(target, new(target.ContentBounds.X + region.X, target.ContentBounds.Y + region.Y, region.Width, region.Height));
                     break;
                 }
             }
