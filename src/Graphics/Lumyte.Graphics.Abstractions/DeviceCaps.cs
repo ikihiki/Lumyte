@@ -15,6 +15,12 @@ public sealed record DeviceCaps
     /// <summary>Gets the supported portable feature flags.</summary>
     public GraphicsFeatures Features { get; init; } = GraphicsFeatures.None;
 
+    /// <summary>Gets enabled mesh limits, or null when unsupported.</summary>
+    public MeshShaderLimits? MeshShaderLimits { get; init; }
+
+    /// <summary>Gets enabled task limits, or null when unsupported.</summary>
+    public TaskShaderLimits? TaskShaderLimits { get; init; }
+
     /// <summary>Gets the maximum buffer allocation size in bytes.</summary>
     public ulong MaxBufferSize { get; init; }
 

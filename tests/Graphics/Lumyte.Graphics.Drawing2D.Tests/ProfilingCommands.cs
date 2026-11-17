@@ -57,6 +57,10 @@ internal sealed class ProfilingCommands : IGraphicsCommandBuffer
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments => owner.Events.Add(T.ShaderTypeName == "DrawRangeArguments2D" ? RecordedDrawRange.Capture(IShaderArguments.Capture(arguments)) : arguments);
 
+        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+
         public void SetPipeline(IGraphicsPipeline pipeline)
         {
         }

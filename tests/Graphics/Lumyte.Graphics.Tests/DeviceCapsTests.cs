@@ -40,7 +40,12 @@ public sealed class DeviceCapsTests
         AssertPowerOfTwo(caps.CopyBufferSizeAlignment);
         AssertPowerOfTwo(caps.CopyBytesPerRowAlignment);
         AssertPowerOfTwo(caps.StorageBufferOffsetAlignment);
-        Assert.Equal(GraphicsFeatures.None, caps.Features & ~(GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering | GraphicsFeatures.DepthBiasClamp | GraphicsFeatures.MeshShader));
+        Assert.Equal(GraphicsFeatures.None, caps.Features & ~(GraphicsFeatures.IndirectDraw | GraphicsFeatures.AnisotropicFiltering | GraphicsFeatures.DepthBiasClamp | GraphicsFeatures.MeshShader | GraphicsFeatures.TaskShader));
+        bool mesh = (caps.Features & GraphicsFeatures.MeshShader) != 0;
+        bool task = (caps.Features & GraphicsFeatures.TaskShader) != 0;
+        Assert.Equal(mesh, caps.MeshShaderLimits is not null);
+        Assert.Equal(task, caps.TaskShaderLimits is not null);
+        Assert.False(task && !mesh);
 
         Assert.Same(caps, device.Caps);
         DeviceCaps changed = caps with { MaxBufferSize = 0 };

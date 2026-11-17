@@ -108,6 +108,36 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         _pipeline = program;
     }
 
+    public void SetPipeline(IMeshPipeline pipeline)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(pipeline);
+        if (pipeline is not VulkanMeshPipeline mesh || !ReferenceEquals(mesh.Program.Owner, owner.Owner))
+        {
+            throw new ArgumentException("Pipeline belongs to another device.");
+        }
+
+        mesh.Program.ValidateAlive();
+        _pipeline = mesh.Program;
+    }
+
+    public void DrawMeshTasks(uint x, uint y = 1, uint z = 1)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        if (_pipeline == null || !_pipeline.IsMesh)
+        {
+            throw new InvalidOperationException("Select a Mesh pipeline before Mesh execution.");
+        }
+
+        ShaderWorkgroupLimits limits = _pipeline.TaskData == null ? owner.Owner.Caps.MeshShaderLimits!.Workgroup : owner.Owner.Caps.TaskShaderLimits!.Workgroup;
+        MeshShaderValidation.Dispatch(limits, x, y, z);
+
+        PrepareDraw(false, true);
+        owner.Owner.MeshApi!.CmdDrawMeshTask(owner.Native, x, y, z);
+    }
+
     public void SetRenderState(GraphicsRenderStateDesc state)
     {
         ThrowIfSettingArguments();
@@ -175,6 +205,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
+        RequireVertexProgram();
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(false);
@@ -185,6 +216,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
+        RequireVertexProgram();
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
         {
             throw new ArgumentException("Indexed draw exceeds the selected index range or has no index buffer.");
@@ -199,6 +231,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
+        RequireVertexProgram();
         VulkanBuffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
         owner.Owner.Api.CmdDrawIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes, 1, 16);
@@ -208,6 +241,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
+        RequireVertexProgram();
         VulkanBuffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
         owner.Owner.Api.CmdDrawIndexedIndirect(owner.Native, buffer.Native, arguments.OffsetInBytes, 1, 20);
@@ -239,6 +273,14 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         }
 
         return owner.Buffer(arguments, BufferUsage.Indirect);
+    }
+
+    private void RequireVertexProgram()
+    {
+        if (_pipeline == null || _pipeline.IsMesh)
+        {
+            throw new InvalidOperationException("Select a conventional graphics pipeline for vertex draws.");
+        }
     }
 
     private void ThrowIfSettingArguments()
@@ -279,15 +321,20 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
         tableHint?.ThrowIfDisposed();
         _table?.ThrowIfDisposed();
-        VulkanPushConstants.Emit(owner, pipeline.ArgumentPipelineLayout, VulkanPushConstants.GraphicsStages, payload);
+        VulkanPushConstants.Emit(owner, pipeline.ArgumentPipelineLayout, owner.Owner.GraphicsShaderStages, payload);
         _arguments = root;
         _argumentTableHint = tableHint;
         _argumentProgram = pipeline;
     }
 
-    private void PrepareDraw(bool indexed)
+    private void PrepareDraw(bool indexed, bool mesh = false)
     {
         owner.ValidatePass(this);
+        if (_pipeline != null && _pipeline.IsMesh != mesh)
+        {
+            throw new InvalidOperationException("Draw command does not match the selected program kind.");
+        }
+
         if (_pipeline == null || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
         {
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");

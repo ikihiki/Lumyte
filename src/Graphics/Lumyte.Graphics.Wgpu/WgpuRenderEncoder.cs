@@ -82,6 +82,21 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         }
     }
 
+    public void SetPipeline(IMeshPipeline pipeline)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(pipeline);
+        throw new NotSupportedException("Wgpu does not support Mesh/Task pipelines.");
+    }
+
+    public void DrawMeshTasks(uint x, uint y = 1, uint z = 1)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        throw new InvalidOperationException("No Mesh pipeline can be selected on this backend.");
+    }
+
     public void SetPipeline(IGraphicsPipeline pipeline)
     {
         ThrowIfSettingArguments();

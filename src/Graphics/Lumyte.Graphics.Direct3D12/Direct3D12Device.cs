@@ -32,6 +32,42 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
         Queue = new Direct3D12Queue(this);
         SdkVersion = NativeMethods.DeviceSdkVersion(native);
         PartialGraphicsProgramsEnabled = partial;
+        if (NativeMethods.DeviceMeshSupported(native) != 0)
+        {
+            ShaderWorkgroupLimits workgroup = new()
+            {
+                MaxSizeX = 128,
+                MaxSizeY = 128,
+                MaxSizeZ = 128,
+                MaxInvocations = 128,
+                MaxGroupCountX = 65535,
+                MaxGroupCountY = 65535,
+                MaxGroupCountZ = 65535,
+                MaxTotalGroupCount = 4194303,
+            };
+            Caps = Caps with
+            {
+                Features = Caps.Features | GraphicsFeatures.MeshShader | GraphicsFeatures.TaskShader,
+                MeshShaderLimits = new()
+                {
+                    Workgroup = workgroup,
+                    MaxOutputVertices = 256,
+                    MaxOutputPrimitives = 256,
+                    MaxSharedMemoryBytes = 28672,
+                    MaxPayloadBytes = 16384,
+                    MaxPayloadAndSharedMemoryBytes = 28672,
+                    MaxOutputMemoryBytes = 32768,
+                    MaxPayloadAndOutputMemoryBytes = 48128,
+                },
+                TaskShaderLimits = new()
+                {
+                    Workgroup = workgroup,
+                    MaxSharedMemoryBytes = 32768,
+                    MaxPayloadBytes = 16384,
+                    MaxPayloadAndSharedMemoryBytes = 32768,
+                },
+            };
+        }
     }
 
     /// <inheritdoc />
@@ -337,6 +373,19 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
             _ => throw new NotSupportedException("Only color texture copies are supported."),
         };
         return new() { BytesPerTexel = bytes, BytesPerRowAlignment = 256, BufferOffsetAlignmentInBytes = 512 };
+    }
+
+    /// <inheritdoc />
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc)
+    {
+        RequireReady();
+        ArgumentNullException.ThrowIfNull(desc);
+        if ((Caps.Features & GraphicsFeatures.MeshShader) == 0)
+        {
+            throw new NotSupportedException("Mesh shaders are not enabled on this device.");
+        }
+
+        return new Direct3D12MeshPipeline(this, desc);
     }
 
     /// <inheritdoc />

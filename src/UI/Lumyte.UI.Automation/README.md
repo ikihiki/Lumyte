@@ -33,3 +33,7 @@ UIの通常入力へsnapshotを導入せず、コピーは自動操作からの�
 
 ScrollAsyncはlocatorの表示領域中央から通常UiWheelInputを送ります。差分は有限の論理pixelで、
 排他的input lease、Popup routing、通常の入れ子残余を共有し、Widget setterを操作しません。
+
+## 数値の閉じた操作
+
+SetValueAsync/SetRangeAsyncは実部品の専用capabilityを要求する。通常の入力lease取得後に現在の幾何とprobeを再確認し、UiSetNumericInputを一回配送する。Rangeは二値を同時に受理し、callback後の再送はしない。NumericBoxは既存Fillを使用する。snapshot.Numericは実際の数値と妥当性、従来のValueは引き続き0〜1の正規化値である。

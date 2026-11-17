@@ -24,6 +24,10 @@ internal sealed class ExecutionReviewRender : IRenderEncoder
     {
     }
 
+    public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+    public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+
     public void SetPipeline(IGraphicsPipeline pipeline)
     {
     }

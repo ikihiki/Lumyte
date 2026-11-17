@@ -13,7 +13,7 @@ IGraphicDevice device = owner;
 Console.WriteLine(device.Caps.MaxBufferSize);
 ```
 
-`VulkanDevice.Create(uint physicalDeviceIndex = 0)` は同期 API です。Vulkan 1.3 instance を生成し、列挙した physical device から指定 index の一つを選びます。graphics と compute の両方を扱える queue family から一つの queue を持つ logical device を作ります。surface、validation layer、device extension は有効にしません。複数 adapter の自動 fallback は行いません。
+`VulkanDevice.Create(uint physicalDeviceIndex = 0)` は同期 API です。Vulkan 1.3 instance を生成し、列挙した physical device から指定 index の一つを選びます。graphics と compute の両方を扱える queue family から一つの queue を持つ logical device を作ります。surface と validation layer は生成・有効化しません。`VK_EXT_mesh_shader` が利用可能なら Mesh と任意の Task feature を有効化します。複数 adapter の自動 fallback は行いません。
 
 Vulkan 1.3と `maintenance4`・`dynamicRendering`・`synchronization2` を必須とし、device生成時に有効化します。`maxBufferSize` を実際の property から取得するためで、古いドライバーで推測値を返しません。adapter がない、必要なVulkan 1.3機能に対応しない、必要な queue がない場合は `NotSupportedException`、存在しない index は `ArgumentOutOfRangeException`、Vulkan の失敗 result は `InvalidOperationException` になります。native loader のロード失敗は binding の例外に従います。失敗時は生成済みの device／instance と binding を解放します。
 
@@ -38,7 +38,7 @@ physical device の properties と features を生成時に取得し、有効に
 
 `VkBufferCopy` の offset と size は byte 単位で、copy offset／size alignment は `1` を返します。image copy の row も一律の追加 byte alignment はないため `1` です。image の texel block、aspect、queue family による追加制約は別途検証が必要です。`optimalBufferCopyOffsetAlignment`／`optimalBufferCopyRowPitchAlignment` は性能上の推奨値なので、必須 alignment として返しません。
 
-`IndirectDraw` は基本機能として返します。`SamplerAnisotropy`／`DepthBiasClamp` が対応していれば device で有効にし、それぞれ `AnisotropicFiltering`／`DepthBiasClamp` を返します。`MeshShader` は extension を有効にしないため返しません。
+`IndirectDraw` は基本機能として返します。`SamplerAnisotropy`／`DepthBiasClamp` が対応していれば device で有効にし、それぞれ `AnisotropicFiltering`／`DepthBiasClamp` を返します。`MeshShader`／`TaskShader` は `VK_EXT_mesh_shader` の対応 feature と記録 entry point を実際に有効化した場合だけ返します。非対応時の制限は null です。
 
 このプロジェクトはデバイス生成・解放、Caps 取得と型付き buffer を扱います。[共通契約](../Lumyte.Graphics.Abstractions/README.md) と [native サンプル](../../../samples/Lumyte.Graphics.DeviceCaps.Sample/README.md) を参照してください。
 
@@ -287,3 +287,11 @@ graphics/compute と pass/command の追跡は独立し、SetArguments の push 
 Device.Dispose は native device より先に全 pool を破棄し、その後の lease 返却は native 呼出しを行いません。
 登録辞書の managed allocation 失敗は世代を変更しませんが、更新成功後の native free 失敗には rollback／再試行を保証しません。
 その場合も古い cache を外し、recorded command の所有権は保ち、残った pool は Device.Dispose で解放します。
+
+## Mesh／Task program
+
+`CreateMeshPipeline` は Mesh と任意の Task／Fragment module を借用します。`VK_EXT_mesh_shader` の feature と property を問い合わせ、軸別 local size／dispatch count、積、payload、shared memory、output の制限を公開します。共通 metadata の stage・payload・root schema・varying ABI 検証に加え、native output component 数と vertex／primitive allocation granularity による丸め後の storage を検査します。Point 出力、strip state と異なる list topology は拒否します。
+
+Mesh variant は従来の blend、depth/stencil、attachment format と dynamic state を共有し、vertex input／input assembly state を指定しません。`DrawMeshTasks` は Task ありなら Task、なければ Mesh の正の group count を検査して `vkCmdDrawMeshTasksEXT` を記録します。通常描画と Mesh 命令の program 種別不一致は native 前に拒否します。descriptor visibility、push constants、barrier と queue semaphore wait stage は有効化した Task／Mesh を含みます。現行 AllGraphics／AllCommands のみ利用可能 stage へ展開し、その他の未対応明示 bit は拒否します。
+
+program ごとの native variant cache が program kind、全 shader と出力 topology を分離します。shader と参照資源は借用のままで、GPU 完了までの保持・同期・解放は利用者が管理します。暗黙の compile、submit、wait は追加しません。

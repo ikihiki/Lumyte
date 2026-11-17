@@ -192,3 +192,19 @@ raw側にはdriver API、host spanの範囲・overflow・mapping安全性、参�
 wrapperはbuffer、texture／view、sampler、table／GpuRef、shader／pipeline、command／encoder、queue／submission／semaphore、surface／swapchain／frameを同じdomainで扱います。backend固有factoryで作るsurfaceだけは、新規・同一backendのものをWrapSurfaceで借用します。rawの子資源や別domainは混在できません。raw参照やreflectionを使った迂回は診断対象外です。
 
 検証層のqueue／presentationはnative前に照合し、成功後だけ状態を公開します。不透明なSubmit例外は部分発行の可能性があるため元例外と候補operandを保持してqueueを隔離し、健全queueの回復は公開しません。解放には明示的なbackend device-loss retirementが必要です。キャンセルは完了ではなく、frameのWaitForReleaseAsyncもsubmission完了ではありません。Windows D3D12のnative失敗時のfence owner保持は、この任意診断とは独立した必須の正しさです。
+
+## Mesh / Task の任意経路
+
+Mesh Shader Tier 1、SM 6.6 と Resource Binding Tier 2 を確認できるデバイスでのみ
+MeshShader／TaskShader と各 limits を公開します。Task は AS に対応し、AS／MS／PS を含む
+pipeline-state stream から native PSO を生成し、ID3D12GraphicsCommandList6.DispatchMesh を記録します。
+Mesh program は通常の描画状態と root／descriptor ABI を共有しますが、通常 draw と mesh dispatch は混在させません。
+同じ pass 内で SetPipeline により切り替えられ、index buffer は mesh dispatch から参照しません。
+LineList／TriangleList のみ対応し、Point と strip restart は拒否します。
+
+Mesh／Task の同期は Enhanced Barriers の vertex-shading scope（非 pixel shader を含む）へ保守的に対応付けます。
+上限検査には D3D12 の 32-element output block 丸め、attribute row 上限、payload と出力の合計を含めます。
+Mesh PSO は従来の Preview partial-program collection を使用せず、両 channel で完全な PSO を cache します。
+
+この追加経路の Windows native build／GPU 実行は Linux 開発環境では未確認です。
+portable admission test や shader compile の成功を native Mesh／Task 描画確認として数えないでください。

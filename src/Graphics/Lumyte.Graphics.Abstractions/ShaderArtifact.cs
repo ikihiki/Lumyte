@@ -60,6 +60,16 @@ public sealed class ShaderArtifact
                     _ = new UTF8Encoding(false, true).GetString(code);
                 }
 
+                if (stage is ShaderStage.Mesh or ShaderStage.Task)
+                {
+                    _ = MeshShaderMetadata.Read(new(target, stage, entry, compiler, layout, code, reflectionJson));
+                }
+
+                if (stage == ShaderStage.Fragment)
+                {
+                    MeshShaderMetadata.ValidateFragmentIntegrity(new(target, stage, entry, compiler, layout, code, reflectionJson));
+                }
+
                 using var reflection = JsonDocument.Parse(reflectionJson);
                 if (reflection.RootElement.ValueKind != JsonValueKind.Object)
                 {

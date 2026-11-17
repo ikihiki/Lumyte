@@ -9,6 +9,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private readonly (uint Width, uint Height) _size = (attachments.FirstOrDefault()?.View ?? depth!.View).Texture.GetMipSize((attachments.FirstOrDefault()?.View ?? depth!.View).Info.BaseMipLevel);
     private readonly TextureFormat? _depthFormat = depth?.View.Info.Format;
     private Direct3D12GraphicsPipeline? _pipeline;
+    private Direct3D12MeshPipeline? _meshPipeline;
     private RenderStateSnapshot? _state;
     private IndexFormat? _indexFormat;
     private ulong _indexCount;
@@ -22,6 +23,10 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private bool _settingArguments;
     private Direct3D12ArgumentTable? _table;
     private Direct3D12ArgumentTable? _argumentTableHint;
+
+    private object? SelectedProgram => (object?)_meshPipeline ?? _pipeline;
+
+    private bool RequiresArguments => _meshPipeline?.RequiresArguments ?? _pipeline?.RequiresArguments ?? false;
 
     public void SetArgumentTable(IArgumentTable table)
     {
@@ -53,7 +58,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         where T : struct, IShaderArguments
     {
         ValidateRootSelection();
-        Direct3D12GraphicsPipeline pipeline = _pipeline!;
+        object pipeline = SelectedProgram!;
         _settingArguments = true;
         try
         {
@@ -73,7 +78,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         where T : unmanaged
     {
         ValidateRootSelection();
-        Direct3D12GraphicsPipeline pipeline = _pipeline!;
+        object pipeline = SelectedProgram!;
         _settingArguments = true;
         try
         {
@@ -101,6 +106,36 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         program.ValidateAlive();
         _pipeline = program;
+        _meshPipeline = null;
+    }
+
+    public void SetPipeline(IMeshPipeline pipeline)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        ArgumentNullException.ThrowIfNull(pipeline);
+        if (pipeline is not Direct3D12MeshPipeline program || !ReferenceEquals(program.Owner, owner.Owner))
+        {
+            throw new ArgumentException("Pipeline belongs to another device.");
+        }
+
+        program.ValidateAlive();
+        _meshPipeline = program;
+        _pipeline = null;
+    }
+
+    public void DrawMeshTasks(uint x, uint y = 1, uint z = 1)
+    {
+        ThrowIfSettingArguments();
+        owner.ValidatePass(this);
+        if (_meshPipeline == null)
+        {
+            throw new InvalidOperationException("Select a mesh pipeline before mesh execution.");
+        }
+
+        MeshShaderValidation.Dispatch(_meshPipeline.DispatchLimits, x, y, z);
+        PrepareDraw(false, true);
+        owner.Owner.Check(NativeMethods.DispatchMesh(owner.Native, x, y, z));
     }
 
     public void SetRenderState(GraphicsRenderStateDesc state)
@@ -167,6 +202,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
+        RequireTraditionalProgram();
         _ = checked(firstVertex + vertexCount);
         _ = checked(firstInstance + instanceCount);
         PrepareDraw(false);
@@ -176,6 +212,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     public void DrawIndexed(uint indexCount, uint instanceCount = 1, uint firstIndex = 0, int baseVertex = 0, uint firstInstance = 0)
     {
         ThrowIfSettingArguments();
+        RequireTraditionalProgram();
         owner.ValidatePass(this);
         if (_indexFormat == null || firstIndex > _indexCount || indexCount > _indexCount - firstIndex)
         {
@@ -190,6 +227,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     public void DrawIndirect(BufferSlice<DrawIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
+        RequireTraditionalProgram();
         owner.ValidatePass(this);
         Direct3D12Buffer<DrawIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(false);
@@ -199,6 +237,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     public void DrawIndexedIndirect(BufferSlice<DrawIndexedIndirectArguments> arguments)
     {
         ThrowIfSettingArguments();
+        RequireTraditionalProgram();
         owner.ValidatePass(this);
         Direct3D12Buffer<DrawIndexedIndirectArguments> buffer = IndirectBuffer(arguments);
         PrepareDraw(true);
@@ -209,6 +248,18 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     {
         ThrowIfSettingArguments();
         owner.EndRender(this);
+    }
+
+    private static void ValidateProgramAlive(object pipeline)
+    {
+        if (pipeline is Direct3D12MeshPipeline mesh)
+        {
+            mesh.ValidateAlive();
+        }
+        else
+        {
+            ((Direct3D12GraphicsPipeline)pipeline).ValidateAlive();
+        }
     }
 
     private void SetIndices<T>(BufferSlice<T> indices, IndexFormat format)
@@ -245,22 +296,30 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     {
         ThrowIfSettingArguments();
         owner.ValidatePass(this);
-        if (_pipeline == null)
+        if (SelectedProgram == null)
         {
             throw new InvalidOperationException("Select a program before setting its arguments.");
         }
 
-        _pipeline.ValidateAlive();
+        ValidateProgramAlive(SelectedProgram!);
         owner.Owner.RequireReady();
     }
 
-    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, Direct3D12GraphicsPipeline pipeline, Direct3D12ArgumentTable? tableHint)
+    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, object pipeline, Direct3D12ArgumentTable? tableHint)
     {
         // User codecs and admission hooks can dispose the command owner or pipeline.
         // Revalidate the captured selection before issuing commands or publishing metadata.
         owner.ValidatePass(this);
-        pipeline.ValidateAlive();
-        if (!ReferenceEquals(_pipeline, pipeline))
+        if (pipeline is Direct3D12MeshPipeline mesh)
+        {
+            mesh.ValidateAlive();
+        }
+        else
+        {
+            ((Direct3D12GraphicsPipeline)pipeline).ValidateAlive();
+        }
+
+        if (!ReferenceEquals(SelectedProgram, pipeline))
         {
             throw new InvalidOperationException("The selected program changed while setting arguments.");
         }
@@ -285,20 +344,28 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         _argumentProgram = pipeline;
     }
 
-    private void PrepareDraw(bool indexed)
+    private void RequireTraditionalProgram()
+    {
+        if (_meshPipeline != null)
+        {
+            throw new InvalidOperationException("Traditional draws cannot use a mesh pipeline.");
+        }
+    }
+
+    private void PrepareDraw(bool indexed, bool mesh = false)
     {
         owner.ValidatePass(this);
-        if (_pipeline == null || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
+        if ((mesh ? _meshPipeline == null : _pipeline == null) || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
         {
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
         }
 
-        if (_pipeline.RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, _pipeline))
+        if (RequiresArguments && _arguments != null && !ReferenceEquals(_argumentProgram, SelectedProgram))
         {
             throw new InvalidOperationException("Set arguments again after switching to a different program.");
         }
 
-        if (_pipeline.RequiresArguments && _arguments == null)
+        if (RequiresArguments && _arguments == null)
         {
             throw new InvalidOperationException("Set shader arguments before drawing or dispatching.");
         }
@@ -320,11 +387,15 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
             }
         }
 
-        _pipeline.ValidateAlive();
+        ValidateProgramAlive(SelectedProgram!);
 
-        nint pipeline = _pipeline.Resolve(_state, _formats, _depthFormat, indexed ? _indexFormat : null);
+        nint pipeline = mesh ? _meshPipeline!.Resolve(_state, _formats, _depthFormat) : _pipeline!.Resolve(_state, _formats, _depthFormat, indexed ? _indexFormat : null);
         owner.Owner.Check(NativeMethods.Pipeline(owner.Native, pipeline, 0));
-        NativeMethods.Topology(owner.Native, (uint)_state.Desc.Topology + 1);
+        if (!mesh)
+        {
+            NativeMethods.Topology(owner.Native, (uint)_state.Desc.Topology + 1);
+        }
+
         if (registrations != null)
         {
             var binding = new Direct3D12ShaderBinding(owner.Owner, table!, registrations);

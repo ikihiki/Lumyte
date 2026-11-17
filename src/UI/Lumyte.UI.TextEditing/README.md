@@ -17,3 +17,9 @@ var editor = TextBox(text: text, layoutProvider: provider,
 同じ確定値の再提示はpreeditやcaretを変更しません。異なる文字列は外部値の更新として反映し、composition中なら既存sessionを取消・退役させてから適用します。外部値の反映はOnTextChangedへechoしません。入力を拒否・変換する場合も、callback後に採用する文字列で再構築します。省略した再構築をライブラリが任意のモデル変数から推測することはありません。Signalを使った自動再構築は後続の統合対象です。
 
 `TextBoxElement.Document`はmount後の低水準の編集backend・Automation統合用のget-only参照です。TextBoxへ文書を引数として渡したり置換したりせず、通常のアプリ状態には`Text`と`OnTextChanged`を使用します。
+
+## NumericBox
+
+NumericBoxはTextBoxを継承し、同じElement・TextDocument・明示的なLayoutProvider・IME接続・Fillを使用する。宣言はValueを指定し、Textは数値表示の入力に使用しない。Cultureは不変のsnapshot、表示はR形式、parseはNumberStyles.Float（桁区切りなし）である。空はnull、不完全な符号・小数・指数や不正値は文書に保持して数値を変更しない。IsValidは本文を公開せずにAutomationのNumeric情報へ反映する。
+
+OnChangedは妥当な数値を受理した後、OnCommittedは非変換中のEnterまたはfocus喪失で妥当な編集を整えた後に通知する。Escapeは最後の受理値の表示へ戻し、新宣言の採用は既存sessionの取消経路から文書へ反映する。[判断と契約](../../../docs/adr/ui/UI-0031-numeric-input-and-accepted-values.md)を参照する。

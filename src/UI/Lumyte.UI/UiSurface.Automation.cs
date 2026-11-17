@@ -37,8 +37,10 @@ public sealed partial class UiSurface
                 throw new InvalidOperationException("Semantic automation values must be finite and between zero and one inclusive.");
             }
 
+            UiNumericState? numeric = redacted ? null : element.SemanticNumericState;
+            numeric?.Validate();
             bool indeterminate = !redacted && element.AutomationIndeterminate;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey));
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey, numeric));
             if (redacted)
             {
                 return;

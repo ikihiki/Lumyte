@@ -15,7 +15,7 @@ internal sealed class ValidationQueue(ValidationDevice device, IGraphicsQueue ra
         ArgumentNullException.ThrowIfNull(desc.CommandBuffers);
         ArgumentNullException.ThrowIfNull(desc.WaitSemaphores);
         ArgumentNullException.ThrowIfNull(desc.SignalSemaphores);
-        QueueSubmitDesc logical = desc with { CommandBuffers = desc.CommandBuffers.ToArray(), WaitSemaphores = desc.WaitSemaphores.ToArray(), SignalSemaphores = desc.SignalSemaphores.ToArray() };
+        QueueSubmitDesc logical = desc with { CommandBuffers = desc.CommandBuffers.ToArray(), WaitSemaphores = desc.WaitSemaphores.Select(wait => wait with { Stages = ValidationStages.Normalize(device, wait.Stages) }).ToArray(), SignalSemaphores = desc.SignalSemaphores.ToArray() };
         ValidationCommandBuffer[] commands = logical.CommandBuffers.Select(command =>
         {
             device.Unwrap(command);
