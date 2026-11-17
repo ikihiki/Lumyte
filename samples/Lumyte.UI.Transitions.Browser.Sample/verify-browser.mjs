@@ -1,3 +1,4 @@
+import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import { BrowserEvaluationFailure, shouldIgnoreKnownBrowserTimeout } from "../../tools/graphics/browser-known-timeout.mjs";
@@ -38,6 +39,8 @@ await new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", resolve);
 });
 
+const traceCapture = captureDiagnosticsEnabled();
+const captureTrace = createCaptureTraceReporter();
 let browser;
 let socket;
 let command;
@@ -83,29 +86,36 @@ try {
             if (!action) { return; }
             if (message.error) { action.reject(new Error(JSON.stringify(message.error))); }
             else { action.resolve(message.result); }
+        } else if (message.method === "Runtime.bindingCalled" && message.params.name === captureDiagnosticBinding) {
+            captureTrace.observe(message.params.payload, { sample: "transitions", stage: traceStage ?? stage, pngIndex });
+            captureTrace.observeGpu(message.params.payload, { sample: "transitions", stage: traceStage ?? stage, pngIndex });
         } else if (message.method === "Log.entryAdded") {
             const entry = message.params.entry;
             if (entry.source !== "network") {
+                const captureObserved = traceCapture && captureTrace.observe(entry.text, { sample: "transitions", stage: traceStage ?? stage, pngIndex });
                 if (entry.level === "error" || /Destroyed texture|Validation Error|Error while parsing WGSL|[Ii]nvalid (?:command|bind|pipeline)/.test(entry.text)) errors.push(entry.text);
+                else if (captureObserved) { /* Already forwarded by the bounded reporter. */ }
                 else progress.push(entry.text);
             }
         } else if (message.method === "Runtime.exceptionThrown") {
             errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
         } else if (message.method === "Runtime.consoleAPICalled") {
             const text = message.params.args.map(value => value.description ?? String(value.value)).join(" ");
+            const captureObserved = traceCapture && captureTrace.observe(text, { sample: "transitions", stage: traceStage ?? stage, pngIndex });
             if (message.params.type === "error") { errors.push(text); }
+            else if (captureObserved) { /* Forwarded once by the bounded reporter, not retained in progress. */ }
             else if (traceGpu && text.startsWith("Browser GPU trace:")) {
-                console.log(JSON.stringify({ check: "browser-ui-transitions-gpu", pngIndex, stage: traceStage ?? stage, elapsedMs: performance.now() - traceStart, trace: text }));
+                captureTrace.observeGpu(text, { sample: "transitions", pngIndex, stage: traceStage ?? stage });
             } else { progress.push(text); }
         }
     });
-    command = function (method, params = {}) {
+    command = function (method, params = {}, timeoutMs) {
         const id = ++nextId;
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
-            }, method === "Page.navigate" ? 60000 : method === "Runtime.evaluate" ? 45000 : 10000);
+            }, timeoutMs ?? (method === "Page.navigate" ? 60000 : method === "Runtime.evaluate" ? 45000 : 10000));
             pending.set(id, {
                 resolve: value => { clearTimeout(timeout); resolve(value); },
                 reject: error => { clearTimeout(timeout); reject(error); },
@@ -114,6 +124,7 @@ try {
         });
     };
     await command("Runtime.enable");
+    if (traceCapture || traceGpu) await command("Runtime.addBinding", { name: captureDiagnosticBinding });
     await command("Log.enable");
     await command("Emulation.setFocusEmulationEnabled", { enabled: true });
     await command("Page.bringToFront");
@@ -126,6 +137,10 @@ try {
     }
     if (requiresSoftwareWebGpu()) {
         await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installBrowserGpuAudit.toString()})();` });
+    }
+    if (traceCapture) {
+        await command("Page.enable");
+        await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installCaptureDiagnosticsRequest.toString()})();` });
     }
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}${sequential ? "/?sequential" : sameContent ? "/?same-content" : ""}` });
     async function evaluate(expression) {
@@ -150,7 +165,7 @@ try {
         const index = ++pngIndex;
         const start = performance.now();
         const log = status => {
-            if (traceGpu && index <= 100) console.log(JSON.stringify({ check: "browser-ui-transitions-png", index, stage: traceStage ?? stage, status, elapsedMs: performance.now() - start }));
+            if (traceCapture || traceGpu) captureTrace.capture({ index, stage: traceStage ?? stage, status, elapsedMs: performance.now() - start });
         };
         log("start");
         try {
@@ -314,6 +329,7 @@ try {
     }
     console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
 } catch (failure) {
+    if (traceCapture || traceGpu) await captureTrace.failure(command, { sample: "transitions", stage, pngIndex });
     let audit;
     if (process.env.LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT === "1" && sequential && !sameContent
         && stage === "entry-midpoint-png" && failure instanceof BrowserEvaluationFailure) {
