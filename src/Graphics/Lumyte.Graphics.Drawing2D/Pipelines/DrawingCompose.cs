@@ -55,7 +55,7 @@ public static partial class DrawingCompose
                 lock (_gate)
                 {
                     CommandRoute2D[] routes = Freeze(device, resources);
-                    var scope = new BackendCompileScope2D(device);
+                    var scope = new BackendCompileScope2D(device, resourceOwner);
                     try
                     {
                         object[] leaves = new object[11];

@@ -99,7 +99,7 @@ var fill = FillPath(BackendBinding2D<IFillPathRenderer2D>.Shared(paths, manager 
 var stroke = StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Shared(paths, manager => manager));
 ```
 
-別の BuildRenderer 呼出しでは新しい scope と instance を作る。既存の借用 instance を明示する Borrowed は破棄しない。Shared の factory が返す instance は renderer 所有で、準備結果の資源使用が残る間は資源 coordinator が保持する。custom backend も従来どおり context.RetainResources を使い、必要な参照寿命を準備結果に結び付ける。
+別の BuildRenderer 呼出しでは新しい scope と instance を作る。factory の戻り値と明示した resourceOwner が同じ実 instance の場合、構築成功時だけ外部 owner の一つの解放経路へ移す。構築失敗ではその caller 所有権を消費しない。異なる share key が同じ実 instance を返した場合も解放責任だけを参照 identity で一つにし、論理設定や型による実行の統合はしない。既存の借用 instance を明示する Borrowed は破棄しない。Shared の factory が返す instance は renderer 所有であり、host が direct の準備結果、retained の batch run、Graph の準備 owner に独立した使用権を持たせる。custom backend が context.RetainResources を呼ばなくても、記録と batch の破棄が成功するまで factory 所有の backend を保持する。回収に失敗した batch が残る間は使用権も保持し、retry 成功後に返す。context.RetainResources は従来の shader 等の借用資源を保持する用途として維持し、新しい backend 実装義務にはしない。
 
 renderer ごとの DrawingResourceState2D、RetainedDrawingCache2D、所有者 ledger は一つとする。DrawingArgumentPlan2D は各 PrepareAsync ごとに一つで、全種別が同じ context を通じて登録し、最後に SealAsync する。別 frame の可変 scratch、mask、出力、登録中の引数表を共有しない。読取り geometry の世代共有や copy-on-write は個別 backend の不変資源契約に従う。
 
@@ -201,7 +201,7 @@ DescribeDataflow は BuildRenderer が使う凍結 route 配列から、kind、�
 
 ### Graph 接続と寿命
 
-Graph 側は構築済み IRenderer2D を新 overload へ渡す。Drawing2D 内の friend interface が元の固定表と resource coordinator を接続し、公開 consumer runner や具体型への downcast を要求しない。元の table constructor と source factory callback、graph-local handle の所有権と記録 callback の guard は維持する。借用した host 間で backend の可変状態を同時使用しないよう、一つの renderer とそれから借用した Graph host の準備は呼出し側が直列化する。未対応の外部 IRenderer2D と異なる device は graph を変更する前に拒否する。
+Graph 側は構築済み IRenderer2D を新 overload へ渡す。Drawing2D 内の friend interface が元の固定表と resource coordinator を接続し、公開 consumer runner や具体型への downcast を要求しない。元の table constructor と source factory callback、graph-local handle の所有権と記録 callback の guard は維持する。借用した host 間で backend の可変状態を同時使用しないよう、一つの renderer とそれから借用した Graph host の準備は呼出し側が直列化する。未対応の外部 IRenderer2D と異なる device は graph を変更する前に拒否する。source の破棄後も有効な host 借用を layer と backdrop の全 compositor に伝え、型付き描画だけを例外扱いしない。source と Graph host の両方を破棄しても、準備済み owner が参照する backend はその batch の回収完了まで保持する。
 
 基準 SHA の `src/Graphics/Lumyte.Graphics.Drawing2D/Execution/PreparedDraw2D.cs` と `PreparedDrawingFrame2D.cs` の既存の所有権を維持する。retained frame は Record、Finish、Submit、AttachSubmission、実完了確認、command 破棄、Retire、Dispose の順に扱う。未記録は Dispose、記録済みで確実に未送信なら command 破棄後に AbortUnsubmitted を使う。
 

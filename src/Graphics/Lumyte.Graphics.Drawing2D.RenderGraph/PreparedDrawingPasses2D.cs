@@ -7,6 +7,7 @@ public sealed class PreparedDrawingPasses2D : IDisposable
     private readonly List<IDisposable> _resources = [];
     private bool _recorded;
     private bool _disposed;
+    private IDisposable? _compositionUse;
 
     internal PreparedDrawingPasses2D()
     {
@@ -15,7 +16,7 @@ public sealed class PreparedDrawingPasses2D : IDisposable
     /// <summary>Releases owned resources in reverse order; failed entries remain owned for a later retry.</summary>
     public void Dispose()
     {
-        if (_disposed && _resources.Count == 0)
+        if (_disposed && _resources.Count == 0 && _compositionUse is null)
         {
             return;
         }
@@ -39,7 +40,12 @@ public sealed class PreparedDrawingPasses2D : IDisposable
         {
             throw new AggregateException("Failed to release drawing preparation resources.", failures);
         }
+
+        _compositionUse?.Dispose();
+        _compositionUse = null;
     }
+
+    internal void HoldComposition(IDisposable? compositionUse) => _compositionUse = compositionUse;
 
     internal void Own(IDisposable resource)
     {

@@ -12,12 +12,15 @@ public sealed class PreparedDraw2D : IDisposable
     private bool _disposed;
     private bool _recorded;
     private List<IPreparedCommandBatch2D>? _unreleased;
+    private IDisposable? _compositionUse;
+    private bool _batchesDisposed;
 
-    internal PreparedDraw2D(RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches, DrawingProfileContext? profileContext = null)
+    internal PreparedDraw2D(RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches, DrawingProfileContext? profileContext = null, IDisposable? compositionUse = null)
     {
         _target = target with { };
         _batches = batches;
         _profileContext = profileContext ?? default(DrawingProfileContext);
+        _compositionUse = compositionUse;
     }
 
     /// <summary>Records once into a command buffer, outside an active pass, without submitting.</summary>
@@ -34,14 +37,14 @@ public sealed class PreparedDraw2D : IDisposable
         using var profile = DrawingProfileScope.Start(11, _profileContext, root: true);
         try
         {
-            if (_disposed && _unreleased is null)
+            if (_disposed && _unreleased is null && _compositionUse is null)
             {
                 profile?.Skip();
                 return;
             }
 
             _disposed = true;
-            IReadOnlyList<IPreparedCommandBatch2D> remaining = _unreleased ?? _batches;
+            IReadOnlyList<IPreparedCommandBatch2D> remaining = _batchesDisposed ? [] : _unreleased ?? _batches;
             List<IPreparedCommandBatch2D>? failed = null;
             List<Exception>? errors = null;
             for (int i = remaining.Count - 1; i >= 0; i--)
@@ -64,6 +67,9 @@ public sealed class PreparedDraw2D : IDisposable
                 throw new AggregateException("Failed to release drawing resources.", errors);
             }
 
+            _batchesDisposed = true;
+            _compositionUse?.Dispose();
+            _compositionUse = null;
             profile?.Success();
         }
         catch (Exception error)

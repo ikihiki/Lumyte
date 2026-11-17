@@ -10,7 +10,7 @@ using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
 namespace Lumyte.Graphics.Drawing2D.Tests;
 
 /// <summary>Verifies the generated public construction API across an assembly boundary.</summary>
-public sealed class CompositionMigrationTests
+public sealed partial class CompositionMigrationTests
 {
     /// <summary>Checks every public drawing command reaches its dedicated interface in painter order.</summary>
     /// <returns>The asynchronous test completion.</returns>

@@ -2,11 +2,12 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
-internal sealed class BackendCompileScope2D(IGraphicDevice device) : IDisposable
+internal sealed class BackendCompileScope2D(IGraphicDevice device, IDisposable? externalOwner = null) : IDisposable
 {
     private readonly Dictionary<object, object> _instances = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, object> _names = new(StringComparer.Ordinal);
     private readonly List<IDisposable> _owned = [];
+    private readonly HashSet<IDisposable> _ownedIdentities = new(ReferenceEqualityComparer.Instance);
 
     public void Dispose()
     {
@@ -33,7 +34,14 @@ internal sealed class BackendCompileScope2D(IGraphicDevice device) : IDisposable
         }
 
         T result = shared.Create(device) ?? throw new InvalidOperationException("A shared factory returned null.");
-        _owned.Add(result);
+
+        // The external owner remains caller-owned until Renderer2D construction succeeds.
+        // It has one disposal path in DrawingResourceState2D, even when factories alias it.
+        if (!ReferenceEquals(result, externalOwner) && _ownedIdentities.Add(result))
+        {
+            _owned.Add(result);
+        }
+
         _instances.Add(shared, result);
         return result;
     }

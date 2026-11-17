@@ -56,7 +56,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         _disposed = true;
         if (_resourceUse is not null)
         {
-            _resourceUse.Dispose();
+            _resources.ReturnBorrow(_resourceUse);
         }
         else
         {
@@ -126,6 +126,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         var owner = new PreparedDrawingPasses2D();
         try
         {
+            owner.HoldComposition(_resources.RetainComposition(allowReturned: _resourceUse is not null));
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);
@@ -550,7 +551,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     private async ValueTask AppendCommandsAsync(RenderGraphBuilder graph, DrawList2D list, int begin, int end, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, PreparedDrawingPasses2D owner, DrawingArgumentPlan2D argumentPlan, CancellationToken cancellationToken)
     {
         IReadOnlyList<DrawingCommand2D> commands = list.Commands;
-        var context = new GraphPreparationContext2D(graph.Device!, graph, bindings, target, _resources);
+        var context = new GraphPreparationContext2D(graph.Device!, graph, bindings, target, _resources, _resourceUse is not null);
         int index = begin;
         while (index < end)
         {
@@ -646,7 +647,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         EffectPixelRect captureBounds = Bounds(context.Target);
         RenderTargetBinding2D capture = CreateIntermediate(context.Graph, captureBounds, context.Target.PixelScale, "drawing2d.backdrop.snapshot");
         AppendClear(context.Graph, capture);
-        var captureContext = new GraphPreparationContext2D(context.Device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load }, context.ResourceState);
+        var captureContext = new GraphPreparationContext2D(context.Device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load }, context.ResourceState, context.AllowReturnedResources);
         var targetSource = new GraphImageSource2D(context.Target.Texture, context.Target.Description, Bounds(context.Target));
         var emptyState = new DrawingState2D(Matrix3x2.Identity, ClipStack2D.Empty);
         IPreparedGraphCommandBatch2D snapshot = await DrawingGraphCompositor.PrepareAsync(captureContext, targetSource, emptyState, replace: true, ct: cancellationToken).ConfigureAwait(false);

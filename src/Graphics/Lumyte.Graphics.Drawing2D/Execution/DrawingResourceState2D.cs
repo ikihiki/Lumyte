@@ -77,6 +77,25 @@ internal sealed class DrawingResourceState2D : IDisposable
 
     internal void AttachCompositionOwner(IDisposable owner) => _compositionOwner = owner;
 
+    internal void ReturnBorrow(IDisposable use)
+    {
+        lock (_gate)
+        {
+            // Failed preparation owners may themselves retain this state. Drain them
+            // before returning the host borrow so their retry owner remains reachable.
+            RetryCleanup();
+            use.Dispose();
+        }
+    }
+
+    internal IDisposable? RetainComposition(bool allowReturned = false)
+    {
+        lock (_gate)
+        {
+            return _compositionOwner is null ? null : Retain(allowReturned, ensureResources: false);
+        }
+    }
+
     internal IDisposable Retain(bool allowReturned = false, bool ensureResources = true)
     {
         lock (_gate)
