@@ -96,6 +96,7 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
     public void Barrier(MemoryBarrierDesc barrier)
     {
         OutsidePass();
+        barrier = barrier with { Before = ValidationStages.Normalize(Device, barrier.Before), After = ValidationStages.Normalize(Device, barrier.After) };
         using GraphicsValidation.RecordingTransaction tx = Device.Tracker.BeginRecording(this);
         Device.Tracker.MemoryBarrier(this, barrier.Before, barrier.After);
         Raw.Barrier(barrier);
@@ -106,6 +107,7 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
         where T : unmanaged
     {
         OutsidePass();
+        barrier = barrier with { Before = ValidationStages.Normalize(Device, barrier.Before), After = ValidationStages.Normalize(Device, barrier.After) };
         BufferBarrierDesc<T> native = barrier with { Buffer = Unwrap(barrier.Buffer) };
         using GraphicsValidation.RecordingTransaction tx = Device.Tracker.BeginRecording(this);
         Device.Tracker.Barrier(this, barrier.Buffer.Buffer, barrier.Before, barrier.After, barrier.Buffer.OffsetInBytes, barrier.Buffer.SizeInBytes);
@@ -117,6 +119,7 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
         where T : struct, IShaderArguments
     {
         OutsidePass();
+        barrier = barrier with { Before = ValidationStages.Normalize(Device, barrier.Before), After = ValidationStages.Normalize(Device, barrier.After) };
         var native = new ShaderDataBufferBarrierDesc<ValidationArguments<T>> { Buffer = Unwrap(barrier.Buffer), Before = barrier.Before, After = barrier.After };
         using GraphicsValidation.RecordingTransaction tx = Device.Tracker.BeginRecording(this);
         Device.Tracker.Barrier(this, barrier.Buffer.Buffer, barrier.Before, barrier.After, checked(barrier.Buffer.Offset * barrier.Buffer.Buffer.ShaderElementStrideInBytes), checked(barrier.Buffer.Count * barrier.Buffer.Buffer.ShaderElementStrideInBytes));
@@ -127,6 +130,7 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
     public void Barrier(TextureBarrierDesc barrier)
     {
         OutsidePass();
+        barrier = barrier with { Before = ValidationStages.Normalize(Device, barrier.Before), After = ValidationStages.Normalize(Device, barrier.After) };
         TextureBarrierDesc native = barrier with { Texture = Device.Unwrap(barrier.Texture) };
         using GraphicsValidation.RecordingTransaction tx = Device.Tracker.BeginRecording(this);
         Device.Tracker.TextureBarrier(this, barrier);

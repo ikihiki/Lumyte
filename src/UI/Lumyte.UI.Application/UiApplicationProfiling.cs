@@ -9,7 +9,9 @@ internal sealed class UiApplicationProfiling : EventSource
 {
     internal static readonly UiApplicationProfiling Log = new();
     private static readonly AsyncLocal<Scope?> _current = new();
+    private static readonly AsyncLocal<long> _capture = new();
     private static long _nextSpan;
+    private static long _nextCapture;
 
     [Event(1, Level = EventLevel.Informational, Keywords = Keywords.Stages)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "EventData contains only declared fixed-width Guid, Boolean, Int32 and Int64 scalar fields; no object graph or reflected properties are serialized.")]
@@ -261,6 +263,77 @@ internal sealed class UiApplicationProfiling : EventSource
         }
     }
 
+    [Event(12, Level = EventLevel.Informational, Keywords = Keywords.Capture)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Only fixed-width declared scalar fields are copied.")]
+    public unsafe void CaptureState(long requestId, Guid profileRunId, long frameId, Guid sourceId, int phase, int reason, int processingCount, int owned, int drawingBusy)
+    {
+        if (!IsEnabled(EventLevel.Informational, Keywords.Capture))
+        {
+            return;
+        }
+
+        EventData* data = stackalloc EventData[9];
+        data[0].DataPointer = (IntPtr)(&requestId);
+        data[0].Size = sizeof(long);
+        data[1].DataPointer = (IntPtr)(&profileRunId);
+        data[1].Size = sizeof(Guid);
+        data[2].DataPointer = (IntPtr)(&frameId);
+        data[2].Size = sizeof(long);
+        data[3].DataPointer = (IntPtr)(&sourceId);
+        data[3].Size = sizeof(Guid);
+        data[4].DataPointer = (IntPtr)(&phase);
+        data[4].Size = sizeof(int);
+        data[5].DataPointer = (IntPtr)(&reason);
+        data[5].Size = sizeof(int);
+        data[6].DataPointer = (IntPtr)(&processingCount);
+        data[6].Size = sizeof(int);
+        data[7].DataPointer = (IntPtr)(&owned);
+        data[7].Size = sizeof(int);
+        data[8].DataPointer = (IntPtr)(&drawingBusy);
+        data[8].Size = sizeof(int);
+        WriteEventCore(12, 9, data);
+    }
+
+    [NonEvent]
+    internal static long StartCapture()
+    {
+        if (!Log.IsEnabled(EventLevel.Informational, Keywords.Capture))
+        {
+            return 0;
+        }
+
+        long id = Interlocked.Increment(ref _nextCapture);
+        Capture(id, 1);
+        return id;
+    }
+
+    [NonEvent]
+    internal static void Capture(long id, int phase, Key key = default, Guid source = default, int reason = 0, int processing = 0, int owned = 0, int busy = 0)
+    {
+        if (id != 0)
+        {
+            try
+            {
+                Log.CaptureState(id, key.Run, key.Frame, source, phase, reason, processing, owned, busy);
+            }
+            catch (Exception)
+            {
+                // Diagnostics must never change completion or ownership.
+            }
+        }
+    }
+
+    [NonEvent]
+    internal static long CurrentCapture() => _capture.Value;
+
+    [NonEvent]
+    internal static long SetCapture(long id)
+    {
+        long previous = _capture.Value;
+        _capture.Value = id;
+        return previous;
+    }
+
     [NonEvent]
     internal static Key ReadKey()
     {
@@ -294,6 +367,7 @@ internal sealed class UiApplicationProfiling : EventSource
         public const EventKeywords Stages = (EventKeywords)2;
         public const EventKeywords Counters = (EventKeywords)4;
         public const EventKeywords GPU = (EventKeywords)8;
+        public const EventKeywords Capture = (EventKeywords)16;
     }
 
     internal sealed class Scope : IDisposable

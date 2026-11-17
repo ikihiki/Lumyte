@@ -99,6 +99,8 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     {
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);
+        _ = MeshShaderValidation.NormalizeStages(barrier.Before.Stages, Owner.Caps.Features);
+        _ = MeshShaderValidation.NormalizeStages(barrier.After.Stages, Owner.Caps.Features);
         CommandValidation.Scope(barrier.Before);
         CommandValidation.Scope(barrier.After);
         MemoryBarrierNative(barrier);
@@ -110,6 +112,8 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         RequireRecording();
         ArgumentNullException.ThrowIfNull(barrier);
         Direct3D12Buffer<T> buffer = Buffer(barrier.Buffer, 0);
+        _ = MeshShaderValidation.NormalizeStages(barrier.Before.Stages, Owner.Caps.Features);
+        _ = MeshShaderValidation.NormalizeStages(barrier.After.Stages, Owner.Caps.Features);
         CommandValidation.Scope(barrier.Before);
         CommandValidation.Scope(barrier.After);
         CommandValidation.BufferAccess(buffer, barrier.Before);
@@ -125,6 +129,8 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
         CommandValidation.Range(texture, barrier.Range);
         CommandValidation.TextureState(texture, barrier.BeforeState, false);
         CommandValidation.TextureState(texture, barrier.AfterState, true);
+        _ = MeshShaderValidation.NormalizeStages(barrier.Before.Stages, Owner.Caps.Features);
+        _ = MeshShaderValidation.NormalizeStages(barrier.After.Stages, Owner.Caps.Features);
         CommandValidation.Scope(barrier.Before);
         CommandValidation.Scope(barrier.After);
         CommandValidation.TextureAccess(barrier.BeforeState, barrier.Before);

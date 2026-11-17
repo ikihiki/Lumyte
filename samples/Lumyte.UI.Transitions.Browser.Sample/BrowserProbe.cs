@@ -12,6 +12,16 @@ public static partial class BrowserProbe
 {
     internal static TransitionScene? Scene { get; set; }
 
+    /// <summary>Enables bounded capture diagnostics before application startup.</summary>
+    /// <param name="sink">The metadata-only diagnostic transport installed by the capture runner.</param>
+    [JSExport]
+    public static void EnableCaptureDiagnostics([JSMarshalAs<JSType.Function<JSType.String>>] Action<string> sink) => Lumyte.UI.SampleSupport.UiCaptureDiagnostics.Enable(sink);
+
+    /// <summary>Gets bounded capture events and pending stage observations.</summary>
+    /// <returns>The diagnostic JSON snapshot.</returns>
+    [JSExport]
+    public static string GetCaptureDiagnostics() => Lumyte.UI.SampleSupport.UiCaptureDiagnostics.GetSnapshot();
+
     /// <summary>Gets startup readiness after logical initial navigation.</summary>
     /// <returns>Whether the primary window and navigator are available.</returns>
     [JSExport]

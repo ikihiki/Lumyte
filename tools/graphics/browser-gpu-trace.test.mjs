@@ -37,7 +37,8 @@ function fixture() {
     method(buffer, "mapAsync", undefined, true);
     let tick = 0;
     const page = { navigator: { gpu }, performance: { now: () => ++tick },
-        console: { info: (prefix, value) => { if (prefix === "Browser GPU trace:") logs.push(JSON.parse(value)); } } };
+        __lumyteCaptureDiagnosticEvent: payload => logs.push(JSON.parse(payload.slice("Browser GPU trace: ".length))),
+        console: { info: () => { throw new Error("Unexpected normal-path console output"); } } };
     return { page, logs, calls, descriptor, pipeline, error, promises, gpu, adapter, device, queue, buffer,
         mode(value) { mode = value; } };
 }

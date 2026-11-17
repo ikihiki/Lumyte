@@ -409,7 +409,7 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
                 TextDocumentChange? latest = changes.LastOrDefault(change => change.CommittedTextChanged && change.Origin != TextEditOrigin.Application && change.Revision > editor.SourceRevision);
                 if (latest is not null)
                 {
-                    editor.Widget.OnTextChanged?.Invoke(new(snapshot.CommittedText, snapshot.Revision, latest.Origin));
+                    editor.NotifyTextChanged(new(snapshot.CommittedText, snapshot.Revision, latest.Origin));
                 }
             }
             catch (Exception error)

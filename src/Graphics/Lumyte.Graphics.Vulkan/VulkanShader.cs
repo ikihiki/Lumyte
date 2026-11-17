@@ -13,6 +13,15 @@ internal sealed unsafe class VulkanShader : IGraphicsShader
     {
         (_owner, Artifact) = (owner, artifact);
         ShaderTargetData target = artifact.GetTarget(owner.Caps.ShaderTarget);
+        if (target.Stage is ShaderStage.Mesh or ShaderStage.Task)
+        {
+            MeshShaderValidation.Validate(target, owner.Caps);
+        }
+        else if (target.Stage is not (ShaderStage.Vertex or ShaderStage.Fragment or ShaderStage.Compute))
+        {
+            throw new NotSupportedException("Unsupported Vulkan shader stage.");
+        }
+
         VulkanPushConstants.ValidateStorage(owner, target);
         byte[] code = target.Code;
         fixed (byte* bytes = code)

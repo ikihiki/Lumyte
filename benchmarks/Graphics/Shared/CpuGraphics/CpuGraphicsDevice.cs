@@ -284,6 +284,9 @@ public sealed class CpuGraphicsDevice : IGraphicDevice, IGraphicsDeviceOwner, ID
     }
 
     /// <inheritdoc/>
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException("Mesh execution is not modeled by the CPU benchmark device.");
+
+    /// <inheritdoc/>
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
         Own(desc.ComputeShader);

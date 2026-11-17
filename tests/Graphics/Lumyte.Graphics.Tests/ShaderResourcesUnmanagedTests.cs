@@ -173,6 +173,10 @@ public sealed class ShaderResourcesUnmanagedTests
             DispatchArguments = (groupCountX, groupCountY, groupCountZ);
         }
 
+        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+
         public void SetPipeline(IGraphicsPipeline pipeline) => throw new NotSupportedException();
 
         public void SetPipeline(IGraphicsComputePipeline pipeline) => throw new NotSupportedException();
@@ -244,6 +248,8 @@ public sealed class ShaderResourcesUnmanagedTests
         public IGraphicsCommandBuffer CreateCommandBuffer(CommandBufferDesc desc) => throw new NotSupportedException();
 
         public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw new NotSupportedException();
+
+        public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
 
         public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw new NotSupportedException();
 

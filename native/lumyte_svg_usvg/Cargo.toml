@@ -1,0 +1,16 @@
+[package]
+name = "lumyte_svg_usvg"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+usvg = { version = "=0.45.1", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

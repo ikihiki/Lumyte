@@ -35,8 +35,8 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         {
             if (_document is null)
             {
-                _document = new(Widget.Text);
-                _lastDeclaredText = Widget.Text;
+                _document = new(DeclaredText);
+                _lastDeclaredText = DeclaredText;
                 _textPending = false;
             }
 
@@ -56,7 +56,10 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
 
     internal ulong SourceRevision => _sourceRevision;
 
-    internal bool HasSourceValueChange => (_textPending || _lastDeclaredText != Widget.Text) && TextDocument.Normalize(Widget.Text) != Document.CaptureSnapshot().CommittedText;
+    internal bool HasSourceValueChange => (_textPending || _lastDeclaredText != DeclaredText) && TextDocument.Normalize(DeclaredText) != Document.CaptureSnapshot().CommittedText;
+
+    /// <summary>Gets the application text adopted by this editor.</summary>
+    protected virtual string DeclaredText => Widget.Text;
 
     /// <inheritdoc/>
     protected override bool RequiresHostValidation => true;
@@ -95,6 +98,8 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         return new(extend ? document.Selection.Anchor : next.Position, next.Position, extend ? document.Selection.AnchorAffinity : next.Affinity, next.Affinity);
     }
 
+    internal void NotifyTextChanged(UiTextChange change) => OnCommittedTextChanged(change);
+
     internal bool SynchronizeText()
     {
         TextDocument document = Document;
@@ -103,12 +108,12 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
             return false;
         }
 
-        if (!_textPending && _lastDeclaredText == Widget.Text)
+        if (!_textPending && _lastDeclaredText == DeclaredText)
         {
             return true;
         }
 
-        string value = TextDocument.Normalize(Widget.Text);
+        string value = TextDocument.Normalize(DeclaredText);
         TextDocumentSnapshot snapshot = document.CaptureSnapshot();
         if (snapshot.CommittedText != value)
         {
@@ -133,7 +138,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
             DocumentChanged();
         }
 
-        _lastDeclaredText = Widget.Text;
+        _lastDeclaredText = DeclaredText;
         _textPending = false;
         return true;
     }
@@ -162,6 +167,22 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         }
     }
 
+    /// <summary>Observes a committed user edit before the application text callback.</summary>
+    /// <param name="change">The coalesced edit.</param>
+    protected virtual void OnCommittedTextChanged(UiTextChange change) => Widget.OnTextChanged?.Invoke(change);
+
+    /// <summary>Replaces this editor's text without echoing it as a user edit.</summary>
+    /// <param name="text">The normalized application text; composition must already have ended.</param>
+    protected void ReplaceApplicationText(string text)
+    {
+        TextDocumentSnapshot snapshot = Document.CaptureSnapshot();
+        if (Document.TryReplace(snapshot.Revision, new(0, snapshot.Text.Length), text, new(text.Length, text.Length), TextEditOrigin.Application))
+        {
+            _sourceRevision = Document.CaptureSnapshot().Revision;
+            DocumentChanged();
+        }
+    }
+
     /// <inheritdoc/>
     protected override bool HostServicesChanged(Lumyte.UI.Compose.Definitions.Widget previous, Lumyte.UI.Compose.Definitions.Widget next)
     {
@@ -174,7 +195,7 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     protected override void ValidateRetainedDrawing()
     {
         if (_layoutRevision != Document.CaptureSnapshot().Revision || !ReferenceEquals(Widget.LayoutProvider, _layoutProvider)
-            || _textPending || _lastDeclaredText != Widget.Text)
+            || _textPending || _lastDeclaredText != DeclaredText)
         {
             InvalidateLayout();
         }

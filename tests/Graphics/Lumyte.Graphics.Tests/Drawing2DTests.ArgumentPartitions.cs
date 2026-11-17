@@ -356,6 +356,8 @@ public sealed partial class Drawing2DTests
 
         public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => _native.GetTextureCopyLayout(format);
 
+        public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
         public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => _native.CreateGraphicsPipeline(desc);
 
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => _native.CreateComputePipeline(desc);
@@ -475,6 +477,10 @@ public sealed partial class Drawing2DTests
             _arguments = ShaderTransfer.Capture(in arguments, rootParameter, shaderTypeName);
             native.SetArguments(in arguments, rootParameter, shaderTypeName);
         }
+
+        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
 
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);
 

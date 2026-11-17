@@ -11,6 +11,11 @@ public static class UiHeadlessApplicationExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         options ??= new();
+        if ((options.TextInputService is null) != (options.TextInputTargets is null))
+        {
+            throw new ArgumentException("A borrowed text service requires an explicit target resolver.", nameof(options));
+        }
+
         UiApplicationBuilder.ValidateSize(options.ClientSize);
         UiApplicationBuilder.ValidateSize(options.Scale);
         builder.SetPrimaryDefaults("Lumyte", options.ClientSize);
