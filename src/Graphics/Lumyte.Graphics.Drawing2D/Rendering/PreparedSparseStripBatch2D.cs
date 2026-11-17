@@ -38,11 +38,11 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
     private PreparedSparseStripBatch2D(RenderPreparationContext2D context)
     {
         _context = context;
-        Own(context.RetainResources());
-        Own(context.ArgumentPlan.Retain());
+        _pipeline = (context.RecordResources() ?? throw new NotSupportedException("Sparse strips require the canonical drawing shader ABI.")).GetPipeline(3);
         _scope = context.ArgumentPlan.Reserve();
-        _pipeline = context.RecordResources()!.GetPipeline(3);
     }
+
+    public bool HasStableOwners => true;
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
 
@@ -144,6 +144,8 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         var batch = new PreparedSparseStripBatch2D(context) { _bytes = strips.WorkingBytes };
         try
         {
+            batch.Own(context.RetainResources());
+            batch.Own(context.ArgumentPlan.Retain());
             batch.Build(strips, cancellationToken);
             return ValueTask.FromResult(batch);
         }

@@ -39,9 +39,9 @@ var after = DrawingCompose.SparseFillRect(
  }
 ```
 
-各 Prepare は現在の型付き命令から横区間を構築する。画像と距離場は保守的な矩形を使い、元の記述を GPU で評価する。mesh は元の幾何と中心位置で補間した coverage を維持する。予算と不正な入力のエラーを別候補への切替に変換しない。
+各 Prepare は現在の型付き命令から横区間を構築する。直接描画と graph adapter は、先行する互換命令の組が所有する容量を後続の予算から差し引く。CPU キャッシュ、現在の命令配列、塗りのコンパイル配列も同時に存在する容量として計上する。画像と距離場は保守的な矩形を使い、元の記述を GPU で評価する。mesh は元の幾何と中心位置で補間した coverage を維持する。予算と不正な入力のエラーを別候補への切替に変換しない。
 
-Record は active pass の外で upload と raster を記録する。連続する互換命令の組ごとに実行し、混在する他方式の描画順と背景の読み込み順を維持する。prepared owner が完了解放されるまで共有 service の寿命を保ち、直接描画、read lease、snapshot の既存 Prepare API と graph adapter を維持する。
+Record は active pass の外で upload と raster を記録する。連続する互換命令の組ごとに実行し、混在する他方式の描画順と背景の読み込み順を維持する。保持描画では、完了と command 解放を確認した横区間の資源だけを排他的に再利用する。組み込み GPU payload の同時共有や整数移動の対象には加えない。prepared owner が完了解放されるまで共有 service の寿命を保ち、直接描画、read lease、snapshot の既存 Prepare API と graph adapter を維持する。
 
 ## 検討した代替案
 

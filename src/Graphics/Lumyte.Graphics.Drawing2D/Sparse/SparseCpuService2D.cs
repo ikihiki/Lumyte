@@ -34,6 +34,6 @@ internal sealed class SparseCpuService2D(SparseCpuOptions2D options) : PipelineS
             throw new NotSupportedException("Sparse output exceeds the explicit strip or boundary-mask limit.");
         }
 
-        return await PreparedSparseStripBatch2D.PrepareAsync(context, plan, cancellationToken).ConfigureAwait(false);
+        return await PreparedSparseStripBatch2D.PrepareAsync(context, plan with { WorkingBytes = checked(plan.WorkingBytes + scratch + Geometry.EstimatedBytes) }, cancellationToken).ConfigureAwait(false);
     }
 }

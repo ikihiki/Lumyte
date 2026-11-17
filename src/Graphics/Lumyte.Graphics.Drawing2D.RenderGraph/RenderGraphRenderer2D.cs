@@ -28,6 +28,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
 
     private readonly IDisposable? _resourceUse;
     private readonly DrawingArgumentTableMode _argumentTableMode = DrawingArgumentTableMode.Auto;
+    private readonly long _maxWorkingBytes = 256L * 1024 * 1024;
     private bool _disposed;
     private int _preparing;
 
@@ -48,6 +49,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         _resourceUse = state.Retain(ensureResources: false);
         _resources = state;
         _argumentTableMode = source.ArgumentTableMode;
+        _maxWorkingBytes = source.MaxWorkingBytes;
     }
 
     /// <summary>Releases this host without disposing borrowed strategies or waiting for GPU work.</summary>
@@ -587,7 +589,11 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             }
 
             int firstReservation = argumentPlan.Reservations.Count;
-            var preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null);
+            var preparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null)
+            {
+                MaxWorkingBytes = _maxWorkingBytes,
+                OtherWorkingBytes = owner.WorkingBytes(argumentPlan),
+            };
             IPreparedCommandBatch2D batch = IsBuiltinRenderer(commands[index]) && preparation.RecordResources() is not null
                 ? await PreparedRecordBatch2D.PrepareAsync(preparation, TakeRecordBatch(list, ref index, end), cancellationToken).ConfigureAwait(false)
                 : commands[index] switch
