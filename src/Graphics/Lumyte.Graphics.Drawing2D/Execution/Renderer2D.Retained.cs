@@ -247,7 +247,11 @@ public sealed partial class Renderer2D
                                     {
                                         while (index < transformed.Commands.Count)
                                         {
-                                            context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
+                                            if (context.EnforceWorkingBudget)
+                                            {
+                                                context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
+                                            }
+
                                             if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
                                             {
                                                 batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
