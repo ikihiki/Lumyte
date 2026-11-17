@@ -47,6 +47,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
 
+    internal bool IsMeshPayload => _resources.IsMesh;
+
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
         get

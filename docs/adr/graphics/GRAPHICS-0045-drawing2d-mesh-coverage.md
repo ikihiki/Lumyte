@@ -24,8 +24,8 @@ using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
 Renderer.FillRect()[StandardFillRect()];
 // 変更後。非対応環境では明示した第二候補を使う。
 Renderer.FillRect()[
-    MeshFillRect(options: new(MaxCommands: 256,
-        MaxWorkingBytes: 16 * 1024 * 1024, NumericPoolBytes: 1024 * 1024)),
+    MeshFillRect(options: MeshCoverageLimits(maxCommands: 256,
+        maxWorkingBytes: 16 * 1024 * 1024, numericPoolBytes: 1024 * 1024)),
     StandardFillRect()
 ];
 ~~~
@@ -44,6 +44,8 @@ Mesh feature と非 null の MeshShaderLimits を両方要求する。実際の 
 
 同じ build の意味的に等しい immutable options は内部 service を共有する。各配置の processor と各 frame の引数計画は独立する。service の pipeline と shader は準備済み結果が残る間保持し、renderer の破棄後にも記録できる。入力 texture、sampler と glyph は借用し、回収に失敗した所有者の再試行経路を維持する。
 
+保持方針を指定した場合、内部の Mesh record owner だけを不変 payload として識別する。任意の custom callback の retained interface や公開 flag は適格性を与えない。cache は一つの構築済み renderer に閉じ、固定された Slot、service、options と device 世代を越えて共有しない。従来の完了確認と先行 producer の証明を変えず、可変の root property は毎回記録する。平行移動の最適化は全候補が内部 Mesh processor の Slot に限り、custom または Standard を含む候補列では従来どおり再構築する。
+
 追加宣言は Lumyte.Graphics.Drawing2D.Pipelines に置く。既存 IRenderer2D、Canvas と PrepareAsync の戻り型は変更しない。
 
 ~~~diff
@@ -51,6 +53,9 @@ Mesh feature と非 null の MeshShaderLimits を両方要求する。実際の 
 +// 全値を明示し、正の命令数・作業量と非負の idle pool 容量を要求する。
 +public sealed record MeshCoverageOptions2D(
 +    int MaxCommands, long MaxWorkingBytes, long NumericPoolBytes);
++// DrawingCompose に容量の factory を追加し、DSL 内で new を必要としない。
++public static MeshCoverageOptions2D MeshCoverageLimits(
++    int maxCommands, long maxWorkingBytes, long numericPoolBytes);
 +// DrawingCompose の生成 factory。対応する各命令にも同形を追加する。
 +public static Definitions.MeshFillRect MeshFillRect(MeshCoverageOptions2D options);
 ~~~

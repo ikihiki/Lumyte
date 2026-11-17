@@ -372,6 +372,8 @@ public sealed partial class Drawing2DTests
 
         internal int ComputePasses { get; private set; }
 
+        internal int MeshDispatches { get; private set; }
+
         internal ulong PayloadCopyBytes { get; private set; }
 
         internal List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> Roots { get; } = [];
@@ -397,7 +399,7 @@ public sealed partial class Drawing2DTests
 
         public void Barrier(TextureBarrierDesc barrier) => native.Barrier(barrier);
 
-        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots, selection);
+        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots, selection, () => MeshDispatches++);
 
         public IComputeEncoder BeginComputePass(ComputePassDesc desc)
         {
@@ -457,7 +459,7 @@ public sealed partial class Drawing2DTests
         }
     }
 
-    private sealed class PartitionRenderEncoder(IRenderEncoder native, List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> roots, (uint First, uint Count)? selection) : IRenderEncoder
+    private sealed class PartitionRenderEncoder(IRenderEncoder native, List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> roots, (uint First, uint Count)? selection, Action meshDispatch) : IRenderEncoder
     {
         private IArgumentTable? _table;
 
@@ -494,9 +496,14 @@ public sealed partial class Drawing2DTests
             native.SetArguments(in arguments, rootParameter, shaderTypeName);
         }
 
-        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+        public void SetPipeline(IMeshPipeline pipeline) => native.SetPipeline(pipeline);
 
-        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1)
+        {
+            CaptureDraw();
+            native.DrawMeshTasks(x, y, z);
+            meshDispatch();
+        }
 
         public void SetPipeline(IGraphicsPipeline pipeline) => native.SetPipeline(pipeline);
 

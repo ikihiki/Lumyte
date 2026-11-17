@@ -119,7 +119,7 @@ public sealed class MeshCoverageTests
     public void ReusedDeclarationBuildsIndependentPlacements()
     {
         Definitions.Renderer configuration = Configuration();
-        Definitions.MeshFillRect declaration = MeshFillRect(options: new(32, 4 * 1024 * 1024, 0));
+        Definitions.MeshFillRect declaration = MeshFillRect(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0));
         _ = configuration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()]];
         _ = configuration[Renderer.FillRect()[declaration, declaration]];
         using RendererBuildHost2D host = configuration.CreateHost();
@@ -135,7 +135,7 @@ public sealed class MeshCoverageTests
     public async Task ExplicitFallbackRecordsNoMeshAsync()
     {
         Definitions.Renderer configuration = Configuration();
-        _ = configuration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()], Renderer.FillRect()[MeshFillRect(options: new(32, 4 * 1024 * 1024, 0)), StandardFillRect()]];
+        _ = configuration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()], Renderer.FillRect()[MeshFillRect(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0)), StandardFillRect()]];
         using RendererBuildHost2D host = configuration.CreateHost();
         var device = new ProfilingDevice();
         DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
@@ -152,6 +152,210 @@ public sealed class MeshCoverageTests
         Assert.Empty(commands.Events.OfType<(string, uint, uint, uint)>());
         Assert.NotEmpty(commands.Events.OfType<(uint, uint)>());
         commands.Dispose();
+    }
+
+    /// <summary>Only completed immutable Mesh owners share across overlapping frames; replacement is copy-on-write.</summary>
+    /// <returns>The CPU fake-device lease proof.</returns>
+    [Fact]
+    public async Task ThreeMeshVersionsShareOnlyCompletedImmutablePayloadAsync()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        Definitions.Renderer configuration = Configuration(resident: true);
+        using RendererBuildHost2D host = configuration.CreateHost();
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var texture = new DispatchTexture { Width = 64, Height = 64 };
+        using IGraphicsTextureView view = texture.CreateView();
+        var target = new RenderTarget2D { View = view };
+        using var scene = new DrawingScene2D();
+        DrawingNodeId2D node = scene.Insert(scene.Root, 0, Content(0));
+        using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
+        using PreparedDrawingFrame2D warm = await renderer.PrepareAsync(snapshot, target);
+        using var warmCommands = new ProfilingCommands();
+        warm.Record(warmCommands);
+        int allocations = device.NativeBuffers;
+        using PreparedDrawingFrame2D unfinished = await renderer.PrepareAsync(snapshot, target);
+        Assert.True(device.NativeBuffers > allocations);
+        unfinished.Dispose();
+        Complete(warm, warmCommands);
+        allocations = device.NativeBuffers;
+        using PreparedDrawingFrame2D old = await renderer.PrepareAsync(snapshot, target);
+        using PreparedDrawingFrame2D same = await renderer.PrepareAsync(snapshot, target);
+        Assert.Equal(allocations, device.NativeBuffers);
+        scene.ReplaceContent(node, Content(1));
+        using DrawingSnapshot2D changed = scene.CaptureSnapshot();
+        using PreparedDrawingFrame2D replacement = await renderer.PrepareAsync(changed, target);
+        Assert.True(device.NativeBuffers > allocations);
+        using var oldCommands = new ProfilingCommands();
+        using var sameCommands = new ProfilingCommands();
+        using var replacementCommands = new ProfilingCommands();
+        renderer.Dispose();
+        old.Record(oldCommands);
+        same.Record(sameCommands);
+        replacement.Record(replacementCommands);
+        Assert.DoesNotContain("shader-copy", oldCommands.Events);
+        Assert.DoesNotContain("shader-copy", sameCommands.Events);
+        Assert.Contains("shader-copy", replacementCommands.Events);
+        Assert.Same(Assert.Single(oldCommands.Events.OfType<RecordedDrawRange>()).Records, Assert.Single(sameCommands.Events.OfType<RecordedDrawRange>()).Records);
+        Assert.NotSame(Assert.Single(oldCommands.Events.OfType<RecordedDrawRange>()).Records, Assert.Single(replacementCommands.Events.OfType<RecordedDrawRange>()).Records);
+        Complete(old, oldCommands);
+        Complete(same, sameCommands);
+        Complete(replacement, replacementCommands);
+    }
+
+    /// <summary>Exact integer translation updates only root properties consumed by both actual shader stages.</summary>
+    /// <returns>The fake immutable root identity verification.</returns>
+    [Fact]
+    public async Task IntegerTranslationUsesMeshRootPropertiesAsync()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        using RendererBuildHost2D host = Configuration(resident: true).CreateHost();
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var texture = new DispatchTexture { Width = 64, Height = 64 };
+        using IGraphicsTextureView view = texture.CreateView();
+        var target = new RenderTarget2D { View = view };
+        using var scene = new DrawingScene2D();
+        DrawingNodeId2D node = scene.Insert(scene.Root, 0, Content(0));
+        using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
+        using PreparedDrawingFrame2D warm = await renderer.PrepareAsync(snapshot, target);
+        using var warmCommands = new ProfilingCommands();
+        warm.Record(warmCommands);
+        RecordedDrawRange original = Assert.Single(warmCommands.Events.OfType<RecordedDrawRange>());
+        Complete(warm, warmCommands);
+        int allocations = device.NativeBuffers;
+        scene.SetTransform(node, System.Numerics.Matrix3x2.CreateTranslation(3, 4));
+        using DrawingSnapshot2D moved = scene.CaptureSnapshot();
+        using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(moved, target);
+        using var commands = new ProfilingCommands();
+        frame.Record(commands);
+        RecordedDrawRange translated = Assert.Single(commands.Events.OfType<RecordedDrawRange>());
+        Assert.Same(original.Records, translated.Records);
+        Assert.Equal(allocations, device.NativeBuffers);
+        Assert.Equal(3f, BitConverter.UInt32BitsToSingle(translated.Reserved0));
+        Assert.Equal(4f, BitConverter.UInt32BitsToSingle(translated.Reserved1));
+        Assert.DoesNotContain("shader-copy", commands.Events);
+        Complete(frame, commands);
+    }
+
+    /// <summary>Every declared Mesh kind consumes real numeric, paint, mask and image inputs; indexed Mesh stays explicit Standard.</summary>
+    /// <returns>The CPU recording proof for the complete configured API.</returns>
+    [Fact]
+    public async Task EveryConfiguredLogicalKindConsumesActualPayloadAsync()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        using RendererBuildHost2D host = Configuration().CreateHost();
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var target = new DispatchTexture();
+        using IGraphicsTextureView view = target.CreateView();
+        using var imageTexture = new DispatchTexture();
+        using IGraphicsTextureView image = imageTexture.CreateView();
+        using var maskTexture = new DispatchTexture { Format = TextureFormat.R8Unorm };
+        using IGraphicsTextureView mask = maskTexture.CreateView();
+        using var sampler = new DispatchSampler();
+        var builder = new PathBuilder2D();
+        builder.MoveTo(new(1, 1));
+        builder.LineTo(new(10, 1));
+        builder.LineTo(new(5, 10));
+        builder.Close();
+        Path2D path = builder.Build();
+        var paint = PaintGraph2D.Solid(new SRgba<float>(1, 0, 0, 0.5f));
+        var style = new StrokeStyle2D();
+        var rect = new Rect2D(1, 1, 10, 10);
+        var mesh = new Mesh2D([new MeshVertex2D(new(1, 1), 0.25f), new MeshVertex2D(new(10, 1), 0.5f), new MeshVertex2D(new(5, 10), 1)], [0, 1, 2]);
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(rect, paint);
+        canvas.FillRoundedRect(rect, 2, paint);
+        canvas.FillCircle(new(6, 6), 4, paint);
+        canvas.DrawLine(new(1, 1), new(10, 10), paint, style);
+        canvas.FillPath(path, paint);
+        canvas.StrokePath(path, paint, style);
+        canvas.DrawImage(new Image2D(image, sampler), rect, rect);
+        canvas.DrawCoverageMask(new CoverageImage2D(mask, sampler), rect, rect, paint);
+        canvas.DrawDistanceField(new DistanceField2D(mask, sampler, DistanceFieldEncoding2D.Sdf, 4), rect, rect, paint);
+        canvas.DrawMesh(mesh, paint);
+        canvas.DrawPaintGraph(paint);
+        using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new RenderTarget2D { View = view });
+        using var commands = new ProfilingCommands();
+        prepared.Record(commands);
+        Assert.True(commands.Events.OfType<(string, uint, uint, uint)>().Count(item => item.Item1 == "mesh") >= 10);
+        Assert.NotEmpty(commands.Events.OfType<(uint, uint)>());
+        Assert.Contains(device.Records, record => record.Kind == 7);
+        Assert.Contains(device.Records, record => record.Kind == 8);
+        commands.Dispose();
+    }
+
+    /// <summary>Different immutable capacities must not reuse another declaration's pipeline service.</summary>
+    /// <returns>The actual fake pipeline creation check.</returns>
+    [Fact]
+    public async Task DifferentOptionsCreateDifferentBuildServicesAsync()
+    {
+        Definitions.Renderer configuration = Configuration();
+        _ = configuration[Renderer.FillCircle()[Array.Empty<IPipelineDeclaration2D<FillCircleCommand2D>>()], Renderer.FillCircle()[MeshFillCircle(options: MeshCoverageLimits(maxCommands: 64, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))]];
+        using RendererBuildHost2D host = configuration.CreateHost();
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var texture = new DispatchTexture();
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(1, 1, 8, 8), new SRgba<float>(1, 0, 0, 1));
+        canvas.FillCircle(new(8, 8), 4, new SRgba<float>(0, 1, 0, 1));
+        using PreparedDraw2D prepared = await renderer.PrepareAsync(canvas.End(), new RenderTarget2D { View = view });
+        Assert.Equal(2, device.MeshPipelineCreations);
+    }
+
+    /// <summary>Mixed intrinsic Standard and closed Mesh routes must both receive extracted root translation.</summary>
+    /// <returns>The regression proof for mixed internal record provenance.</returns>
+    [Fact]
+    public async Task MixedStandardMeshTranslationReachesEveryRecordAsync()
+    {
+        Definitions.Renderer configuration = Configuration(resident: true);
+        _ = configuration[Renderer.FillRect()[Array.Empty<IPipelineDeclaration2D<FillRectCommand2D>>()], Renderer.FillRect()[StandardFillRect()]];
+        using RendererBuildHost2D host = configuration.CreateHost();
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        DrawingResources2D resources = new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
+        using IRenderer2D renderer = host.BuildRenderer(device, resources, null, null);
+        using var texture = new DispatchTexture { Width = 64, Height = 64 };
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(4, 4, 8, 8), new SRgba<float>(1, 0, 0, 0.5f));
+        canvas.FillCircle(new(12, 12), 4, new SRgba<float>(0, 1, 0, 0.5f));
+        using var scene = new DrawingScene2D();
+        DrawingNodeId2D node = scene.Insert(scene.Root, 0, canvas.End());
+        scene.SetTransform(node, System.Numerics.Matrix3x2.CreateTranslation(3, 4));
+        using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
+        using PreparedDrawingFrame2D frame = await renderer.PrepareAsync(snapshot, new RenderTarget2D { View = view });
+        using var commands = new ProfilingCommands();
+        frame.Record(commands);
+        RecordedDrawRange[] roots = commands.Events.OfType<RecordedDrawRange>().ToArray();
+        Assert.Equal(2, roots.Length);
+        Assert.All(roots, root => Assert.Equal(3f, BitConverter.UInt32BitsToSingle(root.Reserved0)));
+        Assert.All(roots, root => Assert.Equal(4f, BitConverter.UInt32BitsToSingle(root.Reserved1)));
+        Assert.Single(commands.Events.OfType<(string, uint, uint, uint)>(), item => item.Item1 == "mesh");
+        Assert.NotEmpty(commands.Events.OfType<(uint, uint)>());
+        commands.Dispose();
+        frame.AbortUnsubmitted();
+    }
+
+    private static DrawList2D Content(int variant)
+    {
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(4, 4, 8, 8), PaintGraph2D.Solid(new SRgba<float>(1, variant, 0, 0.5f)));
+        return canvas.End();
+    }
+
+    private static void Complete(PreparedDrawingFrame2D frame, ProfilingCommands commands)
+    {
+        commands.Submit();
+        frame.AttachSubmission(new CompletedSubmission());
+        commands.Dispose();
+        frame.Retire();
     }
 
     private static DeviceCaps SupportedCaps() => new()
@@ -171,18 +375,29 @@ public sealed class MeshCoverageTests
         },
     };
 
-    private static Definitions.Renderer Configuration() => Renderer(
+    private static Definitions.Renderer Configuration(bool resident = false) => Renderer(
         argumentTables: DrawingArgumentTableMode.Auto,
-        retention: RetentionLimits(maxFramesInFlight: 3, maxCachedAssets: 32, maxCachedBytes: 4 * 1024 * 1024))[
-        Renderer.FillRect()[MeshFillRect(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.FillRoundedRect()[MeshFillRoundedRect(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.FillCircle()[MeshFillCircle(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.DrawLine()[MeshDrawLine(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.FillPath()[MeshFillPath(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.StrokePath()[MeshStrokePath(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.DrawImage()[MeshDrawImage(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.DrawCoverageMask()[MeshDrawCoverageMask(options: new(32, 4 * 1024 * 1024, 0))],
-        Renderer.DrawDistanceField()[MeshDrawDistanceField(options: new(32, 4 * 1024 * 1024, 0))],
+        retention: resident ? RetentionGpuLimits(3, 32, 4 * 1024 * 1024, 16 * 1024 * 1024) : RetentionLimits(maxFramesInFlight: 3, maxCachedAssets: 32, maxCachedBytes: 4 * 1024 * 1024))[
+        Renderer.FillRect()[MeshFillRect(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.FillRoundedRect()[MeshFillRoundedRect(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.FillCircle()[MeshFillCircle(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.DrawLine()[MeshDrawLine(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.FillPath()[MeshFillPath(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.StrokePath()[MeshStrokePath(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.DrawImage()[MeshDrawImage(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.DrawCoverageMask()[MeshDrawCoverageMask(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
+        Renderer.DrawDistanceField()[MeshDrawDistanceField(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))],
         Renderer.DrawMesh()[StandardDrawMesh()],
-        Renderer.DrawPaintGraph()[MeshDrawPaintGraph(options: new(32, 4 * 1024 * 1024, 0))]];
+        Renderer.DrawPaintGraph()[MeshDrawPaintGraph(options: MeshCoverageLimits(maxCommands: 32, maxWorkingBytes: 4 * 1024 * 1024, numericPoolBytes: 0))]];
+
+    private sealed class CompletedSubmission : IGraphicsSubmission
+    {
+        public SubmissionStatus Status => SubmissionStatus.Completed;
+
+        public ValueTask WaitAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public void Dispose()
+        {
+        }
+    }
 }

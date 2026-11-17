@@ -5,6 +5,18 @@ namespace Lumyte.Graphics.Drawing2D.Pipelines;
 /// <summary>Passive mesh coverage algorithm declarations.</summary>
 public static partial class DrawingCompose
 {
+    /// <summary>Creates immutable Mesh admission and resource bounds with no implicit values.</summary>
+    /// <param name="maxCommands">Maximum logical commands per candidate batch.</param>
+    /// <param name="maxWorkingBytes">Conservative preparation working bound.</param>
+    /// <param name="numericPoolBytes">Maximum idle numeric stream storage.</param>
+    /// <returns>The validated passive options.</returns>
+    public static MeshCoverageOptions2D MeshCoverageLimits(int maxCommands, long maxWorkingBytes, long numericPoolBytes)
+    {
+        var options = new MeshCoverageOptions2D(maxCommands, maxWorkingBytes, numericPoolBytes);
+        options.Validate();
+        return options;
+    }
+
     /// <summary>Passive mesh algorithms; each placement has independent processing state.</summary>
     public static partial class Definitions
     {

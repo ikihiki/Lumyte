@@ -14,6 +14,12 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
+        if (args.Contains("--mesh-unsupported-wgpu", StringComparer.Ordinal))
+        {
+            MeshUnsupportedSmoke.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         if (args.Contains("--resident-wgpu", StringComparer.Ordinal))
         {
             ResidentSmoke.RunAsync().GetAwaiter().GetResult();

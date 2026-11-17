@@ -149,22 +149,22 @@ internal sealed class ProfilingDevice : IGraphicDevice
         CopiedBytes += bytes;
     }
 
-    private sealed class Shader(ShaderArtifact artifact) : IGraphicsShader
+    internal sealed class Shader(ShaderArtifact artifact) : IGraphicsShader
     {
         public ShaderArtifact Artifact => artifact;
 
-        public void Dispose()
-        {
-        }
+        internal bool IsDisposed { get; private set; }
+
+        public void Dispose() => IsDisposed = true;
     }
 
-    private sealed class MeshPipeline(MeshPipelineDesc desc) : IMeshPipeline
+    internal sealed class MeshPipeline(MeshPipelineDesc desc) : IMeshPipeline
     {
         public MeshPipelineDesc Desc => desc;
 
-        public void Dispose()
-        {
-        }
+        internal bool IsDisposed { get; private set; }
+
+        public void Dispose() => IsDisposed = true;
     }
 
     private sealed class Pipeline(GraphicsPipelineDesc desc) : IGraphicsPipeline

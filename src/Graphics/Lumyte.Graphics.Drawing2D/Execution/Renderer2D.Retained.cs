@@ -183,7 +183,7 @@ public sealed partial class Renderer2D
                             int commandCount = pages.Sum(page => page.Commands.Count);
                             Vector2 translation = default;
                             Matrix3x2 payloadTransform = entry.Transform;
-                            if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsBuiltinRenderer)) && CanTranslateResident(entry, info, pages) && context.RecordResources() is not null)
+                            if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsImmutableTranslationRenderer)) && CanTranslateResident(entry, info, pages) && context.RecordResources() is not null)
                             {
                                 translation = entry.Transform.Translation;
                                 payloadTransform = Matrix3x2.Identity;
@@ -279,7 +279,7 @@ public sealed partial class Renderer2D
 
                                 _retained.CountCompilation();
                                 compiled++;
-                                var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer), compositionUse);
+                                var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsImmutableTranslationRenderer), compositionUse);
                                 compositionUse = null;
                                 unpublishedPayload = _retained.ResidentInstancesEnabled && run.Shareable ? new ResidentBatchLease2D(run) : run;
                                 var asset = new RetainedDrawingCache2D.Asset(key, unpublishedPayload);
@@ -376,6 +376,34 @@ public sealed partial class Renderer2D
             DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(context, TakeBatch<DrawPaintGraphCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
             _ => throw new NotSupportedException("Layer and effect commands require RenderGraphCanvas2D."),
         };
+
+    private bool IsImmutableTranslationRenderer(DrawingCommand2D command)
+    {
+        if (IsBuiltinRenderer(command))
+        {
+            return true;
+        }
+
+        object? renderer = command switch
+        {
+            FillRectCommand2D => _renderers.FillRect,
+            FillRoundedRectCommand2D => _renderers.FillRoundedRect,
+            FillCircleCommand2D => _renderers.FillCircle,
+            DrawLineCommand2D => _renderers.DrawLine,
+            FillPathCommand2D => _renderers.FillPath,
+            StrokePathCommand2D => _renderers.StrokePath,
+            DrawImageCommand2D => _renderers.DrawImage,
+            DrawCoverageMaskCommand2D => _renderers.DrawCoverageMask,
+            DrawDistanceFieldCommand2D => _renderers.DrawDistanceField,
+            DrawPaintGraphCommand2D => _renderers.DrawPaintGraph,
+            _ => null,
+        };
+
+        // A mixed custom/legacy alternative is not proven to consume translation.
+        // Restrict optimization to a closed set of our own Mesh record processors.
+        return renderer is Pipelines.ICommandChoice2D choice && choice.CandidateProcessors.Count != 0
+            && choice.CandidateProcessors.All(candidate => candidate is Pipelines.MeshCoverageProcessor2D);
+    }
 
     private bool IsBuiltinRenderer(DrawingCommand2D command) => command switch
     {

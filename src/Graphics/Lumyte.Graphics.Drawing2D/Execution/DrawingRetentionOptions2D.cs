@@ -3,8 +3,8 @@ namespace Lumyte.Graphics.Drawing2D;
 /// <summary>Bounds retained GPU work and idle compiled assets per renderer.</summary>
 public sealed record DrawingRetentionOptions2D
 {
-    /// <summary>Gets a value indicating whether builtin record payloads support shared immutable instances and exact integer translation.</summary>
-    /// <remarks>Opt-in preserves the existing exclusive cache representation and memory charges by default. Custom renderers and shaders remain on the compatibility route.</remarks>
+    /// <summary>Gets a value indicating whether builtin and internal Mesh record payloads support shared immutable instances and exact integer translation.</summary>
+    /// <remarks>Opt-in preserves the existing exclusive cache representation and memory charges by default. External custom renderers and shaders remain on the compatibility route.</remarks>
     public bool EnableResidentInstances { get; init; }
 
     /// <summary>Gets the maximum number of prepared, recorded, or quarantined frames.</summary>
