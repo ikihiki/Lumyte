@@ -1,3 +1,4 @@
+import { createBrowserFlightRecorder } from "../../tools/graphics/browser-flight-recorder.mjs";
 import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
@@ -41,6 +42,7 @@ await new Promise((resolve, reject) => {
 
 const traceCapture = captureDiagnosticsEnabled();
 const captureTrace = createCaptureTraceReporter();
+const flightRecorder = createBrowserFlightRecorder({ sample: "transitions", mode: sequential ? "sequential" : sameContent ? "same-content" : "connected" });
 let browser;
 let socket;
 let command;
@@ -80,6 +82,7 @@ try {
     const pending = new Map();
     socket.addEventListener("message", event => {
         const message = JSON.parse(event.data);
+        flightRecorder.dispatch(message, { stage: traceStage ?? stage, pngIndex });
         if (message.id) {
             const action = pending.get(message.id);
             pending.delete(message.id);
@@ -111,7 +114,7 @@ try {
     });
     command = function (method, params = {}, timeoutMs) {
         const id = ++nextId;
-        return new Promise((resolve, reject) => {
+        const send = () => new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
@@ -122,6 +125,8 @@ try {
             });
             socket.send(JSON.stringify({ id, method, params }));
         });
+        return method === "Runtime.evaluate" && /CapturePngAsync\(/.test(params.expression ?? "")
+            ? flightRecorder.request(id, { stage: traceStage ?? stage, pngIndex }, send) : send();
     };
     await command("Runtime.enable");
     if (traceCapture || traceGpu) await command("Runtime.addBinding", { name: captureDiagnosticBinding });
@@ -142,6 +147,7 @@ try {
         await command("Page.enable");
         await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installCaptureDiagnosticsRequest.toString()})();` });
     }
+    await flightRecorder.arm(command, browser.pid);
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}${sequential ? "/?sequential" : sameContent ? "/?same-content" : ""}` });
     async function evaluate(expression) {
         const response = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -329,6 +335,7 @@ try {
     }
     console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
 } catch (failure) {
+    await flightRecorder.finish(true);
     if (traceCapture || traceGpu) await captureTrace.failure(command, { sample: "transitions", stage, pngIndex });
     let audit;
     if (process.env.LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT === "1" && sequential && !sameContent
@@ -344,6 +351,7 @@ try {
     console.warn("::warning title=Known Browser timeout temporarily ignored::Sequential entry midpoint PNG exceeded its unchanged automation deadline. Remaining sequential assertions were not executed; other Browser checks still run.");
     console.log(JSON.stringify({ check: "browser-ui-transitions", mode: "sequential", status: "ignored-known-timeout", stage, reason: "automation-deadline", remainingAssertionsExecuted: false }));
 } finally {
+    await flightRecorder.finish();
     socket?.close();
     if (browser?.pid && browser.exitCode === null && browser.signalCode === null) {
         const stopped = new Promise(resolve => browser.once("exit", resolve));
