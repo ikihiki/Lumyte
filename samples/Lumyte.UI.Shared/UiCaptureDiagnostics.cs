@@ -18,14 +18,20 @@ internal sealed class UiCaptureDiagnostics : EventListener
     private readonly Dictionary<(Guid Run, long Frame), Dictionary<long, string>> _open = new();
     private readonly Dictionary<(Guid Run, long Frame), string> _last = new();
     private readonly Dictionary<long, HashSet<(Guid Run, long Frame)>> _relations = new();
+    private readonly Action<string>? _sink;
     private long _dropped;
     private long _streamed;
 
-    internal static void Enable()
+    internal UiCaptureDiagnostics(Action<string>? sink = null)
+    {
+        _sink = sink;
+    }
+
+    internal static void Enable(Action<string>? sink = null)
     {
         try
         {
-            _instance ??= new();
+            _instance ??= new(sink);
         }
         catch (Exception)
         {
@@ -396,14 +402,24 @@ internal sealed class UiCaptureDiagnostics : EventListener
         }
 
         _events.Enqueue(record);
-        if (_streamed < 2048 || terminal)
+        if (_sink is not null)
         {
-            _streamed++;
-            Console.WriteLine("UI Capture trace: " + record);
-        }
-        else
-        {
-            _dropped++;
+            if (_streamed < 2048 || terminal)
+            {
+                _streamed++;
+                try
+                {
+                    _sink("UI Capture trace: " + record);
+                }
+                catch (Exception)
+                {
+                    // A diagnostic transport failure must not interrupt state retention or application work.
+                }
+            }
+            else
+            {
+                _dropped++;
+            }
         }
     }
 }

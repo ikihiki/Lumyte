@@ -20,26 +20,30 @@ test("serialized pre-start hook only sets the enable flag, without rendering, GP
     assert.equal(target.__lumyteCaptureDiagnosticsRequested, true);
 });
 
-test("structured request/frame identity is preserved and unrelated output is ignored", () => {
+test("structured request/frame identity is buffered silently until failure", async () => {
     const output = [];
     const reporter = createCaptureTraceReporter({ emit: x => output.push(x) });
     assert.equal(reporter.observe("ordinary application output"), false);
     assert.equal(reporter.observe(row(), { sample: "transitions", stage: "entry-midpoint-png" }), true);
     assert.equal(reporter.received, 1);
-    assert.equal(output[0].event.data.captureId, 7);
-    assert.equal(output[0].event.data.frameId, 9);
-    assert.equal(output[0].event.data.profileRunId, "run");
-    assert.equal(output[0].stage, "entry-midpoint-png");
+    assert.deepEqual(output, []);
+    await reporter.failure(undefined);
+    assert.equal(output[0].records[0].event.data.captureId, 7);
+    assert.equal(output[0].records[0].event.data.frameId, 9);
+    assert.equal(output[0].records[0].event.data.profileRunId, "run");
+    assert.equal(output[0].records[0].stage, "entry-midpoint-png");
 });
 
-test("invalid, nested and oversized rows are bounded without forwarding raw data", () => {
+test("invalid, nested and oversized rows are counted silently without forwarding raw data", async () => {
     const output = [];
     const reporter = createCaptureTraceReporter({ emit: x => output.push(x) });
     for (const invalid of ["not-json", JSON.stringify({ eventId: 1 }), "x".repeat(17000), JSON.stringify({ eventId: 12, name: "CaptureState", ticks: 0, frequency: 1, data: { image: { pixels: [1] } } })]) {
         assert.equal(reporter.observe(captureTracePrefix + invalid), true);
     }
     assert.equal(reporter.invalid, 4);
-    assert.deepEqual(output, [{ check: "browser-capture-diagnostics", status: "invalid-row" }]);
+    assert.deepEqual(output, []);
+    await reporter.failure(undefined);
+    assert.equal(output[0].invalid, 4);
 });
 
 test("failure snapshots and final history survive streaming truncation", async () => {
@@ -47,7 +51,7 @@ test("failure snapshots and final history survive streaming truncation", async (
     const reporter = createCaptureTraceReporter({ emit: x => output.push(x), maxRecords: 2, historyLimit: 2 });
     for (let i = 1; i <= 5; i++) reporter.observe(row(i));
     assert.equal(reporter.dropped, 3);
-    assert.equal(output.filter(x => x.status === "trace-truncated").length, 1);
+    assert.deepEqual(output, []);
     const commands = [];
     await reporter.failure(async (...args) => {
         commands.push(args);
@@ -92,7 +96,7 @@ test("all public Browser verifiers enable before navigation and dump before clea
         const verifier = await readFile(new URL("verify-browser.mjs", base), "utf8");
         const main = await readFile(new URL("wwwroot/main.js", base), "utf8");
         assert.ok(verifier.indexOf("installCaptureDiagnosticsRequest.toString()") < verifier.indexOf("await command(\"Page.navigate\""));
-        assert.ok(main.indexOf("EnableCaptureDiagnostics()") < main.indexOf("await runtime.runMain"));
+        assert.ok(main.indexOf("EnableCaptureDiagnostics(") < main.indexOf("await runtime.runMain"));
         assert.match(verifier, /timeoutMs \?\? \(method === "Page.navigate" \? 60000 : method === "Runtime.evaluate" \? 45000 : 10000\)/);
         assert.ok(verifier.indexOf("await captureTrace.failure(") < verifier.indexOf("socket?.close()"));
         if (name === "Transitions") {
@@ -110,7 +114,7 @@ test("undeclared top-level data is never forwarded or retained", async () => {
     event.input = { text: "private input" };
     reporter.observe(captureTracePrefix + JSON.stringify(event));
     await reporter.failure(undefined);
-    assert.deepEqual(Object.keys(output[0].event).sort(), ["data", "eventId", "frequency", "name", "ticks"]);
+    assert.deepEqual(Object.keys(output[0].records[0].event).sort(), ["data", "eventId", "frequency", "name", "ticks"]);
     assert.equal(JSON.stringify(output).includes("private input"), false);
 });
 
@@ -139,9 +143,35 @@ test("every Browser project compiling a diagnostic probe includes its managed ob
         if (!usesDiagnostics) continue;
         checked++;
         const startup = await readFile(new URL("wwwroot/main.js", directory), "utf8");
-        assert.ok(startup.indexOf("EnableCaptureDiagnostics()") >= 0 && startup.indexOf("EnableCaptureDiagnostics()") < startup.indexOf("await runtime.runMain"), entry.name + " must enable requested diagnostics before runMain");
+        assert.match(startup, /EnableCaptureDiagnostics\(payload => globalThis\.__lumyteCaptureDiagnosticEvent\(payload\)\)/, entry.name + " must preserve the native diagnostic binding receiver through the managed callback");
+        assert.ok(startup.indexOf("EnableCaptureDiagnostics(") >= 0 && startup.indexOf("EnableCaptureDiagnostics(") < startup.indexOf("await runtime.runMain"), entry.name + " must enable requested diagnostics before runMain");
         assert.match(project, /<Compile\b[^>]*\bInclude="[^"]*UiCaptureDiagnostics\.cs"/, entry.name + " must compile the observer required by its own or linked probe");
         assert.match(project, /<EventSourceSupport>\s*true\s*<\/EventSourceSupport>/, entry.name + " must retain EventSource support for trimmed diagnostics");
     }
     assert.ok(checked >= 4, "Cover Application, Navigation, Pages and Transitions, including source-linked consumers");
+});
+
+test("GPU and PNG diagnostics stay silent and remain available when the Browser stops responding", async () => {
+    const output = [];
+    const reporter = createCaptureTraceReporter({ emit: x => output.push(x), maxRecords: 2 });
+    for (let id = 0; id < 5; id++) reporter.observeGpu("Browser GPU trace: " + JSON.stringify({ id, method: "onSubmittedWorkDone", status: "start", elapsedMs: 0, atMs: id, pixels: [1, 2] }));
+    reporter.capture({ index: 19, stage: "connected-first-png", status: "start" });
+    reporter.observe(row(19));
+    assert.deepEqual(output, []);
+    await reporter.failure(async () => { throw new Error("unresponsive Browser"); });
+    assert.equal(output.length, 1);
+    assert.equal(output[0].status, "snapshot-query-failed");
+    assert.deepEqual(output[0].gpu.map(x => x.event.id), [3, 4]);
+    assert.equal(output[0].captures[0].index, 19);
+    assert.equal(output[0].recent.at(-1).data.captureId, 19);
+    assert.equal(JSON.stringify(output).includes("pixels"), false);
+});
+
+test("Browser diagnostics use a non-console binding before navigation", async () => {
+    for (const name of ["Application", "Navigation", "Transitions"]) {
+        const verifier = await readFile(new URL(`../../samples/Lumyte.UI.${name}.Browser.Sample/verify-browser.mjs`, import.meta.url), "utf8");
+        assert.ok(verifier.indexOf("Runtime.addBinding") < verifier.indexOf("await command(\"Page.navigate\""));
+        assert.match(verifier, /Runtime.bindingCalled/);
+        assert.doesNotMatch(verifier, /console.log\(JSON.stringify\(\{ check: "browser-ui-transitions-(?:gpu|png)"/);
+    }
 });

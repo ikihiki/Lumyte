@@ -1,4 +1,4 @@
-import { captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
+import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import { BrowserEvaluationFailure, shouldIgnoreKnownBrowserTimeout } from "../../tools/graphics/browser-known-timeout.mjs";
@@ -86,6 +86,9 @@ try {
             if (!action) { return; }
             if (message.error) { action.reject(new Error(JSON.stringify(message.error))); }
             else { action.resolve(message.result); }
+        } else if (message.method === "Runtime.bindingCalled" && message.params.name === captureDiagnosticBinding) {
+            captureTrace.observe(message.params.payload, { sample: "transitions", stage: traceStage ?? stage, pngIndex });
+            captureTrace.observeGpu(message.params.payload, { sample: "transitions", stage: traceStage ?? stage, pngIndex });
         } else if (message.method === "Log.entryAdded") {
             const entry = message.params.entry;
             if (entry.source !== "network") {
@@ -102,7 +105,7 @@ try {
             if (message.params.type === "error") { errors.push(text); }
             else if (captureObserved) { /* Forwarded once by the bounded reporter, not retained in progress. */ }
             else if (traceGpu && text.startsWith("Browser GPU trace:")) {
-                console.log(JSON.stringify({ check: "browser-ui-transitions-gpu", pngIndex, stage: traceStage ?? stage, elapsedMs: performance.now() - traceStart, trace: text }));
+                captureTrace.observeGpu(text, { sample: "transitions", pngIndex, stage: traceStage ?? stage });
             } else { progress.push(text); }
         }
     });
@@ -121,6 +124,7 @@ try {
         });
     };
     await command("Runtime.enable");
+    if (traceCapture || traceGpu) await command("Runtime.addBinding", { name: captureDiagnosticBinding });
     await command("Log.enable");
     await command("Emulation.setFocusEmulationEnabled", { enabled: true });
     await command("Page.bringToFront");
@@ -161,7 +165,7 @@ try {
         const index = ++pngIndex;
         const start = performance.now();
         const log = status => {
-            if (traceGpu && index <= 100) console.log(JSON.stringify({ check: "browser-ui-transitions-png", index, stage: traceStage ?? stage, status, elapsedMs: performance.now() - start }));
+            if (traceCapture || traceGpu) captureTrace.capture({ index, stage: traceStage ?? stage, status, elapsedMs: performance.now() - start });
         };
         log("start");
         try {
@@ -325,7 +329,7 @@ try {
     }
     console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
 } catch (failure) {
-    if (traceCapture) await captureTrace.failure(command, { sample: "transitions", stage, pngIndex });
+    if (traceCapture || traceGpu) await captureTrace.failure(command, { sample: "transitions", stage, pngIndex });
     let audit;
     if (process.env.LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT === "1" && sequential && !sameContent
         && stage === "entry-midpoint-png" && failure instanceof BrowserEvaluationFailure) {

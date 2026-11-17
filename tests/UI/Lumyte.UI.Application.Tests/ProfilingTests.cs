@@ -75,6 +75,103 @@ public sealed class ProfilingTests
         Assert.Single(listener.Events, item => item.Id == 2 && Equals(item.Payload[2], png.Payload[2]));
     }
 
+    /// <summary>Checks default observation buffers metadata without writing normal console output.</summary>
+    [Fact]
+    public void SampleObserverBuffersSilentlyWithoutTransport()
+    {
+        TextWriter output = Console.Out;
+        TextWriter error = Console.Error;
+        using var capturedOutput = new StringWriter();
+        using var capturedError = new StringWriter();
+        try
+        {
+            Console.SetOut(capturedOutput);
+            Console.SetError(capturedError);
+            using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics();
+            long request = UiApplicationProfiling.StartCapture();
+            UiApplicationProfiling.Capture(request, 8);
+            using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+            Assert.NotEmpty(snapshot.RootElement.GetProperty("events").EnumerateArray());
+            Assert.Equal(0, snapshot.RootElement.GetProperty("streamed").GetInt64());
+            Assert.Equal(string.Empty, capturedOutput.ToString());
+            Assert.Equal(string.Empty, capturedError.ToString());
+        }
+        finally
+        {
+            Console.SetOut(output);
+            Console.SetError(error);
+        }
+    }
+
+    /// <summary>Checks the optional transport schema, event budget and reserved terminal delivery.</summary>
+    [Fact]
+    public void SampleObserverCallbackIsMetadataOnlyAndBounded()
+    {
+        var records = new List<string>();
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics(records.Add);
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 742);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key);
+        for (int i = 0; i < 2050; i++)
+        {
+            UiApplicationProfiling.Capture(request, 4, key, processing: i);
+        }
+
+        Assert.Equal(2048, records.Count);
+        UiApplicationProfiling.Capture(request, 10, reason: 1);
+        Assert.Equal(2049, records.Count);
+        const string Prefix = "UI Capture trace: ";
+        foreach (string record in records)
+        {
+            Assert.StartsWith(Prefix, record);
+            using var parsed = System.Text.Json.JsonDocument.Parse(record[Prefix.Length..]);
+            System.Text.Json.JsonElement item = parsed.RootElement;
+            Assert.Equal(new[] { "eventId", "name", "ticks", "frequency", "data" }, item.EnumerateObject().Select(property => property.Name));
+            Assert.Equal(12, item.GetProperty("eventId").GetInt32());
+            Assert.NotEmpty(item.GetProperty("name").GetString()!);
+            Assert.True(item.GetProperty("frequency").GetInt64() > 0);
+            Assert.True(item.GetProperty("ticks").GetInt64() > 0);
+            Assert.All(item.GetProperty("data").EnumerateObject(), property => Assert.Contains(property.Value.ValueKind, new[] { System.Text.Json.JsonValueKind.Number, System.Text.Json.JsonValueKind.String, System.Text.Json.JsonValueKind.True, System.Text.Json.JsonValueKind.False, System.Text.Json.JsonValueKind.Null }));
+        }
+
+        using var first = System.Text.Json.JsonDocument.Parse(records[1][Prefix.Length..]);
+        Assert.Equal(key.Run, first.RootElement.GetProperty("data").GetProperty("profileRunId").GetGuid());
+        Assert.Equal(key.Frame, first.RootElement.GetProperty("data").GetProperty("frameId").GetInt64());
+        using var last = System.Text.Json.JsonDocument.Parse(records[^1][Prefix.Length..]);
+        Assert.Equal(10, last.RootElement.GetProperty("data").GetProperty("phase").GetInt32());
+        using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.Equal(2049, snapshot.RootElement.GetProperty("streamed").GetInt64());
+        Assert.Equal(64, snapshot.RootElement.GetProperty("events").GetArrayLength());
+        Assert.True(snapshot.RootElement.GetProperty("dropped").GetInt64() > 0);
+    }
+
+    /// <summary>Checks a throwing transport cannot interrupt terminal archiving or later observation.</summary>
+    [Fact]
+    public void SampleObserverContainsThrowingCallback()
+    {
+        int calls = 0;
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics(_ =>
+        {
+            calls++;
+            throw new InvalidOperationException("Unavailable diagnostic transport.");
+        });
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 743);
+        using UiApplicationProfiling.Scope? wait = UiApplicationProfiling.Begin(14, key);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key);
+        UiApplicationProfiling.Capture(request, 10, reason: 1);
+        UiApplicationProfiling.Capture(request, 6);
+        Assert.True(calls >= 4);
+        using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        System.Text.Json.JsonElement terminal = Assert.Single(snapshot.RootElement.GetProperty("requests").EnumerateArray());
+        Assert.Equal(10, terminal.GetProperty("data").GetProperty("phase").GetInt32());
+        System.Text.Json.JsonElement archive = Assert.Single(snapshot.RootElement.GetProperty("terminalFrames").EnumerateArray());
+        Assert.Equal(request, archive.GetProperty("requestId").GetInt64());
+        Assert.Contains(archive.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("stage").GetInt32() == 14);
+        Assert.Empty(snapshot.RootElement.GetProperty("relations").EnumerateArray());
+        Assert.Equal(calls, snapshot.RootElement.GetProperty("streamed").GetInt64());
+    }
+
     /// <summary>Checks prior-frame open wait snapshots and reserved terminal recording.</summary>
     [Fact]
     public void SampleObserverIncludesAlreadyOpenWaitAndTerminal()

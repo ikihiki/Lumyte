@@ -1,4 +1,4 @@
-import { captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
+import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -77,6 +77,9 @@ try {
             if (!action) { return; }
             if (message.error) { action.reject(new Error(JSON.stringify(message.error))); }
             else { action.resolve(message.result); }
+        } else if (message.method === "Runtime.bindingCalled" && message.params.name === captureDiagnosticBinding) {
+            captureTrace.observe(message.params.payload, { sample: "navigation" });
+            captureTrace.observeGpu(message.params.payload, { sample: "navigation" });
         } else if (message.method === "Log.entryAdded") {
             const entry = message.params.entry;
             if (entry.source !== "network") {
@@ -110,6 +113,7 @@ try {
         });
     };
     await command("Runtime.enable");
+    if (traceCapture) await command("Runtime.addBinding", { name: captureDiagnosticBinding });
     await command("Log.enable");
     const throttle = Number(process.env.LUMYTE_BROWSER_CPU_THROTTLE ?? 1);
     assert.ok(Number.isFinite(throttle) && throttle >= 1 && throttle <= 20, "CPU throttle must be between 1 and 20");

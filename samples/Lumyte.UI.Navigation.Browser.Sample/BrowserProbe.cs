@@ -13,8 +13,9 @@ public static partial class BrowserProbe
     internal static UiApplication? Application { get; set; }
 
     /// <summary>Enables bounded capture diagnostics before application startup.</summary>
+    /// <param name="sink">The metadata-only diagnostic transport installed by the capture runner.</param>
     [JSExport]
-    public static void EnableCaptureDiagnostics() => Lumyte.UI.SampleSupport.UiCaptureDiagnostics.Enable();
+    public static void EnableCaptureDiagnostics([JSMarshalAs<JSType.Function<JSType.String>>] Action<string> sink) => Lumyte.UI.SampleSupport.UiCaptureDiagnostics.Enable(sink);
 
     /// <summary>Gets bounded capture events and pending stage observations.</summary>
     /// <returns>The diagnostic JSON snapshot.</returns>

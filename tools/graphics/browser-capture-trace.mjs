@@ -1,20 +1,20 @@
-// Observe the existing managed EventSource; never request extra renders or GPU work.
+// Observe existing diagnostics without rendering, waiting for GPU work or normal-path console output.
 export const captureTracePrefix = "UI Capture trace: ";
+export const captureDiagnosticBinding = "__lumyteCaptureDiagnosticEvent";
 
 export function captureDiagnosticsEnabled(environment = process.env) {
-    return environment.LUMYTE_BROWSER_CAPTURE_TRACE === "1"
-        || environment.LUMYTE_REQUIRE_SOFTWARE_WEBGPU === "1";
+    return environment.LUMYTE_BROWSER_CAPTURE_TRACE === "1" || environment.LUMYTE_REQUIRE_SOFTWARE_WEBGPU === "1";
 }
+export function installCaptureDiagnosticsRequest(target = globalThis) { target.__lumyteCaptureDiagnosticsRequested = true; }
 
-// Self-contained for injection before the managed application starts.
-export function installCaptureDiagnosticsRequest(target = globalThis) {
-    target.__lumyteCaptureDiagnosticsRequested = true;
-}
-
-export function createCaptureTraceReporter({ emit = value => console.log(JSON.stringify(value)), maxRecords = 5000, historyLimit = 32 } = {}) {
+export function createCaptureTraceReporter({ emit = value => console.log(JSON.stringify(value)), maxRecords = 256, historyLimit = 32 } = {}) {
     let received = 0, invalid = 0, dropped = 0;
-    const recent = [];
+    const records = [], recent = [], gpu = [], captures = [];
     const safelyEmit = value => { try { emit(value); } catch {} };
+    function retain(buffer, value, limit) {
+        buffer.push(value);
+        if (buffer.length > limit) { buffer.shift(); dropped++; }
+    }
     function observe(text, context = {}) {
         if (typeof text !== "string" || !text.startsWith(captureTracePrefix)) return false;
         received++;
@@ -24,35 +24,40 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
             event = JSON.parse(text.slice(captureTracePrefix.length));
             if (!event || !Number.isInteger(event.eventId) || typeof event.name !== "string" || event.name.length > 128
                 || !Number.isFinite(event.ticks) || !Number.isFinite(event.frequency) || event.frequency <= 0
-                || !event.data || typeof event.data !== "object" || Array.isArray(event.data)
-                || Object.keys(event.data).length > 48
+                || !event.data || typeof event.data !== "object" || Array.isArray(event.data) || Object.keys(event.data).length > 48
                 || Object.entries(event.data).some(([key, value]) => !/^[a-zA-Z][a-zA-Z0-9]*$/.test(key)
                     || !(value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))
                     || (typeof value === "string" && value.length <= 2048)))) throw new Error("shape");
-        } catch {
-            invalid++;
-            if (invalid === 1) safelyEmit({ check: "browser-capture-diagnostics", ...context, status: "invalid-row" });
-            return true;
-        }
-        // Project the declared schema; never forward unchecked top-level payloads.
+        } catch { invalid++; return true; }
         event = { eventId: event.eventId, name: event.name, ticks: event.ticks, frequency: event.frequency, data: event.data };
+        retain(records, { ...context, event }, maxRecords);
         recent.push(event);
         if (recent.length > historyLimit) recent.shift();
-        if (received <= maxRecords) safelyEmit({ check: "browser-capture-event", ...context, event });
-        else {
-            dropped++;
-            if (dropped === 1) safelyEmit({ check: "browser-capture-diagnostics", ...context, status: "trace-truncated", maxRecords });
-        }
         return true;
     }
+    function observeGpu(text, context = {}) {
+        const prefix = "Browser GPU trace: ";
+        if (typeof text !== "string" || !text.startsWith(prefix)) return false;
+        received++;
+        try {
+            if (text.length > 4096) throw new Error("oversized");
+            const value = JSON.parse(text.slice(prefix.length));
+            if (!value || typeof value.method !== "string" || value.method.length > 80 || typeof value.status !== "string" || value.status.length > 32
+                || !Number.isFinite(value.elapsedMs)) throw new Error("shape");
+            const event = { method: value.method, status: value.status, elapsedMs: value.elapsedMs };
+            if (Number.isSafeInteger(value.id)) event.id = value.id;
+            if (Number.isFinite(value.atMs)) event.atMs = value.atMs;
+            if (value.truncated === true) event.truncated = true;
+            retain(gpu, { ...context, event }, maxRecords);
+        } catch { invalid++; }
+        return true;
+    }
+    function capture(value) { retain(captures, value, 100); }
     async function failure(command, context = {}) {
         let status = "unavailable", snapshot;
         try {
             if (typeof command === "function") {
-                const result = await command("Runtime.evaluate", {
-                    expression: "globalThis.lumyteApplicationProbe?.GetCaptureDiagnostics?.()",
-                    returnByValue: true, awaitPromise: false,
-                }, 2000);
+                const result = await command("Runtime.evaluate", { expression: "globalThis.lumyteApplicationProbe?.GetCaptureDiagnostics?.()", returnByValue: true, awaitPromise: false }, 2000);
                 const value = result?.result?.value;
                 if (result?.exceptionDetails) status = "export-error";
                 else if (typeof value !== "string") status = "not-enabled";
@@ -60,8 +65,8 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
                 else { snapshot = JSON.parse(value); status = "available"; }
             }
         } catch { status = "snapshot-query-failed"; }
-        // Emit even after the streaming budget is exhausted; preserve the original failure outside this observer.
-        safelyEmit({ check: "browser-capture-failure", ...context, status, received, invalid, dropped, recent: [...recent], ...(snapshot === undefined ? {} : { snapshot }) });
+        // The only stdout path. Already-received buffers survive a hung/closed Browser.
+        safelyEmit({ check: "browser-capture-failure", ...context, status, received, invalid, dropped, records: [...records], gpu: [...gpu], captures: [...captures], recent: [...recent], ...(snapshot === undefined ? {} : { snapshot }) });
     }
-    return { observe, failure, get received() { return received; }, get invalid() { return invalid; }, get dropped() { return dropped; } };
+    return { observe, observeGpu, capture, failure, get received() { return received; }, get invalid() { return invalid; }, get dropped() { return dropped; } };
 }
