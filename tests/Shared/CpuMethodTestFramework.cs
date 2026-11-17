@@ -15,6 +15,10 @@ namespace Lumyte.Testing;
 public sealed class CpuMethodTestFramework(IMessageSink messageSink) : XunitTestFramework(messageSink)
 {
     /// <inheritdoc/>
+    protected override ITestFrameworkDiscoverer CreateDiscoverer(IAssemblyInfo assemblyInfo)
+        => new LaneInventoryDiscoverer(base.CreateDiscoverer(assemblyInfo), assemblyInfo);
+
+    /// <inheritdoc/>
     protected override ITestFrameworkExecutor CreateExecutor(AssemblyName assemblyName)
         => new CpuMethodExecutor(assemblyName, SourceInformationProvider, DiagnosticMessageSink);
 }

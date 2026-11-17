@@ -154,12 +154,12 @@ internal sealed partial class Build
             throw new ArgumentException($"The selected project is not a classified test project: {Project}");
         }
 
-        if (catalog.Select(entry => entry.Project).Distinct(StringComparer.Ordinal).Count() != catalog.Length || catalog.Any(entry => entry.Default is not ("Cpu" or "Integration")))
+        if (catalog.Select(entry => entry.Project).Distinct(StringComparer.Ordinal).Count() != catalog.Length || catalog.Any(entry => entry.Default is not ("Cpu" or "Integration") || entry.IntegrationClasses is null || entry.Lanes is null || entry.Lanes.Length == 0 || entry.Lanes.Any(value => value is not ("Cpu" or "Integration" or "Gpu")) || entry.Lanes.Distinct(StringComparer.Ordinal).Count() != entry.Lanes.Length))
         {
             throw new InvalidDataException("TestLanes.json contains duplicate projects or an invalid default lane.");
         }
 
-        var environment = new Dictionary<string, string?> { ["LUMYTE_TEST_SERIAL"] = lane == "Cpu" ? null : "1", ["LUMYTE_CPU_METHOD_PARALLELISM"] = lane == "Cpu" ? TestConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };
+        var environment = new Dictionary<string, string?> { ["LUMYTE_LANE_CATALOG"] = Path.Combine(RepositoryDirectory, "build", "TestLanes.json"), ["LUMYTE_TEST_SERIAL"] = lane == "Cpu" ? null : "1", ["LUMYTE_CPU_METHOD_PARALLELISM"] = lane == "Cpu" ? TestConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };
         if (lane == "Cpu")
         {
             foreach (string key in Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(key => key.StartsWith("LUMYTE_", StringComparison.Ordinal) && (key.Contains("TEST", StringComparison.Ordinal) || key.Contains("BENCHMARK", StringComparison.Ordinal) || key.Contains("GPU", StringComparison.Ordinal))))
@@ -184,6 +184,8 @@ internal sealed partial class Build
         Directory.CreateDirectory(directory);
         string filterFile = Path.Combine(directory, lane.ToLowerInvariant() + ".slnf");
         string targetsFile = Path.Combine(directory, lane.ToLowerInvariant() + ".targets");
+        string inventoryDirectory = Path.Combine(directory, "inventory-" + Guid.NewGuid().ToString("N"));
+        environment["LUMYTE_LANE_INVENTORY"] = inventoryDirectory;
         // A solution filter references the canonical .slnx, never a copied project list
         // or an independently maintained solution. Project paths are solution-relative.
         var solutionFilter = new
@@ -218,12 +220,31 @@ internal sealed partial class Build
         // serial boundaries; the CPU xUnit adapter handles bounded method concurrency.
         await DotNetWithEnvironmentAsync(environment, "test", filterFile, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1",
             "-p:LumyteTestLaneTargets=" + targetsFile, "--results-directory", Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant())).ConfigureAwait(false);
+        foreach (var entry in selections)
+        {
+            string inventoryFile = Path.Combine(inventoryDirectory, Path.GetFileName(entry.Path) + ".json");
+            if (!File.Exists(inventoryFile))
+            {
+                throw new InvalidDataException($"Missing real xUnit discovery inventory for {entry.Path}; rebuild the test project.");
+            }
+
+            using var inventory = JsonDocument.Parse(await File.ReadAllTextAsync(inventoryFile).ConfigureAwait(false));
+            if (inventory.RootElement.GetProperty("Project").GetString() != entry.Path || inventory.RootElement.GetProperty("Error").GetString() is { } error)
+            {
+                throw new InvalidDataException("Lane inventory drift: " + inventory.RootElement.GetProperty("Error").GetString());
+            }
+        }
     }
 
-    private sealed record TestLane(string Project, string Default, string[] IntegrationClasses)
+    private sealed record TestLane(string Project, string Default, string[] IntegrationClasses, string[] Lanes)
     {
         internal string? Filter(string lane)
         {
+            if (!Lanes.Contains(lane, StringComparer.Ordinal))
+            {
+                return null;
+            }
+
             if (lane == "Gpu")
             {
                 return "Execution=Gpu";

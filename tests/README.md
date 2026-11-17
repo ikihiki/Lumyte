@@ -18,6 +18,12 @@ build/TestLanes.jsonがsolution内のxUnit projectの正本です。新project�
 GPU Fact/TheoryのExecution=Gpu traitを使い、GPU優先で排他的に選びます。
 未指定のmanaged testはそのprojectの既定レーンへ入るため、新しいFactを追加しても実行漏れません。
 新しいnative/tool/processテストは対応するclass一覧またはtraitも更新してください。
+各projectの`Lanes`は実際にcaseを持つレーンだけを宣言し、該当しないprojectを`.slnf`へ入れません。
+通常のSDK実行内のxUnit discoveryで全caseを分類し、既定値・trait・混在classから求めたレーン構成を`Lanes`と照合します。
+OS別にコンパイル対象外となるclassは他OSのdiscoveryへ要求しません。
+新しいtraitやcaseでレーン構成が変わった場合は、discoveryが示す内容に合わせて明示分類も更新してください。
+追加の`dotnet test`／source grepは行いません。discovery証拠の欠落・分類の不一致はSDKが成功してもrunnerを失敗させます。
+全projectの分類確認にはCPU・integration・GPUの3レーンを実行してください。
 Toolsの純粋なcatalog・JSON検証、managed WAVE、fake window、Text/Editor benchmarkのmanaged契約はCPU側へ残し、同じproject内のFakeTool・native/font・compiler経路だけを統合側へ分けます。
 CPUレーンは継承したLUMYTE_*TEST* / LUMYTE_*BENCHMARK* opt-inを子test processから除去します。
 

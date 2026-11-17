@@ -169,7 +169,7 @@ public sealed class CiInterfaceTests
         Directory.CreateDirectory(Path.Combine(fixture.Root, "build"));
         File.WriteAllText(Path.Combine(fixture.Root, "build", "TestLanes.json"), System.Text.Json.JsonSerializer.Serialize(new[]
         {
-            new { Project = Path.GetFileName(fixture.Project), Default = "Cpu", IntegrationClasses = Array.Empty<string>() },
+            new { Project = Path.GetFileName(fixture.Project), Default = "Cpu", IntegrationClasses = Array.Empty<string>(), Lanes = new[] { "Cpu", "Gpu" } },
         }));
         if (failTest)
         {

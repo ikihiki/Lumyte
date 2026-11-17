@@ -5,6 +5,7 @@ using Fallout.Common;
 
 namespace Lumyte.Build;
 
+[ConsoleHelp(Priority = 6)]
 internal sealed partial class Build : FalloutBuild
 {
     [Parameter("Solution to restore, compile and test.")]
@@ -141,6 +142,8 @@ internal sealed partial class Build : FalloutBuild
             ["LUMYTE_BUILD_ASSEMBLY"] = Assembly.GetExecutingAssembly().Location,
             ["LumyteAgilityChannel"] = SelectedAgilityChannel,
         };
+        overrides.TryAdd("LUMYTE_LANE_CATALOG", null);
+        overrides.TryAdd("LUMYTE_LANE_INVENTORY", null);
         overrides.TryAdd("LUMYTE_CPU_METHOD_PARALLELISM", null);
         overrides.TryAdd("LUMYTE_TEST_SERIAL", null);
 

@@ -96,8 +96,16 @@ class lists, Execution traits, and untagged default-integration projects. A glob
 CLI filter cannot represent those distinct predicates and is deliberately absent.
 The .slnf artifact alone cannot encode class predicates: use the common Test
 entry point, which supplies the adjacent targets property to the SDK invocation.
-Integration/GPU conservatively include host candidates because Execution traits
-can occur in any classified project; their per-project predicates select cases.
+TestLanes.json declares each project's nonempty Lanes in addition to Default
+and IntegrationClasses. Only host projects declaring the requested lane enter
+the .slnf; GPU-only native projects do not create empty integration TRX files.
+The existing xUnit discovery stream validates the complete unfiltered case
+inventory against those declarations using legacy classes, traits and defaults.
+Host-excluded classes need not appear in another OS's discovery. Each selected
+project must produce fresh per-invocation inventory evidence, and the common
+runner rejects missing evidence or drift even if the SDK returns zero. There is
+no source-text heuristic or additional SDK discovery/test invocation. Run all
+three CI lanes to cover the complete project inventory when changing metadata.
 An unselected project reaching VSTest fails instead of falling back to its full
 suite. Unique per-project TRX loggers avoid collisions within the one invocation. The
 MSBuild logger value escapes its embedded semicolon as %3b so the SDK does not

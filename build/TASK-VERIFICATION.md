@@ -3,7 +3,57 @@
 Verified on Linux x64 using the pinned SDK/native paths from
 /tmp/lumyte-lanes-env.sh; no host configuration was changed.
 
-## Current: task-oriented CI interface
+## Current: CI audit repairs
+
+Fallout 10.5.0 release source still reads Console.BufferWidth in redirected help,
+so this repair retains the locked 10.4.0 dependency. A supported initialization
+extension prints the real initialized target graph and public ParameterAttribute
+metadata, including inherited options, without accessing console dimensions.
+The actual redirected CLI must exit zero; no schema-only substitute, permitted
+nonzero exit, or exception-swallowing fallback is used.
+
+TestLanes.json now records nonempty project lane membership. The existing xUnit
+discovery stream verifies the full unfiltered inventory; fresh evidence is
+required after the single SDK test invocation. Missing evidence or declaration
+drift fails the common runner even if the adapter returns zero. Host-excluded
+class names are not required to exist on every OS.
+
+| Verification | Result | Evidence |
+| --- | --- | --- |
+| Release runner build | Zero warnings/errors | /tmp/lumyte-repair-build-final.log |
+| Complete orchestration suite, no build/restore | **262 passed, zero failed/skipped** | /tmp/lumyte-repair-orchestration-final.log |
+| CPU, host restore/build enabled, concurrency 4 | **50 selected projects, 4,181 passed, zero failed/skipped**; fresh discovery inventory accepted | /tmp/lumyte-repair-cpu-final.log |
+| Full integration selection, isolated state root | **11 projects, 452 passed, 16 existing opt-in skips, zero failed/empty TRX**; one SDK test command, fresh discovery accepted | /tmp/lumyte-repair-integration-final.log |
+| Full GPU selection, isolated state root, opt-ins unset | **9 projects, 159 skipped discovery cases, zero failed/empty TRX**; one SDK test command, fresh discovery accepted; selection proof, not GPU execution | /tmp/lumyte-repair-gpu-final.log |
+| Redirected real help | **18 targets, 58 current/inherited options**, exit zero | /tmp/lumyte-repair-help-final.log |
+| Runner and build-test C# format verification | Both exit zero, no changes | /tmp/lumyte-repair-format-build.log and /tmp/lumyte-repair-format-tests.log |
+| Full Markdown lint | **363 files, zero issues** | /tmp/lumyte-repair-markdown-final.log |
+
+All three managed project sets exactly match the nonempty project sets from
+CI 44116989219: CPU 50, integration 11, GPU 9. The separate X11 and cold-capacity
+commands are unchanged and are not .slnf members. Integration adds six new
+regression cases (462 to 468). With GPU opt-ins unset, the existing four-row
+DescriptorReuseGpuTests theory is one skipped discovery case rather than four
+executed rows; this explains local 159 versus CI 162 managed GPU cases. No GPU
+case was removed. Full GPU/native opt-in execution remains for the parent CI run.
+
+The real SDK fixture now has four projects: mixed, integration-default, CPU-only,
+and GPU-only with an integration default. Each lane executes one SDK test
+command: CPU/integration/GPU **3/3/3 cases**, **2/2/3 projects**, with no empty
+TRX or unmatched-test warning. A separate deliberately stale declaration run
+proves omitted GPU membership fails through real discovery. The fixture keeps
+the same-class CPU barrier, legacy classes, traits and default semantics.
+Five additional validation cases cover malformed/empty presence metadata and
+missing discovery evidence; redirected help now covers Test and Compile.
+The complete orchestration count therefore increases from 256 to 262; the
+CPU partition stays unchanged.
+
+Windows x64/arm64 actual runner execution, GPU opt-in execution, browser/AOT and
+four-RID package production remain remote-CI verification responsibilities.
+The workflow, native hooks, strict AOT, browser timeout scope and package flow
+are unchanged. Local native compilation reuses the pinned verified assets.
+
+## Historical: task-oriented CI interface
 
 The required composition workflow uses **10 → 4 distinct direct target names**:
 Compile, Test, Quality, Distribution. Across all workflow files, direct target names are **14 → 8**: the four required

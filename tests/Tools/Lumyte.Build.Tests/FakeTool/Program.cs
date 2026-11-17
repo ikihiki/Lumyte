@@ -13,7 +13,7 @@ internal static class Program
         "PYTHON", "PYTHON3", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "CC_wasm32_unknown_emscripten",
         "AR_wasm32_unknown_emscripten", "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER",
         "LUMYTE_BUILD_ASSEMBLY", "LUMYTE_BENCHMARK_PROJECT", "Configuration",
-        "LUMYTE_TEST_SERIAL", "LUMYTE_CPU_METHOD_PARALLELISM", "LUMYTE_GRAPHICS_GPU_TESTS", "LUMYTE_OPENAL_TESTS", "LUMYTE_UI_BENCHMARK_GPU",
+        "LUMYTE_LANE_CATALOG", "LUMYTE_LANE_INVENTORY", "LUMYTE_TEST_SERIAL", "LUMYTE_CPU_METHOD_PARALLELISM", "LUMYTE_GRAPHICS_GPU_TESTS", "LUMYTE_OPENAL_TESTS", "LUMYTE_UI_BENCHMARK_GPU",
     ];
 
     private static int Main(string[] args)
@@ -34,6 +34,21 @@ internal static class Program
             {
                 Console.Error.WriteLine("Requested fake dotnet failure: " + dotnetExitCode);
                 return dotnetExitCode;
+            }
+
+            if (args.FirstOrDefault() == "test" && Environment.GetEnvironmentVariable("LUMYTE_LANE_INVENTORY") is { } inventoryDirectory
+                && Environment.GetEnvironmentVariable("LUMYTE_TEST_SKIP_INVENTORY") != "1")
+            {
+                // Simulate the process protocol only. SolutionFilterSdkTests uses
+                // the real SDK/xUnit discovery, including deliberate drift failure.
+                Directory.CreateDirectory(inventoryDirectory);
+                using var catalog = JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("LUMYTE_LANE_CATALOG")!));
+                string root = Path.GetDirectoryName(Path.GetDirectoryName(Environment.GetEnvironmentVariable("LUMYTE_LANE_CATALOG")))!;
+                foreach (JsonElement entry in catalog.RootElement.EnumerateArray())
+                {
+                    string project = Path.GetFullPath(entry.GetProperty("Project").GetString()!, root);
+                    File.WriteAllText(Path.Combine(inventoryDirectory, Path.GetFileName(project) + ".json"), JsonSerializer.Serialize(new { Project = project, Error = (string?)null }));
+                }
             }
 
             if (args.FirstOrDefault() == "msbuild" && args.Contains("-getProperty:IsPackable", StringComparer.Ordinal))

@@ -81,6 +81,43 @@ public sealed class TestLaneTests
         Assert.Contains("Classify", result.Output + result.Error, StringComparison.Ordinal);
     }
 
+    /// <summary>A successful SDK exit without actual discovery evidence is not a valid lane run.</summary>
+    /// <returns>The completed fail-closed assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task MissingDiscoveryInventoryFailsAsync()
+    {
+        using var fixture = new BuildFixture();
+        PrepareCatalog(fixture);
+        fixture.Environment["LUMYTE_TEST_SKIP_INVENTORY"] = "1";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--lane", "integration", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("Missing real xUnit discovery inventory", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
+    /// <summary>Lane metadata must be explicit, nonempty, valid and unique.</summary>
+    /// <param name="lanes">Malformed presence declaration.</param>
+    /// <returns>The completed validation assertion.</returns>
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("[\"Cpu\",\"Cpu\"]")]
+    [InlineData("[\"Typo\"]")]
+    [Trait("Execution", "Integration")]
+    public async Task InvalidLanePresenceFailsBeforeToolsAsync(string lanes)
+    {
+        using var fixture = new BuildFixture();
+        PrepareCatalog(fixture);
+        string path = Path.Combine(fixture.Root, "build", "TestLanes.json");
+        string content = File.ReadAllText(path);
+        content = content.Replace("[\"Cpu\",\"Integration\",\"Gpu\"]", lanes, StringComparison.Ordinal);
+        File.WriteAllText(path, content);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--lane", "integration", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.jsonl")));
+    }
+
     private static void PrepareCatalog(BuildFixture fixture)
     {
         File.WriteAllText(fixture.Project, "<Project><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>");
@@ -89,8 +126,8 @@ public sealed class TestLaneTests
         Directory.CreateDirectory(Path.Combine(fixture.Root, "build"));
         File.WriteAllText(Path.Combine(fixture.Root, "build", "TestLanes.json"), JsonSerializer.Serialize(new[]
         {
-            new { Project = Path.GetFileName(fixture.Project), Default = "Cpu", IntegrationClasses = new[] { "ExternalTests" } },
-            new { Project = "Native Fixture.csproj", Default = "Integration", IntegrationClasses = Array.Empty<string>() },
+            new { Project = Path.GetFileName(fixture.Project), Default = "Cpu", IntegrationClasses = new[] { "ExternalTests" }, Lanes = new[] { "Cpu", "Integration", "Gpu" } },
+            new { Project = "Native Fixture.csproj", Default = "Integration", IntegrationClasses = Array.Empty<string>(), Lanes = new[] { "Integration", "Gpu" } },
         }));
     }
 }

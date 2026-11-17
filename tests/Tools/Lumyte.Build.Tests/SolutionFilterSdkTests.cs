@@ -29,7 +29,7 @@ public sealed class SolutionFilterSdkTests(ITestOutputHelper output)
 
         File.Copy(Path.Combine(repository, "global.json"), Path.Combine(fixture.Root, "global.json"));
         File.WriteAllText(Path.Combine(fixture.Root, "Directory.Build.targets"), new XDocument(new XElement("Project", new XElement("Import", new XAttribute("Project", Path.Combine(repository, "tests", "Directory.Build.targets"))))).ToString());
-        string[] projects = ["Mixed/Mixed.csproj", "Native/Native.csproj"];
+        string[] projects = ["Mixed/Mixed.csproj", "Native/Native.csproj", "CpuOnly/CpuOnly.csproj", "GpuOnly/GpuOnly.csproj"];
         for (int index = 0; index < projects.Length; index++)
         {
             string path = Path.Combine(fixture.Root, projects[index]);
@@ -40,7 +40,8 @@ public sealed class SolutionFilterSdkTests(ITestOutputHelper output)
                     <TargetFramework>net10.0</TargetFramework>
                     <IsTestProject>true</IsTestProject>
                     <ImplicitUsings>enable</ImplicitUsings>
-                    <AssemblyName>{(index == 0 ? "Fixture.Fake.IntegrationTests" : "Fixture.Native.Tests")}</AssemblyName>
+                    <Nullable>enable</Nullable>
+                    <AssemblyName>{(index == 0 ? "Fixture.Fake.IntegrationTests" : "Fixture.Native" + index + ".Tests")}</AssemblyName>
                   </PropertyGroup>
                   <ItemGroup>
                     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
@@ -84,16 +85,20 @@ public sealed class SolutionFilterSdkTests(ITestOutputHelper output)
             }
             """;
         File.WriteAllText(Path.Combine(fixture.Root, "Native", "Cases.cs"), nativeSource);
+        File.WriteAllText(Path.Combine(fixture.Root, "CpuOnly", "Cases.cs"), """using Xunit; public sealed class CpuCases { [Fact] public void Cpu() => Assert.Equal("cpu", System.Environment.GetEnvironmentVariable("LUMYTE_FIXTURE_LANE")); }""");
+        File.WriteAllText(Path.Combine(fixture.Root, "GpuOnly", "Cases.cs"), """using Xunit; public sealed class GpuCases { [Fact, Trait("Execution", "Gpu")] public void Gpu() => Assert.Equal("gpu", System.Environment.GetEnvironmentVariable("LUMYTE_FIXTURE_LANE")); }""");
         File.WriteAllText(fixture.Solution, new XDocument(new XElement("Solution", projects.Select(path => new XElement("Project", new XAttribute("Path", path))))).ToString());
         Directory.CreateDirectory(Path.Combine(fixture.Root, "build"));
         File.WriteAllText(Path.Combine(fixture.Root, "build", "TestLanes.json"), JsonSerializer.Serialize(new[]
         {
-            new { Project = projects[0], Default = "Cpu", IntegrationClasses = new[] { "LegacyExternalTests" } },
-            new { Project = projects[1], Default = "Integration", IntegrationClasses = Array.Empty<string>() },
+            new { Project = projects[0], Default = "Cpu", IntegrationClasses = new[] { "LegacyExternalTests" }, Lanes = new[] { "Cpu", "Integration", "Gpu" } },
+            new { Project = projects[1], Default = "Integration", IntegrationClasses = Array.Empty<string>(), Lanes = new[] { "Integration", "Gpu" } },
+            new { Project = projects[2], Default = "Cpu", IntegrationClasses = Array.Empty<string>(), Lanes = new[] { "Cpu" } },
+            new { Project = projects[3], Default = "Integration", IntegrationClasses = Array.Empty<string>(), Lanes = new[] { "Gpu" } },
         }));
         output.WriteLine("Pinned SDK: " + await RunDotnetAsync(fixture.Root, "--version"));
         output.WriteLine(await RunDotnetAsync(fixture.Root, "build", fixture.Solution, "-c", "Release", "--nologo", "-m:1", "-nr:false", "-p:UseSharedCompilation=false"));
-        foreach ((string lane, int count, int membership) in new[] { ("cpu", 2, 1), ("integration", 3, 2), ("gpu", 2, 2) })
+        foreach ((string lane, int count, int membership) in new[] { ("cpu", 3, 2), ("integration", 3, 2), ("gpu", 3, 3) })
         {
             if (lane == "cpu" && (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64))
             {
@@ -115,7 +120,18 @@ public sealed class SolutionFilterSdkTests(ITestOutputHelper output)
             XElement[] counters = results.Select(path => XDocument.Load(path).Descendants().Single(element => element.Name.LocalName == "Counters")).ToArray();
             Assert.Equal(count, counters.Sum(element => int.Parse(element.Attribute("passed")!.Value, System.Globalization.CultureInfo.InvariantCulture)));
             Assert.All(counters, element => Assert.Equal("0", element.Attribute("failed")!.Value));
+            Assert.All(counters, element => Assert.True(int.Parse(element.Attribute("total")!.Value, System.Globalization.CultureInfo.InvariantCulture) > 0));
+            Assert.DoesNotContain("No test matches", result.Output + result.Error, StringComparison.OrdinalIgnoreCase);
         }
+
+        string catalog = Path.Combine(fixture.Root, "build", "TestLanes.json");
+        string correct = File.ReadAllText(catalog);
+        File.WriteAllText(catalog, correct.Replace(""""Cpu","Integration","Gpu"""", """"Cpu","Integration"""", StringComparison.Ordinal));
+        fixture.Environment["LUMYTE_FIXTURE_LANE"] = "integration";
+        BuildFixture.ProcessResult drift = await fixture.RunAsync("Test", "--lane", "integration", "--dotnet-path", Dotnet, "--no-build", "--no-restore");
+        output.WriteLine(drift.Output + drift.Error);
+        Assert.NotEqual(0, drift.ExitCode);
+        Assert.Contains("Lane inventory drift", drift.Output + drift.Error, StringComparison.Ordinal);
     }
 
     private static async Task<string> RunDotnetAsync(string directory, params string[] arguments)

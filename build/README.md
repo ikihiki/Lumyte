@@ -52,7 +52,7 @@ build/
   _build.csproj               実行するconsole project
   Build.cs                    共通CLIとrestore・compile・pack
   Build.Testing.cs             CPU / integration / GPUの排他的選択
-  TestLanes.json               test project既定と混在classの分類
+  TestLanes.json               test project既定・混在class・実在レーンの分類
   Build.Browser.cs             Browser publish・process検証
   Build.UI.cs                  UIのシナリオカタログと共通検証
   Build.Diagnostics.cs         診断process・UI・gallery
@@ -234,6 +234,8 @@ MSBuild leafの状態rootは`artifacts/build/invocations`以下です。
 globalなPATH、shell profile、GPUドライバー登録は変更しません。
 
 Fallout.Buildは10.4.0で固定し、[packages.lock.json](packages.lock.json)に解決結果を記録します。
+Windowsのリダイレクト出力で上流helpが`Console.BufferWidth`に失敗するため、公開初期化hookで実target graphと継承を含む`ParameterAttribute`からhelpを出力します。
+console handleや幅を参照せず、`--help`は子toolを起動しません。targetやoptionの別カタログは持ちません。
 Rustも[Cargo.lock](../native/lumyte_text_parley/Cargo.lock)に従い`--locked`でbuildします。
 Rustupのbootstrapは[RustBootstrap.json](RustBootstrap.json)の公式URLとSHA-256で確認します。
 初回の復元・tool取得にはネットワーク接続が必要です。

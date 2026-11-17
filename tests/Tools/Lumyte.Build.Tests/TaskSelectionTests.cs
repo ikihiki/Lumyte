@@ -7,13 +7,16 @@ namespace Lumyte.Build.Tests;
 public sealed class TaskSelectionTests
 {
     /// <summary>The real help surface cannot re-expand through aliases.</summary>
+    /// <param name="target">The requested task whose help is redirected.</param>
     /// <returns>The completed inventory assertion.</returns>
-    [Fact]
+    [Theory]
+    [InlineData("Test")]
+    [InlineData("Compile")]
     [Trait("Execution", "Integration")]
-    public async Task ActualTargetInventoryCannotReexpandAsync()
+    public async Task ActualTargetInventoryCannotReexpandAsync(string target)
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--help");
+        BuildFixture.ProcessResult result = await fixture.RunAsync(target, "--help");
         Assert.True(result.ExitCode == 0, result.Output + result.Error);
         string targets = result.Output.Split("Parameters", StringSplitOptions.None)[0];
         string[] names = System.Text.RegularExpressions.Regex.Matches(targets, @"^  ([A-Za-z][A-Za-z0-9]+)(?: +|$)", System.Text.RegularExpressions.RegexOptions.Multiline)
@@ -27,6 +30,13 @@ public sealed class TaskSelectionTests
         Assert.DoesNotContain("ValidateTest", names);
         Assert.Contains("--lane", result.Output, StringComparison.Ordinal);
         Assert.Contains("--suite", result.Output, StringComparison.Ordinal);
+        Assert.Contains("--test-concurrency", result.Output, StringComparison.Ordinal);
+        Assert.Contains("--target", result.Output, StringComparison.Ordinal);
+        Assert.Contains("--help", result.Output, StringComparison.Ordinal);
+        Assert.Contains("--skip", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("NotRun", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("invalid", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(fixture.Log));
     }
 
     /// <summary>Invalid or incompatible selectors fail before restore, build, or test launches.</summary>
