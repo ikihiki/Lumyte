@@ -20,6 +20,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
     private Dictionary<ShaderResources, long>? _workingReferences;
     private long _workingReferenceBytes;
     private bool _workingReferencesEnabled;
+    private List<PreparationWorkingBytes2D>? _workingBytesSources;
     private ArgumentTablePlan? _registrations;
     private IDisposable? _tableOwner;
     private ShaderResources? _legacy;
@@ -317,6 +318,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         {
             if (!_returned)
             {
+                ReleaseWorkingBytesSources();
                 ReleasePreparationCaches();
                 Release();
                 _returned = true;
@@ -378,6 +380,18 @@ public sealed class DrawingArgumentPlan2D : IDisposable
             _scopes.Remove(resource);
             ReleaseWorkingReferences(resource);
         }
+    }
+
+    internal IDisposable HoldWorkingBytesSources() => new WorkingBytesUse(this);
+
+    internal void RegisterWorkingBytesSource(PreparationWorkingBytes2D source)
+    {
+        if (_closed || _returned)
+        {
+            throw new InvalidOperationException("Working-byte callbacks require a live preparation scope.");
+        }
+
+        (_workingBytesSources ??= []).Add(source);
     }
 
     internal void RegisterPreparationCache(ClipNormalizationCache2D cache) => _preparationCaches.Add(cache);
@@ -542,6 +556,22 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         return marks;
     }
 
+    private void ReleaseWorkingBytesSources()
+    {
+        if (_workingBytesSources is not { } sources)
+        {
+            return;
+        }
+
+        foreach (PreparationWorkingBytes2D source in sources)
+        {
+            source.Dispose();
+        }
+
+        sources.Clear();
+        _workingBytesSources = null;
+    }
+
     private void ReserveWorkingReferenceBytes(ShaderResources scope, long bytes)
     {
         EnableWorkingReferenceBudget();
@@ -590,6 +620,11 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         }
 
         _users--;
+    }
+
+    private sealed class WorkingBytesUse(DrawingArgumentPlan2D owner) : IDisposable
+    {
+        public void Dispose() => owner.ReleaseWorkingBytesSources();
     }
 
     private sealed class Upload(ShaderResources trigger, Func<CancellationToken, ValueTask> async, Func<CancellationToken, ValueTask>? prepareMapping, Action? mapped, long workingReferenceBytes)

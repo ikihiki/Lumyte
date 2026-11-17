@@ -129,6 +129,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         IDisposable unusedPlanOwner = _resources.CleanupOwner(argumentPlan);
         try
         {
+            using IDisposable workingBytesUse = argumentPlan.HoldWorkingBytesSources();
             owner.HoldComposition(_resources.RetainComposition(allowReturned: _resourceUse is not null));
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);

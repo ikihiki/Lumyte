@@ -20,12 +20,15 @@ internal sealed class RetainedDrawingCache2D : IDisposable
     private bool _disposed;
     private long _compiled;
     private long _reused;
+    private long _activeKeyComparisons;
 
     internal RetainedDrawingCache2D(DrawingRetentionOptions2D options)
     {
         options.Validate();
         _options = options;
     }
+
+    internal long ActiveKeyComparisons => _activeKeyComparisons;
 
     internal bool ResidentInstancesEnabled => _options.EnableResidentInstances;
 
@@ -147,21 +150,25 @@ internal sealed class RetainedDrawingCache2D : IDisposable
                 }
             }
 
-            // Only completed read-only payloads may cross simultaneous frame versions.
-            foreach (FrameLease frame in _active)
+            if (_options.EnableResidentInstances)
             {
-                foreach (Asset asset in frame.Assets)
+                // Only completed read-only payloads may cross simultaneous frame versions.
+                foreach (FrameLease frame in _active)
                 {
-                    if (asset.Key.Matches(key) && asset.Batch is ResidentBatchLease2D shared
-                        && _options.EnableResidentInstances && (asset.Resident || ReferenceEquals(frame, requestingFrame)))
+                    foreach (Asset asset in frame.Assets)
                     {
-                        _reused++;
-                        return new(key, shared.Fork())
+                        _activeKeyComparisons++;
+                        if (asset.Key.Matches(key) && asset.Batch is ResidentBatchLease2D shared
+                            && (asset.Resident || ReferenceEquals(frame, requestingFrame)))
                         {
-                            Resident = asset.Resident,
-                            Translation = asset.Translation,
-                            InitializationSource = asset.Resident ? null : asset.InitializationSource ?? asset,
-                        };
+                            _reused++;
+                            return new(key, shared.Fork())
+                            {
+                                Resident = asset.Resident,
+                                Translation = asset.Translation,
+                                InitializationSource = asset.Resident ? null : asset.InitializationSource ?? asset,
+                            };
+                        }
                     }
                 }
             }

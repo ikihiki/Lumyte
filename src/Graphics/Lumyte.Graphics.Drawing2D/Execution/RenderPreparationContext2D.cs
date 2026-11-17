@@ -8,7 +8,7 @@ public sealed class RenderPreparationContext2D
     private readonly DrawingResourceState2D _resources;
     private readonly bool _allowReturnedResources;
     private long _otherWorkingBytes;
-    private Func<long>? _otherWorkingBytesSource;
+    private PreparationWorkingBytes2D? _otherWorkingBytesSource;
 
     internal RenderPreparationContext2D(IGraphicDevice device, DrawingTargetInfo2D target, DrawingResourceState2D resources, DrawingArgumentPlan2D? argumentPlan = null, bool allowReturnedResources = false)
     {
@@ -43,6 +43,8 @@ public sealed class RenderPreparationContext2D
 
     internal bool EnforceWorkingBudget { get; init; }
 
+    internal bool HasWorkingBytesSource => _otherWorkingBytesSource is { HasSource: true };
+
     internal long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
 
     // Budgeted forks request cumulative accounting when they read this value.
@@ -59,7 +61,7 @@ public sealed class RenderPreparationContext2D
 
             if (_otherWorkingBytesSource is { } source)
             {
-                long bytes = source();
+                long bytes = source.Value;
                 _otherWorkingBytes = bytes;
                 _otherWorkingBytesSource = null;
             }
@@ -101,8 +103,10 @@ public sealed class RenderPreparationContext2D
     internal void SetWorkingBytesSource(Func<long> source)
     {
         ArgumentNullException.ThrowIfNull(source);
+        var shared = new PreparationWorkingBytes2D(source);
+        ArgumentPlan.RegisterWorkingBytesSource(shared);
         _otherWorkingBytes = 0;
-        _otherWorkingBytesSource = source;
+        _otherWorkingBytesSource = shared;
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);
