@@ -38,34 +38,21 @@ internal sealed partial class Build
     [Parameter("Rustup executable override for explicit setup targets.")]
     public string? Rustup { get; set; }
 
-    private Target ParleyNative => definition => definition
-        .Executes(() => BuildAsync(wasm: false));
-
-    private Target ParleyWasm => definition => definition
-        .Executes(() => BuildAsync(wasm: true));
-
-    private Target SetupParleyNative => definition => definition
-        .Executes(() => SetupAsync(wasm: false));
-
-    private Target SetupParleyWasm => definition => definition
-        .Executes(() => SetupAsync(wasm: true));
-
     private Task TestRustAsync() => RunRustTestsAsync();
 
-    private Target PrepareWasmTools => definition => definition
-        .Executes(async () =>
+    private async Task PrepareWasmToolsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PythonPathFile))
         {
-            if (string.IsNullOrWhiteSpace(PythonPathFile))
-            {
-                throw new ArgumentException("PrepareWasmTools requires --python-path-file.");
-            }
+            throw new ArgumentException("Setup --setup-tool wasm-python requires --python-path-file.");
+        }
 
-            string python = await PythonRuntime.ResolveAsync(RepositoryDirectory, Emsdk, Python).ConfigureAwait(false);
-            string destination = Path.GetFullPath(PythonPathFile);
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            await File.WriteAllTextAsync(destination, python + Environment.NewLine, new UTF8Encoding(false)).ConfigureAwait(false);
-            Console.WriteLine($"Emscripten Python: {python}");
-        });
+        string python = await PythonRuntime.ResolveAsync(RepositoryDirectory, Emsdk, Python).ConfigureAwait(false);
+        string destination = Path.GetFullPath(PythonPathFile);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        await File.WriteAllTextAsync(destination, python + Environment.NewLine, new UTF8Encoding(false)).ConfigureAwait(false);
+        Console.WriteLine($"Emscripten Python: {python}");
+    }
 
 
     private static string FindExecutable(string name)

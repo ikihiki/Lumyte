@@ -15,47 +15,22 @@
       "enum": [
         "Benchmark",
         "BenchmarkSignals",
-        "CheckFormat",
-        "CheckMarkdown",
-        "CheckNativeFormat",
-        "Ci",
         "Clean",
         "Compile",
         "ComponentScreeningNotify",
         "ComponentScreeningPlan",
         "ComponentScreeningRun",
-        "ConfigureLavapipe",
-        "DiagnosticGallery",
         "DiagnosticPreviews",
-        "Direct3D12Native",
         "Distribution",
-        "FormatMarkdown",
-        "FormatNative",
+        "Format",
         "GenerateNamedColors",
-        "NativeSmoke",
-        "Pack",
-        "ParleyNative",
-        "ParleyWasm",
-        "PipelineBenchmark",
-        "PreparePublish",
-        "PrepareTest",
-        "PrepareWasmTools",
+        "Native",
         "Publish",
-        "PublishWindowSample",
         "Quality",
-        "Restore",
-        "Samples",
-        "SetupDxc",
-        "SetupParleyNative",
-        "SetupParleyWasm",
-        "SetupWasm",
+        "Setup",
         "Test",
-        "UsvgNative",
-        "ValidateTest",
-        "VerifyEnvironment",
-        "VerifyNamedColors",
-        "VerifySdk",
-        "WgpuNative"
+        "Verify",
+        "VerifyNamedColors"
       ]
     },
     "Verbosity": {
@@ -196,6 +171,10 @@
           "type": "string",
           "description": "Build configuration shared by repository targets"
         },
+        "DistributionOutput": {
+          "type": "string",
+          "description": "Distribution output: all (samples and packages), packages, window-sample, or diagnostic-gallery"
+        },
         "DotnetPath": {
           "type": "string",
           "description": "Explicit dotnet executable for child build commands"
@@ -220,6 +199,10 @@
           "type": "string",
           "description": "Test lane: all, cpu, integration, or gpu (managed only; classified lanes use one SDK test invocation over a generated .slnf)"
         },
+        "NativeBackend": {
+          "type": "string",
+          "description": "Native backend: parley, parley-wasm, wgpu, usvg, or direct3d12"
+        },
         "NoBuild": {
           "type": "boolean",
           "description": "Skip compilation and use existing outputs"
@@ -236,6 +219,10 @@
           "type": "string",
           "description": "Output directory for native libraries and Cargo intermediates"
         },
+        "PipelineValidation": {
+          "type": "boolean",
+          "description": "Capture the Vulkan pipeline validation output after the managed GPU lane"
+        },
         "Project": {
           "type": "string",
           "description": "Optional project for restore, compile, test, pack or publish"
@@ -248,9 +235,17 @@
           "type": "string",
           "description": "File receiving the resolved private Python executable for MSBuild"
         },
+        "QualityScope": {
+          "type": "string",
+          "description": "Quality/format scope: all, managed, native, or markdown"
+        },
         "RepositoryRoot": {
           "type": "string",
           "description": "Repository root when an isolated native worker uses a separate Fallout state directory"
+        },
+        "RestoreMetadata": {
+          "type": "boolean",
+          "description": "Restore metadata before packaging downloaded binaries without rebuilding them"
         },
         "Runtime": {
           "type": "string",
@@ -292,6 +287,10 @@
           "type": "number",
           "description": "Total screening deadline in seconds, capped at 900"
         },
+        "SetupTool": {
+          "type": "string",
+          "description": "Setup tool: wasm, parley, parley-wasm, dxc, lavapipe, or wasm-python"
+        },
         "SkipParleyPackage": {
           "type": "boolean",
           "description": "Exclude Parley packaging until native assets from all supported RIDs have been collected"
@@ -316,6 +315,10 @@
         "Toolchain": {
           "type": "string",
           "description": "Rust toolchain override"
+        },
+        "VerifyScope": {
+          "type": "string",
+          "description": "Verification scope: environment, sdk, or native"
         }
       }
     },

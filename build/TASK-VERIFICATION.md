@@ -3,7 +3,48 @@
 Verified on Linux x64 using the pinned SDK/native paths from
 /tmp/lumyte-lanes-env.sh; no host configuration was changed.
 
-## Original consolidation checks
+## Current: task-oriented CI interface
+
+The required composition workflow uses **10 → 4 distinct direct target names**:
+Compile, Test, Quality, Distribution. Across all workflow files, direct target names are **14 → 8**: the four required
+CI tasks plus the unchanged three advisory trust stages and DiagnosticPreviews.
+Actual declarations/schema/help expose
+**43 → 18** (original baseline 85), including developer, native/tooling,
+publication and three separate advisory trust-stage tasks. Internal preparation,
+format workers and output leaves were removed as targets, not hidden.
+
+| Verification | Result | Evidence |
+| --- | --- | --- |
+| Build runner, Release, no restore | 0 warnings/errors | /tmp/lumyte-interface-build-final.log |
+| Complete orchestration suite | **256 passed, 0 failed/skipped** | /tmp/lumyte-interface-tests-final.log |
+| Common Test CPU lane, host restore/build enabled, concurrency 4 | **50 assemblies, 4,181 passed, 0 failed/skipped**; exactly one SDK test command and 50 canonical .slnf members | /tmp/lumyte-interface-cpu.log |
+| Isolated-root common Test integration lane, selected build-tests project | **160 passed, 0 failed/skipped**; exactly one real SDK test command using canonical source outside invocation root | /tmp/lumyte-interface-integration.log |
+| Build C# format verification | No changes | /tmp/lumyte-interface-format-final.log |
+| Full repository Markdown lint | 363 files, zero issues | /tmp/lumyte-interface-markdown-final.log |
+| Actual help/schema | 18 executable tasks; removed aliases absent | /tmp/lumyte-interface-help.log and .fallout/build.schema.json |
+| Whitespace diff check | Clean | git diff --check |
+
+The full orchestration run includes the real SDK solution-filter fixture
+(CPU/integration/GPU), all 11 UI and seven strict-AOT selectors, native isolated-root
+invocations, package checks and failure propagation. New tests bound the required
+workflow to its exact four-task interface and preserve platform/artifact gates,
+reject removed target names and invalid selectors, exercise all three Quality
+checks and failure boundaries, verify metadata-before-package ordering, and
+retain diagnostic generator/assembler/collector and GPU pipeline output checks.
+
+The current CPU count adds two CPU-only workflow/hook contract tests to 4,179;
+no prior CPU tests were removed. CPU method scheduling and the lane generator
+are unchanged. Native MSBuild calls now use a common backend selector while
+retaining hook ordering, package staging, isolated roots and no solution recursion.
+The earlier statement that native leaf names were unchanged applies only to the
+historical checkpoints below, not this interface follow-up.
+
+Windows/ARM, real GPU/browser publication, every AOT executable, and four-RID
+NuGet production were not rerun locally. Their contracts and workflow gates
+remain; fake-process assertions are orchestration evidence, not native execution
+claims. Local host compilation reuses the already verified native assets.
+
+## Historical: original consolidation checks
 
 The following commands were run from the repository root after sourcing that
 local environment. Logs are retained on the verification host.
@@ -44,7 +85,7 @@ Frozen ADRs and archived performance evidence retain historical target names and
 hashes; current callers and current documentation use the migration table in
 [TASK-MIGRATION.md](TASK-MIGRATION.md). No ADR lint exceptions were added or updated.
 
-## Solution-filter follow-up
+## Historical: solution-filter follow-up
 
 The classified lanes now issue exactly one SDK test command, replacing the
 original per-project loop. These checks supersede the original CPU/orchestration

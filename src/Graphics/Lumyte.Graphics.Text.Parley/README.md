@@ -170,8 +170,8 @@ dotnet run --project build -c Release -- --target Test --project tests/Graphics/
 Parleyだけのnative成果物やtoolchain準備も同じ入口から実行できます。
 
 ```sh
-dotnet run --project build -c Release -- --target SetupParleyNative
-dotnet run --project build -c Release -- --target ParleyNative
+dotnet run --project build -c Release -- --target Setup --setup-tool parley
+dotnet run --project build -c Release -- --target Native --native-backend parley
 ```
 
 C#プロジェクトを直接`dotnet build`した場合も、`ParleyNative.targets`が共通runnerのleaf targetを呼びます。

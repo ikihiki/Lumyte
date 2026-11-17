@@ -73,8 +73,7 @@ jobs:
           source tools/setup/activate.sh
           export LUMYTE_GRAPHICS_GPU_TESTS=1
           export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore
-          dotnet run --project build -c Release --no-build --no-restore -- --target PipelineBenchmark --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore --pipeline-validation
       - name: Upload GPU results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -200,7 +199,7 @@ jobs:
           PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target DiagnosticGallery
+          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --distribution-output diagnostic-gallery
 
       - name: Upload diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -281,7 +280,7 @@ jobs:
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'PublishWindowSample', '--configuration', 'Release', '--no-build', '--no-restore')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'window-sample', '--configuration', 'Release', '--no-build', '--no-restore')
 
       - name: Distribution / Windows packages
         if: matrix.arch == 'x64'
@@ -289,7 +288,7 @@ jobs:
         run: |
           . ./tools/setup/activate.ps1
           foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
-            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Pack', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
+            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'packages', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
           }
 
   browser:
@@ -465,7 +464,7 @@ jobs:
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'CheckFormat', '--configuration', 'Release', '--host-only')
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Quality', '--quality-scope', 'managed', '--configuration', 'Release', '--host-only')
 
   package:
     name: Parley native NuGet package
@@ -492,14 +491,11 @@ jobs:
           name: parley-managed
           path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
 
-      - name: Restore package metadata
+      - name: Package validated runtime assets
         run: |
           # NuGet.config registers the local feed; it must exist before dotnet run restores the runner.
           mkdir -p artifacts/nuget
-          dotnet run --project build -c Release -- --target Restore --project src/Graphics/Lumyte.Graphics.Text.Parley
-
-      - name: Package validated runtime assets
-        run: dotnet run --project build -c Release --no-build --no-restore -- --target Pack --project src/Graphics/Lumyte.Graphics.Text.Parley --configuration Release --no-build --no-restore
+          dotnet run --project build -c Release -- --target Distribution --distribution-output packages --project src/Graphics/Lumyte.Graphics.Text.Parley --no-build --restore-metadata
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

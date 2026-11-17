@@ -253,7 +253,7 @@ public sealed class RepositoryBuildTests
     public async Task PackUsesTheRequestedProjectWithoutImplicitBuildAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
         AssertSuccess(result);
         JsonElement pack = Assert.Single(fixture.Records("dotnet"), record => Arguments(record)[0] == "pack");
         string[] arguments = Arguments(pack);
@@ -277,7 +277,7 @@ public sealed class RepositoryBuildTests
         File.WriteAllText(Path.Combine(source, "Unpackable.csproj"), "<Project><PropertyGroup><IsPackable>false</IsPackable></PropertyGroup></Project>");
         File.WriteAllText(Path.Combine(source, "Lumyte.Graphics.Text.Parley.csproj"), File.ReadAllText(fixture.Project));
         File.WriteAllText(Path.Combine(source, "obj", "Intermediate.csproj"), File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build", "--skip-parley-package");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         JsonElement pack = Assert.Single(records);
@@ -300,7 +300,7 @@ public sealed class RepositoryBuildTests
         using var fixture = new BuildFixture();
         string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Text.Parley.csproj");
         File.WriteAllText(project, File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
     }
@@ -314,7 +314,7 @@ public sealed class RepositoryBuildTests
         using var fixture = new BuildFixture();
         string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Wgpu.csproj");
         File.WriteAllText(project, File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-wgpu-package");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-wgpu-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
     }
@@ -331,7 +331,7 @@ public sealed class RepositoryBuildTests
         File.Copy(fixture.Project, Path.Combine(source, "Packable.csproj"));
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "msbuild";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--no-build");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("23", result.Output + result.Error, StringComparison.Ordinal);
         Assert.Single(fixture.Records("dotnet"));
@@ -386,7 +386,7 @@ public sealed class RepositoryBuildTests
             File.Copy(fixture.Project, Path.Combine(source, name + ".csproj"));
         }
 
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
         AssertSuccess(result);
         JsonElement pack = Assert.Single(fixture.Records("dotnet"));
         var traversal = XDocument.Load(Arguments(pack)[1]);
@@ -406,7 +406,7 @@ public sealed class RepositoryBuildTests
     public async Task CheckFormatUsesTheSelectedConfigurationAsync(string configuration)
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("CheckFormat", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project, "--configuration", configuration);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Quality", "--quality-scope", "managed", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project, "--configuration", configuration);
         AssertSuccess(result);
         JsonElement format = Assert.Single(fixture.Records("dotnet"));
         Assert.Equal("format", Arguments(format)[0]);

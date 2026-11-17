@@ -45,6 +45,26 @@ internal static class Program
             return 0;
         }
 
+        if (Environment.GetEnvironmentVariable("LUMYTE_TEST_QUALITY_TOOLS") == "1")
+        {
+            if (tool == "git")
+            {
+                Console.Write("native.cpp\0");
+                return 0;
+            }
+
+            if (tool == "mise")
+            {
+                Console.WriteLine(Path.Combine(Environment.CurrentDirectory, "markdownlint.mjs"));
+                return 0;
+            }
+
+            if (tool is "node" or "clang-format")
+            {
+                return Environment.GetEnvironmentVariable("LUMYTE_TEST_QUALITY_FAIL_TOOL") == tool ? 23 : 0;
+            }
+        }
+
         if (tool == "python")
         {
             Console.WriteLine(Environment.GetEnvironmentVariable("PARLEY_TEST_PYTHON_VERSION") ?? "Python 3.12.16");

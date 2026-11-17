@@ -22,15 +22,31 @@ internal sealed partial class Build
     [Parameter("Maximum concurrent CPU test methods per assembly (1-64).")]
     public int TestConcurrency { get; set; } = 4;
 
-    private Target Test => definition => definition
-        .DependsOn(PrepareTest)
-        .Executes(RunSelectedTestsAsync);
+    [Parameter("Capture the Vulkan pipeline validation output after the managed GPU lane.")]
+    public bool PipelineValidation { get; set; }
 
-    private Target PrepareTest => definition => definition
-        .DependsOn(ValidateTest, Compile);
-
-    private Target ValidateTest => definition => definition.Executes(() =>
+    private Target Test => definition => definition.Executes(async () =>
     {
+        ValidateTestSelection();
+        if (TestNeedsCompilation)
+        {
+            await CompileAsync().ConfigureAwait(false);
+        }
+
+        await RunSelectedTestsAsync().ConfigureAwait(false);
+        if (PipelineValidation)
+        {
+            await PipelineValidationAsync().ConfigureAwait(false);
+        }
+    });
+
+    private void ValidateTestSelection()
+    {
+        if (PipelineValidation && (Suite != "managed" || Lane != "gpu"))
+        {
+            throw new ArgumentException("--pipeline-validation requires --suite managed --lane gpu.");
+        }
+
         if (Lane is not ("all" or "cpu" or "integration" or "gpu"))
         {
             throw new ArgumentException("Invalid --lane. Expected all, cpu, integration, or gpu.");
@@ -64,7 +80,7 @@ internal sealed partial class Build
         {
             throw new ArgumentException("--project is only supported with --suite managed.");
         }
-    });
+    }
 
     private bool TestNeedsCompilation => Suite is not ("aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "rust") && !Aot;
 

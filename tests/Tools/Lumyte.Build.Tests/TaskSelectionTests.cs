@@ -18,13 +18,13 @@ public sealed class TaskSelectionTests
         string targets = result.Output.Split("Parameters", StringSplitOptions.None)[0];
         string[] names = System.Text.RegularExpressions.Regex.Matches(targets, @"^  ([A-Za-z][A-Za-z0-9]+)(?: +|$)", System.Text.RegularExpressions.RegexOptions.Multiline)
             .Select(match => match.Groups[1].Value).ToArray();
-        Assert.InRange(names.Length, 1, 43);
+        Assert.Equal(18, names.Length);
         Assert.Equal(["Test"], names.Where(name => name.StartsWith("Test", StringComparison.Ordinal)));
         Assert.DoesNotContain(names, name => name.StartsWith("Ci", StringComparison.Ordinal) && name != "Ci");
         Assert.Contains("Benchmark", names);
-        Assert.Contains("Ci", names);
-        Assert.Contains("PrepareTest", names);
-        Assert.Contains("ValidateTest", names);
+        Assert.DoesNotContain("Ci", names);
+        Assert.DoesNotContain("PrepareTest", names);
+        Assert.DoesNotContain("ValidateTest", names);
         Assert.Contains("--lane", result.Output, StringComparison.Ordinal);
         Assert.Contains("--suite", result.Output, StringComparison.Ordinal);
     }
@@ -34,6 +34,13 @@ public sealed class TaskSelectionTests
     /// <param name="arguments">Invalid selection.</param>
     /// <returns>The completed assertion.</returns>
     [Theory]
+    [InlineData("Distribution", "--distribution-output", "pack-typo")]
+    [InlineData("Quality", "--quality-scope", "typo")]
+    [InlineData("Format", "--quality-scope", "typo")]
+    [InlineData("Native", "--native-backend", "typo")]
+    [InlineData("Setup", "--setup-tool", "typo")]
+    [InlineData("Verify", "--verify-scope", "typo")]
+    [InlineData("Test", "--pipeline-validation")]
     [InlineData("Test", "--lane", "cp")]
     [InlineData("Test", "--suite", "browser-typo")]
     [InlineData("Test", "--suite", "ui")]

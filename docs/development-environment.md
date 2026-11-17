@@ -15,7 +15,7 @@ compilerやSlang等の開発ツールは、以下の共通環境で準備する�
 dotnet run --project build -c Release -- --target Compile
 dotnet run --project build -c Release -- --target Test
 dotnet run --project build -c Release -- --target Publish
-dotnet run --project build -c Release -- --target Pack
+dotnet run --project build -c Release -- --target Distribution --distribution-output packages
 ```
 
 .NET、Cargo、Slang、CMakeは各工程のworkerとして使用する。
@@ -141,7 +141,7 @@ GitHub の Windows runner は管理者権限で動くため、システム依存
 開発環境を有効化して、対象プロジェクトの書式確認とビルドを実行する。
 
 ```bash
-dotnet run --project build -c Release -- --target CheckFormat
+dotnet run --project build -c Release -- --target Quality --quality-scope managed
 dotnet run --project build -c Release -- --target Compile
 ```
 
@@ -178,7 +178,7 @@ mise run format-markdown
 `VCPKG_ROOT`は固定コミットのvcpkgを指す。Nativeプロジェクトを追加する際はmanifestとCMakeのtargetを定義し、共通runnerからconfigure／buildを呼ぶ。Native smokeは次の入口で実行する。
 
 ```sh
-dotnet run --project build -c Release -- --target NativeSmoke
+dotnet run --project build -c Release -- --target Verify --verify-scope native
 ```
 
 runnerはCMakeへvcpkgのtoolchainと対象tripletを渡す。非特権モードでは`LUMYTE_VULKAN_INCLUDE_DIR`と`LUMYTE_VULKAN_LIBRARY`も使用する。

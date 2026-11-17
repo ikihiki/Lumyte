@@ -38,13 +38,11 @@ internal sealed partial class Build
         }
     }
 
-    private Target PipelineBenchmark => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            await CaptureValidationLogAsync("vulkan-pipeline-benchmark.jsonl", () => DotNetAsync(
-                "run", "--project", "samples/Lumyte.Graphics.DeviceCaps.Sample", "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
-        });
+    private async Task PipelineValidationAsync()
+    {
+        await CaptureValidationLogAsync("vulkan-pipeline-benchmark.jsonl", () => DotNetAsync(
+            "run", "--project", "samples/Lumyte.Graphics.DeviceCaps.Sample", "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
+    }
 
     private async Task TestWindowingAsync()
     {

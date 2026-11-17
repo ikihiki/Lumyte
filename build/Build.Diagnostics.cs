@@ -24,15 +24,14 @@ internal sealed partial class Build
         }, "tools/diagnostics/verify-browser.mjs").ConfigureAwait(false);
     }
 
-    private Target DiagnosticGallery => definition => definition
-        .Executes(async () =>
-        {
-            await NodeAsync("tools/diagnostics/generate-gallery.test.mjs").ConfigureAwait(false);
-            await NodeAsync("tools/diagnostics/assemble-gallery-site.test.mjs").ConfigureAwait(false);
-            await PythonAsync("-m", "unittest", "discover", "-s", "tools/diagnostics", "-p", "test_collect_gallery_artifacts.py").ConfigureAwait(false);
-            await NodeAsync("tools/diagnostics/generate-gallery.mjs", Path.Combine(ArtifactRoot, "test-results", "diagnostics-ui"),
-                Path.Combine(ArtifactRoot, "diagnostics-gallery")).ConfigureAwait(false);
-        });
+    private async Task GenerateDiagnosticGalleryAsync()
+    {
+        await NodeAsync("tools/diagnostics/generate-gallery.test.mjs").ConfigureAwait(false);
+        await NodeAsync("tools/diagnostics/assemble-gallery-site.test.mjs").ConfigureAwait(false);
+        await PythonAsync("-m", "unittest", "discover", "-s", "tools/diagnostics", "-p", "test_collect_gallery_artifacts.py").ConfigureAwait(false);
+        await NodeAsync("tools/diagnostics/generate-gallery.mjs", Path.Combine(ArtifactRoot, "test-results", "diagnostics-ui"),
+            Path.Combine(ArtifactRoot, "diagnostics-gallery")).ConfigureAwait(false);
+    }
 
     private Target DiagnosticPreviews => definition => definition
         .Executes(async () =>

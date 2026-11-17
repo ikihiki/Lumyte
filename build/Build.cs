@@ -50,33 +50,40 @@ internal sealed partial class Build : FalloutBuild
 
     private string NodeExecutable => Node ?? FindExecutable("node");
 
-    private Target Restore => definition => definition
-        .After(ValidateTest)
-        .OnlyWhenDynamic(() => !NoRestore && !NoBuild && TestNeedsCompilation)
-        .Executes(async () =>
+    private Target Compile => definition => definition.Executes(CompileAsync);
+
+    private async Task RestoreAsync()
+    {
+        if (NoRestore)
         {
-            var arguments = new List<string> { "restore", Project ?? BuildSolution };
-            if (Runtime is not null)
-            {
-                arguments.AddRange(["--runtime", Runtime]);
-            }
+            return;
+        }
 
-            await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
-        });
-
-    private Target Compile => definition => definition
-        .DependsOn(Restore)
-        .OnlyWhenDynamic(() => !NoBuild && TestNeedsCompilation)
-        .Executes(async () =>
+        var arguments = new List<string> { "restore", Project ?? BuildSolution };
+        if (Runtime is not null)
         {
-            var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
-            if (Runtime is not null)
-            {
-                arguments.AddRange(["--runtime", Runtime]);
-            }
+            arguments.AddRange(["--runtime", Runtime]);
+        }
 
-            await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
-        });
+        await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
+    }
+
+    private async Task CompileAsync()
+    {
+        if (NoBuild)
+        {
+            return;
+        }
+
+        await RestoreAsync().ConfigureAwait(false);
+        var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
+        if (Runtime is not null)
+        {
+            arguments.AddRange(["--runtime", Runtime]);
+        }
+
+        await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
+    }
 
     private Target Clean => definition => definition
         .Executes(async () =>
@@ -84,18 +91,14 @@ internal sealed partial class Build : FalloutBuild
             await DotNetAsync("clean", Project ?? BuildSolution, "--configuration", Configuration).ConfigureAwait(false);
         });
 
-    private Target Pack => definition => definition
-        .DependsOn(Compile)
-        .Executes(PackAsync);
-
-    private Target PreparePublish => definition => definition
-        .OnlyWhenDynamic(() => !NoBuild && (Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample").Contains("Browser", StringComparison.Ordinal))
-        .Executes(InstallWasmToolsAsync);
-
     private Target Publish => definition => definition
-        .DependsOn(PreparePublish)
         .Executes(async () =>
         {
+            if (!NoBuild && (Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample").Contains("Browser", StringComparison.Ordinal))
+            {
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+            }
+
             var arguments = new List<string> { "publish", Project ?? "samples/Lumyte.Graphics.Text.Parley.Browser.Sample", "--configuration", Configuration };
             if (NoBuild)
             {

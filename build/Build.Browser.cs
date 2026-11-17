@@ -1,12 +1,7 @@
-using Fallout.Common;
-
 namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target SetupWasm => definition => definition
-        .Executes(InstallWasmToolsAsync);
-
     private async Task TestWasmAsync()
     {
         string graphics = Path.Combine(ArtifactRoot, "browser", "graphics");

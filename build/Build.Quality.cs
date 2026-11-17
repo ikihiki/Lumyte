@@ -4,36 +4,43 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target CheckFormat => definition => definition
-        .Executes(async () =>
+    [Parameter("Quality/format scope: all, managed, native, or markdown.")]
+    public string QualityScope { get; set; } = "all";
+
+    private Target Quality => definition => definition.Executes(() => RunQualityAsync(fix: false));
+
+    private Target Format => definition => definition.Executes(() => RunQualityAsync(fix: true));
+
+    private async Task RunQualityAsync(bool fix)
+    {
+        if (QualityScope is not ("all" or "managed" or "native" or "markdown"))
         {
+            throw new ArgumentException("Invalid --quality-scope.");
+        }
+
+        if (QualityScope is "all" or "managed")
+        {
+            string[] arguments = ["format", Project ?? BuildSolution, "--no-restore"];
             await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["Configuration"] = Configuration },
-                "format", Project ?? BuildSolution, "--no-restore", "--verify-no-changes").ConfigureAwait(false);
-        });
+                fix ? arguments : [.. arguments, "--verify-no-changes"]).ConfigureAwait(false);
+        }
 
-    private Target CheckMarkdown => definition => definition
-        .Executes(async () =>
+        if (QualityScope is "all" or "native")
         {
-            await NodeAsync(await FindMarkdownLintAsync().ConfigureAwait(false)).ConfigureAwait(false);
-        });
+            await FormatNativeSourcesAsync(fix).ConfigureAwait(false);
+        }
 
-    private Target FormatMarkdown => definition => definition
-        .Executes(async () =>
+        if (QualityScope is "all" or "markdown")
         {
-            await NodeAsync(await FindMarkdownLintAsync().ConfigureAwait(false), "--fix").ConfigureAwait(false);
-        });
+            await CheckMarkdownAsync(fix).ConfigureAwait(false);
+        }
+    }
 
-    private Target CheckNativeFormat => definition => definition
-        .Executes(async () =>
-        {
-            await FormatNativeSourcesAsync(fix: false).ConfigureAwait(false);
-        });
-
-    private Target FormatNative => definition => definition
-        .Executes(async () =>
-        {
-            await FormatNativeSourcesAsync(fix: true).ConfigureAwait(false);
-        });
+    private async Task CheckMarkdownAsync(bool fix)
+    {
+        string lint = await FindMarkdownLintAsync().ConfigureAwait(false);
+        await NodeAsync(fix ? [lint, "--fix"] : [lint]).ConfigureAwait(false);
+    }
 
     private async Task FormatNativeSourcesAsync(bool fix)
     {

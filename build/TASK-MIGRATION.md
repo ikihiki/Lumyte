@@ -1,9 +1,49 @@
 # Task option migration
 
-The Fallout inventory is reduced from **85 to 43 actual target declarations**.
-Removed test, benchmark and CI aliases are not retained. The installed Fallout
-10.4 public target-definition API was inspected: this does not hide targets or
-alter listing metadata. Preparation remains in the real dependency graph.
+Required CI now uses **four direct task entry points**: Compile, Test, Quality,
+and Distribution (**10 → 4** distinct direct targets in composition.yml).
+Across all workflow files, direct target names are **14 → 8**: the four required
+CI tasks plus the unchanged three advisory trust stages and DiagnosticPreviews.
+Actual target declarations are **85 → 43 → 18**. These are different metrics;
+removed internal leaf declarations do not survive as hidden targets or aliases.
+
+The installed maintained Fallout.Build 10.4.0 package is retained. Its released
+Target/Executes/DependsOn model supports ordinary awaited task bodies and real
+task dependencies. No new scheduler or private API is needed. Independent
+named-color generation and the legacy Signals benchmark still depend on Compile.
+Preparation inside a task is now plain ordered methods: validate, restore,
+compile, execute; a failed preparation cannot continue to its consumer.
+
+## Small public CI interface
+
+| Task | Responsibility |
+| --- | --- |
+| Compile | Restore and build the host solution or explicit project |
+| Test | Common lane/suite/feature selection; optional GPU pipeline validation output |
+| Quality | All managed/native/Markdown checks on Linux; explicit managed scope on Windows |
+| Distribution | Samples plus packages by default; packages/window-sample/diagnostic-gallery outputs |
+
+The final four-RID package job requests packages with no-build and explicit
+restore-metadata: metadata restoration must succeed before packaging downloaded
+outputs, without rebuilding them. No-build alone still skips restore/build.
+Restore-metadata rejects contradictory no-restore or non-package selections.
+Gallery output retains generator/assembler/collector tests without unrelated
+solution compilation. Windows window publication runs on both architectures;
+Windows packaging remains limited to the original two projects on x64.
+
+The Linux cold-cache capacity test stays before the GPU lane. Optional
+pipeline-validation retains the exact DeviceCaps Vulkan sample and JSONL path;
+it is not a BenchmarkDotNet launcher. It rejects non-managed/non-GPU selections.
+Browser deadline/quarantine settings, native asset producers, package job
+prerequisites, Windows/ARM matrices and gallery artifact consumers are preserved.
+
+Tooling-facing Native, Setup and Verify are not extra CI job categories. Native
+selects a backend without whole-solution compilation; MSBuild hooks retain
+isolated Fallout state roots and the actual repository root. Setup selects a
+tool; Verify selects an environment/sdk/native scope. These are separate, small
+domain APIs, not a giant dispatcher. Format shares Quality scopes for deliberate
+local fixes; Quality never fixes files. Advisory screening remains split into
+three stages across its credential/trust boundary.
 
 ## Common interfaces
 
@@ -28,18 +68,18 @@ Feature suites retain all unit-project and public-sample scenarios, explicit
 fonts, editor connections, and both pages/transitions samples, not lane filters.
 
 Invalid selectors and incompatible combinations fail clearly. Test validation
-precedes restore/build. PrepareTest keeps Compile/Restore dependencies;
+precedes awaited restore/build methods;
 browser/Rust/AOT skip whole-solution compilation and use existing toolchain and
 publish preparation. No-build/no-restore retain their meanings; native AOT
 publication builds its own output with the existing strict warning policy.
-Browser timeout quarantine and native MSBuild/package hooks are unchanged.
+Browser timeout quarantine and native MSBuild/package hook behavior are preserved.
 
 Benchmark area selects the repository area; benchmark-category still filters
 compiled BenchmarkDotNet categories. Integrated mode is graphics/ui only;
 isolated evaluation is core only. BenchmarkSignals retains its distinct
-functional-test/sample prerequisite and legacy measurement. PipelineBenchmark
-retains the Vulkan sample workload, not a BDN category. Distribution and Quality
-are real compositions. Ci remains the aggregate without per-lane/browser aliases.
+functional-test/sample prerequisite and legacy measurement. The old
+PipelineBenchmark workload is now optional GPU pipeline validation, not a BDN
+category. The unused unconditional Linux-x64-only Ci aggregate is removed.
 Privileged screening notification remains separate from measurement.
 
 ## One SDK test invocation per classified lane
@@ -141,30 +181,37 @@ Append replacements after dotnet run --project build -c Release -- --target.
 | TestWasm | Test --suite wasm |
 | TestWindowing | Test --suite windowing |
 
-## Retained inventory
+## Internal method and tooling migration
 
-Core lifecycle, package/sample compositions, native MSBuild leaves, toolchain and
-environment setup, artifact/report tasks and quality workers remain independently
-callable because they are genuine tasks or dependency nodes, not selectors.
+| Removed declarations | Replacement |
+| --- | --- |
+| Restore, PrepareTest, ValidateTest, PreparePublish | Ordered internal methods, not executable target names |
+| Pack | Distribution --distribution-output packages |
+| Samples | Distribution (samples plus packages) |
+| PublishWindowSample | Distribution --distribution-output window-sample |
+| DiagnosticGallery | Distribution --distribution-output diagnostic-gallery |
+| PipelineBenchmark | Test --lane gpu --pipeline-validation |
+| CheckFormat / CheckNativeFormat / CheckMarkdown | Quality --quality-scope managed / native / markdown |
+| FormatNative / FormatMarkdown | Format --quality-scope native / markdown |
+| ParleyNative / ParleyWasm | Native --native-backend parley / parley-wasm |
+| WgpuNative / UsvgNative / Direct3D12Native | Native --native-backend wgpu / usvg / direct3d12 |
+| SetupWasm / SetupParleyNative / SetupParleyWasm | Setup --setup-tool wasm / parley / parley-wasm |
+| SetupDxc / ConfigureLavapipe / PrepareWasmTools | Setup --setup-tool dxc / lavapipe / wasm-python |
+| VerifyEnvironment / VerifySdk / NativeSmoke | Verify --verify-scope environment / sdk / native |
+| Ci | Removed; compose platform-appropriate tasks in the workflow |
 
-- Build.Benchmarks.cs: Benchmark.
-- Build.Browser.cs: SetupWasm.
-- Build.Ci.cs: Distribution, Quality, Ci.
-- Build.ComponentScreening.cs: ComponentScreeningPlan, ComponentScreeningRun.
-- Build.ComponentScreeningNotification.cs: ComponentScreeningNotify.
-- Build.Diagnostics.cs: DiagnosticGallery, DiagnosticPreviews.
-- Build.Direct3D12.cs: Direct3D12Native.
-- Build.Dxc.cs: SetupDxc.
-- Build.Environment.cs: VerifyEnvironment, VerifySdk, ConfigureLavapipe, NativeSmoke.
-- Build.NamedColors.cs: GenerateNamedColors, VerifyNamedColors.
-- Build.Parley.cs: ParleyNative, ParleyWasm, SetupParleyNative, SetupParleyWasm, PrepareWasmTools.
-- Build.Quality.cs: CheckFormat, CheckMarkdown, FormatMarkdown, CheckNativeFormat, FormatNative.
-- Build.Samples.cs: Samples, PublishWindowSample.
-- Build.Testing.cs: Test, PrepareTest, ValidateTest.
-- Build.Usvg.cs: UsvgNative.
-- Build.Validation.cs: BenchmarkSignals, PipelineBenchmark.
-- Build.Wgpu.cs: WgpuNative.
-- Build.cs: Restore, Compile, Clean, Pack, PreparePublish, Publish.
+## Actual retained declarations (18)
+
+- Required CI (4): Compile, Test, Quality, Distribution.
+- Tooling/MSBuild (3): Native, Setup, Verify.
+- Developer tasks (7): Clean, Publish, Format, Benchmark, BenchmarkSignals,
+  GenerateNamedColors, VerifyNamedColors.
+- Artifact publication (1): DiagnosticPreviews.
+- Separate screening trust stages (3): ComponentScreeningPlan,
+  ComponentScreeningRun, ComponentScreeningNotify.
+
+The four direct composition entries exclude nested setup/MSBuild calls and
+separate advisory/publication workflows. All are included in the 18 declarations.
 
 Frozen ADRs and archived measurement evidence retain the target names used at their
 recorded commit. Their historical names map through the table above; they are not

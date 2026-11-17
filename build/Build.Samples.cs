@@ -1,22 +1,14 @@
-using Fallout.Common;
-
 namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target Samples => definition => definition
-        .DependsOn(Compile)
-        .Executes(RunSamplesAsync);
-
     private Task TestAotAsync() => RunAotSamplesAsync();
 
-    private Target PublishWindowSample => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            await DotNetAsync("publish", "samples/Lumyte.Platform.Windows.Sample", "-c", Configuration, "--no-build", "--no-restore",
-                "-o", Path.Combine(ArtifactRoot, "single-window-sample")).ConfigureAwait(false);
-        });
+    private async Task PublishWindowSampleAsync()
+    {
+        await DotNetAsync("publish", "samples/Lumyte.Platform.Windows.Sample", "-c", Configuration, "--no-build", "--no-restore",
+            "-o", Path.Combine(ArtifactRoot, "single-window-sample")).ConfigureAwait(false);
+    }
 
     private async Task RunSamplesAsync()
     {

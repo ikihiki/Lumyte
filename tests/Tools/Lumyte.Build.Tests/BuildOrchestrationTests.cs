@@ -13,7 +13,7 @@ public sealed class BuildOrchestrationTests
     public async Task NativeBuildCopiesArtifactsWithoutPythonOnPathAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyNative", "--toolchain", "test-native");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", "--native-backend", "parley", "--toolchain", "test-native");
         AssertSuccess(result);
         Assert.Equal("Test-only Parley artifact.", File.ReadAllText(Path.Combine(fixture.Output, BuildFixture.NativeFileName)));
         Assert.Equal("Exact test toolchain copyright.", File.ReadAllText(Path.Combine(fixture.Output, "RUST-STANDARD-LIBRARY-NOTICES.html")));
@@ -36,7 +36,7 @@ public sealed class BuildOrchestrationTests
         using var fixture = new BuildFixture();
         fixture.InvocationRoot = Path.Combine(fixture.Root, "nested runner state 日本語");
         Directory.CreateDirectory(fixture.InvocationRoot);
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyNative", "--repository-root", fixture.Root);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", "--native-backend", "parley", "--repository-root", fixture.Root);
         AssertSuccess(result);
         string[] arguments = Arguments(fixture.Record("cargo"));
         int manifest = Array.IndexOf(arguments, "--manifest-path");
@@ -55,7 +55,7 @@ public sealed class BuildOrchestrationTests
     {
         using var fixture = new BuildFixture();
         fixture.Environment["PARLEY_TEST_CARGO_EXIT"] = "17";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyNative");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", "--native-backend", "parley");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("17", result.Output + result.Error, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(fixture.Output, BuildFixture.NativeFileName)));
@@ -70,7 +70,7 @@ public sealed class BuildOrchestrationTests
     {
         using var fixture = new BuildFixture();
         fixture.Environment["PARLEY_TEST_SKIP_ARTIFACT"] = "1";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyNative");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", "--native-backend", "parley");
         Assert.NotEqual(0, result.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Output, BuildFixture.NativeFileName)));
     }
@@ -87,7 +87,7 @@ public sealed class BuildOrchestrationTests
         fixture.Environment["PYTHON"] = "wrong ambient interpreter";
         fixture.Environment["PYTHONHOME"] = "wrong ambient home";
         fixture.Environment["PYTHONPATH"] = "wrong ambient libraries";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyWasm", WasmArguments(fixture));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", ["--native-backend", "parley-wasm", .. WasmArguments(fixture)]);
         AssertSuccess(result);
         Assert.Equal("Test-only Parley artifact.", File.ReadAllText(Path.Combine(fixture.Output, "liblumyte_text_parley.a")));
         Assert.Equal("Exact test toolchain copyright.", File.ReadAllText(Path.Combine(fixture.Output, "RUST-STANDARD-LIBRARY-NOTICES.html")));
@@ -129,7 +129,7 @@ public sealed class BuildOrchestrationTests
         using var fixture = new BuildFixture();
         fixture.Environment["CARGO_ENCODED_RUSTFLAGS"] = null;
         fixture.Environment["RUSTFLAGS"] = "--cfg ambiguous";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyWasm", WasmArguments(fixture));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", ["--native-backend", "parley-wasm", .. WasmArguments(fixture)]);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("CARGO_ENCODED_RUSTFLAGS", result.Output + result.Error, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "cargo.json")));
@@ -142,7 +142,7 @@ public sealed class BuildOrchestrationTests
     public async Task InvalidSdkDoesNotStartChildToolsAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyWasm", "--emsdk", Path.Combine(fixture.Root, "missing SDK"), "--cache", fixture.Cache, "--node", fixture.Node, "--python", fixture.Python);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", "--native-backend", "parley-wasm", "--emsdk", Path.Combine(fixture.Root, "missing SDK"), "--cache", fixture.Cache, "--node", fixture.Node, "--python", fixture.Python);
         Assert.NotEqual(0, result.ExitCode);
         Assert.False(Directory.Exists(fixture.Log));
     }
@@ -155,7 +155,7 @@ public sealed class BuildOrchestrationTests
     {
         using var fixture = new BuildFixture();
         string pathFile = Path.Combine(fixture.Output, "interpreter path 日本語.txt");
-        BuildFixture.ProcessResult result = await fixture.RunAsync("PrepareWasmTools", "--emsdk", fixture.Sdk, "--python", fixture.Python, "--python-path-file", pathFile);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Setup", "--setup-tool", "wasm-python", "--emsdk", fixture.Sdk, "--python", fixture.Python, "--python-path-file", pathFile);
         AssertSuccess(result);
         Assert.Equal(fixture.Python, File.ReadAllText(pathFile).TrimEnd('\r', '\n'));
         Assert.Equal(["-I", "--version"], Arguments(fixture.Record("python")));
@@ -170,7 +170,7 @@ public sealed class BuildOrchestrationTests
     public async Task ExplicitMissingPythonFailsBeforeCompilationAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyWasm", "--emsdk", fixture.Sdk, "--cache", fixture.Cache, "--node", fixture.Node, "--python", Path.Combine(fixture.Root, "missing Python"));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", "--native-backend", "parley-wasm", "--emsdk", fixture.Sdk, "--cache", fixture.Cache, "--node", fixture.Node, "--python", Path.Combine(fixture.Root, "missing Python"));
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Python", result.Output + result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.False(Directory.Exists(fixture.Log));
@@ -184,7 +184,7 @@ public sealed class BuildOrchestrationTests
     {
         using var fixture = new BuildFixture();
         fixture.Environment["PARLEY_TEST_PYTHON_VERSION"] = "Python 2.7.18";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("ParleyWasm", WasmArguments(fixture));
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Native", ["--native-backend", "parley-wasm", .. WasmArguments(fixture)]);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Python", result.Output + result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(Path.Combine(fixture.Log, "python.json")));

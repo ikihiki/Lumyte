@@ -5,27 +5,55 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target Distribution => definition => definition
-        .DependsOn(Samples, Pack);
+    [Parameter("Distribution output: all (samples and packages), packages, window-sample, or diagnostic-gallery.")]
+    public string DistributionOutput { get; set; } = "all";
 
-    private Target Quality => definition => definition
-        .DependsOn(CheckFormat, CheckNativeFormat, CheckMarkdown);
+    [Parameter("Restore metadata before packaging downloaded binaries without rebuilding them.")]
+    public bool RestoreMetadata { get; set; }
 
-    // CI is a genuine aggregate, not a second alias for each test lane.
-    private Target Ci => definition => definition
-        .DependsOn(Compile, Distribution, Quality)
-        .Executes(async () =>
+    private Target Distribution => definition => definition.Executes(async () =>
+    {
+        if (DistributionOutput is not ("all" or "packages" or "window-sample" or "diagnostic-gallery"))
         {
-            await RunTestLaneAsync("Cpu").ConfigureAwait(false);
-            await RunTestLaneAsync("Integration").ConfigureAwait(false);
-            await RunTestLaneAsync("Gpu").ConfigureAwait(false);
-            await TestBrowserContractsAsync().ConfigureAwait(false);
-            await InstallWasmToolsAsync().ConfigureAwait(false);
-            await TestWasmAsync().ConfigureAwait(false);
-            await TestBrowserAudioAsync().ConfigureAwait(false);
-            await TestAotAsync().ConfigureAwait(false);
-            await TestRustAsync().ConfigureAwait(false);
-        });
+            throw new ArgumentException("Invalid --distribution-output.");
+        }
+
+        if (RestoreMetadata && (DistributionOutput != "packages" || !NoBuild || NoRestore))
+        {
+            throw new ArgumentException("--restore-metadata requires --distribution-output packages --no-build without --no-restore.");
+        }
+
+        if (DistributionOutput == "diagnostic-gallery")
+        {
+            await GenerateDiagnosticGalleryAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (DistributionOutput == "window-sample" && !OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("The window sample requires Windows.");
+        }
+
+        await CompileAsync().ConfigureAwait(false);
+        if (DistributionOutput == "window-sample")
+        {
+            await PublishWindowSampleAsync().ConfigureAwait(false);
+            return;
+        }
+
+        // Packaging downloaded binaries still needs metadata, but must not rebuild them.
+        if (RestoreMetadata)
+        {
+            await RestoreAsync().ConfigureAwait(false);
+        }
+
+        if (DistributionOutput == "all")
+        {
+            await RunSamplesAsync().ConfigureAwait(false);
+        }
+
+        await PackAsync().ConfigureAwait(false);
+    });
 
     // Derive the host solution from the canonical list so new shared projects
     // automatically participate without maintaining multiple project inventories.

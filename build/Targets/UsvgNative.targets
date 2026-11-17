@@ -17,6 +17,6 @@
   <Target Name="BuildLumyteUsvgNative" BeforeTargets="BeforeBuild" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="'$(DesignTimeBuild)' != 'true'">
     <Error Condition="'$(RuntimeIdentifier)' == 'browser-wasm'" Text="Static SVG currently supports native desktop only." />
     <Error Condition="'$(LumyteBuildUsvgNative)' == 'true' and '$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != '$(NETCoreSdkRuntimeIdentifier)'" Text="usvg source builds target the current SDK host only. Supply a tested library and set LumyteBuildUsvgNative=false for cross deployment." />
-    <Exec Condition="'$(LumyteBuildUsvgNative)' == 'true'" Command="$(_LumyteParleyBuildCommand) --target UsvgNative --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteUsvgNativeOutput)')).&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+    <Exec Condition="'$(LumyteBuildUsvgNative)' == 'true'" Command="$(_LumyteParleyBuildCommand) --target Native --native-backend usvg --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteUsvgNativeOutput)')).&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
   </Target>
 </Project>
