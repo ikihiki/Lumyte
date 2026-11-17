@@ -287,10 +287,25 @@ jobs:
           test -s "$chrome_directory/vk_swiftshader_icd.json"
           test -s "$chrome_directory/libvulkan.so.1"
 
+      - name: Discover optional native CPU sampler
+        # Diagnostic availability must not replace the original Browser verdict.
+        run: |
+          mkdir -p artifacts/test-results/browser-flight-recorder
+          if ! timeout 120s sudo apt-get install -y linux-tools-generic > artifacts/test-results/browser-flight-recorder/perf-install.log 2>&1; then
+            echo "Native perf tools unavailable; process telemetry and Chrome tracing remain enabled."
+          fi
+          perf_path=$(find /usr/lib/linux-tools -type f -name perf -executable 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$perf_path" ] && "$perf_path" --version > artifacts/test-results/browser-flight-recorder/perf-version.txt 2>&1; then
+            echo "LUMYTE_BROWSER_PERF=$perf_path" >> "$GITHUB_ENV"
+          fi
+
       - name: Browser / contracts, WebGPU and audio
         env:
           CHROME: ${{ steps.chrome.outputs.chrome-path }}
           LUMYTE_REQUIRE_SOFTWARE_WEBGPU: "1"
+          LUMYTE_BROWSER_FLIGHT_RECORDER: "1"
+          # Continuous bounded recording; artifacts only for failure/slow capture.
+          LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: "5000"
           # Temporary: only the verified sequential midpoint PNG deadline becomes a warning.
           LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: "1"
         run: |
