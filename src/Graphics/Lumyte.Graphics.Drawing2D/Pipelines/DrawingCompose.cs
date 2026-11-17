@@ -9,20 +9,17 @@ public static partial class DrawingCompose
     /// <summary>Contains the public Composition declarations.</summary>
     public static partial class Definitions
     {
-        /// <summary>Compiles all roots together into one resource coordinator and ordered renderer.</summary>
+        /// <summary>Compiles all named slots together into one resource coordinator and ordered renderer.</summary>
         [Composable(Factory = "DrawingCompose")]
         public partial class Renderer : IDisposable
         {
             private readonly object _gate = new();
             private readonly List<BackendCompileScope2D> _pending = [];
+            private readonly CommandRoute2D?[] _slots = new CommandRoute2D?[11];
             private CommandRoute2D[]? _frozen;
             private IGraphicDevice? _device;
             private DrawingResources2D? _resourceSnapshot;
             private bool _disposed;
-
-            /// <summary>Gets explicitly initialized routes; no default graph is filled.</summary>
-            [ComposeContent]
-            public RouteContent2D Children { get; } = new();
 
             /// <summary>Gets the required explicit retained-resource bounds.</summary>
             [ComposeParameter]
@@ -111,6 +108,39 @@ public static partial class DrawingCompose
                 }
             }
 
+            [ComposeSlot]
+            private static void FillRect(Renderer target, IReadOnlyList<BackendBinding2D<IFillRectRenderer2D>> children) => target.SetSlot(DrawKind2D.FillRect, children);
+
+            [ComposeSlot]
+            private static void FillRoundedRect(Renderer target, IReadOnlyList<BackendBinding2D<IFillRoundedRectRenderer2D>> children) => target.SetSlot(DrawKind2D.FillRoundedRect, children);
+
+            [ComposeSlot]
+            private static void FillCircle(Renderer target, IReadOnlyList<BackendBinding2D<IFillCircleRenderer2D>> children) => target.SetSlot(DrawKind2D.FillCircle, children);
+
+            [ComposeSlot]
+            private static void DrawLine(Renderer target, IReadOnlyList<BackendBinding2D<IDrawLineRenderer2D>> children) => target.SetSlot(DrawKind2D.DrawLine, children);
+
+            [ComposeSlot]
+            private static void FillPath(Renderer target, IReadOnlyList<BackendBinding2D<IFillPathRenderer2D>> children) => target.SetSlot(DrawKind2D.FillPath, children);
+
+            [ComposeSlot]
+            private static void StrokePath(Renderer target, IReadOnlyList<BackendBinding2D<IStrokePathRenderer2D>> children) => target.SetSlot(DrawKind2D.StrokePath, children);
+
+            [ComposeSlot]
+            private static void DrawImage(Renderer target, IReadOnlyList<BackendBinding2D<IDrawImageRenderer2D>> children) => target.SetSlot(DrawKind2D.DrawImage, children);
+
+            [ComposeSlot]
+            private static void DrawCoverageMask(Renderer target, IReadOnlyList<BackendBinding2D<IDrawCoverageMaskRenderer2D>> children) => target.SetSlot(DrawKind2D.DrawCoverageMask, children);
+
+            [ComposeSlot]
+            private static void DrawDistanceField(Renderer target, IReadOnlyList<BackendBinding2D<IDrawDistanceFieldRenderer2D>> children) => target.SetSlot(DrawKind2D.DrawDistanceField, children);
+
+            [ComposeSlot]
+            private static void DrawMesh(Renderer target, IReadOnlyList<BackendBinding2D<IDrawMeshRenderer2D>> children) => target.SetSlot(DrawKind2D.DrawMesh, children);
+
+            [ComposeSlot]
+            private static void DrawPaintGraph(Renderer target, IReadOnlyList<BackendBinding2D<IDrawPaintGraphRenderer2D>> children) => target.SetSlot(DrawKind2D.DrawPaintGraph, children);
+
             private static CommandRouteDescription2D Describe(CommandRoute2D route) => route.Kind switch
             {
                 DrawKind2D.FillRect => new(route.Kind, typeof(FillRectCommand2D), typeof(IFillRectRenderer2D), route.Binding.SharedName, route.Binding.ConcreteType, route.Binding.ChoiceBackends, "Typed consecutive CPU preparation; shared argument plan and resource state; builtin record encoding/packing/upload followed by fused fragment shape+paint, or explicit custom PrepareAsync."),
@@ -170,12 +200,12 @@ public static partial class DrawingCompose
                     throw new ArgumentOutOfRangeException(nameof(ArgumentTables));
                 }
 
-                CommandRoute2D[] routes = Children.Snapshot();
-                if (routes.Length != 11 || routes.Select(r => r.Kind).Distinct().Count() != 11)
+                if (_slots.Any(route => route is null))
                 {
                     throw new ArgumentException("Exactly one explicit route for each of the eleven command kinds is required.");
                 }
 
+                CommandRoute2D[] routes = _slots.Select(route => route!).ToArray();
                 var shares = new Dictionary<string, object>(StringComparer.Ordinal);
                 foreach (CommandRoute2D route in routes)
                 {
@@ -195,171 +225,40 @@ public static partial class DrawingCompose
                 _resourceSnapshot = resources;
                 return _frozen = routes;
             }
-        }
 
-        /// <summary>Binds the FillRect command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class FillRect : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IFillRectRenderer2D> Backend { get; init; }
+            private void SetSlot<T>(DrawKind2D kind, IReadOnlyList<BackendBinding2D<T>> children)
+                where T : class
+            {
+                lock (_gate)
+                {
+                    ObjectDisposedException.ThrowIf(_disposed, this);
+                    if (_frozen is not null)
+                    {
+                        throw new InvalidOperationException("Named slots are frozen.");
+                    }
 
-            internal override DrawKind2D Kind => DrawKind2D.FillRect;
+                    ArgumentNullException.ThrowIfNull(children);
+                    if (children.Count > 1 || (children.Count == 1 && children[0] is null))
+                    {
+                        throw new ArgumentException("A named slot requires exactly one explicit non-null binding, or no children to clear it.", nameof(children));
+                    }
 
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
+                    int index = (int)kind;
+                    if (children.Count == 0)
+                    {
+                        _slots[index] = null;
+                        return;
+                    }
 
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
+                    if (_slots[index] is not null)
+                    {
+                        throw new ArgumentException("A named slot is already assigned; clear it explicitly before reassignment.", nameof(children));
+                    }
 
-        /// <summary>Binds the FillRoundedRect command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class FillRoundedRect : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IFillRoundedRectRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.FillRoundedRect;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the FillCircle command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class FillCircle : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IFillCircleRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.FillCircle;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the DrawLine command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class DrawLine : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IDrawLineRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.DrawLine;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the FillPath command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class FillPath : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IFillPathRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.FillPath;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the StrokePath command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class StrokePath : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IStrokePathRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.StrokePath;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the DrawImage command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class DrawImage : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IDrawImageRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.DrawImage;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the DrawCoverageMask command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class DrawCoverageMask : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IDrawCoverageMaskRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.DrawCoverageMask;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the DrawDistanceField command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class DrawDistanceField : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IDrawDistanceFieldRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.DrawDistanceField;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the DrawMesh command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class DrawMesh : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IDrawMeshRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.DrawMesh;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
-        }
-
-        /// <summary>Binds the DrawPaintGraph command directly to its original typed backend.</summary>
-        [Composable(Factory = "DrawingCompose")]
-        public partial class DrawPaintGraph : CommandRoute2D
-        {
-            /// <summary>Gets the explicitly selected backend binding.</summary>
-            [ComposeParameter]
-            public required BackendBinding2D<IDrawPaintGraphRenderer2D> Backend { get; init; }
-
-            internal override DrawKind2D Kind => DrawKind2D.DrawPaintGraph;
-
-            internal override IBackendBinding2D Binding => Backend ?? throw new ArgumentException("An explicit backend is required.");
-
-            internal override object Compile(BackendCompileScope2D scope) => (Backend ?? throw new ArgumentException("An explicit backend is required.")).Resolve(scope);
+                    BackendBinding2D<T> binding = children[0];
+                    _slots[index] = new(kind, binding, scope => binding.Resolve(scope));
+                }
+            }
         }
     }
 }

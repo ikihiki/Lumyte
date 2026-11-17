@@ -16,7 +16,7 @@ renderer の作者は矩形とパスなどの実装を別々に設定しつつ�
 
 ## 決定
 
-構築側は描画種別ごとの宣言を明示し、構築完了時に全宣言を一つの固定配送表と一つの renderer 資源管理へまとめる。同じ種別の中だけで FirstSupported の候補を評価し、共有する backend は graph 内の型付き identity を明示して同じ実 instance を注入する。通常の描画側は IRenderer2D と既存の準備結果だけを使う。
+構築側は描画種別ごとの名前付き Slot を明示し、構築完了時に全宣言を一つの固定配送表と一つの renderer 資源管理へまとめる。同じ種別の中だけで FirstSupported の候補を評価し、共有する backend は graph 内の型付き identity を明示して同じ実 instance を注入する。通常の描画側は IRenderer2D と既存の準備結果だけを使う。
 
 ### 利用者の変更前・変更後
 
@@ -44,17 +44,17 @@ var bounds = new DrawingRetentionOptions2D
 };
 var definition = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: bounds)
 [
-    FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(new DefaultFillRectRenderer2D())),
-    FillRoundedRect(BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(new DefaultFillRoundedRectRenderer2D())),
-    FillCircle(BackendBinding2D<IFillCircleRenderer2D>.Borrowed(new DefaultFillCircleRenderer2D())),
-    DrawLine(BackendBinding2D<IDrawLineRenderer2D>.Borrowed(new DefaultDrawLineRenderer2D())),
-    FillPath(BackendBinding2D<IFillPathRenderer2D>.Borrowed(new DefaultFillPathRenderer2D())),
-    StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Borrowed(new DefaultStrokePathRenderer2D())),
-    DrawImage(BackendBinding2D<IDrawImageRenderer2D>.Borrowed(new DefaultDrawImageRenderer2D())),
-    DrawCoverageMask(BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(new DefaultDrawCoverageMaskRenderer2D())),
-    DrawDistanceField(BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(new DefaultDrawDistanceFieldRenderer2D())),
-    DrawMesh(BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(new DefaultDrawMeshRenderer2D())),
-    DrawPaintGraph(BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(new DefaultDrawPaintGraphRenderer2D()))
+    Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(new DefaultFillRectRenderer2D())],
+    Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(new DefaultFillRoundedRectRenderer2D())],
+    Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Borrowed(new DefaultFillCircleRenderer2D())],
+    Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Borrowed(new DefaultDrawLineRenderer2D())],
+    Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Borrowed(new DefaultFillPathRenderer2D())],
+    Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Borrowed(new DefaultStrokePathRenderer2D())],
+    Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Borrowed(new DefaultDrawImageRenderer2D())],
+    Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(new DefaultDrawCoverageMaskRenderer2D())],
+    Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(new DefaultDrawDistanceFieldRenderer2D())],
+    Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(new DefaultDrawMeshRenderer2D())],
+    Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(new DefaultDrawPaintGraphRenderer2D())]
 ];
 using IRenderer2D renderer = definition.BuildRenderer(
     device, resources, resourceOwner, validateResources);
@@ -66,11 +66,11 @@ using PreparedDraw2D prepared = await renderer.PrepareAsync(list, target, cancel
 
 ### 構成と実行の境界
 
-Lumyte.Composition と generator は宣言、factory、children indexer を生成する。Drawing2D の host は全 root を一緒に検査し、固定の DrawKind2D index に配置して DrawingCommandRenderers2D を作る。実行時は従来の switch が対象 interface を直接選び、root の列挙や無関係な predicate の評価をしない。
+Lumyte.Composition と generator は Renderer factory、型付きの名前付き Slot、SlotAssignment を受ける indexer を生成する。Drawing2D の host は全 11 Slot を一緒に検査し、固定の DrawKind2D index に配置して DrawingCommandRenderers2D を作る。実行時は従来の switch が対象 interface を直接選び、root の列挙や無関係な predicate の評価をしない。
 
-全 11 種別をちょうど一度ずつ指定する。欠落、重複、null の backend、共有名の衝突、不一致 device、無効な予算と引数表設定を構築前に拒否する。異種 children を C# の型だけで完全検証したとは扱わず、host が構築時に対応集合を照合する。
+全 11 種別の Slot に明示した binding を一つずつ指定する。各 Slot の children 型は元の interface に対応した BackendBinding2D であり、異なる backend 型や別対象の SlotAssignment は C# の型検査で拒否する。複数 children と null binding、同一 Slot への二重代入は代入時に拒否し、候補選択を自動生成しない。空 children はその Slot を消去する。凍結前の明示的な消去後は再代入できるが、欠落したままの検査・構築は GPU 確保前に拒否する。共有名の衝突、不一致 device、無効な予算と引数表設定も構築前に拒否する。
 
-RouteContent2D は参照型で、配列をコピーし、null・重複 instance・別親所有を全件検証した後に親所有を確定する。一度の Initialize だけを許可する。最初の DescribeDataflow または BuildRenderer が device、明示した DrawingResources2D と宣言集合を固定し、異なる device への再利用と追加初期化を拒否する。required init 設定と不変の binding 値を使い、候補配列もコピーする。
+Core の CompositionSlot は children 配列を捕捉時と適用時にコピーする。host は配列を保持せず、不変の binding 参照を自身の固定表へ保存する。同じ SlotAssignment と binding は独立した複数の定義へ適用でき、親を付け替えない。最初の DescribeDataflow または BuildRenderer が device、明示した DrawingResources2D と全 Slot を固定し、異なる device・資源 snapshot への再利用、凍結後と破棄後の Slot 変更を拒否する。宣言変更と準備の呼出しは利用側で直列化する。required init 設定と不変の binding 値を使い、候補配列もコピーする。
 
 ### 同じ種別だけの FirstSupported
 
@@ -80,7 +80,7 @@ FillRect の例では矩形の候補だけを評価する。FillPath などの�
 IFillRectRenderer2D selected = FirstSupported2D.FillRect(
     new((context, commands) => SupportsFastRect(context, commands), fastRect),
     new((context, commands) => SupportsGeneralRect(context, commands), generalRect));
-var route = FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(selected));
+var route = Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(selected)];
 ```
 
 SupportsFastRect と SupportsGeneralRect は呼出し側が指定する純粋な能力・状態判定であり、GPU 確保、書込み、記録、送信を行わない。判定単位は従来と同じ clip を共有する連続同種 batch とする。最初の true の backend を一回だけ PrepareAsync し、すべて false なら NotSupportedException とする。predicate の例外、不正入力、資源失効、実確保失敗、device failure を非対応に変換せず、次候補へ進めない。
@@ -95,8 +95,8 @@ SupportsFastRect と SupportsGeneralRect は呼出し側が指定する純粋な
 
 ```csharp
 var paths = new SharedBackend2D<PathManager>("paths", device => CreatePathManager(device));
-var fill = FillPath(BackendBinding2D<IFillPathRenderer2D>.Shared(paths, manager => manager));
-var stroke = StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Shared(paths, manager => manager));
+var fill = Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Shared(paths, manager => manager)];
+var stroke = Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Shared(paths, manager => manager)];
 ```
 
 別の BuildRenderer 呼出しでは新しい scope と instance を作る。factory の戻り値と明示した resourceOwner が同じ実 instance の場合、構築成功時だけ外部 owner の一つの解放経路へ移す。構築失敗ではその caller 所有権を消費しない。異なる share key が同じ実 instance を返した場合も解放責任だけを参照 identity で一つにし、論理設定や型による実行の統合はしない。既存の借用 instance を明示する Borrowed は破棄しない。Shared の factory が返す instance は renderer 所有であり、host が direct の準備結果、retained の batch run、Graph の準備 owner に独立した使用権を持たせる。custom backend が context.RetainResources を呼ばなくても、記録と batch の破棄が成功するまで factory 所有の backend を保持する。回収に失敗した batch が残る間は使用権も保持し、retry 成功後に返す。context.RetainResources は従来の shader 等の借用資源を保持する用途として維持し、新しい backend 実装義務にはしない。
@@ -121,7 +121,7 @@ DescribeDataflow は BuildRenderer が使う凍結 route 配列から、kind、�
 
 ### 公開 API 差分
 
-以下は基準 SHA から追加・変更する宣言の抜粋である。生成 factory は既存 generator を使用し、generic factory property を新設しない。
+以下は基準 SHA から追加・変更する宣言の抜粋である。生成 factory は既存 generator を使用する。DrawingCompose.Renderer は Definitions.RendererFactory delegate で、引数は必須の argumentTables、retention と任意の with（IReadOnlyList<Action<Definitions.Renderer>>、既定 null）である。生成される Renderer.FillRect() などは CompositionSlot<Definitions.Renderer, BackendBinding2D<対応 interface>> を返し、その children indexer が CompositionSlotAssignment<Definitions.Renderer> を作る。Renderer 定義の indexer はこの assignment の params 配列を順に適用して同じ定義を返す。一般の Children collection と独立した描画種別ノードは公開しない。
 
 ```diff
  namespace Lumyte.Graphics.Drawing2D
@@ -165,27 +165,55 @@ DescribeDataflow は BuildRenderer が使う凍結 route 配列から、kind、�
 +    }
 +    public static partial class DrawingCompose
 +    {
++        // 生成 factory。必須設定に暗黙の値を挿入しない。
++        public static Definitions.RendererFactory Renderer { get; }
 +        public static partial class Definitions
 +        {
++            public delegate Definitions.Renderer RendererFactory(
++                DrawingArgumentTableMode argumentTables, DrawingRetentionOptions2D retention,
++                IReadOnlyList<Action<Definitions.Renderer>>? with = null);
 +            [Composable(Factory = "DrawingCompose")]
 +            public partial class Renderer : IDisposable
 +            {
 +                [ComposeParameter] public required DrawingRetentionOptions2D Retention { get; init; }
 +                [ComposeParameter] public required DrawingArgumentTableMode ArgumentTables { get; init; }
-+                [ComposeContent] public RouteContent2D Children { get; } = new();
++                public Renderer this[params CompositionSlotAssignment<Renderer>[] content] { get; }
 +                public IReadOnlyList<CommandRouteDescription2D> DescribeDataflow(IGraphicDevice device, DrawingResources2D resources);
++                [ComposeSlot] private static void FillRect(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IFillRectRenderer2D>> children);
++                [ComposeSlot] private static void FillRoundedRect(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IFillRoundedRectRenderer2D>> children);
++                [ComposeSlot] private static void FillCircle(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IFillCircleRenderer2D>> children);
++                [ComposeSlot] private static void DrawLine(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IDrawLineRenderer2D>> children);
++                [ComposeSlot] private static void FillPath(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IFillPathRenderer2D>> children);
++                [ComposeSlot] private static void StrokePath(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IStrokePathRenderer2D>> children);
++                [ComposeSlot] private static void DrawImage(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IDrawImageRenderer2D>> children);
++                [ComposeSlot] private static void DrawCoverageMask(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IDrawCoverageMaskRenderer2D>> children);
++                [ComposeSlot] private static void DrawDistanceField(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IDrawDistanceFieldRenderer2D>> children);
++                [ComposeSlot] private static void DrawMesh(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IDrawMeshRenderer2D>> children);
++                [ComposeSlot] private static void DrawPaintGraph(Renderer target,
++                    IReadOnlyList<BackendBinding2D<IDrawPaintGraphRenderer2D>> children);
 +                public void Dispose(); // 未公開 scope の回収を再試行。構築済み renderer は独立。
 +                // resources 必須。成功した構築だけが resourceOwner を引き取る。
 +                public IRenderer2D BuildRenderer(IGraphicDevice device, DrawingResources2D resources,
 +                    IDisposable? resourceOwner, Action? validateResources);
 +            }
-+            [Composable(Factory = "DrawingCompose")]
-+            public partial class FillRect : CommandRoute2D
-+            {
-+                [ComposeParameter] public required BackendBinding2D<IFillRectRenderer2D> Backend { get; init; }
-+            }
-+            // 残り 10 種別は上の完全構成例と同じ型付き宣言。
 +        }
++    }
++    public static class DrawingComposeRendererCompositionExtensions
++    {
++        public static CompositionSlot<DrawingCompose.Definitions.Renderer,
++            BackendBinding2D<IFillRectRenderer2D>> FillRect(
++                this DrawingCompose.Definitions.RendererFactory factory);
++        // 残り 10 Slot も対応 interface の binding を受ける。
 +    }
 +}
  namespace Lumyte.Graphics.Drawing2D.RenderGraph

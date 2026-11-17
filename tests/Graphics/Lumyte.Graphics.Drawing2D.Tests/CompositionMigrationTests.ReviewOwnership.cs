@@ -246,17 +246,17 @@ public sealed partial class CompositionMigrationTests
     }
 
     private static Definitions.Renderer DefineRaw(SharedBackend2D<UnretainedManager> key, SharedBackend2D<UnretainedManager>? circle = null, SharedBackend2D<UnretainedManager>? rounded = null) => Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D())[
-        FillRect(BackendBinding2D<IFillRectRenderer2D>.Shared(key, manager => manager)),
-        FillRoundedRect(BackendBinding2D<IFillRoundedRectRenderer2D>.Shared(rounded ?? key, manager => manager)),
-        FillCircle(BackendBinding2D<IFillCircleRenderer2D>.Shared(circle ?? key, manager => manager)),
-        DrawLine(BackendBinding2D<IDrawLineRenderer2D>.Shared(key, manager => manager)),
-        FillPath(BackendBinding2D<IFillPathRenderer2D>.Shared(key, manager => manager)),
-        StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Shared(key, manager => manager)),
-        DrawImage(BackendBinding2D<IDrawImageRenderer2D>.Shared(key, manager => manager)),
-        DrawCoverageMask(BackendBinding2D<IDrawCoverageMaskRenderer2D>.Shared(key, manager => manager)),
-        DrawDistanceField(BackendBinding2D<IDrawDistanceFieldRenderer2D>.Shared(key, manager => manager)),
-        DrawMesh(BackendBinding2D<IDrawMeshRenderer2D>.Shared(key, manager => manager)),
-        DrawPaintGraph(BackendBinding2D<IDrawPaintGraphRenderer2D>.Shared(key, manager => manager))];
+        Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Shared(key, manager => manager)],
+        Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Shared(rounded ?? key, manager => manager)],
+        Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Shared(circle ?? key, manager => manager)],
+        Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Shared(key, manager => manager)],
+        Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Shared(key, manager => manager)],
+        Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Shared(key, manager => manager)],
+        Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Shared(key, manager => manager)],
+        Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Shared(key, manager => manager)],
+        Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Shared(key, manager => manager)],
+        Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Shared(key, manager => manager)],
+        Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Shared(key, manager => manager)]];
 
     private sealed class UnretainedManager : IFillRectRenderer2D, IFillRoundedRectRenderer2D, IFillCircleRenderer2D, IDrawLineRenderer2D, IFillPathRenderer2D, IStrokePathRenderer2D, IDrawImageRenderer2D, IDrawCoverageMaskRenderer2D, IDrawDistanceFieldRenderer2D, IDrawMeshRenderer2D, IDrawPaintGraphRenderer2D, IDisposable
     {

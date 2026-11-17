@@ -1,13 +1,11 @@
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
-/// <summary>A declaration attached atomically to exactly one renderer definition.</summary>
-public abstract class CommandRoute2D
+/// <summary>Host-owned immutable snapshot of one typed named slot.</summary>
+internal sealed class CommandRoute2D(DrawKind2D kind, IBackendBinding2D binding, Func<BackendCompileScope2D, object> compile)
 {
-    internal object? Parent { get; set; }
+    internal DrawKind2D Kind { get; } = kind;
 
-    internal abstract DrawKind2D Kind { get; }
+    internal IBackendBinding2D Binding { get; } = binding;
 
-    internal abstract IBackendBinding2D Binding { get; }
-
-    internal abstract object Compile(BackendCompileScope2D scope);
+    internal object Compile(BackendCompileScope2D scope) => compile(scope);
 }

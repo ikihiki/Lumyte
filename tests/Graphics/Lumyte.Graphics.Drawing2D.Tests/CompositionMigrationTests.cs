@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lumyte.Composition;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.Pipelines;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
@@ -148,31 +149,29 @@ public sealed partial class CompositionMigrationTests
         await Assert.ThrowsAsync<NotSupportedException>(() => unsupported.PrepareAsync(context, list.GetCommands<FillRectCommand2D>(0, 1)).AsTask());
     }
 
-    /// <summary>Checks missing and duplicate kinds, atomic ownership, conflicting keys and device mismatch before any factory.</summary>
+    /// <summary>Checks missing and duplicate slots, invalid assignments, conflicting keys and device mismatch before any factory.</summary>
     [Fact]
-    public void InvalidGraphsRejectBeforeAllocationAndContentOwnershipIsAtomic()
+    public void InvalidSlotsRejectBeforeAllocationAndFrozenDefinitionsRejectMutation()
     {
         var device = new ProfilingDevice();
         var backend = new DispatchRenderers();
-        Definitions.Renderer empty = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D())[Array.Empty<CommandRoute2D>()];
+        Definitions.Renderer empty = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D());
         Assert.Throws<ArgumentException>(() => empty.DescribeDataflow(device, Resources(device)));
-        Definitions.Renderer duplicates = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D())[Enumerable.Range(0, 11).Select(_ => FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(backend))).ToArray()];
-        Assert.Throws<ArgumentException>(() => duplicates.DescribeDataflow(device, Resources(device)));
-        CommandRoute2D route = FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(backend));
-        var content = new RouteContent2D();
-        Assert.Throws<ArgumentException>(() => content.Initialize([route, route]));
-        CommandRoute2D[] original = [route];
-        content.Initialize(original);
-        original[0] = FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(backend));
-        Assert.Same(route, content.Snapshot()[0]);
-        Assert.Throws<ArgumentException>(() => new RouteContent2D().Initialize([route]));
-        Assert.Throws<InvalidOperationException>(() => content.Initialize([]));
+        var binding = BackendBinding2D<IFillRectRenderer2D>.Borrowed(backend);
+        CompositionSlotAssignment<Definitions.Renderer> slot = Renderer.FillRect()[binding];
+        Assert.Throws<ArgumentException>(() => _ = empty[slot, slot]);
+        Assert.Throws<ArgumentException>(() => _ = empty[Renderer.FillCircle()[new BackendBinding2D<IFillCircleRenderer2D>[] { null! }]]);
+        Assert.Throws<ArgumentException>(() => _ = empty[Renderer.FillRect()[binding, binding]]);
+        Assert.Throws<InvalidOperationException>(() => _ = empty[default(CompositionSlotAssignment<Definitions.Renderer>)]);
+        Assert.Throws<ArgumentNullException>(() => slot.Apply(null!));
+        Assert.Throws<ArgumentNullException>(() => _ = Renderer.FillRect()[null!]);
         Definitions.Renderer valid = Define(backend.CreateTable());
         DrawingResources2D validResources = Resources(device);
         Assert.Equal(11, valid.DescribeDataflow(device, validResources).Count);
         Assert.Throws<ArgumentException>(() => valid.DescribeDataflow(new ProfilingDevice(), validResources));
         Assert.Throws<InvalidOperationException>(() => valid.DescribeDataflow(device, Resources(device)));
-        Assert.Throws<InvalidOperationException>(() => valid.Children.Initialize([]));
+        Assert.Throws<InvalidOperationException>(() => _ = valid[Renderer.FillRect()[binding]]);
+        Assert.Throws<InvalidOperationException>(() => _ = valid[Renderer.FillRect()[Array.Empty<BackendBinding2D<IFillRectRenderer2D>>()]]);
         int creates = 0;
         SharedBackend Create()
         {
@@ -186,6 +185,103 @@ public sealed partial class CompositionMigrationTests
         Assert.Throws<ArgumentException>(() => conflict.DescribeDataflow(device, Resources(device)));
         Assert.Equal(0, creates);
         Assert.Throws<ArgumentException>(() => valid.BuildRenderer(device, Resources(new ProfilingDevice()), null, null));
+    }
+
+    /// <summary>Checks captured arrays, explicit clearing and reusable assignments without parenting mutable nodes.</summary>
+    [Fact]
+    public void NamedSlotAssignmentsSnapshotAndReuseIndependentDefinitions()
+    {
+        var device = new ProfilingDevice();
+        var backend = new DispatchRenderers();
+        BackendBinding2D<IFillRectRenderer2D>[] children = [BackendBinding2D<IFillRectRenderer2D>.Borrowed(backend)];
+        CompositionSlotAssignment<Definitions.Renderer> assignment = Renderer.FillRect()[children];
+        children[0] = null!;
+        Definitions.Renderer first = Define(backend.CreateTable());
+        Definitions.Renderer second = Define(backend.CreateTable());
+        _ = first[Renderer.FillRect()[Array.Empty<BackendBinding2D<IFillRectRenderer2D>>()]];
+        Assert.Throws<ArgumentException>(() => first.BuildRenderer(device, Resources(device), null, null));
+        _ = first[assignment];
+        _ = second[Renderer.FillRect()[Array.Empty<BackendBinding2D<IFillRectRenderer2D>>()], assignment];
+        Assert.Equal(11, first.DescribeDataflow(device, Resources(device)).Count);
+        Assert.Equal(11, second.DescribeDataflow(device, Resources(device)).Count);
+        first.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => assignment.Apply(first));
+        Assert.Throws<InvalidOperationException>(() => assignment.Apply(second));
+        Definitions.Renderer partial = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D())[assignment];
+        Assert.Throws<ArgumentException>(() => partial.BuildRenderer(device, Resources(device), null, null));
+        partial.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => _ = partial[Renderer.FillRect()[Array.Empty<BackendBinding2D<IFillRectRenderer2D>>()]]);
+    }
+
+    /// <summary>Checks a captured shared binding creates one actual manager per build, never at slot application.</summary>
+    [Fact]
+    public void ReusedSharedSlotAssignmentResolvesOncePerIndependentRenderer()
+    {
+        var device = new ProfilingDevice();
+        var instances = new List<SharedBackend>();
+        var shared = new SharedBackend2D<SharedBackend>("reusable", _ =>
+        {
+            var instance = new SharedBackend();
+            instances.Add(instance);
+            return instance;
+        });
+        CompositionSlotAssignment<Definitions.Renderer> assignment = Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Shared(shared, manager => manager)];
+        Definitions.Renderer missing = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D())[assignment];
+        var owner = new CallbackOwner(() => throw new InvalidOperationException("A failed definition must not consume its owner."));
+        Assert.Throws<ArgumentException>(() => missing.BuildRenderer(device, Resources(device), owner, null));
+        Assert.Empty(instances);
+        missing.Dispose();
+        Definitions.Renderer first = DefineShared(shared);
+        Definitions.Renderer second = DefineShared(shared);
+        _ = first[Renderer.FillRect()[Array.Empty<BackendBinding2D<IFillRectRenderer2D>>()], assignment];
+        _ = second[Renderer.FillRect()[Array.Empty<BackendBinding2D<IFillRectRenderer2D>>()], assignment];
+        DrawingResources2D resources = Resources(device);
+        Assert.Equal(11, first.DescribeDataflow(device, resources).Count);
+        Assert.Equal(11, second.DescribeDataflow(device, resources).Count);
+        Assert.Empty(instances);
+        using IRenderer2D one = first.BuildRenderer(device, resources, null, null);
+        Assert.Single(instances);
+        using IRenderer2D two = second.BuildRenderer(device, resources, null, null);
+        Assert.Equal(2, instances.Count);
+        Assert.NotSame(instances[0], instances[1]);
+        first.Dispose();
+        second.Dispose();
+        Assert.All(instances, instance => Assert.Equal(0, instance.Disposals));
+        one.Dispose();
+        two.Dispose();
+        Assert.All(instances, instance => Assert.Equal(1, instance.Disposals));
+    }
+
+    /// <summary>Checks generated slot signatures enforce the eleven exact backend types and hide old route nodes.</summary>
+    [Fact]
+    public void GeneratedNamedSlotPublicSurfaceIsTypedAndHasNoGeneralChildren()
+    {
+        Type[] backends =
+        [
+            typeof(IFillRectRenderer2D), typeof(IFillRoundedRectRenderer2D), typeof(IFillCircleRenderer2D),
+            typeof(IDrawLineRenderer2D), typeof(IFillPathRenderer2D), typeof(IStrokePathRenderer2D),
+            typeof(IDrawImageRenderer2D), typeof(IDrawCoverageMaskRenderer2D), typeof(IDrawDistanceFieldRenderer2D),
+            typeof(IDrawMeshRenderer2D), typeof(IDrawPaintGraphRenderer2D),
+        ];
+        Type factory = Renderer.GetType();
+        foreach (DrawKind2D kind in Enum.GetValues<DrawKind2D>())
+        {
+            System.Reflection.MethodInfo slot = Assert.Single(
+                typeof(DrawingCompose).Assembly.GetExportedTypes()
+                .SelectMany(type => type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)),
+                method => method.Name == kind.ToString() && method.ReturnType.IsGenericType
+                    && method.ReturnType.GetGenericTypeDefinition() == typeof(CompositionSlot<,>));
+            Assert.Equal(typeof(Definitions.Renderer), slot.ReturnType.GenericTypeArguments[0]);
+            Assert.Equal(typeof(BackendBinding2D<>).MakeGenericType(backends[(int)kind]), slot.ReturnType.GenericTypeArguments[1]);
+            Assert.Equal(factory, Assert.Single(slot.GetParameters()).ParameterType);
+        }
+
+        Assert.Null(typeof(Definitions.Renderer).GetProperty("Children"));
+        Assert.Null(typeof(Definitions).GetNestedType("FillRect"));
+        Assert.DoesNotContain(typeof(DrawingCompose).Assembly.GetExportedTypes(), type => type.Name is "CommandRoute2D" or "RouteContent2D");
+        Assert.Equal(
+            typeof(CompositionSlotAssignment<Definitions.Renderer>[]),
+            Assert.Single(typeof(Definitions.Renderer).GetProperty("Item")!.GetIndexParameters()).ParameterType);
     }
 
     /// <summary>Checks original builtin instances remain unwrapped and combined mixed-kind GPU records match the control.</summary>
@@ -416,30 +512,30 @@ public sealed partial class CompositionMigrationTests
     }
 
     private static Definitions.Renderer Define(DrawingCommandRenderers2D table) => Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 3, MaxCachedAssets = 32, MaxCachedBytes = 1024 * 1024 })[
-        FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(table.FillRect)),
-        FillRoundedRect(BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(table.FillRoundedRect)),
-        FillCircle(BackendBinding2D<IFillCircleRenderer2D>.Borrowed(table.FillCircle)),
-        DrawLine(BackendBinding2D<IDrawLineRenderer2D>.Borrowed(table.DrawLine)),
-        FillPath(BackendBinding2D<IFillPathRenderer2D>.Borrowed(table.FillPath)),
-        StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Borrowed(table.StrokePath)),
-        DrawImage(BackendBinding2D<IDrawImageRenderer2D>.Borrowed(table.DrawImage)),
-        DrawCoverageMask(BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(table.DrawCoverageMask)),
-        DrawDistanceField(BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(table.DrawDistanceField)),
-        DrawMesh(BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(table.DrawMesh)),
-        DrawPaintGraph(BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(table.DrawPaintGraph))];
+        Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(table.FillRect)],
+        Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(table.FillRoundedRect)],
+        Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Borrowed(table.FillCircle)],
+        Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Borrowed(table.DrawLine)],
+        Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Borrowed(table.FillPath)],
+        Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Borrowed(table.StrokePath)],
+        Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Borrowed(table.DrawImage)],
+        Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(table.DrawCoverageMask)],
+        Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(table.DrawDistanceField)],
+        Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(table.DrawMesh)],
+        Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(table.DrawPaintGraph)]];
 
     private static Definitions.Renderer DefineShared(SharedBackend2D<SharedBackend> key, SharedBackend2D<SharedBackend>? circle = null, DrawingArgumentTableMode argumentTables = DrawingArgumentTableMode.Auto) => Renderer(argumentTables: argumentTables, retention: new DrawingRetentionOptions2D())[
-        FillRect(BackendBinding2D<IFillRectRenderer2D>.Shared(key, value => value)),
-        FillRoundedRect(BackendBinding2D<IFillRoundedRectRenderer2D>.Shared(key, value => value)),
-        FillCircle(BackendBinding2D<IFillCircleRenderer2D>.Shared(circle ?? key, value => value)),
-        DrawLine(BackendBinding2D<IDrawLineRenderer2D>.Shared(key, value => value)),
-        FillPath(BackendBinding2D<IFillPathRenderer2D>.Shared(key, value => value)),
-        StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Shared(key, value => value)),
-        DrawImage(BackendBinding2D<IDrawImageRenderer2D>.Shared(key, value => value)),
-        DrawCoverageMask(BackendBinding2D<IDrawCoverageMaskRenderer2D>.Shared(key, value => value)),
-        DrawDistanceField(BackendBinding2D<IDrawDistanceFieldRenderer2D>.Shared(key, value => value)),
-        DrawMesh(BackendBinding2D<IDrawMeshRenderer2D>.Shared(key, value => value)),
-        DrawPaintGraph(BackendBinding2D<IDrawPaintGraphRenderer2D>.Shared(key, value => value))];
+        Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Shared(key, value => value)],
+        Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Shared(key, value => value)],
+        Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Shared(circle ?? key, value => value)],
+        Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Shared(key, value => value)],
+        Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Shared(key, value => value)],
+        Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Shared(key, value => value)],
+        Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Shared(key, value => value)],
+        Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Shared(key, value => value)],
+        Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Shared(key, value => value)],
+        Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Shared(key, value => value)],
+        Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Shared(key, value => value)]];
 
     private static DrawingResources2D Resources(IGraphicDevice device) => new(device, device.CreateGraphicsPipeline(new() { VertexShader = device.CreateShader(DrawingShaders2D.Vertex), FragmentShader = device.CreateShader(DrawingShaders2D.Fragment) }));
 

@@ -16,17 +16,17 @@ internal static class CompositionSmoke
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
         Definitions.Renderer definition = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 2, MaxCachedAssets = 8, MaxCachedBytes = 1024 * 1024 })[
-            FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(new DefaultFillRectRenderer2D())),
-            FillRoundedRect(BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(new DefaultFillRoundedRectRenderer2D())),
-            FillCircle(BackendBinding2D<IFillCircleRenderer2D>.Borrowed(new DefaultFillCircleRenderer2D())),
-            DrawLine(BackendBinding2D<IDrawLineRenderer2D>.Borrowed(new DefaultDrawLineRenderer2D())),
-            FillPath(BackendBinding2D<IFillPathRenderer2D>.Borrowed(new DefaultFillPathRenderer2D())),
-            StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Borrowed(new DefaultStrokePathRenderer2D())),
-            DrawImage(BackendBinding2D<IDrawImageRenderer2D>.Borrowed(new DefaultDrawImageRenderer2D())),
-            DrawCoverageMask(BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(new DefaultDrawCoverageMaskRenderer2D())),
-            DrawDistanceField(BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(new DefaultDrawDistanceFieldRenderer2D())),
-            DrawMesh(BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(new DefaultDrawMeshRenderer2D())),
-            DrawPaintGraph(BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(new DefaultDrawPaintGraphRenderer2D()))];
+            Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(new DefaultFillRectRenderer2D())],
+            Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(new DefaultFillRoundedRectRenderer2D())],
+            Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Borrowed(new DefaultFillCircleRenderer2D())],
+            Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Borrowed(new DefaultDrawLineRenderer2D())],
+            Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Borrowed(new DefaultFillPathRenderer2D())],
+            Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Borrowed(new DefaultStrokePathRenderer2D())],
+            Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Borrowed(new DefaultDrawImageRenderer2D())],
+            Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(new DefaultDrawCoverageMaskRenderer2D())],
+            Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(new DefaultDrawDistanceFieldRenderer2D())],
+            Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(new DefaultDrawMeshRenderer2D())],
+            Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(new DefaultDrawPaintGraphRenderer2D())]];
         var resources = new DrawingResources2D(device, pipeline);
         if (definition.DescribeDataflow(device, resources).Count != 11)
         {

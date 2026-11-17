@@ -90,17 +90,17 @@ public sealed partial class Drawing2DTests
     }
 
     private static Definitions.Renderer ComposeDefinition(DrawingCommandRenderers2D table) => Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: new DrawingRetentionOptions2D { MaxFramesInFlight = 3, MaxCachedAssets = 512, MaxCachedBytes = 64 * 1024 * 1024 })[
-        FillRect(BackendBinding2D<IFillRectRenderer2D>.Borrowed(table.FillRect)),
-        FillRoundedRect(BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(table.FillRoundedRect)),
-        FillCircle(BackendBinding2D<IFillCircleRenderer2D>.Borrowed(table.FillCircle)),
-        DrawLine(BackendBinding2D<IDrawLineRenderer2D>.Borrowed(table.DrawLine)),
-        FillPath(BackendBinding2D<IFillPathRenderer2D>.Borrowed(table.FillPath)),
-        StrokePath(BackendBinding2D<IStrokePathRenderer2D>.Borrowed(table.StrokePath)),
-        DrawImage(BackendBinding2D<IDrawImageRenderer2D>.Borrowed(table.DrawImage)),
-        DrawCoverageMask(BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(table.DrawCoverageMask)),
-        DrawDistanceField(BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(table.DrawDistanceField)),
-        DrawMesh(BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(table.DrawMesh)),
-        DrawPaintGraph(BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(table.DrawPaintGraph))];
+        Renderer.FillRect()[BackendBinding2D<IFillRectRenderer2D>.Borrowed(table.FillRect)],
+        Renderer.FillRoundedRect()[BackendBinding2D<IFillRoundedRectRenderer2D>.Borrowed(table.FillRoundedRect)],
+        Renderer.FillCircle()[BackendBinding2D<IFillCircleRenderer2D>.Borrowed(table.FillCircle)],
+        Renderer.DrawLine()[BackendBinding2D<IDrawLineRenderer2D>.Borrowed(table.DrawLine)],
+        Renderer.FillPath()[BackendBinding2D<IFillPathRenderer2D>.Borrowed(table.FillPath)],
+        Renderer.StrokePath()[BackendBinding2D<IStrokePathRenderer2D>.Borrowed(table.StrokePath)],
+        Renderer.DrawImage()[BackendBinding2D<IDrawImageRenderer2D>.Borrowed(table.DrawImage)],
+        Renderer.DrawCoverageMask()[BackendBinding2D<IDrawCoverageMaskRenderer2D>.Borrowed(table.DrawCoverageMask)],
+        Renderer.DrawDistanceField()[BackendBinding2D<IDrawDistanceFieldRenderer2D>.Borrowed(table.DrawDistanceField)],
+        Renderer.DrawMesh()[BackendBinding2D<IDrawMeshRenderer2D>.Borrowed(table.DrawMesh)],
+        Renderer.DrawPaintGraph()[BackendBinding2D<IDrawPaintGraphRenderer2D>.Borrowed(table.DrawPaintGraph)]];
 
     private sealed class CountedCompositionRect : IFillRectRenderer2D
     {
