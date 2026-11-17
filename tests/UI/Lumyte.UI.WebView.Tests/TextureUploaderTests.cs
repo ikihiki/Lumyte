@@ -39,6 +39,131 @@ public sealed class TextureUploaderTests
         Assert.Equal(0, gpuBudget.Used);
     }
 
+    /// <summary>Upload buffers require an explicit completed map and must be unmapped before GPU recording.</summary>
+    /// <returns>The upload verification.</returns>
+    [Fact]
+    public async Task UploadMapsBeforeCpuCopyAndUnmapsBeforeSubmissionAsync()
+    {
+        var gpu = new FakeGpu();
+        var cpu = new WebViewPixelBudget(4096);
+        var budget = new WebViewPixelBudget(4096);
+        using var mailbox = new WebViewPixelMailbox(cpu);
+        using var uploader = new WebViewTextureUploader(cpu, budget);
+        mailbox.Publish(new byte[] { 16, 32, 64, 128 }, 1, 1, 0);
+        Task<Image2D?> upload = uploader.TryUploadAsync(gpu.Device, mailbox).AsTask();
+        gpu.Complete();
+        Assert.NotNull(await upload);
+        Assert.Equal(new[] { "map", "mapped", "copy", "unmap", "record", "submit", "dispose" }, gpu.Events);
+        Assert.Equal(new byte[] { 128, 64, 32, 128 }, gpu.Staging!.Bytes[..4]);
+        Assert.False(gpu.Staging.IsMapped);
+        Assert.Equal(0, cpu.Used);
+        uploader.Dispose();
+        Assert.Equal(0, budget.Used);
+    }
+
+    /// <summary>A delayed map retains the original pixels and all budgets, and closure cannot publish its stale image.</summary>
+    /// <returns>The mapping-lifetime verification.</returns>
+    [Fact]
+    public async Task PendingMapRetainsPixelsAndBudgetUntilCompletedAsync()
+    {
+        var gate = new TaskCompletionSource();
+        var gpu = new FakeGpu { MapGate = gate };
+        var cpu = new WebViewPixelBudget(4096);
+        var budget = new WebViewPixelBudget(4096);
+        using var mailbox = new WebViewPixelMailbox(cpu);
+        using var uploader = new WebViewTextureUploader(cpu, budget);
+        byte[] raw = [16, 32, 64, 128];
+        mailbox.Publish(raw, 1, 1, 0);
+        Task<Image2D?> upload = uploader.TryUploadAsync(gpu.Device, mailbox).AsTask();
+        Assert.False(upload.IsCompleted);
+        Assert.False(gpu.Staging!.IsMapped);
+        Assert.Equal(260, cpu.Used);
+        Assert.Equal(4, budget.Used);
+        Assert.Equal(new[] { "map" }, gpu.Events);
+        Assert.False(gpu.Texture!.Disposed);
+        Assert.Throws<InvalidOperationException>(uploader.Dispose);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uploader.RetireAsync().AsTask());
+        mailbox.Publish(raw, 1, 1, 0);
+        Assert.Null(await uploader.TryUploadAsync(gpu.Device, mailbox));
+        using (WebViewPixelMailbox.PixelLease pending = mailbox.Take()!)
+        {
+            Assert.Equal(raw, pending.Bytes);
+        }
+
+        mailbox.Resize(1);
+        mailbox.Dispose();
+        Assert.Equal(260, cpu.Used);
+        Assert.Null(gpu.Copy);
+        gate.SetResult();
+        await gpu.Submitted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(gpu.Staging.IsMapped);
+        Assert.False(gpu.Staging.Disposed);
+        Assert.Equal(256, cpu.Used);
+        gpu.Complete();
+        Assert.Null(await upload);
+        Assert.Null(uploader.Current);
+        Assert.Equal(0, cpu.Used);
+        Assert.True(gpu.Staging.Disposed);
+        uploader.Dispose();
+        Assert.Equal(0, budget.Used);
+    }
+
+    /// <summary>Pre-submission map, CPU-copy and unmap failures release their pixels, staging and destination.</summary>
+    /// <param name="stage">The injected failure boundary.</param>
+    /// <returns>The failure and fresh-frame retry verification.</returns>
+    [Theory]
+    [InlineData("map")]
+    [InlineData("map-cancel")]
+    [InlineData("copy")]
+    [InlineData("unmap")]
+    public async Task MappingFailuresReleaseResourcesWithoutReturningConvertedPixelsAsync(string stage)
+    {
+        var gpu = new FakeGpu
+        {
+            FailMap = stage == "map",
+            CancelMap = stage == "map-cancel",
+            FailCpuCopy = stage == "copy",
+            FailUnmap = stage == "unmap",
+        };
+        var cpu = new WebViewPixelBudget(4096);
+        var budget = new WebViewPixelBudget(4096);
+        using var mailbox = new WebViewPixelMailbox(cpu);
+        using var uploader = new WebViewTextureUploader(cpu, budget);
+        byte[] raw = [16, 32, 64, 128];
+        mailbox.Publish(raw, 1, 1, 0);
+        Task<Image2D?> upload = uploader.TryUploadAsync(gpu.Device, mailbox).AsTask();
+        if (stage == "map-cancel")
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => upload);
+        }
+        else
+        {
+            Assert.Equal(stage + "-failed", (await Assert.ThrowsAsync<InvalidOperationException>(() => upload)).Message);
+        }
+
+        Assert.True(gpu.Staging!.Disposed);
+        Assert.True(gpu.Texture!.Disposed);
+        Assert.False(gpu.Staging.IsMapped);
+        Assert.Null(gpu.Copy);
+        Assert.False(gpu.Submitted.Task.IsCompleted);
+        Assert.Null(mailbox.Take());
+        Assert.Null(uploader.Current);
+        Assert.Equal(0, cpu.Used);
+        Assert.Equal(0, budget.Used);
+        gpu.FailMap = false;
+        gpu.CancelMap = false;
+        gpu.FailCpuCopy = false;
+        gpu.FailUnmap = false;
+        mailbox.Publish(raw, 1, 1, 0);
+        Task<Image2D?> retry = uploader.TryUploadAsync(gpu.Device, mailbox).AsTask();
+        gpu.Complete();
+        Assert.NotNull(await retry);
+        Assert.Equal(new byte[] { 128, 64, 32, 128 }, gpu.Staging!.Bytes[..4]);
+        Assert.Equal(0, cpu.Used);
+        uploader.Dispose();
+        Assert.Equal(0, budget.Used);
+    }
+
     /// <summary>A frozen frame survives scene replacement; independent frame leases survive snapshot disposal.</summary>
     /// <returns>The asynchronous check.</returns>
     [Fact]
@@ -222,6 +347,8 @@ public sealed class TextureUploaderTests
         {
             IGraphicsQueue queue = Proxy.Create<IGraphicsQueue>((method, args) =>
             {
+                Assert.False(Staging!.IsMapped);
+                Events.Add("submit");
                 if (FailSubmit)
                 {
                     throw new InvalidOperationException("ambiguous-submit");
@@ -229,6 +356,7 @@ public sealed class TextureUploaderTests
 
                 _completion = new();
                 _status = SubmissionStatus.Pending;
+                Submitted.TrySetResult();
                 return Proxy.Create<IGraphicsSubmission>((member, _) => member.Name switch
                 {
                     "get_Status" => _status,
@@ -242,13 +370,15 @@ public sealed class TextureUploaderTests
                 "get_Queue" => queue,
                 "get_Status" => GraphicsDeviceStatus.Ready,
                 "GetTextureCopyLayout" => new TextureCopyLayout { BytesPerTexel = 4, BytesPerRowAlignment = 256, BufferOffsetAlignmentInBytes = 256 },
-                "CreateBuffer" => Staging = new Buffer((BufferDesc<byte>)args![0]!),
+                "CreateBuffer" => Staging = new Buffer((BufferDesc<byte>)args![0]!, this),
                 "CreateTexture" => CreateTexture((TextureDesc)args![0]!),
                 "CreateSampler" => new DispatchSampler(),
                 "CreateCommandBuffer" => Proxy.Create<IGraphicsCommandBuffer>((member, values) =>
                 {
                     if (member.Name == "CopyBufferToTexture")
                     {
+                        Assert.False(Staging!.IsMapped);
+                        Events.Add("record");
                         if (FailRecord)
                         {
                             throw new InvalidOperationException("record-failed");
@@ -264,6 +394,20 @@ public sealed class TextureUploaderTests
             });
         }
 
+        internal bool FailMap { get; set; }
+
+        internal bool CancelMap { get; set; }
+
+        internal bool FailCpuCopy { get; set; }
+
+        internal bool FailUnmap { get; set; }
+
+        internal TaskCompletionSource? MapGate { get; init; }
+
+        internal TaskCompletionSource Submitted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal List<string> Events { get; } = [];
+
         internal bool FailSubmit { get; init; }
 
         internal bool FailRecord { get; init; }
@@ -276,6 +420,8 @@ public sealed class TextureUploaderTests
 
         internal int TextureCount { get; private set; }
 
+        internal DispatchTexture? Texture { get; private set; }
+
         internal void Retire() => _retirement.SetResult();
 
         internal void Complete()
@@ -287,11 +433,11 @@ public sealed class TextureUploaderTests
         private DispatchTexture CreateTexture(TextureDesc desc)
         {
             TextureCount++;
-            return new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage };
+            return Texture = new() { Width = desc.Width, Height = desc.Height, Format = desc.Format, Usage = desc.Usage };
         }
     }
 
-    private sealed class Buffer(BufferDesc<byte> desc) : IGraphicsBuffer<byte>
+    private sealed class Buffer(BufferDesc<byte> desc, FakeGpu gpu) : IGraphicsBuffer<byte>
     {
         public ulong SizeInBytes => Count;
 
@@ -303,7 +449,7 @@ public sealed class TextureUploaderTests
 
         public MemoryPreference Memory => desc.Memory;
 
-        public bool IsMapped => false;
+        public bool IsMapped { get; private set; }
 
         internal byte[] Bytes { get; } = new byte[checked((int)desc.Count)];
 
@@ -311,14 +457,57 @@ public sealed class TextureUploaderTests
 
         public void ValidateByteRange(ulong offset, ulong length) => Assert.True(offset + length <= Count);
 
-        public void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length) => source.CopyTo(Bytes.AsSpan(checked((int)offset), checked((int)length)));
+        public void CopyBytesFrom(ReadOnlySpan<byte> source, ulong offset, ulong length)
+        {
+            if (!IsMapped || Memory != MemoryPreference.Upload)
+            {
+                throw new InvalidOperationException("CPU copy requires an explicitly mapped Upload buffer.");
+            }
+
+            gpu.Events.Add("copy");
+            if (gpu.FailCpuCopy)
+            {
+                throw new InvalidOperationException("copy-failed");
+            }
+
+            source.CopyTo(Bytes.AsSpan(checked((int)offset), checked((int)length)));
+        }
 
         public void CopyBytesTo(Span<byte> destination, ulong offset, ulong length) => throw new NotSupportedException();
 
-        public ValueTask MapAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public async ValueTask MapAsync(CancellationToken cancellationToken = default)
+        {
+            Assert.False(IsMapped);
+            gpu.Events.Add("map");
+            if (gpu.MapGate is { } gate)
+            {
+                await gate.Task;
+            }
+
+            if (gpu.CancelMap)
+            {
+                throw new OperationCanceledException(new CancellationToken(true));
+            }
+
+            if (gpu.FailMap)
+            {
+                throw new InvalidOperationException("map-failed");
+            }
+
+            IsMapped = true;
+            gpu.Events.Add("mapped");
+        }
 
         public void Unmap()
         {
+            Assert.True(IsMapped);
+            gpu.Events.Add("unmap");
+            if (gpu.FailUnmap)
+            {
+                throw new InvalidOperationException("unmap-failed");
+            }
+
+            IsMapped = false;
         }
 
         public BufferSlice<byte> SliceElements(ulong offset, ulong count) => new(this, offset, count);
@@ -327,6 +516,13 @@ public sealed class TextureUploaderTests
 
         public void CopyTo(Span<byte> destination) => throw new NotSupportedException();
 
-        public void Dispose() => Disposed = true;
+        public void Dispose()
+        {
+            // A backend may unmap while destroying an unsubmitted upload allocation.
+            Assert.True(gpu.MapGate?.Task.IsCompleted ?? true);
+            IsMapped = false;
+            Disposed = true;
+            gpu.Events.Add("dispose");
+        }
     }
 }

@@ -143,22 +143,31 @@ internal sealed class WebViewTextureUploader(WebViewPixelBudget cpuBudget, WebVi
 
             staging = device.CreateBuffer<byte>(new() { Count = checked((ulong)stagingBytes), Usage = BufferUsage.CopySource, Memory = MemoryPreference.Upload });
 
-            // CEF supplies top-down premultiplied BGRA in the encoded sRGB domain.
-            // Unpremultiply before sRGB decoding (sampling), then let Drawing2D premultiply in linear light.
-            for (int i = 0; i < pixels.Bytes.Length; i += 4)
+            await staging.MapAsync();
+            try
             {
-                byte b = pixels.Bytes[i];
-                byte g = pixels.Bytes[i + 1];
-                byte r = pixels.Bytes[i + 2];
-                int alpha = pixels.Bytes[i + 3];
-                pixels.Bytes[i] = alpha == 0 ? (byte)0 : (byte)Math.Min(255, ((r * 255) + (alpha / 2)) / alpha);
-                pixels.Bytes[i + 1] = alpha == 0 ? (byte)0 : (byte)Math.Min(255, ((g * 255) + (alpha / 2)) / alpha);
-                pixels.Bytes[i + 2] = alpha == 0 ? (byte)0 : (byte)Math.Min(255, ((b * 255) + (alpha / 2)) / alpha);
-            }
+                // CEF supplies top-down premultiplied BGRA in the encoded sRGB domain.
+                // Unpremultiply before sRGB decoding (sampling), then let Drawing2D premultiply in linear light.
+                for (int i = 0; i < pixels.Bytes.Length; i += 4)
+                {
+                    byte b = pixels.Bytes[i];
+                    byte g = pixels.Bytes[i + 1];
+                    byte r = pixels.Bytes[i + 2];
+                    int alpha = pixels.Bytes[i + 3];
+                    pixels.Bytes[i] = alpha == 0 ? (byte)0 : (byte)Math.Min(255, ((r * 255) + (alpha / 2)) / alpha);
+                    pixels.Bytes[i + 1] = alpha == 0 ? (byte)0 : (byte)Math.Min(255, ((g * 255) + (alpha / 2)) / alpha);
+                    pixels.Bytes[i + 2] = alpha == 0 ? (byte)0 : (byte)Math.Min(255, ((b * 255) + (alpha / 2)) / alpha);
+                }
 
-            for (int y = 0; y < pixels.Height; y++)
+                for (int y = 0; y < pixels.Height; y++)
+                {
+                    staging.CopyBytesFrom(pixels.Bytes.AsSpan(checked(y * (int)row), (int)row), checked((ulong)y * pitch), row);
+                }
+            }
+            finally
             {
-                staging.CopyBytesFrom(pixels.Bytes.AsSpan(checked(y * (int)row), (int)row), checked((ulong)y * pitch), row);
+                // CPU access must end before this buffer can participate in GPU commands.
+                staging.Unmap();
             }
 
             // The CEF callback's owned CPU copy is no longer needed after copying into staging.
