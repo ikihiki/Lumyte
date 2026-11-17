@@ -153,6 +153,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>
             selection = null;
         }
 
+        long focusRequest = Surface?.FocusRequest ?? 0;
         string? focusedKey = Surface?.FocusedElement is CollectionItemElement focused && Options.Contains(focused) ? focused.Widget.Key : null;
         string? active = keys.Contains(_activeKey, StringComparer.Ordinal) ? _activeKey : selection;
         return () =>
@@ -164,7 +165,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>
                 CollectionItemElement? restore = Options.FirstOrDefault(option => option.Widget.Key == focusedKey && option.Widget.IsEnabled && option.Widget.IsVisible && option.Widget.HitTestVisible);
                 if (restore is not null)
                 {
-                    Surface!.QueueItemFocus(restore);
+                    Surface!.QueueItemFocus(restore, focusRequest);
                 }
             }
 

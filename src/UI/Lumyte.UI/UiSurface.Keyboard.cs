@@ -236,6 +236,7 @@ public sealed partial class UiSurface
             : (current + 1) % _focusCandidates.Count;
         UiElement candidate = _focusCandidates[next];
         _consumedKeys.Add(key.Key);
+        _focusRequest++;
         return ChangeFocus(candidate);
     }
 

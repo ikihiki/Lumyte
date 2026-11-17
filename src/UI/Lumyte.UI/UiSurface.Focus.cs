@@ -29,8 +29,9 @@ public sealed partial class UiSurface
             return false;
         }
 
+        long request = ++_focusRequest;
         CancelAllInput();
-        return ChangeFocus(target);
+        return !_isDisposed && _focusRequest == request && ChangeFocus(target);
     }
 
     /// <summary>Moves focus in the existing eligible candidate order without synthesizing keys.</summary>
@@ -53,6 +54,7 @@ public sealed partial class UiSurface
             UiFocusNavigation.Previous => current <= 0 ? _focusCandidates.Count - 1 : current - 1,
             _ => throw new ArgumentOutOfRangeException(nameof(navigation)),
         };
+        _focusRequest++;
         return ChangeFocus(_focusCandidates[next]);
     }
 }

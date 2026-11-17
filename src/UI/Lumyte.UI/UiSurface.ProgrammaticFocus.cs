@@ -19,6 +19,7 @@ public sealed partial class UiSurface
             return false;
         }
 
+        _focusRequest++;
         return ChangeFocus(element);
     }
 }

@@ -36,6 +36,8 @@ internal sealed class LoopbackHandler : HttpMessageHandler
 
     internal bool CorruptCatalog { get; set; }
 
+    internal int SchemaVersion { get; set; } = 7;
+
     internal ConcurrentQueue<string> ActionBodies { get; } = new();
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -114,7 +116,7 @@ internal sealed class LoopbackHandler : HttpMessageHandler
                             operations[0] = operations[0] with { RequiredPermission = DiagnosticPermission.Edit };
                         }
 
-                        SessionSnapshot[] sessions = [new(h.Session, Guid.NewGuid(), [new(new("ui.automation", "UI automation", 7), operations)], 0, 0, 0)];
+                        SessionSnapshot[] sessions = [new(h.Session, Guid.NewGuid(), [new(new("ui.automation", "UI automation", SchemaVersion), operations)], 0, 0, 0)];
                         request.Completion.SetResult(Json(JsonSerializer.SerializeToUtf8Bytes(sessions, DiagnosticJson.Context.SessionSnapshotArray)));
                     }
                 }

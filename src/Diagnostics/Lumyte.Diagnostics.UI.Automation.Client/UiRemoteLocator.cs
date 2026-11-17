@@ -27,14 +27,14 @@ public sealed class UiRemoteLocator
     /// <param name="value">The desired finite value.</param>
     /// <param name="cancellationToken">Cancels this operation.</param>
     /// <returns>The completed operation.</returns>
-    public async Task SetValueAsync(double value, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(6, "set-value", _steps, NumericValue: value), cancellationToken);
+    public async Task SetValueAsync(double value, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(6, QueryVersion), "set-value", _steps, NumericValue: value), cancellationToken);
 
     /// <summary>Sets both finite ordered endpoints through one ordinary input.</summary>
     /// <param name="lower">The finite lower value.</param>
     /// <param name="upper">The finite upper value.</param>
     /// <param name="cancellationToken">Cancels this operation.</param>
     /// <returns>The completed operation.</returns>
-    public async Task SetRangeAsync(double lower, double upper, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(6, "set-range", _steps, NumericValue: lower, NumericUpper: upper), cancellationToken);
+    public async Task SetRangeAsync(double lower, double upper, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(6, QueryVersion), "set-range", _steps, NumericValue: lower, NumericUpper: upper), cancellationToken);
 
     /// <summary>Restricts an exact identity query to descendants.</summary>
     /// <param name = "testId">The identity.</param>
@@ -63,7 +63,7 @@ public sealed class UiRemoteLocator
     /// <param name="delta">The finite signed logical-pixel delta.</param>
     /// <param name="cancellationToken">Cancels waiting.</param>
     /// <returns>The completed job.</returns>
-    public async Task ScrollAsync(UiRemotePoint delta, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(5, "scroll", _steps, Position: delta), cancellationToken);
+    public async Task ScrollAsync(UiRemotePoint delta, CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(5, QueryVersion), "scroll", _steps, Position: delta), cancellationToken);
 
     /// <summary>Focuses with ordinary game-side Tab input.</summary>
     /// <param name = "cancellationToken">Cancels the operation.</param>
@@ -92,12 +92,12 @@ public sealed class UiRemoteLocator
     /// <summary>Checks once through normal server input.</summary>
     /// <param name="cancellationToken">Cancels waiting.</param>
     /// <returns>The completed job.</returns>
-    public async Task CheckAsync(CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(4, "check", _steps), cancellationToken);
+    public async Task CheckAsync(CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(4, QueryVersion), "check", _steps), cancellationToken);
 
     /// <summary>Unchecks once through normal server input.</summary>
     /// <param name="cancellationToken">Cancels waiting.</param>
     /// <returns>The completed job.</returns>
-    public async Task UncheckAsync(CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(4, "uncheck", _steps), cancellationToken);
+    public async Task UncheckAsync(CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(4, QueryVersion), "uncheck", _steps), cancellationToken);
 
     /// <summary>Selects an ordinal group key through normal server pointer input.</summary>
     /// <param name="optionKey">The desired nonempty key.</param>
