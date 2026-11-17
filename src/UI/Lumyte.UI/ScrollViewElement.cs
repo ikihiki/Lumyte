@@ -84,6 +84,15 @@ public sealed class ScrollViewElement(ScrollWidget widget) : UiElement<ScrollWid
         }
 
         Controller.Geometry(vertical ? content.Y : content.X, vertical ? viewport.Y : viewport.X);
+        if (Controller.ItemAnchorResolver is { } resolve)
+        {
+            Controller.ItemAnchorResolver = null;
+            if (resolve() is { } offset)
+            {
+                Controller.RestoreItemAnchor(offset);
+            }
+        }
+
         if (children.Count != 0)
         {
             SetChildOffset(children[0], vertical ? new(0, -Controller.Offset) : new(-Controller.Offset, 0));

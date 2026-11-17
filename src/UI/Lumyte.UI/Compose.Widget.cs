@@ -20,6 +20,8 @@ public static partial class Compose
             [ComposeParameter]
             public string? Key { get; init; }
 
+            internal int MountedInstanceCount { get; set; }
+
             internal bool HasDeclarationParent { get; set; }
 
             internal IReadOnlyList<WidgetChildren> ChildCollections => _childCollections is { } children ? children : Array.Empty<WidgetChildren>();
