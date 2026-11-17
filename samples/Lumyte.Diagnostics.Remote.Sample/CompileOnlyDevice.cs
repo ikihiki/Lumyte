@@ -42,6 +42,8 @@ internal sealed class CompileOnlyDevice : IGraphicDevice
 
     public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => throw Unsupported();
 
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => throw Unsupported();
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw Unsupported();

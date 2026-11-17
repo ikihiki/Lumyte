@@ -303,6 +303,8 @@ public sealed class RetainedArgumentLifetimeRegressionTests
 
         public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => _inner.GetTextureCopyLayout(format);
 
+        public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
         public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => _inner.CreateGraphicsPipeline(desc);
 
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => _inner.CreateComputePipeline(desc);

@@ -14,6 +14,12 @@ public sealed partial class UiApplication
     private long _profileMetadataTimestamp;
     private bool _profileMetadataEmitted;
 
+    internal (bool Busy, UiApplicationProfiling.Key Key) CaptureDrawingState(UiDriverWindow target)
+    {
+        Entry? entry = _entries.Values.FirstOrDefault(entry => ReferenceEquals(entry.Root, target) && entry.Native is not null);
+        return entry is null ? default : (entry.Drawing is not null, entry.DrawingProfileKey);
+    }
+
     internal Task<bool> RecordAndDrawFrame(UiDriverWindow target)
     {
         target.ProfileKey = default;
@@ -25,7 +31,7 @@ public sealed partial class UiApplication
         Activity? previous = Activity.Current;
         Activity? activity = null;
         UiApplicationProfiling.Key key = default;
-        if (UiApplicationProfiling.Log.IsEnabled(EventLevel.Informational, UiApplicationProfiling.Keywords.Control))
+        if (UiApplicationProfiling.Log.IsEnabled(EventLevel.Informational, UiApplicationProfiling.Keywords.Control | UiApplicationProfiling.Keywords.Capture))
         {
             if (_profileRun == Guid.Empty)
             {

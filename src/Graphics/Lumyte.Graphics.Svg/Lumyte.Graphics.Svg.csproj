@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
+    <None Include="../../../native/lumyte_svg_usvg/THIRD-PARTY-NOTICES.md" Link="SVG-THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Import Project="../../../build/Targets/UsvgNative.targets" />
+</Project>

@@ -16,6 +16,271 @@ namespace Lumyte.UI.Application.Tests;
 /// <summary>Checks standard EventSource profiling and retained resource lifecycle events.</summary>
 public sealed class ProfilingTests
 {
+    /// <summary>Checks request/frame joins and repeated processing behind an asynchronous gate.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task CaptureRelationsSurviveHeldGateAsync()
+    {
+        using var listener = new Capture((EventKeywords)16);
+        long request = UiApplicationProfiling.StartCapture();
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 42);
+        var source = Guid.NewGuid();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        UiApplicationProfiling.Capture(request, 3, key, source, owned: 1, busy: 1);
+        Task work = CompleteAsync();
+        Assert.False(work.IsCompleted);
+        Assert.Contains(listener.Events, item => item.Id == 12 && (int)item.Payload[4]! == 3 && (int)item.Payload[8]! == 1);
+        gate.SetResult();
+        await work;
+        Event[] related = listener.Events.Where(item => item.Id == 12 && (long)item.Payload[0]! == request && (long)item.Payload[2]! == 42).ToArray();
+        Assert.Equal(4, related.Length);
+        Assert.All(related, item => Assert.Equal(key.Run, item.Payload[1]));
+        Assert.Contains(related, item => (int)item.Payload[6]! == 2);
+        Assert.DoesNotContain(listener.Events, item => item.Id == 0);
+
+        async Task CompleteAsync()
+        {
+            await gate.Task;
+            UiApplicationProfiling.Capture(request, 4, key, source, processing: 1);
+            UiApplicationProfiling.Capture(request, 4, key, source, processing: 2);
+            UiApplicationProfiling.Capture(request, 9, key, source, reason: 1);
+        }
+    }
+
+    /// <summary>Checks opt-in separation from default profiling.</summary>
+    [Fact]
+    public void DefaultKeywordsDoNotCreateCaptureIdentity()
+    {
+        using var listener = new Capture((EventKeywords)15);
+        Assert.Equal(0, UiApplicationProfiling.StartCapture());
+        Assert.DoesNotContain(listener.Events, item => item.Id == 12);
+    }
+
+    /// <summary>Checks PNG nesting inside crop and readback.</summary>
+    [Fact]
+    public void PngScopeIsNestedInsideCrop()
+    {
+        using var listener = new Capture((EventKeywords)2);
+        using Activity activity = new Activity("capture-frame").Start();
+        activity.SetCustomProperty("Lumyte.Profiling.RunId", Guid.NewGuid());
+        activity.SetCustomProperty("Lumyte.Profiling.FrameId", 64L);
+        using (UiApplicationProfiling.Scope? readback = UiApplicationProfiling.Begin(29))
+        {
+            new UiFramePixels(1, 1, [255, 0, 0, 255]).Crop(new(0, 0, 1, 1));
+        }
+
+        Event crop = Assert.Single(listener.Events, item => item.Id == 1 && (int)item.Payload[4]! == 32);
+        Event png = Assert.Single(listener.Events, item => item.Id == 1 && (int)item.Payload[4]! == 33);
+        Assert.Equal(crop.Payload[2], png.Payload[3]);
+        Assert.Single(listener.Events, item => item.Id == 2 && Equals(item.Payload[2], png.Payload[2]));
+    }
+
+    /// <summary>Checks default observation buffers metadata without writing normal console output.</summary>
+    [Fact]
+    public void SampleObserverBuffersSilentlyWithoutTransport()
+    {
+        TextWriter output = Console.Out;
+        TextWriter error = Console.Error;
+        using var capturedOutput = new StringWriter();
+        using var capturedError = new StringWriter();
+        try
+        {
+            Console.SetOut(capturedOutput);
+            Console.SetError(capturedError);
+            using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics();
+            long request = UiApplicationProfiling.StartCapture();
+            UiApplicationProfiling.Capture(request, 8);
+            using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+            Assert.NotEmpty(snapshot.RootElement.GetProperty("events").EnumerateArray());
+            Assert.Equal(0, snapshot.RootElement.GetProperty("streamed").GetInt64());
+            Assert.Equal(string.Empty, capturedOutput.ToString());
+            Assert.Equal(string.Empty, capturedError.ToString());
+        }
+        finally
+        {
+            Console.SetOut(output);
+            Console.SetError(error);
+        }
+    }
+
+    /// <summary>Checks the optional transport schema, event budget and reserved terminal delivery.</summary>
+    [Fact]
+    public void SampleObserverCallbackIsMetadataOnlyAndBounded()
+    {
+        var records = new List<string>();
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics(records.Add);
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 742);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key);
+        for (int i = 0; i < 2050; i++)
+        {
+            UiApplicationProfiling.Capture(request, 4, key, processing: i);
+        }
+
+        Assert.Equal(2048, records.Count);
+        UiApplicationProfiling.Capture(request, 10, reason: 1);
+        Assert.Equal(2049, records.Count);
+        const string Prefix = "UI Capture trace: ";
+        foreach (string record in records)
+        {
+            Assert.StartsWith(Prefix, record);
+            using var parsed = System.Text.Json.JsonDocument.Parse(record[Prefix.Length..]);
+            System.Text.Json.JsonElement item = parsed.RootElement;
+            Assert.Equal(new[] { "eventId", "name", "ticks", "frequency", "data" }, item.EnumerateObject().Select(property => property.Name));
+            Assert.Equal(12, item.GetProperty("eventId").GetInt32());
+            Assert.NotEmpty(item.GetProperty("name").GetString()!);
+            Assert.True(item.GetProperty("frequency").GetInt64() > 0);
+            Assert.True(item.GetProperty("ticks").GetInt64() > 0);
+            Assert.All(item.GetProperty("data").EnumerateObject(), property => Assert.Contains(property.Value.ValueKind, new[] { System.Text.Json.JsonValueKind.Number, System.Text.Json.JsonValueKind.String, System.Text.Json.JsonValueKind.True, System.Text.Json.JsonValueKind.False, System.Text.Json.JsonValueKind.Null }));
+        }
+
+        using var first = System.Text.Json.JsonDocument.Parse(records[1][Prefix.Length..]);
+        Assert.Equal(key.Run, first.RootElement.GetProperty("data").GetProperty("profileRunId").GetGuid());
+        Assert.Equal(key.Frame, first.RootElement.GetProperty("data").GetProperty("frameId").GetInt64());
+        using var last = System.Text.Json.JsonDocument.Parse(records[^1][Prefix.Length..]);
+        Assert.Equal(10, last.RootElement.GetProperty("data").GetProperty("phase").GetInt32());
+        using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.Equal(2049, snapshot.RootElement.GetProperty("streamed").GetInt64());
+        Assert.Equal(64, snapshot.RootElement.GetProperty("events").GetArrayLength());
+        Assert.True(snapshot.RootElement.GetProperty("dropped").GetInt64() > 0);
+    }
+
+    /// <summary>Checks a throwing transport cannot interrupt terminal archiving or later observation.</summary>
+    [Fact]
+    public void SampleObserverContainsThrowingCallback()
+    {
+        int calls = 0;
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics(_ =>
+        {
+            calls++;
+            throw new InvalidOperationException("Unavailable diagnostic transport.");
+        });
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 743);
+        using UiApplicationProfiling.Scope? wait = UiApplicationProfiling.Begin(14, key);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key);
+        UiApplicationProfiling.Capture(request, 10, reason: 1);
+        UiApplicationProfiling.Capture(request, 6);
+        Assert.True(calls >= 4);
+        using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        System.Text.Json.JsonElement terminal = Assert.Single(snapshot.RootElement.GetProperty("requests").EnumerateArray());
+        Assert.Equal(10, terminal.GetProperty("data").GetProperty("phase").GetInt32());
+        System.Text.Json.JsonElement archive = Assert.Single(snapshot.RootElement.GetProperty("terminalFrames").EnumerateArray());
+        Assert.Equal(request, archive.GetProperty("requestId").GetInt64());
+        Assert.Contains(archive.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("stage").GetInt32() == 14);
+        Assert.Empty(snapshot.RootElement.GetProperty("relations").EnumerateArray());
+        Assert.Equal(calls, snapshot.RootElement.GetProperty("streamed").GetInt64());
+    }
+
+    /// <summary>Checks prior-frame open wait snapshots and reserved terminal recording.</summary>
+    [Fact]
+    public void SampleObserverIncludesAlreadyOpenWaitAndTerminal()
+    {
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics();
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 741);
+        using UiApplicationProfiling.Scope? wait = UiApplicationProfiling.Begin(14, key);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key, Guid.NewGuid(), owned: 1, busy: 1);
+        using (var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot()))
+        {
+            Assert.Contains(snapshot.RootElement.GetProperty("events").EnumerateArray(), item => item.GetProperty("eventId").GetInt32() == 1 && item.GetProperty("data").GetProperty("stage").GetInt32() == 14);
+        }
+
+        for (int i = 0; i < 2050; i++)
+        {
+            UiApplicationProfiling.Capture(request, 4, key, processing: i);
+        }
+
+        UiApplicationProfiling.Capture(request, 9, key, reason: 2);
+        UiApplicationProfiling.Capture(request, 6, key, processing: 2051);
+        Assert.True(observer.Snapshot().Length < 65536);
+        using var terminal = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.True(terminal.RootElement.GetProperty("dropped").GetInt64() > 0);
+        Assert.Equal(64, terminal.RootElement.GetProperty("events").GetArrayLength());
+        Assert.Contains(terminal.RootElement.GetProperty("requests").EnumerateArray(), item => item.GetProperty("data").GetProperty("phase").GetInt32() == 9);
+    }
+
+    /// <summary>Checks zero-key host terminals retain historical joins after live state and ring rollover.</summary>
+    /// <param name="phase">The actual host terminal phase.</param>
+    [Theory]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void ZeroKeyTerminalRetainsAtTerminalFrameSnapshot(int phase)
+    {
+        using var observer = new Lumyte.UI.SampleSupport.UiCaptureDiagnostics();
+        var key = new UiApplicationProfiling.Key(Guid.NewGuid(), 991);
+        UiApplicationProfiling.Scope? wait = UiApplicationProfiling.Begin(14, key);
+        long request = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(request, 3, key, Guid.NewGuid(), owned: 1, busy: 1);
+        UiApplicationProfiling.Capture(request, phase, reason: 1);
+        wait?.Dispose();
+        for (int i = 0; i < 80; i++)
+        {
+            using UiApplicationProfiling.Scope? unrelated = UiApplicationProfiling.Begin(15, new(Guid.NewGuid(), 1000 + i));
+            UiApplicationProfiling.Capture(request, 6);
+        }
+
+        using var snapshot = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        System.Text.Json.JsonElement archived = Assert.Single(snapshot.RootElement.GetProperty("terminalFrames").EnumerateArray());
+        Assert.Equal(request, archived.GetProperty("requestId").GetInt64());
+        Assert.Equal(key.Run, archived.GetProperty("profileRunId").GetGuid());
+        Assert.Equal(key.Frame, archived.GetProperty("frameId").GetInt64());
+        Assert.Equal("atTerminal", archived.GetProperty("observation").GetString());
+        Assert.Contains(archived.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("stage").GetInt32() == 14);
+        System.Text.Json.JsonElement terminal = Assert.Single(snapshot.RootElement.GetProperty("requests").EnumerateArray());
+        Assert.Equal(phase, terminal.GetProperty("data").GetProperty("phase").GetInt32());
+        Assert.Equal(0, terminal.GetProperty("data").GetProperty("frameId").GetInt64());
+        Assert.Empty(snapshot.RootElement.GetProperty("relations").EnumerateArray());
+        Assert.DoesNotContain(snapshot.RootElement.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("frameId").GetInt64() == key.Frame);
+        Assert.True(observer.Snapshot().Length < 65536);
+
+        var nextKey = new UiApplicationProfiling.Key(Guid.NewGuid(), 2000);
+        using UiApplicationProfiling.Scope? nextWait = UiApplicationProfiling.Begin(14, nextKey);
+        long nextRequest = UiApplicationProfiling.StartCapture();
+        UiApplicationProfiling.Capture(nextRequest, 3, nextKey);
+        using var next = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.Contains(next.RootElement.GetProperty("openStages").EnumerateArray(), item => item.GetProperty("data").GetProperty("frameId").GetInt64() == 2000);
+        for (int i = 0; i < 20; i++)
+        {
+            long newer = UiApplicationProfiling.StartCapture();
+            UiApplicationProfiling.Capture(newer, 3, nextKey);
+            UiApplicationProfiling.Capture(newer, 8);
+        }
+
+        using var evicted = System.Text.Json.JsonDocument.Parse(observer.Snapshot());
+        Assert.DoesNotContain(evicted.RootElement.GetProperty("terminalFrames").EnumerateArray(), item => item.GetProperty("requestId").GetInt64() == request);
+        Assert.True(observer.Snapshot().Length < 65536);
+    }
+
+    /// <summary>Checks the real host preserves supplied cancellation through a held driver request.</summary>
+    /// <returns>The verification.</returns>
+    [Fact]
+    public async Task ScreenshotHostReportsCancellationWithoutChangingDriverLifetimeAsync()
+    {
+        using var listener = new Capture((EventKeywords)16);
+        var driver = new CaptureDriver();
+        UiApplicationBuilder builder = UiApplication.CreateBuilder();
+        builder.UseDriver(() => driver);
+        builder.UseWindows(_ => [Lumyte.UI.Application.Compose.Window("main", "Capture", root: _ => Panel(), onOpened: _ => driver.Opened.TrySetResult())]);
+        await using UiApplication app = builder.Build();
+        Task running = app.RunAsync();
+        await driver.Opened.Task;
+        using var surface = new UiSurface(Panel());
+        var host = (Lumyte.UI.Automation.IUiAutomationScreenshotHost)UiApplicationAutomationHost.Create(app, () => surface);
+        using var cancellation = new CancellationTokenSource();
+        Task<byte[]> capture = host.CapturePngAsync(cancellation.Token).AsTask();
+        await driver.Entered.Task;
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => capture);
+        Assert.False(driver.Release.Task.IsCompleted);
+        Event terminal = Assert.Single(listener.Events, item => item.Id == 12 && (int)item.Payload[4]! == 9);
+        Assert.Equal(1, terminal.Payload[5]);
+        Assert.Contains(listener.Events, item => item.Id == 12 && (int)item.Payload[4]! == 2 && Equals(item.Payload[0], terminal.Payload[0]));
+        driver.Release.SetResult();
+        app.RequestStop();
+        await running;
+    }
+
     /// <summary>Checks a disabled stage returns no scope and emits no events.</summary>
     [Fact]
     public void DisabledStagesReturnNoScopeOrEvents()
@@ -285,6 +550,38 @@ public sealed class ProfilingTests
         while (!condition())
         {
             await Task.Delay(1, timeout.Token);
+        }
+    }
+
+    private sealed class CaptureDriver : UiApplicationDriver
+    {
+        internal TaskCompletionSource Opened { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal override bool SupportsScreenshots => true;
+
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        internal override ValueTask InitializeAsync(UiApplication application, IServiceProvider services, bool textInput, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        internal override ValueTask<UiDriverWindow> CreateWindowAsync(string key, string title, Vector2 size, UiDriverWindow? owner, bool primary, CancellationToken cancellationToken) => ValueTask.FromResult<UiDriverWindow>(new TestWindow(key));
+
+        internal override void Pump()
+        {
+        }
+
+        internal override Task<bool> DrawAsync(UiDriverWindow window, DrawingSnapshot2D scene) => Task.FromResult(true);
+
+        internal override ValueTask CloseWindowAsync(UiDriverWindow window) => window.DisposeAsync();
+
+        internal override async ValueTask<byte[]> CaptureAsync(UiSurface surface, CancellationToken token)
+        {
+            Entered.SetResult();
+            await Release.Task.WaitAsync(token);
+            return [];
         }
     }
 

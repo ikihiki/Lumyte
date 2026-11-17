@@ -20,16 +20,37 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
     internal Pipeline Resolve(RenderStateSnapshot state, TextureFormat[] formats, DescriptorLayoutKey? dependencies = null, TextureFormat? depthFormat = null, IndexFormat? indexFormat = null)
     {
         ValidateAlive();
+        if (formats.Length != state.Desc.ColorTargets.Count ||
+            ((state.Desc.DepthStencil.DepthTestEnable || state.Desc.DepthStencil.DepthWriteEnable || state.Desc.DepthStencil.StencilTestEnable) && depthFormat == null) ||
+            (state.Desc.DepthStencil.StencilTestEnable && depthFormat != TextureFormat.Depth24Stencil8))
+        {
+            throw new ArgumentException("Render state does not match pass attachments.");
+        }
+
         if (Desc.AlphaToCoverageEnable)
         {
             throw new NotSupportedException("Alpha-to-coverage requires multisampled attachments; this pass has one sample.");
+        }
+
+        if (_mesh && (state.Desc.Topology != MeshTopology || state.Desc.StripIndexFormat != null))
+        {
+            throw new InvalidOperationException("Mesh state must match its output list topology without strip restart.");
         }
 
         DescriptorLayoutKey argumentKey = SelectLayout(dependencies);
         if (!_owner.CacheGraphicsPipelines)
         {
             Pipeline fresh = CreateNative(state.Desc, formats, depthFormat);
-            _uncachedPipelines.Add(fresh);
+            try
+            {
+                _uncachedPipelines.Add(fresh);
+            }
+            catch
+            {
+                _owner.Api.DestroyPipeline(_owner.NativeDevice, fresh, null);
+                throw;
+            }
+
             return fresh;
         }
 
@@ -40,7 +61,16 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         }
 
         Pipeline pipeline = CreateNative(state.Desc, formats, depthFormat);
-        _variants.Add(key, pipeline);
+        try
+        {
+            _variants.Add(key, pipeline);
+        }
+        catch
+        {
+            _owner.Api.DestroyPipeline(_owner.NativeDevice, pipeline, null);
+            throw;
+        }
+
         return pipeline;
     }
 
@@ -126,7 +156,17 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         }
 
         CreateLayout(textures, samplers);
-        _argumentLayouts.Add(key, (_layout, _argumentLayout));
+        try
+        {
+            _argumentLayouts.Add(key, (_layout, _argumentLayout));
+        }
+        catch
+        {
+            _owner.Api.DestroyPipelineLayout(_owner.NativeDevice, _layout, null);
+            _owner.Api.DestroyDescriptorSetLayout(_owner.NativeDevice, _argumentLayout, null);
+            throw;
+        }
+
         return key;
     }
 
@@ -134,7 +174,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
     {
         _argumentLayout = VulkanShaderBinding.CreateLayout(_owner, textures, samplers);
         DescriptorSetLayout group = _argumentLayout;
-        var range = new PushConstantRange { StageFlags = VulkanPushConstants.GraphicsStages, Offset = 0, Size = _owner.MaxPushConstantsSize };
+        var range = new PushConstantRange { StageFlags = _owner.GraphicsShaderStages, Offset = 0, Size = _owner.MaxPushConstantsSize };
         var info = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &group, PushConstantRangeCount = 1, PPushConstantRanges = &range };
         Result result = _owner.Api.CreatePipelineLayout(_owner.NativeDevice, &info, null, out _layout);
         if (result == Result.ErrorDeviceLost)
@@ -144,6 +184,7 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
 
         if (result != Result.Success)
         {
+            _owner.Api.DestroyDescriptorSetLayout(_owner.NativeDevice, _argumentLayout, null);
             throw new InvalidOperationException($"Vulkan pipeline layout creation failed: {result}.");
         }
     }
@@ -154,7 +195,8 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
     {
         byte[] vertexEntry = Encoding.UTF8.GetBytes(VertexData.EntryPoint + "\0");
         byte[] fragmentEntry = Encoding.UTF8.GetBytes((FragmentData?.EntryPoint ?? string.Empty) + "\0");
-        Span<PipelineShaderStageCreateInfo> stages = stackalloc PipelineShaderStageCreateInfo[2];
+        byte[] taskEntry = Encoding.UTF8.GetBytes((TaskData?.EntryPoint ?? string.Empty) + "\0");
+        Span<PipelineShaderStageCreateInfo> stages = stackalloc PipelineShaderStageCreateInfo[3];
         Span<PipelineColorBlendAttachmentState> colors = stackalloc PipelineColorBlendAttachmentState[formats.Length];
         Span<Format> nativeFormats = stackalloc Format[formats.Length];
         for (int i = 0; i < formats.Length; i++)
@@ -216,58 +258,66 @@ internal sealed unsafe partial class VulkanGraphicsPipeline
         };
         uint mask = state.SampleMask;
         var samples = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit, PSampleMask = &mask };
-        fixed (byte* vs = vertexEntry)
+        fixed (byte* ts = taskEntry)
         {
-            fixed (byte* fs = fragmentEntry)
+            fixed (byte* vs = vertexEntry)
             {
-                fixed (PipelineShaderStageCreateInfo* shaders = stages)
+                fixed (byte* fs = fragmentEntry)
                 {
-                    fixed (PipelineColorBlendAttachmentState* targets = colors)
+                    fixed (PipelineShaderStageCreateInfo* shaders = stages)
                     {
-                        fixed (Format* targetFormats = nativeFormats)
+                        fixed (PipelineColorBlendAttachmentState* targets = colors)
                         {
-                            shaders[0] = new() { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _vertex.Native, PName = vs };
-                            if (_fragment != null)
+                            fixed (Format* targetFormats = nativeFormats)
                             {
-                                shaders[1] = new() { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _fragment.Native, PName = fs };
-                            }
-
-                            var blend = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = (uint)formats.Length, PAttachments = targets };
-                            var rendering = new PipelineRenderingCreateInfo { SType = StructureType.PipelineRenderingCreateInfo, ColorAttachmentCount = (uint)formats.Length, PColorAttachmentFormats = targetFormats, DepthAttachmentFormat = depthFormat is { } df ? VulkanTexture.NativeFormat(df) : V.Format.Undefined, StencilAttachmentFormat = depthFormat == TextureFormat.Depth24Stencil8 ? VulkanTexture.NativeFormat(depthFormat.Value) : V.Format.Undefined };
-                            var info = new GraphicsPipelineCreateInfo
-                            {
-                                SType = StructureType.GraphicsPipelineCreateInfo,
-                                PNext = &rendering,
-                                StageCount = _fragment == null ? 1u : 2u,
-                                PStages = shaders,
-                                PVertexInputState = &vertexInput,
-                                PInputAssemblyState = &assembly,
-                                PViewportState = &viewport,
-                                PRasterizationState = &raster,
-                                PMultisampleState = &samples,
-                                PColorBlendState = &blend,
-                                PDepthStencilState = depthFormat == null ? null : &depthState,
-                                PDynamicState = &dynamic,
-                                Layout = _layout,
-                                BasePipelineIndex = -1,
-                            };
-                            Result result = _owner.Api.CreateGraphicsPipelines(_owner.NativeDevice, default, 1, &info, null, out Pipeline pipeline);
-                            if (result == Result.ErrorDeviceLost)
-                            {
-                                _owner.ReportLoss("Vulkan pipeline creation failed: device lost.");
-                            }
-
-                            if (result != Result.Success)
-                            {
-                                if (pipeline.Handle != 0)
+                                shaders[0] = new() { SType = StructureType.PipelineShaderStageCreateInfo, Stage = _mesh ? ShaderStageFlags.MeshBitExt : ShaderStageFlags.VertexBit, Module = _vertex.Native, PName = vs };
+                                if (_fragment != null)
                                 {
-                                    _owner.Api.DestroyPipeline(_owner.NativeDevice, pipeline, null);
+                                    shaders[1] = new() { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _fragment.Native, PName = fs };
                                 }
 
-                                throw new InvalidOperationException($"Vulkan graphics pipeline creation failed: {result}.");
-                            }
+                                if (_task != null)
+                                {
+                                    shaders[_fragment == null ? 1 : 2] = new() { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.TaskBitExt, Module = _task.Native, PName = ts };
+                                }
 
-                            return pipeline;
+                                var blend = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = (uint)formats.Length, PAttachments = targets };
+                                var rendering = new PipelineRenderingCreateInfo { SType = StructureType.PipelineRenderingCreateInfo, ColorAttachmentCount = (uint)formats.Length, PColorAttachmentFormats = targetFormats, DepthAttachmentFormat = depthFormat is { } df ? VulkanTexture.NativeFormat(df) : V.Format.Undefined, StencilAttachmentFormat = depthFormat == TextureFormat.Depth24Stencil8 ? VulkanTexture.NativeFormat(depthFormat.Value) : V.Format.Undefined };
+                                var info = new GraphicsPipelineCreateInfo
+                                {
+                                    SType = StructureType.GraphicsPipelineCreateInfo,
+                                    PNext = &rendering,
+                                    StageCount = 1u + (_fragment == null ? 0u : 1u) + (_task == null ? 0u : 1u),
+                                    PStages = shaders,
+                                    PVertexInputState = _mesh ? null : &vertexInput,
+                                    PInputAssemblyState = _mesh ? null : &assembly,
+                                    PViewportState = &viewport,
+                                    PRasterizationState = &raster,
+                                    PMultisampleState = &samples,
+                                    PColorBlendState = &blend,
+                                    PDepthStencilState = depthFormat == null ? null : &depthState,
+                                    PDynamicState = &dynamic,
+                                    Layout = _layout,
+                                    BasePipelineIndex = -1,
+                                };
+                                Result result = _owner.Api.CreateGraphicsPipelines(_owner.NativeDevice, default, 1, &info, null, out Pipeline pipeline);
+                                if (result == Result.ErrorDeviceLost)
+                                {
+                                    _owner.ReportLoss("Vulkan pipeline creation failed: device lost.");
+                                }
+
+                                if (result != Result.Success)
+                                {
+                                    if (pipeline.Handle != 0)
+                                    {
+                                        _owner.Api.DestroyPipeline(_owner.NativeDevice, pipeline, null);
+                                    }
+
+                                    throw new InvalidOperationException($"Vulkan graphics pipeline creation failed: {result}.");
+                                }
+
+                                return pipeline;
+                            }
                         }
                     }
                 }

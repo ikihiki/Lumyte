@@ -4,6 +4,15 @@ namespace Lumyte.Graphics.Direct3D12;
 
 internal static unsafe partial class NativeMethods
 {
+    [LibraryImport(Library, EntryPoint = "device_mesh_supported")]
+    internal static partial uint DeviceMeshSupported(nint device);
+
+    [LibraryImport(Library, EntryPoint = "mesh_create")]
+    internal static partial int MeshCreate(nint device, byte* mesh, ulong meshSize, byte* task, ulong taskSize, byte* fragment, ulong fragmentSize, uint* state, out nint pipeline);
+
+    [LibraryImport(Library, EntryPoint = "commands_dispatch_mesh")]
+    internal static partial int DispatchMesh(nint commands, uint x, uint y, uint z);
+
     [LibraryImport(Library, EntryPoint = "compute_create")]
     internal static partial int ComputeCreate(nint device, byte* code, ulong size, out nint pipeline);
 

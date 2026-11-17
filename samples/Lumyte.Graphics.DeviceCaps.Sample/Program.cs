@@ -37,7 +37,7 @@ if (backend == "vulkan" && exercise == "pipeline-benchmark")
         {
             using var device = VulkanDevice.Create(cacheGraphicsPipelines: cache);
             PipelineBenchmarkResult result = await PipelineBenchmark.RunAsync(device);
-            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Round = round, Warmup = round < 2, Cache = cache, Result = result }));
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new PipelineBenchmarkLog(round, round < 2, cache, result), PipelineBenchmarkJsonContext.Default.PipelineBenchmarkLog));
         }
     }
 

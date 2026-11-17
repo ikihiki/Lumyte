@@ -13,7 +13,7 @@ static D3D12_BARRIER_SYNC barrier_sync(UINT stages) noexcept
     {
         result |= D3D12_BARRIER_SYNC_INDEX_INPUT;
     }
-    if (stages & 16)
+    if (stages & (16 | 512 | 1024))
     {
         result |= D3D12_BARRIER_SYNC_VERTEX_SHADING;
     }

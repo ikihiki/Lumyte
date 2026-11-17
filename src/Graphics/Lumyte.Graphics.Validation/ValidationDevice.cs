@@ -188,6 +188,44 @@ public sealed partial class ValidationDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc/>
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(desc);
+        MeshPipelineDesc native = desc with
+        {
+            MeshShader = Unwrap(desc.MeshShader),
+            TaskShader = desc.TaskShader is null ? null : Unwrap(desc.TaskShader),
+            FragmentShader = desc.FragmentShader is null ? null : Unwrap(desc.FragmentShader),
+        };
+        if (ValidationEncoderChecks.Target(this, desc.MeshShader).Stage != ShaderStage.Mesh ||
+            (desc.TaskShader is { } task && ValidationEncoderChecks.Target(this, task).Stage != ShaderStage.Task) ||
+            (desc.FragmentShader is { } fragment && ValidationEncoderChecks.Target(this, fragment).Stage != ShaderStage.Fragment))
+        {
+            throw new ArgumentException("Mesh pipeline shader stages are incompatible.", nameof(desc));
+        }
+
+        if ((Caps.Features & GraphicsFeatures.MeshShader) == 0 || Caps.MeshShaderLimits is null ||
+            (desc.TaskShader is not null && ((Caps.Features & GraphicsFeatures.TaskShader) == 0 || Caps.TaskShaderLimits is null)))
+        {
+            throw new NotSupportedException("Mesh/Task shaders are unavailable on this device.");
+        }
+
+        ShaderTargetData meshTarget = ValidationEncoderChecks.Target(this, desc.MeshShader);
+        ShaderTargetData? taskTarget = desc.TaskShader is null ? null : ValidationEncoderChecks.Target(this, desc.TaskShader);
+        ShaderTargetData? fragmentTarget = desc.FragmentShader is null ? null : ValidationEncoderChecks.Target(this, desc.FragmentShader);
+        MeshShaderValidation.Validate(meshTarget, Caps);
+        if (taskTarget is not null)
+        {
+            MeshShaderValidation.Validate(taskTarget, Caps);
+        }
+
+        MeshShaderValidation.Program(meshTarget, taskTarget, fragmentTarget);
+        ValidationEncoderChecks.ValidateMeshRoots(this, desc);
+        return OwnCreated(Backend.CreateMeshPipeline(native), raw => new ValidationMeshPipeline(this, raw, desc));
+    }
+
+    /// <inheritdoc/>
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
         EnsureActive();

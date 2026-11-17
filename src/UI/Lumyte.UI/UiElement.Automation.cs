@@ -16,6 +16,8 @@ public partial class UiElement
 
     internal double? SemanticAutomationValue => AutomationValue;
 
+    internal UiNumericState? SemanticNumericState => NumericState;
+
     internal bool AutomationIndeterminate => IsAutomationIndeterminate;
 
     internal bool AutomationPressed => IsAutomationPressed;
@@ -31,6 +33,9 @@ public partial class UiElement
     internal string? SemanticAutomationOptionKey => AutomationOptionKey;
 
     internal string? SemanticAutomationSelectedKey => AutomationSelectedKey;
+
+    /// <summary>Gets detached finite numeric values without disclosing editable text.</summary>
+    protected virtual UiNumericState? NumericState => null;
 
     /// <summary>Gets the detached component selection metadata.</summary>
     protected virtual bool? AutomationChecked => null;

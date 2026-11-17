@@ -7,7 +7,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 namespace Lumyte.Graphics.Vulkan;
 
 /// <summary>Owns a Vulkan 1.3 instance and logical device with cached capabilities.</summary>
-public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
+public sealed unsafe partial class VulkanDevice : IGraphicDevice, IDisposable
 {
     private readonly Vk _api;
     private readonly Instance _instance;
@@ -69,6 +69,10 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
     internal Queue NativeQueue => _nativeQueue;
 
     internal bool SupportsCubeArrays { get; }
+
+    internal ExtMeshShader? MeshApi { get; private set; }
+
+    internal PhysicalDeviceMeshShaderPropertiesEXT MeshProperties { get; private set; }
 
     internal Vk Api => _api;
 
@@ -186,6 +190,14 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         ArgumentNullException.ThrowIfNull(desc);
         var program = new VulkanGraphicsPipeline(this, desc);
         return program;
+    }
+
+    /// <inheritdoc />
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(desc);
+        return new VulkanMeshPipeline(this, desc);
     }
 
     /// <inheritdoc />
@@ -346,6 +358,7 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
         _completions.Dispose();
         _presentation?.Dispose();
         Descriptors.Dispose();
+        MeshApi?.Dispose();
         _api.DestroyDevice(_device, null);
         _api.DestroyInstance(_instance, null);
         _api.Dispose();
@@ -423,7 +436,25 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             }
 
             PhysicalDevice physical = SelectPhysicalDevice(api, instance, desc.PhysicalDeviceIndex);
-            var properties13 = new PhysicalDeviceVulkan13Properties { SType = StructureType.PhysicalDeviceVulkan13Properties };
+            uint extensionCount = 0;
+            Check(api.EnumerateDeviceExtensionProperties(physical, (byte*)null, &extensionCount, null), "EnumerateDeviceExtensionProperties");
+            var availableExtensions = new ExtensionProperties[extensionCount];
+            fixed (ExtensionProperties* available = availableExtensions)
+            {
+                Check(api.EnumerateDeviceExtensionProperties(physical, (byte*)null, &extensionCount, available), "EnumerateDeviceExtensionProperties");
+            }
+
+            bool meshExtension = false;
+            for (int i = 0; i < availableExtensions.Length; i++)
+            {
+                fixed (byte* name = availableExtensions[i].ExtensionName)
+                {
+                    meshExtension |= SilkMarshal.PtrToString((nint)name) == "VK_EXT_mesh_shader";
+                }
+            }
+
+            var meshProperties = new PhysicalDeviceMeshShaderPropertiesEXT { SType = StructureType.PhysicalDeviceMeshShaderPropertiesExt };
+            var properties13 = new PhysicalDeviceVulkan13Properties { SType = StructureType.PhysicalDeviceVulkan13Properties, PNext = meshExtension ? &meshProperties : null };
             var properties = new PhysicalDeviceProperties2 { SType = StructureType.PhysicalDeviceProperties2, PNext = &properties13 };
             api.GetPhysicalDeviceProperties2(physical, &properties);
             if (properties.Properties.ApiVersion < Vk.Version13)
@@ -431,8 +462,9 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 throw new NotSupportedException("The selected adapter must support Vulkan 1.3.");
             }
 
-            var supportedMaintenance = new PhysicalDeviceSwapchainMaintenance1FeaturesEXT { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt };
-            var supported11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = !presenting ? null : &supportedMaintenance };
+            var supportedMesh = new PhysicalDeviceMeshShaderFeaturesEXT { SType = StructureType.PhysicalDeviceMeshShaderFeaturesExt };
+            var supportedMaintenance = new PhysicalDeviceSwapchainMaintenance1FeaturesEXT { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt, PNext = meshExtension ? &supportedMesh : null };
+            var supported11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = presenting ? &supportedMaintenance : meshExtension ? &supportedMesh : null };
             var supported13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &supported11 };
             var supported = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = &supported13 };
             api.GetPhysicalDeviceFeatures2(physical, &supported);
@@ -450,15 +482,19 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
             float priority = 1;
             var queueInfo = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = queueFamily, QueueCount = 1, PQueuePriorities = &priority };
             var enabled = new PhysicalDeviceFeatures { SamplerAnisotropy = supported.Features.SamplerAnisotropy, DepthBiasClamp = supported.Features.DepthBiasClamp, ImageCubeArray = supported.Features.ImageCubeArray, IndependentBlend = true, ShaderInt64 = true };
-            var enabledMaintenance = new PhysicalDeviceSwapchainMaintenance1FeaturesEXT { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt, SwapchainMaintenance1 = true };
-            var enabled11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, ShaderDrawParameters = true, PNext = !presenting ? null : &enabledMaintenance };
+            bool meshEnabled = meshExtension && supportedMesh.MeshShader;
+            bool taskEnabled = meshEnabled && supportedMesh.TaskShader;
+            var enabledMesh = new PhysicalDeviceMeshShaderFeaturesEXT { SType = StructureType.PhysicalDeviceMeshShaderFeaturesExt, MeshShader = meshEnabled, TaskShader = taskEnabled };
+            var enabledMaintenance = new PhysicalDeviceSwapchainMaintenance1FeaturesEXT { SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt, SwapchainMaintenance1 = true, PNext = meshEnabled ? &enabledMesh : null };
+            var enabled11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, ShaderDrawParameters = true, PNext = presenting ? &enabledMaintenance : meshEnabled ? &enabledMesh : null };
             var enabled12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &enabled11, BufferDeviceAddress = true, RuntimeDescriptorArray = true, DescriptorBindingPartiallyBound = true, ShaderSampledImageArrayNonUniformIndexing = true };
             var enabled13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = &enabled12, Maintenance4 = true, DynamicRendering = true, Synchronization2 = true };
-            string[] deviceExtensions = !presenting ? [] : ["VK_KHR_swapchain", "VK_EXT_swapchain_maintenance1"];
+            string[] deviceExtensions = (presenting ? new[] { "VK_KHR_swapchain", "VK_EXT_swapchain_maintenance1" } : Array.Empty<string>()).Concat(meshEnabled ? new[] { "VK_EXT_mesh_shader" } : Array.Empty<string>()).ToArray();
             deviceNames = deviceExtensions.Length == 0 ? 0 : SilkMarshal.StringArrayToPtr(deviceExtensions);
             var deviceInfo = new DeviceCreateInfo { EnabledExtensionCount = (uint)deviceExtensions.Length, PpEnabledExtensionNames = (byte**)deviceNames, SType = StructureType.DeviceCreateInfo, PNext = &enabled13, QueueCreateInfoCount = 1, PQueueCreateInfos = &queueInfo, PEnabledFeatures = &enabled };
             Check(api.CreateDevice(physical, &deviceInfo, null, &device), "CreateDevice");
             DeviceCaps caps = ReadCaps(properties.Properties.Limits, properties13.MaxBufferSize, enabled);
+            caps = WithMeshCaps(caps, meshProperties, meshEnabled, taskEnabled);
             VulkanPresentation? presentation = null;
             if (presenting)
             {
@@ -470,7 +506,19 @@ public sealed unsafe class VulkanDevice : IGraphicDevice, IDisposable
                 presentation = new(surfaceApi!, swapchainApi!, maintenanceApi!);
             }
 
-            return new VulkanDevice(api, instance, device, physical, caps, properties.Properties.Limits.MaxPushConstantsSize, enabled.ImageCubeArray, queueFamily, desc.CacheGraphicsPipelines, presentation);
+            var owner = new VulkanDevice(api, instance, device, physical, caps, properties.Properties.Limits.MaxPushConstantsSize, enabled.ImageCubeArray, queueFamily, desc.CacheGraphicsPipelines, presentation);
+            owner.MeshProperties = meshProperties;
+            if (meshEnabled)
+            {
+                if (!api.TryGetDeviceExtension(instance, device, out ExtMeshShader meshApi))
+                {
+                    throw new NotSupportedException("Enabled VK_EXT_mesh_shader entry points are unavailable.");
+                }
+
+                owner.MeshApi = meshApi;
+            }
+
+            return owner;
         }
         catch
         {

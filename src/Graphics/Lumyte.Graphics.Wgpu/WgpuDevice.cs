@@ -196,6 +196,14 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     }
 
     /// <inheritdoc />
+    public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(desc);
+        throw new NotSupportedException("Wgpu does not support Mesh/Task pipelines.");
+    }
+
+    /// <inheritdoc />
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -338,6 +346,11 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(artifact);
+        if (artifact.GetTarget(ShaderTarget.Wgsl).Stage is not (ShaderStage.Vertex or ShaderStage.Fragment or ShaderStage.Compute))
+        {
+            throw new NotSupportedException("Wgpu requires a supported WGSL shader stage and target.");
+        }
+
         var shader = new WgpuShader(this, artifact);
         return shader;
     }

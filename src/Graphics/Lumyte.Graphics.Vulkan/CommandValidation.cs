@@ -15,7 +15,7 @@ internal static class CommandValidation
 
         CheckAccess(scope, ResourceAccess.HostRead | ResourceAccess.HostWrite, PipelineStage.Host);
         CheckAccess(scope, ResourceAccess.CopyRead | ResourceAccess.CopyWrite, PipelineStage.Copy);
-        CheckAccess(scope, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite, PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader);
+        CheckAccess(scope, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite, PipelineStage.VertexShader | PipelineStage.MeshShader | PipelineStage.TaskShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader);
         CheckAccess(scope, ResourceAccess.IndexRead, PipelineStage.IndexInput);
         CheckAccess(scope, ResourceAccess.IndirectRead, PipelineStage.DrawIndirect);
         CheckAccess(scope, ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite, PipelineStage.DepthStencil);

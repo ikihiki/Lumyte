@@ -119,6 +119,24 @@ public sealed class CpuDeviceTests
         Assert.Throws<ArgumentOutOfRangeException>(() => table.WriteBuffer(1, buffer.SliceElements(0, 4)));
     }
 
+    /// <summary>Mesh APIs remain explicit rejections on the non-rasterizing CPU recorder.</summary>
+    [Fact]
+    public void MeshExecutionIsNotAdvertisedOrSilentlyRecorded()
+    {
+        using var device = new CpuGraphicsDevice();
+        Assert.Equal(GraphicsFeatures.None, device.Caps.Features & (GraphicsFeatures.MeshShader | GraphicsFeatures.TaskShader));
+        Assert.Throws<NotSupportedException>(() => device.CreateMeshPipeline(new() { MeshShader = null! }));
+        using IGraphicsTexture texture = device.CreateTexture(new() { Width = 1, Height = 1, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.RenderAttachment });
+        using IGraphicsTextureView view = texture.CreateView();
+        using IGraphicsCommandBuffer commands = device.CreateCommandBuffer(new());
+        IRenderEncoder pass = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = view, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
+        Assert.Throws<NotSupportedException>(() => pass.SetPipeline((IMeshPipeline)null!));
+        Assert.Throws<NotSupportedException>(() => pass.DrawMeshTasks(1));
+        Assert.Equal(0, device.Counters.Draws);
+        pass.End();
+        commands.Finish();
+    }
+
     private readonly record struct NumericArguments(int Value) : IShaderArguments
     {
         public static string ShaderTypeName => "NumericArguments";

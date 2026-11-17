@@ -377,3 +377,154 @@ API void commands_detach_heaps(Commands* commands, ID3D12DescriptorHeap** rtv, I
     *rtv = commands->render_targets.Detach();
     *dsv = commands->depth_target.Detach();
 }
+
+// PSO stream subobjects must start at pointer alignment. Tail padding is part of
+// that required ABI (notably for blend and sample descriptors).
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
+template <D3D12_PIPELINE_STATE_SUBOBJECT_TYPE Kind, typename T> struct alignas(void*) MeshSubobject
+{
+    D3D12_PIPELINE_STATE_SUBOBJECT_TYPE kind = Kind;
+    T value{};
+};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+API UINT device_mesh_supported(Device* device) noexcept
+{
+    D3D12_FEATURE_DATA_D3D12_OPTIONS7 options{};
+    D3D12_FEATURE_DATA_SHADER_MODEL shader{D3D_SHADER_MODEL_6_6};
+    D3D12_FEATURE_DATA_D3D12_OPTIONS binding{};
+    ComPtr<ID3D12Device2> stream_device;
+    if (!device || FAILED(device->device.As(&stream_device)) ||
+        FAILED(device->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options, sizeof(options))))
+    {
+        return 0;
+    }
+    if (FAILED(device->device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shader, sizeof(shader))) ||
+        FAILED(device->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &binding, sizeof(binding))) ||
+        shader.HighestShaderModel < D3D_SHADER_MODEL_6_6 || binding.ResourceBindingTier < D3D12_RESOURCE_BINDING_TIER_2)
+    {
+        return 0;
+    }
+    return options.MeshShaderTier >= D3D12_MESH_SHADER_TIER_1 ? 1u : 0u;
+}
+API HRESULT mesh_create(Device* device, const void* ms, UINT64 ms_size, const void* amplification, UINT64 as_size,
+                        const void* ps, UINT64 ps_size, const NativeDrawState* state, Pipeline** output) noexcept
+{
+    if (!output)
+    {
+        return E_INVALIDARG;
+    }
+    *output = nullptr;
+    if (!device || !ms || !ms_size || !state || state->count > 8 || state->strip ||
+        (state->topology != D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE &&
+         state->topology != D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE) ||
+        (as_size && !amplification) || (ps_size && !ps))
+    {
+        return E_INVALIDARG;
+    }
+    if (!device_mesh_supported(device))
+    {
+        return DXGI_ERROR_UNSUPPORTED;
+    }
+    auto pipeline = std::unique_ptr<Pipeline>(new (std::nothrow) Pipeline());
+    if (!pipeline)
+    {
+        return E_OUTOFMEMORY;
+    }
+    CHECK(report_failure(device, create_root(device, &pipeline->root)));
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
+    desc.PrimitiveTopologyType = static_cast<D3D12_PRIMITIVE_TOPOLOGY_TYPE>(state->topology);
+    desc.IBStripCutValue = static_cast<D3D12_INDEX_BUFFER_STRIP_CUT_VALUE>(state->strip);
+    desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    desc.RasterizerState.CullMode = static_cast<D3D12_CULL_MODE>(state->cull);
+    desc.RasterizerState.FrontCounterClockwise = state->ccw;
+    desc.RasterizerState.DepthClipEnable = state->clip;
+    desc.RasterizerState.DepthBias = state->bias;
+    desc.RasterizerState.SlopeScaledDepthBias = state->slope;
+    desc.RasterizerState.DepthBiasClamp = state->clamp;
+    desc.DepthStencilState.DepthEnable = state->depth_test || state->depth_write;
+    desc.DepthStencilState.DepthWriteMask =
+        state->depth_write ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+    desc.DepthStencilState.DepthFunc =
+        state->depth_test ? static_cast<D3D12_COMPARISON_FUNC>(state->depth_compare) : D3D12_COMPARISON_FUNC_ALWAYS;
+    desc.DepthStencilState.StencilEnable = state->stencil;
+    desc.DepthStencilState.StencilReadMask = static_cast<UINT8>(state->read_mask);
+    desc.DepthStencilState.StencilWriteMask = static_cast<UINT8>(state->write_mask);
+    auto face = [](const UINT* v)
+    {
+        return D3D12_DEPTH_STENCILOP_DESC{static_cast<D3D12_STENCIL_OP>(v[0]), static_cast<D3D12_STENCIL_OP>(v[1]),
+                                          static_cast<D3D12_STENCIL_OP>(v[2]),
+                                          static_cast<D3D12_COMPARISON_FUNC>(v[3])};
+    };
+    desc.DepthStencilState.FrontFace = face(state->front);
+    desc.DepthStencilState.BackFace = face(state->back);
+    desc.SampleMask = state->mask;
+    desc.SampleDesc.Count = 1;
+    desc.NumRenderTargets = state->count;
+    desc.DSVFormat = static_cast<DXGI_FORMAT>(state->depth_format);
+    desc.BlendState.IndependentBlendEnable = TRUE;
+    for (UINT i = 0; i < state->count; i++)
+    {
+        desc.RTVFormats[i] = static_cast<DXGI_FORMAT>(state->formats[i]);
+        auto& b = desc.BlendState.RenderTarget[i];
+        const auto* c = state->colors[i];
+        b.BlendEnable = c[0];
+        b.SrcBlend = static_cast<D3D12_BLEND>(c[1]);
+        b.DestBlend = static_cast<D3D12_BLEND>(c[2]);
+        b.BlendOp = static_cast<D3D12_BLEND_OP>(c[3]);
+        b.SrcBlendAlpha = static_cast<D3D12_BLEND>(c[4]);
+        b.DestBlendAlpha = static_cast<D3D12_BLEND>(c[5]);
+        b.BlendOpAlpha = static_cast<D3D12_BLEND_OP>(c[6]);
+        b.RenderTargetWriteMask = static_cast<UINT8>(c[7]);
+    }
+    struct Stream
+    {
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, ID3D12RootSignature*> root;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS, D3D12_SHADER_BYTECODE> task;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, D3D12_SHADER_BYTECODE> mesh;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS, D3D12_SHADER_BYTECODE> pixel;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND, D3D12_BLEND_DESC> blend;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_MASK, UINT> mask;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER, D3D12_RASTERIZER_DESC> rasterizer;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, D3D12_DEPTH_STENCIL_DESC> depth;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY, D3D12_PRIMITIVE_TOPOLOGY_TYPE> topology;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS, D3D12_RT_FORMAT_ARRAY> targets;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, DXGI_FORMAT> depth_format;
+        MeshSubobject<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, DXGI_SAMPLE_DESC> samples;
+    } stream;
+    stream.root.value = pipeline->root.Get();
+    stream.task.value = {amplification, static_cast<SIZE_T>(as_size)};
+    stream.mesh.value = {ms, static_cast<SIZE_T>(ms_size)};
+    stream.pixel.value = {ps, static_cast<SIZE_T>(ps_size)};
+    stream.blend.value = desc.BlendState;
+    stream.mask.value = desc.SampleMask;
+    stream.rasterizer.value = desc.RasterizerState;
+    stream.depth.value = desc.DepthStencilState;
+    stream.topology.value = desc.PrimitiveTopologyType;
+    stream.targets.value.NumRenderTargets = desc.NumRenderTargets;
+    std::memcpy(stream.targets.value.RTFormats, desc.RTVFormats, sizeof(desc.RTVFormats));
+    stream.depth_format.value = desc.DSVFormat;
+    stream.samples.value = desc.SampleDesc;
+    ComPtr<ID3D12Device2> stream_device;
+    CHECK(device->device.As(&stream_device));
+    D3D12_PIPELINE_STATE_STREAM_DESC stream_desc{sizeof(stream), &stream};
+    CHECK(report_failure(device, stream_device->CreatePipelineState(&stream_desc, IID_PPV_ARGS(&pipeline->state))));
+    *output = pipeline.release();
+    return S_OK;
+}
+API HRESULT commands_dispatch_mesh(Commands* commands, UINT x, UINT y, UINT z) noexcept
+{
+    if (!commands || !commands->list || !x || !y || !z || x > 65535 || y > 65535 || z > 65535 ||
+        static_cast<UINT64>(x) * y > 4194303 / z)
+    {
+        return E_INVALIDARG;
+    }
+    ComPtr<ID3D12GraphicsCommandList6> list;
+    CHECK(commands->list.As(&list));
+    list->DispatchMesh(x, y, z);
+    return S_OK;
+}

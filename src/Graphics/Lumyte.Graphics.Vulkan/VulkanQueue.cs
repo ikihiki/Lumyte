@@ -112,14 +112,25 @@ internal sealed unsafe class VulkanQueue(VulkanDevice owner) : IGraphicsQueue
         return submission;
     }
 
-    private static PipelineStageFlags NativeStages(PipelineStage stages)
+    private PipelineStageFlags NativeStages(PipelineStage stages)
     {
+        stages = owner.NormalizeStages(stages);
         if (stages == PipelineStage.AllCommands)
         {
             return PipelineStageFlags.AllCommandsBit;
         }
 
         PipelineStageFlags result = 0;
+        if ((stages & PipelineStage.MeshShader) != 0)
+        {
+            result |= PipelineStageFlags.MeshShaderBitExt;
+        }
+
+        if ((stages & PipelineStage.TaskShader) != 0)
+        {
+            result |= PipelineStageFlags.TaskShaderBitExt;
+        }
+
         if ((stages & PipelineStage.Copy) != 0)
         {
             result |= PipelineStageFlags.TransferBit;

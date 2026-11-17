@@ -11,7 +11,13 @@ internal sealed class Direct3D12Shader : IGraphicsShader
     {
         Owner = owner;
         Artifact = artifact;
-        _code = artifact.GetTarget(ShaderTarget.Dxil).Code.ToArray();
+        ShaderTargetData target = artifact.GetTarget(ShaderTarget.Dxil);
+        if (target.Stage is ShaderStage.Mesh or ShaderStage.Task)
+        {
+            MeshShaderValidation.Validate(target, owner.Caps);
+        }
+
+        _code = target.Code.ToArray();
         if (_code.Length < 32 || !_code.AsSpan(0, 4).SequenceEqual("DXBC"u8))
         {
             throw new ArgumentException("A DXIL container is required.", nameof(artifact));

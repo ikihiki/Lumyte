@@ -1,5 +1,5 @@
 // Only the Transitions verifier opts in; no production renderer configuration.
-// Reuse the existing hosted software gate so the next CI run emits diagnostics
+// Reuse the existing hosted software gate so the next CI run captures diagnostics
 // without workflow/Build.Validation changes; local runs can opt in independently.
 export function browserGpuTraceEnabled(environment = process.env) {
     return environment.LUMYTE_BROWSER_GPU_TRACE === "1"
@@ -24,7 +24,7 @@ export function installBrowserGpuTrace(target = globalThis) {
     const emit = value => safely(() => {
         if (count >= limit) return;
         count++;
-        target.console?.info("Browser GPU trace:", JSON.stringify({ ...value,
+        target.__lumyteCaptureDiagnosticEvent?.("Browser GPU trace: " + JSON.stringify({ ...value,
             ...(count === limit ? { truncated: true } : {}) }));
     });
     function wrap(object, name, asyncResult = false, observe) {

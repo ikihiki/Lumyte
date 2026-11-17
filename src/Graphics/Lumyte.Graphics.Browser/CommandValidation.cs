@@ -6,6 +6,7 @@ internal static class CommandValidation
 {
     internal static void Scope(BarrierScope scope)
     {
+        scope = new(MeshShaderValidation.NormalizeStages(scope.Stages, GraphicsFeatures.None), scope.Access);
         const PipelineStage Stages = PipelineStage.AllCommands | PipelineStage.Host;
         const ResourceAccess Access = ResourceAccess.HostRead | ResourceAccess.HostWrite | ResourceAccess.CopyRead | ResourceAccess.CopyWrite | ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite | ResourceAccess.ColorRead | ResourceAccess.ColorWrite | ResourceAccess.IndexRead | ResourceAccess.IndirectRead | ResourceAccess.DepthStencilRead | ResourceAccess.DepthStencilWrite;
         if ((scope.Stages & ~Stages) != 0 || (scope.Access & ~Access) != 0)
