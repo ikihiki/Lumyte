@@ -7,6 +7,8 @@ public sealed class RenderPreparationContext2D
 {
     private readonly DrawingResourceState2D _resources;
     private readonly bool _allowReturnedResources;
+    private long _otherWorkingBytes;
+    private Func<long>? _otherWorkingBytesSource;
 
     internal RenderPreparationContext2D(IGraphicDevice device, DrawingTargetInfo2D target, DrawingResourceState2D resources, DrawingArgumentPlan2D? argumentPlan = null, bool allowReturnedResources = false)
     {
@@ -43,7 +45,34 @@ public sealed class RenderPreparationContext2D
 
     internal long MaxWorkingBytes { get; init; } = 256L * 1024 * 1024;
 
-    internal long OtherWorkingBytes { get; set; }
+    // Budgeted forks request cumulative accounting when they read this value.
+    // Legacy reads stay inert. The source
+    // is memoized per group, and context forks preserve it without forcing it.
+    internal long OtherWorkingBytes
+    {
+        get
+        {
+            if (!EnforceWorkingBudget)
+            {
+                return _otherWorkingBytes;
+            }
+
+            if (_otherWorkingBytesSource is { } source)
+            {
+                long bytes = source();
+                _otherWorkingBytes = bytes;
+                _otherWorkingBytesSource = null;
+            }
+
+            return _otherWorkingBytes;
+        }
+
+        set
+        {
+            _otherWorkingBytes = value;
+            _otherWorkingBytesSource = null;
+        }
+    }
 
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
     /// <returns>A lifetime token containing no pipeline or shader state.</returns>
@@ -63,21 +92,37 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes, OtherWorkingBytes = OtherWorkingBytes };
+        return CopyWorkingBudget(new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes, ComputeShapeMembership = ComputeShapeMembership, MembershipService = MembershipService });
+    }
+
+    internal RenderPreparationContext2D WithWorkingLimit(long maximum)
+        => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources) { EnforceWorkingBudget = true, MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum), ComputeShapeMembership = ComputeShapeMembership, MembershipService = MembershipService });
+
+    internal void SetWorkingBytesSource(Func<long> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        _otherWorkingBytes = 0;
+        _otherWorkingBytesSource = source;
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);
 
-    internal RenderPreparationContext2D WithShapeMembership(Pipelines.CoverageMembershipService2D service) => new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources)
+    internal RenderPreparationContext2D WithShapeMembership(Pipelines.CoverageMembershipService2D service) => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources)
     {
         ComputeShapeMembership = true,
         MembershipService = service,
         EnforceWorkingBudget = true,
         MaxWorkingBytes = MaxWorkingBytes,
-        OtherWorkingBytes = OtherWorkingBytes,
-    };
+    });
 
     internal DrawRecordResources2D? RecordResources() => _resources.Records();
 
     internal SolidRectangleResources2D? RectangleResources() => _resources.Rectangles();
+
+    private RenderPreparationContext2D CopyWorkingBudget(RenderPreparationContext2D target)
+    {
+        target._otherWorkingBytes = _otherWorkingBytes;
+        target._otherWorkingBytesSource = _otherWorkingBytesSource;
+        return target;
+    }
 }

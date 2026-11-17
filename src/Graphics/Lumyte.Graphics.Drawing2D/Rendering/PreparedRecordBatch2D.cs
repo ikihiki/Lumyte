@@ -5,7 +5,7 @@ using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D
+internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
     private static readonly BarrierScope _read = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
     private readonly RenderPreparationContext2D _context;
@@ -46,9 +46,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
 
-    internal bool HasShapeMembership => _pages.Any(page => page.HasShapeMembership);
+    public bool EnforcesWorkingBudget => _context.ComputeShapeMembership || _context.EnforceWorkingBudget;
 
-    internal bool EnforcesWorkingBudget => _context.ComputeShapeMembership || _context.EnforceWorkingBudget;
+    internal bool HasShapeMembership => _pages.Any(page => page.HasShapeMembership);
 
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
@@ -121,9 +121,16 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
-        if (context.ComputeShapeMembership || context.EnforceWorkingBudget)
+        if (!context.EnforceWorkingBudget && (context.ComputeShapeMembership || context.ArgumentPlan.WorkingReferencesEnabled))
         {
-            DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes);
+            context = context.WithWorkingLimit(context.MaxWorkingBytes);
+        }
+
+        if (context.EnforceWorkingBudget)
+        {
+            context.ArgumentPlan.EnableWorkingReferenceBudget();
+            DrawingWorkingBudget2D.ValidateCumulative(context.OtherWorkingBytes, context.ArgumentPlan.EstimatedBytes, context.MaxWorkingBytes);
+            DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes - context.ArgumentPlan.EstimatedBytes);
         }
 
         DrawRecordResources2D? resources = context.RecordResources();
@@ -462,10 +469,13 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 return;
             }
 
-            if (_batch._context.ComputeShapeMembership || _batch._context.EnforceWorkingBudget)
+            bool membershipReferences = _batch._context.ComputeShapeMembership && Cpu.Records.Any(record => record.Kind is 4 or 5);
+            uint workingBuffers = membershipReferences ? Math.Max(7u, Cpu.BufferCount) : Cpu.BufferCount;
+            int workingSamplers = checked(_samplers.Count + (membershipReferences ? 1 : 0));
+            long workingReferenceBytes = checked(((long)workingBuffers + _views.Count + workingSamplers + 2) * 256);
+            if (_batch._context.EnforceWorkingBudget)
             {
-                // Account every page stream and packing/table overhead before the first
-                // native or upload allocation, including scenes without path records.
+                _batch._context.ArgumentPlan.ReserveWorkingReferences(Reservation, workingBuffers, _views.Count, workingSamplers);
                 long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
                 long peak = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + 32768 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
                 long complete = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + EstimateAllocationBytes());
@@ -613,12 +623,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 _membership = _batch.Own(new ShapeMembership2D(_batch._context.Device, (_batch._context.MembershipService?.Resources ?? _batch._resources).GetMembershipPipeline(), _records.Data, _numeric, _shapeMembership!, _shapeDispatches));
             }
 
-            if ((HasShapeMembership || _batch._context.EnforceWorkingBudget) && checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes) > _batch._context.MaxWorkingBytes)
-            {
-                throw new NotSupportedException("Shape membership preparation exceeds the working-byte budget.");
-            }
-
-            _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill);
+            ValidateCompleteWorkingCharge();
+            _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill, workingReferenceBytes);
         }
 
         internal void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target, uint first, uint count, Vector2 translation = default)
@@ -798,8 +804,17 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             return result;
         }
 
+        private void ValidateCompleteWorkingCharge()
+        {
+            if (_batch._context.EnforceWorkingBudget)
+            {
+                DrawingWorkingBudget2D.ValidateCumulative(_batch._context.OtherWorkingBytes, _batch.EstimatedBytes, _batch._context.MaxWorkingBytes);
+            }
+        }
+
         private async ValueTask MapAsync(CancellationToken token)
         {
+            ValidateCompleteWorkingCharge();
             foreach (IStream stream in _streams)
             {
                 await stream.MapAsync(token).ConfigureAwait(false);
@@ -820,6 +835,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             long copied = 0;
             try
             {
+                ValidateCompleteWorkingCharge();
                 Cpu.Resolve(null!, _sampler!);
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)

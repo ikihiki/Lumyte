@@ -5,6 +5,16 @@ namespace Lumyte.Graphics.Drawing2D;
 // No geometry arrays, normalization or path expansion; only budgeted identity tables grow.
 internal static class DrawingWorkingBudget2D
 {
+    internal static void ValidateCumulative(long previous, long current, long maximum)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(previous);
+        ArgumentOutOfRangeException.ThrowIfNegative(current);
+        if (maximum < 0 || previous > maximum || current > maximum - previous)
+        {
+            throw new NotSupportedException("Complete cumulative preparation charges exceed MaxWorkingBytes.");
+        }
+    }
+
     internal static long OwnedBytes(IEnumerable<IPreparedCommandBatch2D> batches, object? excludedOwner = null)
     {
         var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);

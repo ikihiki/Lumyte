@@ -13,7 +13,7 @@ internal static class CoverageMembershipAdmission2D
             return false;
         }
 
-        return Validate(context, commands);
+        return Validate(context.WithWorkingLimit(context.MaxWorkingBytes), commands);
     }
 
     private static bool Validate<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands)
@@ -34,7 +34,15 @@ internal static class CoverageMembershipAdmission2D
         ArgumentTableBindingLimits limits = caps.ArgumentTableBindingLimits;
         ulong maximum = Math.Min(Math.Min(caps.MaxBufferSize, caps.MaxStorageBufferBindingSize == 0 ? caps.MaxBufferSize : caps.MaxStorageBufferBindingSize), limits.MaximumBufferRangeBytes);
         maximum = Math.Min(maximum, int.MaxValue);
-        if (!DrawingWorkingBudget2D.TryValidate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes, out long working))
+        long priorBytes = context.OtherWorkingBytes;
+        long referenceBytes = context.ArgumentPlan.EstimatedBytes;
+        if (priorBytes > context.MaxWorkingBytes || referenceBytes > context.MaxWorkingBytes - priorBytes)
+        {
+            return false;
+        }
+
+        long remaining = context.MaxWorkingBytes - priorBytes - referenceBytes;
+        if (!DrawingWorkingBudget2D.TryValidate(commands, context.Target, remaining, out long working))
         {
             return false;
         }
@@ -104,7 +112,7 @@ internal static class CoverageMembershipAdmission2D
             }
 
             working = checked(working + 32768 + ((long)program.Instructions.Count * 8192) + ((long)Math.Max(1, program.Data.Count) * 96));
-            if (working > context.MaxWorkingBytes - context.OtherWorkingBytes)
+            if (working > remaining)
             {
                 return false;
             }

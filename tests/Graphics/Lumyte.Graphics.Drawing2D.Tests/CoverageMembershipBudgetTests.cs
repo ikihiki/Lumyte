@@ -201,7 +201,7 @@ public sealed class CoverageMembershipBudgetTests
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRoundedRectCommand2D> commands, CancellationToken cancellationToken = default)
         {
-            Other = context.OtherWorkingBytes;
+            Other = context.WithWorkingLimit(context.MaxWorkingBytes).OtherWorkingBytes;
             return ValueTask.FromResult<IPreparedCommandBatch2D>(Batch);
         }
     }

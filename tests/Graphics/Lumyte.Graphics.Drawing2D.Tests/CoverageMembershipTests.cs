@@ -12,6 +12,35 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Exercises membership contracts without native GPU execution.</summary>
 public sealed class CoverageMembershipTests
 {
+    /// <summary>Family and generic forks keep lazy prior accounting, service identity and the smaller cap.</summary>
+    [Fact]
+    public void MembershipForkPreservesLazyWorkingBudgetAndService()
+    {
+        var device = new ProfilingDevice();
+        using var resources = new DrawingResourceState2D(device);
+        using var plan = new DrawingArgumentPlan2D(device);
+        using var service = new CoverageMembershipService2D(device);
+        var context = new RenderPreparationContext2D(device, new() { Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment } }, resources, plan) { MaxWorkingBytes = 1000 };
+        int reads = 0;
+        context.SetWorkingBytesSource(() =>
+        {
+            reads++;
+            return 300;
+        });
+        RenderPreparationContext2D fork = context.WithShapeMembership(service).WithArgumentPlan(plan).WithWorkingLimit(500);
+        Assert.Equal(0, reads);
+        Assert.Equal(0, context.OtherWorkingBytes);
+        Assert.Equal(0, reads);
+        Assert.True(fork.ComputeShapeMembership);
+        Assert.True(fork.EnforceWorkingBudget);
+        Assert.Same(service, fork.MembershipService);
+        Assert.Equal(500, fork.MaxWorkingBytes);
+        Assert.Equal(300, fork.OtherWorkingBytes);
+        Assert.Equal(300, fork.OtherWorkingBytes);
+        Assert.Equal(1, reads);
+        Assert.Equal(500, fork.WithWorkingLimit(2000).MaxWorkingBytes);
+    }
+
     /// <summary>Reused and distinct passive declarations share only one build-local service.</summary>
     [Fact]
     public void ReusedDeclarationCreatesDistinctProcessorsAndOneService()
@@ -107,7 +136,12 @@ public sealed class CoverageMembershipTests
         FillPathCommand2D[] paths = list.Commands.Cast<FillPathCommand2D>().ToArray();
         Assert.True(CoverageMembershipAdmission2D.CanPrepare<FillPathCommand2D>(context, paths));
         using IPreparedCommandBatch2D prepared = await PreparedRecordBatch2D.PrepareAsync<FillPathCommand2D>(context, paths, default);
+        long collectingReferences = plan.EstimatedBytes;
+        Assert.True(plan.WorkingReferencesEnabled);
+        Assert.True(collectingReferences >= 256 + ((7 + 1 + 2) * 256));
+        Assert.True(Assert.IsAssignableFrom<IPreparedWorkingBudget2D>(prepared).EnforcesWorkingBudget);
         await plan.SealAsync();
+        Assert.True(collectingReferences >= plan.EstimatedBytes);
         PreparedRecordBatch2D records = Assert.IsType<PreparedRecordBatch2D>(prepared);
         Assert.True(records.HasShapeMembership);
         using var commands = new ProfilingCommands();
@@ -200,6 +234,60 @@ public sealed class CoverageMembershipTests
         using var graphCommands = new ProfilingCommands();
         graphPlan.Record(graphCommands);
         Assert.Equal(computeSupported ? 1 : 0, graphCommands.Events.OfType<ShapeMembershipArguments2D>().Count());
+    }
+
+    /// <summary>Every mask group reserves the full later binding generation, without counting its shared plan twice.</summary>
+    /// <returns>The asynchronous fake-device materialization check.</returns>
+    [Fact]
+    public async Task MembershipGroupsReserveFullReferencesBeforeMaterializationAsync()
+    {
+        var device = new ProfilingDevice { Caps = new() { ShaderTarget = ShaderTarget.SpirV, MaxBufferSize = 1UL << 30, MaxComputeInvocationsPerWorkgroup = 256, MaxComputeWorkgroupSizeX = 16, MaxComputeWorkgroupSizeY = 16, MaxComputeWorkgroupSizeZ = 1, MaxComputeWorkgroupsPerDimension = 65535 } };
+        using var resources = new DrawingResourceState2D(device);
+        using var plan = new DrawingArgumentPlan2D(device);
+        using var service = new CoverageMembershipService2D(device);
+        var context = new RenderPreparationContext2D(device, new() { Description = new() { Width = 16, Height = 16, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment } }, resources, plan);
+        var path = new PathBuilder2D();
+        path.MoveTo(new(1, 1));
+        path.LineTo(new(12, 2));
+        path.LineTo(new(2, 12));
+        path.Close();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillPath(path.Build(), new SRgba<float>(1, 0, 0, 1));
+        FillPathCommand2D[] commands = canvas.End().Commands.Cast<FillPathCommand2D>().ToArray();
+        var batches = new List<IPreparedCommandBatch2D>();
+        try
+        {
+            for (int i = 0; i < 128; i++)
+            {
+                context.SetWorkingBytesSource(() => DrawingWorkingBudget2D.OwnedBytes(batches, plan));
+                batches.Add(await PreparedRecordBatch2D.PrepareAsync<FillPathCommand2D>(context.WithShapeMembership(service), commands, default));
+            }
+
+            Assert.Equal(0, context.OtherWorkingBytes);
+            Assert.True(plan.WorkingReferencesEnabled);
+            Assert.False(plan.Registrations.IsMaterialized);
+            long collecting = plan.EstimatedBytes;
+            Assert.True(collecting >= 256 + (128L * (7 + 1 + 2) * 256));
+            await plan.SealAsync();
+            Assert.True(collecting >= plan.EstimatedBytes);
+            var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
+            Assert.All(batches, batch =>
+            {
+                Assert.True(Assert.IsAssignableFrom<IPreparedWorkingBudget2D>(batch).EnforcesWorkingBudget);
+                Assert.IsAssignableFrom<IRetainedMemory2D>(batch).AccountMemory(owners);
+            });
+            Assert.Equal(129, owners.Count);
+            Assert.Equal(plan.EstimatedBytes, owners[plan]);
+            Assert.Equal(owners.Values.Sum(), DrawingWorkingBudget2D.OwnedBytes(batches));
+        }
+        finally
+        {
+            foreach (IPreparedCommandBatch2D batch in batches)
+            {
+                batch.Dispose();
+            }
+        }
     }
 
     /// <summary>The planner rounds genuine pixel bounds to 16x16 dispatch groups.</summary>
