@@ -11,7 +11,7 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Creates the real sparse family through public typed declarations.</summary>
 public sealed partial class Drawing2DTests
 {
-    private static IRenderer2D CreateSparseOracleRenderer(IGraphicDevice device)
+    private static IRenderer2D CreateSparseOracleRenderer(IGraphicDevice device, bool legacyCircle = false)
     {
         IGraphicsShader vertex = device.CreateShader(DrawingShaders2D.Vertex);
         IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
@@ -33,7 +33,7 @@ public sealed partial class Drawing2DTests
             Definitions.Renderer definition = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: RetentionGpuLimits(3, 512, 64 * 1024 * 1024, 256 * 1024 * 1024))[
                 Renderer.FillRect()[SparseFillRect(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
                 Renderer.FillRoundedRect()[SparseFillRoundedRect(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
-                Renderer.FillCircle()[SparseFillCircle(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
+                Renderer.FillCircle()[legacyCircle ? StandardFillCircle() : SparseFillCircle(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
                 Renderer.DrawLine()[SparseDrawLine(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
                 Renderer.FillPath()[SparseFillPath(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
                 Renderer.StrokePath()[SparseStrokePath(CpuSparse(8 * 1024 * 1024, 64, 65536, 262144))],
