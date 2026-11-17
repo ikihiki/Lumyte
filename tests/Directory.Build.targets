@@ -1,0 +1,10 @@
+<Project>
+  <!-- Keep the existing xUnit v2 discovery, theory and fixture protocols. -->
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <AssemblyAttribute Include="Xunit.TestFrameworkAttribute">
+      <_Parameter1>Lumyte.Testing.CpuMethodTestFramework</_Parameter1>
+      <_Parameter2>$(AssemblyName)</_Parameter2>
+    </AssemblyAttribute>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/CpuMethodTestFramework.cs" Link="Testing/CpuMethodTestFramework.cs" />
+  </ItemGroup>
+</Project>

@@ -114,7 +114,7 @@ public sealed class BenchmarkCatalogTests
     public async Task FalloutRejectsInvalidModeBeforeBuildAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "invalid", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-mode", "invalid", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
     }
@@ -127,7 +127,7 @@ public sealed class BenchmarkCatalogTests
     {
         using var fixture = new BuildFixture();
         AddProject(fixture.Root, "Lumyte.Signals");
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "NotPresent", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-mode", "screen", "--benchmark-project", "NotPresent", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
     }
@@ -157,7 +157,7 @@ public sealed class BenchmarkCatalogTests
             File.WriteAllText(binary + ".inputs.json", """{"inputs_sha256":"stale","binary_sha256":"stale"}""");
         }
 
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("No-build benchmark outputs", result.Output + result.Error, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
@@ -189,14 +189,14 @@ public sealed class BenchmarkCatalogTests
         string dependency = Path.Combine(output, relative.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(dependency)!);
         File.WriteAllText(dependency, "first output");
-        BuildFixture.ProcessResult initial = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult initial = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
         Assert.True(initial.ExitCode == 0, initial.Output + initial.Error);
         int commands = fixture.Records("dotnet").Length;
         Assert.Equal(2, commands);
         Assert.Equal(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(output)))!, fixture.Records("dotnet")[^1].GetProperty("workingDirectory").GetString());
         Assert.Equal(Path.Combine(fixture.Root, "benchmarks", "Core", "Lumyte.Demo.Benchmark", "Lumyte.Demo.Benchmark.csproj"), fixture.Records("dotnet")[^1].GetProperty("environment").GetProperty("LUMYTE_BENCHMARK_PROJECT").GetString());
         File.WriteAllText(dependency, "replaced output");
-        BuildFixture.ProcessResult changed = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult changed = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-mode", "screen", "--benchmark-project", "Lumyte.Demo", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, changed.ExitCode);
         Assert.Contains("No-build benchmark outputs", changed.Output + changed.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
@@ -282,10 +282,10 @@ public sealed class BenchmarkCatalogTests
     {
         using var fixture = new BuildFixture();
         AddProject(fixture.Root, "Lumyte.Demo");
-        BuildFixture.ProcessResult missing = await fixture.RunAsync("BenchmarkCore", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult missing = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-project", "Lumyte.Demo", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, missing.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
-        BuildFixture.ProcessResult removed = await fixture.RunAsync("BenchmarkCore", "--benchmark-mode", "verify", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult removed = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-mode", "verify", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, removed.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.json")));
     }
@@ -311,12 +311,12 @@ public sealed class BenchmarkCatalogTests
         string output = Path.Combine(projectRoot, "bin", "Release", "net10.0");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "Lumyte.Animation.Benchmark.dll"), "fixture output");
-        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkAnimation", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult first = await fixture.RunAsync("Benchmark", "--benchmark-area", "animation", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
         Assert.True(first.ExitCode == 0, first.Output + first.Error);
         int commands = fixture.Records("dotnet").Length;
         Assert.Equal(2, commands);
         File.WriteAllText(source, "changed animation product");
-        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkAnimation", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("Benchmark", "--benchmark-area", "animation", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
@@ -348,12 +348,12 @@ public sealed class BenchmarkCatalogTests
         string output = Path.Combine(projectRoot, "bin", "Release", "net10.0");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "Lumyte.Input.Benchmark.dll"), "fixture output");
-        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkInput", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult first = await fixture.RunAsync("Benchmark", "--benchmark-area", "input", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
         Assert.True(first.ExitCode == 0, first.Output + first.Error);
         int commands = fixture.Records("dotnet").Length;
         Assert.Equal(2, commands);
         File.WriteAllText(Path.Combine(fixture.Root, "src", changedArea, "Product.cs"), "changed dependency");
-        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkInput", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("Benchmark", "--benchmark-area", "input", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
@@ -380,12 +380,12 @@ public sealed class BenchmarkCatalogTests
         string output = Path.Combine(projectRoot, "bin", "Release", "net10.0");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "Lumyte.Audio.Benchmark.dll"), "fixture output");
-        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkAudio", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult first = await fixture.RunAsync("Benchmark", "--benchmark-area", "audio", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
         Assert.True(first.ExitCode == 0, first.Output + first.Error);
         int commands = fixture.Records("dotnet").Length;
         Assert.Equal(2, commands);
         File.WriteAllText(source, "changed animation product");
-        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkAudio", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("Benchmark", "--benchmark-area", "audio", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
@@ -428,11 +428,11 @@ public sealed class BenchmarkCatalogTests
         string output = Path.Combine(project, "bin", "Release", "net10.0");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "Lumyte.Graphics.Drawing2D.Benchmark.dll"), "fixture output");
-        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkGraphics", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult first = await fixture.RunAsync("Benchmark", "--benchmark-area", "graphics", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
         Assert.True(first.ExitCode == 0, first.Output + first.Error);
         int commands = fixture.Records("dotnet").Length;
         File.WriteAllText(source, "changed input");
-        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkGraphics", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("Benchmark", "--benchmark-area", "graphics", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);
@@ -532,11 +532,11 @@ public sealed class BenchmarkCatalogTests
         string output = Path.Combine(project, "bin", "Release", "net10.0");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "Lumyte.UI.Benchmark.dll"), "fixture output");
-        BuildFixture.ProcessResult first = await fixture.RunAsync("BenchmarkUI", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult first = await fixture.RunAsync("Benchmark", "--benchmark-area", "ui", "--benchmark-mode", "screen", "--dotnet-path", fixture.DotnetTool);
         Assert.True(first.ExitCode == 0, first.Output + first.Error);
         int commands = fixture.Records("dotnet").Length;
         File.WriteAllText(source, "changed input");
-        BuildFixture.ProcessResult stale = await fixture.RunAsync("BenchmarkUI", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult stale = await fixture.RunAsync("Benchmark", "--benchmark-area", "ui", "--benchmark-mode", "screen", "--no-build", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, stale.ExitCode);
         Assert.Contains("No-build benchmark outputs", stale.Output + stale.Error, StringComparison.Ordinal);
         Assert.Equal(commands, fixture.Records("dotnet").Length);

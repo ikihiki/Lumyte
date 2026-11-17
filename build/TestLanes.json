@@ -302,5 +302,10 @@
     "Project": "tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj",
     "Default": "Cpu",
     "IntegrationClasses": []
+  },
+  {
+    "Project": "tests/Tools/Lumyte.TestRunner.Tests/Lumyte.TestRunner.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": []
   }
 ]

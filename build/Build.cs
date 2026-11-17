@@ -51,7 +51,8 @@ internal sealed partial class Build : FalloutBuild
     private string NodeExecutable => Node ?? FindExecutable("node");
 
     private Target Restore => definition => definition
-        .OnlyWhenDynamic(() => !NoRestore && !NoBuild)
+        .After(ValidateTest)
+        .OnlyWhenDynamic(() => !NoRestore && !NoBuild && TestNeedsCompilation)
         .Executes(async () =>
         {
             var arguments = new List<string> { "restore", Project ?? BuildSolution };
@@ -65,7 +66,7 @@ internal sealed partial class Build : FalloutBuild
 
     private Target Compile => definition => definition
         .DependsOn(Restore)
-        .OnlyWhenDynamic(() => !NoBuild)
+        .OnlyWhenDynamic(() => !NoBuild && TestNeedsCompilation)
         .Executes(async () =>
         {
             var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
@@ -137,6 +138,9 @@ internal sealed partial class Build : FalloutBuild
             ["LUMYTE_BUILD_ASSEMBLY"] = Assembly.GetExecutingAssembly().Location,
             ["LumyteAgilityChannel"] = SelectedAgilityChannel,
         };
+        overrides.TryAdd("LUMYTE_CPU_METHOD_PARALLELISM", null);
+        overrides.TryAdd("LUMYTE_TEST_SERIAL", null);
+
         // Browser project references can evaluate the same managed dependency
         // with distinct interop properties. Serialize publication to keep their
         // shared output paths from being written concurrently.

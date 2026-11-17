@@ -14,6 +14,7 @@ using static Lumyte.UI.Compose;
 namespace Lumyte.UI.Application.Tests;
 
 /// <summary>Checks standard EventSource profiling and retained resource lifecycle events.</summary>
+[Collection("Application profiling")]
 public sealed class ProfilingTests
 {
     /// <summary>Checks request/frame joins and repeated processing behind an asynchronous gate.</summary>

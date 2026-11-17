@@ -5,29 +5,27 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target Ci => definition => definition
-        .DependsOn(CiCpu, CiIntegration, CiGpu, CiBrowser, CiDistribution, TestAot, CiQuality, TestRust);
-
-    private Target CiNative => definition => definition
-        .DependsOn(TestIntegration);
-
-    private Target CiCpu => definition => definition
-        .DependsOn(TestCpu);
-
-    private Target CiIntegration => definition => definition
-        .DependsOn(TestIntegration);
-
-    private Target CiGpu => definition => definition
-        .DependsOn(TestGpu);
-
-    private Target CiBrowser => definition => definition
-        .DependsOn(TestBrowserContracts, TestWasm, TestBrowserAudio);
-
-    private Target CiDistribution => definition => definition
+    private Target Distribution => definition => definition
         .DependsOn(Samples, Pack);
 
-    private Target CiQuality => definition => definition
+    private Target Quality => definition => definition
         .DependsOn(CheckFormat, CheckNativeFormat, CheckMarkdown);
+
+    // CI is a genuine aggregate, not a second alias for each test lane.
+    private Target Ci => definition => definition
+        .DependsOn(Compile, Distribution, Quality)
+        .Executes(async () =>
+        {
+            await RunTestLaneAsync("Cpu").ConfigureAwait(false);
+            await RunTestLaneAsync("Integration").ConfigureAwait(false);
+            await RunTestLaneAsync("Gpu").ConfigureAwait(false);
+            await TestBrowserContractsAsync().ConfigureAwait(false);
+            await InstallWasmToolsAsync().ConfigureAwait(false);
+            await TestWasmAsync().ConfigureAwait(false);
+            await TestBrowserAudioAsync().ConfigureAwait(false);
+            await TestAotAsync().ConfigureAwait(false);
+            await TestRustAsync().ConfigureAwait(false);
+        });
 
     // Derive the host solution from the canonical list so new shared projects
     // automatically participate without maintaining multiple project inventories.

@@ -14,7 +14,7 @@ public sealed class RepositoryBuildTests
     public async Task TabsGateUsesActualEditorAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiTabs", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "tabs", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "test", "run"], Commands(records));
@@ -32,7 +32,7 @@ public sealed class RepositoryBuildTests
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiTabsAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "tabs", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Tabs.Sample", Arguments(publish));
@@ -49,7 +49,7 @@ public sealed class RepositoryBuildTests
     public async Task LayoutGateUsesCoreTestsAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiLayout", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "layout", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "run"], Commands(records));
@@ -66,7 +66,7 @@ public sealed class RepositoryBuildTests
     public async Task ScrollGateUsesCoreControlsAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScroll", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "scroll", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "test", "run"], Commands(records));
@@ -84,7 +84,7 @@ public sealed class RepositoryBuildTests
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScrollAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "scroll", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Scroll.Sample", Arguments(publish));
@@ -100,7 +100,7 @@ public sealed class RepositoryBuildTests
     public async Task NumericGateUsesActualEditorAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiNumeric", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "numeric", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "test", "test", "run"], Commands(records));
@@ -119,7 +119,7 @@ public sealed class RepositoryBuildTests
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiNumericAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "numeric", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Numeric.Sample", Arguments(publish));
@@ -137,7 +137,7 @@ public sealed class RepositoryBuildTests
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiCollectionsAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "collections", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Collections.Sample", Arguments(publish));

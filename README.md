@@ -15,9 +15,9 @@ dotnet run --project build -c Release -- --target Test
 - [サンプル一覧と共通ランチャー](samples/README.md)
 - [型付き項目と単一選択](src/UI/Lumyte.UI.Collections/README.md)／[既存Popupへのadapter](src/UI/Lumyte.UI.Controls.Windowing/README.md)
 - [テストの分類と実行手順](tests/README.md)／[ベンチマーク一覧](benchmarks/README.md)
-  - GraphicsのCPU計測: `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen`（GPUを含む統合計測とは別profile）。
-  - UIのCPU計測: `dotnet run --project build -c Release -- --target BenchmarkUI --benchmark-mode screen`。`--benchmark-list true`は未計測catalogを返す。
-  - UIの実backend・標準host計測は`BenchmarkUIIntegration`へ分離。明示的な`LUMYTE_UI_BENCHMARK_GPU=1`が必要。Desktopは所有displayを`LUMYTE_UI_BENCHMARK_OWNED_DISPLAY`と`DISPLAY`へ指定する。Browserは`benchmarks/UI/Shared/BrowserHost/BrowserHost.csproj`をpublishし、`LUMYTE_UI_BENCHMARK_BROWSER_ROOT`へwwwroot、`LUMYTE_UI_BENCHMARK_CHROME`へChrome実行ファイルを指定する。
+  - GraphicsのCPU計測: `dotnet run --project build -c Release -- --target Benchmark --benchmark-area graphics --benchmark-mode screen`（GPUを含む統合計測とは別profile）。
+  - UIのCPU計測: `dotnet run --project build -c Release -- --target Benchmark --benchmark-area ui --benchmark-mode screen`。`--benchmark-list true`は未計測catalogを返す。
+  - UIの実backend・標準host計測は`Benchmark --benchmark-area ui --benchmark-integrated`へ分離。明示的な`LUMYTE_UI_BENCHMARK_GPU=1`が必要。Desktopは所有displayを`LUMYTE_UI_BENCHMARK_OWNED_DISPLAY`と`DISPLAY`へ指定する。Browserは`benchmarks/UI/Shared/BrowserHost/BrowserHost.csproj`をpublishし、`LUMYTE_UI_BENCHMARK_BROWSER_ROOT`へwwwroot、`LUMYTE_UI_BENCHMARK_CHROME`へChrome実行ファイルを指定する。
   - UI初回計測では、未送信記録のnativeメモリ枯渇と1000要素の破棄済みbuffer参照を検出した。修正はnative所有権パッチと共有registrationの個別retirementで行い、失敗した旧測定値を新実装の性能値へ流用しない。[native再現・配布手順](native/wgpu_native/README.md)を参照。
   - UI統合の提示は所有仮想画面／Browser内の完了で、物理scanout・VSyncやOS IMEの計測ではない。矩形sceneの回帰検証を、文字・編集・実visual遷移を含む全面的な性能網羅とは扱わない。
 - [開発環境のセットアップ](docs/development-environment.md)
@@ -88,7 +88,7 @@ dotnet run --project build -c Release -- --target Test
 
 ソリューションは `Lumyte.slnx` を使用します。Falloutの`Test` targetで、
 `tests/` 内のソリューションに登録されたテストを実行します。
-CPUテストはLinux x64のCiCpuで一度だけ実行し、CiIntegration・CiGpu・Browser検証と並列化します。
+CPUテストはLinux x64のTest --lane cpuで一度だけ実行し、Test --lane integration・Test --lane gpu・Browser検証と並列化します。
 Linux／Windowsのx64／aarch64のnative build・integration検証と配布artifact収集は維持します。
 すべての push と PR を対象に、TRX 形式の結果を構成ごとに保存します。
 

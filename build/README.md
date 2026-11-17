@@ -50,11 +50,11 @@ build/
   Build.Testing.cs             CPU / integration / GPUの排他的選択
   TestLanes.json               test project既定と混在classの分類
   Build.Browser.cs             Browser publish・process検証
-  Build.UI.cs                  UIの機能別検証と互換入口
+  Build.UI.cs                  UIのシナリオカタログと共通検証
   Build.Diagnostics.cs         診断process・UI・gallery
   Build.Samples.cs             sample・AOT・publish
   Build.Quality.cs             format・lint
-  Build.Validation.cs          Text・Signals・window等の互換入口とログ
+  Build.Validation.cs          Text・Signals・window等の検証workerとログ
   Build.*.cs                  その他の機能別工程
   Directory.Build.props       親MSBuild設定の自動importを遮断
   Directory.Build.targets
@@ -72,6 +72,9 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 
 ## Target
 
+選択肢と旧入口からの移行は[task option migration](TASK-MIGRATION.md)を参照してください。
+レーン・UI feature・benchmark areaはtargetを増やさずオプションで選択します。
+
 | Target | 処理 |
 | --- | --- |
 | `Restore` / `Compile` / `Test` / `Clean` | 対象projectまたはsolutionの復元・build・test・clean。TestはTRXを保存 |
@@ -82,29 +85,29 @@ MSBuild hookはleaf targetだけを呼び、solution全体へ再入しません�
 | `CheckNativeFormat` / `FormatNative` | C/C++の書式検査／自動修正 |
 | `VerifyEnvironment` / `NativeSmoke` | 共通環境の検証／Slang・CMake・vcpkg・Native NuGet・P/Invoke・software GPUの検証 |
 | `Direct3D12Native` | 選択したAgility SDK・MSVC・CMakeによるDirect3D 12 native DLLのビルド。`--agility-channel Stable/Preview` と復元済み `--agility-sdk-root` を使用 |
-| `SetupWasm` / `TestWasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
-| `TestUiLayout` / `TestUiLayoutAot` | core layout全テストとフォント不要Headless配置画面／strict NativeAOT publishと実行 |
-| `TestUiControls` / `TestUiControlsAot` | Controlsの通常入力・意味情報と明示フォント付きHeadless設定画面／そのstrict NativeAOT publishと実行。前者は先にsolutionをCompile |
-| `TestUiMedia` | Media・Parley adapterの単体検査と実フォントを渡すHeadless sample（先にsolutionをCompile） |
-| `TestText` / `TestRust` | 共通Text・Parley／Rust shimのテスト |
-| `TestSignals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
-| `BenchmarkCore` / `BenchmarkAnimation` / `BenchmarkInput` | 対象別のカタログ列挙・method選択・BenchmarkDotNet測定 |
-| `BenchmarkCoreEvaluate` | [Coreのカテゴリ評価](../benchmarks/Core/README.md)。DI・連携を除外し、分割直列測定と予定／実測ケースの集計を実施 |
+| `SetupWasm` / `Test --suite wasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
+| `Test --suite ui --feature layout` / `Test --suite ui --feature layout --aot` | core layout全テストとフォント不要Headless配置画面／strict NativeAOT publishと実行 |
+| `Test --suite ui --feature controls` / `Test --suite ui --feature controls --aot` | Controlsの通常入力・意味情報と明示フォント付きHeadless設定画面／そのstrict NativeAOT publishと実行。前者は先にsolutionをCompile |
+| `Test --suite ui --feature media` | Media・Parley adapterの単体検査と実フォントを渡すHeadless sample（先にsolutionをCompile） |
+| `Test --suite text` / `Test --suite rust` | 共通Text・Parley／Rust shimのテスト |
+| `Test --suite signals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |
+| `Benchmark --benchmark-area core` / `Benchmark --benchmark-area animation` / `Benchmark --benchmark-area input` | 対象別のカタログ列挙・method選択・BenchmarkDotNet測定 |
+| `Benchmark --benchmark-area core --benchmark-evaluate` | [Coreのカテゴリ評価](../benchmarks/Core/README.md)。DI・連携を除外し、分割直列測定と予定／実測ケースの集計を実施 |
 | `ComponentScreeningPlan` / `ComponentScreeningRun` | PRの固定SHAから測定対象を選び、同一ハーネスで直列比較・解析・証拠保存。Pythonスクリプトは使用しない |
 | `ComponentScreeningNotify` | default branchの信頼済みrunnerで結果リンクをPRへ通知。測定workflowとは権限を分離 |
-| `TestBrowserContracts` / `TestWindowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
-| `TestBrowserAudio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
-| `TestDiagnosticsProcesses` / `TestDiagnosticsUi` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
+| `Test --suite browser-contracts` / `Test --suite windowing` | Graphics・Audio・WindowingのJavaScript契約／Linux X11の検証 |
+| `Test --suite browser-audio` | Browser Audioをpublishし、専用Python／Playwrightで検証 |
+| `Test --suite diagnostics-processes` / `Test --suite diagnostics-ui` | 診断プロセス通信／診断サーバーとWeb UIの検証 |
 | `DiagnosticGallery` | 検証結果から診断galleryを生成 |
-| `Samples` / `TestAot` | CPU・Audio等のsample／NativeAOT publishと実行 |
+| `Samples` / `Test --suite aot` | CPU・Audio等のsample／NativeAOT publishと実行 |
 | `PipelineBenchmark` / `PublishWindowSample` | Vulkan benchmarkの保存／単一Windowサンプルのpublish |
-| `TestCpu` / `CiCpu` | managed契約。Linux x64のみで実行 |
-| `TestIntegration` / `CiIntegration` | 外部tool・process・native libraryの契約 |
-| `TestGpu` / `CiGpu` | 実backend・pixel/readback。既存opt-in条件を維持 |
-| `CiNative` | integrationのrestore・build・test（CiIntegrationの互換名） |
-| `CiBrowser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
-| `CiDistribution` | sample実行・NuGet pack |
-| `CiQuality` | C#・C/C++・Markdownの書式検査 |
+| `Test --lane cpu` / `Test --lane cpu` | managed契約。Linux x64のみで実行 |
+| `Test --lane integration` / `Test --lane integration` | 外部tool・process・native libraryの契約 |
+| `Test --lane gpu` / `Test --lane gpu` | 実backend・pixel/readback。既存opt-in条件を維持 |
+| `Test --lane integration` | integrationのrestore・build・test（Test --lane integrationの互換名） |
+| `Test --suite browser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
+| `Distribution` | sample実行・NuGet pack |
+| `Quality` | C#・C/C++・Markdownの書式検査 |
 | `Ci` | CPU・integration・GPU・Browser・distribution・AOT・quality・Rust（CPUのためLinux x64限定） |
 
 X11には`xvfb-run`、Browser検証にはNodeとChromium／Chromeが必要です。`CHROME`で実行ファイルを指定できます。
@@ -113,8 +116,8 @@ GitHub Pagesの配信権限はCIから分離したままです。
 
 ### CIの対象と再利用
 
-CPUは独立したLinux x64 jobのCiCpuで一度だけ実行します。GPUも独立Linux x64 jobのCiGpuへ分離し、cold-cache容量試験とbackend/pixel検証を維持します。
-LinuxとWindowsは別jobとし、それぞれx64／arm64でbuildとCiIntegrationを実行します。Windows／ARMでCPU全suiteは繰り返しません。
+CPUは独立したLinux x64 jobのTest --lane cpuで一度だけ実行します。GPUも独立Linux x64 jobのTest --lane gpuへ分離し、cold-cache容量試験とbackend/pixel検証を維持します。
+LinuxとWindowsは別jobとし、それぞれx64／arm64でbuildとTest --lane integrationを実行します。Windows／ARMでCPU全suiteは繰り返しません。
 分類と混在projectの選択規則は[テスト手順](../tests/README.md#実行レーン)を参照してください。
 `--host-only`は正本の`Lumyte.slnx`から現在のOS用solutionを`artifacts/ci/`へ生成します。
 LinuxではWindows Platform・Direct3D12と専用sample／testを除外し、WindowsではLinux Platformを除外します。
@@ -151,11 +154,11 @@ project指定のない`Pack`は`src/`からhost・Parley除外条件に合うpro
 `IsPackable`は各projectのMSBuild評価に従い、復元・コンパイルは再実行しません。
 
 ```sh
-dotnet run --project build -c Release -- --target CiNative --host-only
-dotnet run --project build -c Release --no-build --no-restore -- --target CiDistribution --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
-dotnet run --project build -c Release --no-build --no-restore -- --target TestAot --host-only --no-build --no-restore
-dotnet run --project build -c Release --no-build --no-restore -- --target CiBrowser
-dotnet run --project build -c Release --no-build --no-restore -- --target CiQuality --host-only
+dotnet run --project build -c Release -- --target Test --lane integration --host-only
+dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
+dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --host-only --no-build --no-restore
+dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser
+dotnet run --project build -c Release --no-build --no-restore -- --target Quality --host-only
 ```
 
 ## ParleyのNative／WASM
@@ -247,7 +250,7 @@ dotnet run --project build -c Release -- --target VerifyNamedColors --project sr
 
 値の規則と明示的なreference更新は[保守tool](../tools/colors/Lumyte.NamedColors.Generator/README.md)を参照してください。
 
-C5の検証にはTestUiScroll（core/ControlsとHeadless画面）およびTestUiScrollAot（strict NativeAOTとnative実行）を使う。
+C5の検証にはTest --suite ui --feature scroll（core/ControlsとHeadless画面）およびTest --suite ui --feature scroll --aot（strict NativeAOTとnative実行）を使う。
 
 ## 修正済みwgpu-native
 
@@ -259,11 +262,11 @@ dotnet run --project build -c Release -- --target WgpuNative --output artifacts/
 
 ソースpin・必要なnative compiler/libclang・override・全RIDのpack条件は[native手順](../native/wgpu_native/README.md)を参照してください。未収集の他RIDをhostのbinaryで代用しません。修正前のUI測定データは旧baseの記録として保持し、修正後の結果と混ぜません。
 
-タブと折り畳みの検証にはTestUiTabs（通常入力と実編集接続）とTestUiTabsAot（strict NativeAOTの実行）を使う。
+タブと折り畳みの検証にはTest --suite ui --feature tabs（通常入力と実編集接続）とTest --suite ui --feature tabs --aot（strict NativeAOTの実行）を使う。
 
-C7の検証にはTestUiCollections（項目所有権・選択・Popupと明示fontのHeadless画面）とTestUiCollectionsAot（strict NativeAOTとnative実行）を使う。
+C7の検証にはTest --suite ui --feature collections（項目所有権・選択・Popupと明示fontのHeadless画面）とTest --suite ui --feature collections --aot（strict NativeAOTとnative実行）を使う。
 
-C6の検証にはTestUiNumeric（Controls・TextEditing・Automationと実editorのHeadless画面）およびTestUiNumericAot（strict NativeAOTとnative実行）を使う。sampleには明示的なfont fileを渡す。
+C6の検証にはTest --suite ui --feature numeric（Controls・TextEditing・Automationと実editorのHeadless画面）およびTest --suite ui --feature numeric --aot（strict NativeAOTとnative実行）を使う。sampleには明示的なfont fileを渡す。
 
-メニューと受動tooltipの検証にはTestUiMenus（Controls・Windowingの通常入力と公開Headless画面）、
-TestUiMenusAot（strict NativeAOTのpublishと実行）を使います。サンプルは明示fontを受け取ります。
+メニューと受動tooltipの検証にはTest --suite ui --feature menus（Controls・Windowingの通常入力と公開Headless画面）、
+Test --suite ui --feature menus --aot（strict NativeAOTのpublishと実行）を使います。サンプルは明示fontを受け取ります。

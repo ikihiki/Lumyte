@@ -7,30 +7,113 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
+    [Parameter("Test lane: all, cpu, integration, or gpu (managed suite only).")]
+    public string Lane { get; set; } = "all";
+
+    [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust.")]
+    public string Suite { get; set; } = "managed";
+
+    [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, numeric, application, navigation, or pages.")]
+    public string? Feature { get; set; }
+
+    [Parameter("Publish and execute the selected UI feature using strict NativeAOT.")]
+    public bool Aot { get; set; }
+
+    [Parameter("Maximum concurrent CPU test methods per assembly (1-64).")]
+    public int TestConcurrency { get; set; } = 4;
+
     private Target Test => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
+        .DependsOn(PrepareTest)
+        .Executes(RunSelectedTestsAsync);
+
+    private Target PrepareTest => definition => definition
+        .DependsOn(ValidateTest, Compile);
+
+    private Target ValidateTest => definition => definition.Executes(() =>
+    {
+        if (Lane is not ("all" or "cpu" or "integration" or "gpu"))
         {
-            await DotNetAsync("test", Project ?? BuildSolution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
-        });
+            throw new ArgumentException("Invalid --lane. Expected all, cpu, integration, or gpu.");
+        }
 
-    private Target TestCpu => definition => definition
-        .DependsOn(Compile)
-        .Executes(() => RunTestLaneAsync("Cpu"));
+        if (Suite is not ("managed" or "ui" or "aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "diagnostics-processes" or "diagnostics-ui" or "signals" or "text" or "windowing" or "rust"))
+        {
+            throw new ArgumentException("Invalid --suite. See --help for supported suites.");
+        }
 
-    private Target TestIntegration => definition => definition
-        .DependsOn(Compile)
-        .Executes(() => RunTestLaneAsync("Integration"));
+        if (TestConcurrency is < 1 or > 64)
+        {
+            throw new ArgumentException("--test-concurrency must be between 1 and 64.");
+        }
 
-    private Target TestGpu => definition => definition
-        .DependsOn(Compile)
-        .Executes(() => RunTestLaneAsync("Gpu"));
+        if (Suite != "managed" && Lane != "all")
+        {
+            throw new ArgumentException("--lane is only supported with --suite managed; feature suites include samples and process checks.");
+        }
+
+        if (Suite == "ui")
+        {
+            ValidateUiFeature();
+        }
+        else if (Feature is not null || Aot)
+        {
+            throw new ArgumentException("--feature and --aot require --suite ui.");
+        }
+
+        if (Project is not null && Suite != "managed")
+        {
+            throw new ArgumentException("--project is only supported with --suite managed.");
+        }
+    });
+
+    private bool TestNeedsCompilation => Suite is not ("aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "rust") && !Aot;
+
+    private async Task RunSelectedTestsAsync()
+    {
+        switch (Suite)
+        {
+            case "managed":
+                if (Lane != "all")
+                {
+                    await RunTestLaneAsync(Lane switch { "cpu" => "Cpu", "integration" => "Integration", _ => "Gpu" }).ConfigureAwait(false);
+                }
+                else
+                {
+                    await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["LUMYTE_CPU_METHOD_PARALLELISM"] = null }, "test", Project ?? BuildSolution, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1", "--logger", "trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results")).ConfigureAwait(false);
+                }
+
+                break;
+            case "ui": await RunUiFeatureAsync().ConfigureAwait(false); break;
+            case "aot": await TestAotAsync().ConfigureAwait(false); break;
+            case "browser":
+                await TestBrowserContractsAsync().ConfigureAwait(false);
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+                await TestWasmAsync().ConfigureAwait(false);
+                await TestBrowserAudioAsync().ConfigureAwait(false);
+                break;
+            case "wasm":
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+                await TestWasmAsync().ConfigureAwait(false);
+                break;
+            case "browser-audio":
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+                await TestBrowserAudioAsync().ConfigureAwait(false);
+                break;
+            case "browser-contracts": await TestBrowserContractsAsync().ConfigureAwait(false); break;
+            case "diagnostics-processes": await TestDiagnosticsProcessesAsync().ConfigureAwait(false); break;
+            case "diagnostics-ui": await TestDiagnosticsUiAsync().ConfigureAwait(false); break;
+            case "signals": await TestSignalsAsync().ConfigureAwait(false); break;
+            case "text": await TestTextAsync().ConfigureAwait(false); break;
+            case "windowing": await TestWindowingAsync().ConfigureAwait(false); break;
+            case "rust": await TestRustAsync().ConfigureAwait(false); break;
+        }
+    }
 
     private async Task RunTestLaneAsync(string lane)
     {
         if (lane == "Cpu" && (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64))
         {
-            throw new PlatformNotSupportedException("The CPU suite runs only on Linux x64. Use TestIntegration/TestGpu on other hosts.");
+            throw new PlatformNotSupportedException("The CPU suite runs only on Linux x64. Use Test --lane integration or gpu on other hosts.");
         }
 
         TestLane[] catalog = JsonSerializer.Deserialize<TestLane[]>(await File.ReadAllTextAsync(Path.Combine(RepositoryDirectory, "build", "TestLanes.json")).ConfigureAwait(false))!;
@@ -60,7 +143,7 @@ internal sealed partial class Build
             throw new InvalidDataException("TestLanes.json contains duplicate projects or an invalid default lane.");
         }
 
-        var environment = new Dictionary<string, string?>();
+        var environment = new Dictionary<string, string?> { ["LUMYTE_TEST_SERIAL"] = lane == "Cpu" ? null : "1", ["LUMYTE_CPU_METHOD_PARALLELISM"] = lane == "Cpu" ? TestConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };
         if (lane == "Cpu")
         {
             foreach (string key in Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(key => key.StartsWith("LUMYTE_", StringComparison.Ordinal) && (key.Contains("TEST", StringComparison.Ordinal) || key.Contains("BENCHMARK", StringComparison.Ordinal) || key.Contains("GPU", StringComparison.Ordinal))))
@@ -69,6 +152,7 @@ internal sealed partial class Build
             }
         }
 
+        int launched = 0;
         foreach (TestLane entry in catalog)
         {
             string path = Path.GetFullPath(entry.Project, RepositoryDirectory);
@@ -83,8 +167,14 @@ internal sealed partial class Build
                 continue;
             }
 
+            launched++;
             await DotNetWithEnvironmentAsync(environment, "test", path, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1",
                 "--filter", filter, "--logger", $"trx;LogFileName={Path.GetFileNameWithoutExtension(path)}.trx", "--results-directory", Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant())).ConfigureAwait(false);
+        }
+
+        if (launched == 0)
+        {
+            throw new ArgumentException("No classified host test projects match the requested lane/project selection.");
         }
     }
 

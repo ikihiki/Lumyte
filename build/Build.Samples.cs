@@ -8,9 +8,7 @@ internal sealed partial class Build
         .DependsOn(Compile)
         .Executes(RunSamplesAsync);
 
-    private Target TestAot => definition => definition
-        .DependsOn(Compile)
-        .Executes(RunAotSamplesAsync);
+    private Task TestAotAsync() => RunAotSamplesAsync();
 
     private Target PublishWindowSample => definition => definition
         .DependsOn(Compile)

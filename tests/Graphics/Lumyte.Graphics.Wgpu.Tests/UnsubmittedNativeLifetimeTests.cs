@@ -6,6 +6,9 @@ using Xunit.Abstractions;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
+// The filtered CPU lane contains no native-device/callback cases; keep default and GPU runs serial.
+[assembly: System.Reflection.AssemblyMetadata("Lumyte.CpuMethodParallelism", "true")]
+
 namespace Lumyte.Graphics.Wgpu.Tests;
 
 /// <summary>Runs panic-prone native ownership regressions in bounded, owned subprocesses.</summary>

@@ -7,38 +7,37 @@ namespace Lumyte.Build.Tests;
 public sealed class TestLaneTests
 {
     /// <summary>Each tier carries an exclusive test filter and isolated result directory.</summary>
-    /// <param name="target">The public entry point.</param>
+    /// <param name="lane">The public entry point.</param>
     /// <param name="expected">The selected filter fragment.</param>
     /// <returns>The completed process assertion.</returns>
     [Theory]
-    [InlineData("TestCpu", "Execution!=Integration")]
-    [InlineData("CiCpu", "Execution!=Integration")]
-    [InlineData("TestIntegration", "Execution=Integration")]
-    [InlineData("CiIntegration", "Execution=Integration")]
-    [InlineData("CiNative", "Execution=Integration")]
-    [InlineData("TestGpu", "Execution=Gpu")]
-    [InlineData("CiGpu", "Execution=Gpu")]
+    [InlineData("cpu", "Execution!=Integration")]
+    [InlineData("integration", "Execution=Integration")]
+    [InlineData("gpu", "Execution=Gpu")]
     [Trait("Execution", "Integration")]
-    public async Task LaneSelectsExclusiveFilterAsync(string target, string expected)
+    public async Task LaneSelectsExclusiveFilterAsync(string lane, string expected)
     {
-        if (target.EndsWith("Cpu", StringComparison.Ordinal) && (!OperatingSystem.IsLinux() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64))
+        if (lane == "cpu" && (!OperatingSystem.IsLinux() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64))
         {
             return;
         }
 
         using var fixture = new BuildFixture();
         PrepareCatalog(fixture);
+        fixture.Environment["LUMYTE_CPU_METHOD_PARALLELISM"] = "63";
         fixture.Environment["LUMYTE_GRAPHICS_GPU_TESTS"] = "1";
         fixture.Environment["LUMYTE_OPENAL_TESTS"] = "1";
         fixture.Environment["LUMYTE_UI_BENCHMARK_GPU"] = "1";
-        BuildFixture.ProcessResult result = await fixture.RunAsync(target, "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--lane", lane, "--dotnet-path", fixture.DotnetTool, "--no-build");
         Assert.Equal(0, result.ExitCode);
         JsonElement record = Assert.Single(fixture.Records("dotnet"));
         string[] arguments = record.GetProperty("arguments").EnumerateArray().Select(value => value.GetString()!).ToArray();
         Assert.Contains(expected, arguments[Array.IndexOf(arguments, "--filter") + 1], StringComparison.Ordinal);
         Assert.Contains("--no-build", arguments);
         Assert.Contains("--no-restore", arguments);
-        if (target.EndsWith("Cpu", StringComparison.Ordinal))
+        Assert.Equal(lane == "cpu" ? null : "1", record.GetProperty("environment").GetProperty("LUMYTE_TEST_SERIAL").GetString());
+        Assert.Equal(lane == "cpu" ? "4" : null, record.GetProperty("environment").GetProperty("LUMYTE_CPU_METHOD_PARALLELISM").GetString());
+        if (lane == "cpu")
         {
             foreach (string key in new[] { "LUMYTE_GRAPHICS_GPU_TESTS", "LUMYTE_OPENAL_TESTS", "LUMYTE_UI_BENCHMARK_GPU" })
             {
@@ -56,7 +55,7 @@ public sealed class TestLaneTests
         using var fixture = new BuildFixture();
         PrepareCatalog(fixture);
         File.WriteAllText(Path.Combine(fixture.Root, "build", "TestLanes.json"), "[]");
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestIntegration", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--lane", "integration", "--dotnet-path", fixture.DotnetTool, "--no-build");
         Assert.NotEqual(0, result.ExitCode);
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.jsonl")));
         Assert.Contains("Classify", result.Output + result.Error, StringComparison.Ordinal);

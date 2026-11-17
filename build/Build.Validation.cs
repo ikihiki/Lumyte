@@ -13,33 +13,30 @@ internal sealed partial class Build
         ["PYTHONNOUSERSITE"] = "1",
     };
 
-    private Target TestSignals => definition => definition
+    private async Task TestSignalsAsync()
+    {
+        await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+        await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+        await DotNetAsync("test", "tests/Core/Lumyte.Signals.Benchmarks.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+        await DotNetAsync("run", "--project", "samples/Lumyte.UI.Functions.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+    }
+
+    private Target BenchmarkSignals => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
         {
-            await DotNetAsync("test", "tests/Core/Lumyte.Signals.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            await DotNetAsync("run", "--project", "samples/Lumyte.Signals.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            await DotNetAsync("test", "tests/Core/Lumyte.Signals.Benchmarks.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            await DotNetAsync("run", "--project", "samples/Lumyte.UI.Functions.Sample", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-        });
-
-    private Target BenchmarkSignals => definition => definition
-        .DependsOn(TestSignals)
-        .Executes(async () =>
-        {
+            await TestSignalsAsync().ConfigureAwait(false);
             await DotNetAsync("run", "--project", "benchmarks/Core/Lumyte.Signals.Benchmark", "-c", Configuration, "--no-build", "--no-restore",
                 "--", "--filter", "*", "--artifacts", Path.Combine(ArtifactRoot, "signals-benchmarks")).ConfigureAwait(false);
         });
 
-    private Target TestText => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
+    private async Task TestTextAsync()
+    {
+        foreach (string project in new[] { "tests/Graphics/Lumyte.Graphics.Text.Tests", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests" })
         {
-            foreach (string project in new[] { "tests/Graphics/Lumyte.Graphics.Text.Tests", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests" })
-            {
-                await DotNetAsync("test", project, "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
-            }
-        });
+            await DotNetAsync("test", project, "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+        }
+    }
 
     private Target PipelineBenchmark => definition => definition
         .DependsOn(Compile)
@@ -49,19 +46,17 @@ internal sealed partial class Build
                 "run", "--project", "samples/Lumyte.Graphics.DeviceCaps.Sample", "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
         });
 
-    private Target TestWindowing => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
+    private async Task TestWindowingAsync()
+    {
+        if (!OperatingSystem.IsLinux())
         {
-            if (!OperatingSystem.IsLinux())
-            {
-                throw new PlatformNotSupportedException("The native X11 test target requires Linux and xvfb-run.");
-            }
+            throw new PlatformNotSupportedException("The native X11 test target requires Linux and xvfb-run.");
+        }
 
-            await ToolAsync("xvfb-run", "-a", DotNetExecutable, "test", "tests/Platform/Lumyte.Platform.Tests", "-c", Configuration,
-                "--no-build", "--no-restore", "--filter", "FullyQualifiedName~LinuxNativeTests", "--logger", "trx",
-                "--results-directory", Path.Combine(ArtifactRoot, "test-results", "x11")).ConfigureAwait(false);
-        });
+        await ToolAsync("xvfb-run", "-a", DotNetExecutable, "test", "tests/Platform/Lumyte.Platform.Tests", "-c", Configuration,
+            "--no-build", "--no-restore", "--filter", "FullyQualifiedName~LinuxNativeTests", "--logger", "trx",
+            "--results-directory", Path.Combine(ArtifactRoot, "test-results", "x11")).ConfigureAwait(false);
+    }
 
     private async Task CaptureValidationLogAsync(string name, Func<Task<string>> action)
     {

@@ -7,26 +7,22 @@ internal sealed partial class Build
     [Parameter("Repository whose successful diagnostic gallery artifacts are collected.")]
     public string? GalleryRepository { get; set; }
 
-    private Target TestDiagnosticsProcesses => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
-        {
-            await PythonAsync("tools/diagnostics/communication-smoke.py", "--dotnet", DotNetExecutable,
-                "--configuration", Configuration, "--output", Path.Combine(ArtifactRoot, "test-results", "diagnostics-communication", "processes")).ConfigureAwait(false);
-        });
+    private async Task TestDiagnosticsProcessesAsync()
+    {
+        await PythonAsync("tools/diagnostics/communication-smoke.py", "--dotnet", DotNetExecutable,
+            "--configuration", Configuration, "--output", Path.Combine(ArtifactRoot, "test-results", "diagnostics-communication", "processes")).ConfigureAwait(false);
+    }
 
-    private Target TestDiagnosticsUi => definition => definition
-        .DependsOn(Compile)
-        .Executes(async () =>
+    private async Task TestDiagnosticsUiAsync()
+    {
+        await DotNetAsync("publish", "src/Diagnostics/Lumyte.Diagnostics.Server", "-c", Configuration, "--no-build", "--no-restore",
+            "-o", Path.Combine(ArtifactRoot, "diagnostics-ui-server")).ConfigureAwait(false);
+        await ToolWithEnvironmentAsync(NodeExecutable, new Dictionary<string, string?>
         {
-            await DotNetAsync("publish", "src/Diagnostics/Lumyte.Diagnostics.Server", "-c", Configuration, "--no-build", "--no-restore",
-                "-o", Path.Combine(ArtifactRoot, "diagnostics-ui-server")).ConfigureAwait(false);
-            await ToolWithEnvironmentAsync(NodeExecutable, new Dictionary<string, string?>
-            {
-                ["DOTNET"] = DotNetExecutable,
-                ["LUMYTE_CONFIGURATION"] = Configuration,
-            }, "tools/diagnostics/verify-browser.mjs").ConfigureAwait(false);
-        });
+            ["DOTNET"] = DotNetExecutable,
+            ["LUMYTE_CONFIGURATION"] = Configuration,
+        }, "tools/diagnostics/verify-browser.mjs").ConfigureAwait(false);
+    }
 
     private Target DiagnosticGallery => definition => definition
         .Executes(async () =>

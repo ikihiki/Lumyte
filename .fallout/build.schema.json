@@ -13,27 +13,12 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
-        "BenchmarkAnimation",
-        "BenchmarkAudio",
-        "BenchmarkCore",
-        "BenchmarkCoreEvaluate",
-        "BenchmarkGraphics",
-        "BenchmarkGraphicsIntegration",
-        "BenchmarkInput",
+        "Benchmark",
         "BenchmarkSignals",
-        "BenchmarkUI",
-        "BenchmarkUIIntegration",
         "CheckFormat",
         "CheckMarkdown",
         "CheckNativeFormat",
         "Ci",
-        "CiBrowser",
-        "CiCpu",
-        "CiDistribution",
-        "CiGpu",
-        "CiIntegration",
-        "CiNative",
-        "CiQuality",
         "Clean",
         "Compile",
         "ComponentScreeningNotify",
@@ -43,6 +28,7 @@
         "DiagnosticGallery",
         "DiagnosticPreviews",
         "Direct3D12Native",
+        "Distribution",
         "FormatMarkdown",
         "FormatNative",
         "GenerateNamedColors",
@@ -52,9 +38,11 @@
         "ParleyWasm",
         "PipelineBenchmark",
         "PreparePublish",
+        "PrepareTest",
         "PrepareWasmTools",
         "Publish",
         "PublishWindowSample",
+        "Quality",
         "Restore",
         "Samples",
         "SetupDxc",
@@ -62,38 +50,8 @@
         "SetupParleyWasm",
         "SetupWasm",
         "Test",
-        "TestAot",
-        "TestBrowserAudio",
-        "TestBrowserContracts",
-        "TestCpu",
-        "TestDiagnosticsProcesses",
-        "TestDiagnosticsUi",
-        "TestGpu",
-        "TestIntegration",
-        "TestRust",
-        "TestSignals",
-        "TestText",
-        "TestUiApplication",
-        "TestUiCollections",
-        "TestUiCollectionsAot",
-        "TestUiControls",
-        "TestUiControlsAot",
-        "TestUiLayout",
-        "TestUiLayoutAot",
-        "TestUiMedia",
-        "TestUiMenus",
-        "TestUiMenusAot",
-        "TestUiNavigation",
-        "TestUiNumeric",
-        "TestUiNumericAot",
-        "TestUiPages",
-        "TestUiScroll",
-        "TestUiScrollAot",
-        "TestUiTabs",
-        "TestUiTabsAot",
-        "TestWasm",
-        "TestWindowing",
         "UsvgNative",
+        "ValidateTest",
         "VerifyEnvironment",
         "VerifyNamedColors",
         "VerifySdk",
@@ -186,13 +144,29 @@
           "type": "string",
           "description": "Restored Microsoft.Direct3D.D3D12 package directory containing the selected Agility SDK"
         },
+        "Aot": {
+          "type": "boolean",
+          "description": "Publish and execute the selected UI feature using strict NativeAOT"
+        },
+        "BenchmarkArea": {
+          "type": "string",
+          "description": "Benchmark area: core, animation, input, audio, graphics, or ui"
+        },
         "BenchmarkCategory": {
           "type": "string",
           "description": "Optional BenchmarkDotNet category filter across selected projects"
         },
+        "BenchmarkEvaluate": {
+          "type": "boolean",
+          "description": "Evaluate Core in isolated serial method partitions"
+        },
         "BenchmarkFilter": {
           "type": "string",
           "description": "BenchmarkDotNet method filter for selected projects"
+        },
+        "BenchmarkIntegrated": {
+          "type": "boolean",
+          "description": "Include hardware-integrated Graphics/UI benchmarks"
         },
         "BenchmarkList": {
           "type": "boolean",
@@ -208,7 +182,7 @@
         },
         "BenchmarkTimeoutSeconds": {
           "type": "number",
-          "description": "Deadline seconds, up to 900: shared for BenchmarkCore; per build/catalog/Type.Method partition for BenchmarkCoreEvaluate"
+          "description": "Deadline seconds, up to 900: shared for Benchmark --benchmark-area core; per build/catalog/Type.Method partition for Benchmark --benchmark-area core --benchmark-evaluate"
         },
         "Cache": {
           "type": "string",
@@ -230,6 +204,10 @@
           "type": "string",
           "description": "Emscripten SDK tools directory from the .NET wasm-tools workload"
         },
+        "Feature": {
+          "type": "string",
+          "description": "UI feature: layout, controls, media, scroll, menus, tabs, collections, numeric, application, navigation, or pages"
+        },
         "GalleryRepository": {
           "type": "string",
           "description": "Repository whose successful diagnostic gallery artifacts are collected"
@@ -237,6 +215,10 @@
         "HostOnly": {
           "type": "boolean",
           "description": "Build and package only projects supported by the current host OS"
+        },
+        "Lane": {
+          "type": "string",
+          "description": "Test lane: all, cpu, integration, or gpu (managed suite only)"
         },
         "NoBuild": {
           "type": "boolean",
@@ -321,6 +303,15 @@
         "Solution": {
           "type": "string",
           "description": "Solution to restore, compile and test"
+        },
+        "Suite": {
+          "type": "string",
+          "description": "Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust"
+        },
+        "TestConcurrency": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Maximum concurrent CPU test methods per assembly (1-64)"
         },
         "Toolchain": {
           "type": "string",

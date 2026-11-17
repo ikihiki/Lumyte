@@ -19,4 +19,4 @@ GPU initialization occurs only in GlobalSetup, not catalog/list discovery. Execu
 
 The guard independently enumerates physical-device index zero using public Silk.NET Vulkan APIs, requires exactly one adapter, and checks integrated Radeon 8060S vendor 0x1002 / device 0x1586 before creating VulkanDevice at index zero. No reflection or software fallback. The test is genuinely skipped without opt-in; an incorrect manifest or hardware identity with opt-in fails.
 
-The category build owns BenchmarkGraphicsIntegration separately from CPU/default targets. Use the shared executable --catalog interface for untimed discovery; only Screening, Comparison and Diagnostic are purpose categories. Timing campaigns must run without competing builds/tests.
+The category build owns Benchmark --benchmark-area graphics --benchmark-integrated separately from CPU/default targets. Use the shared executable --catalog interface for untimed discovery; only Screening, Comparison and Diagnostic are purpose categories. Timing campaigns must run without competing builds/tests.

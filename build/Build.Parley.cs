@@ -50,8 +50,7 @@ internal sealed partial class Build
     private Target SetupParleyWasm => definition => definition
         .Executes(() => SetupAsync(wasm: true));
 
-    private Target TestRust => definition => definition
-        .Executes(RunRustTestsAsync);
+    private Task TestRustAsync() => RunRustTestsAsync();
 
     private Target PrepareWasmTools => definition => definition
         .Executes(async () =>

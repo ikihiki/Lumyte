@@ -130,11 +130,11 @@ run = "dotnet run --project build -c Release -- --target SetupParleyWasm"
 
 [tasks.test-text-parley]
 description = "Build and test the Parley and csbindgen text backend"
-run = "dotnet run --project build -c Release -- --target TestText"
+run = "dotnet run --project build -c Release -- --target Test --suite text"
 
 [tasks.test-wasm]
 description = "Publish and verify the .NET browser sample with real WebGPU"
-run = "dotnet run --project build -c Release -- --target TestWasm"
+run = "dotnet run --project build -c Release -- --target Test --suite wasm"
 
 [tasks.build]
 description = "Compile the solution through the repository Fallout graph"

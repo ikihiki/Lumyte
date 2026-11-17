@@ -236,7 +236,7 @@ mise run setup-wasm
 CHROME=/usr/bin/google-chrome mise run test-wasm
 ```
 
-`test-wasm`はFalloutの`TestWasm`を呼び、Browserサンプルのtrimmed publishと実ブラウザー上の.NET／WebGPU検証を順に実行します。Parleyの文字組み・COLR v1・MSDF/MTSDFと、全28composite・gradient境界条件も同じBrowser検証で確認します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
+`test-wasm`はFalloutの`Test --suite wasm`を呼び、Browserサンプルのtrimmed publishと実ブラウザー上の.NET／WebGPU検証を順に実行します。Parleyの文字組み・COLR v1・MSDF/MTSDFと、全28composite・gradient境界条件も同じBrowser検証で確認します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
 
 既存 CI の Linux x64 ジョブで同じタスクを実行し、出力ログをテスト結果 artifact に保存します。Browser CIはChrome for Testing 156.0.8078.47を固定し、同梱のSwiftShader libraryとICD manifestの存在を検査してから起動します。runnerの可変なsystem Chromeには依存しません。ANGLEとDawnの両方でSwiftShaderを明示選択する共通起動設定を使います。
 

@@ -42,23 +42,23 @@ Lumyte.Mathematics.Benchmark
 
 ## 実行
 
-固定SDKをPATHへ設定し、リポジトリルートで実行する。通常の`BenchmarkCore`は単独method調査にも使える。
+固定SDKをPATHへ設定し、リポジトリルートで実行する。通常の`Benchmark --benchmark-area core`は単独method調査にも使える。
 
 ~~~sh
 # 全13projectのscreen対象を列挙する。時間測定はしない
-dotnet run --project build -c Release -- --target BenchmarkCoreEvaluate --benchmark-mode screen --benchmark-list --output artifacts/core-plan
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-evaluate --benchmark-mode screen --benchmark-list --output artifacts/core-plan
 
 # 全projectのscreen対象を直列測定・集計する
-dotnet run --project build -c Release -- --target BenchmarkCoreEvaluate --benchmark-mode screen --output artifacts/core-evaluation
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-evaluate --benchmark-mode screen --output artifacts/core-evaluation
 
 # 名前空間の階層で幾何の機能群を選ぶ
-dotnet run --project build -c Release -- --target BenchmarkCoreEvaluate --benchmark-mode screen --benchmark-project Lumyte.Mathematics --benchmark-filter "*GeometryQueries.*" --output artifacts/core-geometry
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-evaluate --benchmark-mode screen --benchmark-project Lumyte.Mathematics --benchmark-filter "*GeometryQueries.*" --output artifacts/core-geometry
 
 # 色名lookupのクラスだけを選ぶ
-dotnet run --project build -c Release -- --target BenchmarkCoreEvaluate --benchmark-mode screen --benchmark-project Lumyte.Mathematics --benchmark-filter "*ColorLookupBenchmarks.*" --output artifacts/core-color-lookup
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-evaluate --benchmark-mode screen --benchmark-project Lumyte.Mathematics --benchmark-filter "*ColorLookupBenchmarks.*" --output artifacts/core-color-lookup
 
 # 通常の単独method調査
-dotnet run --project build -c Release -- --target BenchmarkCore --benchmark-mode screen --benchmark-project Lumyte.Signals --benchmark-filter "*FanoutBenchmarks.Update" --output artifacts/core-fanout
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-mode screen --benchmark-project Lumyte.Signals --benchmark-filter "*FanoutBenchmarks.Update" --output artifacts/core-fanout
 ~~~
 
 `screen`は1 launch・warmup3・測定8 iterations・150ms target。
