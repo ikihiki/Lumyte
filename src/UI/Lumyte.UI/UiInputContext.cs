@@ -56,6 +56,15 @@ public readonly struct UiInputContext
     /// <returns>Whether a capture was released.</returns>
     public bool ReleasePointerCapture() => Input is UiPointerInput pointer && _surface.CancelPointer(pointer.PointerId, Receiver);
 
+    /// <summary>Cancels only this receiver's explicitly identified pointer series.</summary>
+    /// <param name="pointerId">The nonnegative series identity.</param>
+    /// <returns>Whether this receiver owned the capture.</returns>
+    public bool ReleasePointerCapture(long pointerId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(pointerId);
+        return _surface.CancelPointer(pointerId, Receiver);
+    }
+
     /// <summary>Requests focus for the eligible receiver without updating layout; a disconnected or disposed receiver returns false.</summary>
     /// <returns>Whether this receiver could be focused.</returns>
     public bool RequestFocus() => _surface.RequestFocus(Receiver);
@@ -67,4 +76,9 @@ public readonly struct UiInputContext
     /// <summary>Releases this receiver's key capture, notifying cancellation and retaining consumption until Up.</summary>
     /// <returns>Whether a capture was released.</returns>
     public bool ReleaseKeyCapture() => Input is UiKeyInput key && _surface.CancelKey(key.Key, Receiver);
+
+    /// <summary>Cancels only this receiver's explicitly identified key series.</summary>
+    /// <param name="key">The captured physical key.</param>
+    /// <returns>Whether this receiver owned the capture.</returns>
+    public bool ReleaseKeyCapture(Lumyte.Input.Abstractions.Key key) => _surface.CancelKey(key, Receiver);
 }

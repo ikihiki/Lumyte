@@ -101,14 +101,14 @@ internal sealed unsafe partial class Direct3D12CommandBuffer
     private void TextureBarrierNative(Direct3D12Texture texture, TextureBarrierDesc barrier)
     {
         TextureSubresourceRange range = barrier.Range;
-        NativeMethods.TextureDependency(Native, texture.Native, range.BaseMipLevel, range.MipLevelCount, range.BaseArrayLayer, range.ArrayLayerCount, TextureStateNative(barrier.BeforeState), TextureStateNative(barrier.AfterState), (uint)barrier.Before.Stages, (uint)barrier.Before.Access, (uint)barrier.After.Stages, (uint)barrier.After.Access);
+        NativeMethods.TextureDependency(Native, texture.Native, range.BaseMipLevel, range.MipLevelCount, range.BaseArrayLayer, range.ArrayLayerCount, TextureStateNative(barrier.BeforeState), TextureStateNative(barrier.AfterState), (uint)MeshShaderValidation.NormalizeStages(barrier.Before.Stages, Owner.Caps.Features), (uint)barrier.Before.Access, (uint)MeshShaderValidation.NormalizeStages(barrier.After.Stages, Owner.Caps.Features), (uint)barrier.After.Access);
     }
 
-    private void MemoryBarrierNative(MemoryBarrierDesc barrier) => NativeMethods.GlobalDependency(Native, (uint)barrier.Before.Stages, (uint)barrier.Before.Access, (uint)barrier.After.Stages, (uint)barrier.After.Access);
+    private void MemoryBarrierNative(MemoryBarrierDesc barrier) => NativeMethods.GlobalDependency(Native, (uint)MeshShaderValidation.NormalizeStages(barrier.Before.Stages, Owner.Caps.Features), (uint)barrier.Before.Access, (uint)MeshShaderValidation.NormalizeStages(barrier.After.Stages, Owner.Caps.Features), (uint)barrier.After.Access);
 
     private void BufferBarrierNative<T>(Direct3D12Buffer<T> buffer, BufferBarrierDesc<T> barrier)
         where T : unmanaged
-        => NativeMethods.BufferDependency(Native, buffer.Native, barrier.Buffer.OffsetInBytes, barrier.Buffer.SizeInBytes, (uint)barrier.Before.Stages, (uint)barrier.Before.Access, (uint)barrier.After.Stages, (uint)barrier.After.Access);
+        => NativeMethods.BufferDependency(Native, buffer.Native, barrier.Buffer.OffsetInBytes, barrier.Buffer.SizeInBytes, (uint)MeshShaderValidation.NormalizeStages(barrier.Before.Stages, Owner.Caps.Features), (uint)barrier.Before.Access, (uint)MeshShaderValidation.NormalizeStages(barrier.After.Stages, Owner.Caps.Features), (uint)barrier.After.Access);
 
     private IComputeEncoder BeginComputeNative() => new Direct3D12ComputeEncoder(this);
 

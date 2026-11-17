@@ -18,4 +18,7 @@ public enum GraphicsFeatures
 
     /// <summary>Indicates support for mesh shader stages.</summary>
     MeshShader = 8,
+
+    /// <summary>Indicates enabled task and mesh execution support.</summary>
+    TaskShader = 16,
 }

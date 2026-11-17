@@ -12,6 +12,6 @@ public sealed record ShaderCompilationDesc
     /// <summary>Gets the entry point stage.</summary>
     public ShaderStage Stage { get; init; } = ShaderStage.Compute;
 
-    /// <summary>Gets an optional output target; null compiles every supported target.</summary>
+    /// <summary>Gets an optional output target; null compiles all three targets for traditional stages and SPIR-V/DXIL for Mesh/Task.</summary>
     public ShaderTarget? Target { get; init; }
 }

@@ -64,6 +64,10 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
         _pipeline = commands.Owner.Own(value);
     }
 
+    public void SetPipeline(IMeshPipeline value) => throw new NotSupportedException("Mesh execution is not modeled by the CPU benchmark device.");
+
+    public void DrawMeshTasks(uint groupCountX, uint groupCountY = 1, uint groupCountZ = 1) => throw new NotSupportedException("Mesh execution is not modeled by the CPU benchmark device.");
+
     public void SetPipeline(IGraphicsComputePipeline value)
     {
         Check();

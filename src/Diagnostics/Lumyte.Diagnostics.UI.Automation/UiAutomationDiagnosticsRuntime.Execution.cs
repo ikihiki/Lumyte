@@ -39,7 +39,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  node.IsFocused,
  node.IsPressed,
  node.HasActivePress,
- new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, UiAutomationActions.Check, UiAutomationActions.SelectOption, }.Where(action => (node.Actions & action) != 0).Select(action => action == UiAutomationActions.SelectOption ? "select-option" : action.ToString().ToLowerInvariant()).ToArray(),
+ new[] { UiAutomationActions.Click, UiAutomationActions.Focus, UiAutomationActions.Edit, UiAutomationActions.Check, UiAutomationActions.SelectOption, UiAutomationActions.SetValue, UiAutomationActions.SetRange, }.Where(action => (node.Actions & action) != 0).Select(action => action switch { UiAutomationActions.SelectOption => "select-option", UiAutomationActions.SetValue => "set-value", UiAutomationActions.SetRange => "set-range", _ => action.ToString().ToLowerInvariant() }).ToArray(),
  node.IsTransitioning,
  node.Value,
  node.IsIndeterminate,
@@ -47,7 +47,8 @@ public sealed partial class UiAutomationDiagnosticsRuntime
  node.IsSelected,
  node.SelectionGroup?.Value.ToString(CultureInfo.InvariantCulture),
  node.OptionKey,
- node.SelectedKey);
+ node.SelectedKey,
+ node.Numeric is { } numeric ? new(numeric.Minimum, numeric.Maximum, numeric.Step, numeric.Value, numeric.Lower, numeric.Upper, numeric.IsValid) : null);
 
     private static LegacyRemoteSnapshot LegacySnapshot(UiRemoteSnapshot snapshot) => new(
         snapshot.SurfaceId,
@@ -57,7 +58,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             node.ParentId,
             node.TestId,
             node.Name,
-            node.Role is "scrollview" or "scrollbar" or "togglebutton" or "checkbox" or "switch" or "radiobutton" or "radiogroup" ? "none" : node.Role,
+            node.Role is "slider" or "rangeslider" or "scrollview" or "scrollbar" or "togglebutton" or "checkbox" or "switch" or "radiobutton" or "radiogroup" ? "none" : node.Role,
             node.Bounds,
             node.ClippedBounds,
             node.IsVisible,
@@ -67,10 +68,15 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             node.IsFocused,
             node.IsPressed,
             node.HasActivePress,
-            node.Actions.Where(action => action is not ("check" or "select-option")).ToArray(),
+            node.Actions.Where(action => action is not ("check" or "select-option" or "set-value" or "set-range")).ToArray(),
             node.IsTransitioning,
             node.Value,
             node.IsIndeterminate)).ToArray());
+
+    private static SelectionRemoteSnapshot SelectionSnapshot(UiRemoteSnapshot snapshot) => new(
+        snapshot.SurfaceId,
+        snapshot.Sequence,
+        snapshot.Nodes.Select(node => new SelectionRemoteNode(node.Id, node.ParentId, node.TestId, node.Name, node.Role is "slider" or "rangeslider" or "scrollview" or "scrollbar" ? "none" : node.Role, node.Bounds, node.ClippedBounds, node.IsVisible, node.IsEnabled, node.HitTestVisible, node.IsFocusable, node.IsFocused, node.IsPressed, node.HasActivePress, node.Actions.Where(action => action is not ("set-value" or "set-range")).ToArray(), node.IsTransitioning, node.Value, node.IsIndeterminate, node.IsChecked, node.IsSelected, node.SelectionGroup, node.OptionKey, node.SelectedKey)).ToArray());
 
     private static UiLocator Locate(UiAutomationPage page, UiRemoteLocatorStep[] steps)
     {
@@ -83,7 +89,7 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             }
             else
             {
-                UiRole role = step.Role switch { "togglebutton" => UiRole.ToggleButton, "checkbox" => UiRole.CheckBox, "switch" => UiRole.Switch, "radiogroup" => UiRole.RadioGroup, "radiobutton" => UiRole.RadioButton, "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
+                UiRole role = step.Role switch { "slider" => UiRole.Slider, "rangeslider" => UiRole.RangeSlider, "togglebutton" => UiRole.ToggleButton, "checkbox" => UiRole.CheckBox, "switch" => UiRole.Switch, "radiogroup" => UiRole.RadioGroup, "radiobutton" => UiRole.RadioButton, "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
                 locator = locator is null ? page.GetByRole(role, step.Name, step.IncludeHidden) : locator.GetByRole(role, step.Name, step.IncludeHidden);
             }
         }
@@ -146,6 +152,12 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                 case "select-option":
                     await locator!.SelectOptionAsync(plan.OptionKey!, cancellationToken: token);
                     break;
+                case "set-value":
+                    await locator!.SetValueAsync(plan.NumericValue!.Value, cancellationToken: token);
+                    break;
+                case "set-range":
+                    await locator!.SetRangeAsync(plan.NumericValue!.Value, plan.NumericUpper!.Value, cancellationToken: token);
+                    break;
                 case "fill":
                     await locator!.FillAsync(plan.Text!, cancellationToken: token);
                     break;
@@ -182,7 +194,9 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                     UiRemoteSnapshot snapshot = Snapshot(await page.SnapshotAsync(token));
                     result = plan.SchemaVersion < 4
                         ? SerializeBounded(LegacySnapshot(snapshot), LegacySnapshotJsonContext.Default.LegacyRemoteSnapshot)
-                        : SerializeBounded(snapshot with { Nodes = snapshot.Nodes.Select(node => node.Role is "scrollview" or "scrollbar" ? node with { Role = "none" } : node).ToArray() }, UiAutomationJsonContext.Default.UiRemoteSnapshot);
+                        : plan.SchemaVersion < 6
+                            ? SerializeBounded(SelectionSnapshot(snapshot), LegacySnapshotJsonContext.Default.SelectionRemoteSnapshot)
+                            : SerializeBounded(snapshot, UiAutomationJsonContext.Default.UiRemoteSnapshot);
                     break;
                 case "screenshot":
                     result = await page.ScreenshotAsync(token);

@@ -121,6 +121,8 @@ public sealed class RectanglePoolTests
 
         public TextureCopyLayout GetTextureCopyLayout(TextureFormat format) => inner.GetTextureCopyLayout(format);
 
+        public IMeshPipeline CreateMeshPipeline(MeshPipelineDesc desc) => throw new NotSupportedException();
+
         public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc) => inner.CreateGraphicsPipeline(desc);
 
         public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => inner.CreateComputePipeline(desc);

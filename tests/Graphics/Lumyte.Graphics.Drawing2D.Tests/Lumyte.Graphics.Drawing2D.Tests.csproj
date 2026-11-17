@@ -6,6 +6,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Svg/Lumyte.Graphics.Svg.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI/Lumyte.UI.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Media/Lumyte.UI.Media.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

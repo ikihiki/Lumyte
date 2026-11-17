@@ -129,12 +129,37 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
     {
         public async ValueTask<byte[]> CapturePngAsync(CancellationToken cancellationToken = default)
         {
+            long requestId = UiApplicationProfiling.StartCapture();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
             Interlocked.Increment(ref _pending);
             try
             {
-                Task<byte[]> capture = await _application.Dispatcher.InvokeAsync(() => _application.Driver.CaptureAsync(_surface() ?? throw new ObjectDisposedException(nameof(UiSurface)), linked.Token).AsTask(), linked.Token);
-                return await capture;
+                Task<byte[]> capture = await _application.Dispatcher.InvokeAsync(
+                () =>
+                {
+                    UiApplicationProfiling.Capture(requestId, 2);
+                    long previous = requestId == 0 ? 0 : UiApplicationProfiling.SetCapture(requestId);
+                    try
+                    {
+                        return _application.Driver.CaptureAsync(_surface() ?? throw new ObjectDisposedException(nameof(UiSurface)), linked.Token).AsTask();
+                    }
+                    finally
+                    {
+                        if (requestId != 0)
+                        {
+                            UiApplicationProfiling.SetCapture(previous);
+                        }
+                    }
+                },
+                linked.Token);
+                byte[] result = await capture;
+                UiApplicationProfiling.Capture(requestId, 8);
+                return result;
+            }
+            catch (Exception error)
+            {
+                UiApplicationProfiling.Capture(requestId, error is OperationCanceledException ? 9 : 10, reason: error is not OperationCanceledException ? 3 : _stop.IsCancellationRequested ? 2 : cancellationToken.IsCancellationRequested ? 1 : 3);
+                throw;
             }
             finally
             {
@@ -182,7 +207,7 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
                     _keys.Add(key.Key);
                 }
             }
-            else if (input is not (UiCheckInput or UiWheelInput))
+            else if (input is not (UiCheckInput or UiSetNumericInput or UiWheelInput))
             {
                 throw new ArgumentException("Only pointer, key, wheel and checked-state input are lease-owned.", nameof(input));
             }

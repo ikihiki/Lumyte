@@ -3,10 +3,10 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Describes draw state to snapshot independently of the program.</summary>
 public sealed record GraphicsRenderStateDesc
 {
-    /// <summary>Gets the exact primitive assembly mode.</summary>
+    /// <summary>Gets the exact primitive assembly mode; mesh programs require the matching LineList or TriangleList output.</summary>
     public PrimitiveTopology Topology { get; init; } = PrimitiveTopology.TriangleList;
 
-    /// <summary>Gets the indexed strip restart format.</summary>
+    /// <summary>Gets the indexed strip restart format; mesh programs require null.</summary>
     public IndexFormat? StripIndexFormat { get; init; }
 
     /// <summary>Gets the rasterization settings.</summary>

@@ -53,4 +53,10 @@ public enum UiRole
 
     /// <summary>A scroll position control.</summary>
     ScrollBar,
+
+    /// <summary>A numeric single-thumb track.</summary>
+    Slider,
+
+    /// <summary>An ordered two-thumb numeric track.</summary>
+    RangeSlider,
 }

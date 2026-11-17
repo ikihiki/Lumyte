@@ -1,0 +1,22 @@
+<Project>
+  <Import Project="ParleyBuild.targets" />
+  <PropertyGroup>
+    <LumyteBuildUsvgNative Condition="'$(LumyteBuildUsvgNative)' == ''">true</LumyteBuildUsvgNative>
+    <LumyteUsvgNativeOutput Condition="'$(LumyteUsvgNativeOutput)' == ''">$(_LumyteParleyRepositoryRoot)artifacts/svg-usvg/native</LumyteUsvgNativeOutput>
+    <_LumyteUsvgRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_LumyteUsvgRid>
+    <_LumyteUsvgRid Condition="'$(_LumyteUsvgRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_LumyteUsvgRid>
+    <_LumyteUsvgBinary Condition="$([System.String]::Copy('$(_LumyteUsvgRid)').StartsWith('win-'))">lumyte_svg_usvg.dll</_LumyteUsvgBinary>
+    <_LumyteUsvgBinary Condition="$([System.String]::Copy('$(_LumyteUsvgRid)').StartsWith('osx-'))">liblumyte_svg_usvg.dylib</_LumyteUsvgBinary>
+    <_LumyteUsvgBinary Condition="'$(_LumyteUsvgBinary)' == ''">liblumyte_svg_usvg.so</_LumyteUsvgBinary>
+    <LumyteUsvgNativePath Condition="'$(LumyteUsvgNativePath)' == ''">$(LumyteUsvgNativeOutput)/$(_LumyteUsvgBinary)</LumyteUsvgNativePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(LumyteUsvgNativePath)" Link="$([System.IO.Path]::GetFileName('$(LumyteUsvgNativePath)'))" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(LumyteUsvgNativeOutput)/SVG-RUST-STANDARD-LIBRARY-NOTICES.html" Link="SVG-RUST-STANDARD-LIBRARY-NOTICES.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="BuildLumyteUsvgNative" BeforeTargets="BeforeBuild" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(RuntimeIdentifier)' == 'browser-wasm'" Text="Static SVG currently supports native desktop only." />
+    <Error Condition="'$(LumyteBuildUsvgNative)' == 'true' and '$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != '$(NETCoreSdkRuntimeIdentifier)'" Text="usvg source builds target the current SDK host only. Supply a tested library and set LumyteBuildUsvgNative=false for cross deployment." />
+    <Exec Condition="'$(LumyteBuildUsvgNative)' == 'true'" Command="$(_LumyteParleyBuildCommand) --target UsvgNative --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteUsvgNativeOutput)')).&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+  </Target>
+</Project>

@@ -11,4 +11,10 @@ public enum ShaderStage
 
     /// <summary>Uses the Compute representation.</summary>
     Compute = 2,
+
+    /// <summary>Generates rasterized primitives in mesh workgroups.</summary>
+    Mesh = 3,
+
+    /// <summary>Amplifies mesh workgroups using a shared payload.</summary>
+    Task = 4,
 }
