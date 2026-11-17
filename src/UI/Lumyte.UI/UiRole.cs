@@ -68,4 +68,13 @@ public enum UiRole
 
     /// <summary>A non-editable popup selector.</summary>
     ComboBox,
+
+    /// <summary>A keyed tab selection group.</summary>
+    TabView,
+
+    /// <summary>A selectable tab header and retained panel.</summary>
+    TabItem,
+
+    /// <summary>A collapsible content panel.</summary>
+    Expander,
 }
