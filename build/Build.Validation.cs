@@ -104,6 +104,21 @@ internal sealed partial class Build
             await ToolAsync(scroll, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         });
 
+    private Target TestUiCollections => definition => definition
+        .DependsOn(Compile)
+        .Executes(async () =>
+        {
+            await DotNetAsync("test", "tests/UI/Lumyte.UI.Collections.Tests", "-c", Configuration, "--no-build", "--no-restore").ConfigureAwait(false);
+            await RunManagedSampleAsync("samples/Lumyte.UI.Collections.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
+    private Target TestUiCollectionsAot => definition => definition
+        .Executes(async () =>
+        {
+            string collections = await PublishAotSampleAsync("samples/Lumyte.UI.Collections.Sample", "ui-collections-aot", "Lumyte.UI.Collections.Sample", strict: true).ConfigureAwait(false);
+            await ToolAsync(collections, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        });
+
     private Target TestUiNumeric => definition => definition
         .DependsOn(Compile)
         .Executes(async () =>
@@ -353,6 +368,7 @@ internal sealed partial class Build
             File.Delete(settings);
         }
 
+        await RunManagedSampleAsync("samples/Lumyte.UI.Collections.Sample", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         await RunOpenAlSampleAsync("samples/Lumyte.Audio.Sample").ConfigureAwait(false);
         string[][] openAlInvocations = [["--openal"], ["--openal", "--host"], ["--openal", "--reload"], ["--openal", "--host", "--reload"]];
         foreach (string[] arguments in openAlInvocations)
@@ -392,6 +408,8 @@ internal sealed partial class Build
         await ToolAsync(media, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         string controls = await PublishAotSampleAsync("samples/Lumyte.UI.Controls.Sample", "ui-controls-aot", "Lumyte.UI.Controls.Sample", strict: true).ConfigureAwait(false);
         await ToolAsync(controls, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
+        string collections = await PublishAotSampleAsync("samples/Lumyte.UI.Collections.Sample", "ui-collections-aot", "Lumyte.UI.Collections.Sample", strict: true).ConfigureAwait(false);
+        await ToolAsync(collections, "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf").ConfigureAwait(false);
         string pages = await PublishAotSampleAsync("samples/Lumyte.UI.Pages.Sample", "ui-pages-aot", "Lumyte.UI.Pages.Sample", strict: true).ConfigureAwait(false);
         await ToolAsync(pages).ConfigureAwait(false);
         string transitions = await PublishAotSampleAsync("samples/Lumyte.UI.Transitions.Sample", "ui-transitions-aot", "Lumyte.UI.Transitions.Sample", strict: true).ConfigureAwait(false);

@@ -7,6 +7,18 @@ namespace Lumyte.Samples.Tests;
 /// <summary>Tests launcher selection, argument isolation, and catalog coverage.</summary>
 public sealed class LauncherTests
 {
+    /// <summary>Collections use the actual headless public consumer.</summary>
+    [Fact]
+    public void CollectionsSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-collections"]), console);
+        Assert.Equal("ui-collections", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Collections.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Verifies the launcher contract.</summary>
     [Fact]
     public void SeparatorPreservesArgumentsIncludingSpacesAndLauncherOptionNames()
