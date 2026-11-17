@@ -15,11 +15,31 @@ if (args.Contains("--selfcheck", StringComparer.Ordinal))
     return 0;
 }
 
+bool allowUnsandboxed = args.Contains("--allow-unsandboxed-cef", StringComparer.Ordinal);
+string? uriArgument = args.FirstOrDefault(value => value.StartsWith("--browser-uri=", StringComparison.Ordinal));
+if (allowUnsandboxed && (uriArgument is null || !args.Contains("--enable-experimental-cef", StringComparer.Ordinal)))
+{
+    Console.Error.WriteLine("Unsafe CEF requires --enable-experimental-cef and explicit --browser-uri=http(s)://... (trusted local content only).");
+    return 2;
+}
+
+if (!Uri.TryCreate(uriArgument is null ? "https://example.com/" : uriArgument[14..], UriKind.Absolute, out Uri? browserUri)
+    || browserUri.Scheme is not ("http" or "https"))
+{
+    Console.Error.WriteLine("Expected absolute HTTP/S --browser-uri.");
+    return 2;
+}
+
+if (allowUnsandboxed)
+{
+    Console.Error.WriteLine("UNSAFE MODE: CEF sandbox disabled by explicit user choice; trusted local pages only. URL validation is not network isolation.");
+}
+
 UiApplicationBuilder builder = UiApplication.CreateBuilder(args).UseDesktop();
 bool enabled = args.Contains("--enable-experimental-cef", StringComparer.Ordinal);
 if (enabled)
 {
-    builder.UseCefWebViews(new() { HelperExecutablePath = Environment.GetEnvironmentVariable("LUMYTE_CEF_HELPER") });
+    builder.UseCefWebViews(new() { HelperExecutablePath = Environment.GetEnvironmentVariable("LUMYTE_CEF_HELPER"), AllowUnsandboxed = allowUnsandboxed });
 }
 
 builder.UseRoot(window =>
@@ -29,7 +49,7 @@ builder.UseRoot(window =>
         return Button(width: 800, height: 80, automationName: "Native UI — optional browser disabled");
     }
 
-    UiWebViewSession page = window.GetWebViewSession("page", new("https://example.com/"));
+    UiWebViewSession page = window.GetWebViewSession("page", browserUri);
     page.StateChanged += (_, _) =>
     {
         if (page.State == UiWebViewState.Faulted && window.View.CurrentSurface is { } surface)

@@ -2,14 +2,14 @@
 
 The native UI is primary. WebView is an explicitly selected fallback and borrows a persistent, window-owned session. Rebuilding a declaration does not recreate the browser or navigate again.
 
-The public Application.WebView.Cef integration uses a separate Rust/CEF156 process. The UI process does not load CefGlue or libcef. Missing helpers, native aborts, startup/navigation timeouts, malformed IPC and cancellation fault only the browser session; callers can replace the view with their ordinary UI. No implicit retries or sandbox-disable fallback are provided.
+The public Application.WebView.Cef integration uses a separate Rust/CEF156 process. The UI process does not load CefGlue or libcef. Missing helpers, native aborts, startup/navigation timeouts, malformed IPC and cancellation fault only the browser session; callers can replace the view with their ordinary UI. No implicit retries or automatic sandbox-disable fallback are provided. AllowUnsandboxed=true explicitly selects an unsafe mode for trusted content; its default is false and process isolation is not a security boundary without the sandbox.
 
 ## Current capability boundary
 
 - Initial HTTP/S document display only; InputAvailable, PopupAvailable, ImeAvailable and NavigationCommandsAvailable are false. Post-creation navigation/history/reload/stop explicitly throw rather than succeeding without effect. Cancel stops the optional helper, not the UI application.
 - The managed process supervisor currently requires Linux, /usr/bin/python3 and pidfd support. Missing prerequisites fault only the browser; other platforms remain explicitly unavailable.
 - One session, bounded commands and packets, latest-only CPU frames, owned child profile/temp and deadline-controlled process teardown. Existing scene/frame/upload resource lifetimes remain in effect.
-- CPU pixel transport is implemented; actual sandboxed browser rendering, GPU composition and resizing are not acceptance-qualified on this host. Sandbox startup currently aborts in the child and the UI continues.
+- CPU pixel transport is implemented. The explicit unsandboxed product helper has passed a trusted loopback HTTP, exact-pixel, resize and clean-exit functional trial. Sandboxed browser rendering and actual UI GPU composition remain unqualified on this host; default sandbox failure stays local to the browser.
 - Windows bootstrap, persistent profiles, interactive input, DOM automation, accessibility bridging, JS/host RPC and GPU sharing are unsupported.
 - Old Image reachability may delay texture-slot reuse until GC; same-size resize revisits lack a native paint-generation fence.
 

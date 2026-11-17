@@ -65,7 +65,7 @@ helper未指定もローカルな利用不可として扱う。SessionはWindow�
 
 Application接続はengine-freeの共通部だけを参照する。Rust helperは固定したcef-rsとCEFを使い、子プロセスのbootstrapをstdin readerやIPC writerの作成より先に処理する。UIとhelperの接続はこのbackend専用の小さい固定形式とし、汎用RPCや任意の.NETオブジェクト公開を追加しない。
 
-helperパスは明示した絶対パスに限定し、引数はProcessStartInfo.ArgumentListで渡す。現在のmanaged supervisorはLinux・Python3・pidfdを要求し、未対応OSや依存不足ではBrowserだけを失敗させる。通常UIにこれらを要求しない。ユーザーの通常ブラウザprofileを取り込まない。親はhelper専用HOME・cache・tempを所有し、終了後に回収する。Linuxの任意ランチャーも同じhelper寿命の範囲に置く。
+helperパスは明示した絶対パスに限定し、引数はProcessStartInfo.ArgumentListで渡す。現在のmanaged supervisorはLinux・Python3・pidfdを要求し、未対応OSや依存不足ではBrowserだけを失敗させる。通常UIにこれらを要求しない。ユーザーの通常ブラウザprofileを取り込まない。親はhelper専用HOME・cache・tempを所有し、終了後に回収する。Chromiumが追加するsingleton socket名を含めLinuxのUnix-domain socket長制限に収まるよう、private rootはUTF-8で59byte以内にする。継承したtemp baseが長い場合は短い/tmp配下へ退避し、0700で原子的に作成する。継承元のディレクトリやホスト環境は変更・削除しない。Linuxの任意ランチャーも同じhelper寿命の範囲に置く。
 
 起動期限は既定10秒、初期文書の期限は既定15秒とし、正の有限な上限付き値だけを受理する。UI ownerはpipeのread/write、native初期化、プロセス終了を同期的に待たない。startupの無応答、ロードの無応答、EOF、異常packet、queue上限、native processの終了は理由付きFaultedにし、未処理命令を再送しない。中止・失敗時は所有child treeの終了とreader/writerの回収を行う。
 
@@ -85,7 +85,7 @@ CEF callbackが借用するBGRA画素はcallback内でコピーする。GPU転�
 
 ### 安全性と未対応範囲
 
-helperではsandboxを有効にする。起動不能な環境はUIを継続してbackendだけを失敗させる。native bootstrapが成立しないWindows、IME要求、永続profileは現在のhelperでは未対応として明示する。診断用に一時コピーでsandboxを無効化した結果を、そのまま配布設定の成立証拠にしない。
+helperのsandboxは既定で有効にする。起動不能な環境はUIを継続してbackendだけを失敗させる。アプリがAllowUnsandboxed=trueを明示した場合に限り、当面の局所的な選択としてsandboxなしで実行できる。起動失敗からの自動切替は行わない。sandboxなしは信頼できるコンテンツ向けであり、別process・private HOME・read-only表示は悪意あるページからの防御境界ではない。HTTP/SのURL検査もネットワーク隔離やlocalhost制限ではない。native bootstrapが成立しないWindows、IME要求、永続profileは現在のhelperでは未対応として明示する。明示unsafeモードは通常の製品helperで実装・検証し、診断用一時コピーの結果を流用しない。unsafeモードの成功からsandbox付き配布の成立を推測しない。
 
 popup、download、ファイル・JavaScriptのdialog、media・permission要求を既定拒否し、audioをmuteする。HTTP/S以外への遷移を拒否するが、これは通信先ネットワークの隔離や完全なブラウザhardeningではない。DOM automation、OSアクセシビリティ橋渡し、JavaScript/host RPC、対話入力、GPU共有、任意の信頼できないページへの製品保証は含めない。
 
@@ -148,6 +148,7 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 +    public sealed record CefWebViewOptions
 +    {
 +        public string? HelperExecutablePath { get; init; }
++        public bool AllowUnsandboxed { get; init; } = false; // 信頼コンテンツ向けの明示選択のみ
 +        public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(10);
 +        public TimeSpan NavigationTimeout { get; init; } = TimeSpan.FromSeconds(15);
 +        public int MaximumSessions { get; init; } = 1;

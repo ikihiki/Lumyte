@@ -65,6 +65,17 @@ internal sealed class CefHelperSession : IDisposable
         // Lifetime owns cancellation until all readers/writers have unwound.
     }
 
+    internal static string SelectOwnedDirectory(string temporaryBase)
+    {
+        // Linux sockaddr_un.sun_path has 108 bytes, including the terminating NUL.
+        // Chromium appends /org.chromium.Chromium.XXXXXX/SingletonSocket (43 bytes);
+        // reserve 48 so a bounded native suffix change does not consume the terminator.
+        const int MaximumRootBytes = 108 - 1 - 48;
+        string name = "lumyte-browser-" + Guid.NewGuid().ToString("N");
+        string candidate = Path.Combine(Path.GetFullPath(temporaryBase), name);
+        return Encoding.UTF8.GetByteCount(candidate) <= MaximumRootBytes ? candidate : Path.Combine("/tmp", name);
+    }
+
     internal bool TryTakeSnapshot(out HelperSnapshot snapshot)
     {
         lock (_gate)
@@ -205,12 +216,10 @@ internal sealed class CefHelperSession : IDisposable
                 return;
             }
 
-            ownedDirectory = Path.Combine(Path.GetTempPath(), "lumyte-browser-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(ownedDirectory);
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(ownedDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            }
+            ownedDirectory = SelectOwnedDirectory(Path.GetTempPath());
+
+            // Set privacy atomically at creation, before staging code or launching children.
+            Directory.CreateDirectory(ownedDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
             string supervisor = Path.Combine(ownedDirectory, "supervisor.py");
             using (Stream resource = typeof(CefHelperSession).Assembly.GetManifestResourceStream("Lumyte.CefHelperSupervisor")!)
@@ -226,6 +235,11 @@ internal sealed class CefHelperSession : IDisposable
             start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
             start.ArgumentList.Add(path);
             start.ArgumentList.Add("--lumyte-helper");
+            if (_options.AllowUnsandboxed)
+            {
+                start.ArgumentList.Add("--lumyte-allow-unsandboxed");
+            }
+
             start.Environment["TMPDIR"] = ownedDirectory;
             start.Environment["HOME"] = ownedDirectory;
             start.Environment["XDG_CACHE_HOME"] = ownedDirectory;

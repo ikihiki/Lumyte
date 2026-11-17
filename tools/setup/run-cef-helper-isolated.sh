@@ -36,7 +36,7 @@ if [[ ${1:-} == --private-session ]]; then
     wait "$helper"
     exit $?
 fi
-[[ $# == 1 && $1 == --lumyte-helper ]] || fail 'expected --lumyte-helper'
+[[ ($# == 1 && $1 == --lumyte-helper) || ($# == 2 && $1 == --lumyte-helper && $2 == --lumyte-allow-unsandboxed) ]] || fail 'expected --lumyte-helper [--lumyte-allow-unsandboxed]'
 [[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]] || fail 'desktop display unavailable'
 for dep in dbus-run-session gdbus timeout python3 stat readlink mkdir; do
     command -v "$dep" >/dev/null || fail "missing dependency: $dep"

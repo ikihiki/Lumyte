@@ -6,6 +6,9 @@ public sealed record CefWebViewOptions
     /// <summary>Gets the absolute optional helper path. Null leaves the browser unavailable.</summary>
     public string? HelperExecutablePath { get; init; }
 
+    /// <summary>Gets a value indicating whether the helper sandbox may be explicitly disabled. Unsafe: trusted local content only; never enabled automatically.</summary>
+    public bool AllowUnsandboxed { get; init; }
+
     /// <summary>Gets the finite native startup deadline.</summary>
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(10);
 

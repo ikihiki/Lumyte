@@ -1,4 +1,4 @@
-//! Opt-in, sandbox-enabled process host; independent of the selection-probe ABI.
+//! Explicit process host with sandbox enabled by default; independent of the selection-probe ABI.
 use cef::*;
 use std::{
     cell::RefCell,
@@ -10,6 +10,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+mod helper_mode;
 mod helper_protocol;
 use helper_protocol::{Packet, geometry, http_url};
 struct Session {
@@ -43,7 +44,22 @@ impl Session {
     }
 }
 type StateRef = Shared<RefCell<Session>>;
-wrap_app! { struct HelperApp; impl App {} }
+wrap_browser_process_handler! {
+ struct ChildBootstrap { allow_unsandboxed: bool }
+ impl BrowserProcessHandler {
+  fn on_before_child_process_launch(&self, command_line: Option<&mut CommandLine>) {
+   if self.allow_unsandboxed && let Some(c) = command_line {
+    c.append_switch(Some(&CefString::from("lumyte-allow-unsandboxed")));
+   }
+  }
+ }
+}
+wrap_app! {
+ struct HelperApp { allow_unsandboxed: bool }
+ impl App {
+  fn browser_process_handler(&self)->Option<BrowserProcessHandler> {Some(ChildBootstrap::new(self.allow_unsandboxed))}
+ }
+}
 wrap_life_span_handler! {
  struct Life { state:StateRef }
  impl LifeSpanHandler {
@@ -160,25 +176,30 @@ fn protocol_output() -> std::io::Result<std::fs::File> {
 }
 fn run() -> i32 {
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| {
-        a.starts_with("--no-sandbox")
-            || a.starts_with("--disable-setuid-sandbox")
-            || a.starts_with("--disable-namespace-sandbox")
-            || a.starts_with("--remote-debugging")
-    }) {
-        eprintln!("unsafe CEF switches rejected");
-        return 2;
-    }
+    let mode = match helper_mode::parse(&args[1..]) {
+        Ok(mode) => mode,
+        Err(reason) => {
+            eprintln!("cef-helper-arguments: {reason}");
+            return 2;
+        }
+    };
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
     let cef_args = cef::args::Args::new();
-    // Bootstrap CEF children before creating reader/writer threads or reading stdin.
-    if args.iter().any(|a| a.starts_with("--type=")) {
+    // Children bootstrap before IPC threads. Intent is explicitly propagated,
+    // never inferred from ambient environment or an automatic retry.
+    if mode == helper_mode::Mode::Child {
         return execute_process(Some(cef_args.as_main_args()), None, std::ptr::null_mut());
     }
-    if args.len() != 2 || args[1] != "--lumyte-helper" || !cfg!(target_os = "linux") {
-        eprintln!("expected --lumyte-helper (Linux only)");
+    let helper_mode::Mode::Browser { allow_unsandboxed } = mode else {
+        unreachable!()
+    };
+    if !cfg!(target_os = "linux") {
         return 2;
     }
+    eprintln!(
+        "cef-helper-mode: unsafeMode={} sandbox={}",
+        allow_unsandboxed, !allow_unsandboxed
+    );
     let Ok(mut protocol_stdout) = protocol_output() else {
         eprintln!("cannot isolate protocol stdout");
         return 2;
@@ -246,11 +267,11 @@ fn run() -> i32 {
             return 2;
         }
     }
-    // No persistent cache, debug port, subprocess CLI override or sandbox opt-out.
-    let mut app = HelperApp::new();
+    // No persistent cache, debug port or subprocess CLI override. No automatic fallback.
+    let mut app = HelperApp::new(allow_unsandboxed);
     let settings = Settings {
         root_cache_path: CefString::from(profile.to_str().unwrap()),
-        no_sandbox: 0,
+        no_sandbox: i32::from(allow_unsandboxed),
         windowless_rendering_enabled: 1,
         external_message_pump: 1,
         command_line_args_disabled: 1,

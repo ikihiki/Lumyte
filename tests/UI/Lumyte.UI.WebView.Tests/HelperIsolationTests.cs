@@ -8,6 +8,61 @@ namespace Lumyte.UI.WebView.Tests;
 /// <summary>Real IPC child failures must not escape into a UI owner.</summary>
 public sealed class HelperIsolationTests
 {
+    /// <summary>Inherited temporary paths must leave room for Chromium singleton sockets, in bytes.</summary>
+    /// <param name="temporaryBase">An inherited temporary base.</param>
+    [CefHelperTheory]
+    [InlineData("/tmp/ce-bwbv5o0s")]
+    [InlineData("/tmp/very-long-private-launcher-runtime/another-nested-directory")]
+    [InlineData("/tmp/日本語日本語日本語")]
+    [InlineData("/tmp/éééé")]
+    public void OwnedTemporaryRootFitsChromiumSocket(string temporaryBase)
+    {
+        string root = CefHelperSession.SelectOwnedDirectory(temporaryBase);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(root) + 48 < 108, root);
+        Assert.Equal("/tmp", Path.GetDirectoryName(root));
+        Assert.StartsWith("lumyte-browser-", Path.GetFileName(root), StringComparison.Ordinal);
+    }
+
+    /// <summary>A short caller base is honored and each browser has a distinct random root.</summary>
+    [CefHelperFact]
+    public void OwnedTemporaryRootsAreUniqueAndHonorShortBase()
+    {
+        string first = CefHelperSession.SelectOwnedDirectory("/tmp");
+        string second = CefHelperSession.SelectOwnedDirectory("/tmp");
+        Assert.Equal("/tmp", Path.GetDirectoryName(first));
+        Assert.NotEqual(first, second);
+        Assert.Equal(47, Path.GetFileName(first).Length);
+        Assert.Equal("/tmp/a", Path.GetDirectoryName(CefHelperSession.SelectOwnedDirectory("/tmp/a")));
+        Assert.Equal("/tmp/é", Path.GetDirectoryName(CefHelperSession.SelectOwnedDirectory("/tmp/é")));
+    }
+
+    /// <summary>Unsafe mode is never the default; explicit permission forwards exactly one dedicated flag without retry.</summary>
+    /// <param name="allow">Explicit sandbox opt-out.</param>
+    /// <returns>The verification.</returns>
+    [CefHelperTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SandboxChoiceIsExplicitAndNeverRetriedAsync(bool allow)
+    {
+        Assert.False(new CefWebViewOptions().AllowUnsandboxed);
+        string executable = CopyHelper("argumentproof");
+        try
+        {
+            using var helper = new CefHelperSession(new("http://127.0.0.1/"), new(1048576), () => { }, new() { HelperExecutablePath = executable, AllowUnsandboxed = allow });
+            await helper.Completion.WaitAsync(TimeSpan.FromSeconds(8));
+            helper.TryTakeSnapshot(out HelperSnapshot snapshot);
+            Assert.Equal(UiWebViewState.Faulted, snapshot.State);
+            Assert.Equal("cef-helper-exited", snapshot.FailureCode);
+            string[] launches = File.ReadAllLines(Path.Combine(Path.GetDirectoryName(executable)!, "launch-args.txt"));
+            Assert.Single(launches);
+            Assert.Equal(allow ? "--lumyte-helper --lumyte-allow-unsandboxed" : "--lumyte-helper", launches[0]);
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(executable)!, true);
+        }
+    }
+
     /// <summary>Missing helpers fault locally and do not retry.</summary>
     /// <returns>The verification.</returns>
     [Fact]
@@ -273,6 +328,8 @@ public sealed class HelperIsolationTests
             await helper.Completion.WaitAsync(TimeSpan.FromSeconds(6));
             Assert.False(Directory.Exists("/proc/" + child));
             Assert.False(Directory.Exists(lines[1]));
+            Assert.Equal("700", lines[2]);
+            Assert.True(System.Text.Encoding.UTF8.GetByteCount(lines[1]) + 48 < 108);
             helper.TryTakeSnapshot(out HelperSnapshot snapshot);
             Assert.Equal(UiWebViewState.Faulted, snapshot.State);
         }

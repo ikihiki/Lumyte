@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
   fprintf(f,"%s\n%s\n",exe,getenv("DBUS_SESSION_BUS_ADDRESS"));fclose(f);
   return fcntl(8,F_GETFD)==-1 && fcntl(9,F_GETFD)==-1 ? 0 : 96;
  }
- if(argc != 2 || strcmp(argv[1], "--lumyte-helper")) return 90;
+ if((argc != 2 && argc != 3) || strcmp(argv[1], "--lumyte-helper") || (argc == 3 && strcmp(argv[2], "--lumyte-allow-unsandboxed"))) return 90;
  FILE *p = fopen(getenv("FIXTURE_PROOF"), "w");
  if(!p) return 91;
  fprintf(p,"%ld\n%s\n%s\n",(long)getpid(),getenv("DBUS_SESSION_BUS_ADDRESS"),getenv("XDG_RUNTIME_DIR")); fclose(p);
@@ -150,6 +150,10 @@ def main():
             assert r.returncode and not r.stdout and time.monotonic()-t<3
             assert (b'display unavailable' if mode=='no-display' else b'missing dependency: dbus-run-session') in r.stderr
             cases.append(dict(case=mode,exit=r.returncode,residual_count=0));(out/(mode+'.stderr')).write_bytes(r.stderr)
+        for invalid in (['--no-sandbox'], ['--lumyte-helper','--no-sandbox'], ['--lumyte-helper','--lumyte-allow-unsandboxed=false'], ['--lumyte-helper','--lumyte-allow-unsandboxed','--remote-debugging-port=9222'], ['--type=renderer']):
+            r=sp.run([str(wrapper),*invalid],input=b'',capture_output=True,env=base,timeout=3)
+            assert r.returncode==78 and not r.stdout and b'expected --lumyte-helper' in r.stderr
+        cases.append(dict(case='argument-whitelist-5',exit=78,residual_count=0))
         weston=a.weston_root.resolve();lib=weston/'usr/lib/x86_64-linux-gnu'
         env=dict(base,XDG_RUNTIME_DIR=str(runtime),WAYLAND_DISPLAY='w',
             LD_LIBRARY_PATH=f'{lib}:{lib}/weston:{lib}/libweston-14',
@@ -164,7 +168,7 @@ def main():
             time.sleep(.05)
         # Only the dedicated compositor socket reaches launcher; no host display.
         base.update(WAYLAND_DISPLAY=str(runtime/'w'),XDG_RUNTIME_DIR=str(runtime))
-        for mode in ('normal-eof','abort','term','tree-kill','startup-fail','portal-timeout','tree-kill-startup') + (('native-sandbox-failure',) if a.native_helper else ()):
+        for mode in ('explicit-unsandboxed','normal-eof','abort','term','tree-kill','startup-fail','portal-timeout','tree-kill-startup') + (('native-sandbox-failure',) if a.native_helper else ()):
             root=Path(tempfile.mkdtemp(prefix='lumyte-browser-'));root.chmod(0o700)
             marker='LUMYTE_LAUNCHER_SMOKE='+root.name
             env=dict(base,HOME=str(root),TMPDIR=str(root),XDG_CONFIG_HOME=str(root),XDG_DATA_HOME=str(root),XDG_CACHE_HOME=str(root),
@@ -182,8 +186,8 @@ def main():
                     code=int((out/(mode+'-exit')).read_text());assert code==137
                     stdout=b''; stderr=b''
                 else:
-                    p=sp.Popen([str(target),'--lumyte-helper'],cwd=target.parent,env=env,stdin=sp.PIPE,stdout=sp.PIPE,stderr=sp.PIPE)
-                    if mode in ('normal-eof','abort','term'):
+                    p=sp.Popen([str(target),'--lumyte-helper']+(['--lumyte-allow-unsandboxed'] if mode=='explicit-unsandboxed' else []),cwd=target.parent,env=env,stdin=sp.PIPE,stdout=sp.PIPE,stderr=sp.PIPE)
+                    if mode in ('normal-eof','explicit-unsandboxed','abort','term'):
                         assert select.select([p.stdout],[],[],12)[0],mode
                         ready=p.stdout.read(44)
                         assert ready==struct.pack('<11I',40,101,1,0,0,0,0,0,0,0,0),(mode,ready,p.poll())
@@ -193,10 +197,10 @@ def main():
                         packet=struct.pack('<I',40+len(body))+struct.pack('<IQqqiiI',1,1,0,0,800,600,len(body))+body
                         p.stdin.write(packet);p.stdin.flush();p.wait(timeout=12)
                     payload=b'\x00\xffbinary\n;$(touch INJECTION)'
-                    stdout,stderr=p.communicate(payload if mode=='normal-eof' else b'',timeout=12)
+                    stdout,stderr=p.communicate(payload if mode in ('normal-eof','explicit-unsandboxed') else b'',timeout=12)
                     code=p.returncode
                     (out/(mode+'.stderr')).write_bytes(stderr)
-                    if mode=='normal-eof':assert code==0 and stdout==payload,(code,stdout,stderr)
+                    if mode in ('normal-eof','explicit-unsandboxed'):assert code==0 and stdout==payload,(code,stdout,stderr)
                     if mode=='abort':assert code==134 and not stdout,(mode,code,stdout,stderr)
                     if mode=='native-sandbox-failure':assert code==133 and not stdout and b'SUID sandbox helper binary' in stderr,(mode,code,stdout,stderr)
                     if mode in ('term','startup-fail','portal-timeout','tree-kill-startup'):assert code!=0 and not stdout

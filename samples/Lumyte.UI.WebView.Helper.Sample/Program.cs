@@ -18,6 +18,12 @@ if (args.Contains("--selfcheck", StringComparer.Ordinal))
 
 // Engine-free IPC fault injection. Never selected by a normal application implicitly.
 string mode = Path.GetFileName(Environment.ProcessPath)!.Split('.').First();
+if (mode.EndsWith("argumentproof", StringComparison.Ordinal))
+{
+    File.AppendAllText(Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "launch-args.txt"), string.Join(" ", args) + "\n");
+    Environment.Exit(134);
+}
+
 Stream input = Console.OpenStandardInput();
 Stream output = Console.OpenStandardOutput();
 CefHelperPacket start = await CefHelperProtocol.ReadAsync(input, CancellationToken.None);
@@ -29,7 +35,9 @@ if (mode.Contains("orphan-", StringComparison.Ordinal))
         ArgumentList = { "-c", "import os,time; os.setsid(); time.sleep(60)" },
         UseShellExecute = false,
     })!;
-    File.WriteAllText(marker, child.Id + "\n" + Environment.GetEnvironmentVariable("HOME"));
+    string home = Environment.GetEnvironmentVariable("HOME")!;
+    int permissions = OperatingSystem.IsLinux() ? (int)File.GetUnixFileMode(home) : 0;
+    File.WriteAllText(marker, child.Id + "\n" + home + "\n" + Convert.ToString(permissions, 8));
     Environment.Exit(mode.EndsWith("134", StringComparison.Ordinal) ? 134 : 0);
 }
 
