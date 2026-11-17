@@ -139,6 +139,17 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         }
     }
 
+    // Subtraction after nonnegative range checks avoids overflowing cumulative sums.
+    internal static void ValidateWorkingCapacity(long ownBytes, long otherBytes, long argumentBytes, long maximum)
+    {
+        if (ownBytes < 0 || otherBytes < 0 || argumentBytes < 0 || maximum <= 0
+            || otherBytes > maximum || ownBytes > maximum - otherBytes
+            || argumentBytes > maximum - otherBytes - ownBytes)
+        {
+            throw new NotSupportedException("Sparse resources exceed the cumulative working-byte budget.");
+        }
+    }
+
     internal static ValueTask<PreparedSparseStripBatch2D> PrepareAsync(RenderPreparationContext2D context, SparseStripPlan2D strips, CancellationToken cancellationToken)
     {
         var batch = new PreparedSparseStripBatch2D(context) { _bytes = strips.WorkingBytes };
@@ -281,10 +292,18 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
 
         _page.Records.Clear();
         long stripCells = plan.Strips.Sum(strip => checked(2L + (strip.MaskOffset < 0 && clips[strip.CommandOrdinal].Kind == NormalizedClipKind2D.None ? 0 : (strip.Length + 3L) / 4)));
-        if (checked(stripCells + _page.Numeric.Count) > 262144 || checked(_bytes + (stripCells * 64) + (plan.Strips.LongLength * 4096)) > _context.MaxWorkingBytes - _context.OtherWorkingBytes)
+        long numericCapacity = checked(stripCells + _page.Numeric.Count);
+        if (numericCapacity > 262144)
         {
-            throw new NotSupportedException("Sparse strip payload exceeds the preallocation budget.");
+            throw new NotSupportedException("Sparse strip payload exceeds the numeric preallocation budget.");
         }
+
+        // Existing compiled numeric and paint directories coexist with strip storage.
+        // Reserve all of them before growing the strip record/mask/directory lists.
+        // Keep the upper bound after clipping for late upload/table packing ownership.
+        long compilerBytes = _bytes;
+        _bytes = checked(compilerBytes + PayloadWorkingBytes(plan.Strips.LongLength, numericCapacity, checked(_page.Clips.Count + plan.Strips.LongLength)));
+        ValidateWorkingCapacity(_bytes, _context.OtherWorkingBytes, _context.ArgumentPlan.EstimatedBytes, _context.MaxWorkingBytes);
 
         foreach (SparseStrip2D sourceStrip in plan.Strips)
         {
@@ -336,11 +355,13 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
             throw new NotSupportedException("Sparse strips exceed the numeric geometry/paint/clip budget.");
         }
 
-        _bytes = checked(_bytes + (_page.Records.Count * 4096L) + (_page.Numeric.Count * 64L) + (_page.Paints.Count * 4096L));
-        if (_bytes > _context.MaxWorkingBytes)
+        long actualBytes = checked(compilerBytes + PayloadWorkingBytes(_page.Records.Count, _page.Numeric.Count, _page.Clips.Count));
+        if (actualBytes > _bytes)
         {
-            throw new NotSupportedException("Sparse GPU paint resources exceed MaxWorkingBytes.");
+            throw new InvalidOperationException("Sparse page growth exceeded its reserved capacity.");
         }
+
+        ValidateWorkingCapacity(_bytes, _context.OtherWorkingBytes, _context.ArgumentPlan.EstimatedBytes, _context.MaxWorkingBytes);
 
         if (_count == 0)
         {
@@ -358,6 +379,20 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         AddShader(_page.Images.Count == 0 ? new List<ImagePaintData2D> { default } : _page.Images, value => _images = value, () => _page.Images.Count == 0 ? [new(default, default, default, default, 0, 0, 0, 0, 0, 0, 0, 0, _fallback!, _sampler!)] : _page.Images.ToArray());
         AddShader(new List<DrawPageMetadata2D> { default }, value => _metadata = value, () => [new(_paints!, _clips!, _numeric!, _masks!, _images!)]);
         _context.ArgumentPlan.DeferUpload(_scope, UploadAsync, MapAsync, Fill);
+    }
+
+    private long PayloadWorkingBytes(long records, long numeric, long clips)
+    {
+        // Preserve existing record/paint packing/cohort rates. Numeric/clip rates
+        // include list capacity plus upload and destination. Mask/image rates also
+        // include late reference-bearing arrays. Seven mode3 streams always exist.
+        // Fixed scratch covers stream owners, metadata, fallback and packing, with
+        // an additional charge for every possible buffer/texture/sampler binding.
+        long masks = Math.Max(1, _page.Masks.Count);
+        long images = Math.Max(1, _page.Images.Count);
+        long registrations = checked(9L + _views.Count + _samplers.Count);
+        return checked(32768L + (records * 4096) + (numeric * 64) + (_page.Paints.Count * 4096L)
+            + (clips * 64) + (masks * 512) + (images * 768) + (registrations * 256));
     }
 
     private void AddShader<T>(List<T> values, Action<IGpuRef<T>> resolved, Func<T[]>? late = null)
